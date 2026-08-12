@@ -1,0 +1,96 @@
+import LiveWallpaperCore
+import SwiftUI
+
+/// The Monitor overlay as one section of the Overlays tab — a sibling of the
+/// weather overlay, not a whole right column. The enclosing panel owns the
+/// scrolling and padding so both overlays share one rhythm.
+struct MonitorOverlaySection: View {
+    let screen: Screen
+    let screenManager: ScreenManager
+    /// Whether a still frame of the current wallpaper exists to sit behind the board.
+    let backdropAvailable: Bool
+
+    @AppStorage(MonitorPreviewBackdrop.showsWallpaperDefaultsKey) private var showsWallpaper = true
+
+    private var overlay: MonitorOverlayConfiguration {
+        screenManager.monitorOverlay(for: screen)
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            displayCard
+            MonitorBoardSettingsView(screen: screen, screenManager: screenManager)
+        }
+    }
+
+    private var displayCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                showOnThisDisplayRow
+                Divider()
+                layerRow
+                Divider()
+                backdropRow
+            }
+        }
+        .groupBoxStyle(ContainerGroupBoxStyle())
+    }
+
+    private var showOnThisDisplayRow: some View {
+        SettingRow(
+            icon: overlay.enabled ? "gauge.with.dots.needle.67percent" : "gauge.with.dots.needle.0percent",
+            iconColor: overlay.enabled ? DesignTokens.Colors.Status.active : .secondary,
+            title: "Show on This Display",
+            info: "The board floats over whatever wallpaper this display is playing"
+        ) {
+            Toggle("", isOn: Binding(
+                get: { overlay.enabled },
+                set: { screenManager.setMonitorOverlayEnabled($0, for: screen) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .accessibilityLabel(Text("Show Monitor on this display"))
+        }
+    }
+
+    private var layerRow: some View {
+        SettingRow(
+            icon: "square.stack.3d.up",
+            iconColor: .blue,
+            title: "Layer",
+            info: "Desktop keeps the board under your windows; On Top floats it above everything"
+        ) {
+            Picker("", selection: Binding(
+                get: { overlay.level },
+                set: { screenManager.setMonitorOverlayLevel($0, for: screen) }
+            )) {
+                Text("Desktop").tag(MonitorOverlayLevel.desktop)
+                Text("On Top").tag(MonitorOverlayLevel.front)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .disabled(!overlay.enabled)
+            .accessibilityLabel(Text("Overlay layer"))
+        }
+    }
+
+    private var backdropRow: some View {
+        SettingRow(
+            icon: "photo",
+            iconColor: .purple,
+            title: "Wallpaper Backdrop",
+            info: backdropAvailable
+                ? "Preview the board over this display's wallpaper instead of an empty canvas"
+                : "This wallpaper has no still frame to preview the board against"
+        ) {
+            Toggle("", isOn: $showsWallpaper)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .disabled(!backdropAvailable)
+                .accessibilityLabel(Text("Show wallpaper backdrop in the preview"))
+        }
+    }
+}

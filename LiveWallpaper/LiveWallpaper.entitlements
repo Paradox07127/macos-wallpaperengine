@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Explicit in the source contract as well as ENABLE_APP_SANDBOX=YES so
+	     any manual/archive signing path must preserve the sandbox. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.automation.startup-items</key>
+	<true/>
+	<key>com.apple.security.device.power</key>
+	<true/>
+	<!--
+	    Core Audio Process Tap (system-audio "loopback" capture) drives the
+	    audio-reactive wallpaper feature. Under App Sandbox the tap + private
+	    aggregate device read audio input, which requires this entitlement plus
+	    the user granting "System Audio Recording" (TCC). The consuming code
+	    (SystemAudioCaptureService) is compiled only into Pro, so this grant is
+	    intentionally absent from LiveWallpaperLite.entitlements.
+	-->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<!--
+	    macOS 13+ AVFoundation tries to connect to `com.apple.audioanalyticsd`
+	    on every AVPlayer init to log playback codec/format usage statistics.
+	    A sandboxed app without this mach-lookup exception trips a runtime
+	    PRECONDITION FAILURE (visible in Console) — playback continues fine,
+	    but it spams the log on every video swap. Whitelisting this single
+	    system service costs no privacy (it ships nothing user-identifying)
+	    and silences the noise.
+	-->
+	<key>com.apple.security.exception.mach-lookup.global-name</key>
+	<array>
+		<string>com.apple.audioanalyticsd</string>
+	</array>
+	<!--
+	    No package-manager read exception. It granted read access to the whole of
+	    /opt/homebrew, /usr/local and /opt/local — three entire trees — so this
+	    process could stat and hash the SteamCMD binary. Since 2026-08-02 the
+	    unsandboxed SteamConnector does all of that: it locates the binary (three
+	    fixed stats), follows the wrapper to the Mach-O, hashes it, and runs it.
+	    The app keeps only the resolved path string. Do not add this back to make
+	    a file check "work" — move the check into the connector instead.
+	-->
+	<!--
+	    Read-only Apple SMC access for the Monitor widget board's temperature /
+	    power readouts (MonitorSensorSampler). Under the plain App Sandbox
+	    `IOServiceOpen(AppleSMC)` returns kIOReturnNotPermitted; this temporary
+	    exception whitelists that one IOUserClient subclass so the read succeeds
+	    in-process WITHOUT dropping the sandbox or shipping a privileged helper.
+	    It is a Developer ID / direct distribution measure (not accepted for a Mac
+	    App Store submission). Purely
+	    a read path — no SMC writes are ever issued.
+	-->
+	<key>com.apple.security.temporary-exception.iokit-user-client-class</key>
+	<array>
+		<string>AppleSMCClient</string>
+	</array>
+	<!--
+	    Read-only access to other processes' pid list + task info for the Monitor
+	    "Top by CPU" / Processes instruments (proc_listallpids / proc_pidinfo /
+	    proc_name). Under the plain App Sandbox those return nothing — the
+	    `process-info-*` sandbox operations are denied (proc_listallpids yields 0).
+	    This temporary SBPL exception whitelists just the READ operations
+	    (listpids/pidinfo, plus rusage for the Disk widget's per-app I/O rates) so
+	    the per-process CPU/memory/disk walk works in-process WITHOUT dropping the
+	    sandbox or a helper. Developer ID / direct distribution only (not accepted
+	    for the Mac App Store). No control operations (setcontrol/dirtycontrol) are
+	    granted.
+	-->
+	<key>com.apple.security.temporary-exception.sbpl</key>
+	<array>
+		<string>(allow process-info-listpids)</string>
+		<string>(allow process-info-pidinfo)</string>
+		<string>(allow process-info-rusage)</string>
+	</array>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!--
+	    No `com.apple.security.network.server`. SteamCMD's datagram transport
+	    bind()s a local socket, which the sandbox treats as a server operation, so
+	    this app needed the entitlement for as long as it spawned SteamCMD itself.
+	    It no longer does: every spawn, and every read of the SteamCMD binary,
+	    happens in the unsandboxed SteamConnector XPC service. Do not add this key
+	    back without first showing that something in *this* process binds a socket.
+	-->
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
+</dict>
+</plist>

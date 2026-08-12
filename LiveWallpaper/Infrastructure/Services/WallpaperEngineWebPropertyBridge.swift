@@ -1,0 +1,289 @@
+import Foundation
+import LiveWallpaperCore
+
+/// WPE web bridge: deliver `window.wallpaperPropertyListener` defaults.
+/// `forFolder:` cold-start; `schema:` hot apply without re-parsing project.json.
+enum WallpaperEngineWebPropertyBridge {
+    static func bootstrapScript(
+        forFolder folderURL: URL,
+        overrides: [String: WallpaperEngineProjectPropertyValue] = [:]
+    ) -> String? {
+        guard let schema = parseSchema(forFolder: folderURL) else { return nil }
+        return bootstrapScript(schema: schema, overrides: overrides)
+    }
+
+    static func bootstrapScript(
+        schema: WallpaperEngineProjectPropertySchema,
+        overrides: [String: WallpaperEngineProjectPropertyValue] = [:]
+    ) -> String? {
+        guard let json = propertiesJSON(schema: schema, overrides: overrides) else {
+            return nil
+        }
+
+        // 3-stage delivery against startup races: inject, defineProperty hook, RAF poll.
+        return """
+        (function () {
+            var properties = \(json);
+            var delivered = false;
+
+            function deliver(listener) {
+                if (delivered || !listener || typeof listener.applyUserProperties !== 'function') return;
+                delivered = true;
+                try {
+                    listener.applyUserProperties(properties);
+                } catch (error) {
+                    console.error('LiveWallpaper failed to apply Wallpaper Engine properties', error);
+                }
+            }
+
+            // Stage 1 — listener already defined.
+            deliver(window.wallpaperPropertyListener);
+            if (delivered) return;
+
+            // Stage 2 — intercept the page's assignment of the listener.
+            try {
+                var current;
+                Object.defineProperty(window, 'wallpaperPropertyListener', {
+                    configurable: true,
+                    get: function () { return current; },
+                    set: function (value) {
+                        current = value;
+                        deliver(value);
+                    }
+                });
+            } catch (e) {}
+
+            // Stage 3 — short polling fallback for pages that mutate an
+            // already-defined property instead of assigning to the window.
+            var attempts = 0;
+            function pollFallback() {
+                if (delivered) return;
+                deliver(window.wallpaperPropertyListener);
+                if (delivered) return;
+                if (attempts++ < 60) {
+                    window.requestAnimationFrame(pollFallback);
+                }
+            }
+            pollFallback();
+        })();
+        """
+    }
+
+    static func applyScript(
+        schema: WallpaperEngineProjectPropertySchema,
+        previousOverrides: [String: WallpaperEngineProjectPropertyValue],
+        overrides: [String: WallpaperEngineProjectPropertyValue]
+    ) -> String? {
+        let previousValues = schema.effectiveValues(overrides: previousOverrides)
+        let currentValues = schema.effectiveValues(overrides: overrides)
+        let changedKeys = Set(schema.properties.compactMap { property -> String? in
+            previousValues[property.key] == currentValues[property.key] ? nil : property.key
+        })
+        guard !changedKeys.isEmpty,
+              let json = propertiesJSON(
+                  schema: schema,
+                  overrides: overrides,
+                  includingKeys: changedKeys
+              ) else {
+            return nil
+        }
+
+        return """
+        (function () {
+            var listener = window.wallpaperPropertyListener;
+            if (listener && typeof listener.applyUserProperties === 'function') {
+                listener.applyUserProperties(\(json));
+            }
+        })();
+        """
+    }
+
+    static func audioBootstrapOverrides(
+        schema: WallpaperEngineProjectPropertySchema,
+        projectOverrides: [String: WallpaperEngineProjectPropertyValue],
+        volume: Double,
+        muted: Bool
+    ) -> [String: WallpaperEngineProjectPropertyValue] {
+        let level = normalizedAudioLevel(volume: volume, muted: muted)
+        guard muted || level < 0.999 else { return [:] }
+        return audioPropertyOverrides(
+            schema: schema,
+            projectOverrides: projectOverrides,
+            volume: volume,
+            muted: muted,
+            restoreProjectValueAtFullVolume: false
+        )
+    }
+
+    static func audioControlScript(
+        schema: WallpaperEngineProjectPropertySchema,
+        projectOverrides: [String: WallpaperEngineProjectPropertyValue],
+        volume: Double,
+        muted: Bool
+    ) -> String? {
+        let audioOverrides = audioPropertyOverrides(
+            schema: schema,
+            projectOverrides: projectOverrides,
+            volume: volume,
+            muted: muted,
+            restoreProjectValueAtFullVolume: true
+        )
+        guard !audioOverrides.isEmpty else { return nil }
+
+        let runtimeOverrides = projectOverrides.merging(audioOverrides) { _, runtime in runtime }
+        guard let json = propertiesJSON(
+            schema: schema,
+            overrides: runtimeOverrides,
+            includingKeys: Set(audioOverrides.keys)
+        ) else {
+            return nil
+        }
+
+        return """
+        (function () {
+            var listener = window.wallpaperPropertyListener;
+            if (listener && typeof listener.applyUserProperties === 'function') {
+                listener.applyUserProperties(\(json));
+            }
+        })();
+        """
+    }
+
+    /// Synchronous disk read + JSON parse. Callers on hot paths should
+    /// cache the result and use the `schema:` overloads above.
+    static func parseSchema(forFolder folderURL: URL) -> WallpaperEngineProjectPropertySchema? {
+        let manifestURL = folderURL.appendingPathComponent("project.json")
+        guard let data = try? Data(contentsOf: manifestURL),
+              let schema = try? WallpaperEngineProjectPropertySchema.parse(data: data),
+              !schema.properties.isEmpty else {
+            return nil
+        }
+        return schema
+    }
+
+    private static func propertiesJSON(
+        schema: WallpaperEngineProjectPropertySchema,
+        overrides: [String: WallpaperEngineProjectPropertyValue],
+        includingKeys allowedKeys: Set<String>? = nil
+    ) -> String? {
+        guard !schema.properties.isEmpty else { return nil }
+
+        let values = schema.effectiveValues(overrides: overrides)
+        var payload: [String: Any] = [:]
+        for property in schema.properties {
+            if let allowedKeys, !allowedKeys.contains(property.key) { continue }
+            guard let value = values[property.key]?.jsonObject else { continue }
+            let wrapped: [String: Any] = ["value": value]
+            guard JSONSerialization.isValidJSONObject(wrapped) else { continue }
+            payload[property.key] = wrapped
+        }
+
+        guard !payload.isEmpty,
+              JSONSerialization.isValidJSONObject(payload),
+              let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+              let json = String(data: jsonData, encoding: .utf8) else {
+            return nil
+        }
+
+        return json
+    }
+
+    private static func audioPropertyOverrides(
+        schema: WallpaperEngineProjectPropertySchema,
+        projectOverrides: [String: WallpaperEngineProjectPropertyValue],
+        volume: Double,
+        muted: Bool,
+        restoreProjectValueAtFullVolume: Bool
+    ) -> [String: WallpaperEngineProjectPropertyValue] {
+        let candidates = audioVolumeProperties(in: schema)
+        guard !candidates.isEmpty else { return [:] }
+
+        let level = normalizedAudioLevel(volume: volume, muted: muted)
+        let masterIsActive = muted || level < 0.999
+        let effectiveValues = schema.effectiveValues(overrides: projectOverrides)
+
+        var overrides: [String: WallpaperEngineProjectPropertyValue] = [:]
+        for property in candidates {
+            if masterIsActive {
+                overrides[property.key] = .number(scaledAudioLevel(
+                    level,
+                    for: property,
+                    baseValue: effectiveValues[property.key] ?? property.defaultValue
+                ))
+            } else if restoreProjectValueAtFullVolume {
+                overrides[property.key] = effectiveValues[property.key]
+                    ?? property.defaultValue
+                    ?? .number(scaledAudioLevel(1, for: property, baseValue: nil))
+            }
+        }
+        return overrides
+    }
+
+    private static func audioVolumeProperties(
+        in schema: WallpaperEngineProjectPropertySchema
+    ) -> [WallpaperEngineProjectPropertySchema.Property] {
+        schema.properties.filter { property in
+            guard property.type == .slider else { return false }
+            let haystack = "\(property.key) \(property.displayText)".lowercased()
+            return [
+                "volume",
+                "bgm",
+                "audio",
+                "sound",
+                "music",
+                "voice",
+                "音量",
+                "音频",
+                "声音",
+                "音乐",
+                "音效"
+            ].contains { haystack.contains($0) }
+        }
+    }
+
+    private static func normalizedAudioLevel(volume: Double, muted: Bool) -> Double {
+        guard !muted, volume.isFinite else { return 0 }
+        return min(max(volume, 0), 1)
+    }
+
+    private static func scaledAudioLevel(
+        _ level: Double,
+        for property: WallpaperEngineProjectPropertySchema.Property,
+        baseValue: WallpaperEngineProjectPropertyValue?
+    ) -> Double {
+        let lower = property.minimum ?? 0
+        let fallbackUpper: Double = {
+            if property.fraction { return 1 }
+            if let defaultNumber = property.defaultValue?.numberValue,
+               defaultNumber <= 1,
+               lower <= 1 {
+                return 1
+            }
+            return 100
+        }()
+        let upper = property.maximum ?? fallbackUpper
+        let minValue = min(lower, upper)
+        let maxValue = max(lower, upper)
+        let base = min(max(baseValue?.numberValue ?? maxValue, minValue), maxValue)
+        let raw = minValue + ((base - minValue) * min(max(level, 0), 1))
+
+        guard let step = property.step, step > 0 else {
+            return raw
+        }
+        let stepped = ((raw - minValue) / step).rounded() * step + minValue
+        return min(max(stepped, minValue), maxValue)
+    }
+}
+
+private extension WallpaperEngineProjectPropertyValue {
+    var jsonObject: Any? {
+        switch self {
+        case .bool(let value):
+            return value
+        case .number(let value):
+            return value
+        case .string(let value):
+            return value
+        }
+    }
+}

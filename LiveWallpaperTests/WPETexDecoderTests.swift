@@ -1,0 +1,671 @@
+import Compression
+import CoreGraphics
+import Foundation
+import ImageIO
+import LiveWallpaperProWPE
+import Testing
+import UniformTypeIdentifiers
+@testable import LiveWallpaper
+
+@Suite("WPETexDecoder — container + RGBA8888")
+struct WPETexDecoderTests {
+    private static let officialFlag0x40Fixtures: [(name: String, rawBits: UInt32)] = [
+        ("lutx32_daisy.tex", 0xff30_b1c5),
+        ("neutral.tex", 0xff55_55aa),
+    ]
+
+    private static var officialFlag0x40FixtureRoot: URL {
+        SteamLibraryPaths.wallpaperEngineInstallRoot()
+            .appendingPathComponent("assets/materials/lut", isDirectory: true)
+    }
+
+    private static var officialFlag0x40FixturesAvailable: Bool {
+        officialFlag0x40Fixtures.allSatisfy { fixture in
+            FileManager.default.fileExists(
+                atPath: officialFlag0x40FixtureRoot.appendingPathComponent(fixture.name).path
+            )
+        }
+    }
+
+    /// Every `.tex` shipped under `assets/materials/lut`. A raw scan of the
+    /// installed 311-file corpus found the flag-0x40 population lives entirely
+    /// in this directory (28 files, all `flags == 0x42`).
+    private static var officialLUTTexURLs: [URL] {
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: officialFlag0x40FixtureRoot,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        return contents.filter { $0.pathExtension.lowercased() == "tex" }.sorted { $0.path < $1.path }
+    }
+
+    // MARK: - Container guards
+
+    @Test("Empty data fails with truncatedBlock at offset 0")
+    func emptyDataTruncated() {
+        let result = WPETexDecoder().decode(data: Data())
+        guard case .failure(.truncatedBlock(_, let offset)) = result else {
+            Issue.record("Expected truncatedBlock failure, got \(result)")
+            return
+        }
+        #expect(offset == 0)
+    }
+
+    @Test("RG88 alphaChannelPriority expands to luminance+alpha (R,R,R,G)")
+    func rg88AlphaChannelPriorityExpandsToLuminanceAlpha() throws {
+        let input = Data([200, 50, 10, 255])
+
+        let normal = try WPETexPixelDecoder.decodeRG88(input, width: 2, height: 1, mipmap: 0)
+        #expect(
+            Array(normal.pixels) == [200, 50, 0, 255, 10, 255, 0, 255],
+            "default RG88 must stay (R, G, 0, 255) so normal maps read .xy correctly"
+        )
+
+        let glow = try WPETexPixelDecoder.decodeRG88(
+            input, width: 2, height: 1, mipmap: 0, alphaChannelPriority: true
+        )
+        #expect(
+            Array(glow.pixels) == [200, 200, 200, 50, 10, 10, 10, 255],
+            "alphaChannelPriority RG88 must expand to (R, R, R, G) = luminance + alpha"
+        )
+    }
+
+    @Test("Unknown container magic surfaces unsupportedContainer")
+    func unknownContainerMagic() {
+        var buffer = Data()
+        appendMagic(&buffer, magic: "FAKE9999")
+        let result = WPETexDecoder().decode(data: buffer)
+        guard case .failure(.unsupportedContainer(let magic)) = result else {
+            Issue.record("Expected unsupportedContainer, got \(result)")
+            return
+        }
+        #expect(magic.hasPrefix("FAKE"))
+    }
+
+    @Test("Container without TEXI block fails with missingInfoBlock")
+    func missingInfoBlock() {
+        var buffer = Data()
+        appendMagic(&buffer, magic: "TEXV0005")
+        let result = WPETexDecoder().decode(data: buffer)
+        guard case .failure(.missingInfoBlock) = result else {
+            Issue.record("Expected missingInfoBlock, got \(result)")
+            return
+        }
+    }
+
+    @Test("Non-TEXI second block fails with unsupportedBlock")
+    func unsupportedSecondBlock() {
+        var buffer = Data()
+        appendMagic(&buffer, magic: "TEXV0005")
+        appendMagic(&buffer, magic: "WHAT0001")
+        let result = WPETexDecoder().decode(data: buffer)
+        guard case .failure(.unsupportedBlock(let magic)) = result else {
+            Issue.record("Expected unsupportedBlock, got \(result)")
+            return
+        }
+        #expect(magic.hasPrefix("WHAT"))
+    }
+
+    @Test("Probe of a complete RGBA8888 file yields valid info")
+    func probeReturnsInfo() {
+        let buffer = makeRGBA8888TestImage(width: 4, height: 4)
+        let result = WPETexDecoder().probe(data: buffer)
+        guard case .success(let info) = result else {
+            Issue.record("Expected probe success, got \(result)")
+            return
+        }
+        #expect(info.width == 4)
+        #expect(info.height == 4)
+        #expect(info.format == .rgba8888)
+        #expect(info.containerVersion == 5)
+    }
+
+    // MARK: - RGBA8888 round-trip
+
+    @Test("Decode of synthetic RGBA8888 returns a CGImage with correct dimensions")
+    func decodeRGBA8888RoundTrip() throws {
+        let buffer = makeRGBA8888TestImage(width: 4, height: 4)
+        let result = WPETexDecoder().decode(data: buffer)
+        guard case .success(let image) = result else {
+            Issue.record("Expected decode success, got \(result)")
+            return
+        }
+        #expect(image.width == 4)
+        #expect(image.height == 4)
+    }
+
+    @Test("Single-frame static .tex decodes eagerly at full size and declines the streaming path")
+    func singleFrameStaticDecodesEagerlyAndDeclinesStreaming() throws {
+        let buffer = makeRGBA8888TestImage(width: 256, height: 256)
+
+        let eager = try WPETexDecoder().extractTexturePayload(data: buffer).get()
+        #expect(eager.info.format == .rgba8888)
+        #expect(eager.hasAnimationFrames == false)
+        #expect(eager.animationTrack == nil)
+        #expect(eager.videoPayload == nil)
+        let mip = try #require(eager.largestMipmap)
+        #expect(mip.width == 256)
+        #expect(mip.height == 256)
+        #expect(mip.bytes.count == 256 * 256 * 4)
+
+        let streaming = WPETexDecoder().extractStreamingPayload(data: buffer)
+        guard case .failure(.unsupportedAnimation) = streaming else {
+            Issue.record("Expected single-frame static to decline streaming with unsupportedAnimation, got \(streaming)")
+            return
+        }
+    }
+
+    @Test("Decode accepts TEXB0003 PNG-backed texture")
+    func decodeTEXB0003PNGBackedTexture() throws {
+        let buffer = makeTEXB0003PNGBackedImage()
+        let result = WPETexDecoder().decode(data: buffer)
+        guard case .success(let image) = result else {
+            Issue.record("Expected decode success for PNG-backed layout, got \(result)")
+            return
+        }
+
+        #expect(image.width == 1)
+        #expect(image.height == 1)
+    }
+
+    @Test("Unknown format code surfaces unsupportedFormat with the offending code")
+    func unsupportedFormatCode() {
+        let buffer = makeImage(width: 2, height: 2, formatCode: 99, payload: Data(count: 16))
+        let result = WPETexDecoder().decode(data: buffer)
+        guard case .failure(.unsupportedFormat(let code)) = result else {
+            Issue.record("Expected unsupportedFormat, got \(result)")
+            return
+        }
+        #expect(code == 99)
+    }
+
+    @Test("LZ4-compressed mip payload decompresses to the expected uncompressed size")
+    func lz4InflateOnSizeMismatch() throws {
+        let width = 4
+        let height = 4
+        let raw = Data((0..<(width * height * 4)).map { UInt8(($0 * 7) & 0xff) })
+        let compressed = try lz4RawCompress(raw)
+        try #require(compressed.count != raw.count,
+                     "LZ4 must yield a different byte count to exercise the inflate fallback")
+
+        let buffer = makeImage(
+            width: width,
+            height: height,
+            formatCode: WPETexFormat.rgba8888.rawValue,
+            payload: compressed,
+            isLZ4Compressed: true,
+            decompressedByteCount: raw.count
+        )
+
+        let result = WPETexDecoder().decode(data: buffer)
+        guard case .success(let image) = result else {
+            Issue.record("Expected decode success after LZ4 inflate, got \(result)")
+            return
+        }
+        #expect(image.width == width)
+        #expect(image.height == height)
+    }
+
+    @Test("MP4-backed TEXB payload is rejected instead of decoded as raw RGBA")
+    func mp4PayloadIsUnsupportedAnimation() {
+        let buffer = makeImage(
+            width: 1,
+            height: 1,
+            formatCode: WPETexFormat.rgba8888.rawValue,
+            payload: mp4HeaderPayload()
+        )
+
+        let result = WPETexDecoder().decode(data: buffer)
+        guard case .failure(.unsupportedAnimation) = result else {
+            Issue.record("Expected unsupportedAnimation for MP4-backed TEXB payload, got \(result)")
+            return
+        }
+    }
+
+    @Test("Encoded PNG + TEXS animation extracts an animation track with per-frame sub-rects")
+    func encodedPNGWithTEXSExtractsAnimationTrack() throws {
+        let buffer = makeEncodedPNGAtlasWithTEXS()
+        let payload = try WPETexDecoder().extractTexturePayload(data: buffer).get()
+        let track = try #require(payload.animationTrack)
+
+        #expect(payload.hasAnimationFrames == true)
+        #expect(payload.info.format == .rgba8888)
+        #expect(track.frames.count == 2)
+        #expect(track.frames[0].subRect == CGRect(x: 0, y: 0, width: 2, height: 2))
+        #expect(track.frames[1].subRect == CGRect(x: 2, y: 0, width: 2, height: 2))
+        #expect(track.frames[0].mipmaps.first?.bytes == track.frames[1].mipmaps.first?.bytes)
+    }
+
+    @Test("TEXI imageWidth/imageHeight/unkInt0 surface into WPETexInfo")
+    func texiUnknownFieldsAreRetained() throws {
+        let buffer = makeImageWithTEXIImageDimensions(
+            textureWidth: 4,
+            textureHeight: 4,
+            imageWidth: 3,
+            imageHeight: 2,
+            unknownInt0: 7,
+            flags: WPETexInfo.clampUVsFlag
+        )
+
+        let info = try WPETexDecoder().probe(data: buffer).get()
+
+        #expect(info.width == 4)
+        #expect(info.height == 4)
+        #expect(info.imageWidth == 3)
+        #expect(info.imageHeight == 2)
+        #expect(info.unknownInt0 == 7)
+        #expect(info.flags == WPETexInfo.clampUVsFlag)
+        #expect(info.flag0x40Extension == nil)
+    }
+
+    @Test("TEXI flag 0x40 consumes one asset-specific raw Int32 and preserves TEXB alignment")
+    func texiFlag0x40RawExtensionIsRetainedWithoutReinterpretation() throws {
+        let expectedRawBits: [UInt32] = [0xff30_b1c5, 0xff22_7322]
+
+        for rawBits in expectedRawBits {
+            let buffer = makeImageWithTEXIImageDimensions(
+                textureWidth: 32,
+                textureHeight: 32,
+                imageWidth: 1_024,
+                imageHeight: 32,
+                unknownInt0: 32,
+                flags: 0x42,
+                flag0x40RawBits: rawBits
+            )
+
+            // Parsing through TEXB (rather than header-only probe) proves the
+            // extra field was consumed and the following block magic is aligned.
+            let metadata = try WPETexDecoder().extractRawMetadata(data: buffer).get()
+            let rawExtension = try #require(metadata.info.flag0x40Extension)
+            #expect(UInt32(bitPattern: rawExtension.rawValue) == rawBits)
+            #expect(rawExtension.sourceRange == 46..<50)
+            #expect(metadata.info.unknownInt0 == 32)
+            #expect(metadata.info.imageWidth == 1_024)
+            #expect(metadata.info.imageHeight == 32)
+            #expect(metadata.bitmap.version == 3)
+            #expect(metadata.bitmap.frames.count == 1)
+        }
+    }
+
+    @Test(
+        "Official LUT TEXI 0x40 values vary per asset and TEXB0004 remains aligned",
+        .enabled(if: officialFlag0x40FixturesAvailable)
+    )
+    func officialLUTFlag0x40CorpusRetainsActualRawValues() throws {
+        var observed: Set<UInt32> = []
+        var flag0x40Count = 0
+        let pinnedRawBits = Dictionary(uniqueKeysWithValues: Self.officialFlag0x40Fixtures.map { ($0.name, $0.rawBits) })
+
+        // Whole directory, not a hand-picked pair: the gate is "every shipped
+        // 0x40 asset realigns", so a future WPE build adding one must fail here
+        // rather than pass because it was not in the list.
+        for url in Self.officialLUTTexURLs {
+            let data = try Data(contentsOf: url)
+            let info = try WPETexDecoder().probe(data: data).get()
+            guard info.flags & WPETexInfo.rawExtensionFlag != 0 else { continue }
+            flag0x40Count += 1
+
+            let rawExtension = try #require(info.flag0x40Extension, "\(url.lastPathComponent)")
+            let rawBits = UInt32(bitPattern: rawExtension.rawValue)
+
+            #expect(info.flags == 0x42, "\(url.lastPathComponent)")
+            #expect(info.imageWidth == 1_024, "\(url.lastPathComponent)")
+            #expect(info.imageHeight == 32, "\(url.lastPathComponent)")
+            #expect(info.unknownInt0 == 32, "\(url.lastPathComponent)")
+            #expect(rawExtension.sourceRange == 46..<50, "\(url.lastPathComponent)")
+            // Reading TEXB's magic at the post-extension offset is the actual
+            // realignment proof; before A-01 the reader landed 4 bytes early.
+            #expect(data.subdata(in: 50..<58) == Data("TEXB0004".utf8), "\(url.lastPathComponent)")
+            #expect(data[58] == 0, "\(url.lastPathComponent)")
+            if let pinned = pinnedRawBits[url.lastPathComponent] {
+                #expect(rawBits == pinned, "\(url.lastPathComponent)")
+            }
+            observed.insert(rawBits)
+        }
+
+        #expect(flag0x40Count >= 28, "installed LUT corpus should carry at least the 28 measured 0x40 assets")
+        // The raw int32 is asset-specific, which is why it is preserved unnamed.
+        // A constant here would mean it had been mistaken for a dimension.
+        #expect(observed.count > 1)
+    }
+
+    @Test("Streaming extraction preserves TEXS sub-rects and compressed image payloads")
+    func streamingExtractionPreservesSubRectsAndCompressedPayloads() throws {
+        let width = 4
+        let height = 4
+        let raw0 = Data(repeating: 0x11, count: width * height * 4)
+        let raw1 = Data(repeating: 0x22, count: width * height * 4)
+        let compressed0 = try lz4RawCompress(raw0)
+        let compressed1 = try lz4RawCompress(raw1)
+        let buffer = makeStreamingTestImage(
+            width: width,
+            height: height,
+            compressedPayloads: [compressed0, compressed1],
+            decompressedByteCount: width * height * 4
+        )
+
+        let payload = try WPETexDecoder().extractStreamingPayload(data: buffer).get()
+
+        #expect(payload.compressedImages.count == 2)
+        #expect(payload.compressedImages[0].payloads[0].compressedBytes == compressed0)
+        #expect(payload.compressedImages[0].payloads[0].isCompressed == true)
+        #expect(payload.compressedImages[0].payloads[0].decompressedByteCount == width * height * 4)
+        #expect(payload.frames.count == 4)
+        #expect(payload.frames[0].imageID == 0)
+        #expect(payload.frames[0].subRect == CGRect(x: 0, y: 0, width: 4, height: 2))
+        #expect(payload.frames[1].imageID == 0)
+        #expect(payload.frames[1].subRect == CGRect(x: 0, y: 2, width: 4, height: 2))
+        #expect(payload.frames[2].imageID == 1)
+        #expect(payload.frameRate > 0)
+        #expect(payload.loop == true)
+    }
+
+    // MARK: - Fixture helpers
+
+    private func makeRGBA8888TestImage(width: Int, height: Int) -> Data {
+        let pixel: [UInt8] = [0xff, 0x80, 0x33, 0xff]
+        var raw = Data()
+        raw.reserveCapacity(width * height * 4)
+        for _ in 0..<(width * height) { raw.append(contentsOf: pixel) }
+        return makeImage(
+            width: width,
+            height: height,
+            formatCode: WPETexFormat.rgba8888.rawValue,
+            payload: raw
+        )
+    }
+
+    private func makeImage(
+        width: Int,
+        height: Int,
+        formatCode: Int,
+        payload: Data,
+        isLZ4Compressed: Bool = false,
+        decompressedByteCount: Int? = nil
+    ) -> Data {
+        var buffer = Data()
+        appendMagic(&buffer, magic: "TEXV0005")
+        appendMagic(&buffer, magic: "TEXI0001")
+        appendInt32(&buffer, Int32(formatCode))
+        appendUInt32(&buffer, 0)
+        appendInt32(&buffer, Int32(width))
+        appendInt32(&buffer, Int32(height))
+        appendInt32(&buffer, Int32(width))
+        appendInt32(&buffer, Int32(height))
+        appendInt32(&buffer, 0)
+
+        appendMagic(&buffer, magic: "TEXB0003")
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, -1)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, Int32(width))
+        appendInt32(&buffer, Int32(height))
+        appendUInt32(&buffer, isLZ4Compressed ? 1 : 0)
+        appendUInt32(&buffer, UInt32(decompressedByteCount ?? payload.count))
+        appendUInt32(&buffer, UInt32(payload.count))
+        buffer.append(payload)
+        return buffer
+    }
+
+    private func makeTEXB0003PNGBackedImage() -> Data {
+        let payload = onePixelPNG()
+        var buffer = Data()
+        appendMagic(&buffer, magic: "TEXV0005")
+        appendMagic(&buffer, magic: "TEXI0001")
+        appendInt32(&buffer, Int32(WPETexFormat.rgba8888.rawValue))
+        appendUInt32(&buffer, 2)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 0)
+
+        appendMagic(&buffer, magic: "TEXB0003")
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 13)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 1)
+        appendUInt32(&buffer, 0)
+        appendUInt32(&buffer, 0)
+        appendUInt32(&buffer, UInt32(payload.count))
+        buffer.append(payload)
+        return buffer
+    }
+
+    private func onePixelPNG() -> Data {
+        Data([
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+            0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+            0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+            0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0,
+            0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99,
+            0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+            0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+        ])
+    }
+
+    private func mp4HeaderPayload() -> Data {
+        Data([
+            0x00, 0x00, 0x00, 0x18,
+            0x66, 0x74, 0x79, 0x70,
+            0x6d, 0x70, 0x34, 0x32,
+            0x00, 0x00, 0x00, 0x00,
+            0x6d, 0x70, 0x34, 0x32,
+            0x69, 0x73, 0x6f, 0x6d
+        ])
+    }
+
+    private func appendMagic(_ data: inout Data, magic: String) {
+        data.append(contentsOf: magic.utf8)
+        data.append(0x00)
+    }
+
+    private func appendInt32(_ data: inout Data, _ value: Int32) {
+        var le = value.littleEndian
+        withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
+    }
+
+    private func appendUInt32(_ data: inout Data, _ value: UInt32) {
+        var le = value.littleEndian
+        withUnsafeBytes(of: &le) { data.append(contentsOf: $0) }
+    }
+
+    private func appendFloat32(_ data: inout Data, _ value: Float) {
+        var bits = value.bitPattern.littleEndian
+        withUnsafeBytes(of: &bits) { data.append(contentsOf: $0) }
+    }
+
+    private func makeStreamingTestImage(
+        width: Int,
+        height: Int,
+        compressedPayloads: [Data],
+        decompressedByteCount: Int
+    ) -> Data {
+        var buffer = Data()
+        appendMagic(&buffer, magic: "TEXV0005")
+        appendMagic(&buffer, magic: "TEXI0001")
+        appendInt32(&buffer, Int32(WPETexFormat.rgba8888.rawValue))
+        appendUInt32(&buffer, 0)
+        appendInt32(&buffer, Int32(width))
+        appendInt32(&buffer, Int32(height))
+        appendInt32(&buffer, Int32(width))
+        appendInt32(&buffer, Int32(height))
+        appendInt32(&buffer, 0)
+
+        appendMagic(&buffer, magic: "TEXB0004")
+        appendInt32(&buffer, Int32(compressedPayloads.count))
+        appendInt32(&buffer, -1)
+        appendInt32(&buffer, 0)
+        for payload in compressedPayloads {
+            appendInt32(&buffer, 1)
+            appendInt32(&buffer, Int32(width))
+            appendInt32(&buffer, Int32(height))
+            appendUInt32(&buffer, 1)
+            appendUInt32(&buffer, UInt32(decompressedByteCount))
+            appendUInt32(&buffer, UInt32(payload.count))
+            buffer.append(payload)
+        }
+
+        appendMagic(&buffer, magic: "TEXS0003")
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, Int32(width))
+        appendInt32(&buffer, Int32(height))
+        for (imageID, rect) in [
+            (0, (Float(0), Float(0), Float(width), Float(height / 2))),
+            (0, (Float(0), Float(height / 2), Float(width), Float(height / 2))),
+            (1, (Float(0), Float(0), Float(width), Float(height / 2))),
+            (1, (Float(0), Float(height / 2), Float(width), Float(height / 2)))
+        ] {
+            appendInt32(&buffer, Int32(imageID))
+            appendFloat32(&buffer, 0.03)
+            appendFloat32(&buffer, rect.0)
+            appendFloat32(&buffer, rect.1)
+            appendFloat32(&buffer, rect.2)
+            appendFloat32(&buffer, 0)
+            appendFloat32(&buffer, 0)
+            appendFloat32(&buffer, rect.3)
+        }
+        return buffer
+    }
+
+    private func makeEncodedPNGAtlasWithTEXS() -> Data {
+        let pngBytes = twoByTwoPNGAtlas()
+        var buffer = Data()
+        appendMagic(&buffer, magic: "TEXV0005")
+        appendMagic(&buffer, magic: "TEXI0001")
+        appendInt32(&buffer, Int32(WPETexFormat.rgba8888.rawValue))
+        appendUInt32(&buffer, 2)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 0)
+
+        appendMagic(&buffer, magic: "TEXB0003")
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 13)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        appendUInt32(&buffer, 0)
+        appendUInt32(&buffer, UInt32(pngBytes.count))
+        appendUInt32(&buffer, UInt32(pngBytes.count))
+        buffer.append(pngBytes)
+
+        appendMagic(&buffer, magic: "TEXS0003")
+        appendInt32(&buffer, 2)
+        appendInt32(&buffer, 4)
+        appendInt32(&buffer, 4)
+        for (imageID, rect) in [
+            (0, (Float(0), Float(0), Float(2), Float(2))),
+            (0, (Float(2), Float(0), Float(2), Float(2)))
+        ] {
+            appendInt32(&buffer, Int32(imageID))
+            appendFloat32(&buffer, 0.04)
+            appendFloat32(&buffer, rect.0)
+            appendFloat32(&buffer, rect.1)
+            appendFloat32(&buffer, rect.2)
+            appendFloat32(&buffer, 0)
+            appendFloat32(&buffer, 0)
+            appendFloat32(&buffer, rect.3)
+        }
+        return buffer
+    }
+
+    private func twoByTwoPNGAtlas() -> Data {
+        var pixels = Data()
+        pixels.reserveCapacity(4 * 4 * 4)
+        for row in 0..<4 {
+            for col in 0..<4 {
+                let red: UInt8 = col < 2 ? 0xff : 0x00
+                let green: UInt8 = row < 2 ? 0xff : 0x00
+                pixels.append(contentsOf: [red, green, 0x00, 0xff])
+            }
+        }
+        let provider = CGDataProvider(data: pixels as CFData)!
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue)
+        let image = CGImage(
+            width: 4, height: 4,
+            bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: 16,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )!
+        let mutable = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(mutable, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationFinalize(destination)
+        return mutable as Data
+    }
+
+    private func makeImageWithTEXIImageDimensions(
+        textureWidth: Int,
+        textureHeight: Int,
+        imageWidth: Int,
+        imageHeight: Int,
+        unknownInt0: Int32,
+        flags: UInt32 = 0,
+        flag0x40RawBits: UInt32? = nil
+    ) -> Data {
+        precondition((flags & WPETexInfo.rawExtensionFlag != 0) == (flag0x40RawBits != nil))
+        let pixel: [UInt8] = [0xff, 0x80, 0x33, 0xff]
+        var raw = Data()
+        raw.reserveCapacity(textureWidth * textureHeight * 4)
+        for _ in 0..<(textureWidth * textureHeight) { raw.append(contentsOf: pixel) }
+        var buffer = Data()
+        appendMagic(&buffer, magic: "TEXV0005")
+        appendMagic(&buffer, magic: "TEXI0001")
+        appendInt32(&buffer, Int32(WPETexFormat.rgba8888.rawValue))
+        appendUInt32(&buffer, flags)
+        appendInt32(&buffer, Int32(textureWidth))
+        appendInt32(&buffer, Int32(textureHeight))
+        appendInt32(&buffer, Int32(imageWidth))
+        appendInt32(&buffer, Int32(imageHeight))
+        appendInt32(&buffer, unknownInt0)
+        if let rawBits = flag0x40RawBits {
+            appendInt32(&buffer, Int32(bitPattern: rawBits))
+        }
+
+        appendMagic(&buffer, magic: "TEXB0003")
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, -1)
+        appendInt32(&buffer, 1)
+        appendInt32(&buffer, Int32(textureWidth))
+        appendInt32(&buffer, Int32(textureHeight))
+        appendUInt32(&buffer, 0)
+        appendUInt32(&buffer, UInt32(raw.count))
+        appendUInt32(&buffer, UInt32(raw.count))
+        buffer.append(raw)
+        return buffer
+    }
+
+    private func lz4RawCompress(_ data: Data) throws -> Data {
+        let dstCapacity = data.count + 64
+        var dst = Data(count: dstCapacity)
+        let written = dst.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) -> Int in
+            data.withUnsafeBytes { (input: UnsafeRawBufferPointer) -> Int in
+                guard let dstPtr = out.bindMemory(to: UInt8.self).baseAddress,
+                      let srcPtr = input.bindMemory(to: UInt8.self).baseAddress else {
+                    return -1
+                }
+                return compression_encode_buffer(
+                    dstPtr, dstCapacity,
+                    srcPtr, data.count,
+                    nil,
+                    COMPRESSION_LZ4_RAW
+                )
+            }
+        }
+        guard written > 0 else {
+            throw NSError(domain: "lz4", code: -1)
+        }
+        return dst.prefix(written)
+    }
+}

@@ -1,0 +1,387 @@
+import AppKit
+import SwiftUI
+import LiveWallpaperCore
+
+// MARK: - Widget drag gesture
+
+struct WidgetDragModifier: ViewModifier {
+    @ObservedObject var model: MonitorBoardInteractionModel
+    let placement: MonitorWidgetPlacement
+    let geometry: MonitorBoardGeometry
+    let restRawRect: CGRect
+
+    func body(content: Content) -> some View {
+        content.gesture(dragGesture, including: model.isEditing ? .all : .subviews)
+    }
+
+    private var bypassSnap: Bool {
+        let flags = NSEvent.modifierFlags
+        return flags.contains(.command) || flags.contains(.option)
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(MonitorBoardCoordinateSpace.name))
+            .onChanged { value in
+                if model.drag?.widgetID != placement.id {
+                    let render = geometry.renderRect(forRawRect: restRawRect)
+                    let offset = CGSize(
+                        width: value.startLocation.x - render.minX,
+                        height: value.startLocation.y - render.minY
+                    )
+                    let rawOffset = CGSize(
+                        width: offset.width + geometry.tileInsetX,
+                        height: offset.height + geometry.tileInsetY
+                    )
+                    model.beginDrag(placement.id, grabOffset: rawOffset)
+                }
+                model.updateDrag(pointInBoard: value.location, bypassSnap: bypassSnap)
+            }
+            .onEnded { _ in
+                model.endDrag(bypassSnap: bypassSnap)
+            }
+    }
+}
+
+/// Board-relative coordinate space for drag gestures.
+enum MonitorBoardCoordinateSpace {
+    static let name = "MonitorBoard"
+}
+
+// MARK: - Floating control bar (size toggle + settings + remove)
+
+/// S/M/L size toggle + settings + remove, floating on the selected tile.
+struct MonitorWidgetControlBar: View {
+    @ObservedObject var model: MonitorBoardInteractionModel
+    let placement: MonitorWidgetPlacement
+    @State private var denied = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            sizeSegment
+            settingsButton
+            removeButton
+        }
+        .padding(4)
+        .background(
+            Capsule(style: .continuous).fill(Color(white: 0.14).opacity(0.95))
+        )
+        .overlay(
+            Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .offset(x: denied ? -4 : 0)
+        .animation(denied ? .default : nil, value: denied)
+    }
+
+    @ViewBuilder
+    private var sizeSegment: some View {
+        let allowed = placement.kind.allowedSizes
+        if allowed.count > 1 {
+            HStack(spacing: 2) {
+                ForEach(allowed, id: \.self) { size in
+                    Button {
+                        if !model.setSize(placement.id, to: size) { flashDeny() }
+                    } label: {
+                        Text(verbatim: size.rawValue.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(0.8)
+                            .foregroundStyle(placement.size == size ? Color.white : Color.white.opacity(0.45))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule().fill(placement.size == size ? Color(white: 0.3) : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(2)
+            .background(Capsule().fill(Color.black.opacity(0.3)))
+        }
+    }
+
+    private var settingsButton: some View {
+        let isOpen = model.settingsOpenID == placement.id
+        return Button {
+            model.settingsOpenID = isOpen ? nil : placement.id
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isOpen ? Color.white : Color.white.opacity(0.7))
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color(white: isOpen ? 0.28 : 0.14)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(MonitorBoardStrings.widgetSettings)
+        .accessibilityLabel(Text(MonitorBoardStrings.widgetSettings))
+    }
+
+    private var removeButton: some View {
+        Button {
+            model.perform(.delete(id: placement.id))
+        } label: {
+            Image(systemName: "trash")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.7))
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color(white: 0.14)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(MonitorBoardStrings.removeWidget)
+    }
+
+    private func flashDeny() {
+        denied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) { denied = false }
+    }
+}
+
+// MARK: - Edit toolbar (add + done)
+
+/// Top-centre Add Widget + Done pill (Done is the exit path for menu-entered edit mode).
+struct MonitorBoardEditToolbar: View {
+    @ObservedObject var model: MonitorBoardInteractionModel
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button {
+                model.isCatalogOpen.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                    Text(MonitorBoardStrings.addWidget)
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle(model.isCatalogOpen ? Color.white : Color.white.opacity(0.82))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(model.isCatalogOpen ? Color(white: 0.32) : Color.white.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+            .help(MonitorBoardStrings.addWidget)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: MonitorAddButtonFrameKey.self,
+                        value: proxy.frame(in: .named(MonitorBoardCoordinateSpace.name))
+                    )
+                }
+            )
+
+            Button {
+                model.setEditing(false)
+            } label: {
+                Text(MonitorBoardStrings.doneEditing)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.82))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule(style: .continuous).fill(Color.white.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
+            .help(MonitorBoardStrings.doneEditing)
+        }
+        .padding(4)
+        .background(
+            Capsule(style: .continuous).fill(Color(white: 0.13).opacity(0.95))
+        )
+        .overlay(
+            Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Add-widget catalog
+
+/// Available widget kinds (gated kinds hidden when the agent-session feature is off).
+struct MonitorCatalogView: View {
+    @ObservedObject var model: MonitorBoardInteractionModel
+    let maxScrollHeight: CGFloat
+    @State private var contentSize: CGSize?
+
+    private let columns = [GridItem(.adaptive(minimum: 140), spacing: 10)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(MonitorBoardStrings.widgetCatalog)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.9))
+                Spacer()
+                Button {
+                    model.isCatalogOpen = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(model.catalogKinds) { kind in
+                        catalogItem(kind)
+                    }
+                }
+                .modifier(MonitorPanelSizeReader(size: $contentSize))
+            }
+            .frame(height: min(contentSize?.height ?? .greatestFiniteMagnitude, maxScrollHeight))
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(white: 0.11).opacity(0.96))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    private func catalogItem(_ kind: MonitorWidgetKind) -> some View {
+        Button {
+            model.addWidget(kind: kind)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(white: 0.17))
+                    .frame(height: 44)
+                    .overlay(
+                        Text(MonitorWidgetFactory.displayName(kind))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.55))
+                    )
+                HStack(spacing: 4) {
+                    Text(MonitorWidgetFactory.displayName(kind))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.85))
+                    Spacer(minLength: 0)
+                }
+                Text(verbatim: kind.allowedSizes.map { $0.rawValue.uppercased() }.joined(separator: " · "))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.4))
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color(white: 0.15))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Panel size reader
+
+struct MonitorPanelSizeReader: ViewModifier {
+    @Binding var size: CGSize?
+
+    func body(content: Content) -> some View {
+        content.background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { size = proxy.size }
+                    .onChange(of: proxy.size) { size = $1 }
+            }
+        )
+    }
+}
+
+// MARK: - Settings card
+
+struct MonitorWidgetSettingsCard: View {
+    @ObservedObject var model: MonitorBoardInteractionModel
+    let placement: MonitorWidgetPlacement
+    let maxHeight: CGFloat
+
+    /// Matches `MonitorWidgetSettingsPopover` width for deterministic placement.
+    static let cardWidth: CGFloat = MonitorWidgetSettingsPopover.preferredWidth
+
+    @State private var contentSize: CGSize?
+
+    var body: some View {
+        ScrollView {
+            MonitorWidgetSettingsPopover(
+                placement: placement,
+                onUpdate: { model.updateWidget($0) },
+                onRemove: { model.perform(.delete(id: placement.id)) }
+            )
+            .modifier(MonitorPanelSizeReader(size: $contentSize))
+        }
+        .frame(
+            width: Self.cardWidth,
+            height: min(contentSize?.height ?? 340, max(maxHeight, 120))
+        )
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(white: 0.12).opacity(0.97))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.5), radius: 24, x: 0, y: 14)
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+/// Accessibility move/remove actions — edit mode only.
+struct MonitorPlacementAccessibilityActions: ViewModifier {
+    @ObservedObject var model: MonitorBoardInteractionModel
+    let placementID: UUID
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if model.isEditing {
+            content
+                .accessibilityAction(named: Text(MonitorBoardStrings.moveLeft)) {
+                    model.moveWidget(id: placementID, direction: .left)
+                }
+                .accessibilityAction(named: Text(MonitorBoardStrings.moveRight)) {
+                    model.moveWidget(id: placementID, direction: .right)
+                }
+                .accessibilityAction(named: Text(MonitorBoardStrings.moveUp)) {
+                    model.moveWidget(id: placementID, direction: .up)
+                }
+                .accessibilityAction(named: Text(MonitorBoardStrings.moveDown)) {
+                    model.moveWidget(id: placementID, direction: .down)
+                }
+                .accessibilityAction(named: Text(MonitorBoardStrings.removeWidget)) {
+                    model.perform(.delete(id: placementID))
+                }
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - Board-chrome layout preference keys
+
+/// Add Widget button frame (board coords) so the catalog can anchor beneath it.
+struct MonitorAddButtonFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+// MARK: - User-facing strings (centralized catalog keys)
+
+enum MonitorBoardStrings {
+    static var addWidget: LocalizedStringKey { "Add Widget" }
+    static var removeWidget: LocalizedStringKey { "Remove" }
+    static var moveLeft: LocalizedStringKey { "Move Left" }
+    static var moveRight: LocalizedStringKey { "Move Right" }
+    static var moveUp: LocalizedStringKey { "Move Up" }
+    static var moveDown: LocalizedStringKey { "Move Down" }
+    static var widgetSettings: LocalizedStringKey { "Widget Settings" }
+    static var widgetCatalog: LocalizedStringKey { "Widget Catalog" }
+    static var doneEditing: LocalizedStringKey { "Done" }
+    static var emptyBoardHint: LocalizedStringKey { "Double-click to edit, then add instruments from the catalog" }
+}

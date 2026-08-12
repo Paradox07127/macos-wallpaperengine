@@ -1,0 +1,813 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0CA00000000000000000A003 /* LiveWallpaperCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CA00000000000000000A002 /* LiveWallpaperCore */; };
+		0CA00000000000000000A303 /* LiveWallpaperProWPE in Frameworks */ = {isa = PBXBuildFile; productRef = 0CA00000000000000000A302 /* LiveWallpaperProWPE */; };
+		0CA00000000000000000B011 /* LiveWallpaperCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0CA00000000000000000B020 /* LiveWallpaperCore */; };
+		F5C8FFB4301D663800D85832 /* SteamConnector.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = F5C8FFA9301D663800D85832 /* SteamConnector.xpc */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0C322C012D6950490033C48B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0C322BE72D6950480033C48B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0C322BEE2D6950480033C48B;
+			remoteInfo = LiveWallpaper;
+		};
+		F5C8FFB2301D663800D85832 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0C322BE72D6950480033C48B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F5C8FFA8301D663800D85832;
+			remoteInfo = SteamConnector;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F5C8FFB5301D663800D85832 /* Embed XPC Services */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/XPCServices";
+			dstSubfolderSpec = 16;
+			files = (
+				F5C8FFB4301D663800D85832 /* SteamConnector.xpc in Embed XPC Services */,
+			);
+			name = "Embed XPC Services";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0C322BEF2D6950480033C48B /* Loomscreen Pro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Loomscreen Pro.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0C322C002D6950490033C48B /* LiveWallpaperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiveWallpaperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0CA00000000000000000B000 /* Loomscreen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Loomscreen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F5C8FFA9301D663800D85832 /* SteamConnector.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = SteamConnector.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0CA00000000000000000B030 /* Exceptions for "LiveWallpaper" folder in "LiveWallpaperLite" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				VideoPlayback/WPEMetalBuiltins.metal,
+			);
+			target = 0CA00000000000000000B001 /* LiveWallpaperLite */;
+		};
+		F5C8FFB8301D663800D85832 /* Exceptions for "SteamConnector" folder in "SteamConnector" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = F5C8FFA8301D663800D85832 /* SteamConnector */;
+		};
+		F5C8FFBD301D730C00D85832 /* Exceptions for "SteamConnector" folder in "LiveWallpaper" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				SteamConnectorProtocol.swift,
+				SteamLibraryWriter.swift,
+			);
+			target = 0C322BEE2D6950480033C48B /* LiveWallpaper */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		0C322BF12D6950480033C48B /* LiveWallpaper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0CA00000000000000000B030 /* Exceptions for "LiveWallpaper" folder in "LiveWallpaperLite" target */,
+			);
+			path = LiveWallpaper;
+			sourceTree = "<group>";
+		};
+		0C322C032D6950490033C48B /* LiveWallpaperTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LiveWallpaperTests;
+			sourceTree = "<group>";
+		};
+		F5C8FFAA301D663800D85832 /* SteamConnector */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F5C8FFBD301D730C00D85832 /* Exceptions for "SteamConnector" folder in "LiveWallpaper" target */,
+				F5C8FFB8301D663800D85832 /* Exceptions for "SteamConnector" folder in "SteamConnector" target */,
+			);
+			path = SteamConnector;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0C322BEC2D6950480033C48B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0CA00000000000000000A003 /* LiveWallpaperCore in Frameworks */,
+				0CA00000000000000000A303 /* LiveWallpaperProWPE in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0C322BFD2D6950490033C48B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0CA00000000000000000B003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0CA00000000000000000B011 /* LiveWallpaperCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F5C8FFA6301D663800D85832 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0C322BE62D6950480033C48B = {
+			isa = PBXGroup;
+			children = (
+				0C322BF12D6950480033C48B /* LiveWallpaper */,
+				0C322C032D6950490033C48B /* LiveWallpaperTests */,
+				F5C8FFAA301D663800D85832 /* SteamConnector */,
+				0C322BF02D6950480033C48B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		0C322BF02D6950480033C48B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0C322BEF2D6950480033C48B /* Loomscreen Pro.app */,
+				0CA00000000000000000B000 /* Loomscreen.app */,
+				0C322C002D6950490033C48B /* LiveWallpaperTests.xctest */,
+				F5C8FFA9301D663800D85832 /* SteamConnector.xpc */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0C322BEE2D6950480033C48B /* LiveWallpaper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0C322C142D6950490033C48B /* Build configuration list for PBXNativeTarget "LiveWallpaper" */;
+			buildPhases = (
+				0C322BEB2D6950480033C48B /* Sources */,
+				0C322BEC2D6950480033C48B /* Frameworks */,
+				0C322BED2D6950480033C48B /* Resources */,
+				F5C8FFB5301D663800D85832 /* Embed XPC Services */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F5C8FFB3301D663800D85832 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0C322BF12D6950480033C48B /* LiveWallpaper */,
+			);
+			name = LiveWallpaper;
+			packageProductDependencies = (
+				0CA00000000000000000A002 /* LiveWallpaperCore */,
+				0CA00000000000000000A302 /* LiveWallpaperProWPE */,
+			);
+			productName = LiveWallpaper;
+			productReference = 0C322BEF2D6950480033C48B /* Loomscreen Pro.app */;
+			productType = "com.apple.product-type.application";
+		};
+		0C322BFF2D6950490033C48B /* LiveWallpaperTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0C322C172D6950490033C48B /* Build configuration list for PBXNativeTarget "LiveWallpaperTests" */;
+			buildPhases = (
+				0C322BFC2D6950490033C48B /* Sources */,
+				0C322BFD2D6950490033C48B /* Frameworks */,
+				0C322BFE2D6950490033C48B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0C322C022D6950490033C48B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0C322C032D6950490033C48B /* LiveWallpaperTests */,
+			);
+			name = LiveWallpaperTests;
+			productName = LiveWallpaperTests;
+			productReference = 0C322C002D6950490033C48B /* LiveWallpaperTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		0CA00000000000000000B001 /* LiveWallpaperLite */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0CA00000000000000000B005 /* Build configuration list for PBXNativeTarget "LiveWallpaperLite" */;
+			buildPhases = (
+				0CA00000000000000000B002 /* Sources */,
+				0CA00000000000000000B003 /* Frameworks */,
+				0CA00000000000000000B004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0C322BF12D6950480033C48B /* LiveWallpaper */,
+			);
+			name = LiveWallpaperLite;
+			packageProductDependencies = (
+				0CA00000000000000000B020 /* LiveWallpaperCore */,
+			);
+			productName = LiveWallpaperLite;
+			productReference = 0CA00000000000000000B000 /* Loomscreen.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F5C8FFA8301D663800D85832 /* SteamConnector */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F5C8FFB9301D663800D85832 /* Build configuration list for PBXNativeTarget "SteamConnector" */;
+			buildPhases = (
+				F5C8FFA5301D663800D85832 /* Sources */,
+				F5C8FFA6301D663800D85832 /* Frameworks */,
+				F5C8FFA7301D663800D85832 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F5C8FFAA301D663800D85832 /* SteamConnector */,
+			);
+			name = SteamConnector;
+			packageProductDependencies = (
+			);
+			productName = SteamConnector;
+			productReference = F5C8FFA9301D663800D85832 /* SteamConnector.xpc */;
+			productType = "com.apple.product-type.xpc-service";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0C322BE72D6950480033C48B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					0C322BEE2D6950480033C48B = {
+						CreatedOnToolsVersion = 16.2;
+					};
+					0C322BFF2D6950490033C48B = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = 0C322BEE2D6950480033C48B;
+					};
+					0CA00000000000000000B001 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+					F5C8FFA8301D663800D85832 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = 0C322BEA2D6950480033C48B /* Build configuration list for PBXProject "LiveWallpaper" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+				"zh-Hant",
+				ja,
+			);
+			mainGroup = 0C322BE62D6950480033C48B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0CA00000000000000000A001 /* XCLocalSwiftPackageReference "Packages/LiveWallpaperCore" */,
+				0CA00000000000000000A301 /* XCLocalSwiftPackageReference "Packages/LiveWallpaperProWPE" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0C322BF02D6950480033C48B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0C322BEE2D6950480033C48B /* LiveWallpaper */,
+				0CA00000000000000000B001 /* LiveWallpaperLite */,
+				0C322BFF2D6950490033C48B /* LiveWallpaperTests */,
+				F5C8FFA8301D663800D85832 /* SteamConnector */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0C322BED2D6950480033C48B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0C322BFE2D6950490033C48B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0CA00000000000000000B004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F5C8FFA7301D663800D85832 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0C322BEB2D6950480033C48B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0C322BFC2D6950490033C48B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0CA00000000000000000B002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F5C8FFA5301D663800D85832 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0C322C022D6950490033C48B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0C322BEE2D6950480033C48B /* LiveWallpaper */;
+			targetProxy = 0C322C012D6950490033C48B /* PBXContainerItemProxy */;
+		};
+		F5C8FFB3301D663800D85832 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F5C8FFA8301D663800D85832 /* SteamConnector */;
+			targetProxy = F5C8FFB2301D663800D85832 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0C322C122D6950490033C48B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xfrontend -warn-long-function-bodies=300 -Xfrontend -warn-long-expression-type-checking=300";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		0C322C132D6950490033C48B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		0C322C152D6950490033C48B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaper.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"LiveWallpaper/Preview Content\"";
+				DEVELOPMENT_TEAM = FWJP4B62U7;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LiveWallpaperInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 0.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro;
+				PRODUCT_MODULE_NAME = LiveWallpaper;
+				PRODUCT_NAME = "Loomscreen Pro";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		0C322C162D6950490033C48B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaper.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"LiveWallpaper/Preview Content\"";
+				DEVELOPMENT_TEAM = FWJP4B62U7;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LiveWallpaperInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 0.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro;
+				PRODUCT_MODULE_NAME = LiveWallpaper;
+				PRODUCT_NAME = "Loomscreen Pro";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		0C322C182D6950490033C48B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.Tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Loomscreen Pro.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Loomscreen Pro";
+			};
+			name = Debug;
+		};
+		0C322C192D6950490033C48B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.Tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Loomscreen Pro.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Loomscreen Pro";
+			};
+			name = Release;
+		};
+		0CA00000000000000000B006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconLoomscreen;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"LiveWallpaper/Preview Content\"";
+				DEVELOPMENT_TEAM = FWJP4B62U7;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LoomscreenInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 0.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen;
+				PRODUCT_NAME = Loomscreen;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		0CA00000000000000000B007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconLoomscreen;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"LiveWallpaper/Preview Content\"";
+				DEVELOPMENT_TEAM = FWJP4B62U7;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LoomscreenInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 0.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen;
+				PRODUCT_NAME = Loomscreen;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LITE_BUILD";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		F5C8FFB6301D663800D85832 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FWJP4B62U7;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SteamConnector/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SteamConnector;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.SteamConnector;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		F5C8FFB7301D663800D85832 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FWJP4B62U7;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SteamConnector/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SteamConnector;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.SteamConnector;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0C322BEA2D6950480033C48B /* Build configuration list for PBXProject "LiveWallpaper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0C322C122D6950490033C48B /* Debug */,
+				0C322C132D6950490033C48B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0C322C142D6950490033C48B /* Build configuration list for PBXNativeTarget "LiveWallpaper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0C322C152D6950490033C48B /* Debug */,
+				0C322C162D6950490033C48B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0C322C172D6950490033C48B /* Build configuration list for PBXNativeTarget "LiveWallpaperTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0C322C182D6950490033C48B /* Debug */,
+				0C322C192D6950490033C48B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0CA00000000000000000B005 /* Build configuration list for PBXNativeTarget "LiveWallpaperLite" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0CA00000000000000000B006 /* Debug */,
+				0CA00000000000000000B007 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F5C8FFB9301D663800D85832 /* Build configuration list for PBXNativeTarget "SteamConnector" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F5C8FFB6301D663800D85832 /* Debug */,
+				F5C8FFB7301D663800D85832 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		0CA00000000000000000A001 /* XCLocalSwiftPackageReference "Packages/LiveWallpaperCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LiveWallpaperCore;
+		};
+		0CA00000000000000000A301 /* XCLocalSwiftPackageReference "Packages/LiveWallpaperProWPE" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LiveWallpaperProWPE;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0CA00000000000000000A002 /* LiveWallpaperCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LiveWallpaperCore;
+		};
+		0CA00000000000000000A302 /* LiveWallpaperProWPE */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LiveWallpaperProWPE;
+		};
+		0CA00000000000000000B020 /* LiveWallpaperCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LiveWallpaperCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 0C322BE72D6950480033C48B /* Project object */;
+}

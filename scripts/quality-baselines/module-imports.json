@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "local_package_modules": [
+    "LiveWallpaperCore",
+    "LiveWallpaperProWPE"
+  ],
+  "allowed_exported_imports": {},
+  "migrated_file_requirements": {
+    "LiveWallpaper/Infrastructure/Platform/AppleAerialsLibrary.swift": [
+      "LiveWallpaperCore"
+    ],
+    "LiveWallpaper/Infrastructure/Platform/DesktopPictureFrameExtractor.swift": [
+      "LiveWallpaperCore"
+    ],
+    "LiveWallpaper/Infrastructure/Platform/GlobalShortcutManager.swift": [
+      "LiveWallpaperCore"
+    ],
+    "LiveWallpaper/Infrastructure/Platform/WPEStorageInventory.swift": [
+      "LiveWallpaperProWPE"
+    ],
+    "LiveWallpaper/Infrastructure/Platform/WPEStoragePaths.swift": [
+      "LiveWallpaperProWPE"
+    ]
+  },
+  "minimum_explicit_import_files": 279,
+  "minimum_import_occurrences": {
+    "LiveWallpaperCore": 236,
+    "LiveWallpaperProWPE": 81
+  }
+}

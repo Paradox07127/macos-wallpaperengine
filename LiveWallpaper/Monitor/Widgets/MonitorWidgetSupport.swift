@@ -1,0 +1,156 @@
+import Foundation
+import Combine
+import LiveWallpaperCore
+
+// MARK: - Widget-facing contract (orchestrator-owned)
+
+struct MonitorWidgetContext {
+    var snapshot: MonitorSnapshot
+    var history: MonitorHistorySnapshot
+    var placement: MonitorWidgetPlacement
+    var isEditing: Bool
+    var reduceMotion: Bool
+    var now: Date
+}
+
+#if DEBUG
+extension MonitorWidgetContext {
+    /// Preview helper: replace `now` while keeping the production context channel.
+    func at(_ date: Date) -> MonitorWidgetContext {
+        var copy = self
+        copy.now = date
+        return copy
+    }
+}
+#endif
+
+struct MonitorHistorySnapshot: Sendable, Equatable {
+    var sampleTimes: [Double] = []
+    var cpuTotal: [Double] = []
+    var cpuUser: [Double] = []
+    var cpuSystem: [Double] = []
+    var memUsedFraction: [Double] = []
+    /// Aligned with `memUsedFraction` — curve colors by discrete pressure, not used%.
+    var memPressure: [String] = []
+    /// App/wired/compressed fractions of total RAM, aligned with `memUsedFraction`.
+    var memAppFraction: [Double] = []
+    var memWiredFraction: [Double] = []
+    var memCompressedFraction: [Double] = []
+    var gpuSampleTimes: [Double] = []
+    var gpuDevice: [Double] = []
+    /// Aligned with `gpuSampleTimes`; nil where that sample lacked the key.
+    var gpuRenderer: [Double?] = []
+    var gpuTiler: [Double?] = []
+    var netRx: [Double] = []
+    var netTx: [Double] = []
+    var diskRead: [Double] = []
+    var diskWrite: [Double] = []
+
+    var cpuPeak: Double = 0
+    var gpuPeak: Double = 0
+    var netRxPeak: Double = 0
+    var netTxPeak: Double = 0
+    var diskReadPeak: Double = 0
+    var diskWritePeak: Double = 0
+
+    var netRxSessionBytes: Double = 0
+    var netTxSessionBytes: Double = 0
+    var diskReadSessionBytes: Double = 0
+    var diskWriteSessionBytes: Double = 0
+
+    /// Sparse 5h-quota used% (statusline slow); burn-ETA needs ≥2 samples.
+}
+
+@MainActor
+final class MonitorHistoryStore: ObservableObject {
+    @Published private(set) var current = MonitorHistorySnapshot()
+
+    private let capacity: Int
+    private var lastSampleAt: Double?
+    private var lastGPUSampleAt: Double?
+
+    init(capacity: Int = 120) {
+        self.capacity = max(capacity, 2)
+    }
+
+    func reset() {
+        current = MonitorHistorySnapshot()
+        lastSampleAt = nil
+        lastGPUSampleAt = nil
+    }
+
+    func ingest(_ snapshot: MonitorSnapshot) {
+        let t = snapshot.timestamp > 0 ? snapshot.timestamp : Date().timeIntervalSince1970
+        var next = current
+        guard let sys = snapshot.system else { return }
+        if let last = lastSampleAt, t <= last { return }
+        let dt = lastSampleAt.map { min(max(t - $0, 0), 10) } ?? 0
+        lastSampleAt = t
+        next.sampleTimes.append(t)
+        next.cpuTotal.append(sys.cpuTotal)
+        next.cpuUser.append(sys.cpuUser)
+        next.cpuSystem.append(sys.cpuSystem)
+        let memFraction = sys.memTotalBytes > 0
+            ? Double(sys.memUsedBytes) / Double(sys.memTotalBytes) : 0
+        next.memUsedFraction.append(memFraction)
+        next.memPressure.append(sys.memPressure)
+        let total = Double(sys.memTotalBytes)
+        let breakdown = sys.memBreakdown
+        next.memAppFraction.append(total > 0 ? Double(breakdown?.appBytes ?? 0) / total : 0)
+        next.memWiredFraction.append(total > 0 ? Double(breakdown?.wiredBytes ?? 0) / total : 0)
+        next.memCompressedFraction.append(total > 0 ? Double(breakdown?.compressedBytes ?? 0) / total : 0)
+        next.netRx.append(sys.netRxBytesPerSec)
+        next.netTx.append(sys.netTxBytesPerSec)
+        next.diskRead.append(sys.diskReadBytesPerSec)
+        next.diskWrite.append(sys.diskWriteBytesPerSec)
+
+        if let gpu = sys.gpuUsage {
+            let gpuAt = sys.gpuSampledAt ?? t
+            if lastGPUSampleAt != gpuAt {
+                lastGPUSampleAt = gpuAt
+                next.gpuSampleTimes.append(gpuAt)
+                next.gpuDevice.append(gpu)
+                next.gpuRenderer.append(sys.gpuRendererUtil)
+                next.gpuTiler.append(sys.gpuTilerUtil)
+                trim(&next.gpuSampleTimes)
+                trim(&next.gpuDevice)
+                trim(&next.gpuRenderer)
+                trim(&next.gpuTiler)
+            }
+        }
+
+        trim(&next.sampleTimes)
+        trim(&next.cpuTotal)
+        trim(&next.cpuUser)
+        trim(&next.cpuSystem)
+        trim(&next.memUsedFraction)
+        trim(&next.memPressure)
+        trim(&next.memAppFraction)
+        trim(&next.memWiredFraction)
+        trim(&next.memCompressedFraction)
+        trim(&next.netRx)
+        trim(&next.netTx)
+        trim(&next.diskRead)
+        trim(&next.diskWrite)
+
+        next.cpuPeak = next.cpuTotal.max() ?? 0
+        next.gpuPeak = next.gpuDevice.max() ?? 0
+        next.netRxPeak = next.netRx.max() ?? 0
+        next.netTxPeak = next.netTx.max() ?? 0
+        next.diskReadPeak = next.diskRead.max() ?? 0
+        next.diskWritePeak = next.diskWrite.max() ?? 0
+
+        next.netRxSessionBytes += sys.netRxBytesPerSec * dt
+        next.netTxSessionBytes += sys.netTxBytesPerSec * dt
+        next.diskReadSessionBytes += sys.diskReadBytesPerSec * dt
+        next.diskWriteSessionBytes += sys.diskWriteBytesPerSec * dt
+
+        current = next
+    }
+
+    private func trim<T>(_ array: inout [T]) {
+        if array.count > capacity {
+            array.removeFirst(array.count - capacity)
+        }
+    }
+}

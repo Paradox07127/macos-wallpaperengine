@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Loomscreen Pro</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>LiveWallpaper Configuration</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.taijia.livewallpaper.config</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>MetalCaptureEnabled</key>
+	<true/>
+	<key>NSAccentColorName</key>
+	<string>AccentColor</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Audio response analyzes the audio currently playing on your Mac, on-device, to make wallpapers move with the music. No audio is recorded, saved, or sent anywhere.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Access to Desktop is needed to play wallpaper files stored there.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Access to Documents is needed to play wallpaper files stored there.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Access to Downloads is needed to play wallpaper files stored there.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location is used to fetch local weather for weather-reactive effects.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Loomscreen Pro Configuration</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.loomscreen.pro.config</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>lwconfig</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-livewallpaper-config+json</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

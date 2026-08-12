@@ -1,0 +1,881 @@
+import Foundation
+import CoreGraphics
+import AppKit
+import AVFoundation
+import LiveWallpaperCore
+import ServiceManagement
+
+@MainActor
+final class SettingsManager {
+    static let shared = SettingsManager()
+
+    private var cachedGlobalSettings: GlobalSettings?
+    private var cachedConfigurations: [ScreenConfiguration]?
+    private var cachedWallpaperBookmarks: [WallpaperBookmark]?
+
+    /// Three big JSON blobs that used to live in `UserDefaults`.
+    private let screenConfigStore: AtomicFileStore<[ScreenConfiguration]>
+    private let globalSettingsStore: AtomicFileStore<GlobalSettings>
+    private let wallpaperBookmarksStore: AtomicFileStore<[WallpaperBookmark]>
+    private let bookmarkResolver: SecurityScopedBookmarkResolver
+    private let persistWPEBookmarkOwnerRefresh: @MainActor (WPEOrigin, Data) -> Void
+    private let defaults: UserDefaults
+
+    /// Serial off-MainActor writer for all three file stores (configs, global settings, bookmarks).
+    private let configurationPersistenceActor: WallpaperPersistenceActor
+
+    /// Per-store monotonic counters: the actor drops any submission whose generation is older than the last it committed, so a stale in-flight write can't overwrite a newer MainActor mutation (or resurrect a reset).
+    private var configurationWriteGeneration: UInt64 = 0
+    private var globalSettingsWriteGeneration: UInt64 = 0
+    private var bookmarksWriteGeneration: UInt64 = 0
+    private var loginItemValidationGeneration: UInt64 = 0
+
+    private enum Keys {
+        static let screenConfigurations = "screenConfigurations"
+        static let globalSettings = "globalSettings"
+        static let lastUsedDirectory = "lastUsedDirectory"
+        static let aerialsDirectoryBookmark = "AerialsLibrary.DirectoryBookmark"
+        static let bookmarks = "WallpaperBookmarks.v1"
+        static let trustedHosts = "TrustedHTMLHosts.v1"
+        static let wpeEngineAssetsRootBookmark = "WPEEngineAssets.RootBookmark.v1"
+        /// Set only when the engine assets came from the in-app SteamCMD download (the pruned container install).
+        static let wpeEngineAssetsManagedBuildID = "WPEEngineAssets.ManagedBuildID.v1"
+        static let appLanguage = AppLanguagePreference.storageKey
+        /// Bumped each time we successfully migrate a blob out of UserDefaults into the file store.
+        static let configMigrationVersion = "Settings.MigrationVersion"
+        /// Separate from `configMigrationVersion` (that one only gates the one-time UserDefaults→file move).
+        static let blobSchemaVersion = "Settings.BlobSchemaVersion"
+    }
+
+    /// Current migration revision. Bump when introducing a new file-backed
+    /// store or schema change so the migration path re-runs on next launch.
+    private static let currentMigrationVersion = 1
+
+    /// Current in-blob schema revision.
+    private static let currentBlobSchemaVersion = 1
+
+    init(
+        directory: ConfigurationDirectory = ConfigurationDirectory(),
+        defaults: UserDefaults = .appScoped(),
+        bookmarkResolver: SecurityScopedBookmarkResolver = .shared,
+        persistWPEBookmarkOwnerRefresh: @MainActor @escaping (WPEOrigin, Data) -> Void = {
+            origin, refreshed in
+            _ = BookmarkStore.shared.replaceWPEOriginBookmark(
+                workshopID: origin.workshopID,
+                matching: origin.sourceFolderBookmark,
+                with: refreshed
+            )
+        }
+    ) {
+        let screenConfigStore = AtomicFileStore<[ScreenConfiguration]>(
+            fileURL: directory.url(for: .screenConfigurations)
+        )
+        self.screenConfigStore = screenConfigStore
+        let globalSettingsStore = AtomicFileStore<GlobalSettings>(
+            fileURL: directory.url(for: .globalSettings)
+        )
+        let wallpaperBookmarksStore = AtomicFileStore<[WallpaperBookmark]>(
+            fileURL: directory.url(for: .wallpaperBookmarks)
+        )
+        self.globalSettingsStore = globalSettingsStore
+        self.wallpaperBookmarksStore = wallpaperBookmarksStore
+        self.bookmarkResolver = bookmarkResolver
+        self.persistWPEBookmarkOwnerRefresh = persistWPEBookmarkOwnerRefresh
+        self.defaults = defaults
+        self.configurationPersistenceActor = WallpaperPersistenceActor(
+            store: screenConfigStore,
+            globalSettingsStore: globalSettingsStore,
+            bookmarksStore: wallpaperBookmarksStore
+        )
+
+        migrateLegacyUserDefaultsIfNeeded()
+        stampBlobSchemaVersionIfNeeded()
+    }
+
+    // MARK: - Screen Configurations
+
+    func saveConfiguration(_ configuration: ScreenConfiguration) {
+        var configs = loadConfigurations()
+        if let index = configs.firstIndex(where: { $0.screenID == configuration.screenID }) {
+            configs[index] = configuration
+        } else {
+            configs.append(configuration)
+        }
+        persistConfigurations(configs)
+    }
+
+    func replaceAllConfigurations(_ configurations: [ScreenConfiguration]) {
+        persistConfigurations(configurations)
+    }
+
+    func loadConfigurations() -> [ScreenConfiguration] {
+        if let cached = cachedConfigurations { return cached }
+        let configs = screenConfigStore.read() ?? []
+        cachedConfigurations = configs
+        return configs
+    }
+
+    func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
+        loadConfigurations().first { $0.screenID == screenID }
+    }
+
+    /// Updates the in-memory cache synchronously so MainActor readers observe
+    /// the new value before this function returns; disk write is queued async.
+    private func persistConfigurations(_ configs: [ScreenConfiguration]) {
+        configurationWriteGeneration &+= 1
+        let generation = configurationWriteGeneration
+        cachedConfigurations = configs
+        Task { [weak self, configurationPersistenceActor] in
+            do {
+                try await configurationPersistenceActor.write(configs, generation: generation)
+            } catch {
+                await MainActor.run {
+                    guard let self,
+                          self.configurationWriteGeneration == generation else { return }
+                    Logger.error(
+                        "Failed to persist screen configurations: \(error.localizedDescription)",
+                        category: .settings
+                    )
+                    self.cachedConfigurations = nil
+                }
+            }
+        }
+    }
+
+    /// Drains every store routed through the persistence actor before exit so the last MainActor commits (global settings, bookmarks, screen configs) are durable.
+    func flushPendingConfigurationWrites() async {
+        configurationWriteGeneration &+= 1
+        let configGeneration = configurationWriteGeneration
+        do {
+            try await configurationPersistenceActor.write(loadConfigurations(), generation: configGeneration)
+        } catch {
+            Logger.error(
+                "Final configuration flush failed: \(error.localizedDescription)",
+                category: .settings
+            )
+        }
+
+        if let settings = cachedGlobalSettings {
+            globalSettingsWriteGeneration &+= 1
+            let generation = globalSettingsWriteGeneration
+            do {
+                try await configurationPersistenceActor.writeGlobalSettings(settings, generation: generation)
+            } catch {
+                Logger.error("Final global-settings flush failed: \(error.localizedDescription)", category: .settings)
+            }
+        }
+
+        if let bookmarks = cachedWallpaperBookmarks {
+            bookmarksWriteGeneration &+= 1
+            let generation = bookmarksWriteGeneration
+            do {
+                try await configurationPersistenceActor.writeBookmarks(bookmarks, generation: generation)
+            } catch {
+                Logger.error("Final bookmarks flush failed: \(error.localizedDescription)", category: .settings)
+            }
+        }
+    }
+    
+    // MARK: - Global Settings
+
+    /// Updates memory synchronously and queues the disk write off the main actor.
+    func saveGlobalSettings(_ settings: GlobalSettings) {
+        let previousStartOnLogin = cachedGlobalSettings?.startOnLogin ?? loadGlobalSettings().startOnLogin
+        cachedGlobalSettings = settings
+        if previousStartOnLogin != settings.startOnLogin {
+            applyStartOnLoginSetting(settings.startOnLogin)
+        }
+
+        globalSettingsWriteGeneration &+= 1
+        let generation = globalSettingsWriteGeneration
+        Task { [weak self, configurationPersistenceActor] in
+            do {
+                try await configurationPersistenceActor.writeGlobalSettings(settings, generation: generation)
+                Logger.settingsChanged(setting: "globalSettings", value: "Updated global settings")
+            } catch {
+                await MainActor.run {
+                    guard let self,
+                          self.globalSettingsWriteGeneration == generation else { return }
+                    Logger.error("Failed to persist global settings: \(error.localizedDescription)", category: .settings)
+                    self.cachedGlobalSettings = nil
+                }
+            }
+        }
+    }
+
+    func loadGlobalSettings() -> GlobalSettings {
+        if let cached = cachedGlobalSettings { return cached }
+        let settings = globalSettingsStore.read() ?? GlobalSettings()
+        cachedGlobalSettings = settings
+        return settings
+    }
+
+    func loadDisplayDefaults() -> DisplayDefaults {
+        loadGlobalSettings().displayDefaults
+    }
+
+    func saveDisplayDefaults(_ displayDefaults: DisplayDefaults) {
+        var settings = loadGlobalSettings()
+        settings.displayDefaults = displayDefaults
+        saveGlobalSettings(settings)
+    }
+
+    func loadMonitorOverlays() -> [String: MonitorOverlayConfiguration] {
+        loadGlobalSettings().monitorOverlays
+    }
+
+    func saveMonitorOverlays(_ overlays: [String: MonitorOverlayConfiguration]) {
+        var settings = loadGlobalSettings()
+        settings.monitorOverlays = overlays
+        saveGlobalSettings(settings)
+    }
+
+    // MARK: - Wallpaper Engine History (managed library, LRU-bounded)
+
+    /// Upper bound on the managed library.
+    static let maxRecentWPEImports = 200
+
+    /// `clearsDeleteTombstone`: pass `true` ONLY for an explicit user re-acquire
+    /// (Browse re-download, a pasted-link download, or picking a library folder
+    /// with the toolbar's add button).
+    func recordWPEImport(
+        _ entry: WPEHistoryEntry,
+        clearsDeleteTombstone: Bool = false,
+        preservesHistory: Bool = false
+    ) {
+        var settings = loadGlobalSettings()
+        var entry = entry
+        let previous = settings.recentWPEImports.first {
+            $0.origin.workshopID == entry.origin.workshopID
+        }
+        if entry.sizeBytes == nil {
+            entry.sizeBytes = previous?.sizeBytes
+        }
+        // Relink keeps importedAt/lastUsed (update badge uses remoteEpoch > importedAt).
+        // Genuine re-import restamps importedAt for matchingImportedAt delete identity.
+        if preservesHistory, let previous {
+            entry = WPEHistoryEntry(
+                origin: entry.origin,
+                importedAt: previous.importedAt,
+                lastUsedAt: entry.lastUsedAt ?? previous.lastUsedAt,
+                sizeBytes: entry.sizeBytes
+            )
+        }
+        var recent = settings.recentWPEImports.filter {
+            $0.origin.workshopID != entry.origin.workshopID
+        }
+        recent.insert(entry, at: 0)
+        if recent.count > Self.maxRecentWPEImports {
+            recent = Array(recent.prefix(Self.maxRecentWPEImports))
+        }
+        settings.recentWPEImports = recent
+        if clearsDeleteTombstone {
+            settings.deletedWorkshopIDs.removeAll { $0 == entry.origin.workshopID }
+        }
+        saveGlobalSettings(settings)
+        NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
+    }
+
+    /// Backfills a single import's measured folder size.
+    func updateWPEImportSize(workshopID: String, sizeBytes: Int64) {
+        var settings = loadGlobalSettings()
+        guard let index = settings.recentWPEImports.firstIndex(where: {
+            $0.origin.workshopID == workshopID
+        }), settings.recentWPEImports[index].sizeBytes == nil else { return }
+        settings.recentWPEImports[index].sizeBytes = sizeBytes
+        saveGlobalSettings(settings)
+    }
+
+    /// Persists a refreshed source-folder bookmark into every matching WPE history row.
+    @discardableResult
+    func replaceWPEHistorySourceBookmark(
+        workshopID: String,
+        matching original: Data,
+        with refreshed: Data
+    ) -> Bool {
+        var settings = loadGlobalSettings()
+        var didReplace = false
+        for index in settings.recentWPEImports.indices {
+            guard let updated = settings.recentWPEImports[index]
+                .replacingSourceFolderBookmark(
+                    workshopID: workshopID,
+                    matching: original,
+                    with: refreshed
+                ) else { continue }
+            settings.recentWPEImports[index] = updated
+            didReplace = true
+        }
+        guard didReplace else { return false }
+        saveGlobalSettings(settings)
+        NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
+        return true
+    }
+
+    /// Upper bound on the delete-tombstone list.
+    static let maxDeletedWorkshopTombstones = 500
+
+    /// SKU-neutral equivalent of `WPEPathSafety.isSafeWorkshopID` (which is Pro-only): rejects empty, `.`/`..`, and any separator so a persisted tombstone can never carry an escape-capable component.
+    private static func isSafeWorkshopIDComponent(_ value: String) -> Bool {
+        !value.isEmpty
+            && value != "."
+            && value != ".."
+            && !value.contains("/")
+            && !value.contains("\\")
+            && !value.contains("..")
+    }
+
+    /// Records that the user deleted `workshopID`, so the auto-import scan won't resurrect it from a still-present SteamCMD download or library-folder copy.
+    func recordWPEDeleteTombstone(workshopID: String) {
+        // Validate persisted tombstones here because the Pro-only path validator is unavailable to Lite.
+        var settings = loadGlobalSettings()
+        guard Self.insertDeleteTombstone(workshopID: workshopID, into: &settings) else { return }
+        saveGlobalSettings(settings)
+    }
+
+    /// Atomic compare-and-remove for confirmation UIs that captured a concrete library entry.
+    @discardableResult
+    func removeWPEImport(
+        workshopID: String,
+        matchingImportedAt importedAt: Date,
+        recordingDeleteTombstone: Bool = true
+    ) -> Bool {
+        var settings = loadGlobalSettings()
+        guard let index = settings.recentWPEImports.firstIndex(where: {
+            $0.origin.workshopID == workshopID && $0.importedAt == importedAt
+        }) else { return false }
+        settings.recentWPEImports.remove(at: index)
+        if recordingDeleteTombstone {
+            _ = Self.insertDeleteTombstone(workshopID: workshopID, into: &settings)
+        }
+        saveGlobalSettings(settings)
+        NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
+        return true
+    }
+
+    func removeWPEImport(workshopID: String) {
+        var settings = loadGlobalSettings()
+        let previous = settings.recentWPEImports
+        settings.recentWPEImports.removeAll { $0.origin.workshopID == workshopID }
+        guard settings.recentWPEImports != previous else { return }
+        saveGlobalSettings(settings)
+        NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
+    }
+
+
+    @discardableResult
+    private static func insertDeleteTombstone(
+        workshopID: String,
+        into settings: inout GlobalSettings
+    ) -> Bool {
+        guard isSafeWorkshopIDComponent(workshopID),
+              !settings.deletedWorkshopIDs.contains(workshopID) else { return false }
+        settings.deletedWorkshopIDs.insert(workshopID, at: 0)
+        if settings.deletedWorkshopIDs.count > maxDeletedWorkshopTombstones {
+            settings.deletedWorkshopIDs = Array(
+                settings.deletedWorkshopIDs.prefix(maxDeletedWorkshopTombstones)
+            )
+        }
+        return true
+    }
+
+    // MARK: - Wallpaper Engine Assets Root Bookmark
+
+    func saveWPEEngineAssetsBookmark(_ bookmark: Data) {
+        defaults.set(bookmark, forKey: Keys.wpeEngineAssetsRootBookmark)
+        NotificationCenter.default.post(name: .wpeEngineAssetsBookmarkDidChange, object: nil)
+    }
+
+    func loadWPEEngineAssetsBookmark() -> Data? {
+        defaults.data(forKey: Keys.wpeEngineAssetsRootBookmark)
+    }
+
+    func clearWPEEngineAssetsBookmark() {
+        defaults.removeObject(forKey: Keys.wpeEngineAssetsRootBookmark)
+        NotificationCenter.default.post(name: .wpeEngineAssetsBookmarkDidChange, object: nil)
+    }
+
+    /// Steam `buildid` of the in-app-downloaded engine assets, or nil when no managed install is present.
+    var wpeEngineAssetsManagedBuildID: String? {
+        get { defaults.string(forKey: Keys.wpeEngineAssetsManagedBuildID) }
+        set {
+            if let newValue, !newValue.isEmpty {
+                defaults.set(newValue, forKey: Keys.wpeEngineAssetsManagedBuildID)
+            } else {
+                defaults.removeObject(forKey: Keys.wpeEngineAssetsManagedBuildID)
+            }
+            NotificationCenter.default.post(name: .wpeEngineAssetsBookmarkDidChange, object: nil)
+        }
+    }
+
+    private func applyStartOnLoginSetting(_ startOnLogin: Bool) {
+        let service = SMAppService.mainApp
+        loginItemValidationGeneration &+= 1
+        let statusBefore = service.status
+        Logger.debug(
+            "applyStartOnLoginSetting target=\(startOnLogin) statusBefore=\(describe(statusBefore)) bundlePath=\(Bundle.main.bundlePath)",
+            category: .settings
+        )
+
+        do {
+            if startOnLogin {
+                if statusBefore == .notRegistered || statusBefore == .notFound {
+                    try service.register()
+                }
+            } else {
+                if statusBefore == .enabled || statusBefore == .requiresApproval {
+                    try service.unregister()
+                }
+            }
+        } catch {
+            Logger.error(
+                "SMAppService.\(startOnLogin ? "register" : "unregister") threw: \(error.localizedDescription)",
+                category: .settings
+            )
+            postLoginItemFailure(reason: .registrationFailed(error))
+            return
+        }
+
+        let statusAfter = service.status
+        Logger.debug("SMAppService statusAfter=\(describe(statusAfter))", category: .settings)
+
+        if loginItemStatus(statusAfter, matches: startOnLogin) {
+            return
+        }
+
+        scheduleLoginItemStatusValidation(targetEnabled: startOnLogin)
+    }
+
+    private func describe(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .notRegistered:    return "notRegistered"
+        case .enabled:          return "enabled"
+        case .requiresApproval: return "requiresApproval"
+        case .notFound:         return "notFound"
+        @unknown default:       return "unknown(\(status.rawValue))"
+        }
+    }
+
+    private func loginItemStatus(_ status: SMAppService.Status, matches targetEnabled: Bool) -> Bool {
+        switch (targetEnabled, status) {
+        case (true, .enabled), (false, .notRegistered), (false, .notFound):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func scheduleLoginItemStatusValidation(targetEnabled: Bool) {
+        loginItemValidationGeneration &+= 1
+        let generation = loginItemValidationGeneration
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_250_000_000)
+            guard let self, self.loginItemValidationGeneration == generation else { return }
+
+            let status = SMAppService.mainApp.status
+            Logger.debug("SMAppService delayedStatus=\(self.describe(status))", category: .settings)
+            guard !self.loginItemStatus(status, matches: targetEnabled) else { return }
+
+            switch (targetEnabled, status) {
+            case (true, .requiresApproval):
+                Logger.warning("Login item registered but requires user approval in System Settings", category: .settings)
+                self.postLoginItemFailure(reason: .requiresApproval)
+            case (true, .notRegistered), (true, .notFound):
+                Logger.error("Login item register() returned without error but delayed status is \(self.describe(status)); app may not be in /Applications/ or signing is rejected", category: .settings)
+                self.postLoginItemFailure(reason: .registrationSilentlyFailed)
+            case (false, _):
+                Logger.warning("Login item disable target=false but delayed status=\(self.describe(status))", category: .settings)
+            default:
+                break
+            }
+        }
+    }
+
+    private func postLoginItemFailure(reason: LoginItemFailure) {
+        NotificationCenter.default.post(
+            name: .loginItemRegistrationDidFail,
+            object: nil,
+            userInfo: ["reason": reason]
+        )
+    }
+
+    // MARK: - Clean Settings
+
+    func cleanSettingsForScreen(_ screenID: CGDirectDisplayID) {
+        var configs = loadConfigurations()
+        configs.removeAll { $0.screenID == screenID }
+        cachedConfigurations = configs
+        persistConfigurations(configs)
+    }
+
+    func cleanAllSettings(applyLoginSetting: Bool = true) {
+        cachedGlobalSettings = GlobalSettings()
+        cachedConfigurations = []
+        cachedWallpaperBookmarks = []
+
+        // Route deletes through the same serial actor with bumped generations so an in-flight async write (older generation) can't resurrect the file after the reset.
+        configurationWriteGeneration &+= 1
+        globalSettingsWriteGeneration &+= 1
+        bookmarksWriteGeneration &+= 1
+        let configGeneration = configurationWriteGeneration
+        let globalGeneration = globalSettingsWriteGeneration
+        let bookmarksGeneration = bookmarksWriteGeneration
+        Task { [configurationPersistenceActor] in
+            await configurationPersistenceActor.delete(generation: configGeneration)
+            await configurationPersistenceActor.deleteGlobalSettings(generation: globalGeneration)
+            await configurationPersistenceActor.deleteBookmarks(generation: bookmarksGeneration)
+        }
+
+        defaults.removeObject(forKey: Keys.screenConfigurations)
+        defaults.removeObject(forKey: Keys.globalSettings)
+        defaults.removeObject(forKey: Keys.aerialsDirectoryBookmark)
+        defaults.removeObject(forKey: Keys.bookmarks)
+        defaults.removeObject(forKey: Keys.trustedHosts)
+        defaults.removeObject(forKey: Keys.wpeEngineAssetsRootBookmark)
+        defaults.removeObject(forKey: Keys.appLanguage)
+        defaults.removeObject(forKey: Keys.wpeEngineAssetsManagedBuildID)
+        defaults.removeObject(forKey: Keys.configMigrationVersion)
+        defaults.removeObject(forKey: Keys.blobSchemaVersion)
+        // Keys owned by other components; literals on purpose (see their owners).
+        defaults.removeObject(forKey: "WPELibrary.RootBookmark.v1")          // WPEDependencyMountResolver
+        defaults.removeObject(forKey: "loomscreen.sidebar.displayOrder.v1")  // SidebarDisplayOrder.preferencesKey
+        defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // MonitorSourceAuthorization
+        defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // MonitorSourceAuthorization
+
+        BookmarkStore.shared.resetAfterSettingsCleared()
+        TrustedHostStore.shared.resetAfterSettingsCleared()
+        if applyLoginSetting {
+            applyStartOnLoginSetting(false)
+        }
+    }
+
+    // MARK: - Legacy Migration
+
+    private func migrateLegacyUserDefaultsIfNeeded() {
+        let storedVersion = defaults.integer(forKey: Keys.configMigrationVersion)
+        guard storedVersion < Self.currentMigrationVersion else { return }
+
+        var allSucceeded = true
+        allSucceeded = seedStoreFromUserDefaults(
+            store: screenConfigStore,
+            legacyKey: Keys.screenConfigurations,
+            label: "screenConfigurations"
+        ) && allSucceeded
+        allSucceeded = seedStoreFromUserDefaults(
+            store: globalSettingsStore,
+            legacyKey: Keys.globalSettings,
+            label: "globalSettings"
+        ) && allSucceeded
+        allSucceeded = seedStoreFromUserDefaults(
+            store: wallpaperBookmarksStore,
+            legacyKey: Keys.bookmarks,
+            label: "wallpaperBookmarks"
+        ) && allSucceeded
+
+        guard allSucceeded else {
+            Logger.error(
+                "SettingsManager migration v\(Self.currentMigrationVersion) DID NOT complete cleanly; will retry on next launch",
+                category: .settings
+            )
+            return
+        }
+
+        defaults.set(Self.currentMigrationVersion, forKey: Keys.configMigrationVersion)
+        Logger.info(
+            "SettingsManager migration v\(Self.currentMigrationVersion) complete",
+            category: .settings
+        )
+    }
+
+    /// Returns `true` if the seed step succeeded — either the legacy blob was absent (nothing to do) or it was successfully written to the file store.
+    private func seedStoreFromUserDefaults<V: Codable>(
+        store: AtomicFileStore<V>,
+        legacyKey: String,
+        label: String
+    ) -> Bool {
+        guard !store.hasPersistedValue else { return true }
+        guard let data = defaults.data(forKey: legacyKey) else { return true }
+        do {
+            try store.writeRaw(data)
+            Logger.info(
+                "Migrated \(label) from UserDefaults → file (\(data.count) bytes)",
+                category: .settings
+            )
+            return true
+        } catch {
+            Logger.error(
+                "Failed to migrate \(label): \(error.localizedDescription)",
+                category: .settings
+            )
+            return false
+        }
+    }
+
+    /// Reads the last-stamped in-blob schema version and advances it to `currentBlobSchemaVersion`.
+    private func stampBlobSchemaVersionIfNeeded() {
+        let storedVersion = defaults.integer(forKey: Keys.blobSchemaVersion)
+        guard storedVersion < Self.currentBlobSchemaVersion else { return }
+        defaults.set(Self.currentBlobSchemaVersion, forKey: Keys.blobSchemaVersion)
+    }
+
+    // MARK: - Validation
+
+    func validateConfiguration(for screenID: CGDirectDisplayID) -> Bool {
+        guard let configuration = loadConfigurations().first(where: { $0.screenID == screenID }) else { return false }
+
+        guard let definition = WallpaperSessionDefinition(configuration: configuration) else {
+            Logger.error("Malformed wallpaper configuration for screen \(screenID)", category: .settings)
+            return false
+        }
+
+        switch definition {
+        case .video(let bookmarkData, _):
+            return validateVideoBookmark(bookmarkData, for: screenID, configuration: configuration)
+        case .html(let source, _):
+            return validateHTMLSource(source, for: screenID)
+        case .scene(let descriptor):
+            return !descriptor.workshopID.isEmpty
+                && !descriptor.cacheRelativePath.isEmpty
+                && !descriptor.entryFile.isEmpty
+        }
+    }
+
+    private func validateVideoBookmark(
+        _ bookmarkData: Data,
+        for screenID: CGDirectDisplayID,
+        configuration: ScreenConfiguration
+    ) -> Bool {
+        switch bookmarkResolver.resolve(bookmarkData, target: .transient) {
+        case .success(let resolved):
+            let url = resolved.url
+            if resolved.didRefresh {
+                let updatedConfig = configuration.withUpdatedActiveBookmark(resolved.bookmarkData)
+                saveConfiguration(updatedConfig)
+                Logger.info("Refreshed stale bookmark for screen \(screenID)", category: .fileAccess)
+            }
+
+            let canAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if canAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            guard canAccess else {
+                if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+                    // Fail-open by design: existence-only pass avoids deleting a
+                    // config over a transient scope failure.
+                    Logger.warning(
+                        "Video bookmark for screen \(screenID) passed validation on file existence only (security scope unavailable)",
+                        category: .fileAccess
+                    )
+                    return true
+                }
+                Logger.error("Cannot access file for screen \(screenID)", category: .fileAccess)
+                return false
+            }
+            return true
+
+        case .failure(let failure):
+            Logger.error("Failed to resolve bookmark for screen \(screenID): \(failure.localizedDescription)", category: .fileAccess)
+            return false
+        }
+    }
+
+    private func validateHTMLSource(_ source: HTMLSource, for screenID: CGDirectDisplayID) -> Bool {
+        switch source {
+        case .inline:
+            return true
+        case .url(let url):
+            guard let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else {
+                Logger.error("Invalid remote HTML URL for screen \(screenID): unsupported scheme '\(url.scheme ?? "none")'", category: .fileAccess)
+                return false
+            }
+            return true
+        case .file(let bookmarkData):
+            return validateLocalHTMLBookmark(bookmarkData, indexFileName: nil, for: screenID)
+        case .folder(let bookmarkData, let indexFileName):
+            return validateLocalHTMLBookmark(bookmarkData, indexFileName: indexFileName, for: screenID)
+        }
+    }
+
+    private func validateLocalHTMLBookmark(
+        _ bookmarkData: Data,
+        indexFileName: String?,
+        for screenID: CGDirectDisplayID
+    ) -> Bool {
+        switch bookmarkResolver.resolve(bookmarkData, target: .transient) {
+        case .success(let resolved):
+            let url = resolved.url
+            if resolved.didRefresh {
+                persistRefreshedHTMLBookmark(
+                    matching: bookmarkData,
+                    with: resolved.bookmarkData,
+                    for: screenID
+                )
+            }
+
+            let canAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if canAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            guard canAccess || FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
+                Logger.error("Cannot access local HTML resource for screen \(screenID)", category: .fileAccess)
+                return false
+            }
+            if !canAccess {
+                // Fail-open by design: existence-only pass avoids deleting a
+                // config over a transient scope failure.
+                Logger.warning(
+                    "HTML bookmark for screen \(screenID) passed validation on file existence only (security scope unavailable)",
+                    category: .fileAccess
+                )
+            }
+
+            if let indexFileName {
+                let escapedIndex = indexFileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? indexFileName
+                guard let requestURL = URL(string: "\(FolderURLSchemeHandler.scheme)://\(FolderURLSchemeHandler.host)/\(escapedIndex)") else {
+                    Logger.error("Invalid HTML folder index name for screen \(screenID): \(indexFileName)", category: .fileAccess)
+                    return false
+                }
+                do {
+                    let indexURL = try FolderURLSchemeHandler.resolvedFileURL(
+                        for: requestURL,
+                        inside: url
+                    )
+                    return FileManager.default.fileExists(atPath: indexURL.path(percentEncoded: false))
+                } catch {
+                    Logger.error("Failed to resolve HTML folder index for screen \(screenID): \(error.localizedDescription)", category: .fileAccess)
+                    return false
+                }
+            }
+
+            return FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
+
+        case .failure(let failure):
+            Logger.error("Failed to resolve local HTML bookmark for screen \(screenID): \(failure.localizedDescription)", category: .fileAccess)
+            return false
+        }
+    }
+
+    /// Actor-safe persistent owner used by validation.
+    @discardableResult
+    func persistRefreshedHTMLBookmark(
+        matching original: Data,
+        with refreshed: Data,
+        for screenID: CGDirectDisplayID
+    ) -> Bool {
+        guard let current = getConfiguration(for: screenID) else { return false }
+
+        let updated: ScreenConfiguration?
+        if let origin = current.wpeOrigin,
+           origin.sourceFolderBookmark == original {
+            updated = current.replacingWPEOriginBookmark(
+                workshopID: origin.workshopID,
+                matching: original,
+                with: refreshed
+            )
+            _ = replaceWPEHistorySourceBookmark(
+                workshopID: origin.workshopID,
+                matching: original,
+                with: refreshed
+            )
+            persistWPEBookmarkOwnerRefresh(origin, refreshed)
+        } else {
+            updated = current.replacingHTMLBookmark(
+                matching: original,
+                with: refreshed
+            )
+        }
+
+        guard let updated else {
+            Logger.info(
+                "[bookmark/screenHTML] skipped stale refresh save — stored bookmark changed between resolve and save",
+                category: .fileAccess
+            )
+            return false
+        }
+        saveConfiguration(updated)
+        return true
+    }
+
+    // MARK: - User Preferences
+
+    func saveLastUsedDirectory(_ url: URL) {
+        defaults.set(url.path(percentEncoded: false), forKey: Keys.lastUsedDirectory)
+    }
+
+    func getLastUsedDirectory() -> URL? {
+        guard let path = defaults.string(forKey: Keys.lastUsedDirectory) else {
+            return nil
+        }
+        let url = URL(fileURLWithPath: path)
+        if url.exists {
+            return url
+        }
+        Logger.info("Last used directory no longer exists: \(path)", category: .fileAccess)
+        return nil
+    }
+
+    // MARK: - Apple Aerials Library
+
+    func saveAerialsDirectoryBookmark(_ bookmarkData: Data) {
+        defaults.set(bookmarkData, forKey: Keys.aerialsDirectoryBookmark)
+    }
+
+    func loadAerialsDirectoryBookmark() -> Data? {
+        defaults.data(forKey: Keys.aerialsDirectoryBookmark)
+    }
+
+    func clearAerialsDirectoryBookmark() {
+        defaults.removeObject(forKey: Keys.aerialsDirectoryBookmark)
+    }
+
+    // MARK: - Wallpaper Bookmarks
+
+    func loadWallpaperBookmarks() -> [WallpaperBookmark] {
+        if let cached = cachedWallpaperBookmarks { return cached }
+        let bookmarks = wallpaperBookmarksStore.read() ?? []
+        cachedWallpaperBookmarks = bookmarks
+        return bookmarks
+    }
+
+    /// Cache is updated synchronously (so a subsequent `loadWallpaperBookmarks`
+    /// can't read the not-yet-flushed disk copy); the write is queued async.
+    func saveWallpaperBookmarks(_ bookmarks: [WallpaperBookmark]) {
+        cachedWallpaperBookmarks = bookmarks
+        bookmarksWriteGeneration &+= 1
+        let generation = bookmarksWriteGeneration
+        Task { [weak self, configurationPersistenceActor] in
+            do {
+                try await configurationPersistenceActor.writeBookmarks(bookmarks, generation: generation)
+            } catch {
+                await MainActor.run {
+                    guard let self,
+                          self.bookmarksWriteGeneration == generation else { return }
+                    Logger.error("Failed to persist wallpaper bookmarks: \(error.localizedDescription)", category: .settings)
+                    self.cachedWallpaperBookmarks = nil
+                }
+            }
+        }
+    }
+
+    // MARK: - Trusted HTML Hosts
+
+    func loadTrustedHosts() -> [String] {
+        defaults.stringArray(forKey: Keys.trustedHosts) ?? []
+    }
+
+    func saveTrustedHosts(_ hosts: [String]) {
+        defaults.set(hosts, forKey: Keys.trustedHosts)
+    }
+}
+
+// MARK: - URL Extension
+extension URL {
+    var exists: Bool {
+        FileManager.default.fileExists(atPath: path(percentEncoded: false))
+    }
+}

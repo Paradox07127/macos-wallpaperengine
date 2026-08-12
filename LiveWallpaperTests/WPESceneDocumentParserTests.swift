@@ -1,0 +1,2446 @@
+import Foundation
+import LiveWallpaperCore
+import LiveWallpaperProWPE
+import Testing
+@testable import LiveWallpaper
+
+@Suite("WPESceneDocumentParser")
+struct WPESceneDocumentParserTests {
+
+    @Test("Attachment on a pure group lowers onto its renderable children")
+    func groupAttachmentLowersOntoChildren() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+            "objects": [
+                [
+                    "id": 100,
+                    "name": "身体",
+                    "image": "models/body.json",
+                    "origin": "500 -300 0",
+                ],
+                [
+                    "id": 200,
+                    "name": "头发组",
+                    "attachment": "头发",
+                    "parent": 100,
+                    "origin": "-1 -220 0",
+                ],
+                [
+                    "id": 300,
+                    "name": "主发",
+                    "image": "models/hair.json",
+                    "parent": 200,
+                    "origin": "89 -31 0",
+                ],
+                [
+                    "id": 400,
+                    "name": "眼睛",
+                    "image": "models/eye.json",
+                    "attachment": "头发",
+                    "parent": 100,
+                    "origin": "-112 -281 0",
+                ],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let byID = Dictionary(uniqueKeysWithValues: document.imageObjects.map { ($0.id, $0) })
+
+        let hair = try #require(byID["300"])
+        #expect(hair.attachment == "头发")
+        #expect(hair.parentObjectID == "100")
+        #expect(abs(hair.origin.x - (500 - 1 + 89)) < 0.001)
+
+        let eye = try #require(byID["400"])
+        #expect(eye.attachment == "头发")
+        #expect(eye.parentObjectID == "100")
+
+        let body = try #require(byID["100"])
+        #expect(body.attachment == nil)
+    }
+
+    @Test("User-property envelope on visible resolves from supplied user values")
+    func userPropertyVisibleResolvesFromUserValues() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "64",
+                "name": "Himmel",
+                "type": "image",
+                "image": "models/himmel.json",
+                "visible": ["user": "xme", "value": true]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+
+        let hidden = try WPESceneDocumentParser.parse(data: data, userValues: ["xme": .bool(false)])
+        #expect(hidden.imageObjects.first?.visible == false)
+
+        let visibleBinding = try #require(hidden.propertyBindings["xme"]?.first)
+        #expect(visibleBinding.target == .imageObject(id: "64"))
+        #expect(visibleBinding.kind == .visible)
+        #expect(visibleBinding.action == .incremental)
+
+        let patch = WPEScenePropertyPatch(
+            bindingsByProperty: hidden.propertyBindings,
+            oldValues: ["xme": .bool(true)],
+            newValues: ["xme": .bool(false)]
+        )
+        #expect(!patch.requiresReload)
+        #expect(patch.incrementalBindings == [visibleBinding])
+
+        let shownDefault = try WPESceneDocumentParser.parse(data: data, userValues: [:])
+        #expect(shownDefault.imageObjects.first?.visible == true)
+
+        let legacy = try WPESceneDocumentParser.parse(data: data)
+        #expect(legacy.imageObjects.first?.visible == true)
+    }
+
+    @Test("Object paint order preserves original objects-array indices")
+    func objectPaintOrderPreservesOriginalIndices() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                ["id": "background", "name": "Background", "type": "image", "image": "materials/background.png"],
+                ["id": "matrix", "name": "Matrix Rain", "type": "particle", "particle": "particles/matrix/spawner.json"],
+                ["id": "title", "name": "Title", "type": "text", "text": "Hello"]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.objectPaintOrder == ["background": 0, "matrix": 1, "title": 2])
+    }
+
+    @Test("Combo bindings are classified as reload")
+    func comboBindingsRequireReload() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "22",
+                "name": "Frieren",
+                "type": "image",
+                "image": "models/fll.json",
+                "effects": [[
+                    "id": "waves",
+                    "file": "effects/waterwaves/effect.json",
+                    "passes": [[
+                        "id": 1,
+                        "combos": ["QUALITY": ["user": "quality", "value": 0]]
+                    ]]
+                ]]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: ["quality": .number(1)])
+        let binding = try #require(document.propertyBindings["quality"]?.first)
+
+        #expect(binding.kind == .combo)
+        #expect(binding.action == .reload)
+        #expect(WPEScenePropertyPatch(
+            bindingsByProperty: document.propertyBindings,
+            oldValues: ["quality": .number(0)],
+            newValues: ["quality": .number(1)]
+        ).requiresReload)
+    }
+
+    // MARK: - Required structure
+
+    @Test("Empty data throws invalidUTF8")
+    func emptyDataThrows() {
+        #expect(throws: WPESceneDocumentError.invalidUTF8) {
+            try WPESceneDocumentParser.parse(data: Data())
+        }
+    }
+
+    @Test("Top-level array throws rootNotObject")
+    func rootArrayThrows() throws {
+        let data = try JSONSerialization.data(withJSONObject: [["camera": [:]]], options: [])
+        #expect(throws: WPESceneDocumentError.rootNotObject) {
+            try WPESceneDocumentParser.parse(data: data)
+        }
+    }
+
+    @Test("Missing camera throws missingCamera")
+    func missingCameraThrows() throws {
+        let payload: [String: Any] = ["general": ["clearcolor": "0 0 0"]]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        #expect(throws: WPESceneDocumentError.missingCamera) {
+            try WPESceneDocumentParser.parse(data: data)
+        }
+    }
+
+    @Test("Missing general throws missingGeneral")
+    func missingGeneralThrows() throws {
+        let payload: [String: Any] = ["camera": ["center": "0 0 0"]]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        #expect(throws: WPESceneDocumentError.missingGeneral) {
+            try WPESceneDocumentParser.parse(data: data)
+        }
+    }
+
+    // MARK: - Flexible vector formats
+
+    @Test("Parser accepts space-separated vector strings, JSON arrays, and dicts")
+    func flexibleVectorFormats() throws {
+        let payload: [String: Any] = [
+            "camera": [
+                "center": "0.5 1 2",
+                "eye": [3, 4, 5],
+                "up": ["x": 0, "y": 1, "z": 0]
+            ],
+            "general": [
+                "orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.camera.center.x == 0.5)
+        #expect(document.camera.center.y == 1)
+        #expect(document.camera.center.z == 2)
+        #expect(document.camera.eye == SIMD3<Double>(3, 4, 5))
+        #expect(document.camera.up == SIMD3<Double>(0, 1, 0))
+    }
+
+    @Test("Perspective camera reads fov and clipping planes from general")
+    func perspectiveCameraReadsFovAndClippingPlanesFromGeneral() throws {
+        let payload: [String: Any] = [
+            "camera": [
+                "center": "-1.83970 0.51670 9.15603",
+                "eye": "-2.05772 0.85240 10.07242",
+                "up": "0 1 0"
+            ],
+            "general": [
+                "orthogonalprojection": NSNull(),
+                "fov": 50,
+                "nearz": 0.01,
+                "farz": 10000
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.general.usesPerspectiveProjection)
+        #expect(document.camera.fov == 50)
+        #expect(document.camera.nearZ == 0.01)
+        #expect(document.camera.farZ == 10000)
+    }
+
+    @Test("Corpus-frequency general zoom is preserved without changing camera semantics")
+    func generalZoomIsPreservedAsUnconsumedMetadata() throws {
+        // `general.zoom` is authored in 60/60 local scene packages. Use a
+        // discriminating mutation instead of the corpus-wide 1.0 default so
+        // this test proves the parser retained the field rather than defaulted.
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": [
+                "orthogonalprojection": ["width": 1920, "height": 1080, "auto": true],
+                "zoom": [
+                    "value": 1.375,
+                    "script": "export function update(value) { return value; }",
+                    "scriptproperties": ["gain": ["user": "zoomGain", "value": 1.0]]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+
+        let document = try WPESceneDocumentParser.parse(
+            data: data,
+            userValues: ["zoomGain": .number(1.5)]
+        )
+
+        #expect(document.general.zoom == 1.375)
+        #expect(document.general.zoomField.seed == 1.375)
+        #expect(document.general.zoomField.script?.contains("update(value)") == true)
+        #expect(document.general.zoomField.scriptProperties["gain"] == .number(1.5))
+        #expect(document.general.zoomField.userBindings == [
+            WPESceneAuthoredUserBinding(propertyKey: "zoomGain")
+        ])
+        #expect(document.propertyBindings["zoomGain"]?.contains {
+            $0.target == .generalField(name: "zoom") && $0.action == .reload
+        } == true)
+        #expect(document.camera == WPESceneCamera.defaultCamera)
+        #expect(document.diagnostics.contains {
+            $0.message.contains("general.zoom") && $0.message.contains("awaits L1")
+        })
+    }
+
+    @Test("Perspective override and camera shake preserve user and script envelopes without camera consumption")
+    func generalCameraMetadataPreservesAuthoredEnvelopes() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": [
+                "orthogonalprojection": ["width": 1920, "height": 1080, "auto": true],
+                "perspectiveoverridefov": ["user": "overrideFOV", "value": 95.0],
+                "camerashake": [
+                    "value": true,
+                    "script": "export function update(value) { return value; }",
+                    "scriptproperties": ["active": ["user": "shakeActive", "value": false]]
+                ],
+                "camerashakeamplitude": ["user": "shakeAmplitude", "value": 0.5],
+                "camerashakespeed": 3.25,
+                "camerashakeroughness": [
+                    "value": 1.25,
+                    "script": "export function update(value) { return value; }"
+                ]
+            ]
+        ]
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload),
+            userValues: [
+                "overrideFOV": .number(87.27),
+                "shakeActive": .bool(true),
+                "shakeAmplitude": .number(1.75)
+            ]
+        )
+
+        #expect(document.general.perspectiveOverrideFOV.seed == 95)
+        #expect(document.general.perspectiveOverrideFOV.resolvedValue == 87.27)
+        #expect(document.general.perspectiveOverrideFOV.userBindings == [
+            WPESceneAuthoredUserBinding(propertyKey: "overrideFOV")
+        ])
+        #expect(document.general.cameraShake.enabled.seed == true)
+        #expect(document.general.cameraShake.enabled.scriptProperties["active"] == .bool(true))
+        #expect(document.general.cameraShake.enabled.userBindings == [
+            WPESceneAuthoredUserBinding(propertyKey: "shakeActive")
+        ])
+        #expect(document.general.cameraShake.amplitude.seed == 0.5)
+        #expect(document.general.cameraShake.amplitude.resolvedValue == 1.75)
+        #expect(document.general.cameraShake.speed.resolvedValue == 3.25)
+        #expect(document.general.cameraShake.roughness.script != nil)
+        #expect(document.propertyBindings["overrideFOV"]?.contains {
+            $0.target == .generalField(name: "perspectiveoverridefov")
+        } == true)
+        #expect(document.camera == WPESceneCamera.defaultCamera)
+        #expect(document.diagnostics.contains {
+            $0.message.contains("perspectiveoverridefov") && $0.message.contains("awaits L1")
+        })
+        #expect(document.diagnostics.contains {
+            $0.message.contains("camerashake") && $0.message.contains("not consumed")
+        })
+    }
+
+    @Test("Clear, wind, and gravity metadata retain discriminating values and bindings")
+    func generalEnvironmentMetadataIsPreservedWithoutRuntimeConsumption() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": [
+                "orthogonalprojection": ["width": 1920, "height": 1080, "auto": true],
+                "clearenabled": ["user": "clearScene", "value": true],
+                "windenabled": true,
+                "winddirection": [
+                    "value": "0.25 0 0.75",
+                    "script": "export function update(value) { return value; }",
+                    "scriptproperties": ["gust": ["user": "gust", "value": 1.0]]
+                ],
+                "windstrength": 4.5,
+                "gravitydirection": "0 -0.75 0.25",
+                "gravitystrength": ["user": "gravityStrength", "value": 223.0]
+            ]
+        ]
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload),
+            userValues: [
+                "clearScene": .bool(false),
+                "gust": .number(2.5),
+                "gravityStrength": .number(111.5)
+            ]
+        )
+
+        #expect(document.general.clearEnabled.seed == true)
+        #expect(document.general.clearEnabled.resolvedValue == false)
+        #expect(document.general.wind.enabled.resolvedValue == true)
+        #expect(document.general.wind.direction.seed == SIMD3<Double>(0.25, 0, 0.75))
+        #expect(document.general.wind.direction.scriptProperties["gust"] == .number(2.5))
+        #expect(document.general.wind.strength.resolvedValue == 4.5)
+        #expect(document.general.gravity.direction.resolvedValue == SIMD3<Double>(0, -0.75, 0.25))
+        #expect(document.general.gravity.strength.seed == 223)
+        #expect(document.general.gravity.strength.resolvedValue == 111.5)
+        #expect(document.propertyBindings["gravityStrength"]?.contains {
+            $0.target == .generalField(name: "gravitystrength") && $0.kind == .general
+        } == true)
+        #expect(document.camera == WPESceneCamera.defaultCamera)
+        #expect(document.particleObjects.isEmpty)
+        #expect(document.diagnostics.contains {
+            $0.message.contains("clearenabled") && $0.message.contains("awaits L1")
+        })
+        #expect(document.diagnostics.contains {
+            $0.message.contains("wind/gravity") && $0.message.contains("awaits L1")
+        })
+    }
+
+    @Test("Light objects and lightconfig preserve typed values and dynamic provenance without renderer consumption")
+    func lightMetadataPreservesTypedFieldsAndBindings() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": [
+                "orthogonalprojection": ["width": 1920, "height": 1080, "auto": true],
+                "lightconfig": [
+                    "directional": 1,
+                    "directionalshadow": 2,
+                    "point": 3,
+                    "pointshadow": 4,
+                    "spot": 5,
+                    "spotshadow": 6
+                ]
+            ],
+            "objects": [
+                [
+                    "id": 433,
+                    "name": "Point",
+                    "light": "lpoint",
+                    "origin": [
+                        "value": "10 20 30",
+                        "script": "export function update(value) { return value; }",
+                        "scriptproperties": ["offset": ["user": "lightOffset", "value": 1.0]]
+                    ],
+                    "color": "0.25 0.5 0.75",
+                    "radius": ["user": "lightRadius", "value": 100.0],
+                    "intensity": 6.0,
+                    "castshadow": true,
+                    "castvolumetrics": true,
+                    "innercone": 11.0,
+                    "outercone": 27.0,
+                    "attenuation": 0.125,
+                    "exponent": 2.0,
+                    "density": 3.0,
+                    "volumetricsexponent": 4.0,
+                    "lightsourcesize": 5.0,
+                    "mindistance": 6.0,
+                    "dependencies": [259, "459"]
+                ],
+                [
+                    "id": 259,
+                    "name": "Directional",
+                    "light": "ldirectional",
+                    "angles": [
+                        "value": "7 8 9",
+                        "script": "export function update(value) { return value; }"
+                    ],
+                    "cascadedistance0": 0.3,
+                    "cascadedistance1": 0.4,
+                    "cascadedistance2": 8.0,
+                    "visible": false
+                ]
+            ]
+        ]
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload),
+            userValues: [
+                "lightOffset": .number(2.5),
+                "lightRadius": .number(175)
+            ]
+        )
+
+        #expect(document.general.lightConfiguration == WPESceneLightConfiguration(
+            directional: 1,
+            directionalShadow: 2,
+            point: 3,
+            pointShadow: 4,
+            spot: 5,
+            spotShadow: 6
+        ))
+        #expect(document.lightObjects.count == 2)
+        let point = try #require(document.lightObjects.first { $0.id == "433" })
+        #expect(point.type == .point)
+        #expect(point.authoredType == "lpoint")
+        #expect(point.origin == SIMD3<Double>(10, 20, 30))
+        #expect(point.color == SIMD3<Double>(0.25, 0.5, 0.75))
+        #expect(point.radius == 175)
+        #expect(point.intensity == 6)
+        #expect(point.castShadow)
+        #expect(point.castVolumetrics)
+        #expect(point.innerConeDegrees == 11)
+        #expect(point.outerConeDegrees == 27)
+        #expect(point.attenuation == 0.125)
+        #expect(point.exponent == 2)
+        #expect(point.density == 3)
+        #expect(point.volumetricsExponent == 4)
+        #expect(point.lightSourceSize == 5)
+        #expect(point.minimumDistance == 6)
+        #expect(point.dependencies == ["259", "459"])
+        #expect(point.fieldBindings["radius"]?.seed == .number(100))
+        #expect(point.fieldBindings["radius"]?.resolvedValue == .number(175))
+        #expect(point.fieldBindings["radius"]?.userBindings == [
+            WPESceneAuthoredUserBinding(propertyKey: "lightRadius")
+        ])
+        #expect(point.fieldBindings["origin"]?.script?.contains("update(value)") == true)
+        #expect(point.fieldBindings["origin"]?.scriptProperties["offset"] == .number(2.5))
+
+        let directional = try #require(document.lightObjects.first { $0.id == "259" })
+        #expect(directional.type == .directional)
+        #expect(directional.angles == SIMD3<Double>(7, 8, 9))
+        #expect(directional.cascadeDistances == SIMD3<Double>(0.3, 0.4, 8))
+        #expect(!directional.visible)
+        #expect(document.propertyBindings["lightRadius"]?.contains {
+            $0.target == .lightObject(id: "433") && $0.kind == .uniform && $0.action == .reload
+        } == true)
+        #expect(document.diagnostics.contains {
+            $0.message.contains("Light object Point") && $0.message.contains("await their L1 gates")
+        })
+        #expect(document.diagnostics.contains {
+            $0.message.contains("general.lightconfig") && $0.message.contains("await their L1 gates")
+        })
+    }
+
+    @Test("Camera object overrides the top-level editor camera")
+    func cameraObjectOverridesTopLevelCamera() throws {
+        let payload: [String: Any] = [
+            "camera": [
+                "center": "-1.83970 0.51670 9.15603",
+                "eye": "-2.05772 0.85240 10.07242",
+                "up": "0 1 0"
+            ],
+            "general": ["orthogonalprojection": NSNull(), "fov": 60],
+            "objects": [[
+                "id": 443,
+                "camera": "default",
+                "origin": "0.00000 0.00000 6.00000",
+                "fov": ["user": "newproperty71", "value": 50.0],
+                "zoom": 1.0,
+                "solid": true
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.camera.eye == SIMD3<Double>(0, 0, 6))
+        #expect(document.camera.center == SIMD3<Double>(0, 0, 5))
+        #expect(document.camera.up == SIMD3<Double>(0, 1, 0))
+        #expect(document.camera.fov == 50)
+    }
+
+    @Test("Text object records parent id and pre-composition local origin")
+    func textObjectRecordsParentAndLocalOrigin() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+            "objects": [
+                ["id": 2051, "name": "panel", "origin": "10 20 0"],
+                [
+                    "id": 1230,
+                    "name": "CIV STATE",
+                    "text": "STATE",
+                    "parent": 2051,
+                    "origin": "5 -3 0"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let text = try #require(document.textObjects.first { $0.id == "1230" })
+        #expect(text.parentObjectID == "2051")
+        #expect(text.localOrigin == SIMD3<Double>(5, -3, 0))
+        #expect(text.origin == SIMD3<Double>(15, 17, 0))
+    }
+
+    @Test("Text object static angles parse (standalone z tilt, no parent chain)")
+    func textObjectStaticAnglesParse() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160]],
+            "objects": [
+                [
+                    "id": 130,
+                    "name": "Clock",
+                    "text": "12:34",
+                    "anchor": "none",
+                    "origin": "234.58234 491.26196 0.00000",
+                    "angles": "0.00000 0.00000 0.52360",
+                    "scale": "0.75389 0.75389 0.75389"
+                ],
+                [
+                    "id": 200,
+                    "name": "group",
+                    "origin": "0 0 0",
+                    "angles": "0 0 0.25"
+                ],
+                [
+                    "id": 201,
+                    "name": "ChildLabel",
+                    "text": "child",
+                    "parent": 200,
+                    "origin": "0 0 0",
+                    "angles": "0 0 0.5"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let clock = try #require(document.textObjects.first { $0.id == "130" })
+        #expect(abs(clock.angles.z - 0.5236) < 0.0001)
+        #expect(clock.parentObjectID == nil)
+        let child = try #require(document.textObjects.first { $0.id == "201" })
+        #expect(abs(child.angles.z - 0.75) < 0.0001)
+    }
+
+    @Test("HDR bloom settings parse from general (user-bound values unwrapped)")
+    func hdrBloomSettingsParse() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": [
+                "orthogonalprojection": NSNull(),
+                "hdr": true,
+                "bloom": true,
+                "bloomhdrstrength": ["user": "hdr", "value": 4.0],
+                "bloomhdrthreshold": 0.46,
+                "bloomhdrfeather": 0.88,
+                "bloomhdrscatter": ["user": "hdr1", "value": 2.0],
+                "bloomhdriterations": 6,
+                "bloomtint": "1 1 1"
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let bloom = try #require(document.general.bloom)
+        #expect(bloom.strength == 4.0)
+        #expect(bloom.threshold == 0.46)
+        #expect(bloom.feather == 0.88)
+        #expect(bloom.scatter == 2.0)
+        #expect(bloom.iterations == 6)
+        // The HDR bloom keys are rendered — none of them may be flagged unsupported.
+        #expect(!document.diagnostics.contains {
+            $0.message.contains("general.bloom") && $0.message.contains("unsupported")
+        })
+        let sdrPayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": NSNull(), "bloom": true]
+        ]
+        let sdrDoc = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: sdrPayload, options: [])
+        )
+        #expect(sdrDoc.general.bloom == nil)
+    }
+
+    @Test("Only SDR-only bloom keys are flagged unsupported")
+    func sdrBloomKeysFlaggedUnsupported() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": [
+                "orthogonalprojection": NSNull(),
+                "bloom": true,
+                "bloomstrength": 2.0,
+                "bloomthreshold": 0.5,
+                "bloomhdrstrength": 4.0,
+                "bloomtint": "1 1 1"
+            ]
+        ]
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload, options: [])
+        )
+        let unsupported = document.diagnostics
+            .filter { $0.message.contains("unsupported") }
+            .map(\.message)
+        #expect(unsupported.contains { $0.contains("general.bloomstrength") })
+        #expect(unsupported.contains { $0.contains("general.bloomthreshold") })
+        #expect(!unsupported.contains { $0.contains("general.bloomhdrstrength") })
+        #expect(!unsupported.contains { $0.contains("general.bloomtint") })
+        #expect(!unsupported.contains { $0 == "general.bloom is unsupported by the current renderer" })
+    }
+
+    @Test("Text object dynamic origin script is captured for runtime ticking")
+    func textDynamicOriginScriptCaptured() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": NSNull()],
+            "objects": [[
+                "id": 408,
+                "name": "coord",
+                "text": "[x]",
+                "origin": [
+                    "script": "export function update(v){v.x=shared.xx1;v.y=shared.yy1;v.z=shared.zz1;return v;}",
+                    "value": "0 1 0"
+                ]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let label = try #require(document.textObjects.first { $0.id == "408" })
+        #expect(label.originScript != nil)
+        #expect(label.originScript?.script.contains("shared.xx1") == true)
+        let staticPayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": NSNull()],
+            "objects": [[
+                "id": 1,
+                "text": "clock",
+                "origin": ["script": "export function update(v){v.x=0.5;return v;}", "value": "0 0 0"]
+            ]]
+        ]
+        let staticDoc = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: staticPayload)
+        )
+        #expect(staticDoc.textObjects.first { $0.id == "1" }?.originScript == nil)
+    }
+
+    @Test("Text object alpha script is retained for runtime ticking")
+    func textAlphaScriptRetained() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+            "objects": [[
+                "id": 490,
+                "name": "***",
+                "text": "***",
+                "alpha": [
+                    "script": "export function update(value) { return 0; }",
+                    "value": 0.2
+                ]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let text = try #require(document.textObjects.first { $0.id == "490" })
+        #expect(text.alphaScript?.contains("update") == true)
+        #expect(abs(text.alpha - 0.2) < 0.0001)
+    }
+
+    @Test("Scene without a camera object keeps the top-level camera")
+    func sceneWithoutCameraObjectKeepsTopLevelCamera() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0", "eye": "3 4 5", "up": "0 1 0"],
+            "general": ["orthogonalprojection": NSNull(), "fov": 50],
+            "objects": [[
+                "id": 1,
+                "name": "layer",
+                "image": "models/a.json",
+                "origin": "0 0 6"
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.camera.eye == SIMD3<Double>(3, 4, 5))
+        #expect(document.camera.fov == 50)
+    }
+
+    // MARK: - Image objects
+
+    @Test("Image object with happy-path fields populates imageObjects")
+    func imageObjectHappyPath() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "layer1",
+                "name": "Background",
+                "type": "image",
+                "image": "materials/bg.png",
+                "origin": "0.5 0.5 0",
+                "scale": "1 1 1",
+                "alpha": 0.85,
+                "blendmode": "additive",
+                "visible": true,
+                "alignment": "center",
+                "size": [512, 512, 0]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.imageObjects.count == 1)
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.name == "Background")
+        #expect(layer.imageRelativePath == "materials/bg.png")
+        #expect(layer.alpha == 0.85)
+        #expect(layer.blendMode == .additive)
+        #expect(layer.alignment == .center)
+        #expect(layer.size == CGSize(width: 512, height: 512))
+    }
+
+    @Test("Image material instance preserves static and dynamic binding overrides")
+    func imageMaterialInstancePreservesBindingOverrides() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": 7,
+                "name": "Album Cover",
+                "image": "models/cover.json",
+                "solid": true,
+                "instance": [
+                    "id": 820,
+                    "combos": ["version": 2, "USE_MASK": 1],
+                    "textures": ["util/white", NSNull(), "masks/cover"],
+                    "usertextures": [
+                        "$legacyProperty",
+                        ["name": "$mediaThumbnail", "type": "system"]
+                    ]
+                ],
+                "effects": [[
+                    "id": 9,
+                    "name": "Dynamic Mask",
+                    "file": "effects/dynamic/effect.json",
+                    "passes": [[
+                        "usertextures": [["name": "$effectMask", "type": "usershortcut"]]
+                    ]]
+                ]]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let instance = try #require(document.imageObjects.first?.materialInstance)
+
+        #expect(instance.id == 820)
+        #expect(instance.combos == ["version": 2, "USE_MASK": 1])
+        #expect(instance.textures == [0: "util/white", 2: "masks/cover"])
+        #expect(instance.userTextures == [
+            WPESceneUserTextureBinding(name: "$legacyProperty"),
+            WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system")
+        ])
+        #expect(document.imageObjects.first?.solid == true)
+        #expect(document.imageObjects.first?.effects.first?.passOverrides.first?.userTextures == [
+            WPESceneUserTextureBinding(name: "$effectMask", type: "usershortcut")
+        ])
+        #expect(document.diagnostics.contains { $0.message.contains("dynamic instance user textures") })
+    }
+
+    @Test("Image numeric colorBlendMode maps to layer additive blend")
+    func imageNumericColorBlendModeMapsToLayerBlend() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "ripple",
+                "name": "ripple1440p",
+                "type": "image",
+                "image": "models/workshop/2655151285/ripple.json",
+                "colorBlendMode": 9
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.blendMode == .additive)
+    }
+
+    @Test("Destination-reading colorBlendMode routes to the programmable path, not opaque normal")
+    func imageOverlayBlendModeUsesProgrammablePath() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "1478",
+                "name": "昼夜变化",
+                "type": "image",
+                "image": "models/util/solidlayer.json",
+                "color": "0.28627 0.32157 0.51765",
+                "colorBlendMode": 11
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.colorBlendMode == 11)
+        #expect(layer.usesProgrammableBlend)
+    }
+
+    @Test("Fixed-function colorBlendModes stay on the cheap blend-state path")
+    func imageFixedFunctionBlendModesStayFixedFunction() throws {
+        for (raw, expected) in [(0, WPESceneBlendMode.normal), (2, .multiply), (7, .screen), (9, .additive), (31, .additive)] {
+            let payload: [String: Any] = [
+                "camera": ["center": "0 0 0"],
+                "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+                "objects": [[
+                    "id": "x", "name": "x", "type": "image",
+                    "image": "models/x.json", "colorBlendMode": raw
+                ]]
+            ]
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+            let layer = try #require(try WPESceneDocumentParser.parse(data: data).imageObjects.first)
+            #expect(layer.blendMode == expected, "colorBlendMode \(raw)")
+            #expect(!layer.usesProgrammableBlend, "colorBlendMode \(raw) must not pay for a scene snapshot")
+        }
+    }
+
+    @Test("instanceoverride alpha keyframes survive parsing and are not baked")
+    func instanceOverrideAnimatedAlphaIsParsed() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "4424",
+                "name": "stars",
+                "particle": "particles/stars.json",
+                "instanceoverride": [
+                    "id": 4426,
+                    "count": 3.0,
+                    "alpha": [
+                        "value": 1.0,
+                        "animation": [
+                            "c0": [["frame": 0, "value": 0.01], ["frame": 1794, "value": 1.018]],
+                            "options": ["fps": 30, "length": 2700, "mode": "loop", "wraploop": true]
+                        ]
+                    ]
+                ]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let object = try #require(document.particleObjects.first { $0.id == "4424" })
+        let override = try #require(object.instanceOverride)
+        let animation = try #require(override.alphaAnimation, "override alpha keyframes must survive")
+        #expect(abs((animation.scalar(at: 0) ?? -1) - 0.01) < 0.001)
+        #expect((animation.scalar(at: 1794.0 / 30.0) ?? 0) > 1.0)
+    }
+
+    @Test("Transform-host origin keyframes are parsed, not collapsed to the static value seed")
+    func transformHostAnimatedOriginIsParsed() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "15705",
+                "name": "meteor emitter host",
+                "origin": [
+                    "value": "0 0 0",
+                    "animation": [
+                        "c0": [["frame": 0, "value": 2869.73], ["frame": 1503, "value": 0]],
+                        "c1": [["frame": 0, "value": 1791.55], ["frame": 1503, "value": 0]],
+                        "c2": [["frame": 0, "value": 0], ["frame": 1503, "value": 0]],
+                        "options": ["fps": 30, "length": 2700, "mode": "loop", "wraploop": true]
+                    ]
+                ]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let host = try #require(document.transformHostObjects.first { $0.id == "15705" })
+        let animation = try #require(host.originAnimation, "origin keyframes must survive parsing")
+        #expect(host.origin == SIMD3<Double>(0, 0, 0))
+        let start = try #require(animation.vector(at: 0))
+        #expect(abs(start[0] - 2869.73) < 0.01, "got \(start[0])")
+        let arrived = try #require(animation.vector(at: 1503.0 / 30.0))
+        #expect(abs(arrived[0]) < 1, "emitter must reach the origin, got \(arrived[0])")
+    }
+
+    @Test("Image color keyframes are parsed, not collapsed to the static value seed")
+    func imageAnimatedColorIsParsed() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "1478",
+                "name": "昼夜变化",
+                "type": "image",
+                "image": "models/util/solidlayer.json",
+                "color": [
+                    "value": "0.28627 0.32157 0.51765",
+                    "animation": [
+                        "c0": [["frame": 0, "value": 0.5], ["frame": 600, "value": 1.0]],
+                        "c1": [["frame": 0, "value": 0.5], ["frame": 600, "value": 1.0]],
+                        "c2": [["frame": 0, "value": 0.5], ["frame": 600, "value": 1.0]],
+                        "options": ["fps": 30, "length": 2700, "mode": "loop", "wraploop": true]
+                    ]
+                ]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let layer = try #require(try WPESceneDocumentParser.parse(data: data).imageObjects.first)
+
+        let animation = try #require(layer.colorAnimation, "color animation must survive parsing")
+        #expect(abs(layer.color.x - 0.28627) < 0.0001)
+        let at6s = try #require(animation.vector(at: 6))
+        #expect(abs(at6s[0] - 0.65) < 0.01, "got \(at6s[0])")
+    }
+
+
+    // JSON `null` bridges to NSNull, and `entry["image"] != nil` is TRUE for
+    // NSNull — so `{"image": null}` was classified image-kind, parseImageObject
+    // returned nil, and the transform-host branch was skipped because the
+    // resolution already said `.image`. The node's transform vanished and its
+    // children lost the parent offset.
+    @Test("An explicit null image does not classify the object as image-kind")
+    func explicitNullImageDoesNotClassifyAsImage() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                [
+                    "id": "host",
+                    "name": "Host",
+                    "image": NSNull(),
+                    "origin": "100 200 0"
+                ],
+                [
+                    "id": "child",
+                    "name": "Child",
+                    "image": "models/child.json",
+                    "parent": "host",
+                    "origin": "10 20 0"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        // The null-image node must be classified as a transform host, not an
+        // image: only hosts carry origin/scale/angles scripts and keyframe
+        // tracks onto their descendants. Misclassifying it as image-kind drops
+        // that whole channel silently (parseImageObject returns nil and the
+        // host branch is skipped because the resolution already said .image).
+        #expect(document.imageObjects.contains { $0.id == "host" } == false,
+                "a null image must not produce an image layer")
+        #expect(document.transformHostObjects.contains { $0.id == "host" },
+                "a null-image node must still be a transform host")
+    }
+
+    @Test("Text objects carry scale/angles SceneScripts (corpus scene 2955378002)")
+    func textScaleAndAnglesScriptsAreParsed() throws {
+        // The real binding from workshop scene 2955378002's `playervolumepercentage`
+        // label: a scale script with its scriptProperties, seeded from the
+        // authored value. Text is excluded from the transform-host path, so this
+        // is the object's only route to a scripted scale.
+        let script = """
+        const audioBuffer = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
+        export function init(value) { }
+        export function update() { return 1; }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "3653", "name": "playervolumepercentage", "type": "text", "text": "0%",
+                "scale": [
+                    "value": "1.26929 1.26929 1.26929",
+                    "script": script,
+                    "scriptproperties": ["frequency": 1, "maxvalue": 1.15, "minvalue": 1, "smoothing": 25]
+                ],
+                "angles": ["value": "0 0 0", "script": script]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let text = try #require(try WPESceneDocumentParser.parse(data: data).textObjects.first)
+
+        let scale = try #require(text.scaleScript, "text scale script must survive parsing")
+        #expect(abs(scale.seed.x - 1.26929) < 0.0001, "seeded from the authored value")
+        #expect(scale.scriptProperties["maxvalue"] == .number(1.15))
+        #expect(text.anglesScript != nil, "text angles script must survive parsing")
+    }
+
+    /// A script envelope's nested `scriptproperties` must still resolve against
+    /// the user's values. Workshop 3510729512 wires its clock this way — the
+    /// wallpaper's "Display to seconds" checkbox reaches the clock SceneScript
+    /// only as `scriptproperties.showSeconds = {user: "newproperty8", …}` inside
+    /// the `text` script envelope. `resolveUserPropertyEnvelopes` preserves a
+    /// dict carrying `script` (collapsing it would drop the script itself) and
+    /// recurses instead; if that recursion is ever dropped, every settings
+    /// toggle wired through a script property silently stops working.
+    @Test("A user property reaches scriptProperties nested inside a script envelope")
+    func userPropertyResolvesInsideScriptEnvelope() throws {
+        let script = """
+        export function update(value) { return scriptProperties.showSeconds ? '12:34:56' : '12:34'; }
+        """
+        func payload() -> [String: Any] {
+            [
+                "camera": ["center": "0 0 0"],
+                "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+                "objects": [[
+                    "id": "531", "name": "Clock", "type": "text",
+                    "text": [
+                        "value": "12:34",
+                        "script": script,
+                        "scriptproperties": [
+                            "delimiter": ":",
+                            "showSeconds": ["user": "newproperty8", "value": false]
+                        ]
+                    ]
+                ]]
+            ]
+        }
+        let data = try JSONSerialization.data(withJSONObject: payload(), options: [])
+
+        let on = try #require(try WPESceneDocumentParser.parse(
+            data: data, userValues: ["newproperty8": .bool(true)]
+        ).textObjects.first)
+        #expect(on.textScript != nil, "the script envelope must survive resolution")
+        #expect(on.scriptProperties["showSeconds"] == .bool(true),
+                "the user's checkbox must override the baked value")
+
+        let offDocument = try WPESceneDocumentParser.parse(data: data, userValues: [:])
+        let off = try #require(offDocument.textObjects.first)
+        #expect(off.scriptProperties["showSeconds"] == .bool(false),
+                "with no override the baked value stands")
+        #expect(off.scriptProperties["delimiter"] == .string(":"),
+                "literal siblings must survive the same pass")
+
+        let binding = try #require(offDocument.propertyBindings["newproperty8"]?.first)
+        #expect(binding.target == .scriptProperty(.init(
+            objectID: "531",
+            role: .textContent,
+            propertyName: "showSeconds"
+        )))
+        #expect(binding.kind == .scriptProperty)
+        #expect(binding.action == .incremental,
+                "typed provenance is an incremental candidate; renderer preflight remains authoritative")
+        let patch = WPEScenePropertyPatch(
+            bindingsByProperty: offDocument.propertyBindings,
+            oldValues: ["newproperty8": .bool(false)],
+            newValues: ["newproperty8": .bool(true)]
+        )
+        #expect(!patch.requiresReload,
+                "the typed script target reaches renderer preflight instead of masquerading as direct visibility")
+    }
+
+    @Test("Effect shader constants carry their SceneScript (corpus scene 2955378002)")
+    func effectConstantScriptsAreParsed() throws {
+        // The real binding from workshop scene 2955378002: a day/night window
+        // driving a `multiply` uniform. The authored value stays as the seed so a
+        // failed script leaves the pass exactly as authored.
+        let script = """
+        import * as WEMath from 'WEMath';
+        export function update(value) {
+            return WEMath.smoothStep(0, 0.2, engine.timeOfDay);
+        }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "1", "name": "img", "image": "models/util/solidlayer.json",
+                "effects": [[
+                    "name": "Magia nera", "visible": true, "file": "effects/x/effect.json",
+                    "passes": [["constantshadervalues": [
+                        "multiply": ["value": 1, "script": script],
+                        "u_offset": ["value": "0.25 0.5"],
+                        "plain": 3
+                    ]]]
+                ]]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let image = try #require(try WPESceneDocumentParser.parse(data: data).imageObjects.first)
+        let override = try #require(image.effects.first?.passOverrides.first)
+
+        let bound = try #require(override.constantScripts["multiply"], "the bound script must survive")
+        #expect(bound.script == script)
+        #expect(bound.seed.x == 1, "seeded from the authored value")
+        #expect(override.constants["multiply"] == .number(1), "the authored seed must remain")
+        #expect(override.constantScripts["u_offset"] == nil, "a scriptless constant binds nothing")
+        #expect(override.constantScripts["plain"] == nil)
+    }
+
+    @Test("Effect-constant scripts count toward the per-scene runtime cap")
+    func effectConstantScriptsCountTowardTheCap() throws {
+        // They get a JavaScriptCore runtime each, exactly like the transform
+        // families — but they were created from the PIPELINE, after the cap had
+        // already been checked against the document, so they bypassed it.
+        let script = "export function update(v) { return shared.x; }"
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "1", "name": "img", "image": "models/util/solidlayer.json",
+                "effects": [[
+                    "name": "fx", "visible": true, "file": "effects/x/effect.json",
+                    "passes": [["constantshadervalues": [
+                        "a": ["value": 1, "script": script],
+                        "b": ["value": 1, "script": script]
+                    ]]]
+                ]]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+        #expect(WPESceneScriptInstanceInventory(document: document).total == 2)
+    }
+
+    @Test("A scripted constant's arity comes from its authored value")
+    func scriptedConstantArityFollowsAuthoredValue() {
+        #expect(WPEMetalSceneRenderer.valueShape(of: .number(1)) == .scalar)
+        #expect(WPEMetalSceneRenderer.valueShape(of: .vector([0.25, 0.5])) == .vector2)
+        #expect(WPEMetalSceneRenderer.valueShape(of: .vector([1, 0, 0])) == .vector3)
+        // Unknown/absent authored value: WPE's own default for a bound uniform is
+        // a single float, and the corpus is 401/451 scalars.
+        #expect(WPEMetalSceneRenderer.valueShape(of: nil) == .scalar)
+    }
+
+    @Test("An effect authored hidden behind a visibility script stays hidden")
+    func effectVisibilityEnvelopeSeedIsHonoured() throws {
+        // `{value, script}` fell through `parseBool` to nil and defaulted to
+        // SHOWN, so an effect authored hidden with a script bound to it rendered.
+        let script = "export function update(value) { return thisLayer.visible; }"
+        func payload(_ visible: Any) -> [String: Any] {
+            [
+                "camera": ["center": "0 0 0"],
+                "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+                "objects": [[
+                    "id": "1", "name": "img", "image": "models/util/solidlayer.json",
+                    "effects": [[
+                        "name": "fx", "visible": visible,
+                        "file": "effects/x/effect.json", "passes": []
+                    ]]
+                ]]
+            ]
+        }
+        func effect(_ visible: Any) throws -> WPESceneImageEffect {
+            let data = try JSONSerialization.data(withJSONObject: payload(visible), options: [])
+            return try #require(
+                try WPESceneDocumentParser.parse(data: data).imageObjects.first?.effects.first
+            )
+        }
+        #expect(try effect(["value": false, "script": script]).visible == false)
+        #expect(try effect(["value": true, "script": script]).visible == true)
+        #expect(try effect(false).visible == false, "the bare Bool form must still work")
+        #expect(try effect(["value": true, "script": script]).visibleScript?.script == script)
+        #expect(try effect(true).visibleScript == nil)
+    }
+
+    @Test("Script source-reuse diagnostics count bindings, distinct sources and the top repeat")
+    func scriptSourceReuseDiagnostics() throws {
+        // Mirrors 2955378002's shape: one colour script pasted onto every object,
+        // plus one unique script, so the numbers are hand-checkable.
+        let shared = "export function update(value) { return shared.accentColor; }"
+        let unique = "export function update(value) { return engine.runtime; }"
+        var objects: [[String: Any]] = (0..<5).map { index in
+            [
+                "id": "\(index)", "name": "img\(index)", "image": "models/util/solidlayer.json",
+                "color": ["value": "1 1 1", "script": shared]
+            ]
+        }
+        objects.append([
+            "id": "9", "name": "solo", "image": "models/util/solidlayer.json",
+            "scale": ["value": "1 1 1", "script": unique]
+        ])
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": objects
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let reuse = WPESceneScriptInstanceInventory.sourceReuse(in: document)
+        #expect(reuse.bindings == 6)
+        #expect(reuse.distinct == 2)
+        #expect(reuse.maxRepeat == 5)
+    }
+
+    @Test("A scene binding an audio script requires capture even without the authored flag")
+    func scriptBoundAudioRequiresCapture() throws {
+        // Every audio-reactive scene in the local corpus omits
+        // `general.supportsaudioprocessing` while binding the audio-response
+        // template. Gating capture on the flag alone leaves the broker silent,
+        // so those scripts sit at `minvalue` forever instead of pulsing.
+        func document(script: String?) throws -> WPESceneDocument {
+            var object: [String: Any] = [
+                "id": "1", "name": "label", "type": "text", "text": "0%"
+            ]
+            if let script {
+                object["scale"] = ["value": "1 1 1", "script": script]
+            }
+            let payload: [String: Any] = [
+                "camera": ["center": "0 0 0"],
+                "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+                "objects": [object]
+            ]
+            return try WPESceneDocumentParser.parse(
+                data: try JSONSerialization.data(withJSONObject: payload, options: [])
+            )
+        }
+        let audio = try document(script: """
+        const audioBuffer = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
+        export function update() { return audioBuffer.average[0]; }
+        """)
+        #expect(audio.general.supportsAudioProcessing == false, "the corpus never sets the flag")
+        #expect(WPESceneScriptInstanceInventory.usesAudioAPI(in: audio))
+
+        let silent = try document(script: "export function update(v) { return v; }")
+        #expect(!WPESceneScriptInstanceInventory.usesAudioAPI(in: silent))
+        #expect(!WPESceneScriptInstanceInventory.usesAudioAPI(in: try document(script: nil)))
+    }
+
+    @Test("Image and text `color` SceneScripts are parsed onto their objects")
+    func colorScriptsAreParsed() throws {
+        let colorScript = """
+        export function update(value) { return new Vec3(shared.r || 0, 0, 0); }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                [
+                    "id": "1",
+                    "name": "tinted image",
+                    "type": "image",
+                    "image": "models/util/solidlayer.json",
+                    "color": ["value": "1 1 1", "script": colorScript]
+                ],
+                [
+                    "id": "2",
+                    "name": "tinted text",
+                    "type": "text",
+                    "text": "hello",
+                    "color": ["value": "1 1 1", "script": colorScript]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let image = try #require(document.imageObjects.first)
+        #expect(image.colorScript?.script == colorScript)
+        let text = try #require(document.textObjects.first)
+        #expect(text.colorScript?.script == colorScript)
+    }
+
+    @Test("A script whose only dynamic marker is registerAudioBuffers is not statically resolved")
+    func audioBufferScriptIsDynamic() {
+        // "audio" matching is case-sensitive, so `registerAudioBuffers` slips past
+        // it; without its own token an audio-only origin script would be baked once.
+        let script = """
+        const b = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
+        export function update(v) { v.x = b.average[0]; return v; }
+        """
+        #expect(!WPETransformScriptStaticAnalysis.isStaticallyResolvable(script))
+    }
+
+    @Test("A parent-dependent transform is retained for the runtime layer graph")
+    func parentDependentTransformIsDynamic() throws {
+        let script = """
+        let parent;
+        export function init(value) { parent = thisLayer.getParent(); }
+        export function update(value) { value.y *= Math.sign(-parent.origin.y); return value; }
+        """
+        #expect(!WPETransformScriptStaticAnalysis.isStaticallyResolvable(script))
+
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "parent", "name": "Parent",
+                "origin": "0 -10 0", "scale": "1 1 1"
+            ], [
+                "id": "child", "name": "Child", "parent": "parent",
+                "text": "Clock", "origin": ["value": "0 -66 0", "script": script]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(data: data)
+        #expect(document.textObjects.first?.originScript?.script == script)
+    }
+
+    @Test("Image numeric colorBlendMode 7 maps to layer screen blend")
+    func imageNumericColorBlendModeSevenMapsToScreenBlend() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "471",
+                "name": "atmosphere overlay",
+                "type": "image",
+                "image": "models/workshop/2079971872/atmosphere.json",
+                "colorBlendMode": 7
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.blendMode == .screen)
+    }
+
+    @Test("Image origin script using cursorWorldPosition is preserved for runtime")
+    func cursorOriginScriptIsPreservedForRuntime() throws {
+        let script = """
+        'use strict';
+        export function update(value) {
+            value.x = input.cursorWorldPosition.x;
+            value.y = input.cursorWorldPosition.y;
+            return value;
+        }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": "154",
+                "name": "苍月草1/Nemophila1",
+                "type": "image",
+                "image": "models/nemophila.json",
+                "origin": [
+                    "script": script,
+                    "value": "860.29364 133.27734 0"
+                ],
+                "size": "360 248 0"
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let layer = try #require(document.imageObjects.first)
+
+        #expect(layer.origin == SIMD3<Double>(860.29364, 133.27734, 0))
+        #expect(layer.originScript?.script == script)
+        #expect(layer.originScript?.seed == SIMD3<Double>(860.29364, 133.27734, 0))
+    }
+
+    @Test("Image origin script reading shared state is preserved for runtime")
+    func sharedOriginScriptIsPreservedForRuntime() throws {
+        let script = """
+        'use strict';
+        export function update(value) {
+            value.x = shared.xx1;
+            value.y = shared.yy1;
+            value.z = shared.zz1;
+            return value;
+        }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": "188",
+                "name": "Star1 model1",
+                "type": "image",
+                "image": "models/star.json",
+                "origin": [
+                    "script": script,
+                    "value": "0 1 0"
+                ],
+                "size": "100 100 0"
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let layer = try #require(document.imageObjects.first)
+
+        #expect(layer.origin == SIMD3<Double>(0, 1, 0))
+        #expect(layer.originScript?.script == script)
+        #expect(layer.originScript?.seed == SIMD3<Double>(0, 1, 0))
+    }
+
+    @Test("Image origin script reading engine runtime is preserved for runtime")
+    func runtimeOriginScriptIsPreservedForRuntime() throws {
+        let script = """
+        export function update(value) {
+            value.x = engine.runtime;
+            return value;
+        }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": "189",
+                "name": "RuntimeMover",
+                "type": "image",
+                "image": "models/star.json",
+                "origin": [
+                    "script": script,
+                    "value": "0 1 0"
+                ],
+                "size": "100 100 0"
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let layer = try #require(document.imageObjects.first)
+
+        #expect(layer.origin == SIMD3<Double>(0, 1, 0))
+        #expect(layer.originScript?.script == script)
+        #expect(layer.originScript?.seed == SIMD3<Double>(0, 1, 0))
+    }
+
+    @Test("Image scale and angles scripts reading shared state are preserved for runtime")
+    func sharedScaleAndAnglesScriptsArePreservedForRuntime() throws {
+        let scaleScript = """
+        export function update(value) {
+            value.x = shared.sx;
+            value.y = shared.sy;
+            value.z = shared.sz;
+            return value;
+        }
+        """
+        let anglesScript = """
+        export function update(value) {
+            value.x = shared.rx;
+            value.y = shared.ry;
+            value.z = shared.rz;
+            return value;
+        }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": "300",
+                "name": "sa3",
+                "type": "image",
+                "image": "models/sa3.json",
+                "origin": "0 0 0",
+                "scale": [
+                    "script": scaleScript,
+                    "value": "0.003 0.003 0.003"
+                ],
+                "angles": [
+                    "script": anglesScript,
+                    "value": "0 0 0"
+                ],
+                "size": "512 512 0"
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let layer = try #require(document.imageObjects.first)
+
+        #expect(layer.scale == SIMD3<Double>(0.003, 0.003, 0.003))
+        #expect(layer.scaleScript?.script == scaleScript)
+        #expect(layer.scaleScript?.seed == SIMD3<Double>(0.003, 0.003, 0.003))
+        #expect(layer.angles == SIMD3<Double>(0, 0, 0))
+        #expect(layer.anglesScript?.script == anglesScript)
+        #expect(layer.anglesScript?.seed == SIMD3<Double>(0, 0, 0))
+    }
+
+    @Test("Image and text alpha animations are preserved and resolve single-shot fades")
+    func alphaAnimationsPreserved() throws {
+        let alphaFade: [String: Any] = [
+            "value": 1,
+            "animation": [
+                "options": ["fps": 30, "length": 90, "mode": "single"],
+                "c0": [
+                    ["frame": 0, "value": 1],
+                    ["frame": 60, "value": 1],
+                    ["frame": 90, "value": 0]
+                ]
+            ]
+        ]
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                [
+                    "id": "intro-image",
+                    "name": "Intro Image",
+                    "type": "image",
+                    "image": "materials/intro.png",
+                    "alpha": alphaFade
+                ],
+                [
+                    "id": "intro-text",
+                    "name": "Intro Text",
+                    "type": "text",
+                    "text": "By Author",
+                    "alpha": alphaFade
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let image = try #require(document.imageObjects.first)
+        #expect(image.alpha == 1)
+        #expect(image.alphaAnimation != nil)
+        #expect(image.resolvedAlpha(at: 1) == 1)
+        #expect(image.resolvedAlpha(at: 4) == 0)
+
+        let text = try #require(document.textObjects.first)
+        #expect(text.alpha == 1)
+        #expect(text.alphaAnimation != nil)
+        #expect(text.resolvedAlpha(at: 1) == 1)
+        #expect(text.resolvedAlpha(at: 4) == 0)
+    }
+
+    @Test("Text object parses letter spacing with a neutral default")
+    func textObjectParsesLetterSpacing() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                [
+                    "id": "effect-text",
+                    "name": "Effect Text",
+                    "type": "text",
+                    "text": "Glow",
+                    "letterspacing": 1.5
+                ],
+                [
+                    "id": "plain-text",
+                    "name": "Plain Text",
+                    "type": "text",
+                    "text": "Plain"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let effect = try #require(document.textObjects.first { $0.id == "effect-text" })
+        #expect(effect.letterSpacing == 1.5)
+
+        let plain = try #require(document.textObjects.first { $0.id == "plain-text" })
+        #expect(plain.letterSpacing == 0)
+    }
+
+    @Test("Image object inherits parent transform from non-renderable group object")
+    func imageObjectInheritsParentTransform() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                [
+                    "id": 10,
+                    "name": "Group",
+                    "origin": "100 200 3",
+                    "scale": "2 3 4",
+                    "angles": "0 0 1.5707963267948966"
+                ],
+                [
+                    "id": 11,
+                    "name": "Child",
+                    "image": "materials/child.png",
+                    "parent": 10,
+                    "origin": "10 20 5",
+                    "scale": "0.5 2 0.25",
+                    "angles": "0.1 0.2 0.3"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(abs(layer.origin.x - 40) < 0.0001)
+        #expect(abs(layer.origin.y - 220) < 0.0001)
+        #expect(layer.origin.z == 23)
+        #expect(layer.scale == SIMD3<Double>(1, 6, 1))
+        #expect(abs(layer.angles.z - 1.8707963267948966) < 0.0001)
+    }
+
+    @Test("Image object inherits parent X rotation in 3D")
+    func imageObjectInheritsParentXRotationIn3D() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                [
+                    "id": 10,
+                    "name": "Group",
+                    "origin": "1 2 3",
+                    "scale": "2 3 4",
+                    "angles": "1.5707963267948966 0 0"
+                ],
+                [
+                    "id": 11,
+                    "name": "Child",
+                    "image": "materials/child.png",
+                    "parent": 10,
+                    "origin": "0 1 0",
+                    "scale": "1 1 1",
+                    "angles": "0 0 0"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(abs(layer.origin.x - 1) < 0.0001)
+        #expect(abs(layer.origin.y - 2) < 0.0001)
+        #expect(abs(layer.origin.z - 6) < 0.0001)
+        #expect(layer.scale == SIMD3<Double>(2, 3, 4))
+        #expect(abs(layer.angles.x - 1.5707963267948966) < 0.0001)
+    }
+
+    @Test("Property-bound {user,value} scale resolves (not default 1.0) through parent composition")
+    func propertyBoundScaleResolvesThroughParentComposition() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                ["id": 20, "name": "Group", "origin": "0 0 0"],
+                [
+                    "id": 21,
+                    "name": "Audio",
+                    "image": "models/util/composelayer.json",
+                    "parent": 20,
+                    "origin": "0 0 0",
+                    "scale": ["user": "newproperty11", "value": "0.5 0.5 0.5"]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let layer = try #require(document.imageObjects.first)
+        #expect(abs(layer.scale.x - 0.5) < 0.0001)
+        #expect(abs(layer.scale.y - 0.5) < 0.0001)
+    }
+
+    @Test("Uniform scalar scale (a lone number) resolves to all axes, not the 1.0 default")
+    func uniformScalarScaleResolvesToAllAxes() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                ["id": 30, "name": "Group", "origin": "0 0 0"],
+                [
+                    "id": 31,
+                    "name": "Audio",
+                    "image": "models/util/composelayer.json",
+                    "parent": 30,
+                    "origin": "0 0 0",
+                    "scale": 0.5
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let layer = try #require(document.imageObjects.first)
+        #expect(abs(layer.scale.x - 0.5) < 0.0001)
+        #expect(abs(layer.scale.y - 0.5) < 0.0001)
+        #expect(abs(layer.scale.z - 0.5) < 0.0001)
+    }
+
+    @Test("Property-bound visibility {user,value:false} hides the layer (style-combo selection)")
+    func propertyBoundVisibilityHidesLayer() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                [
+                    "id": 269, "name": "斜", "image": "models/util/solidlayer.json",
+                    "origin": "100 100 0",
+                    "visible": ["user": ["condition": "1", "name": "newproperty14"], "value": true]
+                ],
+                [
+                    "id": 488, "name": "底", "image": "models/util/solidlayer.json",
+                    "origin": "100 100 0",
+                    "visible": ["user": ["condition": "2", "name": "newproperty14"], "value": false]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let byID = Dictionary(uniqueKeysWithValues: document.imageObjects.map { ($0.id, $0) })
+        #expect(byID["269"]?.visible == true)
+        #expect(byID["488"]?.visible == false)
+    }
+
+    @Test("Image config and propagation-control metadata are preserved without runtime consumption")
+    func imageConfigAndPropagationMetadataArePreserved() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": 387,
+                "name": "Bar 3",
+                "image": "models/util/composelayer.json",
+                "config": ["passthrough": true],
+                "disablepropagation": true,
+                "copybackground": false
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.copyBackground == false)
+        #expect(layer.config == WPESceneImageConfig(passthrough: true))
+        #expect(layer.disablePropagation == true)
+        #expect(document.diagnostics.contains {
+            $0.message.contains("config.passthrough") && $0.message.contains("awaits L1")
+        })
+        #expect(document.diagnostics.contains {
+            $0.message.contains("disablepropagation") && $0.message.contains("awaits L1")
+        })
+    }
+
+    @Test("Solidlayer with a visible effect and no authored alpha defaults to a transparent base")
+    func solidlayerEffectBaseDefaultsTransparent() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                [
+                    "id": 704,
+                    "name": "纯色",
+                    "image": "models/util/solidlayer.json",
+                    "color": "0 0 0",
+                    "effects": [
+                        [
+                            "file": "effects/workshop/2799421411/audio_responsive_oscilloscope/effect.json",
+                            "visible": true
+                        ]
+                    ]
+                ],
+                [
+                    "id": 705,
+                    "name": "Plain",
+                    "image": "models/util/solidlayer.json",
+                    "color": "0 0 0"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+        let byID = Dictionary(uniqueKeysWithValues: document.imageObjects.map { ($0.id, $0) })
+
+        #expect(byID["704"]?.alpha == 0)
+        #expect(byID["705"]?.alpha == 1)
+    }
+
+    @Test("Solid MDL model objects are parsed as renderable layers")
+    func solidModelObjectsAreRenderableLayers() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                ["id": 10, "name": "Group", "origin": "1 2 3"],
+                [
+                    "id": 11,
+                    "name": "Skybox",
+                    "solid": true,
+                    "model": "models/sky/sky.mdl",
+                    "parent": 10,
+                    "scale": "8 12 8",
+                    "visible": ["user": ["condition": "4", "name": "background"], "value": true]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: ["background": .string("4")])
+
+        let object = try #require(document.imageObjects.first)
+        #expect(object.id == "11")
+        #expect(object.imageRelativePath == "models/sky/sky.mdl")
+        #expect(object.parentObjectID == "10")
+        #expect(object.visible == true)
+        #expect(object.localScale == SIMD3<Double>(8, 12, 8))
+        #expect(object.scale == SIMD3<Double>(8, 12, 8))
+    }
+
+    @Test("Non-rendered solid transform scripts are preserved as transform hosts")
+    func solidTransformScriptsArePreservedAsTransformHosts() throws {
+        let angleScript = """
+        export function update(value) {
+            value.z = engine.runtime;
+            return value;
+        }
+        """
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                [
+                    "id": 20,
+                    "name": "Runtime Group",
+                    "solid": true,
+                    "origin": "4 5 6",
+                    "scale": "2 3 4",
+                    "angles": ["script": angleScript, "value": "0 0 0"]
+                ],
+                [
+                    "id": 21,
+                    "name": "Child",
+                    "image": "models/child.json",
+                    "parent": 20,
+                    "origin": "1 0 0"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let host = try #require(document.transformHostObjects.first)
+        #expect(host.id == "20")
+        #expect(host.localOrigin == SIMD3<Double>(4, 5, 6))
+        #expect(host.localScale == SIMD3<Double>(2, 3, 4))
+        #expect(host.anglesScript?.script == angleScript)
+    }
+
+    private func styleSelectorSceneData() throws -> Data {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                [
+                    "id": 269, "name": "斜", "image": "models/util/solidlayer.json",
+                    "origin": "100 100 0",
+                    "visible": ["user": ["condition": "1", "name": "newproperty14"], "value": true]
+                ],
+                [
+                    "id": 488, "name": "底", "image": "models/util/solidlayer.json",
+                    "origin": "100 100 0",
+                    "visible": ["user": ["condition": "2", "name": "newproperty14"], "value": false]
+                ]
+            ]
+        ]
+        return try JSONSerialization.data(withJSONObject: payload, options: [])
+    }
+
+    @Test("Style selector resolves the live selection (numeric, string, mismatch)")
+    func styleSelectorResolvesLiveSelection() throws {
+        let data = try styleSelectorSceneData()
+
+        let pickBottom = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .number(2)])
+        let bottomByID = Dictionary(uniqueKeysWithValues: pickBottom.imageObjects.map { ($0.id, $0) })
+        #expect(bottomByID["269"]?.visible == false)
+        #expect(bottomByID["488"]?.visible == true)
+
+        let pickBottomString = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .string("2")])
+        let bottomStringByID = Dictionary(uniqueKeysWithValues: pickBottomString.imageObjects.map { ($0.id, $0) })
+        #expect(bottomStringByID["488"]?.visible == true)
+
+        let pickDiagonal = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .number(1)])
+        let diagonalByID = Dictionary(uniqueKeysWithValues: pickDiagonal.imageObjects.map { ($0.id, $0) })
+        #expect(diagonalByID["269"]?.visible == true)
+        #expect(diagonalByID["488"]?.visible == false)
+    }
+
+    @Test("Style selector 'off' value hides every conditional layer")
+    func styleSelectorOffHidesAll() throws {
+        let data = try styleSelectorSceneData()
+        let off = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .number(3)])
+        let byID = Dictionary(uniqueKeysWithValues: off.imageObjects.map { ($0.id, $0) })
+        #expect(byID["269"]?.visible == false)
+        #expect(byID["488"]?.visible == false)
+    }
+
+    @Test("Condition-form visibility records an incremental binding carrying the condition")
+    func styleSelectorBindingIsIncrementalWithCondition() throws {
+        let data = try styleSelectorSceneData()
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .number(1)])
+
+        let bindings = try #require(document.propertyBindings["newproperty14"])
+        #expect(bindings.count == 2)
+        for binding in bindings {
+            #expect(binding.kind == .visible)
+            #expect(binding.action == .incremental)
+            #expect(binding.condition != nil)
+        }
+        #expect(bindings.contains { $0.target == .imageObject(id: "269") && $0.condition == "1" })
+        #expect(bindings.contains { $0.target == .imageObject(id: "488") && $0.condition == "2" })
+    }
+
+    @Test("Switching a style selector is an incremental patch, not a reload")
+    func styleSelectorPatchIsIncremental() throws {
+        let data = try styleSelectorSceneData()
+        let document = try WPESceneDocumentParser.parse(data: data, userValues: ["newproperty14": .number(1)])
+
+        let patch = WPEScenePropertyPatch(
+            bindingsByProperty: document.propertyBindings,
+            oldValues: ["newproperty14": .number(1)],
+            newValues: ["newproperty14": .number(2)]
+        )
+        #expect(!patch.requiresReload)
+        #expect(patch.incrementalBindings.count == 2)
+    }
+
+    @Test("Nested user property without a condition behaves like a simple binding")
+    func nestedUserWithoutConditionActsAsSimpleBinding() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": 7, "name": "Toggle", "image": "models/util/solidlayer.json",
+                "visible": ["user": ["name": "toggle"], "value": true]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let hidden = try WPESceneDocumentParser.parse(data: data, userValues: ["toggle": .bool(false)])
+        #expect(hidden.imageObjects.first?.visible == false)
+        #expect(hidden.propertyBindings["toggle"]?.first?.target == .imageObject(id: "7"))
+    }
+
+    @Test("sceneConditionMatches maps live combo values to a condition literal")
+    func sceneConditionMatchesCoversTypes() {
+        typealias Schema = WallpaperEngineProjectPropertySchema
+        #expect(Schema.sceneConditionMatches(value: .number(2), condition: "2"))
+        #expect(Schema.sceneConditionMatches(value: .string("2"), condition: "2"))
+        #expect(!Schema.sceneConditionMatches(value: .number(1), condition: "2"))
+        #expect(!Schema.sceneConditionMatches(value: .number(2), condition: "1"))
+        #expect(!Schema.sceneConditionMatches(value: nil, condition: "2"))
+    }
+
+    @Test("Child image object adds parent-local Y in scene-up coordinates")
+    func childImageOriginYAddsInSceneUpCoordinates() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [
+                [
+                    "id": 86,
+                    "name": "Parent",
+                    "origin": "1921 938 0"
+                ],
+                [
+                    "id": 106,
+                    "name": "Child",
+                    "image": "models/child.json",
+                    "parent": 86,
+                    "origin": "-607.5 222.5 0"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.origin == SIMD3<Double>(1313.5, 1160.5, 0))
+    }
+
+    @Test("Unsupported object types emit info diagnostics and do not abort the parse")
+    func unsupportedObjectsEmitDiagnostics() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1, "height": 1, "auto": true]],
+            "objects": [
+                ["type": "image", "image": "a.png", "name": "A"],
+                ["type": "particle", "name": "Sparks"],
+                ["type": "text", "name": "Title"],
+                ["type": "sound", "name": "Loop"]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.imageObjects.count == 1)
+        #expect(document.diagnostics.contains(where: { $0.message.contains("Particle") }))
+        #expect(document.diagnostics.contains(where: { $0.message.contains("Text") }))
+        #expect(document.diagnostics.contains(where: { $0.message.contains("Sound") }))
+    }
+
+    @Test("Shape-based object kind detection handles WPE objects without type")
+    func shapeBasedObjectKindDetection() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1, "height": 1, "auto": true]],
+            "objects": [
+                ["name": "BG", "image": "materials/bg.png"],
+                ["name": "Loop", "sound": ["file": "sounds/loop.ogg"]],
+                ["name": "Sparks", "particle": ["emitters": []]],
+                ["name": "Title", "text": "Hello"],
+                ["id": 5, "name": "Lamp", "light": "lpoint", "color": "1 1 1"]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.imageObjects.count == 1)
+        #expect(document.lightObjects.count == 1)
+        #expect(document.lightObjects.first?.type == .point)
+        #expect(document.imageObjects.first?.name == "BG")
+        #expect(document.diagnostics.contains(where: { $0.message.contains("Sound object Loop") }))
+        #expect(document.diagnostics.contains(where: { $0.message.contains("Particle object Sparks") }))
+        #expect(document.diagnostics.contains(where: { $0.message.contains("Text object Title") }))
+        #expect(document.diagnostics.contains(where: { $0.message.contains("Light object Lamp") }))
+        #expect(!document.diagnostics.contains(where: { $0.message.contains("has no image path") }))
+    }
+
+    @Test("shape:quad DIRECTDRAW layer parses as a transparent-base image layer with perspective points")
+    func shapeQuadLayerParsesAsImageWithPoints() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": 96,
+                "name": "光束 - 线性",
+                "shape": "quad",
+                "scale": "3 3 1",
+                "angles": "0 0 0.41952",
+                "effects": [[
+                    "file": "effects/lightshafts/effect.json",
+                    "id": 97,
+                    "visible": true,
+                    "passes": [[
+                        "combos": ["DIRECTDRAW": 1, "RENDERING": 1],
+                        "constantshadervalues": [
+                            "point0": "0.4 0.25",
+                            "point1": "0.6 0.25",
+                            "point2": "0.94451 0.83623",
+                            "point3": "0.09498 0.88795"
+                        ]
+                    ]]
+                ]]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.id == "96")
+        #expect(layer.imageRelativePath == "models/util/solidlayer.json")
+        #expect(layer.alpha == 0)
+        #expect(layer.blendMode == .additive)
+        let points = try #require(layer.shapePoints)
+        #expect(points.count == 4)
+        #expect(points[0] == SIMD2<Double>(0.4, 0.25))
+        #expect(points[1] == SIMD2<Double>(0.6, 0.25))
+        #expect(points[2] == SIMD2<Double>(0.94451, 0.83623))
+        #expect(points[3] == SIMD2<Double>(0.09498, 0.88795))
+    }
+
+    @Test("shape:quad layer without perspective points stays a normal-blend surface")
+    func shapeQuadWithoutPointsFallsBack() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": 5,
+                "name": "Bare",
+                "shape": "quad"
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.imageRelativePath == "models/util/solidlayer.json")
+        #expect(layer.shapePoints == nil)
+        #expect(layer.blendMode == .normal)
+        #expect(layer.alpha == 0)
+    }
+
+    @Test("shape:quad with an invisible effect still keeps a transparent base")
+    func shapeQuadInvisibleEffectStaysTransparent() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": 7,
+                "name": "Bare beam",
+                "shape": "quad",
+                "effects": [[
+                    "file": "effects/lightshafts/effect.json",
+                    "visible": false,
+                    "passes": [["combos": ["DIRECTDRAW": 1]]]
+                ]]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.alpha == 0)
+        #expect(layer.shapePoints == nil)
+    }
+
+    @Test("Ambiguous WPE object emits warning and preserves renderable image layer")
+    func ambiguousObjectEmitsWarningAndPreservesImage() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1, "height": 1, "auto": true]],
+            "objects": [[
+                "name": "ImageWithSound",
+                "image": "materials/bg.png",
+                "sound": ["file": "sounds/loop.ogg"]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.imageObjects.count == 1)
+        #expect(document.diagnostics.contains(where: {
+            $0.severity == .warning && $0.message.contains("Ambiguous object ImageWithSound")
+        }))
+    }
+
+    @Test(".tex texture path emits a warning diagnostic")
+    func texTextureEmitsWarning() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1, "height": 1, "auto": true]],
+            "objects": [[
+                "type": "image",
+                "image": "materials/sky.tex",
+                "name": "Sky"
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        #expect(document.imageObjects.first?.imageRelativePath == "materials/sky.tex")
+        #expect(document.diagnostics.contains(where: { $0.severity == .warning && $0.message.contains(".tex") }))
+    }
+
+    @Test("Image effects preserve file, pass overrides, constants, textures, material, and animation metadata")
+    func imageEffectsPreserveRenderMetadata() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [[
+                "id": "layer1",
+                "name": "Foreground",
+                "type": "image",
+                "image": "models/foreground.json",
+                "material": "materials/foreground.json",
+                "effects": [[
+                    "id": 7,
+                    "name": "Shake",
+                    "file": "effects/shake/effect.json",
+                    "visible": true,
+                    "passes": [[
+                        "id": 2,
+                        "combos": ["MASK": 1],
+                        "constantshadervalues": [
+                            "speed": 0.59,
+                            "strength": 0.133,
+                            "bounds": "0.1 0.2 0.3 0.4"
+                        ],
+                        "textures": [NSNull(), "masks/shake_mask"]
+                    ]]
+                ]],
+                "animationlayers": [[
+                    "id": 3,
+                    "rate": 24,
+                    "visible": true,
+                    "blend": 0.5,
+                    "additive": true,
+                    "animation": 9
+                ]]
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.materialRelativePath == "materials/foreground.json")
+        #expect(layer.effects.count == 1)
+        let effect = try #require(layer.effects.first)
+        #expect(effect.id == "7")
+        #expect(effect.name == "Shake")
+        #expect(effect.fileRelativePath == "effects/shake/effect.json")
+        #expect(effect.visible == true)
+        #expect(effect.isShakeEffect)
+
+        let pass = try #require(effect.passOverrides.first)
+        #expect(pass.id == 2)
+        #expect(pass.combos["MASK"] == 1)
+        #expect(pass.constants["speed"]?.numberValue == 0.59)
+        #expect(pass.constants["strength"]?.numberValue == 0.133)
+        #expect(pass.constants["bounds"]?.vectorValue == [0.1, 0.2, 0.3, 0.4])
+        #expect(pass.textures[1] == "masks/shake_mask")
+
+        let animation = try #require(layer.animationLayers.first)
+        #expect(animation.id == 3)
+        #expect(animation.rate == 24)
+        #expect(animation.visible == true)
+        #expect(animation.blend == 0.5)
+        #expect(animation.additive == true)
+        #expect(animation.animation == 9)
+    }
+
+    @Test("Parses image parallax depth from scene object")
+    func parsesImageParallaxDepth() throws {
+        let json = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 100, "height": 50, "auto": true } },
+          "objects": [{
+            "id": "layer",
+            "name": "Layer",
+            "type": "image",
+            "image": "materials/base.png",
+            "parallaxDepth": 0.125
+          }]
+        }
+        """
+
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        let object = try #require(document.imageObjects.first)
+
+        #expect(object.parallaxDepth == SIMD2<Double>(0.125, 0.125))
+    }
+
+    @Test("Particle object preserves instance overrides")
+    func particleObjectPreservesInstanceOverrides() throws {
+        let json = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 100, "height": 50, "auto": true } },
+          "objects": [{
+            "id": 17,
+            "name": "Leaves",
+            "type": "particle",
+            "particle": "particles/presets/leaves2.json",
+            "instanceoverride": {
+              "count": 0.2,
+              "rate": 0.7,
+              "lifetime": 1.77,
+              "size": 0.69,
+              "speed": 1.32,
+              "alpha": 0.03,
+              "brightness": 4.0,
+              "colorn": "0.75294 0.75294 0.75294"
+            }
+          }]
+        }
+        """
+
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        let object = try #require(document.particleObjects.first)
+        let override = try #require(object.instanceOverride)
+
+        #expect(override.count == 0.2)
+        #expect(override.rate == 0.7)
+        #expect(override.lifetime == 1.77)
+        #expect(override.size == 0.69)
+        #expect(override.speed == 1.32)
+        #expect(override.alpha == 0.03)
+        #expect(override.brightness == 4.0)
+        let color = try #require(override.color)
+        #expect(abs(color.x - 192) < 0.001)
+        #expect(abs(color.y - 192) < 0.001)
+        #expect(abs(color.z - 192) < 0.001)
+    }
+
+    @Test("Particle object parses generic brightness (default 1)")
+    func particleObjectParsesBrightness() throws {
+        let json = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 100, "height": 50, "auto": true } },
+          "objects": [
+            {
+              "id": 46,
+              "name": "Embers",
+              "type": "particle",
+              "particle": "particles/presets/wildfire.json",
+              "brightness": 2.0
+            },
+            {
+              "id": 47,
+              "name": "Dust",
+              "type": "particle",
+              "particle": "particles/presets/dust.json"
+            }
+          ]
+        }
+        """
+
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        #expect(document.particleObjects.count == 2)
+        let embers = try #require(document.particleObjects.first { $0.id == "46" })
+        #expect(embers.brightness == 2.0)
+        let dust = try #require(document.particleObjects.first { $0.id == "47" })
+        #expect(dust.brightness == 1.0)
+    }
+
+    @Test("Text object parses generic brightness (wildfire sample) and preserves it through withLiveText")
+    func textObjectParsesBrightness() throws {
+        let json = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 100, "height": 50, "auto": true } },
+          "objects": [
+            {
+              "id": 101,
+              "name": "Clock",
+              "type": "text",
+              "text": "12:34",
+              "brightness": 2.39,
+              "color": "1 1 1"
+            },
+            {
+              "id": 102,
+              "name": "Label",
+              "type": "text",
+              "text": "plain"
+            }
+          ]
+        }
+        """
+
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        #expect(document.textObjects.count == 2)
+        let clock = try #require(document.textObjects.first { $0.id == "101" })
+        #expect(abs(clock.brightness - 2.39) < 0.0001)
+        let label = try #require(document.textObjects.first { $0.id == "102" })
+        #expect(label.brightness == 1.0)
+        let live = clock.withLiveText("12:35", alpha: 0.5)
+        #expect(abs(live.brightness - 2.39) < 0.0001)
+    }
+
+    @Test("Text object parses WPE offscreen-background fields")
+    func textObjectParsesBackgroundFields() throws {
+        let json = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 100, "height": 50, "auto": true } },
+          "objects": [{
+            "id": 103,
+            "name": "Background Text",
+            "type": "text",
+            "text": "Hello",
+            "copybackground": true,
+            "opaquebackground": true,
+            "backgroundcolor": "0.1 0.2 0.3",
+            "backgroundbrightness": 1.5
+          }]
+        }
+        """
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        let object = try #require(document.textObjects.first)
+        #expect(object.copyBackground)
+        #expect(object.opaqueBackground)
+        #expect(object.backgroundColor == SIMD3<Double>(0.1, 0.2, 0.3))
+        #expect(object.backgroundBrightness == 1.5)
+        let live = object.withLiveText("World", alpha: 1)
+        #expect(live.copyBackground && live.opaqueBackground)
+        #expect(live.backgroundColor == object.backgroundColor)
+    }
+
+    @Test("Particle object inherits parent transform from group object")
+    func particleObjectInheritsParentTransform() throws {
+        let json = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 100, "height": 50, "auto": true } },
+          "objects": [
+            {
+              "id": "group",
+              "origin": "1920 1080 0",
+              "scale": "2 2 1"
+            },
+            {
+              "id": "leaves",
+              "type": "particle",
+              "particle": "particles/presets/leaves2.json",
+              "parent": "group",
+              "origin": "-10 15 0",
+              "scale": "0.5 0.25 1"
+            }
+          ]
+        }
+        """
+
+        let document = try WPESceneDocumentParser.parse(data: Data(json.utf8))
+        let object = try #require(document.particleObjects.first)
+
+        #expect(object.origin == SIMD3<Double>(1900, 1110, 0))
+        #expect(object.scale == SIMD3<Double>(1, 0.5, 1))
+    }
+}
