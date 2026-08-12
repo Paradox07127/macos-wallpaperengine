@@ -1,0 +1,430 @@
+#if !LITE_BUILD
+import AppKit
+import LiveWallpaperCore
+import SwiftUI
+
+/// Steam does not return remaining quota, so we can only truthfully show an "issued from this Mac today" count — never a "remaining" figure.
+enum WorkshopRequestCounter {
+    private static let countKey = "loomscreen.workshop.requestsToday.count"
+    private static let dateKey = "loomscreen.workshop.requestsToday.date"
+
+    static func todayString() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
+    static func countForToday(defaults: UserDefaults = .appScoped()) -> Int {
+        guard defaults.string(forKey: dateKey) == todayString() else { return 0 }
+        return defaults.integer(forKey: countKey)
+    }
+
+    static func increment(defaults: UserDefaults = .appScoped()) {
+        let today = todayString()
+        if defaults.string(forKey: dateKey) == today {
+            defaults.set(defaults.integer(forKey: countKey) + 1, forKey: countKey)
+        } else {
+            defaults.set(today, forKey: dateKey)
+            defaults.set(1, forKey: countKey)
+        }
+    }
+}
+
+/// Filter ribbon for the Workshop (online) tab.
+struct WorkshopBrowseFilterRibbon: View {
+    let viewModel: WorkshopBrowseViewModel
+    let hasWebAPIKey: Bool
+
+    @State private var isFilterPanelExpanded = false
+    @FocusState private var isSearchFocused: Bool
+    @State private var filterRowsHeight: CGFloat = 240
+
+    /// Cap on the chip area; beyond it the rows scroll internally rather than growing the ribbon unbounded — at narrow widths Genre wraps onto many rows that would otherwise overrun the layout.
+    private static let maxRowsHeight: CGFloat = 240
+
+    var body: some View {
+        VStack(spacing: 0) {
+            topRow
+                .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
+                .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
+
+            if isFilterPanelExpanded {
+                filterPanel
+                    .disabled(controlsDisabled)
+            }
+        }
+    }
+
+    // MARK: - Top row
+
+    private var topRow: some View {
+        HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+            searchField
+
+            WorkshopFiltersToggle(
+                isExpanded: $isFilterPanelExpanded,
+                activeFilterCount: activeFilterCount,
+                isDisabled: controlsDisabled
+            )
+
+            Spacer(minLength: DesignTokens.Spacing.sm)
+
+            sortMenu
+            timeFrameMenu
+        }
+    }
+
+    private var sortMenu: some View {
+        Picker("Sort", selection: Binding(
+            get: { viewModel.preferredSort },
+            set: { viewModel.updateSort($0) }
+        )) {
+            ForEach(Self.sortOptions) { option in
+                Text(Self.sortTitle(option)).tag(option)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .controlSize(.small)
+        .fixedSize()
+        .disabled(controlsDisabled)
+        .help(Text("Sort criteria"))
+    }
+
+    private var timeFrameMenu: some View {
+        Picker("Time Frame", selection: Binding(
+            get: { timeFrameSelection },
+            set: { viewModel.updateTimeFrame($0) }
+        )) {
+            ForEach(WorkshopTimeFrame.allCases) { option in
+                Text(Self.timeFrameTitle(option)).tag(option)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .controlSize(.small)
+        .fixedSize()
+        .disabled(controlsDisabled || !timeFrameApplies)
+        .help(Text("Time frame applies to Most Popular"))
+    }
+
+    // MARK: - Expanding filter panel
+
+    private var filterPanel: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                    WorkshopFilterRow("Type") {
+                        HStack(spacing: 6) {
+                            ForEach(WorkshopContentTypeFilter.selectableCases) { type in
+                                WorkshopFilterChip(
+                                    title: Text(type.displayName),
+                                    isSelected: viewModel.selectedTypes.contains(type),
+                                    onIsolate: { viewModel.isolateType(type) }
+                                ) {
+                                    viewModel.toggleType(type)
+                                }
+                            }
+                        }
+                    }
+
+                    WorkshopFilterRow("Maturity") {
+                        HStack(spacing: 6) {
+                            ForEach(WorkshopAgeRatingFilter.allCases) { rating in
+                                WorkshopFilterChip(
+                                    title: Text(verbatim: rating.displayName),
+                                    isSelected: viewModel.selectedAgeRatings.contains(rating),
+                                    onIsolate: { viewModel.isolateAgeRating(rating) }
+                                ) {
+                                    viewModel.toggleAgeRating(rating)
+                                }
+                            }
+                        }
+                    }
+
+                    WorkshopFilterRow("Resolution") {
+                        chipFlow {
+                            ForEach(WorkshopResolutionFilter.selectableCases) { resolution in
+                                WorkshopFilterChip(
+                                    title: Text(verbatim: resolution.displayName),
+                                    isSelected: viewModel.selectedResolutions.contains(resolution),
+                                    onIsolate: { viewModel.isolateResolution(resolution) }
+                                ) {
+                                    viewModel.toggleResolution(resolution)
+                                }
+                            }
+                        }
+                    }
+
+                    WorkshopFilterRow("Genre") {
+                        chipFlow {
+                            ForEach(WorkshopGenre.allTags, id: \.self) { tag in
+                                WorkshopFilterChip(
+                                    title: Text(verbatim: tag),
+                                    isSelected: viewModel.selectedGenres.contains(tag),
+                                    onIsolate: { viewModel.isolateGenre(tag) }
+                                ) {
+                                    viewModel.toggleGenre(tag)
+                                }
+                            }
+                        }
+                    }
+                }
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: FilterRowsHeightKey.self, value: geo.size.height)
+                    }
+                )
+            }
+            .frame(height: min(filterRowsHeight, Self.maxRowsHeight))
+            .onPreferenceChange(FilterRowsHeightKey.self) { filterRowsHeight = $0 }
+
+            if activeFilterCount > 0 {
+                Button("Clear filters") { viewModel.resetFilters() }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .padding(.leading, 74 + DesignTokens.Spacing.sm)
+            }
+        }
+        .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
+        .padding(.bottom, DesignTokens.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    /// Wrapping chip row (replaces a horizontal scroll that hid most options
+    /// off-screen) — every tag stays visible across as many lines as it takes.
+    private func chipFlow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        WorkshopChipFlow(spacing: 6, lineSpacing: 6) {
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Search / refresh / status
+
+    private var searchField: some View {
+        HStack(spacing: 7) {
+            // Typing auto-searches after the view-model's debounce; clicking the
+            // glass or pressing Return skips the wait and runs it now.
+            Button {
+                Task { await viewModel.submitSearch() }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(controlsDisabled)
+            .help(Text("Search"))
+
+            TextField("Search the Workshop", text: Binding(
+                get: { viewModel.searchInput },
+                set: { viewModel.searchInput = $0 }
+            ))
+            .textFieldStyle(.plain)
+            .font(DesignTokens.Typography.body)
+            .focused($isSearchFocused)
+            .disabled(controlsDisabled)
+            .onSubmit { Task { await viewModel.submitSearch() } }
+
+            if !viewModel.searchInput.isEmpty {
+                Button {
+                    Task { await viewModel.clearSearch() }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(Text("Clear search"))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(
+            minWidth: DesignTokens.LibraryFilterBar.searchMinWidth,
+            idealWidth: DesignTokens.LibraryFilterBar.searchIdealWidth,
+            maxWidth: DesignTokens.LibraryFilterBar.searchMaxWidth
+        )
+        .adaptiveGlassSurface(.capsule, interactive: true)
+        .overlay {
+            if isSearchFocused {
+                Capsule().strokeBorder(Color.accentColor, lineWidth: 1.5)
+            }
+        }
+        .opacity(controlsDisabled ? 0.5 : 1)
+    }
+
+    // MARK: - Helpers
+
+    private var controlsDisabled: Bool {
+        !hasWebAPIKey || viewModel.isRateLimited
+    }
+
+    /// Count of categories narrowing results — non-empty AND a proper subset
+    /// (selecting all == no filter). Surfaced as the Filters badge.
+    private var activeFilterCount: Int {
+        var count = 0
+        if WorkshopFilterMath.isNarrowing(viewModel.selectedTypes, total: WorkshopContentTypeFilter.selectableCases.count) { count += 1 }
+        if WorkshopFilterMath.isNarrowing(viewModel.selectedAgeRatings, total: WorkshopAgeRatingFilter.allCases.count) { count += 1 }
+        if WorkshopFilterMath.isNarrowing(viewModel.selectedResolutions, total: WorkshopResolutionFilter.selectableCases.count) { count += 1 }
+        if WorkshopFilterMath.isNarrowing(viewModel.selectedGenres, total: WorkshopGenre.allTags.count) { count += 1 }
+        return count
+    }
+
+    private var timeFrameApplies: Bool {
+        viewModel.preferredSort == .mostPopular
+    }
+
+    private var timeFrameSelection: WorkshopTimeFrame {
+        timeFrameApplies ? viewModel.preferredTimeFrame : .allTime
+    }
+
+    // MARK: - Sort / time frame options
+
+    private static let sortOptions: [WorkshopSortMode] = [
+        .mostPopular, .topRated, .newest, .lastUpdated, .mostSubscribed
+    ]
+
+    private static func sortTitle(_ sort: WorkshopSortMode) -> LocalizedStringKey {
+        switch sort {
+        case .mostPopular: return "Most Popular"
+        case .topRated: return "Top Rated All Time"
+        case .newest: return "Most Recent"
+        case .lastUpdated: return "Last Updated"
+        case .mostSubscribed: return "Total Unique Subscribers"
+        case .search: return "Search"
+        }
+    }
+
+    private static func timeFrameTitle(_ timeFrame: WorkshopTimeFrame) -> LocalizedStringKey {
+        switch timeFrame {
+        case .today: return "Today"
+        case .oneWeek: return "One Week"
+        case .thirtyDays: return "Thirty Days"
+        case .threeMonths: return "Three Months"
+        case .sixMonths: return "Six Months"
+        case .oneYear: return "One Year"
+        case .allTime: return "All Time"
+        }
+    }
+}
+
+/// Filter chip in the *deselect-to-hide* model: every option is selected (shown) by default, and tapping a chip deselects it to exclude that tag.
+struct WorkshopFilterChip: View {
+    let title: Text
+    let isSelected: Bool
+    /// Option-click: collapse the category to just this option. `nil` disables
+    /// the shortcut (and its hint).
+    var onIsolate: (() -> Void)?
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            if let onIsolate, NSEvent.modifierFlags.contains(.option) {
+                onIsolate()
+            } else {
+                action()
+            }
+        } label: {
+            title
+                .font(DesignTokens.Typography.caption)
+                .lineLimit(1)
+                .strikethrough(!isSelected, color: .secondary)
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                .opacity(isSelected ? 1 : 0.5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .modifier(WorkshopChipBackground(isSelected: isSelected))
+        }
+        .buttonStyle(.plain)
+        .help(onIsolate != nil
+            ? Text("Click to show/hide · Option-click to show only this")
+            : Text(""))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityValue(isSelected ? Text("Shown") : Text("Hidden"))
+    }
+}
+
+/// Selected chips get a tinted Liquid Glass capsule with an accent ring (so selection stays unmistakable); deselected chips keep a quiet flat fill.
+private struct WorkshopChipBackground: ViewModifier {
+    let isSelected: Bool
+
+    func body(content: Content) -> some View {
+        if isSelected {
+            content
+                .adaptiveGlassSurface(.capsule, tint: .accentColor, interactive: true)
+                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1))
+        } else {
+            content
+                .background(Capsule().fill(Color.primary.opacity(0.04)))
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+        }
+    }
+}
+
+/// Carries the chip rows' natural height up so the panel sizes its scroll to
+/// content (capped at `maxRowsHeight`).
+private struct FilterRowsHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Minimal flow layout: lays chips left-to-right and wraps to a new line when the next one would overflow the proposed width, so a long tag list stays fully visible (vs a horizontal scroll that hides most of it).
+private struct WorkshopChipFlow: Layout {
+    var spacing: CGFloat = 6
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        let rows = computeRows(maxWidth: maxWidth, subviews: subviews)
+        let height = rows.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(0, rows.count - 1))
+        let widest = rows.map(\.width).max() ?? 0
+        return CGSize(width: maxWidth == .infinity ? widest : min(widest, maxWidth), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        let rows = computeRows(maxWidth: bounds.width, subviews: subviews)
+        var y = bounds.minY
+        for row in rows {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + lineSpacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func computeRows(maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let projected = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            if projected > maxWidth, !current.indices.isEmpty {
+                rows.append(current)
+                current = Row(indices: [index], width: size.width, height: size.height)
+            } else {
+                if !current.indices.isEmpty { current.width += spacing }
+                current.indices.append(index)
+                current.width += size.width
+                current.height = max(current.height, size.height)
+            }
+        }
+        if !current.indices.isEmpty { rows.append(current) }
+        return rows
+    }
+}
+#endif

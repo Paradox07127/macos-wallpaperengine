@@ -1,0 +1,367 @@
+#if !LITE_BUILD
+    import Foundation
+    @testable import LiveWallpaper
+    import Testing
+
+    @Suite("AF-12: Doctor operation and asset lifecycle", .serialized)
+    struct SteamCMDDoctorLifecycleTests {
+        @Test("operation owner serializes generations and rejects stale completion")
+        func operationGenerationsAreExclusive() async throws {
+            let coordinator = SteamCMDDoctorOperationCoordinator()
+            let firstStarted = AF12Latch()
+            let releaseFirst = AF12Latch()
+            let secondStarted = AF12Latch()
+            let releaseSecond = AF12Latch()
+            let secondLeaseBox = AF12LeaseBox()
+
+            let firstTask = Task {
+                try await coordinator.withOperation(.appUpdate) { lease in
+                    await firstStarted.signal()
+                    await releaseFirst.wait()
+                    return lease
+                }
+            }
+            await firstStarted.wait()
+
+            let secondTask = Task {
+                try await coordinator.withOperation(.workshopDownload) { lease in
+                    await secondLeaseBox.set(lease)
+                    await secondStarted.signal()
+                    await releaseSecond.wait()
+                    return lease
+                }
+            }
+            for _ in 0 ..< 20 {
+                await Task.yield()
+            }
+            #expect(await !(secondStarted.isSignalled))
+
+            await releaseFirst.signal()
+            let firstLease = try await firstTask.value
+            await secondStarted.wait()
+            let storedSecondLease = await secondLeaseBox.value
+            let activeSecondLease = try #require(storedSecondLease)
+            #expect(activeSecondLease.generation == firstLease.generation + 1)
+            #expect(await coordinator.isCurrent(activeSecondLease))
+            #expect(await !(coordinator.isCurrent(firstLease)))
+            await releaseSecond.signal()
+            let secondLease = try await secondTask.value
+            #expect(secondLease.generation == firstLease.generation + 1)
+            #expect(await !(coordinator.isCurrent(secondLease)))
+        }
+
+        @Test("cancelled waiter consumes no generation and successor can enter")
+        func cancelledWaiterDoesNotPublish() async throws {
+            let coordinator = SteamCMDDoctorOperationCoordinator()
+            let started = AF12Latch()
+            let release = AF12Latch()
+
+            let first = Task {
+                try await coordinator.withOperation(.appUpdate) { lease in
+                    await started.signal()
+                    await release.wait()
+                    return lease
+                }
+            }
+            await started.wait()
+            let cancelled = Task {
+                try await coordinator.withOperation(.workshopDownload) { $0 }
+            }
+            cancelled.cancel()
+            do {
+                _ = try await cancelled.value
+                Issue.record("cancelled operation unexpectedly entered")
+            } catch is CancellationError {
+            }
+
+            await release.signal()
+            let firstLease = try await first.value
+            let successor = try await coordinator.withOperation(.assetsMutation) { $0 }
+            #expect(successor.generation == firstLease.generation + 1)
+        }
+
+        @Test("cancelled publisher retains the FIFO until durable state precedes its successor")
+        func cancelledPublisherCompletesBeforeSuccessor() async throws {
+            let coordinator = SteamCMDDoctorOperationCoordinator()
+            let commitStarted = AF12Latch()
+            let allowPublication = AF12Latch()
+            let successorStarted = AF12Latch()
+            let durableState = AF12StringBox()
+
+            let publisher = Task {
+                try await coordinator.withOperation(.appUpdate) { _ in
+                    await commitStarted.signal()
+                    await allowPublication.wait()
+                    await durableState.set("published-and-marked")
+                }
+            }
+            await commitStarted.wait()
+            publisher.cancel()
+
+            let successor = Task {
+                try await coordinator.withOperation(.appUpdate) { _ in
+                    await successorStarted.signal()
+                    return await durableState.value
+                }
+            }
+            for _ in 0 ..< 20 {
+                await Task.yield()
+            }
+            #expect(await !(successorStarted.isSignalled))
+
+            await allowPublication.signal()
+            try await publisher.value
+            #expect(try await successor.value == "published-and-marked")
+        }
+
+        @Test("same operation inherits its lease while cross-kind nesting fails closed")
+        func nestedOperationRules() async throws {
+            let coordinator = SteamCMDDoctorOperationCoordinator()
+            let inherited = try await coordinator.withOperation(.appUpdate) { outer in
+                try await coordinator.withOperation(.appUpdate, inheriting: outer) { inner in
+                    #expect(inner == outer)
+                    return inner
+                }
+            }
+            #expect(inherited.generation == 1)
+
+            do {
+                _ = try await coordinator.withOperation(.appUpdate) { outer in
+                    try await coordinator.withOperation(.workshopDownload, inheriting: outer) { $0 }
+                }
+                Issue.record("cross-kind nested operation unexpectedly entered")
+            } catch let error as SteamCMDDoctorOperationError {
+                #expect(error == .nestedConflict(active: .appUpdate, requested: .workshopDownload))
+            }
+        }
+
+        /// The inspection now happens in the connector, so there is no checker to
+        /// inject; the rule it fed is tested directly instead.
+        private static func inspection(
+            sha: String?,
+            team: String? = "MXGJJ98X76",
+            valid: Bool = true
+        ) -> SteamCMDBinaryInspection {
+            SteamCMDBinaryInspection(
+                exists: sha != nil,
+                sha256: sha,
+                signatureValid: valid,
+                teamIdentifier: team,
+                isHardenedRuntime: true,
+                isQuarantined: false,
+                unavailableReason: nil
+            )
+        }
+
+        @Test("An unchanged SHA is trusted from cache without re-examining the signature")
+        func unchangedBinarySkipsReverification() {
+            let decision = SteamCMDDoctorService.evaluateTrust(
+                inspection: Self.inspection(sha: "identity-1"),
+                cachedSHA256: "identity-1"
+            )
+            #expect(decision.isTrusted)
+            #expect(!decision.didReverify)
+            #expect(decision.verifiedSHA256 == "identity-1")
+        }
+
+        /// A changed SHA is normal (SteamCMD self-updates) — but it must re-earn
+        /// trust, and an attacker-signed replacement must not.
+        @Test("A changed SHA is re-verified, and a foreign team identifier is refused")
+        func changedBinaryIsReverifiedAgainstValve() {
+            let valve = SteamCMDDoctorService.evaluateTrust(
+                inspection: Self.inspection(sha: "identity-2"),
+                cachedSHA256: "identity-1"
+            )
+            #expect(valve.isTrusted)
+            #expect(valve.didReverify)
+            #expect(valve.verifiedSHA256 == "identity-2")
+
+            let attacker = SteamCMDDoctorService.evaluateTrust(
+                inspection: Self.inspection(sha: "identity-2", team: "ATTACKER"),
+                cachedSHA256: "identity-1"
+            )
+            #expect(!attacker.isTrusted)
+            #expect(attacker.verifiedSHA256 == nil, "a refused binary must not stay cached as verified")
+
+            let unsigned = SteamCMDDoctorService.evaluateTrust(
+                inspection: Self.inspection(sha: "identity-2", valid: false),
+                cachedSHA256: "identity-1"
+            )
+            #expect(!unsigned.isTrusted)
+        }
+
+        @Test("A binary the connector could not read is never trusted")
+        func unreadableBinaryIsRefused() {
+            let decision = SteamCMDDoctorService.evaluateTrust(
+                inspection: .missing,
+                cachedSHA256: "identity-1"
+            )
+            #expect(!decision.isTrusted)
+            #expect(decision.verifiedSHA256 == nil, "a binary that is gone must not stay cached as verified")
+        }
+
+        /// "I was too busy to look" is not "the binary is bad". The two shared one
+        /// reply shape until 2026-08-02, which made a queued-out inspection read
+        /// as a deleted binary and threw away the cached trust with it.
+        @Test("A connector that gave up waiting is not a verdict about the binary")
+        func unavailableInspectionKeepsCachedTrust() {
+            let busy = SteamCMDBinaryInspection.unavailable("expired while queued")
+            #expect(!busy.exists, "the flag stays false; the reason is what distinguishes it")
+
+            let decision = SteamCMDDoctorService.evaluateTrust(
+                inspection: busy,
+                cachedSHA256: "identity-1"
+            )
+            #expect(!decision.isTrusted, "no verdict means we cannot proceed this round")
+            #expect(
+                decision.verifiedSHA256 == "identity-1",
+                "the cache must survive: nothing said the binary changed"
+            )
+            #expect(!decision.didReverify)
+
+            // The other direction: a real absence still clears it.
+            #expect(SteamCMDBinaryInspection.missing.unavailableReason == nil)
+        }
+
+        /// The argv now lives in the connector and cannot be observed from here,
+        /// but the reading of what codesign prints is shared — and that is the
+        /// part that decides trust.
+        @Test("codesign output parses, and a timed-out verify never reads as signed")
+        func codesignVerdictParsing() {
+            let display = "TeamIdentifier=MXGJJ98X76\nflags=0x10000(runtime)"
+            #expect(SteamCMDCodeSignatureParser.teamIdentifier(in: display) == "MXGJJ98X76")
+            #expect(SteamCMDCodeSignatureParser.isHardenedRuntime(in: display))
+            #expect(SteamCMDCodeSignatureParser.teamIdentifier(in: "no team here") == nil)
+
+            #expect(SteamCMDCodeSignatureParser.signatureValid(verifyExitCode: 0, timedOut: false))
+            // Fail-closed: exit 0 on a run that never finished is not a verdict.
+            #expect(!SteamCMDCodeSignatureParser.signatureValid(verifyExitCode: 0, timedOut: true))
+            #expect(!SteamCMDCodeSignatureParser.signatureValid(verifyExitCode: 1, timedOut: false))
+        }
+
+        /// The replace-while-queued window, run against a file that really
+        /// changes. The gate moved into the connector with the spawn; this drives
+        /// the same function the connector calls immediately before `Process.run`.
+        @Test("A binary replaced after Doctor trusted it is refused execution")
+        func binaryReplacedAfterTrustIsRefused() throws {
+            let fm = FileManager.default
+            let root = temporaryRoot("binary-replacement")
+            defer { try? fm.removeItem(at: root) }
+            try fm.createDirectory(at: root, withIntermediateDirectories: true)
+            let binary = root.appendingPathComponent("steamcmd")
+            try Data("trusted-version".utf8).write(to: binary)
+
+            let path = binary.resolvingSymlinksInPath().path(percentEncoded: false)
+            let trusted = try #require(SteamCMDBinaryDigest.sha256(ofFileAt: path))
+            #expect(SteamCMDBinaryDigest.mayExecute(path: path, expectedSHA256: trusted))
+
+            try Data("attacker-version".utf8).write(to: binary, options: .atomic)
+            #expect(!SteamCMDBinaryDigest.mayExecute(path: path, expectedSHA256: trusted))
+
+            // A vanished binary is refused, not treated as unchanged.
+            try fm.removeItem(at: binary)
+            #expect(!SteamCMDBinaryDigest.mayExecute(path: path, expectedSHA256: trusted))
+        }
+
+        @Test("The probe argv gate passes exactly the shapes the Doctor sends")
+        func probeArgumentAllowlistAcceptsDoctorShapes() {
+            #expect(SteamCMDProbeArgumentPolicy.isAllowed(["+quit"]))
+            #expect(SteamCMDProbeArgumentPolicy.isAllowed(["+login", "anonymous", "+quit"]))
+            #expect(SteamCMDProbeArgumentPolicy.isAllowed(["+login", "anonymous"]))
+        }
+
+        @Test("Injection-shaped probe argv is refused")
+        func probeArgumentAllowlistRefusesInjection() {
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed([]))
+            // Redirecting the install target is a write, not a diagnostic.
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+force_install_dir", "/tmp/x", "+quit"]))
+            // Scripts execute arbitrary directive sequences from a file.
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+runscript", "/tmp/evil.txt"]))
+            // The probe channel must never log into a real account.
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+login", "realuser", "+quit"]))
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+login"]))
+            // Bare words and shell-looking tokens are not SteamCMD directives.
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["rm", "-rf", "/"]))
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+quit", ";", "echo", "pwned"]))
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+quit", "+app_update", "431960"]))
+            #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+@ShutdownOnFailedCommand", "1", "+quit"]))
+        }
+
+        private func temporaryRoot(_ label: String) -> URL {
+            FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+                .appendingPathComponent("AF12-Lifecycle-\(label)-\(UUID().uuidString)", isDirectory: true)
+        }
+
+        private func managedRoot(under parent: URL, label: String) -> URL {
+            parent.appendingPathComponent(label, isDirectory: true)
+                .appendingPathComponent("common/wallpaper_engine", isDirectory: true)
+        }
+
+        private func seedAssets(_ value: String?, slot: String, managed: URL) throws {
+            guard let value else { return }
+            let directory = managed.appendingPathComponent(slot, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data(value.utf8).write(to: directory.appendingPathComponent("marker"))
+        }
+
+        private func marker(in directory: URL) throws -> String? {
+            guard FileManager.default.fileExists(atPath: directory.path) else { return nil }
+            return try String(
+                contentsOf: directory.appendingPathComponent("marker"),
+                encoding: .utf8
+            )
+        }
+    }
+
+    private actor AF12Latch {
+        private var signalled = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        var isSignalled: Bool {
+            signalled
+        }
+
+        func signal() {
+            guard !signalled else { return }
+            signalled = true
+            let current = waiters
+            waiters.removeAll(keepingCapacity: false)
+            current.forEach { $0.resume() }
+        }
+
+        func wait() async {
+            if signalled {
+                return
+            }
+            await withCheckedContinuation { continuation in
+                waiters.append(continuation)
+            }
+        }
+    }
+
+    private actor AF12LeaseBox {
+        private(set) var value: SteamCMDDoctorOperationLease?
+
+        func set(_ lease: SteamCMDDoctorOperationLease) {
+            value = lease
+        }
+    }
+
+    private actor AF12StringBox {
+        private(set) var value: String?
+
+        func set(_ value: String) {
+            self.value = value
+        }
+    }
+
+    private final class AF12FailingRemovalFileManager: FileManager, @unchecked Sendable {
+        override func removeItem(at _: URL) throws {
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+
+    private func af12IsMainThread() -> Bool {
+        Thread.isMainThread
+    }
+#endif

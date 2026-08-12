@@ -1,0 +1,328 @@
+import Testing
+import AppKit
+import Foundation
+import LiveWallpaperCore
+import Observation
+import CoreGraphics
+import os
+@testable import LiveWallpaper
+
+@Suite("WPEImportTracker")
+@MainActor
+struct WPEImportTrackerTests {
+    private let screenA: CGDirectDisplayID = 1
+    private let screenB: CGDirectDisplayID = 2
+
+    @Test("Records, reads, and clears errors per screen")
+    func errorRoundtrip() {
+        let tracker = WPEImportTracker()
+        #expect(tracker.error(for: screenA) == nil)
+        tracker.recordError(.wpePackageInvalid("bad payload"), for: screenA)
+        #expect(tracker.error(for: screenA) == .wpePackageInvalid("bad payload"))
+        #expect(tracker.error(for: screenB) == nil)
+        tracker.clearError(for: screenA)
+        #expect(tracker.error(for: screenA) == nil)
+    }
+
+    @Test("recordError invalidates Observation for SwiftUI re-render")
+    func recordErrorInvalidatesObservation() {
+        let tracker = WPEImportTracker()
+        let counter = ChangeCounter()
+
+        withObservationTracking {
+            _ = tracker.error(for: screenA)
+        } onChange: {
+            counter.increment()
+        }
+
+        #expect(counter.value == 0)
+        tracker.recordError(.wpeImportFailed("disk full"), for: screenA)
+        #expect(counter.value == 1)
+    }
+
+    @Test("clearError invalidates Observation for SwiftUI re-render")
+    func clearErrorInvalidatesObservation() {
+        let tracker = WPEImportTracker()
+        tracker.recordError(.fileAccessDenied("Scene"), for: screenA)
+        let counter = ChangeCounter()
+
+        withObservationTracking {
+            _ = tracker.error(for: screenA)
+        } onChange: {
+            counter.increment()
+        }
+
+        tracker.clearError(for: screenA)
+        #expect(counter.value == 1)
+    }
+
+    @Test("Generation counter increments monotonically per screen")
+    func generationMonotonic() {
+        let tracker = WPEImportTracker()
+        let first = tracker.bumpGeneration(for: screenA)
+        let second = tracker.bumpGeneration(for: screenA)
+        let third = tracker.bumpGeneration(for: screenA)
+        #expect(first == 1)
+        #expect(second == 2)
+        #expect(third == 3)
+
+        let otherFirst = tracker.bumpGeneration(for: screenB)
+        #expect(otherFirst == 1)
+    }
+
+    @Test("isCurrentGeneration only matches the latest bump")
+    func generationCurrencyCheck() {
+        let tracker = WPEImportTracker()
+        let stale = tracker.bumpGeneration(for: screenA)
+        let fresh = tracker.bumpGeneration(for: screenA)
+        #expect(tracker.isCurrentGeneration(stale, for: screenA) == false)
+        #expect(tracker.isCurrentGeneration(fresh, for: screenA) == true)
+    }
+
+    @Test("Termination invalidates every admitted and future generation")
+    func terminationInvalidatesGenerations() {
+        let tracker = WPEImportTracker()
+        let admitted = tracker.bumpGeneration(for: screenA)
+
+        tracker.invalidateForTermination()
+        let issuedAfterTermination = tracker.bumpGeneration(for: screenB)
+
+        #expect(tracker.isTerminated)
+        #expect(!tracker.isCurrentGeneration(admitted, for: screenA))
+        #expect(!tracker.isCurrentGeneration(issuedAfterTermination, for: screenB))
+    }
+
+    @Test("Delayed WPE import completion after termination has no side effects")
+    func delayedImportCompletionAfterTerminationIsDropped() async {
+        guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
+            Issue.record("No NSScreen available for WPE termination test")
+            return
+        }
+        let tracker = WPEImportTracker()
+        let delayedImport = DelayedWPEImportOperation()
+        let historyWrites = ChangeCounter()
+        let configurationWrites = ChangeCounter()
+        let sessionRestores = ChangeCounter()
+        let notifications = ChangeCounter()
+        let lifecycleActive = OSAllocatedUnfairLock(initialState: true)
+        let coordinator = WPEImportCoordinator(
+            tracker: tracker,
+            configurationStore: WallpaperConfigurationStore(),
+            saveConfiguration: { _ in configurationWrites.increment() },
+            restoreWallpaperSession: { _, _, _, beforeCommit in
+                if beforeCommit() {
+                    sessionRestores.increment()
+                }
+            },
+            importOperation: { _ in await delayedImport.call() },
+            recordImport: { _ in historyWrites.increment() },
+            isLifecycleActive: { lifecycleActive.withLock { $0 } },
+            notifyImportCompleted: { _, _, _ in notifications.increment() }
+        )
+
+        let importTask = Task {
+            await coordinator.importProject(
+                at: FileManager.default.temporaryDirectory,
+                for: screen
+            )
+        }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !delayedImport.isWaiting, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        guard delayedImport.isWaiting else {
+            Issue.record("Timed out waiting for delayed WPE import")
+            importTask.cancel()
+            return
+        }
+
+        lifecycleActive.withLock { $0 = false }
+        tracker.invalidateForTermination()
+        delayedImport.resume(with: .ready(
+            .html(source: .inline("<p>x</p>"), config: .default),
+            origin: WPEOrigin(
+                workshopID: "termination-fixture",
+                title: "Termination Fixture",
+                originalType: .scene,
+                sourceFolderBookmark: Data([0x01]),
+                cacheRelativePath: nil,
+                previewFileName: nil
+            )
+        ))
+        let outcome = await importTask.value
+
+        guard case .rejected = outcome else {
+            Issue.record("Terminated import unexpectedly applied: \(outcome)")
+            return
+        }
+        #expect(historyWrites.value == 0)
+        #expect(configurationWrites.value == 0)
+        #expect(sessionRestores.value == 0)
+        #expect(notifications.value == 0)
+        #expect(screen.runtimeSession == nil)
+    }
+
+    @Test("A later explicit wallpaper selection supersedes a delayed WPE import")
+    func explicitSelectionSupersedesDelayedImport() async {
+        guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
+            Issue.record("No NSScreen available for WPE latest-intent test")
+            return
+        }
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        let delayedImport = DelayedWPEImportOperation()
+        let historyWrites = ChangeCounter()
+        let configurationWrites = ChangeCounter()
+        let sessionRestores = ChangeCounter()
+        let coordinator = WPEImportCoordinator(
+            tracker: manager.wpeImportTracker,
+            configurationStore: WallpaperConfigurationStore(),
+            saveConfiguration: { _ in configurationWrites.increment() },
+            restoreWallpaperSession: { _, _, _, beforeCommit in
+                if beforeCommit() {
+                    sessionRestores.increment()
+                }
+            },
+            importOperation: { _ in await delayedImport.call() },
+            recordImport: { _ in historyWrites.increment() }
+        )
+
+        let importTask = Task {
+            await coordinator.importProject(
+                at: FileManager.default.temporaryDirectory,
+                for: screen
+            )
+        }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !delayedImport.isWaiting, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        guard delayedImport.isWaiting else {
+            Issue.record("Timed out waiting for delayed WPE import")
+            importTask.cancel()
+            return
+        }
+
+        manager.beginExplicitWallpaperSelection(for: screen)
+        delayedImport.resume(with: .ready(
+            .html(source: .inline("<p>x</p>"), config: .default),
+            origin: WPEOrigin(
+                workshopID: "superseded-fixture",
+                title: "Superseded Fixture",
+                originalType: .scene,
+                sourceFolderBookmark: Data([0x02]),
+                cacheRelativePath: nil,
+                previewFileName: nil
+            )
+        ))
+        let outcome = await importTask.value
+
+        guard case .rejected = outcome else {
+            Issue.record("Superseded import unexpectedly applied: \(outcome)")
+            return
+        }
+        #expect(historyWrites.value == 0)
+        #expect(configurationWrites.value == 0)
+        #expect(sessionRestores.value == 0)
+    }
+
+    @Test("WPE import generation remains guarded through transaction commit")
+    func importGenerationGuardsTransactionCommit() async throws {
+        guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
+            Issue.record("No NSScreen available for WPE commit-guard test")
+            return
+        }
+        let tracker = WPEImportTracker()
+        let commitCapture = WPECommitCapture()
+        let configurationWrites = ChangeCounter()
+        let notifications = ChangeCounter()
+        let coordinator = WPEImportCoordinator(
+            tracker: tracker,
+            configurationStore: WallpaperConfigurationStore(),
+            saveConfiguration: { _ in configurationWrites.increment() },
+            restoreWallpaperSession: { _, _, _, beforeCommit in
+                commitCapture.capture(beforeCommit)
+            },
+            importOperation: { _ in
+                .ready(
+                    .html(source: .inline("<p>x</p>"), config: .default),
+                    origin: WPEOrigin(
+                        workshopID: "commit-guard-fixture",
+                        title: "Commit Guard Fixture",
+                        originalType: .scene,
+                        sourceFolderBookmark: Data([0x03]),
+                        cacheRelativePath: nil,
+                        previewFileName: nil
+                    )
+                )
+            },
+            notifyImportCompleted: { _, _, _ in notifications.increment() }
+        )
+
+        let outcome = await coordinator.importProject(
+            at: FileManager.default.temporaryDirectory,
+            for: screen
+        )
+        guard case .applied = outcome else {
+            Issue.record("Expected an admitted import proposal, got \(outcome)")
+            return
+        }
+        #expect(commitCapture.hasCommit)
+
+        _ = tracker.bumpGeneration(for: screen.id)
+
+        #expect(commitCapture.commit() == false)
+        #expect(configurationWrites.value == 0)
+        #expect(notifications.value == 0)
+    }
+}
+
+private final class ChangeCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value = 0
+    var value: Int {
+        lock.lock(); defer { lock.unlock() }
+        return _value
+    }
+    func increment() {
+        lock.lock(); defer { lock.unlock() }
+        _value += 1
+    }
+}
+
+@MainActor
+private final class WPECommitCapture {
+    private var action: (@MainActor () -> Bool)?
+    var hasCommit: Bool { action != nil }
+
+    func capture(_ action: @MainActor @escaping () -> Bool) {
+        self.action = action
+    }
+
+    func commit() -> Bool {
+        action?() ?? false
+    }
+}
+
+@MainActor
+private final class DelayedWPEImportOperation {
+    typealias Result = WallpaperEngineImportService.ImportResult
+
+    private var continuation: CheckedContinuation<Result, Never>?
+    var isWaiting: Bool { continuation != nil }
+
+    func call() async -> Result {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resume(with result: Result) {
+        let pending = continuation
+        continuation = nil
+        pending?.resume(returning: result)
+    }
+}

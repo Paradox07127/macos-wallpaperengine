@@ -1,0 +1,993 @@
+import CoreGraphics
+import Foundation
+import ImageIO
+import LiveWallpaperCore
+import Testing
+import UniformTypeIdentifiers
+@testable import LiveWallpaper
+
+@Suite("WallpaperEngineImportService") @MainActor
+struct WallpaperEngineImportServiceTests {
+    @Test("Imports video type from synthetic folder")
+    func importsVideoTypeFromSyntheticFolder() async throws {
+        let fixture = try makeFixture(type: .video, entryFile: "video.mp4", pkgEntries: [
+            PackageEntrySpec("video.mp4", [0x01, 0x02])
+        ])
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, let origin) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .video = content else {
+            Issue.record("Expected .video content, got \(content)")
+            return
+        }
+        #expect(origin.workshopID == fixture.workshopID)
+        #expect(origin.originalType == .video)
+    }
+
+    @Test("Imports unpacked web folder without scene.pkg")
+    func importsWebTypeFromSyntheticFolder() async throws {
+        let fixture = try makeFixture(type: .web, entryFile: "index.html", pkgEntries: nil)
+        defer { fixture.cleanup() }
+        try Data("<html></html>".utf8).write(to: fixture.folderURL.appendingPathComponent("index.html"))
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, let origin) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .html(let source, let config) = content else {
+            Issue.record("Expected .html content, got \(content)")
+            return
+        }
+        guard case .folder(_, let indexFileName) = source else {
+            Issue.record("Expected .folder source, got \(source)")
+            return
+        }
+        #expect(indexFileName == "index.html")
+        #expect(config.physicalPixelLayout)
+        #expect(origin.cacheRelativePath == nil)
+        #expect(origin.resourceLocation == .sourceFolder)
+        #expect(origin.entryFile == "index.html")
+    }
+
+    @Test("DPR-aware unpacked web imports with CSS-point layout")
+    func dprAwareWebImportUsesCSSPointLayout() async throws {
+        let fixture = try makeFixture(type: .web, entryFile: "index.html", pkgEntries: nil)
+        defer { fixture.cleanup() }
+        try Data("""
+        <html>
+        <script type="module">
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        </script>
+        </html>
+        """.utf8).write(to: fixture.folderURL.appendingPathComponent("index.html"))
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, _) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .html(_, let config) = content else {
+            Issue.record("Expected .html content, got \(content)")
+            return
+        }
+        #expect(!config.physicalPixelLayout)
+    }
+
+    @Test("Packaged web imports in place from scene.pkg without extracting to wpe-cache")
+    func packagedWebImportsInPlaceWithoutExtraction() async throws {
+        let fixture = try makeFixture(type: .web, entryFile: "index.html", pkgEntries: [
+            PackageEntrySpec("index.html", Array("<html><body>hi</body></html>".utf8)),
+            PackageEntrySpec("app.js", Array("console.log(1)".utf8))
+        ])
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, let origin) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .html(let source, let config) = content else {
+            Issue.record("Expected .html content, got \(content)")
+            return
+        }
+        guard case .folder(_, let indexFileName) = source else {
+            Issue.record("Expected .folder source, got \(source)")
+            return
+        }
+        #expect(indexFileName == "index.html")
+        #expect(config.physicalPixelLayout)
+        #expect(origin.cacheRelativePath == nil)
+        #expect(origin.resourceLocation == .sourceFolder)
+        #expect(origin.entryFile == "index.html")
+        let extractedDir = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
+        #expect(!FileManager.default.fileExists(atPath: extractedDir.path))
+    }
+
+    @Test("WallpaperContent.video round-trips packageEntryName and decodes legacy payloads")
+    func videoContentPackageEntryRoundTrips() throws {
+        let packaged = WallpaperContent.video(bookmarkData: Data([0xAA, 0xBB]), packageEntryName: "video.mp4")
+        let encoded = try JSONEncoder().encode(packaged)
+        let decoded = try JSONDecoder().decode(WallpaperContent.self, from: encoded)
+        #expect(decoded == packaged)
+        #expect(decoded.packageVideoEntryName == "video.mp4")
+
+        let legacyJSON = #"{"video":{"bookmarkData":"qrs="}}"#
+        let legacy = try JSONDecoder().decode(WallpaperContent.self, from: Data(legacyJSON.utf8))
+        #expect(legacy.activeVideoBookmarkData != nil)
+        #expect(legacy.packageVideoEntryName == nil)
+    }
+
+    @Test("Packaged-video config keeps its package entry across bookmark refresh and saved-restore")
+    func packagedVideoConfigPreservesPackageEntry() throws {
+        let pkgBookmark = Data([0x01, 0x02])
+        var config = ScreenConfiguration(screenID: 1, videoBookmarkData: pkgBookmark)
+        config.activeWallpaper = .video(bookmarkData: pkgBookmark, packageEntryName: "video.mp4")
+        config.savedVideoBookmarkData = pkgBookmark
+        config.savedVideoPackageEntryName = "video.mp4"
+
+        let refreshed = config.withUpdatedActiveBookmark(Data([0x03, 0x04]))
+        #expect(refreshed.activeWallpaper.packageVideoEntryName == "video.mp4")
+
+        var swapped = refreshed
+        swapped.activeWallpaper = .html(source: .inline("<html></html>"), config: .default)
+        let restored = swapped.activateSavedVideoWallpaper()
+        #expect(restored)
+        #expect(swapped.activeWallpaper.packageVideoEntryName == "video.mp4")
+
+        let decoded = try JSONDecoder().decode(ScreenConfiguration.self, from: JSONEncoder().encode(config))
+        #expect(decoded.savedVideoPackageEntryName == "video.mp4")
+        #expect(decoded.activeWallpaper.packageVideoEntryName == "video.mp4")
+
+        let fromWallpaper = ScreenConfiguration(
+            screenID: 2,
+            wallpaper: .video(bookmarkData: Data([0x05]), packageEntryName: "clip.mp4")
+        )
+        #expect(fromWallpaper.savedVideoPackageEntryName == "clip.mp4")
+    }
+
+    @Test("Unsupported scene returns unsupported result")
+    func unsupportedSceneReturnsUnsupportedResult() async throws {
+        let fixture = try makeFixture(type: .scene, entryFile: "scene.json", pkgEntries: nil)
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .unsupported(let origin) = result else {
+            Issue.record("Expected .unsupported, got \(result)")
+            return
+        }
+        #expect(origin.originalType == .scene)
+    }
+
+    @Test("Unsupported application returns unsupported result")
+    func unsupportedApplicationReturnsUnsupportedResult() async throws {
+        let fixture = try makeFixture(type: .application, entryFile: "app.exe", pkgEntries: nil)
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .unsupported(let origin) = result else {
+            Issue.record("Expected .unsupported, got \(result)")
+            return
+        }
+        #expect(origin.originalType == .application)
+    }
+
+    @Test("Packaged video imports in place from scene.pkg without extracting to wpe-cache")
+    func packagedVideoImportsInPlaceWithoutExtraction() async throws {
+        let fixture = try makeFixture(type: .video, entryFile: "video.mp4", pkgEntries: [
+            PackageEntrySpec("video.mp4", [0x01, 0x02, 0x03])
+        ])
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, let origin) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        #expect(content.packageVideoEntryName == "video.mp4")
+        #expect(origin.cacheRelativePath == nil)
+        #expect(origin.resourceLocation == .sourceFolder)
+        #expect(origin.entryFile == "video.mp4")
+        let extractedDir = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
+        #expect(!FileManager.default.fileExists(atPath: extractedDir.path))
+    }
+
+    @Test("Scene import sets origin without cache path")
+    func sceneImportSetsOriginButNoCachePath() async throws {
+        let fixture = try makeFixture(type: .scene, entryFile: "scene.json", pkgEntries: nil)
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .unsupported(let origin) = result else {
+            Issue.record("Expected .unsupported, got \(result)")
+            return
+        }
+        #expect(origin.cacheRelativePath == nil)
+        #expect(origin.resourceLocation == .unsupported)
+        #expect(origin.entryFile == "scene.json")
+    }
+
+    @Test("Scene with scene.pkg + valid scene.json + image asset returns ready scene content")
+    func sceneWithPackageAndAssetReturnsReady() async throws {
+        let pngBytes = try makeFixturePNG(width: 4, height: 4)
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [{
+                "id": "layer1",
+                "name": "Layer 1",
+                "type": "image",
+                "image": "materials/layer1.png",
+                "origin": "0.5 0.5 0",
+                "scale": "1 1 1",
+                "alpha": 1.0,
+                "blendmode": "normal"
+            }]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [
+                PackageEntrySpec("scene.json", Array(sceneJSON.utf8)),
+                PackageEntrySpec("materials/layer1.png", Array(pngBytes))
+            ]
+        )
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, let origin) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .scene(let descriptor) = content else {
+            Issue.record("Expected .scene content, got \(content)")
+            return
+        }
+        #expect(descriptor.workshopID == fixture.workshopID)
+        #expect(descriptor.cacheRelativePath == "wpe-cache/\(fixture.workshopID)")
+        #expect(descriptor.entryFile == "scene.json")
+        #expect(descriptor.capabilityTier == .imageOnly)
+        #expect(origin.cacheRelativePath == "wpe-cache/\(fixture.workshopID)")
+        #expect(origin.resourceLocation == .cache)
+    }
+
+    @Test("Packaged scene imports in place (.packageSource) without extracting the payload")
+    func packagedSceneImportsInPlaceWithoutExtraction() async throws {
+        let pngBytes = try makeFixturePNG(width: 4, height: 4)
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [{
+                "id": "layer1",
+                "name": "Layer 1",
+                "type": "image",
+                "image": "materials/layer1.png",
+                "origin": "0.5 0.5 0",
+                "scale": "1 1 1",
+                "alpha": 1.0,
+                "blendmode": "normal"
+            }]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [
+                PackageEntrySpec("scene.json", Array(sceneJSON.utf8)),
+                PackageEntrySpec("materials/layer1.png", Array(pngBytes))
+            ]
+        )
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+        guard case .ready(.scene(let descriptor), _) = result else {
+            Issue.record("Expected .ready scene, got \(result)")
+            return
+        }
+        #expect(descriptor.assetStorage == .packageSource(fileName: "scene.pkg"))
+        #expect(descriptor.capabilityTier == .imageOnly)
+
+        let sceneCache = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
+        #expect(!FileManager.default.fileExists(atPath: sceneCache.path))
+    }
+
+    @Test("Unpacked scene folder with valid scene.json + image asset imports in place (.sourceDirectory)")
+    func unpackedSceneFolderWithAssetReturnsReady() async throws {
+        let pngBytes = try makeFixturePNG(width: 4, height: 4)
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [{
+                "id": "layer1",
+                "name": "Layer 1",
+                "type": "image",
+                "image": "materials/layer1.png",
+                "origin": "0.5 0.5 0",
+                "scale": "1 1 1",
+                "alpha": 1.0,
+                "blendmode": "normal"
+            }]
+        }
+        """
+        let fixture = try makeFixture(type: .scene, entryFile: "scene.json", pkgEntries: nil)
+        defer { fixture.cleanup() }
+        let materials = fixture.folderURL.appendingPathComponent("materials", isDirectory: true)
+        try FileManager.default.createDirectory(at: materials, withIntermediateDirectories: true)
+        try Data(sceneJSON.utf8).write(to: fixture.folderURL.appendingPathComponent("scene.json"))
+        try pngBytes.write(to: materials.appendingPathComponent("layer1.png"))
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, let origin) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .scene(let descriptor) = content else {
+            Issue.record("Expected .scene content, got \(content)")
+            return
+        }
+        #expect(descriptor.workshopID == fixture.workshopID)
+        #expect(descriptor.cacheRelativePath == "wpe-cache/\(fixture.workshopID)")
+        #expect(descriptor.entryFile == "scene.json")
+        #expect(descriptor.capabilityTier == .imageOnly)
+        #expect(descriptor.assetStorage == .sourceDirectory)
+        #expect(origin.cacheRelativePath == "wpe-cache/\(fixture.workshopID)")
+        #expect(origin.resourceLocation == .cache)
+        let sceneCache = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
+        #expect(!FileManager.default.fileExists(atPath: sceneCache.path))
+    }
+
+    @Test("A particle object alongside a resolvable image does not downgrade the scene")
+    func sceneWithParticlesStaysImageOnly() async throws {
+        let pngBytes = try makeFixturePNG(width: 4, height: 4)
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [
+                {
+                    "id": "layer1",
+                    "name": "Layer 1",
+                    "type": "image",
+                    "image": "materials/layer1.png"
+                },
+                {
+                    "id": "particle1",
+                    "name": "Sparks",
+                    "type": "particle"
+                }
+            ]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [
+                PackageEntrySpec("scene.json", Array(sceneJSON.utf8)),
+                PackageEntrySpec("materials/layer1.png", Array(pngBytes))
+            ]
+        )
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, _) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .scene(let descriptor) = content else {
+            Issue.record("Expected .scene content, got \(content)")
+            return
+        }
+        // The parser logs an `.info` note for the particle object ("parsed;
+        // rendered by the Metal particle simulator"). That success note used to
+        // flag the whole scene as "Limited Compatibility".
+        #expect(descriptor.capabilityTier == .imageOnly)
+    }
+
+    // MARK: - Dependency awareness
+
+    @Test("Scene with declared workshop dependencies missing from cache surfaces as unsupported with the missing IDs")
+    func sceneWithMissingDependenciesIsUnsupported() async throws {
+        let manifest = """
+        {
+            "workshopid": "deps-missing",
+            "title": "Composed Scene",
+            "type": "scene",
+            "file": "scene.json",
+            "preview": "preview.gif",
+            "dependencies": ["123456789012", "987654321098"]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: nil,
+            manifestOverride: manifest,
+            workshopIDOverride: "deps-missing"
+        )
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .unsupported(let origin) = result else {
+            Issue.record("Expected .unsupported, got \(result)")
+            return
+        }
+        #expect(origin.missingDependencyIDs == ["123456789012", "987654321098"])
+        #expect(origin.cacheRelativePath == nil)
+        #expect(origin.resourceLocation == .unsupported)
+    }
+
+    @Test("Sibling Workshop folder satisfies the dependency check (Solution A re-import flow)")
+    func siblingFolderSubscribeRecognised() async throws {
+        let pngBytes = try makeFixturePNG(width: 4, height: 4)
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [{
+                "id": "layer1", "name": "Layer 1", "type": "image",
+                "image": "materials/layer1.png"
+            }]
+        }
+        """
+        let manifest = """
+        {
+            "workshopid": "deps-sibling",
+            "title": "Composed Scene",
+            "type": "scene",
+            "file": "scene.json",
+            "preview": "preview.gif",
+            "dependencies": ["123456789012"]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [
+                PackageEntrySpec("scene.json", Array(sceneJSON.utf8)),
+                PackageEntrySpec("materials/layer1.png", Array(pngBytes))
+            ],
+            manifestOverride: manifest,
+            workshopIDOverride: "deps-sibling"
+        )
+        defer { fixture.cleanup() }
+
+        let workshopRoot = fixture.folderURL.deletingLastPathComponent()
+        let depDir = workshopRoot.appendingPathComponent("123456789012", isDirectory: true)
+        try FileManager.default.createDirectory(at: depDir, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: depDir.appendingPathComponent("project.json"))
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(_, let origin) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        #expect(origin.missingDependencyIDs.isEmpty)
+    }
+
+    @Test("Sibling folder without project.json does NOT count as a satisfied dependency")
+    func siblingFolderRequiresProjectManifest() async throws {
+        let manifest = """
+        {
+            "workshopid": "deps-stub",
+            "title": "Stub",
+            "type": "scene",
+            "file": "scene.json",
+            "dependencies": ["123456789012"]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: nil,
+            manifestOverride: manifest,
+            workshopIDOverride: "deps-stub"
+        )
+        defer { fixture.cleanup() }
+
+        let workshopRoot = fixture.folderURL.deletingLastPathComponent()
+        let depDir = workshopRoot.appendingPathComponent("123456789012", isDirectory: true)
+        try FileManager.default.createDirectory(at: depDir, withIntermediateDirectories: true)
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .unsupported(let origin) = result else {
+            Issue.record("Expected .unsupported, got \(result)")
+            return
+        }
+        #expect(origin.missingDependencyIDs == ["123456789012"])
+    }
+
+    @Test("Nested bin/x64/*.dll layout is detected as Windows plugin")
+    func nestedWindowsPluginDetected() async throws {
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [PackageEntrySpec("scene.json", Array("{}".utf8))]
+        )
+        defer { fixture.cleanup() }
+
+        let nestedBin = fixture.folderURL.appendingPathComponent("bin/x64", isDirectory: true)
+        try FileManager.default.createDirectory(at: nestedBin, withIntermediateDirectories: true)
+        try Data([0x4D, 0x5A]).write(to: nestedBin.appendingPathComponent("plugin.dll"))
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .unsupported(let origin) = result else {
+            Issue.record("Expected .unsupported, got \(result)")
+            return
+        }
+        #expect(origin.requiresWindowsPlugin)
+    }
+
+    @Test("Legacy WPEOrigin plist without dependency metadata decodes lossily")
+    func legacyOriginWithoutDependencyMetadataMigrates() throws {
+        let origin = WPEOrigin(
+            workshopID: "legacy",
+            title: "Legacy",
+            originalType: .scene,
+            sourceFolderBookmark: Data([0xAA]),
+            cacheRelativePath: "wpe-cache/legacy",
+            previewFileName: nil,
+            entryFile: "scene.json",
+            resourceLocation: .cache
+        )
+        let encoded = try JSONEncoder().encode(origin)
+        var dict = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        dict.removeValue(forKey: "dependencyWorkshopIDs")
+        dict.removeValue(forKey: "missingDependencyIDs")
+        dict.removeValue(forKey: "requiresWindowsPlugin")
+        let stripped = try JSONSerialization.data(withJSONObject: dict, options: .sortedKeys)
+
+        let decoded = try JSONDecoder().decode(WPEOrigin.self, from: stripped)
+
+        #expect(decoded.dependencyWorkshopIDs.isEmpty)
+        #expect(decoded.missingDependencyIDs.isEmpty)
+        #expect(decoded.requiresWindowsPlugin == false)
+        #expect(decoded.workshopID == "legacy")
+    }
+
+    @Test("Scene with all dependencies satisfied skips the dependency gate")
+    func sceneWithSatisfiedDependenciesPassesGate() async throws {
+        let pngBytes = try makeFixturePNG(width: 4, height: 4)
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [{
+                "id": "layer1", "name": "Layer 1", "type": "image",
+                "image": "materials/layer1.png"
+            }]
+        }
+        """
+        let manifest = """
+        {
+            "workshopid": "deps-ok",
+            "title": "Composed Scene",
+            "type": "scene",
+            "file": "scene.json",
+            "preview": "preview.gif",
+            "dependencies": ["123456789012"]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [
+                PackageEntrySpec("scene.json", Array(sceneJSON.utf8)),
+                PackageEntrySpec("materials/layer1.png", Array(pngBytes))
+            ],
+            manifestOverride: manifest,
+            workshopIDOverride: "deps-ok",
+            prefilledSiblingWorkshopIDs: ["123456789012"]
+        )
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, let origin) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .scene(let descriptor) = content else {
+            Issue.record("Expected .scene content, got \(content)")
+            return
+        }
+        #expect(descriptor.dependencyWorkshopIDs == ["123456789012"])
+        #expect(origin.missingDependencyIDs.isEmpty)
+        #expect(origin.dependencyWorkshopIDs == ["123456789012"])
+        #expect(origin.cacheRelativePath == "wpe-cache/deps-ok")
+    }
+
+    @Test("Scene with bin/*.dll plugin is rejected as requires-windows-plugin before extraction")
+    func sceneWithWindowsPluginIsRejectedEarly() async throws {
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [
+                PackageEntrySpec("scene.json", Array("{}".utf8))
+            ]
+        )
+        defer { fixture.cleanup() }
+
+        let binDir = fixture.folderURL.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
+        try Data([0x4D, 0x5A]).write(to: binDir.appendingPathComponent("plugin.dll"))
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .unsupported(let origin) = result else {
+            Issue.record("Expected .unsupported, got \(result)")
+            return
+        }
+        #expect(origin.requiresWindowsPlugin)
+        #expect(origin.cacheRelativePath == nil)
+    }
+
+    @Test("Project.json with non-numeric dependency entries silently filters them out")
+    func projectFiltersNonNumericDependencies() throws {
+        let manifest = """
+        {
+            "workshopid": "filter-test",
+            "title": "Filter",
+            "type": "scene",
+            "file": "scene.json",
+            "dependencies": ["123456789012", "not-a-workshop-id", 987654321098, "1.0.0"]
+        }
+        """
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folderURL = rootURL.appendingPathComponent("workshop", isDirectory: true)
+        try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: rootURL) }
+        try Data(manifest.utf8).write(to: folderURL.appendingPathComponent("project.json"))
+
+        let project = try WallpaperEngineProject.read(from: folderURL)
+
+        #expect(project.dependencyWorkshopIDs == ["123456789012", "987654321098"])
+        #expect(!project.requiresWindowsPlugin)
+    }
+
+    @Test("Scene whose declared layers are all missing assets is classified unsupported")
+    func sceneWithMissingAssetsIsUnsupported() async throws {
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [{
+                "id": "layer1",
+                "name": "Layer 1",
+                "type": "image",
+                "image": "materials/missing.png"
+            }]
+        }
+        """
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [
+                PackageEntrySpec("scene.json", Array(sceneJSON.utf8))
+            ]
+        )
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .unsupported(let origin) = result else {
+            Issue.record("Expected .unsupported, got \(result)")
+            return
+        }
+        #expect(origin.cacheRelativePath == "wpe-cache/\(fixture.workshopID)")
+        #expect(origin.resourceLocation == .cache)
+    }
+
+    @Test("Scene import persists preflight tier and feature flags")
+    func sceneImportPersistsPreflightMetadata() async throws {
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [{
+                "id": "layer1",
+                "name": "Layer 1",
+                "type": "image",
+                "image": "materials/layer.png"
+            }]
+        }
+        """
+        let png = try makeFixturePNG(width: 1, height: 1)
+        let fixture = try makeFixture(
+            type: .scene,
+            entryFile: "scene.json",
+            pkgEntries: [
+                PackageEntrySpec("scene.json", Array(sceneJSON.utf8)),
+                PackageEntrySpec("materials/layer.png", Array(png)),
+                PackageEntrySpec("shaders/custom.frag", Array("void main() {}".utf8))
+            ]
+        )
+        defer { fixture.cleanup() }
+
+        let result = try await fixture.service.importProject(folder: fixture.folderURL)
+
+        guard case .ready(let content, _) = result else {
+            Issue.record("Expected .ready, got \(result)")
+            return
+        }
+        guard case .scene(let descriptor) = content else {
+            Issue.record("Expected .scene content, got \(content)")
+            return
+        }
+
+        #expect(descriptor.capabilityTier == .imageOnly)
+        #expect(descriptor.preflightTier == .degradedPlayable)
+        #expect(descriptor.preflightFeatureFlags == [.customShaderSource])
+    }
+
+    @Test("Cached content resolver rebuilds scene descriptor by reclassifying scene.json")
+    func cachedContentResolverRebuildsSceneDescriptor() throws {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? fileManager.removeItem(at: rootURL) }
+        let appSupportRoot = rootURL.appendingPathComponent("ApplicationSupport/LiveWallpaper", isDirectory: true)
+        let cacheURL = appSupportRoot.appendingPathComponent("wpe-cache/resolve-scene", isDirectory: true)
+        try fileManager.createDirectory(at: cacheURL, withIntermediateDirectories: true)
+        let sceneJSON = """
+        {
+            "camera": { "center": "0 0 0" },
+            "general": {
+                "orthogonalprojection": { "width": 1920, "height": 1080, "auto": true }
+            },
+            "objects": [{
+                "name": "Missing layer",
+                "image": "materials/missing.png"
+            }]
+        }
+        """
+        try Data(sceneJSON.utf8).write(to: cacheURL.appendingPathComponent("scene.json"))
+        let shaderDir = cacheURL.appendingPathComponent("shaders", isDirectory: true)
+        try fileManager.createDirectory(at: shaderDir, withIntermediateDirectories: true)
+        try Data("void main() {}".utf8).write(to: shaderDir.appendingPathComponent("cached.frag"))
+
+        let origin = WPEOrigin(
+            workshopID: "resolve-scene",
+            title: "Cached Scene",
+            originalType: .scene,
+            sourceFolderBookmark: Data("missing-source".utf8),
+            cacheRelativePath: "wpe-cache/resolve-scene",
+            previewFileName: nil,
+            entryFile: "scene.json",
+            resourceLocation: .cache
+        )
+        let resolver = WPECachedContentResolver(
+            applicationSupportRootURL: appSupportRoot,
+            makeBookmark: { url in Data(url.path.utf8) }
+        )
+
+        guard case .scene(let descriptor) = resolver.content(for: origin) else {
+            Issue.record("Expected cached scene content")
+            return
+        }
+        #expect(descriptor.workshopID == "resolve-scene")
+        #expect(descriptor.cacheRelativePath == "wpe-cache/resolve-scene")
+        #expect(descriptor.entryFile == "scene.json")
+        #expect(descriptor.capabilityTier == .unsupported)
+        #expect(descriptor.dependencyWorkshopIDs == [])
+        #expect(descriptor.preflightTier == .degradedPlayable)
+        #expect(descriptor.preflightFeatureFlags == [.customShaderSource])
+    }
+
+    @Test("Cached content resolver rebuilds packaged video without source folder access")
+    func cachedContentResolverRebuildsPackagedVideoWithoutSourceFolderAccess() throws {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? fileManager.removeItem(at: rootURL) }
+        let appSupportRoot = rootURL.appendingPathComponent("ApplicationSupport/LiveWallpaper", isDirectory: true)
+        let cacheURL = appSupportRoot.appendingPathComponent("wpe-cache/resolve-video", isDirectory: true)
+        try fileManager.createDirectory(at: cacheURL, withIntermediateDirectories: true)
+        let videoURL = cacheURL.appendingPathComponent("video.mp4")
+        try Data([0x00, 0x01]).write(to: videoURL)
+
+        let origin = WPEOrigin(
+            workshopID: "resolve-video",
+            title: "Cached Video",
+            originalType: .video,
+            sourceFolderBookmark: Data("missing-source".utf8),
+            cacheRelativePath: "wpe-cache/resolve-video",
+            previewFileName: nil,
+            entryFile: "video.mp4",
+            resourceLocation: .cache
+        )
+        let resolver = WPECachedContentResolver(
+            applicationSupportRootURL: appSupportRoot,
+            makeBookmark: { url in Data(url.path.utf8) }
+        )
+
+        let content = resolver.content(for: origin)
+
+        guard case .video(let bookmarkData, let packageEntryName) = content else {
+            Issue.record("Expected cached video content, got \(String(describing: content))")
+            return
+        }
+        #expect(bookmarkData == Data(videoURL.path.utf8))
+        #expect(packageEntryName == nil)
+    }
+
+    private func makeFixture(
+        type: WPEType,
+        entryFile: String,
+        pkgEntries: [PackageEntrySpec]?,
+        manifestOverride: String? = nil,
+        workshopIDOverride: String? = nil,
+        prefilledSiblingWorkshopIDs: [String] = []
+    ) throws -> ImportFixture {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folderURL = rootURL.appendingPathComponent("workshop", isDirectory: true)
+        let cacheURL = rootURL.appendingPathComponent("cache", isDirectory: true)
+        try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+
+        let workshopID = workshopIDOverride ?? "3351072238"
+        let manifest = manifestOverride ?? """
+        {
+            "workshopid": "\(workshopID)",
+            "title": "Synthetic Wallpaper",
+            "type": "\(type.rawValue)",
+            "file": "\(entryFile)",
+            "preview": "preview.gif"
+        }
+        """
+        try Data(manifest.utf8).write(to: folderURL.appendingPathComponent("project.json"))
+        try Data([0x47, 0x49, 0x46]).write(to: folderURL.appendingPathComponent("preview.gif"))
+
+        // Dependencies now resolve only as sibling items in Steam's Workshop
+        // content directory — the extraction cache that used to satisfy them is
+        // gone, so the fixture has to place them where Steam would.
+        for depID in prefilledSiblingWorkshopIDs {
+            let depDir = folderURL.deletingLastPathComponent()
+                .appendingPathComponent(depID, isDirectory: true)
+            try fileManager.createDirectory(at: depDir, withIntermediateDirectories: true)
+            // A sibling counts as present only when it carries project.json.
+            try Data(#"{"title":"dep"}"#.utf8).write(to: depDir.appendingPathComponent("project.json"))
+        }
+
+        if let pkgEntries {
+            try makePackage(entries: pkgEntries).write(to: folderURL.appendingPathComponent("scene.pkg"))
+        }
+
+        let service = WallpaperEngineImportService(
+            validateVideo: { _ in },
+            makeBookmark: { url in Data(url.path.utf8) }
+        )
+        return ImportFixture(
+            rootURL: rootURL,
+            folderURL: folderURL,
+            cacheURL: cacheURL,
+            workshopID: workshopID,
+            service: service
+        )
+    }
+
+    private func makeFixturePNG(width: Int, height: Int) throws -> Data {
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw NSError(domain: "fixture", code: -1)
+        }
+        context.setFillColor(CGColor(red: 1, green: 0.5, blue: 0.2, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let image = context.makeImage() else {
+            throw NSError(domain: "fixture", code: -2)
+        }
+        let mutableData = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(mutableData, UTType.png.identifier as CFString, 1, nil) else {
+            throw NSError(domain: "fixture", code: -3)
+        }
+        CGImageDestinationAddImage(dest, image, nil)
+        if !CGImageDestinationFinalize(dest) {
+            throw NSError(domain: "fixture", code: -4)
+        }
+        return mutableData as Data
+    }
+
+    private func makePackage(entries: [PackageEntrySpec]) -> Data {
+        var payload = Data()
+        var resolvedEntries: [(name: String, offset: UInt32, size: UInt32)] = []
+
+        for entry in entries {
+            let offset = UInt32(payload.count)
+            let size = UInt32(entry.bytes.count)
+            resolvedEntries.append((entry.name, offset, size))
+            payload.append(contentsOf: entry.bytes)
+        }
+
+        var data = Data()
+        let magicBytes = Array("PKGV0022".utf8)
+        appendU32(UInt32(magicBytes.count), to: &data)
+        data.append(contentsOf: magicBytes)
+        appendU32(UInt32(resolvedEntries.count), to: &data)
+
+        for entry in resolvedEntries {
+            let nameBytes = Array(entry.name.utf8)
+            appendU32(UInt32(nameBytes.count), to: &data)
+            data.append(contentsOf: nameBytes)
+            appendU32(entry.offset, to: &data)
+            appendU32(entry.size, to: &data)
+        }
+
+        data.append(payload)
+        return data
+    }
+
+    private func appendU32(_ value: UInt32, to data: inout Data) {
+        data.append(UInt8(value & 0xff))
+        data.append(UInt8((value >> 8) & 0xff))
+        data.append(UInt8((value >> 16) & 0xff))
+        data.append(UInt8((value >> 24) & 0xff))
+    }
+}
+
+private struct ImportFixture {
+    let rootURL: URL
+    let folderURL: URL
+    let cacheURL: URL
+    let workshopID: String
+    let service: WallpaperEngineImportService
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: rootURL)
+    }
+}
+
+private struct PackageEntrySpec: Sendable {
+    let name: String
+    let bytes: [UInt8]
+
+    init(_ name: String, _ bytes: [UInt8]) {
+        self.name = name
+        self.bytes = bytes
+    }
+}

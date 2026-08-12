@@ -1,0 +1,100 @@
+import AppKit
+import CoreGraphics
+import LiveWallpaperCore
+
+/// Renderer-independent particle layer placed above the wallpaper window and
+/// below desktop icons. One click-through panel is owned per display.
+@MainActor
+final class EnvironmentOverlayController {
+    private final class Host {
+        let window: NSPanel
+        let view: ParticleOverlayView
+        var suspended = false
+
+        init(window: NSPanel, view: ParticleOverlayView) {
+            self.window = window
+            self.view = view
+        }
+    }
+
+    private var hosts: [CGDirectDisplayID: Host] = [:]
+
+    func apply(
+        effect: ParticleEffect,
+        density: Double,
+        screenID: CGDirectDisplayID,
+        screenFrame: NSRect
+    ) {
+        guard effect != .none else {
+            teardown(screenID: screenID)
+            return
+        }
+
+        let host = hosts[screenID] ?? makeHost(screenID: screenID, screenFrame: screenFrame)
+        host.window.setFrame(screenFrame, display: true)
+        host.view.frame = NSRect(origin: .zero, size: screenFrame.size)
+        host.view.setEffect(effect, density: CGFloat(density))
+        host.view.setSuspended(host.suspended)
+        if !host.suspended {
+            host.window.orderFrontRegardless()
+        }
+    }
+
+    func setSuspended(_ suspended: Bool, screenID: CGDirectDisplayID) {
+        guard let host = hosts[screenID], host.suspended != suspended else { return }
+        host.suspended = suspended
+        host.view.setSuspended(suspended)
+        if suspended {
+            host.window.orderOut(nil)
+        } else {
+            host.window.orderFrontRegardless()
+        }
+    }
+
+    func teardown(screenID: CGDirectDisplayID) {
+        guard let host = hosts.removeValue(forKey: screenID) else { return }
+        host.view.setEffect(.none)
+        host.window.orderOut(nil)
+        host.window.close()
+    }
+
+    func retainOnly(_ liveScreenIDs: Set<CGDirectDisplayID>) {
+        for screenID in Array(hosts.keys) where !liveScreenIDs.contains(screenID) {
+            teardown(screenID: screenID)
+        }
+    }
+
+    func teardownAll() {
+        for screenID in Array(hosts.keys) {
+            teardown(screenID: screenID)
+        }
+    }
+
+    private func makeHost(screenID: CGDirectDisplayID, screenFrame: NSRect) -> Host {
+        let window = NSPanel(
+            contentRect: screenFrame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
+        window.isFloatingPanel = true
+        window.hidesOnDeactivate = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.isExcludedFromWindowsMenu = true
+        window.isRestorable = false
+        window.animationBehavior = .none
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+
+        let view = ParticleOverlayView(frame: NSRect(origin: .zero, size: screenFrame.size))
+        view.autoresizingMask = [.width, .height]
+        window.contentView = view
+
+        let host = Host(window: window, view: view)
+        hosts[screenID] = host
+        return host
+    }
+}

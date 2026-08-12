@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+DERIVED_DATA="${DERIVED_DATA:-/tmp/LiveWallpaperReleaseCandidateCheck}"
+DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+export DEVELOPER_DIR
+MACOS_DESTINATION="platform=macOS,arch=arm64"
+MACOS_ARCHIVE_DESTINATION="generic/platform=macOS"
+
+if [[ "$DERIVED_DATA" != /* ]]; then
+  echo "ERROR: DERIVED_DATA must be an absolute path outside the repository." >&2
+  exit 64
+fi
+case "$DERIVED_DATA" in
+  "$ROOT"|"$ROOT"/*)
+    echo "ERROR: DERIVED_DATA must stay outside the repository." >&2
+    exit 64
+    ;;
+esac
+
+BUILD_SETTINGS_LOG="$(mktemp -t livewallpaper-release-build-settings.XXXXXX)"
+MATRIX_BUILD_LOG="$(mktemp -t livewallpaper-link-matrix.XXXXXX)"
+APP_TEST_RESULT_BUNDLE="${APP_TEST_RESULT_BUNDLE:-/tmp/LiveWallpaperReleaseCandidateTests-$$.xcresult}"
+# The link-matrix archives are throwaway — nothing downstream reads them
+# (`release-app.sh` builds its own under build/release). They used to land on a
+# fixed path and were never cleaned, so the second run of a dual-SKU release
+# tripped `require_fresh_archive_path` on the first run's leftovers. A per-run
+# directory makes "never validate a stale archive" true by construction instead
+# of by check, and stops leaking an archive pair per run into /tmp.
+ARCHIVE_SCRATCH="$(mktemp -d -t livewallpaper-rc-archives)"
+trap 'rm -f "$BUILD_SETTINGS_LOG" "$MATRIX_BUILD_LOG"; rm -rf "$ARCHIVE_SCRATCH"' EXIT
+
+fail_with_log() {
+  local message="$1"
+  echo "ERROR: $message Tail of log:" >&2
+  tail -40 "$MATRIX_BUILD_LOG" >&2
+  exit 1
+}
+
+assert_no_removed_dynamic_links() {
+  local binary="$1"
+  local label="$2"
+  if otool -L "$binary" | grep -Eq 'Sparkle|libc\+\+'; then
+    echo "ERROR: $label links a removed Sparkle/libc++ dependency." >&2
+    otool -L "$binary" >&2
+    exit 1
+  fi
+}
+
+require_fresh_archive_path() {
+  local archive_path="$1"
+  local label="$2"
+  if [[ "$archive_path" != /* || "$archive_path" != *.xcarchive ]]; then
+    echo "ERROR: $label archive path must be an absolute .xcarchive path." >&2
+    exit 64
+  fi
+  case "$archive_path" in
+    "$ROOT"|"$ROOT"/*)
+      echo "ERROR: $label archive path must stay outside the repository." >&2
+      exit 64
+      ;;
+  esac
+  if [[ -e "$archive_path" ]]; then
+    echo "ERROR: $label archive path already exists; choose a clean archive path." >&2
+    exit 64
+  fi
+}
+
+assert_arm64_binary() {
+  local binary="$1"
+  local label="$2"
+  if [[ "$(lipo -archs "$binary")" != "arm64" ]]; then
+    echo "ERROR: $label is not exactly arm64." >&2
+    lipo -archs "$binary" >&2
+    exit 1
+  fi
+}
+
+
+echo "== Entitlement source baseline =="
+scripts/check_entitlements.sh --sku pro --source
+scripts/check_entitlements.sh --sku lite --source
+
+echo "== Release build settings =="
+xcodebuild -showBuildSettings \
+  -project LiveWallpaper.xcodeproj \
+  -scheme LiveWallpaper \
+  -configuration Release \
+  -destination "$MACOS_DESTINATION" \
+  | tee "$BUILD_SETTINGS_LOG" \
+  | grep -E "PRODUCT_BUNDLE_IDENTIFIER|MARKETING_VERSION|CURRENT_PROJECT_VERSION|MACOSX_DEPLOYMENT_TARGET|ENABLE_HARDENED_RUNTIME|CODE_SIGN|DEVELOPMENT_TEAM|ENABLE_APP_SANDBOX|ENABLE_USER_SELECTED_FILES|ENTITLEMENTS"
+
+if ! grep -q "ENABLE_HARDENED_RUNTIME = YES" "$BUILD_SETTINGS_LOG"; then
+  echo "ERROR: Release Hardened Runtime is not enabled." >&2
+  exit 1
+fi
+
+echo "== Privacy manifest =="
+PRIVACY_MANIFEST="LiveWallpaper/PrivacyInfo.xcprivacy"
+if [[ ! -f "$PRIVACY_MANIFEST" ]]; then
+  echo "ERROR: Missing $PRIVACY_MANIFEST." >&2
+  exit 1
+fi
+plutil -lint "$PRIVACY_MANIFEST"
+plutil -extract NSPrivacyAccessedAPITypes raw -o - "$PRIVACY_MANIFEST" >/dev/null
+
+if ! security find-identity -p codesigning -v | grep -q '"Developer ID Application:'; then
+  if [[ "${REQUIRE_DEVELOPER_ID:-0}" == "1" ]]; then
+    echo "ERROR: No Developer ID Application signing identity found on this Mac." >&2
+    exit 1
+  fi
+  echo "WARNING: No Developer ID Application signing identity found on this Mac; notarized export must run on a signing machine." >&2
+fi
+
+# App schemes omit SwiftPM test products, so package tests run explicitly first.
+# Serial execution and isolated scratch paths avoid compiler-cache contention.
+PACKAGE_TEST_PATHS=(
+  "Packages/LiveWallpaperCore"
+  "Packages/LiveWallpaperProWPE"
+)
+
+echo "== Swift package tests (sequential) =="
+for package_path in "${PACKAGE_TEST_PATHS[@]}"; do
+  package_name="${package_path##*/}"
+  package_scratch="$DERIVED_DATA/SwiftPM/$package_name"
+  package_log="/tmp/LiveWallpaperReleaseCandidate-${package_name}-$$.log"
+  echo "-- $package_name --"
+  if ! swift test \
+    --package-path "$package_path" \
+    --scratch-path "$package_scratch" \
+    > "$package_log" 2>&1; then
+    echo "ERROR: $package_name tests failed; app scheme checks were not started." >&2
+    tail -80 "$package_log" >&2
+    exit 1
+  fi
+  package_summary="$(grep -E 'Test run with [1-9][0-9]* tests?' "$package_log" | tail -1 || true)"
+  if [[ -z "$package_summary" ]]; then
+    echo "ERROR: $package_name reported success without a non-zero test summary." >&2
+    tail -80 "$package_log" >&2
+    exit 1
+  fi
+  echo "$package_summary"
+  echo "Raw log: $package_log"
+done
+
+echo "== Unit tests (Pro scheme) =="
+DERIVED_DATA="$DERIVED_DATA" \
+RESULT_BUNDLE="$APP_TEST_RESULT_BUNDLE" \
+scripts/app_tests.sh full
+
+# Cover Pro and Lite Debug/Release links with isolated build databases.
+# Developer ID entitlements and notarization remain a separate signing-machine gate.
+PRO_DEBUG_BIN="$DERIVED_DATA/Build/Products/Debug/Loomscreen Pro.app/Contents/MacOS/Loomscreen Pro"
+[[ -x "$PRO_DEBUG_BIN" ]] || fail_with_log "Pro Debug test action did not produce the app binary."
+assert_no_removed_dynamic_links "$PRO_DEBUG_BIN" "Pro Debug"
+
+DERIVED_DATA_PRO_RELEASE="${DERIVED_DATA}ProRelease"
+PRO_ARCHIVE_PATH="${PRO_ARCHIVE_PATH:-$ARCHIVE_SCRATCH/LiveWallpaper-LinkMatrix.xcarchive}"
+require_fresh_archive_path "$PRO_ARCHIVE_PATH" "Pro Release"
+echo "== Link matrix + archive smoke: Pro Release =="
+xcodebuild archive \
+  -project LiveWallpaper.xcodeproj \
+  -scheme LiveWallpaper \
+  -configuration Release \
+  -destination "$MACOS_ARCHIVE_DESTINATION" \
+  -archivePath "$PRO_ARCHIVE_PATH" \
+  -derivedDataPath "$DERIVED_DATA_PRO_RELEASE" \
+  CODE_SIGN_STYLE=Manual \
+  CODE_SIGN_IDENTITY="-" \
+  DEVELOPMENT_TEAM="" \
+  PROVISIONING_PROFILE_SPECIFIER="" \
+  ENABLE_HARDENED_RUNTIME=YES \
+  ARCHS=arm64 \
+  SWIFT_EMIT_LOC_STRINGS=NO \
+  > "$MATRIX_BUILD_LOG" 2>&1 || fail_with_log "LiveWallpaper Release archive failed."
+PRO_ARCHIVED_APP="$PRO_ARCHIVE_PATH/Products/Applications/Loomscreen Pro.app"
+PRO_RELEASE_BIN="$PRO_ARCHIVED_APP/Contents/MacOS/Loomscreen Pro"
+[[ -x "$PRO_RELEASE_BIN" ]] || fail_with_log "Pro Release archive did not produce Loomscreen Pro.app."
+assert_arm64_binary "$PRO_RELEASE_BIN" "Pro Release archive"
+codesign --verify --deep --strict --verbose=2 "$PRO_ARCHIVED_APP"
+assert_no_removed_dynamic_links "$PRO_RELEASE_BIN" "Pro Release archive"
+
+
+DERIVED_DATA_LITE_DEBUG="${DERIVED_DATA}LiteDebug"
+echo "== Link matrix: Lite Debug =="
+xcodebuild build \
+  -project LiveWallpaper.xcodeproj \
+  -scheme LiveWallpaperLite \
+  -configuration Debug \
+  -destination "$MACOS_DESTINATION" \
+  -derivedDataPath "$DERIVED_DATA_LITE_DEBUG" \
+  SWIFT_EMIT_LOC_STRINGS=NO \
+  > "$MATRIX_BUILD_LOG" 2>&1 || fail_with_log "LiveWallpaperLite Debug build failed."
+LITE_DEBUG_BIN="$DERIVED_DATA_LITE_DEBUG/Build/Products/Debug/Loomscreen.app/Contents/MacOS/Loomscreen"
+[[ -x "$LITE_DEBUG_BIN" ]] || fail_with_log "Lite Debug build did not produce the app binary."
+assert_no_removed_dynamic_links "$LITE_DEBUG_BIN" "Lite Debug"
+
+DERIVED_DATA_LITE_RELEASE="${DERIVED_DATA}LiteRelease"
+LITE_ARCHIVE_PATH="${LITE_ARCHIVE_PATH:-$ARCHIVE_SCRATCH/Loomscreen-LinkMatrix.xcarchive}"
+require_fresh_archive_path "$LITE_ARCHIVE_PATH" "Lite Release"
+echo "== Link matrix + archive smoke: Lite Release =="
+xcodebuild archive \
+  -project LiveWallpaper.xcodeproj \
+  -scheme LiveWallpaperLite \
+  -configuration Release \
+  -destination "$MACOS_ARCHIVE_DESTINATION" \
+  -archivePath "$LITE_ARCHIVE_PATH" \
+  -derivedDataPath "$DERIVED_DATA_LITE_RELEASE" \
+  CODE_SIGN_STYLE=Manual \
+  CODE_SIGN_IDENTITY="-" \
+  DEVELOPMENT_TEAM="" \
+  PROVISIONING_PROFILE_SPECIFIER="" \
+  ENABLE_HARDENED_RUNTIME=YES \
+  ARCHS=arm64 \
+  SWIFT_EMIT_LOC_STRINGS=NO \
+  > "$MATRIX_BUILD_LOG" 2>&1 || fail_with_log "LiveWallpaperLite Release archive failed."
+
+LITE_ARCHIVED_APP="$LITE_ARCHIVE_PATH/Products/Applications/Loomscreen.app"
+LITE_RELEASE_BIN="$LITE_ARCHIVED_APP/Contents/MacOS/Loomscreen"
+[[ -x "$LITE_RELEASE_BIN" ]] || fail_with_log "Lite Release archive did not produce Loomscreen.app."
+assert_arm64_binary "$LITE_RELEASE_BIN" "Lite Release archive"
+codesign --verify --deep --strict --verbose=2 "$LITE_ARCHIVED_APP"
+assert_no_removed_dynamic_links "$LITE_RELEASE_BIN" "Lite Release archive"
+
+# Lite must remain free of Pro renderer and SceneScript components.
+for lite_binary in "$LITE_DEBUG_BIN" "$LITE_RELEASE_BIN"; do
+  if nm "$lite_binary" 2>/dev/null | grep -Eq 'WPEMetalSceneRenderer|WPEMetalRenderExecutor'; then
+    echo "ERROR: Lite binary contains a Pro-only renderer symbol." >&2
+    exit 1
+  fi
+  if otool -L "$lite_binary" | grep -q 'JavaScriptCore'; then
+    echo "ERROR: Lite binary unexpectedly links JavaScriptCore." >&2
+    exit 1
+  fi
+done
+# Lite ships no XPC service at all. Pro ships exactly one: SteamConnector, which
+# runs SteamCMD outside the sandbox so downloads land in the user's real Steam
+# library. The SceneScript helper retired 2026-07-23 must never come back — it
+# isolated only provably-inert scripts while the dynamic ones ran in-process.
+if [[ -d "$LITE_ARCHIVED_APP/Contents/XPCServices" ]]; then
+  echo "ERROR: $LITE_ARCHIVED_APP unexpectedly embeds an XPC service." >&2
+  exit 1
+fi
+if [[ -d "$PRO_ARCHIVED_APP/Contents/XPCServices" ]]; then
+  pro_services="$(ls "$PRO_ARCHIVED_APP/Contents/XPCServices")"
+  if [[ "$pro_services" != "SteamConnector.xpc" ]]; then
+    echo "ERROR: Pro embeds unexpected XPC service(s): $pro_services" >&2
+    exit 1
+  fi
+  # An unsandboxed helper is the whole point; a sandboxed one would put its
+  # STEAMROOT back in the container and silently undo the migration.
+  if codesign -d --entitlements - --xml \
+      "$PRO_ARCHIVED_APP/Contents/XPCServices/SteamConnector.xpc" 2>/dev/null \
+      | plutil -p - 2>/dev/null | grep -q "com.apple.security.app-sandbox"; then
+    echo "ERROR: SteamConnector is sandboxed; its \$HOME would be the app container." >&2
+    exit 1
+  fi
+fi
+echo "  ✓ Pro/Lite Debug/Release links, no embedded XPC services, and Lite archive purity verified"
+
+echo "== Diff whitespace check =="
+git diff --check
+
+echo "Release candidate checks passed."

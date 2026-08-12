@@ -1,0 +1,167 @@
+# Xcode
+#
+# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+
+## User settings
+xcuserdata/
+*.xcuserstate
+project.xcworkspace/
+!LiveWallpaper.xcodeproj/project.xcworkspace/
+!LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/
+LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/*
+!LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+!LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+*.xcuserdatad/
+
+## Compatibility with Xcode 8 and earlier (ignoring not required starting Xcode 9)
+*.xcscmblueprint
+*.xccheckout
+
+## Compatibility with Xcode 3 and earlier (ignoring not required starting Xcode 4)
+build/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+## Obj-C/Swift specific
+*.hmap
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+#
+# Add this line if you want to avoid checking in source code from Swift Package Manager dependencies.
+# Packages/
+# Package.pins
+# Package.resolved
+# *.xcodeproj
+#
+# Xcode automatically generates this directory with a .xcworkspacedata file and xcuserdata
+# hence it is not needed unless you have added a package configuration file to your project
+.swiftpm
+
+.build/
+
+
+
+Carthage/Build/
+
+# fastlane
+#
+# It is recommended to not store the screenshots in the git repo.
+# Instead, use fastlane to re-generate the screenshots whenever they are needed.
+# For more information about the recommended setup visit:
+# https://docs.fastlane.tools/best-practices/source-control/#source-control
+
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# macOS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Application specific
+*.swp
+*.log
+*.trace/
+.audit/
+
+.claude/
+
+.vm-bridge/
+cache/
+tools/
+trace/
+.playwright-cli/
+scripts/
+skills/
+docs/review/
+# Review write-ups stay local, same as docs/review/.
+docs/implementation-review-plan.md
+# WPE parity/leak investigation ledgers stay local too.
+docs/wpe-parity/
+docs/leak/
+docs/wpe-pipeline-review-*.md
+archived/
+CLAUDE.md
+LiveWallpaperTests/Fixtures
+# Except the machine-independent oracle structural-fingerprint golden net (a few
+# KB of JSON, no pixels) — see .claude/skills/wpe-oracle/references/self-oracle-runbook.md.
+!LiveWallpaperTests/Fixtures/
+LiveWallpaperTests/Fixtures/*
+!LiveWallpaperTests/Fixtures/oracle-golden/
+!LiveWallpaperTests/Fixtures/GeneralSettingsOwnershipFixture.swift
+
+# Keep portable CI/release contracts; all other maintainer-local scripts remain ignored.
+!scripts/
+scripts/*
+!scripts/release_candidate_check.sh
+!scripts/fast_app_contract_tests.sh
+!scripts/app_tests.sh
+!scripts/xcode_test_runner.py
+!scripts/xcode_test_runner_self_test.py
+!scripts/release_contract_check.sh
+!scripts/release-app.sh
+!scripts/check_entitlements.sh
+!scripts/check_entitlements_self_test.sh
+!scripts/entitlement_fingerprint.py
+!scripts/check_quality_exclusions.py
+!scripts/check_module_import_boundaries.py
+!scripts/wpe-corpus-manifest.py
+!scripts/wpe-corpus-manifest.schema.json
+!scripts/release-baselines/
+!scripts/release-baselines/entitlements.fingerprint
+!scripts/quality-baselines/
+!scripts/quality-baselines/exclusions.json
+!scripts/quality-baselines/component-loc.json
+
+# Instruments trace bundles run to gigabytes each; keep them local. The sibling
+# README.md stays tracked because it is the measurement record, so ignore the
+# bundles individually rather than the whole artifacts/ directory.
+artifacts/**/*.trace/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local-only baseline; AF-10 lint/format contracts are tracked below.
+.periphery.yml
+!.swiftformat
+!.swiftlint.yml
