@@ -2273,36 +2273,6 @@
         }
       }
     },
-    "Add wallpaper" : {
-      "comment" : "Quick Add button accessibility label",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add wallpaper"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙を追加"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新增桌布"
-          }
-        }
-      }
-    },
     "Add wallpaper to this display" : {
       "comment" : "Accessibility label for the per-display add button shown in the menu bar when a display has no wallpaper.",
       "extractionState" : "manual",
