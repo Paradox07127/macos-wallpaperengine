@@ -45,6 +45,9 @@ struct SteamWebAPIKeyEntrySheet: View {
                     .font(.caption)
                     .foregroundStyle(DesignTokens.Colors.Status.danger)
             }
+
+            Divider()
+
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -60,7 +63,7 @@ struct SteamWebAPIKeyEntrySheet: View {
             }
         }
         .padding(DesignTokens.Spacing.xl)
-        .frame(width: 460)
+        .frame(minWidth: 460, idealWidth: 460, maxWidth: 560)
         .onAppear {
             Task {
                 if let stored = try? await services.keychain.loadWebAPIKey() {

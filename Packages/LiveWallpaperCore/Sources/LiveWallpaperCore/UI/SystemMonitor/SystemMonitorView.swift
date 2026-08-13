@@ -1,6 +1,6 @@
 import SwiftUI
 
-public struct SystemMonitorView: View {
+struct SystemMonitorView: View {
     private var monitor = SystemMonitor.shared
     @State private var powerSource: PowerMonitor.PowerSource = PowerMonitor.shared.currentPowerSource
     @AppStorage("Dashboard.RAMScope") private var ramScopeRaw: String = "system"
@@ -12,7 +12,7 @@ public struct SystemMonitorView: View {
     private let activeDisplayCount: Int
     private let totalDisplayCount: Int
 
-    public init(activeDisplayCount: Int = 0, totalDisplayCount: Int = 0) {
+    init(activeDisplayCount: Int = 0, totalDisplayCount: Int = 0) {
         self.activeDisplayCount = activeDisplayCount
         self.totalDisplayCount = totalDisplayCount
     }
@@ -36,7 +36,7 @@ public struct SystemMonitorView: View {
         return Text("Sys: \(FormatUtils.formatBytes(usedBytes)) / \(monitor.formattedTotalMemory())", comment: "Dashboard system memory detail. Placeholders are used and total memory.")
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(spacing: 8) {
             RAMScopePicker(selection: $ramScopeRaw)
 

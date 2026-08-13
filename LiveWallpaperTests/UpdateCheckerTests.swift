@@ -10,11 +10,11 @@ struct SemanticVersionTests {
         #expect(v == SemanticVersion(major: 1, minor: 2, patch: 3))
     }
 
-    @Test("Accepts the v / loomscreen-v / lwp-v prefixes we publish")
+    @Test("Accepts the v / loomscreen-v prefixes we publish")
     func acceptsKnownPrefixes() {
         #expect(SemanticVersion(parsing: "v1.0.0") == SemanticVersion(major: 1, minor: 0, patch: 0))
         #expect(SemanticVersion(parsing: "loomscreen-v2.10.5") == SemanticVersion(major: 2, minor: 10, patch: 5))
-        #expect(SemanticVersion(parsing: "lwp-v0.4.1") == SemanticVersion(major: 0, minor: 4, patch: 1))
+        #expect(SemanticVersion(parsing: "lwp-v0.4.1") == nil, "the retired lwp-v prefix must no longer parse")
     }
 
     @Test("Strips suffix metadata after - or + from the patch component")

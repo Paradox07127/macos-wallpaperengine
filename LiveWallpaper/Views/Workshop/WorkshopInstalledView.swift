@@ -114,17 +114,11 @@ struct WorkshopInstalledView: View {
     }
 
     private var installedInspectorPlaceholder: some View {
-        VStack(spacing: DesignTokens.Spacing.sm) {
-            Image(systemName: "square.dashed")
-                .font(.system(size: 28))
-                .foregroundStyle(.tertiary)
-            Text("Select a wallpaper to see details.")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(DesignTokens.Spacing.lg)
+        IllustratedEmptyState(
+            symbol: "square.dashed",
+            title: "Select a wallpaper to see details.",
+            variant: .compact
+        )
     }
 
 
@@ -231,7 +225,7 @@ struct WorkshopInstalledView: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 14)
+                .padding(.vertical, DesignTokens.Spacing.cardInset)
                 .background(
                     Color.clear
                         .contentShape(Rectangle())
@@ -260,21 +254,11 @@ struct WorkshopInstalledView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: DesignTokens.Spacing.md) {
-            Image(systemName: "square.stack.3d.up.slash")
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text("No wallpapers installed yet.")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-            Text("Download from Browse Online, paste a Workshop URL, or add an existing library folder with the toolbar's + button.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(DesignTokens.Spacing.xl)
+        IllustratedEmptyState(
+            symbol: "square.stack.3d.up.slash",
+            title: "No wallpapers installed yet.",
+            message: "Download from Browse Online, paste a Workshop URL, or add an existing library folder with the toolbar's + button."
+        )
     }
 
     // MARK: - Type filter chips (multi-select)
@@ -352,8 +336,8 @@ struct WorkshopInstalledView: View {
         }
     }
 
-    /// Displays currently running this entry — drives the green highlight in the
-    /// screen-chooser mini-map.
+    /// Displays currently running this entry — drives the active checkmark in
+    /// the Apply popover.
     private func activeScreenIDs(for entry: WPEHistoryEntry) -> Set<CGDirectDisplayID> {
         Set(screenManager.screens
             .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.workshopID == entry.origin.workshopID }

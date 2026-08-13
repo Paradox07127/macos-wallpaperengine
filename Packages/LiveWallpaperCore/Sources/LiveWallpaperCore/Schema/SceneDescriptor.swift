@@ -40,29 +40,6 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         self.propertyOverrides = propertyOverrides
     }
 
-    public func updating(
-        property key: String,
-        to value: WallpaperEngineProjectPropertyValue?
-    ) -> SceneDescriptor {
-        var next = propertyOverrides
-        if let value {
-            next[key] = value
-        } else {
-            next.removeValue(forKey: key)
-        }
-        return SceneDescriptor(
-            workshopID: workshopID,
-            cacheRelativePath: cacheRelativePath,
-            entryFile: entryFile,
-            capabilityTier: capabilityTier,
-            assetStorage: assetStorage,
-            dependencyWorkshopIDs: dependencyWorkshopIDs,
-            preflightTier: preflightTier,
-            preflightFeatureFlags: preflightFeatureFlags,
-            propertyOverrides: next
-        )
-    }
-
     public func withPropertyOverrides(
         _ overrides: [String: WallpaperEngineProjectPropertyValue]
     ) -> SceneDescriptor {

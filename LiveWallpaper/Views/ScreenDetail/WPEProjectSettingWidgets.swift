@@ -2,81 +2,21 @@
 import LiveWallpaperCore
 import SwiftUI
 
-struct WPEProjectSettingRow<Content: View>: View {
-    /// Author-supplied subtitles (from `project.json`) render verbatim;
-    /// app-supplied subtitles flow through the localization catalog.
-    enum Subtitle {
-        case authorVerbatim(String)
-        case localized(LocalizedStringKey)
-    }
-
-    let icon: String?
-    let iconColor: Color?
-    let title: String
-    let subtitle: Subtitle?
-    let content: Content
-
-    init(
-        icon: String? = nil,
-        iconColor: Color? = nil,
-        title: String,
-        subtitle: Subtitle? = nil,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.icon = icon
-        self.iconColor = iconColor ?? (icon != nil ? .accentColor : nil)
-        self.title = title
-        self.subtitle = subtitle
-        self.content = content()
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            if let icon = icon, let iconColor = iconColor {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(iconColor.opacity(0.15))
-                        .frame(width: 24, height: 24)
-                    Image(systemName: icon)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(iconColor)
-                }
-                .accessibilityHidden(true)
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: title)
-                    .font(DesignTokens.Typography.body)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                if subtitle != nil {
-                    subtitleText
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
-
-            content
-        }
-        .controlSize(.small)
-        .padding(.vertical, 3)
-        .dynamicTypeSize(...DynamicTypeSize.accessibility3)
-    }
-
-    @ViewBuilder
-    private var subtitleText: some View {
-        switch subtitle {
-        case .authorVerbatim(let raw):
-            Text(verbatim: raw)
-        case .localized(let key):
-            Text(key)
-        case .none:
-            EmptyView()
+/// Per-control-type glyph for WPE custom-setting rows, so author properties
+/// share the app-wide `SettingRow` geometry (icon block + title + control)
+/// instead of a bespoke icon-less row.
+enum WPEPropertyRowIcon {
+    static func symbol(for type: WallpaperEngineProjectPropertySchema.PropertyType) -> String {
+        switch type {
+        case .bool:        return "switch.2"
+        case .slider:      return "slider.horizontal.3"
+        case .combo:       return "list.bullet"
+        case .color:       return "paintpalette"
+        case .textinput:   return "character.cursor.ibeam"
+        case .file:        return "doc.badge.plus"
+        case .directory:   return "folder.badge.plus"
+        case .group, .text, .unsupported:
+            return "questionmark"
         }
     }
 }

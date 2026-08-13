@@ -88,7 +88,7 @@ struct ScheduleSection: View {
             title: "Set up a schedule",
             message: "Switch wallpapers automatically across different times of day.",
             symbolColor: .accentColor,
-            primary: IllustratedEmptyState.ButtonAction("Get Started", action: enableSchedule),
+            primary: EmptyStateButtonAction("Get Started", action: enableSchedule),
             variant: .compact
         )
         .frame(maxWidth: .infinity)
@@ -161,7 +161,12 @@ struct ScheduleSection: View {
 
             Spacer()
 
-            DisableScheduleButton(action: disableSchedule)
+            Button(role: .destructive, action: disableSchedule) {
+                Text("Disable Schedule")
+            }
+            .buttonStyle(GlassCapsuleButtonStyle(tint: DesignTokens.Colors.Status.danger))
+            .accessibilityLabel(Text("Disable schedule"))
+            .accessibilityHint(Text("Removes all schedule slots and returns to normal playback"))
         }
     }
 
@@ -427,30 +432,3 @@ struct ScheduleSection: View {
     }
 }
 
-/// Destructive twin of `GlassCapsuleButtonStyle` geometry (balances Add Slot).
-private struct DisableScheduleButton: View {
-    let action: () -> Void
-
-    @State private var isHovering = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Button(role: .destructive, action: action) {
-            Text("Disable Schedule")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(DesignTokens.Colors.Status.danger)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(isHovering ? DesignTokens.Colors.Status.danger.opacity(0.10) : Color.clear)
-                )
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovering)
-        .accessibilityLabel(Text("Disable schedule"))
-        .accessibilityHint(Text("Removes all schedule slots and returns to normal playback"))
-    }
-}

@@ -1,7 +1,6 @@
 import CoreGraphics
 import Foundation
 import LiveWallpaperCore
-@testable import LiveWallpaper
 
 @MainActor
 final class FakeFullScreenDetector: FullScreenDetecting {
@@ -34,18 +33,6 @@ final class FakeFullScreenDetector: FullScreenDetecting {
 
     var occlusionFractions: [CGDirectDisplayID: CGFloat] {
         storedOcclusionFractions
-    }
-
-    func setHiddenScreens(_ hiddenScreens: [CGDirectDisplayID: Bool]) {
-        storedHiddenScreens = hiddenScreens
-    }
-
-    func setOccludedScreens(_ occludedScreens: [CGDirectDisplayID: Bool]) {
-        storedOccludedScreens = occludedScreens
-    }
-
-    func setOcclusionFractions(_ occlusionFractions: [CGDirectDisplayID: CGFloat]) {
-        storedOcclusionFractions = occlusionFractions
     }
 
     func isDesktopHidden(for screenID: CGDirectDisplayID) -> Bool {

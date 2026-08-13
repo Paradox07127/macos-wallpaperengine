@@ -274,6 +274,7 @@ struct CodexAgentSourceTests {
         let oldEnded = Self.model(id: "old-ended", eventTime: now.addingTimeInterval(-8_000), eventType: "task_complete")
         let live = Self.model(id: "live", eventTime: now.addingTimeInterval(-5), eventType: "task_started")
 
+        var tracker = MonitorAgentWaitTracker()
         let states = CodexAgentSource.sessionStates(
             modelsByURL: [
                 recentURL: recentEnded,
@@ -285,7 +286,8 @@ struct CodexAgentSourceTests {
                 .init(url: oldURL, modificationDate: now.addingTimeInterval(-8_000), processAlive: false),
                 .init(url: liveURL, modificationDate: now.addingTimeInterval(-5), processAlive: true)
             ],
-            now: now
+            now: now,
+            waitTracker: &tracker
         )
 
         #expect(states.map(\.id) == ["codex:live", "codex:recent-ended"])

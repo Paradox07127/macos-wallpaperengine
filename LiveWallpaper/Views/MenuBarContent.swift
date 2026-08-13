@@ -5,7 +5,7 @@ import os
 
 struct MenuBarContent: View {
     private static let signposter = OSSignposter(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.taijia.LiveWallpaper",
+        subsystem: Bundle.main.bundleIdentifier ?? "com.loomscreen.pro",
         category: "MenuBar"
     )
 
@@ -83,17 +83,13 @@ struct MenuBarContent: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button(action: { invokeAddWallpaper(nil) }) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .adaptiveGlassSurface(.circle, interactive: true)
+                IconControlButton(
+                    systemImage: "plus",
+                    isEnabled: true,
+                    action: { invokeAddWallpaper(nil) },
+                    accessibilityLabel: "Add wallpaper"
+                )
                 .help(Text("Add wallpaper — pick a video for this display", comment: "Quick Add button help"))
-                .accessibilityLabel(Text("Add wallpaper", comment: "Quick Add button accessibility label"))
 
                 Toggle("", isOn: Binding(
                     get: { isWallpaperEnabled },
@@ -790,17 +786,18 @@ private struct MenuBarWindowChromeClearer: NSViewRepresentable {
         window.isOpaque = false
         window.backgroundColor = .clear
 
-        if let contentView = window.contentView {
-            hideVisualEffectViews(in: contentView)
-        }
-    }
-
-    private static func hideVisualEffectViews(in view: NSView) {
-        if let vfx = view as? NSVisualEffectView {
-            vfx.isHidden = true
-        }
-        for subview in view.subviews {
-            hideVisualEffectViews(in: subview)
+        // The chrome is a sibling of our content inside the window's frame view; the
+        // previous recursive walk started at `contentView` and so only ever searched
+        // our own SwiftUI subtree. Whatever it missed drew a second rounded backdrop
+        // under the glass shell — a non-concentric arc at the four corners.
+        // Matched by position, not by class, so it holds however AppKit backs the
+        // popover: everything outside `contentView` is chrome.
+        guard let content = window.contentView, let frameView = content.superview else { return }
+        frameView.wantsLayer = true
+        frameView.layer?.backgroundColor = NSColor.clear.cgColor
+        frameView.layer?.borderWidth = 0
+        for sibling in frameView.subviews where sibling !== content {
+            sibling.isHidden = true
         }
     }
 }

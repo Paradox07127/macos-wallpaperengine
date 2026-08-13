@@ -53,7 +53,7 @@
 
 ## 版本划分
 
-| | **Lite**（免费，MIT） | **Pro** |
+| | **Lite** | **Pro** |
 |---|:---:|:---:|
 | 视频 / 网页 / Apple Aerials、播放列表、排程、Overlay、快捷键 | ✅ | ✅ |
 | Wallpaper Engine 场景渲染与导入 | — | ✅ |

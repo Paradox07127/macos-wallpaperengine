@@ -23,11 +23,6 @@ enum WPETexMetalTranscoder {
     nonisolated(unsafe) private static var samplerState: MTLSamplerState?
     private static let pipelineLock = NSLock()
 
-    static func isAvailable(for format: WPETexFormat) -> Bool {
-        guard let device, device.supportsBCTextureCompression else { return false }
-        return mtlPixelFormat(for: format) != nil
-    }
-
     static func transcode(
         _ bytes: Data,
         format: WPETexFormat,

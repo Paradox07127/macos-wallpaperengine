@@ -46,10 +46,10 @@ struct ClaudeTranscriptLine {
             let object = try? JSONSerialization.jsonObject(with: data),
             let dict = object as? [String: Any]
         else { return nil }
-        self.init(dict: dict, rawUTF8: String(data: data, encoding: .utf8))
+        self.init(dict: dict)
     }
 
-    init(dict: [String: Any], rawUTF8: String? = nil) {
+    init(dict: [String: Any]) {
         let typeString = dict["type"] as? String ?? "other"
         switch typeString {
         case "user": self.type = .user
@@ -301,13 +301,13 @@ struct ClaudeSessionModel {
         let isFresh = age < 15
         let isVeryStale = age >= freshnessTimeout
 
-        // 1. Blocked on a human: an AskUserQuestion call the user has not answered.
+        // Blocked on a human: an AskUserQuestion call the user has not answered.
         //    This is the transcript's own signal; the old probe searched system
         //    lines for "permission"/"approval" and matched nothing in practice.
         if !outstandingAskIDs.isEmpty && processAlive {
             return .needsInput
         }
-        // 2. Actively working. An outstanding tool call outranks freshness while
+        // Actively working. An outstanding tool call outranks freshness while
         //    the process is alive: a build or a test run can go minutes without
         //    writing a transcript event, and calling that "idle" was wrong. The
         //    `stale` warning (5 min silent) is what flags a suspicious one.
@@ -320,14 +320,14 @@ struct ClaudeSessionModel {
         if lastAssistantStopReason == "end_turn" && processAlive {
             return .idle
         }
-        // 4. No activity for a long while: idle if alive, otherwise ended.
+        // No activity for a long while: idle if alive, otherwise ended.
         if isVeryStale {
             return processAlive ? .idle : .ended
         }
         if !processAlive {
             return .ended
         }
-        // 6. Fresh but ambiguous ⇒ running; otherwise unknown.
+        // Fresh but ambiguous ⇒ running; otherwise unknown.
         return isFresh ? .running : .unknown
     }
 
@@ -412,14 +412,5 @@ struct ClaudeSessionModel {
         model.outstandingAskIDs = Set(state.outstandingAskIDs ?? [])
         model.lastInboundAwaitsModel = state.lastInboundAwaitsModel ?? false
         return model
-    }
-
-    // MARK: - Private helpers
-
-    private struct Rate {
-        var input: Double       // USD per 1M input tokens
-        var output: Double
-        var cacheRead: Double
-        var cacheWrite: Double
     }
 }

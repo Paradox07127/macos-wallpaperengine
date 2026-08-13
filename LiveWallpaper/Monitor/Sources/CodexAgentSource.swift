@@ -149,15 +149,6 @@ final class CodexAgentSource: MonitorDataSource {
     static func sessionStates(
         modelsByURL: [URL: CodexSessionModel],
         files: [CodexSessionScanner.SessionFile],
-        now: Date
-    ) -> [MonitorAgentSessionState] {
-        var tracker = MonitorAgentWaitTracker()
-        return sessionStates(modelsByURL: modelsByURL, files: files, now: now, waitTracker: &tracker)
-    }
-
-    static func sessionStates(
-        modelsByURL: [URL: CodexSessionModel],
-        files: [CodexSessionScanner.SessionFile],
         now: Date,
         waitTracker: inout MonitorAgentWaitTracker,
         liveProcessDirectories: (directories: Set<String>, complete: Bool)

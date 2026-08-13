@@ -895,10 +895,6 @@ final class WallpaperVideoPlayer {
         videoView.setParticleEffect(effect, density: density)
     }
 
-    func setParticleDensity(_ density: Double) {
-        videoView?.setParticleDensity(density)
-    }
-
     func setParticleEffectsSuspended(_ suspended: Bool) {
         guard particleEffectsSuspended != suspended else { return }
         particleEffectsSuspended = suspended

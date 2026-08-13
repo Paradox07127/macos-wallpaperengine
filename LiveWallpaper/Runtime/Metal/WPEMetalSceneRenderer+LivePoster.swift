@@ -55,15 +55,6 @@ extension WPEMetalSceneRenderer {
     }
     // MARK: - Capture requests
 
-    /// Read-back of the first frame, captured at the end of `performLoad()`
-    /// **only when scene-debug artifacts are enabled**. Production leaves it
-    /// `nil`; the inspector requests a poster from the next normally-presented
-    /// frame via `captureLivePosterFromNextFrame()`.
-    ///
-    /// TODO: no production reader — only tests observe it. Either surface it in
-    /// the scene-debug inspector or retire it.
-    var previewSnapshot: NSImage? { cachedSnapshot }
-
     /// Reuses the next frame the renderer was already going to present as the
     /// inspector poster. This deliberately avoids forcing a fresh synchronous
     /// `renderCurrentFrame()` on the main actor. Dynamic scenes resolve on their

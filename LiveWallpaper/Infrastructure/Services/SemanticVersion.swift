@@ -15,7 +15,7 @@ struct SemanticVersion: Comparable, Equatable, Hashable, Sendable {
 
     init?(parsing raw: String) {
         var input = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        for prefix in ["loomscreen-v", "lwp-v", "v"] where input.hasPrefix(prefix) {
+        for prefix in ["loomscreen-v", "v"] where input.hasPrefix(prefix) {
             input = String(input.dropFirst(prefix.count))
             break
         }

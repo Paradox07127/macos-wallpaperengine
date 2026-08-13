@@ -1066,13 +1066,6 @@ struct ScheduleSlotTimelineSegmentsTests {
         #expect(segments[0].wraps == true)
     }
 
-    @Test("wraps property matches start > end semantics")
-    func wrapsFlagMatchesStartGtEnd() {
-        #expect(ScheduleSlot(startHour: 6, endHour: 12, label: "x").wraps == false)
-        #expect(ScheduleSlot(startHour: 12, endHour: 6, label: "x").wraps == true)
-        #expect(ScheduleSlot(startHour: 22, endHour: 0, label: "x").wraps == true)
-        #expect(ScheduleSlot(startHour: 12, endHour: 12, label: "x").wraps == false)
-    }
 }
 
 @Suite("FrameRateLimit.resolveCompositionFPS")

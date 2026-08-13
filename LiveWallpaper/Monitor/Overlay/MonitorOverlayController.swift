@@ -1,6 +1,5 @@
 import AppKit
 import LiveWallpaperCore
-import os
 
 struct MonitorOverlayVisibilityInput: Equatable, Sendable {
     var screenID: CGDirectDisplayID
@@ -67,8 +66,6 @@ enum MonitorOverlayVisibilityPolicy {
 @MainActor
 final class MonitorOverlayController: NSObject {
     static let shared = MonitorOverlayController()
-
-    private static let log = os.Logger(subsystem: "com.livewallpaper", category: "MonitorOverlay")
 
     /// ScreenManager stores into the screen's `monitorOverlay.board`.
     var onOverlayEdited: ((CGDirectDisplayID, MonitorBoardConfiguration) -> Void)?
@@ -228,18 +225,6 @@ final class MonitorOverlayController: NSObject {
         self.isUserAbsent = isUserAbsent
         self.occludedScreenIDs = occludedScreenIDs
         reconcileVisibilityAndRuntime()
-    }
-
-    // MARK: - Editing
-
-    func setEditing(_ editing: Bool) {
-        for host in hosts.values {
-            host.board.setEditing(editing)
-        }
-    }
-
-    var isEditing: Bool {
-        hosts.values.contains { $0.board.isEditing }
     }
 
     #if DEBUG

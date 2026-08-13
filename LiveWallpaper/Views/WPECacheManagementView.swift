@@ -76,19 +76,12 @@ struct WPECacheManagementView: View {
 
     // Shared formatters — list refreshes often; don't rebuild per row.
     var byteFormatter: ByteCountFormatter { Self.sharedByteFormatter }
-    var relativeFormatter: RelativeDateTimeFormatter { Self.sharedRelativeFormatter }
 
     private static let sharedByteFormatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
         f.allowedUnits = [.useKB, .useMB, .useGB]
         f.countStyle = .file
         f.includesUnit = true
-        return f
-    }()
-
-    private static let sharedRelativeFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
         return f
     }()
 }

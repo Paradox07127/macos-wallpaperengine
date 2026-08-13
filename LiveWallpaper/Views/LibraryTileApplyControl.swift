@@ -33,7 +33,9 @@ struct LibraryTileApplyControl: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(DesignTokens.Colors.onAccentFill)
             .frame(width: 22, height: 22)
-            .background(Circle().fill(tint.opacity(0.95)))
-            .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+            // Over-artwork glyph control — same glass family as the thumbnail
+            // badges, which handles legibility and Reduce Transparency; the
+            // strong opacity keeps the tinted-identity read of the old solid fill.
+            .thumbnailBadgeGlass(tint: tint, opacity: 0.9, in: .circle)
     }
 }

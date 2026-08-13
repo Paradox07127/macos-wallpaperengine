@@ -18,7 +18,7 @@ extension GeneralSettingsView {
             ) {
                 HStack(spacing: 8) {
                     if loginItemShowsInlineStatus {
-                        GeneralSettingsStatusPill(text: loginItemStatusText, color: loginItemStatusColor)
+                        StatusChip(verbatim: loginItemStatusText, tint: loginItemStatusColor)
                             .help(Text(verbatim: loginItemStatusSubtitle))
                     }
 

@@ -41,11 +41,6 @@ extension WPEMetalSceneRenderer {
         try await debugAdoptedActor().reload()
     }
 
-    @MainActor
-    func captureLivePosterFromNextFrame() async -> NSImage? {
-        await debugAdoptedActor().captureLivePoster()
-    }
-
     /// Drops the strong test-actor hold on cleanup so a torn-down test renderer
     /// (and the actor that retains it) can deallocate.
     func releaseDebugActorIfNeeded() {

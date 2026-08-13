@@ -4,13 +4,13 @@ import SwiftUI
 /// hover lift. The glass is not decoration — without a surface the card's footer
 /// is transparent, so `shadow` traces the opaque thumbnail alone and draws a line
 /// across the card's waist instead of sitting behind the whole card.
-public struct GalleryTileChrome: ViewModifier {
-    public let isHovering: Bool
-    public let isSelected: Bool
-    public let cornerRadius: CGFloat
-    public let reduceMotion: Bool
+struct GalleryTileChrome: ViewModifier {
+    let isHovering: Bool
+    let isSelected: Bool
+    let cornerRadius: CGFloat
+    let reduceMotion: Bool
 
-    public init(
+    init(
         isHovering: Bool,
         isSelected: Bool = false,
         cornerRadius: CGFloat = DesignTokens.Corner.lg,
@@ -22,7 +22,7 @@ public struct GalleryTileChrome: ViewModifier {
         self.reduceMotion = reduceMotion
     }
 
-    public func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
         content
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .adaptiveGlassSurface(.roundedRectangle(cornerRadius), stroked: false)

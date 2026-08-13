@@ -711,7 +711,6 @@ final class WPEMetalRenderExecutor {
                     reference: .image(layer.graphLayer.imagePath),
                     target: .scene,
                     layer: graphLayer,
-                    runtimeUniforms: runtimeUniforms,
                     textures: textures,
                     commandBuffer: commandBuffer,
                     frameState: &frameState
@@ -957,8 +956,7 @@ final class WPEMetalRenderExecutor {
             guard u.slot < slots.count else { continue }
             let value = Self.textureResolutionValue(
                 named: u.name,
-                texturesBySlot: texturesBySlot,
-                destinationTexture: destinationTexture
+                texturesBySlot: texturesBySlot
             ) ?? Self.firstValue(
                 in: values,
                 matching: Self.translatedUniformNameCandidates(for: u)
@@ -1299,7 +1297,6 @@ final class WPEMetalRenderExecutor {
             layer: drawLayer,
             puppetModel: puppetModel,
             skinningState: skinningState,
-            runtimeUniforms: runtimeUniforms,
                 destination: destination,
                 textures: textures,
                 frameState: frameState,
@@ -1538,7 +1535,7 @@ final class WPEMetalRenderExecutor {
         var seen = Set<String>()
         for reference in textureReferences(for: pass) {
             guard case .fbo(let alias) = reference,
-                  WPEMetalShaderInputs.isSceneAliasName(alias),
+                  WPETextureReference.isSceneAliasName(alias),
                   seen.insert(alias).inserted,
                   needsSnapshot(alias) else {
                 continue
@@ -1644,7 +1641,6 @@ final class WPEMetalRenderExecutor {
         reference: WPETextureReference,
         target: WPERenderTarget,
         layer: WPERenderLayer,
-        runtimeUniforms: WPEMetalRuntimeUniforms,
         textures: [String: MTLTexture],
         commandBuffer: MTLCommandBuffer,
         frameState: inout WPEMetalFrameState
@@ -2119,18 +2115,8 @@ final class WPEMetalRenderExecutor {
         let geometry = layer.geometry
         let sceneWidth = Float(max(sceneSize.width, 1))
         let sceneHeight = Float(max(sceneSize.height, 1))
-        // `usesShapeQuadGeometry` gates every real call to exactly 4 points; the
-        // fallback keeps this total for a defensive/future caller (degenerate
-        // zero-area quad = draws nothing rather than crashing on an index).
-        guard let points = geometry.shapePoints, points.count == 4 else {
-            return WPEShapeQuadUniforms(
-                corner0: SIMD4<Float>(0, 0, 0, 0),
-                corner1: SIMD4<Float>(0, 0, 0, 0),
-                corner2: SIMD4<Float>(0, 0, 0, 0),
-                corner3: SIMD4<Float>(0, 0, 0, 0),
-                sceneHalfAndPad: SIMD4<Float>(sceneWidth * 0.5, sceneHeight * 0.5, 0, 0)
-            )
-        }
+        // `usesShapeQuadGeometry` gates every call to exactly 4 points.
+        let points = geometry.shapePoints!
         let baseSquare = sceneHeight
         let scaleX = Float(geometry.scale.x)
         let scaleY = Float(geometry.scale.y)
@@ -2630,8 +2616,7 @@ final class WPEMetalRenderExecutor {
             let value = Self.texelSizeValue(named: u.name, sceneSize: currentSceneSize)
             ?? Self.textureResolutionValue(
                 named: u.name,
-                texturesBySlot: texturesBySlot,
-                destinationTexture: destinationTexture
+                texturesBySlot: texturesBySlot
             ) ?? Self.translatedUniformValue(for: u, in: pass)
             if let length = u.arrayLength {
                 Self.packArrayUniform(value, glslType: u.glslType, length: length, slot: u.slot, into: &slots)
@@ -2742,8 +2727,7 @@ final class WPEMetalRenderExecutor {
 
     private static func textureResolutionValue(
         named name: String,
-        texturesBySlot: [Int: MTLTexture],
-        destinationTexture: MTLTexture?
+        texturesBySlot: [Int: MTLTexture]
     ) -> WPESceneShaderConstantValue? {
         guard let slot = textureResolutionSlotIndex(for: name),
               let texture = texturesBySlot[slot] else {

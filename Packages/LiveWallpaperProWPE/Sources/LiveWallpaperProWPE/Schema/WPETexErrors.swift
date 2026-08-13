@@ -326,8 +326,6 @@ public struct WPETexAnimationTrack: Sendable, Equatable {
         self.frameRate = frameRate
         self.loop = loop
     }
-
-    public var frameCount: Int { frames.count }
 }
 
 public struct WPETexAnimationFrame: Sendable, Equatable {

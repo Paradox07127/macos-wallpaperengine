@@ -1,7 +1,7 @@
 # Changelog
 
-All notable changes to **Loomscreen** (the open-source Lite edition of the
-LiveWallpaper codebase) are tracked here. Format follows
+All notable changes to **Loomscreen** (the open-source Lite edition) are
+tracked here. Format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
@@ -10,7 +10,7 @@ unstable — any `0.y` → `0.(y+1)` bump may introduce breaking changes to
 the configuration schema, UI layout, or feature gating. A `1.0.0` tag
 will be cut once the surface has stabilized through real-world use.
 
-Pro-edition (`LiveWallpaper.app`) release notes live separately and are
+Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
 ## [0.3.0] — 2026-07-25
@@ -208,12 +208,3 @@ codebase, distributed via GitHub Releases.
 - `InfoPlist.xcstrings` no longer localizes `CFBundleDisplayName` /
   `CFBundleName` to "LiveWallpaper" for every locale, which used to
   override Loomscreen's hard-coded display name at runtime.
-
-[Unreleased]: https://github.com/Paradox07127/Loomscreen/compare/loomscreen-v0.3.0...HEAD
-[0.3.0]: https://github.com/Paradox07127/Loomscreen/compare/loomscreen-v0.2.4...loomscreen-v0.3.0
-[0.2.4]: https://github.com/Paradox07127/Loomscreen/compare/loomscreen-v0.2.3...loomscreen-v0.2.4
-[0.2.3]: https://github.com/Paradox07127/Loomscreen/compare/loomscreen-v0.2.2...loomscreen-v0.2.3
-[0.2.2]: https://github.com/Paradox07127/Loomscreen/compare/loomscreen-v0.2.1...loomscreen-v0.2.2
-[0.2.1]: https://github.com/Paradox07127/Loomscreen/compare/loomscreen-v0.2.0...loomscreen-v0.2.1
-[0.2.0]: https://github.com/Paradox07127/Loomscreen/compare/loomscreen-v0.1.0...loomscreen-v0.2.0
-[0.1.0]: https://github.com/Paradox07127/Loomscreen/releases/tag/loomscreen-v0.1.0

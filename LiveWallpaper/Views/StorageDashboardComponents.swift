@@ -207,15 +207,9 @@ struct StorageInfoButton<Content: View>: View {
         .help(Text("Details"))
         .accessibilityLabel(Text("Details"))
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            content().padding(14)
+            content().padding(DesignTokens.Spacing.cardInset)
         }
     }
 }
 
-extension View {
-    func storageDestructiveIconStyle() -> some View {
-        buttonStyle(.borderless)
-            .foregroundStyle(DesignTokens.Colors.Status.danger)
-    }
-}
 #endif

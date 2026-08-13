@@ -10,14 +10,14 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>LiveWallpaper Configuration</string>
+			<string>Loomscreen Pro Configuration</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.taijia.livewallpaper.config</string>
+				<string>com.loomscreen.pro.config</string>
 			</array>
 		</dict>
 	</array>
@@ -77,7 +77,7 @@
 				</array>
 				<key>public.mime-type</key>
 				<array>
-					<string>application/x-livewallpaper-config+json</string>
+					<string>application/x-loomscreen-pro-config+json</string>
 				</array>
 			</dict>
 		</dict>

@@ -1556,8 +1556,6 @@ struct WPESceneDocumentParserTests {
         let image = try #require(document.imageObjects.first)
         #expect(image.alpha == 1)
         #expect(image.alphaAnimation != nil)
-        #expect(image.resolvedAlpha(at: 1) == 1)
-        #expect(image.resolvedAlpha(at: 4) == 0)
 
         let text = try #require(document.textObjects.first)
         #expect(text.alpha == 1)
@@ -2234,7 +2232,6 @@ struct WPESceneDocumentParserTests {
         #expect(effect.name == "Shake")
         #expect(effect.fileRelativePath == "effects/shake/effect.json")
         #expect(effect.visible == true)
-        #expect(effect.isShakeEffect)
 
         let pass = try #require(effect.passOverrides.first)
         #expect(pass.id == 2)

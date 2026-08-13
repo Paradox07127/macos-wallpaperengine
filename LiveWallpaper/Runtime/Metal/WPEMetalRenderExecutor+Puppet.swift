@@ -718,7 +718,6 @@ extension WPEMetalRenderExecutor {
         layer: WPERenderLayer,
         puppetModel: WPEPuppetModel?,
         skinningState: PuppetSkinningState?,
-        runtimeUniforms: WPEMetalRuntimeUniforms,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
         textures: [String: MTLTexture],
         frameState: WPEMetalFrameState,
@@ -730,7 +729,7 @@ extension WPEMetalRenderExecutor {
               let model = puppetModel else {
             return false
         }
-        if shouldDeferPuppetMeshWarp(for: layer, model: model) {
+        if shouldDeferPuppetMeshWarp(for: layer) {
             // Intentional fallthrough: the dispatcher's genericimage2/4 path resolves
             // texture0 with the SAME atlas precedence used below
             // (`textureBindings[0] ?? textures[0] ?? source`). Because this pass targets
@@ -944,7 +943,7 @@ extension WPEMetalRenderExecutor {
               // Mirrors the material-pass deferral decision. No-effect puppets already warped at
               // material time; clip+effect puppets are consumed by the early multi-encoder clip branch,
               // while ordinary effect puppets continue through this single-encoder mesh composite.
-              shouldDeferPuppetMeshWarp(for: layer, model: model) else {
+              shouldDeferPuppetMeshWarp(for: layer) else {
             return false
         }
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
@@ -1390,7 +1389,7 @@ extension WPEMetalRenderExecutor {
     /// pre-deferral behaviour. Clip-composite puppets with effects use the same ordering: their local
     /// material/effects are produced first, then the final mesh warp re-applies authored per-part clipping.
     /// A DEBUG `WPEPuppetDeferMeshWarp` override forces the decision (A/B testing).
-    private func shouldDeferPuppetMeshWarp(for layer: WPERenderLayer, model: WPEPuppetModel) -> Bool {
+    private func shouldDeferPuppetMeshWarp(for layer: WPERenderLayer) -> Bool {
         // The deferred warp can only be applied if there's a `.scene` copy pass to land it on; without
         // one, deferring the material-time warp would lose it (the puppet would render unwarped). So even
         // a forced override stays on the direct path when no scene-warp target exists.
@@ -1758,7 +1757,7 @@ extension WPEMetalRenderExecutor {
         guard let model = puppetModel else {
             return false
         }
-        if shouldDeferPuppetMeshWarp(for: layer, model: model) {
+        if shouldDeferPuppetMeshWarp(for: layer) {
             return try encodeDeferredPuppetClipCompositePassIfNeeded(
                 pass: pass,
                 layer: layer,

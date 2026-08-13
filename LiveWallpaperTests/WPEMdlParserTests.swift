@@ -33,7 +33,7 @@ struct WPEPuppetAnimationEvaluatorTests {
                 (SIMD3(20, 0, 0), SIMD3(0, 0, 0), SIMD3(1, 1, 1))
             ])
         ])
-        let palette = WPEPuppetAnimationEvaluator.palette(for: anim, at: 0)
+        let palette = WPEPuppetAnimationEvaluator.palette(layers: [WPEPuppetAnimationLayer(animation: anim, rate: 1, additive: false, blend: 1)], bones: [], at: 0)
         #expect(palette.count == 1)
         #expect(palette.allSatisfy { simd_equal($0, matrix_identity_float4x4) })
     }
@@ -138,73 +138,6 @@ struct WPEPuppetAnimationEvaluatorTests {
         #expect(cyc[0].map { simd_equal($0.columns.3, SIMD4<Float>(1, 0, 0, 1)) } == true)
     }
 
-    @Test("Loop mode wraps the sampled frame index")
-    func loopModeWraps() {
-        let anim = animation(frameCount: 2, mode: "loop", channels: [channel([
-            (.zero, .zero, SIMD3(1, 1, 1))
-        ])])
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 0) == 0)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 1.0 / 30.0) == 1)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 2.0 / 30.0) == 0)
-    }
-
-    @Test("Unknown playback modes default to loop")
-    func unknownModeDefaultsToLoop() {
-        let anim = animation(frameCount: 4, mode: "clamp", channels: [channel([
-            (.zero, .zero, SIMD3(1, 1, 1))
-        ])])
-        let fps = 30.0
-        let expected = [0, 1, 2, 3, 0, 1, 2]
-        for (rawFrame, want) in expected.enumerated() {
-            let time = Double(rawFrame) / fps
-            #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: time) == want)
-        }
-    }
-
-    @Test("Single mode reaches and holds the final stored frame")
-    func singleModeReachesFinalStoredFrame() {
-        let anim = animation(frameCount: 4, mode: "single", channels: [channel([
-            (.zero, .zero, SIMD3(1, 1, 1))
-        ])])
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 3.0 / 30.0) == 3)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 4.0 / 30.0) == 4)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 8.0 / 30.0) == 4)
-    }
-
-    @Test("Mirror mode ping-pongs the sampled frame index instead of freezing on the last frame")
-    func mirrorModeBounces() {
-        let anim = animation(frameCount: 4, mode: "mirror", channels: [channel([
-            (.zero, .zero, SIMD3(1, 1, 1))
-        ])])
-        let fps = 30.0
-        let expected = [0, 1, 2, 3, 4, 3, 2, 1, 0, 1, 2, 3, 4]
-        for (rawFrame, want) in expected.enumerated() {
-            let time = Double(rawFrame) / fps
-            #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: time) == want)
-        }
-    }
-
-    @Test("Mirror mode is case-insensitive and tolerates surrounding whitespace")
-    func mirrorModeNormalizesCasingAndWhitespace() {
-        let anim = animation(frameCount: 3, mode: " Mirror ", channels: [channel([
-            (.zero, .zero, SIMD3(1, 1, 1))
-        ])])
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 0) == 0)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 1.0 / 30.0) == 1)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 2.0 / 30.0) == 2)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 3.0 / 30.0) == 3)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 4.0 / 30.0) == 2)
-    }
-
-    @Test("Mirror mode with zero intervals never divides by a zero period")
-    func mirrorModeZeroIntervals() {
-        let anim = animation(frameCount: 0, mode: "mirror", channels: [channel([
-            (.zero, .zero, SIMD3(1, 1, 1))
-        ])])
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 0) == 0)
-        #expect(WPEPuppetAnimationEvaluator.sampledFrameIndex(for: anim, at: 5.0 / 30.0) == 0)
-    }
-
     @Test("Translation and rotation interpolate between stored frames")
     func interpolatesTRSBetweenStoredFrames() {
         let anim = animation(frameCount: 2, mode: "loop", channels: [channel([
@@ -212,7 +145,7 @@ struct WPEPuppetAnimationEvaluatorTests {
             (SIMD3(10, 0, 0), SIMD3(0, 0, .pi / 2), SIMD3(3, 3, 3)),
             (SIMD3(0, 0, 0), SIMD3(0, 0, 0), SIMD3(1, 1, 1))
         ])])
-        let palette = WPEPuppetAnimationEvaluator.palette(for: anim, at: 0.5 / 30.0)
+        let palette = WPEPuppetAnimationEvaluator.palette(layers: [WPEPuppetAnimationLayer(animation: anim, rate: 1, additive: false, blend: 1)], bones: [], at: 0.5 / 30.0)
         let skinned = palette[0] * SIMD4<Float>(1, 0, 0, 1)
 
         let rootTwo = sqrt(Float(2))
@@ -254,7 +187,7 @@ struct WPEPuppetAnimationEvaluatorTests {
                 (SIMD3(20, 0, 0), SIMD3(0, 0, 0), SIMD3(1, 1, 1))
             ])
         ])
-        let palette = WPEPuppetAnimationEvaluator.palette(for: anim, at: 1.0 / 30.0)
+        let palette = WPEPuppetAnimationEvaluator.palette(layers: [WPEPuppetAnimationLayer(animation: anim, rate: 1, additive: false, blend: 1)], bones: [], at: 1.0 / 30.0)
         let skinned = palette[0] * SIMD4<Float>(1, 2, 0, 1)
         #expect(skinned == SIMD4<Float>(11, 2, 0, 1))
     }

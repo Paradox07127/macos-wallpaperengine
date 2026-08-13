@@ -46,21 +46,6 @@ public enum WallpaperContent: Equatable, Sendable {
         return descriptor
     }
 
-    /// Live `scene.pkg` dependency (not just a cache copy). Prefer over-report:
-    /// under-report + reclaim breaks the wallpaper. `.html(.folder)` is always true
-    /// (folder import may serve package; content does not record which path).
-    public var mayReadFromSourcePackage: Bool {
-        switch self {
-        case .video(_, let packageEntryName):
-            return packageEntryName != nil
-        case .html(let source, _):
-            if case .folder = source { return true }
-            return false
-        case .scene(let descriptor):
-            if case .packageSource = descriptor.assetStorage { return true }
-            return false
-        }
-    }
 }
 
 // MARK: - Codable

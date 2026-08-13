@@ -40,18 +40,10 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         self.nameIndex = nameIndex
     }
 
-    /// Full-path byte limit; individual multibyte components may legitimately exceed 255 bytes in aggregate.
-    static let maxEntryNameBytes = IndexLimits.production.maxEntryNameBytes
     /// Per-component cap when writing to disk. APFS rejects a single path
     /// component over 255 UTF-8 bytes, so over-long components are shortened on
     /// extraction (see `filesystemSafeEntryName`).
     static let maxComponentBytes = 250
-    /// Upper bound on the entry count — rejects a corrupt/misaligned header
-    /// claiming an absurd count. Generous enough for any real package (even
-    /// large frame-sequence scenes); `reserveCapacity` is clamped separately so
-    /// a bogus count can't pre-allocate wildly.
-    static let maxEntryCount = IndexLimits.production.maxEntryCount
-
     static func parseIndex(
         streamingFrom handle: FileHandle,
         limits: IndexLimits = .production,
@@ -460,15 +452,5 @@ fileprivate extension Data {
             | (UInt32(self[base + cursor + 3]) << 24)
         cursor += 4
         return value
-    }
-
-    private func wpeReadBytes(cursor: inout Int, length: Int) throws -> Data {
-        guard length >= 0, cursor >= 0, cursor <= count, length <= count - cursor else {
-            throw WPEPackageError.truncatedHeader
-        }
-        let base = startIndex
-        let range = (base + cursor)..<(base + cursor + length)
-        cursor += length
-        return Data(self[range])
     }
 }

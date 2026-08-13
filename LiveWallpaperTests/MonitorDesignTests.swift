@@ -3,8 +3,6 @@ import SwiftUI
 @testable import LiveWallpaper
 
 struct MonitorDesignTests {
-    private let tol = 0.01
-
     private func approx(_ a: Double, _ b: Double, _ t: Double, _ label: String) {
         #expect(abs(a - b) <= t, "\(label): \(a) vs \(b) (Δ \(abs(a - b)))")
     }

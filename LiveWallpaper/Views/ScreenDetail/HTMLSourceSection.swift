@@ -523,7 +523,7 @@ struct HTMLOptionsInspector: View {
                 .disabled(draftCustomCSS == (config.customCSS ?? ""))
             }
         }
-        .padding(14)
+        .padding(DesignTokens.Spacing.cardInset)
     }
 
     // MARK: - Bindings

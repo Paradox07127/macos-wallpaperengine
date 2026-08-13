@@ -164,10 +164,6 @@ final class VideoContainerView: NSView {
         particleOverlayView.setEffect(effect, density: CGFloat(density))
     }
 
-    func setParticleDensity(_ density: Double) {
-        particleOverlayView.updateDensity(CGFloat(density))
-    }
-
     func setParticleEffectsSuspended(_ suspended: Bool) {
         particleOverlayView.setSuspended(suspended)
     }

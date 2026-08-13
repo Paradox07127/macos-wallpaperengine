@@ -19,7 +19,7 @@ final class WPEDisplayLinkTarget: NSObject {
         super.init()
     }
 
-    @objc func step(_ link: CADisplayLink) {
+    @objc func step(_: CADisplayLink) {
         // On the render thread (the link's run loop). assumeIsolated grants sync
         // isolated access via the executor's checkIsolated — a misrouted callback
         // would trap rather than race.

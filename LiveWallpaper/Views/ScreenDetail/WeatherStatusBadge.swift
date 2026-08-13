@@ -40,7 +40,7 @@ struct WeatherStatusBadge: View {
                 }
 
                 if let error = weatherService.lastError {
-                    Text(verbatim: PIISanitizer.scrub(error))
+                    Text(verbatim: LogPrivacyRedactor.scrub(error))
                         .font(.caption2)
                         .foregroundStyle(DesignTokens.Colors.Status.danger)
                         .lineLimit(1)

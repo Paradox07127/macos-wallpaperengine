@@ -30,7 +30,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"a\":1}\n{\"b\":2}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let reader = JSONLTailReader(url: url)
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
         let outcome = try reader.poll()
         #expect(linesAsStrings(outcome) == ["{\"a\":1}", "{\"b\":2}"])
         #expect(outcome.didRotate == false)
@@ -42,7 +42,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"a\":1}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let reader = JSONLTailReader(url: url)
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
         _ = try reader.poll()
 
         try append("{\"b\":2}\n{\"c\":3}\n", to: url)
@@ -55,7 +55,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"old\":1}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let firstReader = JSONLTailReader(url: url)
+        let firstReader = JSONLTailReader(url: url, resumeFrom: nil)
         _ = try firstReader.poll()
         guard let cursor = firstReader.cursorState else {
             Issue.record("Expected cursor after first successful poll")
@@ -76,7 +76,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"old\":1}\n{\"old\":2}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let firstReader = JSONLTailReader(url: url)
+        let firstReader = JSONLTailReader(url: url, resumeFrom: nil)
         _ = try firstReader.poll()
         guard let cursor = firstReader.cursorState else {
             Issue.record("Expected cursor after first successful poll")
@@ -98,7 +98,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"done\":1}\n{\"partial\":")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let firstReader = JSONLTailReader(url: url)
+        let firstReader = JSONLTailReader(url: url, resumeFrom: nil)
         let firstOutcome = try firstReader.poll()
         #expect(linesAsStrings(firstOutcome) == ["{\"done\":1}"])
         guard let cursor = firstReader.cursorState else {
@@ -122,7 +122,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"a\":1}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let reader = JSONLTailReader(url: url)
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
         _ = try reader.poll()
 
         try append("{\"partial\":", to: url)
@@ -139,7 +139,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"old\":1}\n{\"old\":2}\n{\"old\":3}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let reader = JSONLTailReader(url: url)
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
         _ = try reader.poll()
 
         try "{\"new\":1}\n".data(using: .utf8)!.write(to: url)
@@ -153,7 +153,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"a\":1}\n{\"a\":2}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let reader = JSONLTailReader(url: url)
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
         _ = try reader.poll()
 
         try FileManager.default.removeItem(at: url)
@@ -168,7 +168,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"a\":1}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let reader = JSONLTailReader(url: url)
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
         _ = try reader.poll()
 
         try FileManager.default.removeItem(at: url)
@@ -192,7 +192,7 @@ struct JSONLTailReaderTests {
         }
         try buffer.write(to: url)
 
-        let reader = JSONLTailReader(url: url)
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
         let outcome = try reader.poll()
         #expect(reader.startedMidFile == true)
         for data in outcome.newLines {
@@ -207,7 +207,7 @@ struct JSONLTailReaderTests {
         let url = try makeTempFile("{\"a\":1}\n\n{\"b\":2}\n")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let reader = JSONLTailReader(url: url)
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
         let outcome = try reader.poll()
         #expect(linesAsStrings(outcome) == ["{\"a\":1}", "{\"b\":2}"])
     }

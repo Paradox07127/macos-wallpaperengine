@@ -165,7 +165,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             wallpaperType: .scene,
             activity: activity,
             supportsPlaybackControl: true,
-            subtitle: loadError?.errorDescription.map(PIISanitizer.scrub)
+            subtitle: loadError?.errorDescription.map(LogPrivacyRedactor.scrub)
         )
     }
 
@@ -312,12 +312,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         // Route through the session so the effective profile honours
         // `userIntendsToPlay` — a manually paused scene must not resume just
         // because it became visible again (space switch / display wake).
-        applyEffectivePerformanceProfile()
-    }
-
-    func hide() {
-        isVisible = false
-        window?.orderOut(nil)
         applyEffectivePerformanceProfile()
     }
 

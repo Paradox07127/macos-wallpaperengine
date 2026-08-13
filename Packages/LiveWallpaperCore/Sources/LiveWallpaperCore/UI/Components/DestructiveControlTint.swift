@@ -1,9 +1,9 @@
 import SwiftUI
 
-public struct DestructiveControlTint: ViewModifier {
-    public init() {}
+struct DestructiveControlTint: ViewModifier {
+    init() {}
 
-    public func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
         content
             // Destructive cue lives in the red label + glyph. The surface stays
             // NEUTRAL — a red-tinted plate behind red text is same-hue on

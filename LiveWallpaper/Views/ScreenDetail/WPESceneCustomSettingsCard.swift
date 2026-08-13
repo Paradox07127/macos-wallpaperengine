@@ -134,7 +134,7 @@ struct WPESceneCustomSettingsCard: View {
     private func sectionHeaderRow(_ section: WPEProjectSettingsPresentation.Section) -> some View {
         let isExpanded = editor.expandedSections.contains(section.id)
         return Button {
-            toggleSection(section.id)
+            editor.toggleSection(section.id)
         } label: {
             HStack(spacing: 8) {
                 Text(verbatim: section.title)
@@ -188,10 +188,6 @@ struct WPESceneCustomSettingsCard: View {
         }
     }
 
-    private func toggleSection(_ sectionID: String) {
-        editor.toggleSection(sectionID)
-    }
-
     static func isSceneSettingCandidate(
         _ property: WallpaperEngineProjectPropertySchema.Property
     ) -> Bool {
@@ -211,7 +207,7 @@ struct WPESceneCustomSettingsCard: View {
     ) -> some View {
         switch property.type {
         case .bool:
-            WPEProjectSettingRow(title: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
                 Toggle("", isOn: boolBinding(for: property))
                     .labelsHidden()
                     .toggleStyle(.switch)
@@ -219,7 +215,7 @@ struct WPESceneCustomSettingsCard: View {
                     .accessibilityLabel(property.displayText)
             }
         case .slider:
-            WPEProjectSettingRow(title: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
                 HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
                     Slider(
                         value: numberBinding(for: property),
@@ -241,7 +237,7 @@ struct WPESceneCustomSettingsCard: View {
         case .combo:
             let currentValue = ValueLogic.value(for: property, in: values)
             let optionsCoverCurrent = property.options.contains { $0.value == currentValue }
-            WPEProjectSettingRow(title: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
                 if property.options.isEmpty {
                     Text(verbatim: currentValue.stringValue)
                         .font(DesignTokens.Typography.code)
@@ -265,7 +261,7 @@ struct WPESceneCustomSettingsCard: View {
                     // column past the panel. Staying compressible is what keeps the
                     // panel intact; no max width is needed for that.
                     //
-                    // But `WPEProjectSettingRow` gives its title `maxWidth: .infinity`
+                    // But `SettingRow` gives its title `maxWidth: .infinity`
                     // AND `layoutPriority(1)`, so a merely-compressible control loses
                     // every point of the row and collapses to a bare chevron. Matching
                     // that priority makes the two share the row, and `minWidth` keeps
@@ -278,14 +274,14 @@ struct WPESceneCustomSettingsCard: View {
                 }
             }
         case .color:
-            WPEProjectSettingRow(title: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
                 ColorPicker("", selection: colorBinding(for: property), supportsOpacity: false)
                     .labelsHidden()
                     .controlSize(.small)
                     .accessibilityLabel(property.displayText)
             }
         case .textinput:
-            WPEProjectSettingRow(title: property.displayText) {
+            SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
                 TextField("", text: stringBinding(for: property))
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 132)
@@ -293,11 +289,11 @@ struct WPESceneCustomSettingsCard: View {
                     .accessibilityLabel(property.displayText)
             }
         case .file, .directory:
-            WPEProjectSettingRow(
-                icon: property.type == .file ? "doc.badge.plus" : "folder.badge.plus",
+            SettingRow(
+                icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: .secondary,
-                title: property.displayText,
-                subtitle: .localized("Not supported on macOS yet")
+                verbatimTitle: property.displayText,
+                subtitle: "Not supported on macOS yet"
             ) {
                 EmptyView()
             }

@@ -43,7 +43,7 @@ struct WPEFallbackCard: View {
                 securityScopedBookmarkData: origin.sourceFolderBookmark
             )
                 .frame(width: 280)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous))
                 .shadow(color: Color.black.opacity(0.18), radius: 8, y: 4)
 
             VStack(spacing: 8) {
@@ -81,7 +81,7 @@ struct WPEFallbackCard: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(reason.severityTint.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
+            .background(reason.severityTint.opacity(0.14), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.preview))
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text("\(origin.title). \(warningTitle). \(warningBody)"))
 

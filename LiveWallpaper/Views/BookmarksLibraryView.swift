@@ -104,7 +104,7 @@ struct BookmarksLibraryView: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 14)
+                .padding(.vertical, DesignTokens.Spacing.cardInset)
             }
         }
     }
@@ -281,7 +281,7 @@ private struct BookmarkTile: View {
         Button(role: .destructive, action: onDelete) {
             Image(systemName: "trash")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DesignTokens.Colors.Status.danger)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }

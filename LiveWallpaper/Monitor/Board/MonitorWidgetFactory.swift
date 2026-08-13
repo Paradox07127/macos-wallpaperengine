@@ -33,9 +33,8 @@ enum MonitorWidgetFactory {
         }
     }
 
-    /// `cornerRadius` is threaded for layout geometry but not consumed here.
     @MainActor @ViewBuilder
-    static func tile(context: MonitorWidgetContext, cornerRadius: CGFloat) -> some View {
+    static func tile(context: MonitorWidgetContext) -> some View {
         switch context.placement.kind {
         case .cpu:
             MonitorCPUWidgetView(context: context)

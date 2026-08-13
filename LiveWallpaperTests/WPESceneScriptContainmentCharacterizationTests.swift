@@ -564,14 +564,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
         var oldAttempts = 0
         _ = old.withConstructionPermission { oldAttempts += 1 }
         #expect(oldAttempts == 0)
-        let slot = WPESceneScriptClaimedOutcomeSlot<String>()
-        let claim = try #require(slot.beginClaim())
-        if old.acceptsCompletion() {
-            _ = slot.publish("late", for: claim)
-        } else {
-            #expect(slot.reject(claim))
-        }
-        #expect(slot.takeLatest() == nil)
+        #expect(!old.acceptsCompletion())
         #expect(fresh.prepare(.init(text: 0, layer: 0, transform: 1)))
         #expect(state.isCurrent(fresh))
         state.retire(fresh)
@@ -749,8 +742,8 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #endif
     }
 
-    @Test("Scene timeout fails closed while its running permit remains occupied")
-    func timeoutFailsClosedWithoutReleasingRunningPermit() throws {
+    @Test("Occupied running permit refuses further admission until the worker returns")
+    func occupiedPermitRefusesAdmissionUntilWorkerReturns() throws {
         let governor = WPESceneScriptExecutionGovernor(
             limit: 1
         )
@@ -762,10 +755,8 @@ struct WPESceneScriptContainmentCharacterizationTests {
             )
         )
         let blocker = RR10ControlledBlocker()
-        let scene = WPESceneScriptFailClosedState(baked: "baked")
         let workerParticipant = governor.makeParticipant()
         let rejectedParticipant = governor.makeParticipant()
-        let latePublishAccepted = RR10LockedValue<Bool?>(nil)
         var started = false
         defer {
             blocker.release()
@@ -774,17 +765,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
             }
         }
 
-        started = harness.trySchedule({
-            blocker.run()
-            latePublishAccepted.set(scene.publishCompleted("late-worker-result"))
-        }, participant: workerParticipant, onFinish: blocker.markFinished)
+        started = harness.trySchedule(
+            blocker.run,
+            participant: workerParticipant,
+            onFinish: blocker.markFinished
+        )
         #expect(started)
         try #require(blocker.waitUntilEntered())
-        #expect(scene.publishCompleted("last-completed"))
-        let firstReason = WPESceneScriptFailClosedReason.executionTimedOut(operation: .tick)
-        #expect(scene.failClosed(firstReason))
-        #expect(!scene.failClosed(.capacityUnavailable(operation: .event)))
-        #expect(scene.failureReason == firstReason)
 
         #if DEBUG
             #expect(governor.debugSnapshot.active == 1)
@@ -795,91 +782,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
             onFinish: {}
         )
         #expect(!rejectedAdmitted)
-        for operation in WPESceneScriptOperation.allCases {
-            #expect(!scene.allows(operation))
-        }
 
         blocker.release()
         try #require(blocker.waitUntilFinished())
         #if DEBUG
             #expect(governor.debugSnapshot.active == 0)
         #endif
-        #expect(scene.presentedSnapshot == "last-completed")
-        #expect(latePublishAccepted.value == false)
         #expect(!blocker.hitHardDeadline)
-    }
-
-    @Test("Fail-closed scene preserves baked value when nothing completed")
-    func failClosedPreservesBakedValue() {
-        let scene = WPESceneScriptFailClosedState(baked: "baked")
-        let reason = WPESceneScriptFailClosedReason.capacityUnavailable(operation: .setup)
-        #expect(scene.failClosed(reason))
-
-        #expect(scene.presentedSnapshot == "baked")
-        #expect(scene.failureReason == reason)
-        for operation in WPESceneScriptOperation.allCases {
-            #expect(!scene.allows(operation))
-        }
-    }
-
-    @Test("Rejected async scheduling returns the in-flight slot without publishing")
-    func rejectedAsyncSchedulingReturnsSlot() throws {
-        let governor = WPESceneScriptExecutionGovernor(
-            limit: 1
-        )
-        let harness = RR10PermitWorkerHarness(
-            governor: governor,
-            queue: DispatchQueue(
-                label: "com.livewallpaper.tests.rr10-governor.outcome-slot",
-                attributes: .concurrent
-            )
-        )
-        let occupyingWorker = RR10ControlledBlocker()
-        let occupyingParticipant = governor.makeParticipant()
-        let rejectedParticipant = governor.makeParticipant()
-        let slot = WPESceneScriptClaimedOutcomeSlot<String>()
-        var occupyingWorkerStarted = false
-        defer {
-            occupyingWorker.release()
-            if occupyingWorkerStarted {
-                _ = occupyingWorker.waitUntilFinished()
-            }
-        }
-
-        occupyingWorkerStarted = harness.trySchedule(
-            occupyingWorker.run,
-            participant: occupyingParticipant,
-            onFinish: occupyingWorker.markFinished
-        )
-        #expect(occupyingWorkerStarted)
-        try #require(occupyingWorker.waitUntilEntered())
-
-        let rejectedClaim = try #require(slot.beginClaim())
-        let scheduled = harness.trySchedule({
-            slot.publish("must-not-run", for: rejectedClaim)
-        }, participant: rejectedParticipant, onFinish: {})
-        #expect(!scheduled)
-        #expect(slot.reject(rejectedClaim))
-        #expect(!slot.publish("late-rejected-result", for: rejectedClaim))
-
-        #expect(!slot.isInFlight)
-        #expect(slot.takeLatest() == nil)
-        let freshClaim = try #require(slot.beginClaim())
-        #expect(freshClaim != rejectedClaim)
-        #expect(!slot.reject(rejectedClaim))
-        #expect(slot.isInFlight)
-        #expect(!slot.publish("late-rejected-result", for: rejectedClaim))
-        #expect(slot.isInFlight)
-        #expect(slot.publish("fresh-result", for: freshClaim))
-        #expect(slot.takeLatest() == "fresh-result")
-
-        occupyingWorker.release()
-        try #require(occupyingWorker.waitUntilFinished())
-        #if DEBUG
-            #expect(governor.debugSnapshot.permitsGranted == 1)
-        #endif
-        #expect(harness.workersStarted == 1)
-        #expect(!occupyingWorker.hitHardDeadline)
     }
 }
 

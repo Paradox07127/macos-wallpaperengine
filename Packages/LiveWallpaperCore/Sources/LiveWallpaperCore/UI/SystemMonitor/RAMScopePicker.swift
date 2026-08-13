@@ -1,17 +1,17 @@
 import SwiftUI
 
-public struct RAMScopePicker: View {
+struct RAMScopePicker: View {
     @Binding var selection: String
-    public var maxWidth: CGFloat?
+    var maxWidth: CGFloat?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(selection: Binding<String>, maxWidth: CGFloat? = nil) {
+    init(selection: Binding<String>, maxWidth: CGFloat? = nil) {
         self._selection = selection
         self.maxWidth = maxWidth
     }
 
-    public var body: some View {
+    var body: some View {
         HStack(spacing: 0) {
             scopeButton(label: "All", value: "system")
             scopeButton(label: "App", value: "app")

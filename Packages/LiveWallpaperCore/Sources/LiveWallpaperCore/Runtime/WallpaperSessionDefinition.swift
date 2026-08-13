@@ -9,10 +9,6 @@ public enum WallpaperSessionDefinition: Equatable, Sendable {
     case html(HTMLSource, HTMLConfig)
     case scene(SceneDescriptor)
 
-    public static func video(bookmarkData: Data) -> WallpaperSessionDefinition {
-        .video(bookmarkData: bookmarkData, packageEntryName: nil)
-    }
-
     public init?(configuration: ScreenConfiguration) {
         switch configuration.activeWallpaper {
         case .video(let bookmarkData, let packageEntryName):

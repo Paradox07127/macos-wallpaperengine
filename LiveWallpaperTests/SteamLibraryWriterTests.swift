@@ -13,35 +13,39 @@ struct SteamLibraryPathsTests {
 
     @Test("Only the two agreed subtrees are writable")
     func writableSubtreesAreExactlyTwo() {
-        #expect(SteamLibraryPaths.isWritable(contentRoot))
-        #expect(SteamLibraryPaths.isWritable(contentRoot.appendingPathComponent("3725117707")))
-        #expect(SteamLibraryPaths.isWritable(engineRoot))
-        #expect(SteamLibraryPaths.isWritable(engineRoot.appendingPathComponent("assets")))
+        let steam = SteamLibraryPaths.steamRoot()
+        #expect(SteamLibraryPaths.isWritable(contentRoot, steamRoot: steam))
+        #expect(SteamLibraryPaths.isWritable(contentRoot.appendingPathComponent("3725117707"), steamRoot: steam))
+        #expect(SteamLibraryPaths.isWritable(engineRoot, steamRoot: steam))
+        #expect(SteamLibraryPaths.isWritable(engineRoot.appendingPathComponent("assets"), steamRoot: steam))
 
         // Everything else in the Steam profile is Steam's, including the files
         // that hold the user's session.
-        let steam = SteamLibraryPaths.steamRoot()
-        #expect(!SteamLibraryPaths.isWritable(steam))
-        #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("config")))
-        #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("config/config.vdf")))
-        #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("userdata")))
-        #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("steamapps")))
+        #expect(!SteamLibraryPaths.isWritable(steam, steamRoot: steam))
+        #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("config"), steamRoot: steam))
+        #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("config/config.vdf"), steamRoot: steam))
+        #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("userdata"), steamRoot: steam))
+        #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("steamapps"), steamRoot: steam))
         // Notably the acf ledger, which we deliberately never rewrite.
         #expect(!SteamLibraryPaths.isWritable(
-            steam.appendingPathComponent("steamapps/workshop/appworkshop_431960.acf")
+            steam.appendingPathComponent("steamapps/workshop/appworkshop_431960.acf"),
+            steamRoot: steam
         ))
     }
 
     @Test("Nothing outside the Steam profile is writable")
     func pathsOutsideSteamAreRefused() {
-        #expect(!SteamLibraryPaths.isWritable(URL(fileURLWithPath: "/")))
-        #expect(!SteamLibraryPaths.isWritable(URL(fileURLWithPath: "/Applications")))
+        let steam = SteamLibraryPaths.steamRoot()
+        #expect(!SteamLibraryPaths.isWritable(URL(fileURLWithPath: "/"), steamRoot: steam))
+        #expect(!SteamLibraryPaths.isWritable(URL(fileURLWithPath: "/Applications"), steamRoot: steam))
         #expect(!SteamLibraryPaths.isWritable(
-            URL(fileURLWithPath: SteamConnectorEnvironmentProbe.posixHomeDirectory())
+            URL(fileURLWithPath: SteamConnectorEnvironmentProbe.posixHomeDirectory()),
+            steamRoot: steam
         ))
         #expect(!SteamLibraryPaths.isWritable(
             URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-                .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine")
+                .appendingPathComponent("Library/Application Support/Steam/steamapps/common/wallpaper_engine"),
+            steamRoot: steam
         ))
     }
 

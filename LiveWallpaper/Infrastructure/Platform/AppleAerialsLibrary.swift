@@ -526,7 +526,7 @@ extension AppleAerialsLibrary {
     }
 
     /// macOS 26/27 (Tahoe) per-user aerials store; also the grant panel's directory hint.
-    nonisolated static func suggestedDirectoryToGrant(fileManager: FileManager = .default) -> URL {
+    nonisolated static func suggestedDirectoryToGrant() -> URL {
         realHomeDirectory()
             .appendingPathComponent("Library/Application Support/com.apple.wallpaper/aerials", isDirectory: true)
     }

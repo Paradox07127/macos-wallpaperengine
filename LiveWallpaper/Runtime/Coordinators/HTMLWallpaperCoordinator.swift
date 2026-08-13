@@ -213,11 +213,6 @@ final class HTMLWallpaperCoordinator {
         setWallpaper(source: source, config: preserved, for: screen)
     }
 
-    func setWallpaper(url: String, for screen: Screen) {
-        guard let source = HTMLSource(userInput: url) else { return }
-        setWallpaper(source: source, for: screen)
-    }
-
     func updateConfig(_ config: HTMLConfig, for screen: Screen) {
         guard var existing = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               case .html(let source, let previousConfig) = existing.activeWallpaper else { return }

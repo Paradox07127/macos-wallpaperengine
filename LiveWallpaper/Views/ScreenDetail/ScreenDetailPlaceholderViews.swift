@@ -1,3 +1,4 @@
+import LiveWallpaperCore
 import SwiftUI
 
 struct ScreenDetailLoadingView: View {
@@ -12,6 +13,6 @@ struct ScreenDetailLoadingView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.preview))
     }
 }

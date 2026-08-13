@@ -75,7 +75,7 @@ struct LibraryGuideCard: View {
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 14)
+            .padding(.vertical, DesignTokens.Spacing.cardInset)
             .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.lg))
             .frame(maxWidth: DesignTokens.GuidedLibrary.featureWidth)
 
@@ -109,7 +109,7 @@ struct LibraryGuideCard: View {
             }
 
             if let errorMessage, !errorMessage.isEmpty {
-                Text(verbatim: PIISanitizer.scrub(errorMessage))
+                Text(verbatim: LogPrivacyRedactor.scrub(errorMessage))
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(DesignTokens.Colors.Status.danger)
                     .multilineTextAlignment(.center)

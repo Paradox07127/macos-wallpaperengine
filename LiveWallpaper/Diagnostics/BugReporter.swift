@@ -48,7 +48,7 @@ enum BugReporter {
         sections.append("""
         <details><summary>Diagnostic snapshot — auto-generated, please review before posting</summary>
 
-        - **App**: LiveWallpaper \(snapshot.appVersion) (Build \(snapshot.appBuild)) — \(snapshot.sku.rawValue) SKU
+        - **App**: \(BundleIdentity.productDisplayName) \(snapshot.appVersion) (Build \(snapshot.appBuild)) — \(snapshot.sku.rawValue) SKU
         - **macOS**: \(snapshot.macOSVersion) (\(snapshot.macOSBuild))
         - **Hardware**: \(snapshot.hardwareModel) · \(snapshot.chip) · \(snapshot.physicalMemoryGiB) GB
         - **Displays**: \(formatDisplays(snapshot.displays))

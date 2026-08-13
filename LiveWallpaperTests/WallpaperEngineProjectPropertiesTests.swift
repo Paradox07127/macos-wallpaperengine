@@ -203,8 +203,9 @@ struct WallpaperEngineProjectPropertiesTests {
         let folder = try makeProjectFolder(manifest: sampleManifest)
         defer { try? FileManager.default.removeItem(at: folder) }
 
+        let schema = try #require(WallpaperEngineWebPropertyBridge.parseSchema(forFolder: folder))
         let script = try #require(WallpaperEngineWebPropertyBridge.bootstrapScript(
-            forFolder: folder,
+            schema: schema,
             overrides: [
                 "bgmvolume": .number(33),
                 "music": .bool(false),

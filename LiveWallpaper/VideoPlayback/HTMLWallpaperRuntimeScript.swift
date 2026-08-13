@@ -1150,7 +1150,7 @@ enum HTMLWallpaperRuntimeScript {
                 try {
                     listener.applyGeneralProperties(properties);
                 } catch (error) {
-                    console.error('LiveWallpaper failed to apply Wallpaper Engine general properties', error);
+                    console.error('Loomscreen failed to apply Wallpaper Engine general properties', error);
                 }
             }
         })();

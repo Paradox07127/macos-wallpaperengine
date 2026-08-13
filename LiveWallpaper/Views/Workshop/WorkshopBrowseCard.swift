@@ -178,17 +178,7 @@ struct WorkshopBrowseCard: View {
     @ViewBuilder
     private var statusBadge: some View {
         if let status = statusInfo {
-            HStack(spacing: 4) {
-                Image(systemName: status.symbol)
-                    .foregroundStyle(status.tint)
-                    .imageScale(.small)
-                Text(verbatim: status.text)
-                    .font(DesignTokens.Typography.captionEmphasized)
-                    .foregroundStyle(status.tint)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(status.tint.opacity(0.10), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
+            StatusChip(verbatim: status.text, tint: status.tint, systemImage: status.symbol)
         }
     }
 

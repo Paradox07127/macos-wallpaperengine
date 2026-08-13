@@ -36,10 +36,6 @@ final class JSONLTailReader {
         return TailCursorState(inode: lastInode, size: lastSize, offset: committedOffset)
     }
 
-    convenience init(url: URL) {
-        self.init(url: url, resumeFrom: nil)
-    }
-
     init(url: URL, resumeFrom state: TailCursorState?) {
         self.url = url
         self.resumeState = state

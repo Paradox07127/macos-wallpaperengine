@@ -1,13 +1,10 @@
 import AppKit
 import LiveWallpaperCore
 import SwiftUI
-import os
 
 /// AppKit host that embeds the SwiftUI monitor board and connects it to the runtime.
 @MainActor
 final class MonitorBoardHostView: NSView {
-
-    private static let log = os.Logger(subsystem: "com.livewallpaper", category: "MonitorBoard")
 
     private let dataModel: MonitorBoardDataModel
     private let interactionModel: MonitorBoardInteractionModel

@@ -13,7 +13,7 @@ struct ConfigurationPorterTests {
 
         let bundle = ConfigurationBundle(
             schemaVersion: 1,
-            appBundleID: Bundle.main.bundleIdentifier ?? "com.loomscreen.pro",
+            appBundleID: Bundle.main.bundleIdentifier!,
             appVersion: "test-1.0",
             exportedAt: Date(timeIntervalSince1970: 1_750_000_000),
             screenConfigurations: [

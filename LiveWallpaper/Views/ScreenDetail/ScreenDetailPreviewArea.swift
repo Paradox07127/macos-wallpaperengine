@@ -76,7 +76,12 @@ struct ScreenDetailPreviewArea: View {
                         )
                         .aspectRatio(previewAspectRatio, contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: previewHeight)
-                        .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 4)
+                        .shadow(
+                            color: Color.black.opacity(DesignTokens.Card.shadowOpacity),
+                            radius: DesignTokens.Card.shadowRadius,
+                            x: 0,
+                            y: DesignTokens.Card.shadowYOffset
+                        )
                     }
 
                     videoCommandBar
@@ -160,7 +165,7 @@ struct ScreenDetailPreviewArea: View {
                 speedSlider
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, DesignTokens.Spacing.cardInset)
             .padding(.vertical, 6)
             .adaptiveGlassSurface(.capsule)
         }
@@ -251,11 +256,11 @@ struct ScreenDetailPreviewArea: View {
     private var dragHintOverlay: some View {
         if isDraggingOver {
             ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
                     .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
                     .fill(Color.accentColor.opacity(0.08))
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
                     .strokeBorder(Color.accentColor.opacity(0.85), lineWidth: 1.5)
                 VStack(spacing: 10) {
                     Group {

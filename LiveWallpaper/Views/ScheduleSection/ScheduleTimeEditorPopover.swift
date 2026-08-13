@@ -84,8 +84,7 @@ struct ScheduleTimeEditorPopover: View {
                 .disabled(applyDisabled)
             }
         }
-        .padding(16)
-        .frame(width: 280)
+        .settingsPopoverChrome(width: 280)
     }
 
     // MARK: - Subviews

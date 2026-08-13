@@ -21,7 +21,8 @@ struct WallpaperEngineWebPropertyBridgeTests {
         """)
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        let script = try #require(WallpaperEngineWebPropertyBridge.bootstrapScript(forFolder: folder))
+        let schema = try #require(WallpaperEngineWebPropertyBridge.parseSchema(forFolder: folder))
+        let script = try #require(WallpaperEngineWebPropertyBridge.bootstrapScript(schema: schema))
 
         #expect(script.contains("wallpaperPropertyListener"))
         #expect(script.contains("applyUserProperties"))
@@ -41,7 +42,7 @@ struct WallpaperEngineWebPropertyBridgeTests {
         """)
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        #expect(WallpaperEngineWebPropertyBridge.bootstrapScript(forFolder: folder) == nil)
+        #expect(WallpaperEngineWebPropertyBridge.parseSchema(forFolder: folder) == nil)
     }
 
     @Test("Bootstrap script installs a defineProperty hook on wallpaperPropertyListener")
@@ -59,7 +60,8 @@ struct WallpaperEngineWebPropertyBridgeTests {
         """)
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        let script = try #require(WallpaperEngineWebPropertyBridge.bootstrapScript(forFolder: folder))
+        let schema = try #require(WallpaperEngineWebPropertyBridge.parseSchema(forFolder: folder))
+        let script = try #require(WallpaperEngineWebPropertyBridge.bootstrapScript(schema: schema))
 
         #expect(script.contains("Object.defineProperty(window, 'wallpaperPropertyListener'"))
         #expect(script.contains("set:"))

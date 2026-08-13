@@ -7,24 +7,6 @@ import Testing
 @Suite("WPETexMetalTranscoder — GPU-backed BC → RGBA8")
 struct WPETexMetalTranscoderTests {
 
-    @Test("isAvailable reports true for every BC format on a Metal device with BC compression support")
-    func isAvailableMatchesDeviceCapability() {
-        guard let device = MTLCreateSystemDefaultDevice() else {
-            return
-        }
-        let supported = device.supportsBCTextureCompression
-        for format in [WPETexFormat.dxt1, .dxt3, .dxt5, .bc7] {
-            #expect(WPETexMetalTranscoder.isAvailable(for: format) == supported)
-        }
-    }
-
-    @Test("Non-BC formats route through the pixel decoder and stay unsupported here")
-    func nonBCFormatsRemainUnavailable() {
-        #expect(!WPETexMetalTranscoder.isAvailable(for: .rgba8888))
-        #expect(!WPETexMetalTranscoder.isAvailable(for: .r8))
-        #expect(!WPETexMetalTranscoder.isAvailable(for: .rg88))
-    }
-
     @Test("Transcoding a single DXT5 4×4 block produces a 4×4 RGBA8 image")
     func transcodeDXT5SingleBlockReturnsRGBA() throws {
         guard let device = MTLCreateSystemDefaultDevice(),

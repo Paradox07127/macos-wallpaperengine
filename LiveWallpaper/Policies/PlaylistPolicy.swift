@@ -1,11 +1,6 @@
 import Foundation
 
 enum PlaylistPolicy {
-    static func combinedPlaylist(primary: Data, additional: [Data]?) -> [Data]? {
-        let full = [primary] + (additional ?? [])
-        return full.count > 1 ? full : nil
-    }
-
     static func nextCursor(
         currentCursor: Int,
         playlistCount: Int,

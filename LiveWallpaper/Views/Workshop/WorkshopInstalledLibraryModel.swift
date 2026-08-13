@@ -148,10 +148,6 @@
         var activeApplyCommandCount: Int {
             applyTasks.count
         }
-
-        var activeDeleteCommandCount: Int {
-            deleteHandles.count
-        }
         #endif
 
         func onAppear() {

@@ -119,7 +119,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             wallpaperType: .video,
             activity: activity,
             supportsPlaybackControl: true,
-            subtitle: runtimeError.map { PIISanitizer.scrub($0.userMessage) }
+            subtitle: runtimeError.map { LogPrivacyRedactor.scrub($0.userMessage) }
         )
     }
 
@@ -153,12 +153,6 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         isVisible = true
         player?.setWindowVisible(true)
         applyPerformanceProfile(currentProfile)
-    }
-
-    func hide() {
-        isVisible = false
-        applyPerformanceProfile(currentProfile)
-        player?.setWindowVisible(false)
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {

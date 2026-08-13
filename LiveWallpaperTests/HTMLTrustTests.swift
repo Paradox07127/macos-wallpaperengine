@@ -428,20 +428,4 @@ struct TrustedHostStoreTests {
         #expect(store.origins.map(\.rawValue) == ["https://a.com:443"])
     }
 
-    @Test("contains is exact to origin boundaries")
-    func containsExactOrigin() throws {
-        let (store, _) = makeStore(seed: ["foo.com"])
-        let httpsDefault = try #require(TrustedHTMLOrigin(url: URL(string: "https://FOO.COM")!))
-        let httpDefault = try #require(TrustedHTMLOrigin(url: URL(string: "http://foo.com")!))
-        let httpsOtherPort = try #require(TrustedHTMLOrigin(url: URL(string: "https://foo.com:8443")!))
-
-        #expect(store.contains(httpsDefault))
-        // Path is not part of origin identity — same host/scheme/port still matches.
-        let httpsWithPath = try #require(TrustedHTMLOrigin(url: URL(string: "https://foo.com/path")!))
-        #expect(store.contains(httpsWithPath))
-        #expect(!store.contains(httpDefault))
-        #expect(!store.contains(httpsOtherPort))
-        let otherHost = try #require(TrustedHTMLOrigin(url: URL(string: "https://bar.com/path")!))
-        #expect(!store.contains(otherHost))
-    }
 }

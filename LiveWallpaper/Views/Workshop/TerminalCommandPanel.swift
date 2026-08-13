@@ -51,7 +51,7 @@ struct TerminalCommandPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                .strokeBorder(Color.primary.opacity(DesignTokens.Card.strokeOpacity), lineWidth: DesignTokens.Card.strokeWidth)
         }
     }
 

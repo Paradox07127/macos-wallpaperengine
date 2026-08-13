@@ -107,34 +107,6 @@ final class MonitorSourceAuthorization {
         }
     }
 
-    // MARK: - Resolution
-
-    /// Resolves the Claude grant into an EPHEMERAL security scope that is opened and closed entirely within `body`, without ever touching `activeScopes`.
-    func withResolvedClaudeRoot<T>(_ body: (URL) throws -> T) rethrows -> T? {
-        let provider = Provider.claude
-        let target = SecurityScopedBookmarkResolver.Target(label: "monitor.\(provider.defaultDirectoryName).ephemeral") { [weak self] original, refreshed in
-            guard let self else { return }
-            Task { @MainActor in
-                if self.defaults.data(forKey: provider.defaultsKey) == original {
-                    self.defaults.set(refreshed, forKey: provider.defaultsKey)
-                }
-            }
-        }
-
-        guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-            defaults.data(forKey: provider.defaultsKey),
-            target: target
-        ) else {
-            return nil
-        }
-        guard resolved.url.startAccessingSecurityScopedResource() else {
-            Logger.warning("Monitor: ephemeral startAccessingSecurityScopedResource failed for \(provider.defaultDirectoryName)", category: .fileAccess)
-            return nil
-        }
-        defer { resolved.url.stopAccessingSecurityScopedResource() }
-        return try body(resolved.url)
-    }
-
     /// Resolves the stored grant, starts its security scope, and tracks it so `release()` can balance the access.
     func resolveRoot(_ provider: Provider) -> URL? {
         let target = SecurityScopedBookmarkResolver.Target(label: "monitor.\(provider.defaultDirectoryName)") { [weak self] original, refreshed in

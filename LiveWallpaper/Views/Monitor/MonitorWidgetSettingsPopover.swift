@@ -24,8 +24,7 @@ struct MonitorWidgetSettingsPopover: View {
             Divider()
             removeButton
         }
-        .padding(20)
-        .frame(width: Self.preferredWidth)
+        .settingsPopoverChrome(width: Self.preferredWidth)
     }
 
     private var header: some View {

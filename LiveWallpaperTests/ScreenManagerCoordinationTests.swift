@@ -1502,7 +1502,6 @@ private final class TestRuntimeSession: WallpaperRuntimeSession, HTMLWallpaperCo
     var wallpaperWindow: NSWindow? { nil }
 
     func show() {}
-    func hide() {}
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {}
     func updateFrame(to frame: CGRect) {}
     func prepareForDisplay(timeout: Duration) async -> WallpaperPreparationResult { .ready }

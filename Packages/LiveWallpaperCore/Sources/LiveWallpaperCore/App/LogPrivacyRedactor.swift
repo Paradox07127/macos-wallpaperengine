@@ -41,6 +41,8 @@ public enum LogPrivacyRedactor {
         let template: String
 
         init(pattern: String, template: String) {
+            // Patterns are the hardcoded literals in `rules` below — a typo should
+            // crash at first use in development, not silently skip redaction.
             self.regex = try! NSRegularExpression(pattern: pattern)
             self.template = template
         }

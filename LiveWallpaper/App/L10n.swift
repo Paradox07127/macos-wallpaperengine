@@ -43,8 +43,8 @@ enum L10n {
     enum Window {
         static let settingsTitle = String(
             localized: "window.title.settings",
-            defaultValue: "LiveWallpaper Settings",
-            comment: "Title of the LiveWallpaper settings window."
+            defaultValue: "Loomscreen Settings",
+            comment: "Title of the settings window."
         )
     }
 

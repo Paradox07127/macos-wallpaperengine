@@ -87,7 +87,7 @@ enum WPERenderDiagnosticReport {
 
         lines.append("")
         lines.append(contentsOf: environmentLines)
-        return PIISanitizer.scrub(lines.joined(separator: "\n"))
+        return LogPrivacyRedactor.scrub(lines.joined(separator: "\n"))
     }
 
     private static func resolutionSummaryText(

@@ -23,9 +23,7 @@ struct BookmarksPopover: View {
                 emptyState
             }
         }
-        .padding(14)
-        .frame(width: 260)
-        .presentationCompactAdaptation(.popover)
+        .settingsPopoverChrome(width: 260)
         .confirmDestructive($pendingDestructive)
     }
 

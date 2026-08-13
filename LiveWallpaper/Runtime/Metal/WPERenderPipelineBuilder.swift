@@ -162,24 +162,6 @@ enum WPEOfficialTextureFormatABI {
     static let r16F = 11
     static let bc7 = 12
 
-    /// Explicit semantic bridge from decoder cases to the official shader ABI.
-    /// Do not replace this switch with `format.rawValue`.
-    static func shaderValue(for format: WPETexFormat) -> Int? {
-        switch format {
-        case .rgba8888: return rgba8888
-        case .dxt5: return dxt5
-        case .dxt3: return dxt3
-        case .dxt1: return dxt1
-        case .rg88: return rg88
-        case .r8: return r8
-        case .bc7: return bc7
-        case .rgba1010102:
-            // Not declared by official common_fragment.h. Treat it as unknown
-            // rather than leaking the decoder's raw value into shader ABI.
-            return nil
-        }
-    }
-
     /// Maps the TEXI integer through the official header's declared set. This
     /// also preserves formats our current CPU decoder cannot upload yet (ETC,
     /// RGB565, half-float) without conflating arbitrary unknown codes with ABI.

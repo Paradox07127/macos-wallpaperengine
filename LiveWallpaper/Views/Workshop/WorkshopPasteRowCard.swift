@@ -28,7 +28,7 @@ struct WorkshopPasteRowCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
+        .padding(DesignTokens.Spacing.cardInset)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
@@ -88,13 +88,13 @@ struct WorkshopPasteRowCard: View {
     private var statusBadge: some View {
         switch row.state {
         case .ready:
-            BadgeChip(text: "Ready", tint: DesignTokens.Colors.Status.active, systemImage: "checkmark.seal.fill")
+            StatusChip(verbatim: String(localized: "Ready", comment: "Workshop paste row status badge."), tint: DesignTokens.Colors.Status.active, systemImage: "checkmark.seal.fill")
         case .fetchingMetadata:
-            BadgeChip(text: "Fetching", tint: .blue, systemImage: "hourglass")
+            StatusChip(verbatim: String(localized: "Fetching", comment: "Workshop paste row status badge."), tint: .blue, systemImage: "hourglass")
         case .invalidInput:
-            BadgeChip(text: "Invalid", tint: DesignTokens.Colors.Status.caution, systemImage: "exclamationmark.triangle.fill")
+            StatusChip(verbatim: String(localized: "Invalid", comment: "Workshop paste row status badge."), tint: DesignTokens.Colors.Status.caution, systemImage: "exclamationmark.triangle.fill")
         case .failed:
-            BadgeChip(text: errorBadgeLabel, tint: DesignTokens.Colors.Status.danger, systemImage: "xmark.octagon.fill")
+            StatusChip(verbatim: errorBadgeLabel, tint: DesignTokens.Colors.Status.danger, systemImage: "xmark.octagon.fill")
         }
     }
 
@@ -135,7 +135,7 @@ struct WorkshopPasteRowCard: View {
                     .labelStyle(.iconOnly)
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DesignTokens.Colors.Status.danger)
             .accessibilityLabel(Text("Remove from queue"))
         }
     }
@@ -236,21 +236,6 @@ struct WorkshopPasteRowCard: View {
 }
 
 // MARK: - Helper Views
-
-private struct BadgeChip: View {
-    let text: String
-    let tint: Color
-    let systemImage: String
-
-    var body: some View {
-        Label(text, systemImage: systemImage)
-            .font(DesignTokens.Typography.badge)
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(tint.opacity(0.12), in: Capsule())
-    }
-}
 
 private struct SkeletonLines: View {
     var body: some View {

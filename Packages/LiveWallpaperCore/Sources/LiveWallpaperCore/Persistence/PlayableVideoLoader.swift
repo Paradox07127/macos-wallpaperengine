@@ -4,7 +4,6 @@ import Foundation
 
 public protocol PlayableVideoLoading: Sendable {
     func validatePlayableVideo(at url: URL) async throws
-    func detectFormat(at url: URL) async throws -> VideoFormatInfo
 }
 
 public struct PlayableVideoLoader: PlayableVideoLoading, Sendable {
@@ -12,10 +11,6 @@ public struct PlayableVideoLoader: PlayableVideoLoading, Sendable {
 
     public func validatePlayableVideo(at url: URL) async throws {
         try await Self.validatePlayableVideo(at: url)
-    }
-
-    public func detectFormat(at url: URL) async throws -> VideoFormatInfo {
-        try await Self.detectFormat(at: url)
     }
 
     public static func validatePlayableVideo(at url: URL) async throws {

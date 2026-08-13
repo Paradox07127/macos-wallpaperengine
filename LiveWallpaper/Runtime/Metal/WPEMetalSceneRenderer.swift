@@ -421,8 +421,6 @@ final class WPEMetalSceneRenderer: NSObject {
     var parallaxAuthoredDepthByObjectID: [String: SIMD2<Double>] = [:]
     var parallaxAuthoredOriginByObjectID: [String: SIMD2<Double>] = [:]
 
-    var renderedTexture: MTLTexture? { outputTexture }
-
     /// Test hook: reads a value from the scene's shared script store after a
     /// render, so a test can assert a HIDDEN text object's compute script ran
     /// (populated `shared`) rather than being skipped by the visibility filter.

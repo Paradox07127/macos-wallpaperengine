@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "0C322BEE2D6950480033C48B"
-               BuildableName = "LiveWallpaper.app"
+               BuildableName = "Loomscreen Pro.app"
                BlueprintName = "LiveWallpaper"
                ReferencedContainer = "container:LiveWallpaper.xcodeproj">
             </BuildableReference>
@@ -75,7 +75,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "0C322BEE2D6950480033C48B"
-            BuildableName = "LiveWallpaper.app"
+            BuildableName = "Loomscreen Pro.app"
             BlueprintName = "LiveWallpaper"
             ReferencedContainer = "container:LiveWallpaper.xcodeproj">
          </BuildableReference>
@@ -102,7 +102,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "0C322BEE2D6950480033C48B"
-            BuildableName = "LiveWallpaper.app"
+            BuildableName = "Loomscreen Pro.app"
             BlueprintName = "LiveWallpaper"
             ReferencedContainer = "container:LiveWallpaper.xcodeproj">
          </BuildableReference>

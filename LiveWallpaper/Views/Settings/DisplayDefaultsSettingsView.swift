@@ -91,10 +91,10 @@ struct DisplayDefaultsSettingsView: View {
             title: "Volume",
             subtitle: "Default output level"
         ) {
-            HStack(spacing: DesignTokens.Spacing.sm) {
+            HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
                 Slider(value: playbackBinding(\.videoVolume, for: kind), in: 0...1)
                     .controlSize(.small)
-                    .frame(width: DisplayDefaultsMetrics.sliderWidth)
+                    .frame(width: DesignTokens.Inspector.sliderWidth)
                     .accessibilityLabel(Text("Default volume"))
 
                 Text(verbatim: "\(Int((playback(for: kind).videoVolume * 100).rounded()))%")
@@ -250,8 +250,4 @@ struct DisplayDefaultsSettingsView: View {
         }
         SettingsManager.shared.saveDisplayDefaults(displayDefaults)
     }
-}
-
-private enum DisplayDefaultsMetrics {
-    static let sliderWidth: CGFloat = 180
 }

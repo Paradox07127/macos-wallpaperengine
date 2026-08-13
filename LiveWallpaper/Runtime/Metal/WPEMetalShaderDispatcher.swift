@@ -91,12 +91,12 @@ struct WPEMetalShaderDispatcher {
             )
         case .solidColor:
             try dispatchSolidColor(
-                pass: pass, layer: layer, destination: destination, textures: textures,
+                pass: pass, layer: layer, destination: destination,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .solidLayer:
             try dispatchSolidLayer(
-                pass: pass, layer: layer, destination: destination, textures: textures,
+                pass: pass, layer: layer, destination: destination,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .copy:
@@ -126,7 +126,7 @@ struct WPEMetalShaderDispatcher {
             )
         case .genericParticle:
             try dispatchGenericParticle(
-                pass: pass, layer: layer, destination: destination, textures: textures,
+                pass: pass, destination: destination, textures: textures,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         }
@@ -140,7 +140,6 @@ struct WPEMetalShaderDispatcher {
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
-        textures: [String: MTLTexture],
         frameState: WPEMetalFrameState,
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
@@ -181,7 +180,6 @@ struct WPEMetalShaderDispatcher {
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
-        textures: [String: MTLTexture],
         frameState: WPEMetalFrameState,
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
@@ -618,7 +616,6 @@ struct WPEMetalShaderDispatcher {
 
     private func dispatchGenericParticle(
         pass: WPEPreparedRenderPass,
-        layer: WPERenderLayer,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
         textures: [String: MTLTexture],
         frameState: WPEMetalFrameState,
@@ -1072,7 +1069,7 @@ struct WPEMetalShaderDispatcher {
         guard case .fbo(let name) = reference else {
             return false
         }
-        return WPEMetalShaderInputs.isSceneAliasName(name)
+        return WPETextureReference.isSceneAliasName(name)
     }
 
     func isGroupCompositeSourceReference(_ reference: WPETextureReference, layer: WPERenderLayer) -> Bool {

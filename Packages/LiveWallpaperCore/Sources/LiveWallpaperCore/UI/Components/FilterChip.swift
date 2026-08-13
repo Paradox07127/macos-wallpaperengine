@@ -1,8 +1,36 @@
 import SwiftUI
 
-/// Translucent filter pill for toolbar-style control rows. Selected state stays
-/// subtle to match Apple Music / News chip rows — brightened surface + slightly
-/// stronger border, never a hard accent fill.
+/// Shared capsule backing for filter chips: selected chips get a tinted Liquid
+/// Glass capsule with an accent ring (selection stays unmistakable), deselected
+/// chips keep a quiet flat fill. The single source of truth for chip chrome —
+/// bespoke twins of this recipe drifted (0.07 vs 0.04 fills) before it existed.
+public struct FilterChipBackground: ViewModifier {
+    let isSelected: Bool
+
+    public init(isSelected: Bool) {
+        self.isSelected = isSelected
+    }
+
+    public func body(content: Content) -> some View {
+        if isSelected {
+            content
+                .adaptiveGlassSurface(.capsule, tint: .accentColor, interactive: true)
+                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1))
+        } else {
+            content
+                .background(Capsule().fill(Color.primary.opacity(0.04)))
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+        }
+    }
+}
+
+extension View {
+    public func filterChipBackground(isSelected: Bool) -> some View {
+        modifier(FilterChipBackground(isSelected: isSelected))
+    }
+}
+
+/// Translucent filter pill for toolbar-style control rows.
 public struct FilterChip: View {
     private let title: Text
     private let isSelected: Bool
@@ -19,24 +47,10 @@ public struct FilterChip: View {
             title
                 .font(DesignTokens.Typography.caption)
                 .lineLimit(1)
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .background(
-                    Capsule().fill(
-                        isSelected
-                            ? Color.accentColor.opacity(0.15)
-                            : Color.primary.opacity(0.07)
-                    )
-                )
-                .overlay(
-                    Capsule().strokeBorder(
-                        isSelected
-                            ? Color.accentColor.opacity(0.45)
-                            : Color.primary.opacity(0.08),
-                        lineWidth: 0.5
-                    )
-                )
+                .filterChipBackground(isSelected: isSelected)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])

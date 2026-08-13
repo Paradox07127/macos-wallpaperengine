@@ -61,7 +61,7 @@ struct WorkshopDownloadToastHost: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Text("Dismiss"))
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 10)
         .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
         .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 6)

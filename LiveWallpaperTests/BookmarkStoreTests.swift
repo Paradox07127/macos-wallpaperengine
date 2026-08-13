@@ -95,15 +95,6 @@ struct BookmarkStoreTests {
         #expect(bookmark.label == "Beach Sunset")
     }
 
-    @Test("contains detects equivalent content regardless of label")
-    func containsByContent() {
-        let (store, _) = makeStore()
-        let content = sampleVideoContent(byte: 0x42)
-        store.add(label: "first", content: content)
-        #expect(store.contains(content))
-        #expect(!store.contains(sampleVideoContent(byte: 0x99)))
-    }
-
     @Test("add can preserve Wallpaper Engine origin for scene bookmarks")
     func addPreservesWPEOriginForSceneBookmarks() {
         let (store, _) = makeStore()

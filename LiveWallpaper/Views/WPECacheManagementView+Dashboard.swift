@@ -122,7 +122,8 @@ extension WPECacheManagementView {
                     } label: {
                         Image(systemName: "trash")
                     }
-                    .storageDestructiveIconStyle()
+                    .buttonStyle(.borderless)
+                    .destructiveControlTint()
                     .controlSize(.small)
                     .disabled(totalBytes == 0)
                     .help(Text("Clear All Caches"))
@@ -149,7 +150,8 @@ extension WPECacheManagementView {
                     } label: {
                         Image(systemName: "trash")
                     }
-                    .storageDestructiveIconStyle()
+                    .buttonStyle(.borderless)
+                    .destructiveControlTint()
                     .controlSize(.small)
                     .disabled((videoStats?.totalBytes ?? 0) == 0)
                     .help(Text("Clear Video Cache"))

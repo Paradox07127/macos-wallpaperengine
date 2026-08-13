@@ -122,12 +122,6 @@ struct ArcGauge<Center: View>: View {
     }
 }
 
-extension ArcGauge where Center == EmptyView {
-    init(value: Double?, color: Color? = nil, peak: Double? = nil, bands: [ArcBand]? = nil, lineWidth: CGFloat = 9) {
-        self.init(value: value, color: color, peak: peak, bands: bands, lineWidth: lineWidth) { EmptyView() }
-    }
-}
-
 #Preview("Arc gauge") {
     HStack(spacing: 24) {
         ForEach([0.22, 0.58, 0.91], id: \.self) { v in

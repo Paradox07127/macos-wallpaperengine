@@ -94,7 +94,7 @@ struct WorkshopInspectorContent: View {
             .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                    .strokeBorder(Color.primary.opacity(DesignTokens.Card.strokeOpacity), lineWidth: DesignTokens.Card.strokeWidth)
             }
             .contentShape(Rectangle())
             .onTapGesture { if shouldBlurHero { requestReveal() } }
@@ -455,22 +455,12 @@ struct WorkshopInspectorContent: View {
     private func tagChip(_ tag: String) -> some View {
         if let onSelectTag {
             Button { onSelectTag(tag) } label: {
-                Text(tag)
-                    .font(DesignTokens.Typography.badge)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                StatusChip(verbatim: tag, tint: .accentColor, interactive: true)
             }
             .buttonStyle(.plain)
             .help(Text("Browse items tagged \(tag)"))
         } else {
-            Text(tag)
-                .font(DesignTokens.Typography.badge)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06), in: Capsule())
+            StatusChip(verbatim: tag, tint: .secondary)
         }
     }
 

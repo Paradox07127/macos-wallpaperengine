@@ -101,12 +101,12 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
-public struct AppLanguageScope<Content: View>: View {
+struct AppLanguageScope<Content: View>: View {
     @AppStorage(AppLanguagePreference.storageKey) private var rawPreference = AppLanguagePreference.system.rawValue
 
     private let content: Content
 
-    public init(defaults: UserDefaults = .standard, @ViewBuilder content: () -> Content) {
+    init(defaults: UserDefaults = .standard, @ViewBuilder content: () -> Content) {
         _rawPreference = AppStorage(
             wrappedValue: AppLanguagePreference.system.rawValue,
             AppLanguagePreference.storageKey,
@@ -115,7 +115,7 @@ public struct AppLanguageScope<Content: View>: View {
         self.content = content()
     }
 
-    public var body: some View {
+    var body: some View {
         content.environment(\.locale, preference.locale)
     }
 

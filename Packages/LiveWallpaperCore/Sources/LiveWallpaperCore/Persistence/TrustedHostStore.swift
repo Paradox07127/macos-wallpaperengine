@@ -48,10 +48,6 @@ public final class TrustedHostStore {
         Self.builtInTrustedOrigins.contains(origin)
     }
 
-    public func contains(_ origin: TrustedHTMLOrigin) -> Bool {
-        originSet.contains(origin)
-    }
-
     @discardableResult
     public func trust(_ origin: TrustedHTMLOrigin) -> Bool {
         guard origin.isSecure, !originSet.contains(origin) else { return false }

@@ -33,7 +33,6 @@ struct WPEStaticTextureReloadThrottle: Equatable, Sendable {
 struct WPEMetalTextureCacheLRU: Equatable, Sendable {
     private var core: WPEMetalLRUByteBudget<String>
 
-    var budgetBytes: Int { core.budgetBytes }
     var totalBytes: Int { core.totalBytes }
     var entries: [String: WPEMetalLRUByteBudget<String>.Entry] { core.entries }
 

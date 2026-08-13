@@ -16,7 +16,7 @@ extension GeneralSettingsView {
             ) {
                 HStack(spacing: 8) {
                     if audioResponseEnabled {
-                        GeneralSettingsStatusPill(text: audioStatusText, color: audioStatusColor)
+                        StatusChip(verbatim: audioStatusText, tint: audioStatusColor)
                             .help(Text(verbatim: audioStatusSubtitle))
                     }
 
@@ -108,7 +108,7 @@ extension GeneralSettingsView {
                 comment: "Help text when system audio capture is active."
             )
         case .failed(let reason):
-            return PIISanitizer.scrub(reason)
+            return LogPrivacyRedactor.scrub(reason)
         case .idle:
             return String(
                 localized: "Turn on access to start system audio capture",

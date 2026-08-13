@@ -10,7 +10,7 @@ struct RuntimeErrorBanner: View {
     let onRePick: () -> Void
 
     var body: some View {
-        let sanitizedTitle = PIISanitizer.scrub(error.title)
+        let sanitizedTitle = LogPrivacyRedactor.scrub(error.title)
 
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: severityIcon)
@@ -23,7 +23,7 @@ struct RuntimeErrorBanner: View {
                     .font(.callout.weight(.medium))
                     .lineLimit(2)
                 if let subtitle = error.subtitlePath, !subtitle.isEmpty {
-                    Text(verbatim: PIISanitizer.scrub(subtitle))
+                    Text(verbatim: LogPrivacyRedactor.scrub(subtitle))
                         .font(DesignTokens.Typography.codeCaption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -32,7 +32,7 @@ struct RuntimeErrorBanner: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: sanitizedTitle))
-            .accessibilityValue(Text(verbatim: PIISanitizer.scrub(error.accessibilityDetail)))
+            .accessibilityValue(Text(verbatim: LogPrivacyRedactor.scrub(error.accessibilityDetail)))
 
             Spacer(minLength: 8)
 
