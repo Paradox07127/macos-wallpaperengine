@@ -374,12 +374,6 @@ extension ScreenManager {
         htmlCoordinator.setWallpaperPreservingConfig(source: source, for: screen)
     }
 
-    func setHTMLWallpaper(url: String, for screen: Screen) {
-        guard !isTerminating else { return }
-        beginExplicitWallpaperSelection(for: screen)
-        htmlCoordinator.setWallpaper(url: url, for: screen)
-    }
-
     func updateHTMLConfig(_ config: HTMLConfig, for screen: Screen) {
         guard !isTerminating else { return }
         htmlCoordinator.updateConfig(config, for: screen)

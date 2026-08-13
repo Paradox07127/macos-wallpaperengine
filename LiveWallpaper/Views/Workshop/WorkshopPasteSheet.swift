@@ -19,7 +19,7 @@ struct WorkshopPasteSheet: View {
             Divider()
             queueArea
         }
-        .frame(minWidth: 440, idealWidth: 500, minHeight: 340, idealHeight: 420)
+        .frame(minWidth: 440, idealWidth: 500, maxWidth: 720, minHeight: 340, idealHeight: 420, maxHeight: 760)
         .background(DesignTokens.Colors.pageBackground)
         .overlay(alignment: .bottom) {
             DiagnosticExportToast(isPresented: $toastVisible)
@@ -84,7 +84,7 @@ struct WorkshopPasteSheet: View {
 
             Button("Done") { dismiss() }
                 .controlSize(.small)
-                .keyboardShortcut(.cancelAction)
+                .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
         .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
@@ -99,7 +99,7 @@ struct WorkshopPasteSheet: View {
                     .fill(Color(nsColor: .controlBackgroundColor))
                     .overlay {
                         RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                            .strokeBorder(Color.primary.opacity(DesignTokens.Card.strokeOpacity), lineWidth: DesignTokens.Card.strokeWidth)
                     }
                 TextEditor(text: Binding(
                     get: { model.rawInput },
@@ -115,8 +115,8 @@ struct WorkshopPasteSheet: View {
                     Text("https://steamcommunity.com/sharedfiles/filedetails/?id=…\n3725117707\nsteam://url/CommunityFilePage/…")
                         .font(DesignTokens.Typography.body)
                         .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, DesignTokens.Spacing.cardInset)
+                        .padding(.vertical, DesignTokens.Spacing.cardInset)
                         .allowsHitTesting(false)
                 }
             }
@@ -156,21 +156,11 @@ struct WorkshopPasteSheet: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "tray")
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text("Paste a Workshop URL to get started.")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-            Text("Only public metadata is read for each item. Your Steam credentials stay in SteamCMD.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 24)
+        IllustratedEmptyState(
+            symbol: "tray",
+            title: "Paste a Workshop URL to get started.",
+            message: "Only public metadata is read for each item. Your Steam credentials stay in SteamCMD."
+        )
     }
 
     private var queueList: some View {

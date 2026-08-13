@@ -370,7 +370,7 @@ extension WPEMetalSceneRenderer {
         // A child task on the actor (not `async let`, which would try to send `self`
         // into a concurrent child) — it interleaves at the load's suspension points.
         let shaderWarmTask = Task { [actor] in
-            await actor.prewarmShaders(pipeline: pipeline, textObjects: document.textObjects)
+            await actor.prewarmShaders(pipeline: pipeline)
         }
 
         debugStage("textures.load", "begin (pipeline-driven)")
@@ -423,9 +423,9 @@ extension WPEMetalSceneRenderer {
         )
 
         // Audio startup is deferred to after the first frame (see below): the
-        // synchronous `runtime.start(sounds:)` is a 300-900ms hit that does not
-        // gate any pixels, so keeping it on the load path only inflates perceived
-        // load time.
+        // synchronous `runtime.prepare(sounds:)` + `play()` is a 300-900ms hit
+        // that does not gate any pixels, so keeping it on the load path only
+        // inflates perceived load time.
         // Finish seeding the shader cache before the first (synchronous) render() so it
         // hits warmed entries. By now this has overlapped the entire texture/particle/text
         // load above; on heavy scenes the ~1.9s transpile is already absorbed.
@@ -531,7 +531,7 @@ extension WPEMetalSceneRenderer {
             // the generation, so `publishDeferredAudio` releases the engine instead
             // of leaking stale audio; a policy suspend leaves it prepared-but-silent
             // until the next `.quality`/`resume()`.
-            await actor.publishDeferredAudio(runtime: runtime, generation: generation, workshopID: workshopID)
+            await actor.publishDeferredAudio(runtime: runtime, generation: generation)
         }
     }
 

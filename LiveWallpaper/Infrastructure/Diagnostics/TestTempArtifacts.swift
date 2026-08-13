@@ -9,7 +9,6 @@ enum TestTempArtifacts {
         var totalBytes: UInt64
 
         static let empty = Summary(itemCount: 0, totalBytes: 0)
-        var isEmpty: Bool { itemCount == 0 }
     }
 
     /// Explicit test prefix allowlist (never UUID heuristic — production stages UUID dirs).

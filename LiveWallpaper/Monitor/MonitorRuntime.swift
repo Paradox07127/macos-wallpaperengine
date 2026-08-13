@@ -189,8 +189,6 @@ final class MonitorRuntimeLeaseHandle: Sendable {
         self.generation = generation
     }
 
-    var leaseID: UUID { slot.leaseID }
-
     @discardableResult
     func updateOptions(_ options: MonitorRuntimeOptions) -> Task<Void, Never> {
         enqueue(.updateOptions(options))

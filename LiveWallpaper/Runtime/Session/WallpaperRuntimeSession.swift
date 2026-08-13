@@ -18,7 +18,6 @@ protocol WallpaperRuntimeSession: AnyObject {
     var runtimeError: WallpaperRuntimeError? { get }
 
     func show()
-    func hide()
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile)
     func updateFrame(to frame: CGRect)
     func cleanup()

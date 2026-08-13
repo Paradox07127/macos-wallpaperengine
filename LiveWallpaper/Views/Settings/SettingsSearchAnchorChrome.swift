@@ -47,11 +47,6 @@ struct SettingsSearchSectionHeader: View {
         self.anchor = anchor
     }
 
-    init(verbatim title: String, anchor: SettingsSearchAnchor) {
-        self.title = .verbatim(title)
-        self.anchor = anchor
-    }
-
     var body: some View {
         header
             .id(anchor)

@@ -117,7 +117,7 @@ final class WPEMetalRenderTargetPool {
         sceneSize: CGSize
     ) -> CGSize? {
         let localFBOName = WPERenderTargetNames.PuppetClip.baseName(of: fboName) ?? fboName
-        guard !WPEMetalShaderInputs.isSceneAliasName(fboName),
+        guard !WPETextureReference.isSceneAliasName(fboName),
               layer.localFBOs.contains(where: { $0.name == localFBOName }) else { return nil }
         return layerCompositeSize(for: layer, sceneSize: sceneSize)
     }

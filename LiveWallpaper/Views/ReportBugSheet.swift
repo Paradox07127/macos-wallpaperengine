@@ -127,11 +127,11 @@ struct ReportBugSheet: View {
     nonisolated private static func makeSanitizedLogCopy(from source: URL) async -> URL? {
         await Task.detached(priority: .userInitiated) {
             guard let raw = try? String(contentsOf: source, encoding: .utf8) else { return nil }
-            let scrubbed = PIISanitizer.scrub(raw)
+            let scrubbed = LogPrivacyRedactor.scrub(raw)
 
             let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
                 ?? FileManager.default.temporaryDirectory
-            let destination = caches.appendingPathComponent("LiveWallpaper-log-sanitized.txt")
+            let destination = caches.appendingPathComponent("Loomscreen-log-sanitized.txt")
             do {
                 try scrubbed.write(to: destination, atomically: true, encoding: .utf8)
                 return destination

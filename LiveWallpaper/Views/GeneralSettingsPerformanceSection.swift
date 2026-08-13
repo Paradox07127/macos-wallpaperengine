@@ -134,6 +134,9 @@ extension GeneralSettingsView {
                     }
                     .labelsHidden()
                     .controlSize(.small)
+                    // Deliberately wider than Inspector.sliderWidth: the track
+                    // carries Off→1 GB end labels and needs the extra travel
+                    // for GB-level precision.
                     .frame(width: 240)
                     .accessibilityLabel(Text("Video preload (RAM)"))
                     .accessibilityValue(Text(videoCacheValueLabel))

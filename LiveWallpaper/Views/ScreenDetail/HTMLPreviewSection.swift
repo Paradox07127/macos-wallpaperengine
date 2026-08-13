@@ -74,12 +74,12 @@ struct HTMLPreviewSection: View {
 
             if source != nil {
                 HTMLInformationOverlay(source: source, config: config)
-                    .padding(14)
+                    .padding(DesignTokens.Spacing.cardInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(false)
 
                 HTMLRenderingDiagnosticsOverlay(screen: screen, source: source, config: config)
-                    .padding(14)
+                    .padding(DesignTokens.Spacing.cardInset)
                     // Clears the refresh button parked in the same corner.
                     .padding(.trailing, 44)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -162,10 +162,8 @@ struct HTMLPreviewSection: View {
         } label: {
             Image(systemName: "arrow.clockwise")
                 .font(.system(size: 11, weight: .semibold))
-                .padding(7)
-                .adaptiveGlassSurface(.circle, interactive: true)
         }
-        .buttonStyle(.plain)
+        .adaptiveGlassButton(.regular, shape: .circle)
         .help(Text("Refresh web snapshot"))
         .accessibilityLabel(Text("Refresh web preview"))
     }
@@ -383,7 +381,7 @@ struct HTMLInformationOverlay: View {
         }
         .font(DesignTokens.Typography.code)
         .foregroundStyle(DesignTokens.Colors.overlayForeground)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 8)
         .thumbnailBadgeGlass()
         .accessibilityElement(children: .combine)

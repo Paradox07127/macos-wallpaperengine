@@ -221,6 +221,10 @@ private struct StringCatalog: Decodable {
             // on every catalog re-save. The value check below already exempted
             // it — an absent unit is the same case, not a missing translation.
             guard !key.isEmpty else { return false }
+            // `shouldTranslate: false` marks deliberately unlocalized entries
+            // (brand names like CFBundleDisplayName: the per-SKU Info.plist value
+            // must stand, and any catalog override would leak across SKUs).
+            guard strings[key]?.shouldTranslate != false else { return false }
             guard let unit = strings[key]?.localizations?[locale]?.stringUnit else {
                 return true
             }
@@ -293,6 +297,7 @@ private struct StringCatalog: Decodable {
     struct Entry: Decodable {
         let extractionState: String?
         let localizations: [String: Localization]?
+        let shouldTranslate: Bool?
     }
 
     struct Localization: Decodable {

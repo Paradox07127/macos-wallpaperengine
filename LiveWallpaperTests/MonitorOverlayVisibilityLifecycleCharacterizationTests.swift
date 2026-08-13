@@ -157,7 +157,7 @@ struct MonitorOverlayVisibilityLifecycleCharacterizationTests {
         let visibilityUpdate = try sourceSlice(
             controller,
             from: "func updateVisibility(",
-            to: "func setEditing("
+            to: "#if DEBUG"
         )
         let visibilityReconcile = try sourceSlice(
             controller,

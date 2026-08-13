@@ -5,14 +5,6 @@ import LiveWallpaperCore
 /// `forFolder:` cold-start; `schema:` hot apply without re-parsing project.json.
 enum WallpaperEngineWebPropertyBridge {
     static func bootstrapScript(
-        forFolder folderURL: URL,
-        overrides: [String: WallpaperEngineProjectPropertyValue] = [:]
-    ) -> String? {
-        guard let schema = parseSchema(forFolder: folderURL) else { return nil }
-        return bootstrapScript(schema: schema, overrides: overrides)
-    }
-
-    static func bootstrapScript(
         schema: WallpaperEngineProjectPropertySchema,
         overrides: [String: WallpaperEngineProjectPropertyValue] = [:]
     ) -> String? {
@@ -32,7 +24,7 @@ enum WallpaperEngineWebPropertyBridge {
                 try {
                     listener.applyUserProperties(properties);
                 } catch (error) {
-                    console.error('LiveWallpaper failed to apply Wallpaper Engine properties', error);
+                    console.error('Loomscreen failed to apply Wallpaper Engine properties', error);
                 }
             }
 

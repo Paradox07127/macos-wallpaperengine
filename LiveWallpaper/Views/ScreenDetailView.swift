@@ -290,6 +290,9 @@ struct ScreenDetailView: View {
             main: { mainColumn },
             inspector: { width in inspectorPanel(width: width) }
         )
+        // Same size floor as the DetailPageScaffold pages (Bookmarks/Aerials/
+        // Workshop) — this page hand-rolls the scaffold, so it opts in here.
+        .frame(minWidth: DesignTokens.LibraryPage.minWidth, minHeight: DesignTokens.LibraryPage.minHeight)
         .background(DesignTokens.Colors.pageBackground)
         .toolbar {
             // Leading, so it reads outer-to-inner left to right: which side of

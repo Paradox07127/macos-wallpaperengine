@@ -171,33 +171,6 @@ struct WPESoundRuntimeTests {
         #expect(document.soundObjects.isEmpty)
     }
 
-    @Test("WPESoundRuntime.start with no sounds returns 0 attached and does not run the engine")
-    func soundRuntimeStartsWithoutSounds() throws {
-        let resolver = WPEMultiRootResourceResolver(
-            primaryRootURL: FileManager.default.temporaryDirectory,
-            dependencyMounts: []
-        )
-        let runtime = WPESoundRuntime(resolver: resolver)
-        let attached = runtime.start(sounds: [])
-        defer { runtime.stop() }
-        #expect(attached == 0)
-        #expect(runtime.play() == false)
-    }
-
-    @Test("Master mute set before start() seeds the runtime's initial state")
-    func masterMuteBeforeStartIsHonored() throws {
-        let resolver = WPEMultiRootResourceResolver(
-            primaryRootURL: FileManager.default.temporaryDirectory,
-            dependencyMounts: []
-        )
-        let runtime = WPESoundRuntime(resolver: resolver)
-        runtime.setMuted(true)
-        runtime.setMasterVolume(0.25)
-        let attached = runtime.start(sounds: [])
-        defer { runtime.stop() }
-        #expect(attached == 0)
-    }
-
     @Test("setMasterVolume clamps to [0, 1]")
     func masterVolumeClamps() throws {
         let resolver = WPEMultiRootResourceResolver(

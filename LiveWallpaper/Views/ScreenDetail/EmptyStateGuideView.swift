@@ -177,7 +177,7 @@ private struct GuideCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(14)
+            .padding(DesignTokens.Spacing.cardInset)
             .frame(minHeight: 128, alignment: .center)
             .frame(maxWidth: .infinity)
             .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous))
@@ -199,10 +199,10 @@ private struct GuideCard: View {
         .focused($isFocused)
         .scaleEffect(isActive && !reduceMotion ? 1.015 : 1.0)
         .shadow(
-            color: .black.opacity(isActive ? DesignTokens.Card.shadowOpacity : DesignTokens.Card.strokeOpacity),
-            radius: isActive ? DesignTokens.Card.shadowRadius : 4,
+            color: .black.opacity(isActive ? DesignTokens.Card.shadowOpacity : DesignTokens.Card.restShadowOpacity),
+            radius: isActive ? DesignTokens.Card.shadowRadius : DesignTokens.Card.restShadowRadius,
             x: 0,
-            y: isActive ? DesignTokens.Card.shadowYOffset : 2
+            y: isActive ? DesignTokens.Card.shadowYOffset : DesignTokens.Card.restShadowYOffset
         )
         .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.32, dampingFraction: 0.86)), value: isHovering)
         .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.32, dampingFraction: 0.86)), value: isFocused)

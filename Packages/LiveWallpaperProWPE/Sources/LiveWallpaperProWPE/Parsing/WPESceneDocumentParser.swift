@@ -121,7 +121,7 @@ public enum WPESceneDocumentParser {
         }
 
         let rawGeneralDict = ((json as? [String: Any])?["general"] as? [String: Any]) ?? generalDict
-        let authoredCamera = parseCamera(cameraDict, general: generalDict, diagnostics: &diagnostics)
+        let authoredCamera = parseCamera(cameraDict, general: generalDict)
         let general = parseGeneral(generalDict, authored: rawGeneralDict, diagnostics: &diagnostics)
 
         let rawObjects: [[String: Any]] = (root["objects"] as? [[String: Any]]) ?? []
@@ -1550,8 +1550,7 @@ public enum WPESceneDocumentParser {
 
     private static func parseCamera(
         _ dict: [String: Any],
-        general: [String: Any],
-        diagnostics: inout [WPESceneDiagnostic]
+        general: [String: Any]
     ) -> WPESceneCamera {
         let center = parseVector3(dict["center"]) ?? WPESceneCamera.defaultCamera.center
         let eye = parseVector3(dict["eye"]) ?? WPESceneCamera.defaultCamera.eye

@@ -50,7 +50,7 @@ enum WPEMetalShaderInputs {
             if let texture = frameState.latestNamedTextures[name] {
                 return texture
             }
-            if Self.isSceneAliasName(name) {
+            if WPETextureReference.isSceneAliasName(name) {
                 // WPE's `_rt_FullFrameBuffer` (and the other scene aliases) means
                 // "what is CURRENTLY rendered to the background's output" — never
                 // the previous frame. `currentFrameSceneTexture` is non-nil only
@@ -119,13 +119,6 @@ enum WPEMetalShaderInputs {
             return texture
         }
         return nil
-    }
-
-    /// True for `_rt_*` names that WPE's runtime aliases to the live scene texture rather
-    /// than a discrete FBO allocation. Forwards to the canonical single source of truth in
-    /// the Schema package shared with the graph builder.
-    static func isSceneAliasName(_ name: String) -> Bool {
-        WPETextureReference.isSceneAliasName(name)
     }
 
     static func normalizedBuiltinShaderName(_ shaderName: String) -> String {

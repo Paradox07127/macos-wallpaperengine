@@ -292,25 +292,6 @@
                 .appendingPathComponent("AF12-Lifecycle-\(label)-\(UUID().uuidString)", isDirectory: true)
         }
 
-        private func managedRoot(under parent: URL, label: String) -> URL {
-            parent.appendingPathComponent(label, isDirectory: true)
-                .appendingPathComponent("common/wallpaper_engine", isDirectory: true)
-        }
-
-        private func seedAssets(_ value: String?, slot: String, managed: URL) throws {
-            guard let value else { return }
-            let directory = managed.appendingPathComponent(slot, isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try Data(value.utf8).write(to: directory.appendingPathComponent("marker"))
-        }
-
-        private func marker(in directory: URL) throws -> String? {
-            guard FileManager.default.fileExists(atPath: directory.path) else { return nil }
-            return try String(
-                contentsOf: directory.appendingPathComponent("marker"),
-                encoding: .utf8
-            )
-        }
     }
 
     private actor AF12Latch {
@@ -355,13 +336,4 @@
         }
     }
 
-    private final class AF12FailingRemovalFileManager: FileManager, @unchecked Sendable {
-        override func removeItem(at _: URL) throws {
-            throw CocoaError(.fileWriteUnknown)
-        }
-    }
-
-    private func af12IsMainThread() -> Bool {
-        Thread.isMainThread
-    }
 #endif

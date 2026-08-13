@@ -11,7 +11,7 @@ extension WPEMetalSceneRenderer {
     /// with no Instruments observer the emit cost is negligible. Read the stages
     /// with the os_signpost template to measure off-main rendering.
     static let frameSignposter = OSSignposter(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.taijia.LiveWallpaper",
+        subsystem: Bundle.main.bundleIdentifier ?? "com.loomscreen.pro",
         category: "WPEFrame"
     )
 

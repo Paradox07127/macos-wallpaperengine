@@ -2,7 +2,6 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
-import LiveWallpaperProWPE
 import Metal
 import os
 import Testing

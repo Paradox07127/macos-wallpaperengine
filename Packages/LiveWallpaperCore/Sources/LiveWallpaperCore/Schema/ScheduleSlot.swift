@@ -41,12 +41,6 @@ public struct ScheduleSlot: Codable, Equatable, Identifiable, Sendable {
         }
     }
 
-    /// True when the slot crosses midnight (e.g. 22 → 6). Zero-length slots
-    /// are reported as non-wrapping; callers reject them upstream.
-    public var wraps: Bool {
-        startHour > endHour
-    }
-
     /// Half-open [start,end) segments on 0–24; wrapping yields up to two; empty halves dropped.
     public func timelineSegments() -> [TimelineSegment] {
         if startHour == endHour { return [] }

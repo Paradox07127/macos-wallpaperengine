@@ -57,7 +57,6 @@ extension WPEMetalSceneRenderer {
     /// requests are `Sendable`) — never the non-`Sendable` executor.
     func prewarmCustomShaders(
         for pipeline: WPEPreparedRenderPipeline,
-        textObjects: [WPESceneTextObject],
         on actor: isolated WPEDisplayRenderActor
     ) async {
         // Always pre-compile before the first-frame encode: compiling a pipeline

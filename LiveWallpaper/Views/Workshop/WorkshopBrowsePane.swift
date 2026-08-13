@@ -303,127 +303,89 @@ struct WorkshopBrowsePane: View {
     }
 
     private var apiKeyRequiredState: some View {
-        VStack(spacing: DesignTokens.Spacing.md) {
-            Image(systemName: "key.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text("Set your Steam Web API key to browse online.")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+        IllustratedEmptyState(
+            symbol: "key.fill",
+            title: "Set your Steam Web API key to browse online.",
+            primary: EmptyStateButtonAction("Set Web API key") { onRequestKeyEntry() }
+        ) {
+            VStack(spacing: DesignTokens.Spacing.sm) {
+                Text(verbatim: WorkshopAPIKeyOwnershipInfo.prerequisitesLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+                Text("[Get a key](https://steamcommunity.com/dev/apikey)  ·  [Steam Web API TOU](https://steamcommunity.com/dev/apiterms)  ·  [About Limited Accounts](https://help.steampowered.com/en/faqs/view/71D3-35C2-AD96-AA3A)")
+                    .font(.caption)
+                    .tint(Color.accentColor)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
 
-            Text(verbatim: WorkshopAPIKeyOwnershipInfo.prerequisitesLine)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-            Text("[Get a key](https://steamcommunity.com/dev/apikey)  ·  [Steam Web API TOU](https://steamcommunity.com/dev/apiterms)  ·  [About Limited Accounts](https://help.steampowered.com/en/faqs/view/71D3-35C2-AD96-AA3A)")
-                .font(.caption)
-                .tint(Color.accentColor)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 380)
-
-            Button {
-                onRequestKeyEntry()
-            } label: {
-                Label("Set Web API key", systemImage: "key")
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.top, DesignTokens.Spacing.xs)
-
-            if let onDownloadByLink {
-                VStack(spacing: DesignTokens.Spacing.xs) {
-                    Button(action: onDownloadByLink) {
-                        Label("Or download by link", systemImage: "link")
+                if let onDownloadByLink {
+                    VStack(spacing: DesignTokens.Spacing.xs) {
+                        Button(action: onDownloadByLink) {
+                            Label("Or download by link", systemImage: "link")
+                        }
+                        .buttonStyle(.link)
+                        Text("Paste a Workshop URL to install it without a key. Searching is what needs one.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 360)
                     }
-                    .buttonStyle(.link)
-                    Text("Paste a Workshop URL to install it without a key. Searching is what needs one.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 360)
+                    .padding(.top, DesignTokens.Spacing.xs)
                 }
-                .padding(.top, DesignTokens.Spacing.xs)
-            }
 
-            Text(verbatim: WorkshopAPIKeyOwnershipInfo.passwordReassurance)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
+                Text(verbatim: WorkshopAPIKeyOwnershipInfo.passwordReassurance)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(DesignTokens.Spacing.xl)
     }
 
     private var inspectorPlaceholder: some View {
-        VStack(spacing: DesignTokens.Spacing.sm) {
-            Image(systemName: "square.dashed")
-                .font(.system(size: 28))
-                .foregroundStyle(.tertiary)
-            Text("Select a wallpaper to see details.")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(DesignTokens.Spacing.lg)
+        IllustratedEmptyState(
+            symbol: "square.dashed",
+            title: "Select a wallpaper to see details.",
+            variant: .compact
+        )
     }
 
     private var emptyState: some View {
-        VStack(spacing: DesignTokens.Spacing.sm) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 36))
-                .foregroundStyle(.tertiary)
-            Text(emptyMessage)
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            if hasActiveFilters {
-                Button("Clear filters") { clearFilters() }
-                    .buttonStyle(.borderless)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        IllustratedEmptyState(
+            symbol: "magnifyingglass",
+            verbatimTitle: emptyMessage,
+            primary: hasActiveFilters
+                ? EmptyStateButtonAction("Clear filters") { clearFilters() }
+                : nil
+        )
     }
 
     /// Shown inside the grid when "Hide items already in my library" excludes
     /// every item on the loaded page.
     private var scopeEmptyNote: some View {
-        VStack(spacing: DesignTokens.Spacing.sm) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 30))
-                .foregroundStyle(.tertiary)
-            Text("Every item on this page is already in your library.")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button("Show downloaded items") { hidesDownloadedPref = false }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, DesignTokens.Spacing.xl)
+        IllustratedEmptyState(
+            symbol: "sparkles",
+            title: "Every item on this page is already in your library.",
+            primary: EmptyStateButtonAction("Show downloaded items") { hidesDownloadedPref = false },
+            variant: .compact
+        )
     }
 
     private func errorState(_ error: WorkshopQueryError) -> some View {
-        VStack(spacing: DesignTokens.Spacing.md) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(DesignTokens.Colors.Status.warning)
-            Text(message(for: error))
-                .font(DesignTokens.Typography.body)
-                .multilineTextAlignment(.center)
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Button("Retry") { Task { await viewModel.reload() } }
-                    .buttonStyle(.borderedProminent)
+        IllustratedEmptyState(
+            symbol: "exclamationmark.triangle.fill",
+            verbatimTitle: message(for: error),
+            symbolColor: DesignTokens.Colors.Status.warning,
+            primary: EmptyStateButtonAction("Retry") { Task { await viewModel.reload() } },
+            secondary: {
                 if case .missingAPIKey = error {
-                    Button("Set Web API key") { onRequestKeyEntry() }
+                    return EmptyStateButtonAction("Set Web API key") { onRequestKeyEntry() }
                 }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(DesignTokens.Spacing.xl)
+                return nil
+            }()
+        )
     }
 
     private func creatorFilterBanner(_ creator: WorkshopBrowseViewModel.CreatorFilter) -> some View {

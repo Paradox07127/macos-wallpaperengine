@@ -134,9 +134,6 @@ struct VideoSessionLifecycleTests {
         session.play()
         #expect(!player.particleEffectsSuspended)
 
-        session.hide()
-        #expect(player.particleEffectsSuspended)
-
         session.show()
         #expect(!player.particleEffectsSuspended)
     }
@@ -378,7 +375,6 @@ struct VideoSessionLifecycleTests {
         // These all change after retry preparation starts. The candidate must
         // receive this state, never the values captured at task creation.
         session.pause()
-        session.hide()
         session.applyPerformanceProfile(.suspended)
         old.setMuted(true)
         old.setVolume(0.8)
@@ -393,7 +389,7 @@ struct VideoSessionLifecycleTests {
         #expect(installed === candidate)
         #expect(installed !== old)
         #expect(!session.userIntendsToPlay)
-        #expect(session.summary.activity == .off)
+        #expect(session.summary.activity == .paused)
         #expect(installed.isMuted)
         #expect(installed.audioVolume == 0.8)
         #expect(installed.currentPlaybackSpeed == 1.5)
@@ -1483,7 +1479,7 @@ private final class SuspendingWallpaperAssetLoader {
     private var continuation: CheckedContinuation<AVURLAsset, any Error>?
     private(set) var isSuspended = false
 
-    func load(_ url: URL) async throws -> AVURLAsset {
+    func load(_: URL) async throws -> AVURLAsset {
         isSuspended = true
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
@@ -1515,9 +1511,9 @@ private final class ControlledVideoCompositionBuilder {
     }
 
     func build(
-        asset: AVAsset,
-        config: VideoEffectConfig,
-        frameDuration: CMTime
+        asset _: AVAsset,
+        config _: VideoEffectConfig,
+        frameDuration _: CMTime
     ) async throws -> AVVideoComposition {
         callCount += 1
         let call = callCount

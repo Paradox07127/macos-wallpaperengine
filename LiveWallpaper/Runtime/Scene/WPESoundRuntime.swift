@@ -187,14 +187,6 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// prepare+play convenience; renderer usually splits so prepare can leave MainActor.
-    @discardableResult
-    func start(sounds: [WPESceneSoundObject]) -> Int {
-        let attached = prepare(sounds: sounds)
-        play()
-        return attached
-    }
-
     /// Resolve and schedule files without starting playback. `scheduleFile`
     /// streams long assets through AVFoundation instead of allocating a PCM
     /// buffer proportional to the complete file length.

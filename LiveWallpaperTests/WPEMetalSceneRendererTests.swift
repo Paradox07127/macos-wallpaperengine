@@ -858,7 +858,7 @@ struct WPEMetalSceneRendererTests {
 
         try await renderer.load()
 
-        let pixel = try #require(renderer.renderedTexture?.readPixel(x: 32, y: 32))
+        let pixel = try #require(renderer.outputTexture?.readPixel(x: 32, y: 32))
         #expect(pixel.r >= 200)
         #expect(pixel.r > pixel.g)
         #expect(pixel.r > pixel.b)
@@ -918,7 +918,7 @@ struct WPEMetalSceneRendererTests {
 
         try await renderer.load()
 
-        let pixel = try #require(renderer.renderedTexture?.readPixel(x: 32, y: 32))
+        let pixel = try #require(renderer.outputTexture?.readPixel(x: 32, y: 32))
         #expect(pixel.r >= 200)
         #expect(pixel.r > pixel.g)
         #expect(pixel.r > pixel.b)
@@ -942,7 +942,7 @@ struct WPEMetalSceneRendererTests {
 
         try await renderer.load()
 
-        let texture = try #require(renderer.renderedTexture)
+        let texture = try #require(renderer.outputTexture)
         #expect(try #require(texture.readPixel(x: 32, y: 12)).r >= 200)
         #expect(try #require(texture.readPixel(x: 32, y: 52)).r >= 200)
         #expect(try #require(texture.readPixel(x: 12, y: 32)).r < 100)
@@ -967,7 +967,7 @@ struct WPEMetalSceneRendererTests {
 
         try await renderer.load()
 
-        let texture = try #require(renderer.renderedTexture)
+        let texture = try #require(renderer.outputTexture)
         #expect(try #require(texture.readPixel(x: 32, y: 12)).r >= 200)
         #expect(try #require(texture.readPixel(x: 32, y: 52)).r >= 200)
         #expect(try #require(texture.readPixel(x: 12, y: 32)).r < 100)
@@ -990,7 +990,7 @@ struct WPEMetalSceneRendererTests {
 
         try await renderer.load()
 
-        let pixel = try #require(renderer.renderedTexture?.readPixel(x: 32, y: 32))
+        let pixel = try #require(renderer.outputTexture?.readPixel(x: 32, y: 32))
         #expect(pixel.g >= 245)
         #expect(pixel.g > pixel.r)
         #expect(pixel.g > pixel.b)
@@ -1114,7 +1114,7 @@ struct WPEMetalSceneRendererTests {
 
         try await renderer.load()
 
-        let snapshot = try #require(renderer.previewSnapshot)
+        let snapshot = try #require(renderer.cachedSnapshot)
         #expect(snapshot.size.width == 64)
         #expect(snapshot.size.height == 64)
     }
@@ -1165,7 +1165,6 @@ struct WPEMetalSceneRendererTests {
         }
 
         let diagnostic = try #require(renderer.loadDiagnostics)
-        #expect(diagnostic.layerName == "Hero Layer")
         #expect(diagnostic.errorDescription.contains("Hero Layer"))
         #expect(!diagnostic.errorDescription.lowercased().contains("texture"))
         #expect(!diagnostic.errorDescription.lowercased().contains("shader"))

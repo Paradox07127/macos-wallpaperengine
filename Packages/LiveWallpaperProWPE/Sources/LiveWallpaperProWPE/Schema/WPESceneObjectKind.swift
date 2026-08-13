@@ -20,16 +20,16 @@ public enum WPESceneObjectKind: String, Equatable, Sendable {
     }
 }
 
-public struct WPESceneObjectKindResolution: Equatable, Sendable {
-    public let primary: WPESceneObjectKind
-    public let candidates: [WPESceneObjectKind]
-    public let explicitType: String?
+struct WPESceneObjectKindResolution: Equatable, Sendable {
+    let primary: WPESceneObjectKind
+    let candidates: [WPESceneObjectKind]
+    let explicitType: String?
 
-    public init(primary: WPESceneObjectKind, candidates: [WPESceneObjectKind], explicitType: String?) {
+    init(primary: WPESceneObjectKind, candidates: [WPESceneObjectKind], explicitType: String?) {
         self.primary = primary
         self.candidates = candidates
         self.explicitType = explicitType
     }
 
-    public var isAmbiguous: Bool { candidates.count > 1 }
+    var isAmbiguous: Bool { candidates.count > 1 }
 }

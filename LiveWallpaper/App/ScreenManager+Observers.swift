@@ -6,13 +6,13 @@ import Observation
 extension ScreenManager {
     func setupPowerMonitoring() {
         powerMonitor.powerSourcePublisher
-            .sink { [weak self] powerSource in
-                self?.handlePowerStateChange(powerSource)
+            .sink { [weak self] _ in
+                self?.handlePowerStateChange()
             }
             .store(in: &cleanupTasks)
         
-        let initialPowerSource = powerMonitor.currentPowerSource
-        handlePowerStateChange(initialPowerSource)
+        _ = powerMonitor.currentPowerSource
+        handlePowerStateChange()
     }
     
     func setupScreenObservers() {
@@ -182,7 +182,7 @@ extension ScreenManager {
     func setupFullScreenDetection() {
         observeFullScreenChanges()
         fullScreenDetector.checkNow()
-        handleFullScreenChange(fullScreenDetector.hiddenScreens)
+        handleFullScreenChange()
     }
 
     private func observeFullScreenChanges() {
@@ -199,20 +199,20 @@ extension ScreenManager {
                 guard let self,
                       !self.isTerminating,
                       self.fullScreenTrackingGeneration == generation else { return }
-                self.handleFullScreenChange(self.fullScreenDetector.hiddenScreens)
+                self.handleFullScreenChange()
                 self.observeFullScreenChanges()
             }
         }
     }
 
     /// Full-screen / window-occlusion changes fold into the effective profile like every other condition; a single policy refresh applies the unified play/pause decision.
-    private func handleFullScreenChange(_ hiddenScreens: [CGDirectDisplayID: Bool]) {
+    private func handleFullScreenChange() {
         refreshMonitorOverlayVisibility()
         refreshPerformancePolicyForAllScreens()
     }
 
     /// Routes power changes through the unified performance policy.
-    private func handlePowerStateChange(_ powerSource: PowerMonitor.PowerSource) {
+    private func handlePowerStateChange() {
         refreshPerformancePolicyForAllScreens()
     }
 

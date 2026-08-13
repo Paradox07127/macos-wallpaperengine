@@ -1,7 +1,7 @@
 import Foundation
 
 // MARK: - Monitor wallpaper data contract (schema v2)
-// Single snapshot contract for board + HUD. Key names are load-bearing; rename only with `schemaVersion` bump.
+// Single snapshot contract for the widget board. Key names are load-bearing; rename only with `schemaVersion` bump.
 
 enum MonitorAgentProvider: String, Codable, Sendable, CaseIterable {
     case claude

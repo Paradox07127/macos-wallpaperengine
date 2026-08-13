@@ -1,7 +1,6 @@
 import CoreGraphics
 import LiveWallpaperCore
 import Testing
-@testable import LiveWallpaper
 
 @Suite("Video span layout")
 struct VideoSpanLayoutTests {

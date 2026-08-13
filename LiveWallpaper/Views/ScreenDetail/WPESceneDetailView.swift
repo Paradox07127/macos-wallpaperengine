@@ -182,7 +182,7 @@ struct WPESceneDetailView: View {
             fallbackBackground
                 .overlay(alignment: .bottom) { previewErrorStrip(reason: fallbackReason) }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
                         .strokeBorder(severityColor(for: fallbackReason).opacity(0.45), lineWidth: 1.5)
                 }
         }
@@ -199,7 +199,7 @@ struct WPESceneDetailView: View {
                 .foregroundStyle(DesignTokens.Colors.overlayForeground)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.top, 24)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
@@ -237,7 +237,7 @@ struct WPESceneDetailView: View {
         case .unsupportedType:
             return Text("We can't render this scene's feature set yet.")
         case .sceneParseFailed(let detail):
-            return Text(verbatim: PIISanitizer.scrub(detail))
+            return Text(verbatim: LogPrivacyRedactor.scrub(detail))
         case .sceneShaderUnsupported:
             return Text("A custom shader couldn't be translated. Try re-downloading the project.")
         case .sceneResourceMissing:
@@ -255,7 +255,7 @@ struct WPESceneDetailView: View {
         case .texUnsupportedFormat(let code):
             return Text("Format \(code) — not yet decoded.", comment: "Texture error detail. The placeholder is a texture format code.")
         case .texDecodeFailed(let detail):
-            return Text(verbatim: PIISanitizer.scrub(detail))
+            return Text(verbatim: LogPrivacyRedactor.scrub(detail))
         }
     }
 
@@ -829,7 +829,7 @@ private struct DiagnosticLogSheet: View {
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
         }
-        .padding(14)
+        .padding(DesignTokens.Spacing.cardInset)
         .background(tint.opacity(0.08))
     }
 
@@ -839,7 +839,7 @@ private struct DiagnosticLogSheet: View {
                 .font(DesignTokens.Typography.codeCaption)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
+                .padding(DesignTokens.Spacing.cardInset)
         }
         .background(Color.black.opacity(0.8))
     }
@@ -957,7 +957,7 @@ struct SceneInformationOverlay: View {
         }
         .font(DesignTokens.Typography.code)
         .foregroundStyle(DesignTokens.Colors.overlayForeground)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 8)
         .thumbnailBadgeGlass()
         .accessibilityElement(children: .combine)

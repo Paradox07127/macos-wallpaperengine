@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-@testable import LiveWallpaper
 import LiveWallpaperCore
 
 @MainActor

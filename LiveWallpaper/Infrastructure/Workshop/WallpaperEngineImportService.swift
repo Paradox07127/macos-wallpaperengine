@@ -107,7 +107,7 @@ final class WallpaperEngineImportService {
         folderURL: URL,
         sourceBookmark: Data
     ) async -> ImportResult {
-        guard let videoURL = resourceURL(root: folderURL, relativePath: project.entryFile),
+        guard let videoURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: project.entryFile),
               fileManager.fileExists(atPath: videoURL.path) else {
             return .rejected(reason: "Missing video entry \(project.entryFile)")
         }
@@ -146,7 +146,7 @@ final class WallpaperEngineImportService {
             )
         }
 
-        guard let indexURL = resourceURL(root: folderURL, relativePath: project.entryFile),
+        guard let indexURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: project.entryFile),
               fileManager.fileExists(atPath: indexURL.path) else {
             return .rejected(reason: "Missing web entry \(project.entryFile)")
         }
@@ -268,7 +268,6 @@ final class WallpaperEngineImportService {
             if let packageResult = await finishScenePackageBackedImport(
                 project: project,
                 pkgURL: pkgURL,
-                sourceFolderURL: folderURL,
                 sourceBookmark: sourceBookmark
             ) {
                 return packageResult
@@ -276,7 +275,7 @@ final class WallpaperEngineImportService {
             return .rejected(reason: "Packaged scene \(project.entryFile) could not be read from the package")
         }
 
-        guard let entryURL = resourceURL(root: folderURL, relativePath: project.entryFile),
+        guard let entryURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: project.entryFile),
               fileManager.fileExists(atPath: entryURL.path) else {
             return .unsupported(origin: makeOrigin(
                 project: project,
@@ -303,7 +302,6 @@ final class WallpaperEngineImportService {
     private func finishScenePackageBackedImport(
         project: WallpaperEngineProject,
         pkgURL: URL,
-        sourceFolderURL: URL,
         sourceBookmark: Data
     ) async -> ImportResult? {
         guard let provider = try? await WPEPackageSceneAssetProvider.open(packageURL: pkgURL),
@@ -473,10 +471,6 @@ final class WallpaperEngineImportService {
     }
 
 
-    private func resourceURL(root: URL, relativePath: String) -> URL? {
-        WPEPathSafety.resourceURL(root: root, relativePath: relativePath)
-    }
-
     private func describe(_ error: Error) -> String {
         if let localized = error as? LocalizedError, let description = localized.errorDescription {
             return description
@@ -536,7 +530,7 @@ struct WPECachedContentResolver {
         let didStart = folderURL.startAccessingSecurityScopedResource()
         defer { if didStart { folderURL.stopAccessingSecurityScopedResource() } }
 
-        let looseEntryURL = resourceURL(root: folderURL, relativePath: entryFile)
+        let looseEntryURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: entryFile)
         let looseEntryExists = looseEntryURL.map { fileManager.fileExists(atPath: $0.path) } ?? false
         let pkgURL = folderURL.appendingPathComponent("scene.pkg")
         let packagedEntryExists = fileManager.fileExists(atPath: pkgURL.path)
@@ -593,7 +587,7 @@ struct WPECachedContentResolver {
         guard WPEPathSafety.contains(cacheURL, in: safeSupportRoot) else {
             return nil
         }
-        let entryURLCandidate = resourceURL(root: cacheURL, relativePath: entryFile)
+        let entryURLCandidate = WPEPathSafety.resourceURL(root: cacheURL, relativePath: entryFile)
         let entryExistsInCache = entryURLCandidate.map { fileManager.fileExists(atPath: $0.path) } ?? false
 
         // Prefer source rebuild over stale cache; cache only if source is gone.
@@ -751,9 +745,6 @@ struct WPECachedContentResolver {
         ))
     }
 
-    private func resourceURL(root: URL, relativePath: String) -> URL? {
-        WPEPathSafety.resourceURL(root: root, relativePath: relativePath)
-    }
 }
 
 /// Scene-cache file list for preflight custom-shader probes.

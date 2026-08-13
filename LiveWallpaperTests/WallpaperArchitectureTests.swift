@@ -50,7 +50,7 @@ struct WallpaperSessionDefinitionTests {
         let definitions: [WallpaperSessionDefinition] = [
             .html(.url(URL(string: "https://example.com/live")!), .default),
             .html(.inline("<html></html>"), .default),
-            .video(bookmarkData: Data([0x01, 0x02])),
+            .video(bookmarkData: Data([0x01, 0x02]), packageEntryName: nil),
         ]
 
         let displayNames = definitions.map { definition in
@@ -1124,7 +1124,6 @@ private final class FakePlaybackController: WallpaperPlaybackControllable {
     var wallpaperWindow: NSWindow? { nil }
 
     func show() {}
-    func hide() {}
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {}
     func updateFrame(to frame: CGRect) {}
     func cleanup() {}
@@ -1375,20 +1374,6 @@ struct PlaylistPolicyTests {
     func staleCursorNormalizes() {
         let next = PlaylistPolicy.nextCursor(currentCursor: 7, playlistCount: 3, shuffle: false)
         #expect(next == 2)
-    }
-
-    @Test("combinedPlaylist returns nil when only primary exists")
-    func combinedPlaylistNilWithOneEntry() {
-        #expect(PlaylistPolicy.combinedPlaylist(primary: Data([0x01]), additional: nil) == nil)
-        #expect(PlaylistPolicy.combinedPlaylist(primary: Data([0x01]), additional: []) == nil)
-    }
-
-    @Test("combinedPlaylist composes primary + additional when more than one entry")
-    func combinedPlaylistComposes() {
-        let primary = Data([0x01])
-        let extras = [Data([0x02]), Data([0x03])]
-        let combined = PlaylistPolicy.combinedPlaylist(primary: primary, additional: extras)
-        #expect(combined == [primary, extras[0], extras[1]])
     }
 
     @Test("Playlist rotation waits until configured interval elapses")
@@ -2654,8 +2639,6 @@ private final class TestWallpaperRuntimeSession: WallpaperRuntimeSession {
     func updateFrame(to frame: CGRect) {}
 
     func show() {}
-
-    func hide() {}
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {}
 

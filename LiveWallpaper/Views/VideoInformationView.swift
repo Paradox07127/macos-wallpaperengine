@@ -58,7 +58,7 @@ struct VideoInformationOverlay: View {
         }
         .font(DesignTokens.Typography.metric)
         .foregroundStyle(DesignTokens.Colors.overlayForeground)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 8)
         .thumbnailBadgeGlass()
     }
@@ -94,7 +94,10 @@ struct VideoInformationOverlay: View {
             videoResolution = (width: abs(Int(transformedSize.width)),
                                height: abs(Int(transformedSize.height)))
             videoFrameRate = Double(nominalFrameRate)
-        } catch {}
+        } catch {
+            // Best-effort metadata: the inspector rows stay blank on failure.
+            Logger.debug("Video metadata load failed: \(error)", category: .videoPlayer)
+        }
     }
 
     private func resetVideoInformation() {

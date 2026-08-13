@@ -75,7 +75,7 @@ final class SystemAudioCaptureService: @unchecked Sendable {
 
         // Global stereo private tap of every process (`isExclusive` + empty processes).
         let description = CATapDescription()
-        description.name = "LiveWallpaper System Audio"
+        description.name = "\(BundleIdentity.productDisplayName) System Audio"
         description.processes = []
         description.isExclusive = true
         description.isMixdown = true
@@ -122,7 +122,7 @@ final class SystemAudioCaptureService: @unchecked Sendable {
         // Private aggregate; TapAutoStartKey starts the sub-tap.
         let aggregateUID = UUID().uuidString
         let aggregateDescription: [String: Any] = [
-            kAudioAggregateDeviceNameKey as String: "LiveWallpaper Audio Capture",
+            kAudioAggregateDeviceNameKey as String: "\(BundleIdentity.productDisplayName) Audio Capture",
             kAudioAggregateDeviceUIDKey as String: aggregateUID,
             kAudioAggregateDeviceIsPrivateKey as String: true,
             kAudioAggregateDeviceIsStackedKey as String: false,

@@ -26,7 +26,9 @@ struct ScreenDetailHeader: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    // Same glass family as the header's action buttons, at
+                    // regular size so it stays proportionate to the title line.
+                    .adaptiveGlassButton(.regular, shape: .circle)
                     .help(Text("Reload display content"))
                     .accessibilityLabel(Text("Reload display"))
                     .accessibilityHint(Text("Reloads the wallpaper content for this screen"))

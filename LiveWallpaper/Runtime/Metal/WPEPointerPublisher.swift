@@ -50,11 +50,11 @@ final class WPEPointerPublisher {
     /// Idempotent: a second `start()` while already running is a no-op.
     func start() {
         guard !isRunning else { return }
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: Self.mouseMask) { [weak self] event in
-            self?.handleMouseEvent(event)
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: Self.mouseMask) { [weak self] _ in
+            self?.handleMouseEvent()
         }
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: Self.mouseMask) { [weak self] event in
-            self?.handleMouseEvent(event)
+            self?.handleMouseEvent()
             return event
         }
         installGeometryObservers()
@@ -87,7 +87,7 @@ final class WPEPointerPublisher {
 
     // MARK: - Mouse
 
-    private func handleMouseEvent(_ event: NSEvent) {
+    private func handleMouseEvent() {
         let time = now()
         if throttleInterval > 0, time - lastMousePublishAt < throttleInterval { return }
         lastMousePublishAt = time

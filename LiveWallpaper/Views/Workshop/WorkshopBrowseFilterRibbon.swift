@@ -337,7 +337,7 @@ struct WorkshopFilterChip: View {
                 .opacity(isSelected ? 1 : 0.5)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .modifier(WorkshopChipBackground(isSelected: isSelected))
+                .filterChipBackground(isSelected: isSelected)
         }
         .buttonStyle(.plain)
         .help(onIsolate != nil
@@ -345,23 +345,6 @@ struct WorkshopFilterChip: View {
             : Text(""))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityValue(isSelected ? Text("Shown") : Text("Hidden"))
-    }
-}
-
-/// Selected chips get a tinted Liquid Glass capsule with an accent ring (so selection stays unmistakable); deselected chips keep a quiet flat fill.
-private struct WorkshopChipBackground: ViewModifier {
-    let isSelected: Bool
-
-    func body(content: Content) -> some View {
-        if isSelected {
-            content
-                .adaptiveGlassSurface(.capsule, tint: .accentColor, interactive: true)
-                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1))
-        } else {
-            content
-                .background(Capsule().fill(Color.primary.opacity(0.04)))
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
-        }
     }
 }
 

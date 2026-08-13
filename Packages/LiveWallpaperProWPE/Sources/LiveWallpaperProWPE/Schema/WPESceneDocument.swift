@@ -819,9 +819,6 @@ public struct WPESceneParticleObject: Equatable, Sendable, Identifiable {
         self.instanceOverride = instanceOverride
     }
 
-    public func resolvedAlpha(at time: Double) -> Double {
-        alphaAnimation?.scalar(at: time) ?? alpha
-    }
 }
 
 public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
@@ -973,9 +970,6 @@ public struct WPESceneAuthoredField<Value: Equatable & Sendable>: Equatable, Sen
         self.scriptProperties = scriptProperties
     }
 
-    public var hasDynamicBinding: Bool {
-        !userBindings.isEmpty || script != nil
-    }
 }
 
 public struct WPESceneCameraShakeSettings: Equatable, Sendable {
@@ -1374,10 +1368,6 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         self.scriptProperties = scriptProperties
         self.shapePoints = shapePoints
     }
-
-    public func resolvedAlpha(at time: Double) -> Double {
-        alphaAnimation?.scalar(at: time) ?? alpha
-    }
 }
 
 public struct WPESceneImageEffect: Equatable, Sendable, Identifiable {
@@ -1407,14 +1397,6 @@ public struct WPESceneImageEffect: Equatable, Sendable, Identifiable {
         self.visible = visible
         self.passOverrides = passOverrides
         self.visibleScript = visibleScript
-    }
-
-    public var isShakeEffect: Bool {
-        let normalizedFile = fileRelativePath.lowercased()
-        let normalizedName = name.lowercased()
-        return normalizedFile.contains("/shake/")
-            || normalizedFile.hasSuffix("shake/effect.json")
-            || normalizedName == "shake"
     }
 }
 

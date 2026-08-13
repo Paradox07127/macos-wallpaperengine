@@ -74,7 +74,7 @@ struct ManualLocationPicker: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                        .strokeBorder(Color.primary.opacity(DesignTokens.Card.strokeOpacity), lineWidth: DesignTokens.Card.strokeWidth)
                 )
             }
 

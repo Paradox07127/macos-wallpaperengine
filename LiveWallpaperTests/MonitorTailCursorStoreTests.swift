@@ -66,7 +66,7 @@ struct MonitorTailCursorStoreTests {
         initialData.append(0x0A)
         try initialData.write(to: transcript, options: .atomic)
 
-        let initialReader = JSONLTailReader(url: transcript)
+        let initialReader = JSONLTailReader(url: transcript, resumeFrom: nil)
         #expect(try initialReader.poll().newLines == [oldLine])
         let cursor = try #require(initialReader.cursorState)
         var aggregate = makeAggregate(turnCount: 7)

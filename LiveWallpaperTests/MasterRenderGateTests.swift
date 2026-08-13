@@ -25,23 +25,6 @@ struct MasterRenderGateTests {
         try body()
     }
 
-    private static func withGate(
-        _ enabled: Bool,
-        _ body: () async throws -> Void
-    ) async rethrows {
-        let defaults = UserDefaults.appScoped()
-        let original = defaults.object(forKey: gateDefaultsKey)
-        defaults.set(enabled, forKey: gateDefaultsKey)
-        defer {
-            if let original {
-                defaults.set(original, forKey: gateDefaultsKey)
-            } else {
-                defaults.removeObject(forKey: gateDefaultsKey)
-            }
-        }
-        try await body()
-    }
-
     private static func makeManager(screen: Screen) -> ScreenManager {
         ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: true,
@@ -204,7 +187,6 @@ private final class GateTestRuntimeSession: WallpaperRuntimeSession {
     private(set) var showCallCount = 0
 
     func show() { showCallCount += 1 }
-    func hide() {}
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {}
     func updateFrame(to frame: CGRect) {}
     func cleanup() { cleanupCallCount += 1 }

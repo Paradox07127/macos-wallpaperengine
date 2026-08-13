@@ -57,18 +57,6 @@ public enum SceneLoadDiagnostic: Equatable, Sendable {
     case materialUnresolved(layer: String, reason: String)
     case other(layer: String, message: String)
 
-    public var layerName: String {
-        switch self {
-        case .texture(let layer, _),
-             .legacyUnsupportedTexture(let layer),
-             .fileMissing(let layer, _),
-             .crossPackageReference(let layer, _),
-             .materialUnresolved(let layer, _),
-             .other(let layer, _):
-            return layer
-        }
-    }
-
     public var errorDescription: String {
         switch self {
         case .texture(let layer, _):

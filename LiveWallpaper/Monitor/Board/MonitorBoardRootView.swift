@@ -82,7 +82,7 @@ struct MonitorBoardRootView: View {
                     }
 
                     ForEach(model.placements) { placement in
-                        widgetTile(placement, geometry: geometry, boardSize: boardSize, now: now)
+                        widgetTile(placement, geometry: geometry, now: now)
                     }
 
                     if model.isEditing {
@@ -123,7 +123,6 @@ struct MonitorBoardRootView: View {
     private func widgetTile(
         _ placement: MonitorWidgetPlacement,
         geometry: MonitorBoardGeometry,
-        boardSize: CGSize,
         now: Date
     ) -> some View {
         let restRawRect = rawRect(placement, geometry: geometry)
@@ -188,8 +187,7 @@ struct MonitorBoardRootView: View {
                     isEditing: model.isEditing,
                     reduceMotion: reduceMotion,
                     now: now
-                ),
-                cornerRadius: cornerRadius
+                )
             )
         }
     }

@@ -53,7 +53,7 @@
 
 ## Editions
 
-| | **Lite** (free, MIT) | **Pro** |
+| | **Lite** | **Pro** |
 |---|:---:|:---:|
 | Video / Web / Apple Aerials, playlists, schedules, overlays, shortcuts | ✅ | ✅ |
 | Wallpaper Engine scene rendering & import | — | ✅ |

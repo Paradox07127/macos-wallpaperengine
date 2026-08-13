@@ -102,8 +102,6 @@ struct SteamCMDBinaryLocation: Codable, Equatable, Sendable {
     let canonicalPath: String?
     /// Why it did not resolve, for the Doctor's message.
     let failureReason: String?
-
-    static let notFound = SteamCMDBinaryLocation(canonicalPath: nil, failureReason: nil)
 }
 
 struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
@@ -784,16 +782,6 @@ enum SteamLibraryPaths {
     /// anything else could climb out of the content root.
     static func isSafeWorkshopID(_ id: String) -> Bool {
         !id.isEmpty && id.count <= 20 && id.allSatisfy(\.isNumber)
-    }
-
-    static func canonicalPath(_ url: URL) -> String {
-        var path = url.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-        while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
-        return path
-    }
-
-    static func isWritable(_ url: URL) -> Bool {
-        isWritable(url, steamRoot: steamRoot())
     }
 
     /// True only for paths at or under one of the two writable subtrees, with

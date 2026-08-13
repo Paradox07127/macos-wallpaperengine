@@ -32,28 +32,6 @@ struct WorkshopDownloadTests {
 
 
 
-    @Test("Captures the quoted destination from a SteamCMD success line")
-    func capturesDownloadPath() {
-        let stdout = """
-        Redirecting stderr to '/tmp/steamcmd/logs/stderr.txt'
-        Logging in user 'alice_01' [U:1:123] to Steam Public...OK
-        Success. Downloaded item 1234567890 to "/Users/x/steamcmd/steamapps/workshop/content/431960/1234567890" (1048576 bytes after 1 chunks)
-        """
-        #expect(
-            SteamCMDDoctorService.capturedDownloadPath(stdout: stdout, itemID: 1234567890)
-                == "/Users/x/steamcmd/steamapps/workshop/content/431960/1234567890"
-        )
-    }
-
-    @Test("Does not match a different item id or a failure line")
-    func ignoresNonMatchingOutput() {
-        let success = #"Success. Downloaded item 1234567890 to "/tmp/a" (1 bytes after 1 chunks)"#
-        #expect(SteamCMDDoctorService.capturedDownloadPath(stdout: success, itemID: 999) == nil)
-
-        let failure = "ERROR! Download item 1234567890 failed (No Connection)."
-        #expect(SteamCMDDoctorService.capturedDownloadPath(stdout: failure, itemID: 1234567890) == nil)
-    }
-
     @Test("SteamCMD output retention is a bounded tail")
     func steamCMDOutputTailIsBounded() {
         var tail = SteamCMDOutputTail(maxBytes: 32)
@@ -106,20 +84,6 @@ struct WorkshopDownloadTests {
         #expect(output.contains("Steam Console Client (c) Valve Corporation"))
         #expect(output.contains("Success. Downloaded item 123"))
         #expect(output.contains("output bytes omitted"))
-    }
-
-    @Test("SteamCMD public build id survives diagnostic-tail eviction")
-    func steamCMDPublicBuildIDSurvivesTailEviction() {
-        var summary = SteamCMDOutputSemanticSummary()
-        summary.consume(#"    "public""#)
-        summary.consume("    {")
-        summary.consume(#"        "buildid"    "24681012""#)
-        summary.consume("    }")
-        var tail = SteamCMDOutputTail(maxBytes: 32)
-        tail.append(Data(repeating: 0x78, count: 4_096))
-
-        let output = summary.rendered(with: tail)
-        #expect(SteamCMDDoctorService.parsePublicBuildID(fromAppInfo: output) == "24681012")
     }
 
     @Test("Repeated public contexts cannot exhaust independent semantic slots")

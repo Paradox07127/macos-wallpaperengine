@@ -30,11 +30,4 @@ public enum WallpaperMode: String, Codable, CaseIterable, Identifiable, Sendable
         case .schedule: return "Schedule"
         }
     }
-
-    public var icon: String {
-        switch self {
-        case .playlist: return "list.bullet.rectangle"
-        case .schedule: return "clock"
-        }
-    }
 }

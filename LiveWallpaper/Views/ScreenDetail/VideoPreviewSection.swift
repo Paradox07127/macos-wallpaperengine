@@ -124,7 +124,7 @@ struct VideoPreviewSection: View {
 
     @ViewBuilder
     private var unloadedPreview: some View {
-        let errorMessage = previewController.lastError.map(PIISanitizer.scrub)
+        let errorMessage = previewController.lastError.map(LogPrivacyRedactor.scrub)
         VStack(spacing: 14) {
             Image(systemName: errorMessage == nil ? (previewController.isLoading ? "hourglass" : "photo") : "exclamationmark.triangle")
                 .font(.system(size: 36))

@@ -47,17 +47,6 @@ public enum ConfigurationPorter {
         return try encoder.encode(bundle)
     }
 
-    @discardableResult
-    public static func export(_ bundle: ConfigurationBundle, to destination: URL) throws -> URL {
-        let data = try encode(bundle)
-        try data.write(to: destination, options: [.atomic])
-        Logger.info(
-            "Configuration exported to \(destination.lastPathComponent) (\(data.count) bytes)",
-            category: .settings
-        )
-        return destination
-    }
-
     /// Decodes but does NOT apply — for preview / dialog purposes.
     public static func decode(from source: URL) throws -> ConfigurationBundle {
         if let size = try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize,
@@ -93,7 +82,11 @@ public enum ConfigurationPorter {
             )
         }
 
-        let expectedBundleID = Bundle.main.bundleIdentifier ?? "com.loomscreen.pro"
+        // No fallback: guessing a SKU here would compare Lite imports against the
+        // Pro id (or vice versa). A bundle-less host cannot validate provenance.
+        guard let expectedBundleID = Bundle.main.bundleIdentifier else {
+            throw ImportError.invalidFile(reason: "host bundle has no identifier")
+        }
         guard bundle.appBundleID == expectedBundleID else {
             throw ImportError.bundleMismatch(
                 expected: expectedBundleID,

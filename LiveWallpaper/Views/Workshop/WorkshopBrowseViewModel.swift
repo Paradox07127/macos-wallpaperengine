@@ -226,7 +226,7 @@ final class WorkshopBrowseViewModel {
     private static let searchDebounce: Duration = .milliseconds(500)
 
     /// True when pending filter/search state differs from what's displayed —
-    /// drives the Search button's enabled/prominent state.
+    /// gates the debounced auto-search.
     var hasPendingChanges: Bool {
         makeRequest(page: 1) != currentRequest
     }

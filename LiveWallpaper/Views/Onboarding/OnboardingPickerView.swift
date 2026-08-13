@@ -384,7 +384,7 @@ private struct ActionRowCard: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.vertical, DesignTokens.Spacing.cardInset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)

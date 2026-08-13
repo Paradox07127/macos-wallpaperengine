@@ -155,6 +155,10 @@ public enum DesignTokens {
         public static let md: CGFloat = 12
         public static let lg: CGFloat = 16
         public static let xl: CGFloat = 24
+        /// Content inset for cards, tiles, and floating chrome. Promoted from a
+        /// 14pt literal that 22 call sites had independently converged on —
+        /// it sits between `md` and `lg` deliberately; don't fold it into either.
+        public static let cardInset: CGFloat = 14
     }
 
     public enum Corner {
@@ -162,6 +166,10 @@ public enum DesignTokens {
         public static let md: CGFloat = 10
         public static let lg: CGFloat = 14
         public static let xl: CGFloat = 18
+        /// Radius for preview containers (screen previews, hero media, drop
+        /// targets). Promoted from a 16pt literal already used by
+        /// `ScreenPreviewChrome` and every large preview surface.
+        public static let preview: CGFloat = 16
     }
 
     public enum Inspector {

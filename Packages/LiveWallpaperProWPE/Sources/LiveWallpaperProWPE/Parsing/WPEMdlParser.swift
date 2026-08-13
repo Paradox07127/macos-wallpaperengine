@@ -218,7 +218,7 @@ public struct WPEPuppetMeshPart: Hashable, Sendable {
 public struct WPEPuppetAnimation: Equatable, Sendable {
     public let id: Int
     public let name: String
-    /// Playback mode from the file; "loop" drives the wrap in `sampledFrameIndex`.
+    /// Playback mode from the file; "loop" drives the wrap in `interpolationInfo`.
     public let mode: String
     public let fps: Float
     public let frameCount: Int
@@ -396,18 +396,6 @@ public struct WPEPuppetPaletteEvaluation: Equatable, Sendable {
 /// `blend`. Frame 0 of every layer is the bind pose, so the palette is identity there (regression
 /// guard against the P0 static draw).
 public enum WPEPuppetAnimationEvaluator {
-    public static func palette(
-        for animation: WPEPuppetAnimation,
-        bones: [WPEPuppetBone] = [],
-        at time: Double
-    ) -> [simd_float4x4] {
-        palette(
-            layers: [WPEPuppetAnimationLayer(animation: animation, rate: 1, additive: false, blend: 1)],
-            bones: bones,
-            at: time
-        )
-    }
-
     public static func palette(
         layers: [WPEPuppetAnimationLayer],
         bones: [WPEPuppetBone],
@@ -876,11 +864,6 @@ public enum WPEPuppetAnimationEvaluator {
         }
     }
 
-    public static func sampledFrameIndex(for animation: WPEPuppetAnimation, at time: Double) -> Int {
-        let interpolation = interpolationInfo(for: animation, at: time)
-        return interpolation.t >= 1 ? interpolation.frameB : interpolation.frameA
-    }
-
     private static func sampledTRS(
         channel: WPEPuppetAnimChannel,
         interpolation: WPEPuppetInterpolationInfo
@@ -946,35 +929,6 @@ public enum WPEPuppetAnimationEvaluator {
         )
     }
 
-    private static func rotationX(_ angle: Float) -> simd_float4x4 {
-        let c = cos(angle), s = sin(angle)
-        return simd_float4x4(
-            SIMD4<Float>(1, 0, 0, 0),
-            SIMD4<Float>(0, c, s, 0),
-            SIMD4<Float>(0, -s, c, 0),
-            SIMD4<Float>(0, 0, 0, 1)
-        )
-    }
-
-    private static func rotationY(_ angle: Float) -> simd_float4x4 {
-        let c = cos(angle), s = sin(angle)
-        return simd_float4x4(
-            SIMD4<Float>(c, 0, -s, 0),
-            SIMD4<Float>(0, 1, 0, 0),
-            SIMD4<Float>(s, 0, c, 0),
-            SIMD4<Float>(0, 0, 0, 1)
-        )
-    }
-
-    private static func rotationZ(_ angle: Float) -> simd_float4x4 {
-        let c = cos(angle), s = sin(angle)
-        return simd_float4x4(
-            SIMD4<Float>(c, s, 0, 0),
-            SIMD4<Float>(-s, c, 0, 0),
-            SIMD4<Float>(0, 0, 1, 0),
-            SIMD4<Float>(0, 0, 0, 1)
-        )
-    }
 }
 
 private final class WPEMdlParseAuditRecorder {
@@ -2150,7 +2104,6 @@ public enum WPEMdlParserError: Error, Equatable, Sendable {
     case invalidVertexBuffer(byteCount: UInt32, stride: Int)
     case invalidIndexBuffer(UInt32)
     case invalidSkeletonMatrix(UInt32)
-    case invalidSkeletonTrailingMarker(offset: Int, value: UInt8)
     case invalidElementMatrixPayload(actual: UInt32, expected: UInt32)
     case invalidAttachmentHeader(offset: Int)
     case invalidAnimationHeader(offset: Int)
@@ -2287,55 +2240,6 @@ private struct WPEMdlBinaryReader {
             )
         }
         return Data(data[range])
-    }
-
-    /// First offset in `[from, from + 64]` whose bytes look like a bone record.
-    /// Returns `from` immediately when the cursor already sits on a record (no padding).
-    private func nextLikelySkeletonBoneRecordOffset(
-        from start: Int,
-        boneCount: Int,
-        sectionEnd: Int
-    ) -> Int? {
-        guard start >= 0, start < sectionEnd else { return nil }
-        let upperBound = min(sectionEnd, start + 64)
-        for candidateOffset in start...upperBound where isLikelySkeletonBoneRecord(
-            at: candidateOffset,
-            boneCount: boneCount,
-            sectionEnd: sectionEnd
-        ) {
-            return candidateOffset
-        }
-        return nil
-    }
-
-    /// Recognizes a bone record header, allowing forward parent references up to the total bone count.
-    private func isLikelySkeletonBoneRecord(
-        at candidateOffset: Int,
-        boneCount: Int,
-        sectionEnd: Int
-    ) -> Bool {
-        guard candidateOffset >= 0,
-              candidateOffset + 13 <= sectionEnd,
-              let recordFlag = readUInt8(at: candidateOffset + 4),
-              recordFlag == 0,
-              let parent = readInt32(at: candidateOffset + 5),
-              parent >= -1,
-              parent < Int32(boneCount),
-              let matrixByteCount = readUInt32(at: candidateOffset + 9),
-              matrixByteCount >= 16 * UInt32(MemoryLayout<Float>.size),
-              matrixByteCount % UInt32(MemoryLayout<Float>.size) == 0 else {
-            return false
-        }
-        return candidateOffset + 13 + Int(matrixByteCount) <= sectionEnd
-    }
-
-    private func readUInt8(at absoluteOffset: Int) -> UInt8? {
-        guard absoluteOffset >= 0, absoluteOffset < data.count else { return nil }
-        return data[absoluteOffset]
-    }
-
-    private func readInt32(at absoluteOffset: Int) -> Int32? {
-        readUInt32(at: absoluteOffset).map(Int32.init(bitPattern:))
     }
 
     private func readUInt32(at absoluteOffset: Int) -> UInt32? {

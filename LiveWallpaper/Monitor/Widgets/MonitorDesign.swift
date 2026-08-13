@@ -28,11 +28,6 @@ enum MonitorDesign {
 
     private static func clampUnit(_ x: Double) -> Double { min(1, max(0, x)) }
 
-    private static func encodeGamma(_ x: Double) -> Double {
-        let c = clampUnit(x)
-        return c <= 0.0031308 ? 12.92 * c : 1.055 * pow(c, 1 / 2.4) - 0.055
-    }
-
     // MARK: - Neutrals (warm graphite — not blue-black)
 
     static let bg0 = oklch(0.15, 0.011, 74)
@@ -75,8 +70,6 @@ enum MonitorDesign {
         return loadSteel
     }
 
-    /// Same thresholds as `loadBandColor`; semantic band for tests/callers.
-    enum LoadBand { case low, mid, high }
     static func temperatureColor(_ celsius: Double) -> Color {
         let t = min(1, max(0, (celsius - 34) / (70 - 34)))
         let l: Double, c: Double, h: Double

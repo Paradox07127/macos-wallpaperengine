@@ -15,7 +15,7 @@ extension GeneralSettingsView {
             ) {
                 HStack(spacing: 8) {
                     if weatherShowsInlineStatus {
-                        GeneralSettingsStatusPill(text: weatherPermissionText, color: weatherPermissionColor)
+                        StatusChip(verbatim: weatherPermissionText, tint: weatherPermissionColor)
                             .help(Text(verbatim: weatherPermissionSubtitle))
                     }
 

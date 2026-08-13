@@ -189,7 +189,7 @@ struct GeneralSettingsView: View {
             isPresented: $isPresentingDiagnosticsExporter,
             document: diagnosticsDocument,
             contentType: .plainText,
-            defaultFilename: "LiveWallpaper Diagnostics.txt"
+            defaultFilename: "\(BundleIdentity.productDisplayName) Diagnostics.txt"
         ) { result in
             diagnosticsDocument = nil
             switch result {

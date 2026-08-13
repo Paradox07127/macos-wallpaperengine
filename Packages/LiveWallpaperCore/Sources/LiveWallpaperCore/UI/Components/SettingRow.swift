@@ -66,6 +66,27 @@ public struct SettingRow<Content: View>: View {
         self.content = content()
     }
 
+    /// Mixed variant: author-supplied title rendered verbatim, app-supplied
+    /// subtitle routed through the localization catalog (e.g. a WPE property
+    /// row annotated with an app-side "Not supported" note).
+    public init(
+        icon: String,
+        iconColor: Color = .accentColor,
+        verbatimTitle: String,
+        subtitle: LocalizedStringKey,
+        titleBadge: SettingRowTitleBadge? = nil,
+        info: String.LocalizationValue? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.icon = icon
+        self.iconColor = iconColor
+        self.title = Text(verbatim: verbatimTitle)
+        self.titleBadge = titleBadge
+        self.subtitle = Text(subtitle, bundle: .main)
+        self.info = info
+        self.content = content()
+    }
+
     public var body: some View {
         HStack(alignment: .center, spacing: 8) {
             ZStack {
@@ -116,19 +137,12 @@ public struct SettingRow<Content: View>: View {
 /// click (popover). Public so inspector rows that don't use `SettingRow`
 /// (e.g. compact slider grids) can adopt the same pattern.
 public struct InfoTooltipButton: View {
-    let text: String.LocalizationValue?
-    let verbatimText: String?
+    let text: String.LocalizationValue
     @State private var isPresentingPopover = false
     @AppStorage(AppLanguagePreference.storageKey) private var rawPreference = AppLanguagePreference.system.rawValue
 
     public init(text: String.LocalizationValue) {
         self.text = text
-        self.verbatimText = nil
-    }
-
-    public init(verbatim text: String) {
-        self.text = nil
-        self.verbatimText = text
     }
 
     public var body: some View {
@@ -154,8 +168,6 @@ public struct InfoTooltipButton: View {
     }
 
     private var localizedText: String {
-        if let verbatimText { return verbatimText }
-        guard let text else { return "" }
         let preference = AppLanguagePreference(rawValue: rawPreference) ?? .system
         return String(
             localized: text,

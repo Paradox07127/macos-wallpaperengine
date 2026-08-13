@@ -511,14 +511,6 @@ struct WorkshopInstalledOwnershipCharacterizationTests {
         #expect(model.activeApplyCommandCount == 0)
     }
 
-    @MainActor
-    private func waitForDeleteDrain(_ model: WorkshopInstalledLibraryModel) async {
-        for _ in 0..<100 where model.activeDeleteCommandCount != 0 {
-            await Task.yield()
-        }
-        #expect(model.activeDeleteCommandCount == 0)
-    }
-
     private func installedModelSource() throws -> String {
         try projectSource("LiveWallpaper/Views/Workshop/WorkshopInstalledLibraryModel.swift")
     }
@@ -683,19 +675,6 @@ private final class WorkshopInstalledLibraryStoreProbe {
             },
             now: { [weak self] in self?.now ?? .distantPast }
         )
-    }
-}
-
-@MainActor
-private final class WorkshopInstalledBookmarkPersistenceProbe: BookmarkPersisting {
-    private var stored: [WallpaperBookmark] = []
-
-    func load() -> [WallpaperBookmark] {
-        stored
-    }
-
-    func save(_ bookmarks: [WallpaperBookmark]) {
-        stored = bookmarks
     }
 }
 

@@ -46,7 +46,7 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
             wallpaperType: wallpaperType,
             activity: activity,
             supportsPlaybackControl: true,
-            subtitle: runtimeError.map { PIISanitizer.scrub($0.userMessage) }
+            subtitle: runtimeError.map { LogPrivacyRedactor.scrub($0.userMessage) }
         )
     }
 
@@ -66,13 +66,6 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         isVisible = true
         window?.orderBack(nil)
         // Honour userIntendsToPlay — a manual pause must not resume on visibility alone.
-        applyPerformanceProfile(currentProfile)
-    }
-
-    func hide() {
-        isVisible = false
-        window?.orderOut(nil)
-        // `isVisible == false` folds to `.suspended` inside applyPerformanceProfile.
         applyPerformanceProfile(currentProfile)
     }
 

@@ -196,7 +196,7 @@
             #expect(app.contains("SystemMonitor.shared.shutdown()"))
         }
 
-        @Test("v2 unions wallpaper overlay and HUD demand into one system concern set")
+        @Test("v2 unions every lease's demand into one system concern set")
         func monitorV2DemandUnion() {
             var wallpaper = MonitorRuntimeOptions(system: true)
             wallpaper.activeWidgetKinds = [.cpu, .gpu]
@@ -206,10 +206,10 @@
             overlay.activeWidgetKinds = [.memory, .network]
             overlay.gpuSampleSeconds = 2
 
-            var hud = MonitorRuntimeOptions(system: false)
-            hud.agents = true
+            var agentsOnly = MonitorRuntimeOptions(system: false)
+            agentsOnly.agents = true
 
-            let merged = MonitorRuntime.merged([wallpaper, overlay, hud])
+            let merged = MonitorRuntime.merged([wallpaper, overlay, agentsOnly])
             #expect(merged?.system == true)
             #expect(merged?.agents == true)
             #expect(merged?.activeWidgetKinds == [.cpu, .gpu, .memory, .network])
@@ -260,7 +260,7 @@
             }
         }
 
-        @Test("v2 surface contracts show system demand and agents-only HUD")
+        @Test("v2 surface contracts derive system demand from the placed widgets")
         func monitorV2ConsumerSourceContract() throws {
             let overlay = try productionSource(
                 "LiveWallpaper/Monitor/Overlay/MonitorOverlayController.swift"

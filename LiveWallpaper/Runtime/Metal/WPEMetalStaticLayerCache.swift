@@ -64,7 +64,7 @@ enum WPEMetalStaticLayerClassifier {
                 case .image(let name), .asset(let name):
                     if dynamicTextureNames.contains(name) { return nil }
                 case .fbo(let name):
-                    if WPEMetalShaderInputs.isSceneAliasName(name) { return nil }
+                    if WPETextureReference.isSceneAliasName(name) { return nil }
                     // An FBO this layer hasn't produced yet is another (possibly
                     // dynamic) layer's output → not invariant from here.
                     if !produced.contains(name) { return nil }
@@ -142,10 +142,6 @@ struct WPEMetalStaticLayerCacheLRU: Equatable, Sendable {
         }
         core.record(key, bytes: bytes)
         return core.evictOverBudget(protecting: [])
-    }
-
-    mutating func remove(_ key: String) {
-        core.remove(key)
     }
 
     mutating func removeAll() {

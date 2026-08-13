@@ -81,11 +81,6 @@ public final class BookmarkStore {
         Logger.info("Bookmark renamed: type \(bookmarks[index].wallpaperType.rawValue)", category: .ui)
     }
 
-    /// True when an equivalent shortcut already exists.
-    public func contains(_ content: WallpaperContent) -> Bool {
-        bookmarks.contains { $0.content == content }
-    }
-
     public func equivalentBookmark(
         content: WallpaperContent,
         wpeOrigin: WPEOrigin? = nil

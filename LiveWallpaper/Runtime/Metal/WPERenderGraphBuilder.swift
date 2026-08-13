@@ -86,9 +86,9 @@ struct WPERenderGraphBuilder: Sendable {
         // only pass is an identity `_rt_FullFrameBuffer`→scene copy — a WPE no-op that,
         // if drawn, re-injects the whole frame over itself and accrues a nested
         // picture-in-picture (scene 3470764447). See `noOpFullFramePassthroughIDs`.
-        let noOpFullFrameDrops = Self.noOpFullFramePassthroughIDs(in: document, objectByID: objectByID)
+        let noOpFullFrameDrops = Self.noOpFullFramePassthroughIDs(in: document)
         let composeWrappersToDrop = Self.particleOnlyComposeWrapperIDs(
-            in: document, objectByID: objectByID
+            in: document
         ).union(Self.emptyComposeWrapperIDs(in: document, objectByID: objectByID))
          .union(noOpFullFrameDrops)
         let visibleLayerIDs = Set(document.imageObjects
@@ -877,8 +877,7 @@ struct WPERenderGraphBuilder: Sendable {
     /// graph. A compose layer with any image descendant is a real group and is
     /// left untouched.
     private static func particleOnlyComposeWrapperIDs(
-        in document: WPESceneDocument,
-        objectByID: [String: WPESceneImageObject]
+        in document: WPESceneDocument
     ) -> Set<String> {
         let composeLayerIDs = Set(
             document.imageObjects
@@ -978,8 +977,7 @@ struct WPERenderGraphBuilder: Sendable {
     /// NOT dropped. Mirrors `emptyComposeWrapperIDs`, which handles the
     /// `composelayer` variant of the same picture-in-picture hazard.
     private static func noOpFullFramePassthroughIDs(
-        in document: WPESceneDocument,
-        objectByID: [String: WPESceneImageObject]
+        in document: WPESceneDocument
     ) -> Set<String> {
         Set(
             document.imageObjects

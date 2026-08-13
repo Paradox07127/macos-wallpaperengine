@@ -15,7 +15,7 @@ private struct _ScreenPreviewChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.preview))
             .shadow(
                 color: shadow ? .black.opacity(0.15) : .clear,
                 radius: shadow ? 10 : 0,
@@ -24,7 +24,7 @@ private struct _ScreenPreviewChrome: ViewModifier {
             )
             .overlay {
                 if stroke {
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.preview)
                         .stroke(Color(.separatorColor), lineWidth: 1)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)

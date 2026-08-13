@@ -3,15 +3,6 @@
     import LiveWallpaperProWPE
 
     protocol SteamCMDWorkshopFileInventoryServing: AnyObject, Sendable {
-        func resolveDownloadedItemFolder(
-            stdout: String,
-            itemID: UInt64,
-            workdir: URL
-        ) -> SteamCMDValidatedWorkshopItem?
-        func validatedItemDirectory(
-            itemID: UInt64,
-            workdir: URL
-        ) -> SteamCMDValidatedWorkshopItem?
         func projectFolders(
             under steamRoot: URL,
             anchoredTo trustAnchor: URL,
@@ -67,54 +58,6 @@
             self.identityReader = identityReader ?? Self.readDirectoryIdentity
         }
 
-        /// Accepts a successful SteamCMD destination only when it is the exact item
-        /// directory under the user-authorized official Steam profile.
-        func resolveDownloadedItemFolder(
-            stdout: String,
-            itemID: UInt64,
-            workdir: URL
-        ) -> SteamCMDValidatedWorkshopItem? {
-            guard let capturedPath = Self.capturedDownloadPath(stdout: stdout, itemID: itemID),
-                  capturedPath.hasPrefix("/"),
-                  !URL(fileURLWithPath: capturedPath).pathComponents.contains("..")
-            else { return nil }
-
-            let reported = URL(fileURLWithPath: capturedPath, isDirectory: true).standardizedFileURL
-            for root in approvedSteamRoots(workdir: workdir) {
-                guard let item = validatedItemDirectory(
-                    workshopID: String(itemID),
-                    under: root.steamRoot,
-                    anchoredTo: root.trustAnchor,
-                    requiringProjectJSON: false
-                ),
-                    reported.path(percentEncoded: false) == item.url.path(percentEncoded: false)
-                else { continue }
-                return item
-            }
-            return nil
-        }
-
-        /// Disk-only fallback for `resolveDownloadedItemFolder`: locates the item
-        /// directory by ID alone, without requiring steamcmd's stdout success line.
-        /// steamcmd's stdout under the sandbox has a thread-race that can drop that
-        /// line even though the download completed and the files landed on disk.
-        func validatedItemDirectory(
-            itemID: UInt64,
-            workdir: URL
-        ) -> SteamCMDValidatedWorkshopItem? {
-            for root in approvedSteamRoots(workdir: workdir) {
-                if let item = validatedItemDirectory(
-                    workshopID: String(itemID),
-                    under: root.steamRoot,
-                    anchoredTo: root.trustAnchor,
-                    requiringProjectJSON: false
-                ) {
-                    return item
-                }
-            }
-            return nil
-        }
-
         /// Returns direct, numeric Workshop item directories with a regular
         /// `project.json`. Symlinked items and manifests are not inventory targets.
         func projectFolders(
@@ -158,19 +101,6 @@
             current.identity == candidate.identity
             else { return nil }
             return current.url
-        }
-
-        nonisolated static func capturedDownloadPath(stdout: String, itemID: UInt64) -> String? {
-            let pattern = #"Success\. Downloaded item \#(itemID) to \"([^\"]+)\""#
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                  let match = regex.firstMatch(in: stdout, range: NSRange(stdout.startIndex..., in: stdout)),
-                  let range = Range(match.range(at: 1), in: stdout)
-            else { return nil }
-            return String(stdout[range])
-        }
-
-        private func approvedSteamRoots(workdir: URL) -> [(steamRoot: URL, trustAnchor: URL)] {
-            [(steamRoot: workdir, trustAnchor: workdir)]
         }
 
         private func validatedItemDirectory(

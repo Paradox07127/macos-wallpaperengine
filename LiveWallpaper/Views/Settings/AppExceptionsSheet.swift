@@ -17,7 +17,7 @@ struct AppExceptionsSheet: View {
             Divider()
             footer
         }
-        .frame(minWidth: 480, idealWidth: 540, minHeight: 340, idealHeight: 440)
+        .frame(minWidth: 480, idealWidth: 540, maxWidth: 720, minHeight: 340, idealHeight: 440, maxHeight: 640)
     }
 
     private var header: some View {
@@ -36,26 +36,12 @@ struct AppExceptionsSheet: View {
     @ViewBuilder
     private var content: some View {
         if rules.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "app.badge.checkmark")
-                    .font(.system(size: 32, weight: .light))
-                    .foregroundStyle(.tertiary)
-                Text("No apps added")
-                    .foregroundStyle(.secondary)
-                Text("Add apps like Xcode, Final Cut Pro, or a game.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                Button {
-                    addApp()
-                } label: {
-                    Label("Add Application…", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .padding(.top, 4)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(24)
+            IllustratedEmptyState(
+                symbol: "app.badge.checkmark",
+                title: "No apps added",
+                message: "Add apps like Xcode, Final Cut Pro, or a game.",
+                primary: EmptyStateButtonAction("Add Application…") { addApp() }
+            )
         } else {
             List {
                 ForEach($rules) { $rule in

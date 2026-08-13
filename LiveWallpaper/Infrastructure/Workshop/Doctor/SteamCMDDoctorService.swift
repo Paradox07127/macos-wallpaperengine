@@ -824,99 +824,6 @@ final class SteamCMDDoctorService {
             return .failed(reason: redacted(result.diagnosticTail))
         }
     }
-
-
-
-
-    /// materials/models/shaders present (guards mid-stage incomplete downloads).
-    nonisolated static func isWPEContentComplete(installRoot: URL, fileManager: FileManager) -> Bool {
-        let assets = installRoot.appendingPathComponent("assets", isDirectory: true)
-        return ["materials", "models", "shaders"].allSatisfy { sub in
-            var isDir = ObjCBool(false)
-            let u = assets.appendingPathComponent(sub, isDirectory: true)
-            return fileManager.fileExists(atPath: u.path(percentEncoded: false), isDirectory: &isDir) && isDir.boolValue
-        }
-    }
-
-    /// Install finished: buildid/BytesStaged evidence, or populated dirs post-prune.
-    nonisolated static func isWPEStagingComplete(installRoot: URL, fileManager: FileManager) -> Bool {
-        let manifest = installRoot
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("appmanifest_\(wallpaperEngineAppID).acf", isDirectory: false)
-        guard let acf = try? String(contentsOf: manifest, encoding: .utf8) else {
-            return isWPEContentComplete(installRoot: installRoot, fileManager: fileManager)
-                && isWPEContentNonEmpty(installRoot: installRoot, fileManager: fileManager)
-        }
-        if let build = parseACFBuildID(acf), build != "0" { return true }
-        guard let toStage = parseACFUInt(acf, key: "BytesToStage"),
-              let staged = parseACFUInt(acf, key: "BytesStaged"),
-              toStage > 0 else { return false }
-        return staged == toStage
-    }
-
-    /// Framework dirs non-empty (empty dirs can be mid-download shells).
-    nonisolated static func isWPEContentNonEmpty(installRoot: URL, fileManager: FileManager) -> Bool {
-        let assets = installRoot.appendingPathComponent("assets", isDirectory: true)
-        return ["materials", "models", "shaders"].allSatisfy { sub in
-            let contents = (try? fileManager.contentsOfDirectory(
-                atPath: assets.appendingPathComponent(sub, isDirectory: true).path(percentEncoded: false)
-            )) ?? []
-            return !contents.isEmpty
-        }
-    }
-
-    nonisolated static func parseACFUInt(_ acf: String, key: String) -> UInt64? {
-        firstCapture(in: acf, pattern: "\"\(key)\"\\s+\"(\\d+)\"").flatMap(UInt64.init)
-    }
-
-    nonisolated static func readInstalledBuildID(installRoot: URL, fileManager: FileManager) -> String? {
-        // `…/steamapps/{common/wallpaper_engine,downloading/431960}` → `…/steamapps/appmanifest_431960.acf`.
-        let manifest = installRoot
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("appmanifest_\(wallpaperEngineAppID).acf", isDirectory: false)
-        guard let acf = try? String(contentsOf: manifest, encoding: .utf8) else { return nil }
-        let build = parseACFBuildID(acf)
-        if let build, build != "0" { return build }
-        // Staged-not-committed leaves buildid=0; TargetBuildID is the build we staged.
-        return firstCapture(in: acf, pattern: #""TargetBuildID"\s+"(\d+)""#) ?? build
-    }
-
-    nonisolated static func parseACFBuildID(_ acf: String) -> String? {
-        firstCapture(in: acf, pattern: #""buildid"\s+"(\d+)""#)
-    }
-
-    /// public-branch buildid only (brace-scoped; no beta fallthrough).
-    nonisolated static func parsePublicBuildID(fromAppInfo stdout: String) -> String? {
-        let scope: Substring
-        if let branches = stdout.range(of: "\"branches\"") {
-            scope = stdout[branches.upperBound...]
-        } else {
-            scope = stdout[...]
-        }
-        guard let publicKey = scope.range(of: "\"public\"") else { return nil }
-        let body = Self.bracedBlock(in: scope[publicKey.upperBound...]) ?? scope[publicKey.upperBound...]
-        return firstCapture(in: String(body), pattern: #""buildid"\s+"(\d+)""#)
-    }
-
-    /// Returns the text inside the first `{ … }` of `text`, brace-balanced, so a
-    /// VDF key's value block can be isolated from following siblings.
-    nonisolated static func bracedBlock(in text: Substring) -> Substring? {
-        guard let open = text.firstIndex(of: "{") else { return nil }
-        var depth = 0
-        var i = open
-        while i < text.endIndex {
-            let c = text[i]
-            if c == "{" { depth += 1 } else if c == "}" {
-                depth -= 1
-                if depth == 0 { return text[text.index(after: open)..<i] }
-            }
-            i = text.index(after: i)
-        }
-        return nil
-    }
-
     /// Enumerate workshop content folders while workdir scope is held. Lets the library ingest
     /// items SteamCMD wrote outside the in-app download button (a manual `steamcmd`
     /// run, a prior launch, a download whose import didn't record).
@@ -951,12 +858,6 @@ final class SteamCMDDoctorService {
             }
             seen.formUnion(consumedIDs)
         }
-    }
-
-    /// Extracts the quoted destination from SteamCMD's
-    /// `Success. Downloaded item <id> to "<path>"` line.
-    nonisolated static func capturedDownloadPath(stdout: String, itemID: UInt64) -> String? {
-        SteamCMDWorkshopFileInventory.capturedDownloadPath(stdout: stdout, itemID: itemID)
     }
 
     // MARK: - Helpers
@@ -1202,15 +1103,6 @@ final class SteamCMDDoctorService {
             return value
         }
         return "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
-    }
-
-    nonisolated private static func firstCapture(in text: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, range: range),
-              match.numberOfRanges > 1,
-              let captureRange = Range(match.range(at: 1), in: text) else { return nil }
-        return String(text[captureRange])
     }
 }
 #endif

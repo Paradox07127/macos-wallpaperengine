@@ -367,14 +367,14 @@ actor WPEDisplayRenderActor {
     /// Off-critical-path shader/pipeline pre-warm, run as a child task on this
     /// actor so it overlaps the texture/particle load's suspension points. Reaches
     /// the renderer through `self`; the caller captures only Sendable inputs.
-    func prewarmShaders(pipeline: WPEPreparedRenderPipeline, textObjects: [WPESceneTextObject]) async {
-        await renderer?.prewarmCustomShaders(for: pipeline, textObjects: textObjects, on: self)
+    func prewarmShaders(pipeline: WPEPreparedRenderPipeline) async {
+        await renderer?.prewarmCustomShaders(for: pipeline, on: self)
     }
 
     /// Publish a prepared deferred-audio runtime once its off-actor `prepare` has
     /// finished, on this actor. `WPESoundRuntime` is Sendable, so the detached
     /// audio task hands it back here.
-    func publishDeferredAudio(runtime: WPESoundRuntime, generation: Int, workshopID: String) {
+    func publishDeferredAudio(runtime: WPESoundRuntime, generation: Int) {
         guard let renderer, !Task.isCancelled, renderer.loadGeneration == generation else {
             runtime.stop()
             return

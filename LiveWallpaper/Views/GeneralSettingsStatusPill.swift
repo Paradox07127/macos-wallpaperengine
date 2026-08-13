@@ -1,18 +1,3 @@
-import LiveWallpaperCore
-import SwiftUI
-
-struct GeneralSettingsStatusPill: View {
-    let text: String
-    let color: Color
-
-    var body: some View {
-        Text(verbatim: text)
-            .font(DesignTokens.Typography.captionEmphasized)
-            .foregroundStyle(color)
-            .padding(.horizontal, DesignTokens.Spacing.sm)
-            .padding(.vertical, DesignTokens.Spacing.xxs)
-            .background(color.opacity(0.12), in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.24), lineWidth: 0.5))
-            .fixedSize()
-    }
-}
+// Retired 2026-08-12: settings status pills now use the shared `StatusChip`
+// (LiveWallpaperCore). File kept only because the Xcode target references it —
+// remove it from the project alongside the next manual pbxproj edit.

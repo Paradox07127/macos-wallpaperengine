@@ -209,7 +209,7 @@ struct PlaylistSection: View {
                 }
             }
         }
-        .padding(14)
+        .padding(DesignTokens.Spacing.cardInset)
         .frame(minWidth: 200)
     }
 
