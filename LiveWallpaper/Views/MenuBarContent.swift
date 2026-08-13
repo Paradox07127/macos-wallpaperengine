@@ -83,14 +83,6 @@ struct MenuBarContent: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                IconControlButton(
-                    systemImage: "plus",
-                    isEnabled: true,
-                    action: { invokeAddWallpaper(nil) },
-                    accessibilityLabel: "Add wallpaper"
-                )
-                .help(Text("Add wallpaper — pick a video for this display", comment: "Quick Add button help"))
-
                 Toggle("", isOn: Binding(
                     get: { isWallpaperEnabled },
                     set: { enabled in

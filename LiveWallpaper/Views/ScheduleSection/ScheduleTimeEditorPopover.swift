@@ -71,6 +71,7 @@ struct ScheduleTimeEditorPopover: View {
                 } label: {
                     Text("Cancel")
                 }
+                .adaptiveGlassButton(.regular)
                 .keyboardShortcut(.cancelAction)
 
                 Button {
@@ -79,8 +80,8 @@ struct ScheduleTimeEditorPopover: View {
                     Text("Apply")
                         .frame(minWidth: 60)
                 }
+                .adaptiveGlassButton(.prominent)
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
                 .disabled(applyDisabled)
             }
         }

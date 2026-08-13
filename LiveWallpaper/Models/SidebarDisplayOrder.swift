@@ -20,6 +20,23 @@ enum SidebarDisplayOrder {
         }
     }
 
+    /// Re-key one display's saved entry when its fingerprint format changes.
+    /// Matching needs the display ID too: two identical serial-0 panels shared
+    /// one legacy fingerprint, so the fingerprint alone cannot say whose entry
+    /// this is. Entries whose ID also changed keep their stale key and fall
+    /// back to system order, exactly as they did before this ran.
+    static func rekeyed(
+        _ entries: [Entry],
+        displayID: CGDirectDisplayID,
+        from legacy: String,
+        to current: String
+    ) -> [Entry] {
+        entries.map { entry in
+            guard entry.displayID == displayID, entry.fingerprint == legacy else { return entry }
+            return Entry(displayID: entry.displayID, fingerprint: current)
+        }
+    }
+
     static func decode(_ data: Data) -> [Entry] {
         guard !data.isEmpty else { return [] }
         return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []

@@ -38,8 +38,10 @@ Pick a scheme and `⌘R`.
 scripts/release_candidate_check.sh
 ```
 
-The release-candidate gate runs the Core, ProWPE, and VideoWeb Swift package
-tests first, then the signed Pro app tests, then the Lite build. These checks are
+The release-candidate gate runs the Core and ProWPE Swift package tests first,
+then the signed Pro app tests, then the Lite build. Video/Web behavior is
+covered by app-target suites; there is no standalone VideoWeb Swift package in
+the current repository. These checks are
 intentionally sequential; do not start Pro and Lite separately in parallel.
 The suites enforce runtime invariants (localization coverage, particle/render
 behavior, etc.); if a change needs to diverge from one, call it out in the PR
@@ -51,10 +53,11 @@ Use the smallest gate that answers the current question, then run the complete
 release-candidate gate before integration.
 
 ```bash
-# One or more affected Swift Testing suites; verifies every requested suite ran.
+# One or more affected Swift Testing suites; verifies each requested suite appears in xcresult.
 scripts/app_tests.sh suites LocalizationCoverageTests EntitlementAuditTests
 
-# Complete signed Pro app test target. The current count floor prevents false-green runs.
+# Complete signed Pro app test target. The count floor catches gross zero/partial runs,
+# but does not replace per-suite passed/skipped validation.
 scripts/app_tests.sh full
 
 # Repeat either command without rebuilding after a successful build on the same DerivedData.
@@ -70,7 +73,9 @@ scripts/release_candidate_check.sh
 
 The app-test scripts keep verbose `xcodebuild` output in a raw log and use the
 generated `.xcresult` for the terminal summary, non-zero test-count assertion,
-required-suite assertion, failures, and slowest-test list. The artifact paths
+required-suite presence, failures, and slowest-test list. Presence currently does not prove
+that a suite contains a non-skipped passing case; the canonical per-suite outcome manifest
+is tracked as an open release-gate task. The artifact paths
 are printed after every run. Set `DERIVED_DATA` to reuse a build location, and
 set a fresh `RESULT_BUNDLE` path when an external job needs deterministic
 artifact placement.

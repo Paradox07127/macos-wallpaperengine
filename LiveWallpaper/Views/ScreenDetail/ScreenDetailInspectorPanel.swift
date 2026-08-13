@@ -229,8 +229,7 @@ struct ScreenDetailInspectorPanel: View {
             Button(action: onResetDisplaySettings) {
                 Label("Reset Current Display", systemImage: "arrow.counterclockwise.circle")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, size: .small)
             .tint(DesignTokens.Colors.Status.danger)
             .help(Text("Reset all playback, color, particle, audio, and layout settings on this display — wallpaper, playlist, and bookmarks stay"))
             Spacer()
@@ -278,33 +277,20 @@ struct ScreenDetailInspectorPanel: View {
     }
 
     private var wallpaperModePill: some View {
-        HStack(spacing: 0) {
-            ForEach(featureCatalog.capabilities.selectableWallpaperModes) { mode in
-                Button {
-                    withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.18))) {
-                        draft.selectedWallpaperMode = mode
-                    }
+        GlassSegmentedPicker(
+            selection: Binding(
+                get: { draft.selectedWallpaperMode },
+                set: { mode in
+                    draft.selectedWallpaperMode = mode
                     onWallpaperModeChange(mode)
-                } label: {
-                    Text(mode.labelKey)
-                        .font(draft.selectedWallpaperMode == mode ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule()
-                                .fill(draft.selectedWallpaperMode == mode ? Color.accentColor.opacity(0.35) : Color.clear)
-                        )
-                        .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+            ),
+            values: featureCatalog.capabilities.selectableWallpaperModes
+        ) { mode, isSelected in
+            Text(mode.labelKey)
+                .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
                 .accessibilityLabel(wallpaperModeAccessibilityLabel(mode))
-                .accessibilityAddTraits(
-                    draft.selectedWallpaperMode == mode ? .isSelected : []
-                )
-            }
         }
-        .padding(2)
-        .adaptiveGlassSurface(.capsule, interactive: true)
     }
 
     private func wallpaperModeAccessibilityLabel(_ mode: WallpaperMode) -> Text {

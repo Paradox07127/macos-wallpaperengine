@@ -40,6 +40,12 @@ public struct GlobalSettings: Codable, Sendable {
     /// and the overlay has to outlive it (and exist on a display with no wallpaper).
     public var monitorOverlays: [String: MonitorOverlayConfiguration] = [:]
 
+    /// User-assigned display names, keyed by `NSScreen.displayFingerprint`.
+    /// Lives here for the same reason as `monitorOverlays`: clearing a wallpaper
+    /// deletes that display's whole `ScreenConfiguration`, and the name has to
+    /// survive it.
+    public var screenNames: [String: String] = [:]
+
     /// Opt-in TCC system-audio capture for audio-reactive Pro wallpapers.
     public var audioResponseEnabled: Bool = false
 
@@ -73,6 +79,7 @@ public struct GlobalSettings: Codable, Sendable {
         videoCacheMaxBytesPerScreen: Int = GlobalSettings.defaultVideoCacheBytes,
         displayDefaults: DisplayDefaults = DisplayDefaults(),
         monitorOverlays: [String: MonitorOverlayConfiguration] = [:],
+        screenNames: [String: String] = [:],
         audioResponseEnabled: Bool = false,
         adaptiveFrameRateEnabled: Bool = false
     ) {
@@ -92,6 +99,7 @@ public struct GlobalSettings: Codable, Sendable {
         self.videoCacheMaxBytesPerScreen = Self.clampedVideoCacheBytes(videoCacheMaxBytesPerScreen)
         self.displayDefaults = displayDefaults
         self.monitorOverlays = monitorOverlays
+        self.screenNames = screenNames
         self.audioResponseEnabled = audioResponseEnabled
         self.adaptiveFrameRateEnabled = adaptiveFrameRateEnabled
     }
@@ -130,6 +138,7 @@ public struct GlobalSettings: Codable, Sendable {
         displayDefaults = (try? c.decodeIfPresent(DisplayDefaults.self, forKey: .displayDefaults)) ?? DisplayDefaults()
         // Lossy: one unreadable display's overlay must not drop every other display's.
         monitorOverlays = Self.decodeLossyOverlays(from: c, forKey: .monitorOverlays)
+        screenNames = (try? c.decodeIfPresent([String: String].self, forKey: .screenNames)) ?? [:]
         audioResponseEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .audioResponseEnabled)) ?? false
         adaptiveFrameRateEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .adaptiveFrameRateEnabled)) ?? false
     }

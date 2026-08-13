@@ -142,7 +142,10 @@ struct SettingsWindowLayoutTests {
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScreenDetailPreviewArea.swift")
         let playbackInspector = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/CommonPlaybackInspector.swift")
 
-        #expect(previewArea.contains("ForEach(VideoFitMode.videoModes)"))
+        // The fit-mode picker is a GlassSegmentedPicker fed `values:`; the probe
+        // pins WHICH mode list each surface iterates, not the control used.
+        #expect(previewArea.contains("values: VideoFitMode.videoModes"))
+        #expect(!previewArea.contains("VideoFitMode.sceneModes"))
         #expect(playbackInspector.contains("ForEach(VideoFitMode.sceneModes)"))
     }
 

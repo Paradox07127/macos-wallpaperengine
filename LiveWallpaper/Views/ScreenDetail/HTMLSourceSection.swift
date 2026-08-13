@@ -9,7 +9,6 @@ struct HTMLSourceSection: View {
     @Binding var config: HTMLConfig
 
     @Environment(ScreenManager.self) private var screenManager
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var trustStore = TrustedHostStore.shared
 
     @State private var selectedSegment: SourceSegment = .url
@@ -54,31 +53,11 @@ struct HTMLSourceSection: View {
     }
 
     private var sourceSegmentPicker: some View {
-        HStack(spacing: 0) {
-            ForEach(SourceSegment.pickable) { segment in
-                Button {
-                    let animation = DesignTokens.motion(reduceMotion, .snappy(duration: 0.18))
-                    withAnimation(animation) {
-                        selectedSegment = segment
-                    }
-                } label: {
-                    Text(segment.labelKey)
-                        .font(selectedSegment == segment ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(selectedSegment == segment ? Color.accentColor.opacity(0.35) : Color.clear)
-                        )
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(segment.labelKey))
-                .accessibilityAddTraits(selectedSegment == segment ? .isSelected : [])
-            }
-        }
-        .padding(2)
-        .adaptiveGlassSurface(.capsule, interactive: true)
+        GlassSegmentedPicker(
+            selection: $selectedSegment,
+            values: SourceSegment.pickable,
+            title: { $0.labelKey }
+        )
     }
 
     // MARK: - Source Pane
@@ -116,14 +95,12 @@ struct HTMLSourceSection: View {
             Button(action: pasteFromClipboard) {
                 Image(systemName: "doc.on.clipboard")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, shape: .circle, size: .small)
             .help(Text("Paste URL from clipboard"))
             .accessibilityLabel(Text("Paste URL from clipboard"))
 
             Button("Use") { commitURL() }
-                .adaptiveGlassButton(.prominent)
-                .controlSize(.small)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .disabled(urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
             urlChipsRow
@@ -154,8 +131,7 @@ struct HTMLSourceSection: View {
             Spacer(minLength: 0)
 
             Button("Choose…") { pickLocal() }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
         }
     }
 
@@ -266,17 +242,8 @@ struct HTMLSourceSection: View {
         color: Color,
         help: Text
     ) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: symbol)
-                .font(.system(size: 9, weight: .semibold))
-            label
-                .font(DesignTokens.Typography.badge)
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(color.opacity(0.15), in: Capsule())
-        .help(help)
+        StatusChip(text: label, tint: color, systemImage: symbol)
+            .help(help)
     }
 
     // MARK: - Actions
@@ -472,8 +439,7 @@ struct HTMLOptionsInspector: View {
             } label: {
                 Text("Edit…")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, size: .small)
             .fixedSize()
             .popover(isPresented: $customCSSPresented, arrowEdge: .leading) {
                 customCSSEditor
@@ -500,13 +466,13 @@ struct HTMLOptionsInspector: View {
                 Button("Reset") {
                     draftCustomCSS = config.customCSS ?? ""
                 }
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
                 .disabled(draftCustomCSS == (config.customCSS ?? ""))
 
                 Spacer()
 
                 Button("Close") { customCSSPresented = false }
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .keyboardShortcut(.cancelAction)
 
                 Button("Apply") {
@@ -517,8 +483,7 @@ struct HTMLOptionsInspector: View {
                     }
                     customCSSPresented = false
                 }
-                .controlSize(.small)
-                .buttonStyle(.borderedProminent)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .keyboardShortcut(.defaultAction)
                 .disabled(draftCustomCSS == (config.customCSS ?? ""))
             }

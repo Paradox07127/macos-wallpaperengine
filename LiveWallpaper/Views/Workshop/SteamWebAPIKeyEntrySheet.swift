@@ -3,7 +3,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores the key in the Workshop Keychain slot (`WhenUnlockedThisDeviceOnly`, no iCloud sync).
+/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores the key in the Workshop container-file slot (this Mac only, no iCloud sync).
 struct SteamWebAPIKeyEntrySheet: View {
     let services: WorkshopServices
     let onSaved: () -> Void
@@ -26,43 +26,10 @@ struct SteamWebAPIKeyEntrySheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
-            header
-            antiPhishingCard
-            Text("[Get a key](https://steamcommunity.com/dev/apikey)  ·  [Steam Web API TOU](https://steamcommunity.com/dev/apiterms)  ·  [About Limited Accounts](https://help.steampowered.com/en/faqs/view/71D3-35C2-AD96-AA3A)")
-                .font(DesignTokens.Typography.body)
-                .tint(Color.accentColor)
-                .fixedSize(horizontal: false, vertical: true)
-            Toggle(isOn: $hasReadTOU) {
-                Text("I have read the Steam Web API Terms of Use.")
-                    .font(DesignTokens.Typography.body)
-            }
-            .toggleStyle(.checkbox)
-            keyField
-            validationHint
-            if let savingError {
-                Text(savingError)
-                    .font(.caption)
-                    .foregroundStyle(DesignTokens.Colors.Status.danger)
-            }
-
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .controlSize(.regular)
-                    .help(Text("Discard changes"))
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
-                    .disabled(validation != .valid)
-                    .help(Text("Save key to Keychain and close"))
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            innerContent
+            footer
         }
-        .padding(DesignTokens.Spacing.xl)
         .frame(minWidth: 460, idealWidth: 460, maxWidth: 560)
         .onAppear {
             Task {
@@ -75,33 +42,126 @@ struct SteamWebAPIKeyEntrySheet: View {
         }
     }
 
+    private enum SteamLinks {
+        static let apiKey = URL(string: "https://steamcommunity.com/dev/apikey")!
+        static let terms = URL(string: "https://steamcommunity.com/dev/apiterms")!
+        static let limitedAccounts = URL(string: "https://help.steampowered.com/en/faqs/view/71D3-35C2-AD96-AA3A")!
+    }
+
+    private var innerContent: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+            header
+            safetyCard
+            entryCard
+        }
+        .padding(DesignTokens.Spacing.xl)
+    }
+
+    private var footer: some View {
+        SheetFooterBar(
+            primaryTitle: "Save",
+            primaryAction: { save() },
+            primaryDisabled: validation != .valid,
+            primaryHelp: "Save key and close",
+            cancelTitle: "Cancel",
+            cancelAction: { dismiss() },
+            cancelHelp: "Discard changes"
+        )
+    }
+
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
             Text("Set your Steam Web API key")
                 .font(.headline)
-            InfoTooltipButton(text: "Loomscreen uses your own Steam account's Web API key to read Workshop metadata — free, but it needs Mobile Steam Guard and a non-limited Steam account. Calls go directly to Valve over HTTPS; the key is stored only in this Mac's Keychain (no iCloud sync) and is never proxied through Loomscreen.")
+            InfoTooltipButton(text: "Loomscreen uses your own Steam account's Web API key to read Workshop metadata — free, but it needs Mobile Steam Guard and a non-limited Steam account. Calls go directly to Valve over HTTPS; the key is stored only on this Mac (no iCloud sync) and is never proxied through Loomscreen.")
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var antiPhishingCard: some View {
-        HStack(alignment: .top, spacing: DesignTokens.Spacing.xs) {
-            Image(systemName: "shield.lefthalf.filled")
-                .foregroundStyle(DesignTokens.Colors.Status.warning)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Official source only")
-                    .font(DesignTokens.Typography.caption.weight(.bold))
-                Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer. If a key may be compromised, [revoke it on Steam](https://steamcommunity.com/dev/apikey).")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .tint(Color.accentColor)
-                    .fixedSize(horizontal: false, vertical: true)
+    /// Anti-phishing notice with the two external actions it talks about:
+    /// the official generate page (primary) and the revoke page.
+    private var safetyCard: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            HStack(alignment: .top, spacing: DesignTokens.Spacing.xs) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .foregroundStyle(DesignTokens.Colors.Status.warning)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Official source only")
+                        .font(DesignTokens.Typography.caption.weight(.bold))
+                    Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Button {
+                    NSWorkspace.shared.open(SteamLinks.apiKey)
+                } label: {
+                    Label("Revoke on Steam", systemImage: "arrow.uturn.backward")
+                }
+                .adaptiveGlassButton(.regular, size: .small)
+
+                Spacer(minLength: 0)
+
+                Button {
+                    NSWorkspace.shared.open(SteamLinks.apiKey)
+                } label: {
+                    Label("Get a key", systemImage: "key.fill")
+                }
+                .adaptiveGlassButton(.regular, size: .small)
             }
         }
         .padding(DesignTokens.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DesignTokens.Colors.Status.warning.opacity(0.06), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
+    }
+
+    /// TOU consent, its reference links, and the gated key entry as one logical group.
+    private var entryCard: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Toggle(isOn: $hasReadTOU) {
+                Text("I have read the Steam Web API Terms of Use.")
+                    .font(DesignTokens.Typography.body)
+            }
+            .toggleStyle(.checkbox)
+
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Button {
+                    NSWorkspace.shared.open(SteamLinks.terms)
+                } label: {
+                    Label("Steam Web API TOU", systemImage: "doc.text")
+                }
+                .adaptiveGlassButton(.regular, size: .small)
+
+                Button {
+                    NSWorkspace.shared.open(SteamLinks.limitedAccounts)
+                } label: {
+                    Label("About Limited Accounts", systemImage: "questionmark.circle")
+                }
+                .adaptiveGlassButton(.regular, size: .small)
+            }
+
+            keyField
+            validationHint
+            if let savingError {
+                Text(savingError)
+                    .font(.caption)
+                    .foregroundStyle(DesignTokens.Colors.Status.danger)
+            }
+        }
+        .padding(DesignTokens.Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: DesignTokens.Card.strokeWidth)
+        )
     }
 
     private var keyField: some View {

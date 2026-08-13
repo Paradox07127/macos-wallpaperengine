@@ -13,8 +13,7 @@ extension GeneralSettingsView {
                 subtitle: "Copy a sanitized system and runtime summary."
             ) {
                 Button("Copy") { copyDiagnosticsSummary() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .accessibilityLabel(Text("Copy diagnostic summary"))
             }
@@ -26,8 +25,7 @@ extension GeneralSettingsView {
                 subtitle: "Save a sanitized diagnostic report as a text file."
             ) {
                 Button("Export…") { beginDiagnosticsExport() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .accessibilityLabel(Text("Export diagnostics"))
             }
@@ -39,8 +37,7 @@ extension GeneralSettingsView {
                 subtitle: "Review diagnostics before opening a GitHub issue."
             ) {
                 Button("Open…") { presentBugReport() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .accessibilityLabel(Text("Report a bug"))
             }
@@ -52,8 +49,7 @@ extension GeneralSettingsView {
                 subtitle: "Open the folder containing the app's diagnostic logs."
             ) {
                 Button("Show in Finder") { revealLogFolder() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .accessibilityLabel(Text("Show logs in Finder"))
                     .accessibilityHint(Text("Opens the folder containing the app's log files"))

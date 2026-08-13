@@ -23,8 +23,7 @@ extension GeneralSettingsView {
                         Button(weatherGrantButtonTitle) {
                             handleWeatherGrantAction()
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .adaptiveGlassButton(.regular, size: .small)
                         .fixedSize()
                     }
 

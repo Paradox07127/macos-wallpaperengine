@@ -172,22 +172,18 @@ struct ScreenDetailPreviewArea: View {
     }
 
     private var fitModeGroup: some View {
-        HStack(spacing: 6) {
-            ForEach(VideoFitMode.videoModes) { mode in
-                fitModeButton(mode)
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Video fit mode"))
-    }
-
-    private func fitModeButton(_ mode: VideoFitMode) -> some View {
-        let isSelected = draft.selectedFitMode == mode
-        return Button {
-            guard draft.selectedFitMode != mode else { return }
-            draft.selectedFitMode = mode
-            onFitModeChange(mode)
-        } label: {
+        GlassSegmentedPicker(
+            selection: Binding(
+                get: { draft.selectedFitMode },
+                set: { mode in
+                    guard draft.selectedFitMode != mode else { return }
+                    draft.selectedFitMode = mode
+                    onFitModeChange(mode)
+                }
+            ),
+            values: VideoFitMode.videoModes,
+            shell: .flat
+        ) { mode, isSelected in
             VStack(spacing: 2) {
                 Image(systemName: mode.iconName)
                     .font(.system(size: 13, weight: .medium))
@@ -197,13 +193,11 @@ struct ScreenDetailPreviewArea: View {
             }
             .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .contentShape(Rectangle())
+            .help(Text(mode.tooltipKey))
+            .accessibilityLabel(Text(mode.titleKey))
         }
-        .buttonStyle(.plain)
-        .help(Text(mode.tooltipKey))
-        .accessibilityLabel(Text(mode.titleKey))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Video fit mode"))
     }
 
     private var speedSlider: some View {

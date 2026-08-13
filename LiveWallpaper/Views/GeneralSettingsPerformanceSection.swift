@@ -96,8 +96,7 @@ extension GeneralSettingsView {
                     : "Active for \(applicationRules.count) app\(applicationRules.count == 1 ? "" : "s")"
             ) {
                 Button("Edit…") { showAppExceptions = true }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .accessibilityLabel(Text("Edit application exceptions"))
             }
@@ -134,10 +133,7 @@ extension GeneralSettingsView {
                     }
                     .labelsHidden()
                     .controlSize(.small)
-                    // Deliberately wider than Inspector.sliderWidth: the track
-                    // carries Off→1 GB end labels and needs the extra travel
-                    // for GB-level precision.
-                    .frame(width: 240)
+                    .frame(width: DesignTokens.Settings.sliderWidth)
                     .accessibilityLabel(Text("Video preload (RAM)"))
                     .accessibilityValue(Text(videoCacheValueLabel))
 

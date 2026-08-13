@@ -30,7 +30,7 @@ Run the complete sequential gate before creating artifacts:
 scripts/release_candidate_check.sh
 ```
 
-The script runs the Core, ProWPE, and VideoWeb package tests, signed Pro tests,
+The script runs the Core and ProWPE package tests, signed Pro tests,
 the four-surface arm64 link matrix (Pro Debug/Release and Lite Debug/Release),
 Pro and Lite Release archive smokes, release build-setting/privacy checks, and
 `git diff --check`. Every Xcode action uses

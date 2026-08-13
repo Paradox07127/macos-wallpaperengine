@@ -257,6 +257,11 @@ public enum DesignTokens {
     public enum Settings {
         public static let formHorizontalMargin: CGFloat = 18
         public static let formVerticalMargin: CGFloat = 12
+        /// Settings-window sliders get a much longer throw than the inspector's
+        /// `Inspector.sliderWidth`: this window has no 268pt panel floor to fit
+        /// into, and these tracks (volume, RAM budget) are dragged for a value
+        /// rather than nudged.
+        public static let sliderWidth: CGFloat = 240
     }
 
     public enum Card {

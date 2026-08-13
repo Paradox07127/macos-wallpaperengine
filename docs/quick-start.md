@@ -65,7 +65,7 @@ The Steam Workshop page needs one-time setup, guided in-app:
 
 1. Open **Steam Workshop** in the sidebar — the **Steam connection** page lists each prerequisite and offers auto-configuration.
 2. **SteamCMD** — Loomscreen detects (or helps install) Valve's command-line tool and verifies its signature. Downloads run through it with your own Steam account; discovered accounts with cached logins are offered automatically.
-3. **Steam Web API key** — needed only for *browsing* the Workshop in-app. Get one free at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey); it's stored in your local Keychain and never synced.
+3. **Steam Web API key** — needed only for *browsing* the Workshop in-app. Get one free at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey); Loomscreen stores it in its sandboxed Application Support directory with owner-only permissions and does not intentionally sync it.
 4. **Engine assets** — scenes reference shared Wallpaper Engine assets; Loomscreen downloads them once via SteamCMD and can check for updates on launch (**Settings → Workshop**).
 
 Then browse, filter, and download scenes directly, or link a local scene folder

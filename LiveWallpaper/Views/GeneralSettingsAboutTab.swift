@@ -143,12 +143,12 @@ extension GeneralSettingsView {
             .padding(.vertical, 16)
             .padding(.horizontal, 10)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.secondary.opacity(0.08))
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                    .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                    .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: DesignTokens.Card.strokeWidth)
             )
             .contentShape(.rect)
         }

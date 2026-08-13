@@ -115,7 +115,9 @@ auto-installs. Pro has no in-app updater.
 ## 8) Security & privacy
 
 - No telemetry, no accounts.
-- Workshop API key lives in the local Keychain (no iCloud sync).
+- Workshop API key is stored in Loomscreen's sandboxed Application Support
+  directory with owner-only permissions. Loomscreen does not intentionally
+  sync it; normal Mac backup and migration behavior remains a system policy.
 - Web wallpapers render in sandboxed contexts; optional tracker blocking and CSP enforcement.
 - File access uses security-scoped bookmarks; permission prompts are listed in [install.md](install.md#system-permission-prompts).
 

@@ -4,6 +4,32 @@ import Testing
 
 @Suite("Sidebar display order")
 struct SidebarDisplayOrderTests {
+    /// A serial-0 panel moving from its EDID key to a UUID key must keep its
+    /// place: the stored entry matches neither by (ID, fingerprint) nor by
+    /// fingerprint once the key changes, so without a re-key the display falls
+    /// to the end of the sidebar.
+    @Test("Re-keyed entry keeps its place after the display's fingerprint changes")
+    func rekeyedEntryKeepsSidebarPosition() {
+        let stored = [display(9, "13929:15830:0"), display(4, "2513:32829:21573")]
+        let migrated = SidebarDisplayOrder.rekeyed(
+            stored, displayID: 9, from: "13929:15830:0", to: "uuid:PANEL-A"
+        )
+        let available = [display(4, "2513:32829:21573"), display(9, "uuid:PANEL-A")]
+
+        #expect(SidebarDisplayOrder.orderedDisplayIDs(from: available, storedOrder: migrated) == [9, 4])
+    }
+
+    @Test("Re-key leaves the entries of other displays untouched")
+    func rekeyOnlyTouchesTheNamedDisplay() {
+        // Both panels shared one legacy EDID key, so the display ID decides.
+        let stored = [display(9, "13929:15830:0"), display(10, "13929:15830:0")]
+        let migrated = SidebarDisplayOrder.rekeyed(
+            stored, displayID: 10, from: "13929:15830:0", to: "uuid:PANEL-B"
+        )
+
+        #expect(migrated == [display(9, "13929:15830:0"), display(10, "uuid:PANEL-B")])
+    }
+
     @Test("Saved order takes precedence over the system order")
     func savedOrderTakesPrecedence() {
         let available = [display(1, "1:1:1"), display(2, "2:2:2"), display(3, "3:3:3")]

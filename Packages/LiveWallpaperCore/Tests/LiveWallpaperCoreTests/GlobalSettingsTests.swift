@@ -194,4 +194,21 @@ struct GlobalSettingsTests {
         let legacy = Data("{\"pauseInGameMode\": true}".utf8)
         #expect(try JSONDecoder().decode(GlobalSettings.self, from: legacy).pauseInLowPowerMode)
     }
+
+    @Test("Custom display names round-trip, keyed by display fingerprint")
+    func screenNamesRoundTrip() throws {
+        var settings = GlobalSettings()
+        settings.screenNames = ["1552:24067:16843009": "Desk left"]
+
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(GlobalSettings.self, from: data)
+
+        #expect(decoded.screenNames["1552:24067:16843009"] == "Desk left")
+    }
+
+    @Test("An install predating custom display names decodes to none")
+    func screenNamesDefaultToEmpty() throws {
+        let old = Data("{\"pauseOnFullScreen\": true}".utf8)
+        #expect(try JSONDecoder().decode(GlobalSettings.self, from: old).screenNames.isEmpty)
+    }
 }

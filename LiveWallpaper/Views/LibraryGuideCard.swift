@@ -90,7 +90,7 @@ struct LibraryGuideCard: View {
                             .frame(minWidth: 132)
                     }
                 }
-                .buttonStyle(GlassCapsuleButtonStyle(fontSize: 13, horizontalPadding: 22, verticalPadding: 9))
+                .buttonStyle(GlassCapsuleButtonStyle(preset: .large))
                 .disabled(isActionInProgress)
                 .keyboardShortcut(.defaultAction)
 
@@ -104,7 +104,7 @@ struct LibraryGuideCard: View {
                                 .frame(minWidth: 96)
                         }
                     }
-                    .buttonStyle(GlassCapsuleButtonStyle(tint: .secondary, fontSize: 13, horizontalPadding: 18, verticalPadding: 9))
+                    .buttonStyle(GlassCapsuleButtonStyle(tint: .secondary, preset: .large))
                 }
             }
 

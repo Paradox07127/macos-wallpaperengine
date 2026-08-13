@@ -33,6 +33,7 @@ struct UpdateBannerView: View {
             .padding(.vertical, 4)
             .padding(.horizontal, 4)
         }
+        .groupBoxStyle(ContainerGroupBoxStyle())
         // If the launch-time check completes BEFORE the About panel is opened, the `.onChange` handler below never fires for that transition.
         .onAppear { presentAvailableAlertIfNeeded(for: checker.status) }
         .onChange(of: checker.status) { _, newStatus in
@@ -132,7 +133,7 @@ struct UpdateBannerView: View {
             Button("Open") {
                 NSWorkspace.shared.open(release.releasePageURL)
             }
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, size: .small)
         case .checking:
             EmptyView()
         default:

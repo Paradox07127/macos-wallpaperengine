@@ -69,6 +69,41 @@ public final class WallpaperConfigurationStore {
         return migrateByFingerprint(to: screenID, fingerprint: fingerprint)
     }
 
+    /// Re-key one display's stored configuration when its fingerprint format
+    /// changes (EDID → per-display UUID). Runs once per display; refuses to act
+    /// when the new key already has a config, so two panels that used to share
+    /// an ambiguous EDID key cannot both claim it.
+    ///
+    /// `screenID` is the display doing the migrating. Two identical serial-0
+    /// panels stored one row each under the same legacy key, so row order alone
+    /// would hand one panel the other's wallpaper; the row whose `screenID`
+    /// matches wins, and a tie with no match is refused rather than guessed.
+    @discardableResult
+    public func migrateFingerprint(
+        from legacy: String,
+        to current: String,
+        preferring screenID: CGDirectDisplayID? = nil
+    ) -> Bool {
+        guard legacy != current,
+              !legacy.isUnknownDisplayFingerprint,
+              !current.isUnknownDisplayFingerprint else { return false }
+
+        var all = persistence.loadConfigurations()
+        guard !all.contains(where: { $0.displayFingerprint == current }) else { return false }
+
+        let candidates = all.indices.filter { all[$0].displayFingerprint == legacy }
+        guard let index = candidates.first(where: { all[$0].screenID == screenID })
+                ?? (candidates.count == 1 ? candidates.first : nil)
+        else { return false }
+
+        all[index].displayFingerprint = current
+        let migrated = all[index]
+        persistence.replaceAllConfigurations(all)
+        cache[migrated.screenID] = migrated
+        bumpRevision(for: migrated.screenID)
+        return true
+    }
+
     /// Parked configs use `kCGNullDirectDisplay` so they cannot shadow a live ID.
     public static let parkedScreenID: CGDirectDisplayID = 0
 

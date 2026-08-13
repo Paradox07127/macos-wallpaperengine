@@ -52,6 +52,7 @@ struct WorkshopDoctorView: View {
                 .font(DesignTokens.Typography.sectionTitle)
             Spacer()
             Button("Done") { dismiss() }
+                .adaptiveGlassButton(.regular)
                 .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
@@ -84,8 +85,7 @@ struct WorkshopDoctorView: View {
                 info: "Pick Steam's own folder — the one containing config/config.vdf — once. Loomscreen keeps a security-scoped bookmark to it and never creates a second Workshop repository."
             ) {
                 Button(isLibraryReady ? "Change…" : "Choose…") { pickSteamLibrary() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
             }
 
             Divider()
@@ -139,8 +139,7 @@ struct WorkshopDoctorView: View {
     private var accountPicker: some View {
         if discoveredAccounts.isEmpty {
             Button("Rescan") { Task { await loadAccounts() } }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
         } else {
             Menu {
                 ForEach(discoveredAccounts) { account in
@@ -283,8 +282,7 @@ struct WorkshopDoctorView: View {
             Button(action: exportDiagnostics) {
                 Label("Export diagnostics", systemImage: "doc.on.doc")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, size: .small)
             .help(Text("Copy all probe reports as redacted JSON to clipboard"))
 
             Spacer()
@@ -297,8 +295,7 @@ struct WorkshopDoctorView: View {
                     Text("Run all probes")
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
+            .adaptiveGlassButton(.prominent, size: .regular)
             .disabled(service.state == .probing)
             .help(Text("Run every diagnostic check against the bound SteamCMD install."))
         }
@@ -546,15 +543,10 @@ private struct ProbeRow: View {
         switch (report.id, report.status) {
         case (.binaryIdentity, .red):
             Button("Re-select SteamCMD") { pickBinary() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .adaptiveGlassButton(.prominent, size: .small)
 
         case (.gatekeeperQuarantine, .yellow), (.gatekeeperQuarantine, .red):
-            if commandFromStatus != nil {
-                Button(commandRevealed ? "Hide command" : "Show command") { commandRevealed.toggle() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-            }
+            showCommandButton()
 
         case (.codeSignature, .yellow):
             if commandFromStatus != nil {
@@ -571,8 +563,7 @@ private struct ProbeRow: View {
             Button(commandRevealed ? "Hide command" : label) {
                 commandRevealed.toggle()
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, size: .small)
         }
     }
 

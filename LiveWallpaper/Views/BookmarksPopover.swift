@@ -89,6 +89,7 @@ struct BookmarksPopover: View {
                 } label: {
                     Label("Remove", systemImage: "trash")
                 }
+                .buttonStyle(.borderless)
                 .controlSize(.small)
                 .destructiveControlTint()
 
@@ -102,7 +103,7 @@ struct BookmarksPopover: View {
                 } label: {
                     Text("Update")
                 }
-                .controlSize(.small)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .keyboardShortcut(.defaultAction)
                 .disabled(updateDisabled(existing: existing))
             }
@@ -114,8 +115,7 @@ struct BookmarksPopover: View {
                 } label: {
                     Label("Save", systemImage: "plus")
                 }
-                .controlSize(.small)
-                .buttonStyle(.borderedProminent)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .keyboardShortcut(.defaultAction)
             }
         }

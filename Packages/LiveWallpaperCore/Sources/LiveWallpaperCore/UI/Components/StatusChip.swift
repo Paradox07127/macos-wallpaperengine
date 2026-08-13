@@ -25,6 +25,20 @@ public struct StatusChip: View {
         self.interactive = interactive
     }
 
+    /// Pre-built `Text` variant for interpolated/composed labels the other
+    /// inits can't express (e.g. "3× Active").
+    public init(
+        text: Text,
+        tint: Color = .accentColor,
+        systemImage: String? = nil,
+        interactive: Bool = false
+    ) {
+        self.title = text
+        self.tint = tint
+        self.systemImage = systemImage
+        self.interactive = interactive
+    }
+
     /// Verbatim variant for already-resolved runtime strings (statuses,
     /// author-supplied tags) that must not re-enter the localization catalog.
     public init(

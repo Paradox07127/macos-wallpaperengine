@@ -182,17 +182,14 @@ struct MonitorBoardSettingsView: View {
             }
             HStack(spacing: 6) {
                 Button("Reset", action: resetLayout)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .disabled(isDefaultLayout)
                 Button("Import…", action: importLayout)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                 Button("Export…", action: exportLayout)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .disabled(draft.widgets.isEmpty)
             }
@@ -273,20 +270,17 @@ struct MonitorBoardSettingsView: View {
             ) {
                 if !isAuthorized {
                     Button("Authorize…", action: authorize)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .adaptiveGlassButton(.regular, size: .small)
                         .fixedSize()
                 }
             }
             if isAuthorized {
                 HStack(spacing: 6) {
                     Button("Revoke", action: revoke)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .adaptiveGlassButton(.regular, size: .small)
                         .fixedSize()
                     Button("Re-authorize…", action: authorize)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .adaptiveGlassButton(.regular, size: .small)
                         .fixedSize()
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)

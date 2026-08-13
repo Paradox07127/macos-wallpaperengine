@@ -256,7 +256,7 @@ struct WorkshopInspectorContent: View {
         let screens = screenManager.screens
         if screens.isEmpty {
             Button {} label: { applyLabel }
-                .buttonStyle(.bordered)
+                .adaptiveGlassButton(.prominent)
                 .controlSize(.regular)
                 .disabled(true)
                 .help(Text("Open a display first, then apply"))

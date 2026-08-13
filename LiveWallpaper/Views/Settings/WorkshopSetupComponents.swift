@@ -107,8 +107,7 @@ struct WorkshopPrivacyLink: View {
                 Image(systemName: "hand.raised")
             }
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .adaptiveGlassButton(.regular, size: .small)
         .sheet(isPresented: $isPresented) {
             WorkshopPrivacySheet()
         }
@@ -148,7 +147,7 @@ private struct WorkshopPrivacySheet: View {
                     )
                     point(
                         title: "Web API key",
-                        body: "The Web API key is stored in this Mac's Keychain and is never synced. Forgetting it here does not revoke it; do that at steamcommunity.com/dev/apikey."
+                        body: "The Web API key is stored privately on this Mac and is never synced. Forgetting it here does not revoke it; do that at steamcommunity.com/dev/apikey."
                     )
                     point(
                         title: "Where requests go",
@@ -159,14 +158,10 @@ private struct WorkshopPrivacySheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
-            .padding(DesignTokens.Spacing.lg)
+            SheetFooterBar(
+                primaryTitle: "Done",
+                primaryAction: { dismiss() }
+            )
         }
         .frame(width: 460, height: 420)
     }

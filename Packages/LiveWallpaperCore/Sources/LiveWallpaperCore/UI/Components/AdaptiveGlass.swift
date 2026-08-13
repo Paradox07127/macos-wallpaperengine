@@ -55,11 +55,14 @@ public extension View {
         ))
     }
 
+    /// `size: nil` lets the environment's `controlSize` flow through (e.g. the
+    /// `.small` set by `SettingRow`); pass a value only to pin a specific size.
     func adaptiveGlassButton(
         _ prominence: AdaptiveGlassProminence = .regular,
-        shape: AdaptiveGlassButtonShape = .capsule
+        shape: AdaptiveGlassButtonShape = .capsule,
+        size: ControlSize? = nil
     ) -> some View {
-        modifier(AdaptiveGlassButtonModifier(prominence: prominence, shape: shape))
+        modifier(AdaptiveGlassButtonModifier(prominence: prominence, shape: shape, size: size))
     }
 
     /// Liquid-glass chrome for a small badge floating over a thumbnail/preview. The
@@ -275,6 +278,7 @@ private struct AdaptiveGlassSurfaceModifier: ViewModifier {
 private struct AdaptiveGlassButtonModifier: ViewModifier {
     let prominence: AdaptiveGlassProminence
     let shape: AdaptiveGlassButtonShape
+    let size: ControlSize?
 
     private var borderShape: ButtonBorderShape {
         switch shape {
@@ -288,23 +292,30 @@ private struct AdaptiveGlassButtonModifier: ViewModifier {
         if #available(macOS 26.0, *) {
             switch prominence {
             case .regular:
-                content.buttonStyle(.glass).buttonBorderShape(borderShape)
+                sized(content).buttonStyle(.glass).buttonBorderShape(borderShape)
             case .prominent:
-                content.buttonStyle(.glassProminent).buttonBorderShape(borderShape)
+                sized(content).buttonStyle(.glassProminent).buttonBorderShape(borderShape)
             }
         } else {
             switch prominence {
             case .regular:
-                content
+                sized(content)
                     .buttonStyle(.bordered)
-                    .controlSize(.regular)
                     .buttonBorderShape(borderShape)
             case .prominent:
-                content
+                sized(content)
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
                     .buttonBorderShape(borderShape)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func sized(_ content: Content) -> some View {
+        if let size {
+            content.controlSize(size)
+        } else {
+            content
         }
     }
 }

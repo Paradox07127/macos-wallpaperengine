@@ -197,8 +197,7 @@ struct WPEInstalledInspectorContent: View {
                     Label(isUpdateRetry ? "Retry Update" : "Update", systemImage: "arrow.down.circle")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
                 .disabled(!state.canUpdate)
                 .help(state.canUpdate
                       ? Text("Re-download the latest version from Steam")
@@ -278,7 +277,7 @@ struct WPEInstalledInspectorContent: View {
             Button {} label: {
                 Label("Apply", systemImage: "play.fill").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .adaptiveGlassButton(.prominent)
             .controlSize(.regular)
             .disabled(true)
             .help(Text("Open a display first, then apply"))
@@ -343,34 +342,17 @@ struct WPEInstalledInspectorContent: View {
     private func tagChip(_ tag: String) -> some View {
         if let onSelectTag = actions.onSelectTag {
             Button { onSelectTag(tag) } label: {
-                Text(verbatim: tag)
-                    .font(DesignTokens.Typography.badge)
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                StatusChip(verbatim: tag, tint: .accentColor, interactive: true)
             }
             .buttonStyle(.plain)
             .help(Text("Browse items tagged \(tag)"))
         } else {
-            Text(verbatim: tag)
-                .font(DesignTokens.Typography.badge)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06), in: Capsule())
+            StatusChip(verbatim: tag, tint: .secondary)
         }
     }
 
     private func contentRatingPill(_ rating: String) -> some View {
-        let tint = contentRatingTint(rating)
-        return Text(verbatim: rating.uppercased(with: .current))
-            .font(DesignTokens.Typography.badge)
-            .tracking(0.5)
-            .foregroundStyle(tint)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
+        StatusChip(verbatim: rating.uppercased(with: .current), tint: contentRatingTint(rating))
     }
 
     private func contentRatingTint(_ rating: String) -> Color {

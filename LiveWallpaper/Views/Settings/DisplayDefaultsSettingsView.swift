@@ -9,6 +9,7 @@ private enum DisplayDefaultsKind {
 
 struct DisplayDefaultsSettingsView: View {
     @Environment(\.featureCatalog) private var featureCatalog
+    @Environment(ScreenManager.self) private var screenManager
     @State private var displayDefaults = SettingsManager.shared.loadDisplayDefaults()
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
 
@@ -18,6 +19,7 @@ struct DisplayDefaultsSettingsView: View {
 
     var body: some View {
         Form {
+            arrangementSection
             if featureCatalog.capabilities.canRender(.video) {
                 videoSection
             }
@@ -32,11 +34,68 @@ struct DisplayDefaultsSettingsView: View {
         .settingsSearchAnchorScroller(
             pendingSearchAnchor: $pendingSearchAnchor,
             anchors: [
+                .displayDefaultsArrangement,
                 .displayDefaultsVideo,
                 .displayDefaultsWeb,
                 .displayDefaultsScene
             ]
         )
+    }
+
+    /// Read-only mirror of the macOS arrangement: it answers "which panel is
+    /// which" for every per-display control in the app, and hosts renaming.
+    @ViewBuilder
+    private var arrangementSection: some View {
+        if !screenManager.screens.isEmpty {
+            Section {
+                DisplayArrangementMap(
+                    items: screenManager.screens.map {
+                        DisplayArrangementItem(id: $0.id, frame: $0.frame)
+                    },
+                    height: 150
+                ) { item, size in
+                    if let screen = screenManager.screens.first(where: { $0.id == item.id }) {
+                        arrangementTile(screen, size: size)
+                    }
+                }
+                .padding(.vertical, DesignTokens.Spacing.xs)
+            } header: {
+                SettingsSearchSectionHeader("Displays", anchor: .displayDefaultsArrangement)
+            } footer: {
+                Text("Mirrors your macOS display arrangement. Right-click a display to rename it.")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func arrangementTile(_ screen: Screen, size: CGSize) -> some View {
+        RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+            .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
+            .overlay {
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+                    .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: DesignTokens.Card.strokeWidth)
+            }
+            .overlay {
+                VStack(spacing: 2) {
+                    Text(verbatim: screen.name)
+                        .font(DesignTokens.Typography.caption)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    // Only the taller tiles have room for a second line.
+                    if size.height >= 46 {
+                        Text(verbatim: "\(Int(screen.frame.width))×\(Int(screen.frame.height))")
+                            .font(DesignTokens.Typography.metric)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, DesignTokens.Spacing.xs)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
+            .screenRenameMenu(for: screen)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text("\(screen.name), \(Int(screen.frame.width)) by \(Int(screen.frame.height)) pixels", comment: "Arrangement map tile VoiceOver label: display name, then width and height in pixels."))
     }
 
     private var videoSection: some View {
@@ -94,7 +153,7 @@ struct DisplayDefaultsSettingsView: View {
             HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
                 Slider(value: playbackBinding(\.videoVolume, for: kind), in: 0...1)
                     .controlSize(.small)
-                    .frame(width: DesignTokens.Inspector.sliderWidth)
+                    .frame(width: DesignTokens.Settings.sliderWidth)
                     .accessibilityLabel(Text("Default volume"))
 
                 Text(verbatim: "\(Int((playback(for: kind).videoVolume * 100).rounded()))%")

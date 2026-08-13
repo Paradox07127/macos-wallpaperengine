@@ -300,8 +300,7 @@ struct WPESceneDetailView: View {
                         Label("Retry", systemImage: "arrow.clockwise")
                             .font(.caption.weight(.semibold))
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.prominent, size: .small)
                     .accessibilityHint(Text("Re-decodes the scene with the current cache state"))
                 }
                 Button {
@@ -310,16 +309,15 @@ struct WPESceneDetailView: View {
                     Label("Log", systemImage: "terminal")
                         .font(.caption.weight(.semibold))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
                 .help(Text("Open the full diagnostic log"))
                 .accessibilityLabel(Text("Open the full diagnostic log"))
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(severityColor(for: reason).opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.md), tint: severityColor(for: reason))
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
                     .strokeBorder(severityColor(for: reason).opacity(0.30), lineWidth: 1)
             }
             .transition(.opacity)
@@ -380,18 +378,14 @@ struct WPESceneDetailView: View {
                     Label("Link Assets", systemImage: "arrow.right")
                         .font(.caption.weight(.semibold))
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .accessibilityHint(Text("Opens the Workshop settings page to link a Wallpaper Engine install"))
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                DesignTokens.Colors.Status.warning.opacity(0.10),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
+            .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.md), tint: DesignTokens.Colors.Status.warning)
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
                     .strokeBorder(DesignTokens.Colors.Status.warning.opacity(0.30), lineWidth: 1)
             }
             .transition(.opacity)
@@ -823,10 +817,10 @@ private struct DiagnosticLogSheet: View {
                 Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
                     .animation(.snappy, value: didCopy)
             }
-            .buttonStyle(.bordered)
+            .adaptiveGlassButton(.regular, size: .small)
             .tint(didCopy ? DesignTokens.Colors.Status.active : tint)
             Button("Done") { dismiss() }
-                .buttonStyle(.borderedProminent)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .keyboardShortcut(.defaultAction)
         }
         .padding(DesignTokens.Spacing.cardInset)

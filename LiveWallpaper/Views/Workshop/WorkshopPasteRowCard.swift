@@ -162,14 +162,14 @@ struct WorkshopPasteRowCard: View {
                     Label("Retry download", systemImage: "arrow.down.circle")
                         .font(DesignTokens.Typography.body)
                 }
-                .buttonStyle(.borderless)
+                .adaptiveGlassButton(.regular, size: .small)
                 .help(Text(verbatim: reason))
             case .idle:
                 Button(action: onDownload) {
                     Label("Download", systemImage: "arrow.down.circle")
                         .font(DesignTokens.Typography.body)
                 }
-                .buttonStyle(.borderless)
+                .adaptiveGlassButton(.regular, size: .small)
             }
         }
     }
