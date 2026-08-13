@@ -78,6 +78,18 @@ The tracked, secret-free packaging helper produces:
 - `build/release/Loomscreen-Pro-X.Y.Z.dmg`
 - `build/release/Loomscreen-Pro-X.Y.Z.dmg.sha256`
 
+Packaging requires `create-dmg` on the packaging Mac:
+
+```sh
+brew install create-dmg
+```
+
+It lays out the mounted DMG window (background, icon positions, `/Applications`
+drop link). The window background is rendered per SKU by
+`scripts/dmg_background.swift`, which bakes the SKU's app name into the
+Gatekeeper command shown on the image — that is why it is generated at package
+time instead of committed as a static PNG.
+
 Expected commands:
 
 ```sh
