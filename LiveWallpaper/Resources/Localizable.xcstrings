@@ -4,36 +4,6 @@
     "" : {
 
     },
-    "\nYou may need to reconfigure these screens." : {
-      "comment" : "Validation follow-up guidance.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "\nYou may need to reconfigure these screens."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "\nこれらの画面を再設定する必要がある場合があります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "您可能需要重新配置这些屏幕。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "\n您可能需要重新設定這些螢幕。"
-          }
-        }
-      }
-    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -167,35 +137,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "[取得金鑰](https://steamcommunity.com/dev/apikey)  ·  [Steam Web API 使用條款](https://steamcommunity.com/dev/apiterms)  ·  [關於受限制帳戶](https://help.steampowered.com/en/faqs/view/71D3-35C2-AD96-AA3A)"
-          }
-        }
-      }
-    },
-    "%@\n\n%@\n\nReplace current configuration?" : {
-      "comment" : "Import confirmation alert message. First placeholder is a bulleted list of restored sections; second is the device-portability warning.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@\n\n%2$@\n\nReplace current configuration?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@\n\n%2$@\n\n現在の設定を置き換えますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@\n\n%2$@\n\n替换当前配置？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@\n\n%2$@\n\n要取代目前的設定嗎？"
           }
         }
       }
@@ -1275,66 +1216,6 @@
         }
       }
     },
-    "• %lld invalid configurations are for connected screens.\n" : {
-      "comment" : "Validation detail. The placeholder is the invalid connected-screen count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld invalid configurations are for connected screens.\n"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld 件の無効な設定は接続中の画面用です。\n"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld 个无效配置针对已连接的屏幕。\n"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld 組無效配置適用於已連接的螢幕。\n"
-          }
-        }
-      }
-    },
-    "• %lld invalid configurations are for disconnected screens.\n" : {
-      "comment" : "Validation detail. The placeholder is the invalid disconnected-screen count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld invalid configurations are for disconnected screens.\n"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld 件の無効な設定は未接続の画面用です。\n"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld 个无效配置针对已断开的屏幕。\n"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld 組無效配置適用於已中斷連線的螢幕。\n"
-          }
-        }
-      }
-    },
     "• %lld saved bookmarks" : {
       "comment" : "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant.",
       "localizations" : {
@@ -1419,36 +1300,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "另有 %lld 個"
-          }
-        }
-      }
-    },
-    "✅ All %lld configurations are valid." : {
-      "comment" : "Validation success message. The placeholder is the valid configuration count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "✅ All %lld configurations are valid."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "✅ %lld 件の設定はすべて有効です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "✅ 全部 %lld 个配置均有效。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "✅ 全部 %lld 組配置均有效。"
           }
         }
       }
@@ -3168,36 +3019,6 @@
         }
       }
     },
-    "Already saved as “%@”" : {
-      "comment" : "Tooltip when an identical plan is already bookmarked. The placeholder is the existing bookmark's label.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Already saved as “%@”"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すでに「%@」として保存済み"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已保存为“%@”"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已儲存為「%@」"
-          }
-        }
-      }
-    },
     "Also active on: %@" : {
       "localizations" : {
         "en" : {
@@ -3822,35 +3643,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "套用到所有顯示器"
-          }
-        }
-      }
-    },
-    "Apply to all displays?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply to all displays?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてのディスプレイに適用しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用到所有显示器吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要套用到所有顯示器嗎？"
           }
         }
       }
@@ -5278,35 +5070,6 @@
         }
       }
     },
-    "Browsing, library access, and downloads are separate: the API key browses online, the folder bookmark reads installed items, and the background connector will handle SteamCMD downloads." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browsing, library access, and downloads are separate: the API key browses online, the folder bookmark reads installed items, and the background connector will handle SteamCMD downloads."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "閲覧、ライブラリアクセス、ダウンロードは別々です。API キーはオンライン閲覧、フォルダブックマークはインストール済みアイテムの読み取り、バックグラウンドコネクタは SteamCMD ダウンロードを担当します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "浏览、库访问和下载彼此独立：API 密钥用于在线浏览，文件夹书签用于读取已安装项目，后台连接器将负责 SteamCMD 下载。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "瀏覽、收藏庫存取和下載彼此獨立：API 金鑰用於線上瀏覽，資料夾書籤用於讀取已安裝項目，背景連線器將負責 SteamCMD 下載。"
-          }
-        }
-      }
-    },
     "Built-in" : {
       "localizations" : {
         "en" : {
@@ -5867,35 +5630,6 @@
         }
       }
     },
-    "Caps decode at 1080p / 8 Mbps to lighten GPU load." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Caps decode at 1080p / 8 Mbps to lighten GPU load."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GPU 負荷を軽減するため、デコードを 1080p / 8 Mbps に制限します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将解码上限设为 1080p / 8 Mbps，减轻 GPU 负担。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將解碼上限設為 1080p / 8 Mbps，以降低 GPU 負載。"
-          }
-        }
-      }
-    },
     "Capture on Lock" : {
       "localizations" : {
         "en" : {
@@ -5980,35 +5714,6 @@
         }
       }
     },
-    "Captures the currently visible video frame and uses it as the macOS desktop picture" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Captures the currently visible video frame and uses it as the macOS desktop picture"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在表示されているビデオフレームをキャプチャして macOS のデスクトップピクチャとして使用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "捕获当前可见的视频帧并将其用作 macOS 桌面图片"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "擷取目前可見的影片影格，並作為 macOS 桌面圖片"
-          }
-        }
-      }
-    },
     "Center" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6034,35 +5739,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "置中"
-          }
-        }
-      }
-    },
-    "Center at original size (may crop or show borders)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Center at original size (may crop or show borders)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "元のサイズで中央に配置します（切り抜きや余白が出る場合があります）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以原始尺寸居中显示（可能裁切或出现边框）"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以原始尺寸置中顯示（可能裁切或出現邊框）"
           }
         }
       }
@@ -6116,35 +5792,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更改"
-          }
-        }
-      }
-    },
-    "Change Folder" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Change Folder"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "フォルダを変更"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更改文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更改資料夾"
           }
         }
       }
@@ -7207,35 +6854,6 @@
         }
       }
     },
-    "Clear all cached Wallpaper Engine projects?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear all cached Wallpaper Engine projects?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "キャッシュ済みの Wallpaper Engine プロジェクトをすべてクリアしますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除所有缓存的 Wallpaper Engine 项目？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要清除所有已快取的 Wallpaper Engine 專案嗎？"
-          }
-        }
-      }
-    },
     "Clear All Caches" : {
       "comment" : "Tooltip for clearing all cache categories.",
       "extractionState" : "manual",
@@ -7522,35 +7140,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除搜尋"
-          }
-        }
-      }
-    },
-    "Clear the Scene wallpaper?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear the Scene wallpaper?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーン壁紙をクリアしますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除场景壁纸吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要清除場景桌布嗎？"
           }
         }
       }
@@ -8489,64 +8078,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在連接…"
-          }
-        }
-      }
-    },
-    "Connection setup" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connection setup"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接続設定"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連線設定"
-          }
-        }
-      }
-    },
-    "Connector required" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connector required"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コネクタが必要"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要连接器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要連線器"
           }
         }
       }
@@ -9860,37 +9391,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "嚴重"
-          }
-        }
-      }
-    },
-    "Crop one video across the full display layout" : {
-      "comment" : "Description of a video display mode when videos are displayed across all displays.",
-      "extractionState" : "manual",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Crop one video across the full display layout"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 本のビデオをディスプレイ全体のレイアウトに合わせてクロップ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将单个视频裁剪铺满所有显示器组成的画面"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "裁切單一影片以橫跨完整顯示器佈局"
           }
         }
       }
@@ -11654,35 +11154,6 @@
         }
       }
     },
-    "Do not grant Terminal Full Disk Access or redirect SteamCMD into Loomscreen's container." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Do not grant Terminal Full Disk Access or redirect SteamCMD into Loomscreen's container."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terminal にフルディスクアクセスを許可したり、SteamCMD を Loomscreen のコンテナにリダイレクトしたりしないでください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请勿授予 Terminal“完全磁盘访问”权限，也不要将 SteamCMD 重定向到 Loomscreen 的容器中。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請勿授予 Terminal「完整磁碟存取」權限，也不要將 SteamCMD 重新導向到 Loomscreen 的容器中。"
-          }
-        }
-      }
-    },
     "done" : {
       "comment" : "A keyword for the \"Done\" button.",
       "isCommentAutoGenerated" : true,
@@ -12161,36 +11632,6 @@
         }
       }
     },
-    "Downloaded Projects" : {
-      "comment" : "Storage settings.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloaded Projects"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード済みプロジェクト"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下载项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下載專案"
-          }
-        }
-      }
-    },
     "Downloaded Wallpaper Engine, but trimming it to the assets folder failed." : {
       "comment" : "Engine-assets download succeeded but pruning failed.",
       "localizations" : {
@@ -12330,29 +11771,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載會透過 SteamCMD 以你自己的 Steam 帳戶登入。Loomscreen 只列出 Steam 在本機登入過的帳戶，從不保存你的密碼。"
-          }
-        }
-      }
-    },
-    "Downloads sign in as your own Steam account through SteamCMD. Loomscreen reads which accounts Steam already knows about; it never stores your password." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードは SteamCMD を通じてあなた自身の Steam アカウントでサインインします。Loomscreen は Steam が既に把握しているアカウントを読み取るだけで、パスワードを保存することはありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下载会通过 SteamCMD 以你自己的 Steam 账户登录。Loomscreen 只读取 Steam 已知的账户，从不保存你的密码。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下載會透過 SteamCMD 以你自己的 Steam 帳戶登入。Loomscreen 只讀取 Steam 已知的帳戶，從不保存你的密碼。"
           }
         }
       }
@@ -12749,37 +12167,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為每個顯示器分配專用算繪執行緒，將影格處理移出主執行緒以獲得更流暢的播放。關閉後將在主執行緒算繪——僅用於排查問題。變更會重新載入桌布。適用於場景（Wallpaper Engine）桌布。"
-          }
-        }
-      }
-    },
-    "Each display renders its own full video frame" : {
-      "comment" : "Description of the video display mode when each display renders its own full video frame.",
-      "extractionState" : "manual",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Each display renders its own full video frame"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各ディスプレイがそれぞれ完全なビデオフレームを描画"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每个显示器各自播放完整画面"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每台顯示器各自渲染完整影片畫面"
           }
         }
       }
@@ -13337,126 +12724,6 @@
         }
       }
     },
-    "error.app.configuration_save_failed" : {
-      "comment" : "Error shown when app settings cannot be saved.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Failed to save configuration"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "構成の保存に失敗しました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存配置失败"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "儲存設定失敗"
-          }
-        }
-      }
-    },
-    "error.app.configuration_save_failed.recovery" : {
-      "comment" : "Recovery suggestion for configuration save failures.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Try restarting the app"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アプリを再起動してみてください"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尝试重新启动应用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請嘗試重新啟動 App"
-          }
-        }
-      }
-    },
-    "error.app.effects_pipeline_failed" : {
-      "comment" : "Error shown when the video effects pipeline fails.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effects error: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "エフェクトエラー：%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "效果错误：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "效果錯誤：%@"
-          }
-        }
-      }
-    },
-    "error.app.effects_pipeline_failed.recovery" : {
-      "comment" : "Recovery suggestion for video effects failures.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Try disabling effects"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "エフェクトを無効にしてみてください"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尝试禁用效果"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請嘗試停用效果"
-          }
-        }
-      }
-    },
     "error.app.file_access_denied" : {
       "comment" : "Error shown when the app cannot access a selected wallpaper file.",
       "extractionState" : "manual",
@@ -13513,126 +12780,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請嘗試重新選擇檔案"
-          }
-        }
-      }
-    },
-    "error.app.html_load_failed" : {
-      "comment" : "Error shown when a web wallpaper cannot be loaded.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Failed to load web content: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web コンテンツの読み込みに失敗しました：%@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加载网页内容失败：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "載入網頁內容失敗：%@"
-          }
-        }
-      }
-    },
-    "error.app.html_load_failed.recovery" : {
-      "comment" : "Recovery suggestion for web wallpaper load failures.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Check the URL and try again"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL を確認して、もう一度試してください"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查 URL 并重试"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請檢查 URL 後再試一次"
-          }
-        }
-      }
-    },
-    "error.app.video_not_playable" : {
-      "comment" : "Error shown when a selected video cannot be played.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "\"%@\" is not playable"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」は再生できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@”无法播放。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」無法播放"
-          }
-        }
-      }
-    },
-    "error.app.video_not_playable.recovery" : {
-      "comment" : "Recovery suggestion for unsupported video files.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The file format may not be supported"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ファイル形式がサポートされていない可能性があります"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文件格式可能不受支持"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "檔案格式可能不受支援"
           }
         }
       }
@@ -13753,66 +12900,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請嘗試從 Steam 創意工坊重新下載"
-          }
-        }
-      }
-    },
-    "error.app.wpe_unsupported_type" : {
-      "comment" : "Error shown when a Wallpaper Engine package type is unsupported.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine \"%@\" type is not supported"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine の「%@」タイプはサポートされていません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持 Wallpaper Engine 的“%@”类型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援 Wallpaper Engine「%@」類型"
-          }
-        }
-      }
-    },
-    "error.app.wpe_unsupported_type.recovery" : {
-      "comment" : "Recovery suggestion for unsupported Wallpaper Engine package types.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Look for a video version of this wallpaper"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この壁紙の動画版を探してください"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查找此壁纸的视频版本"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尋找此桌布的影片版本"
           }
         }
       }
@@ -16035,35 +15122,6 @@
         }
       }
     },
-    "Fill screen (may crop video)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fill screen (may crop video)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画面いっぱいに表示（動画が切り抜かれる場合があります）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "填满屏幕（可能裁剪视频）"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "填滿螢幕（可能裁切影片）"
-          }
-        }
-      }
-    },
     "Fill: crop to fill screen" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16333,35 +15391,6 @@
         }
       }
     },
-    "Fit entire video (may show borders)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fit entire video (may show borders)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画全体を表示（余白が出る場合があります）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示完整视频（可能出现边框）"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示完整影片（可能出現邊框）"
-          }
-        }
-      }
-    },
     "Fit: show entire video" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16416,35 +15445,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "標記 Steam 上有新版本的已安裝內容"
-          }
-        }
-      }
-    },
-    "Flags persist in UserDefaults until toggled off. \"Reset all\" clears every flag here (including scene-dump targets) so a forgotten toggle never affects normal playback." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Flags persist in UserDefaults until toggled off. \"Reset all\" clears every flag here (including scene-dump targets) so a forgotten toggle never affects normal playback."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "フラグはオフにするまで UserDefaults に残ります。「すべてリセット」でここの全フラグ（シーンダンプ対象含む）を消し、忘れられた設定が通常再生に影響しないようにします。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开关会保存在 UserDefaults，直到手动关闭。「全部重置」会清除此处所有标志（含场景转储目标），避免遗忘的开关影响正常播放。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開關會保存在 UserDefaults，直到手動關閉。「全部重設」會清除此處所有旗標（含場景傾印目標），避免遺忘的開關影響正常播放。"
           }
         }
       }
@@ -16721,95 +15721,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "忘記"
-          }
-        }
-      }
-    },
-    "Forget Library" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Forget Library"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブラリを解除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "断开资源库连接"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "忘記資料庫"
-          }
-        }
-      }
-    },
-    "Forget Wallpaper Engine install folder?" : {
-      "comment" : "A confirmation prompt for forgetting the Wallpaper Engine install folder.",
-      "extractionState" : "manual",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Forget Wallpaper Engine install folder?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine のインストールフォルダを解除しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "忘记 Wallpaper Engine 安装文件夹吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要忘記 Wallpaper Engine 安裝資料夾嗎？"
-          }
-        }
-      }
-    },
-    "Forget Workshop library?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Forget Workshop library?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップライブラリを解除しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除创意工坊库吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要忘記創意工坊資料庫嗎？"
           }
         }
       }
@@ -18205,30 +17116,6 @@
         }
       }
     },
-    "https://steamcommunity.com/sharedfiles/filedetails/?id=…\n3725117707\nsteam://url/CommunityFilePage/…" : {
-      "comment" : "A description of the paste field's placeholder text.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "https://steamcommunity.com/sharedfiles/filedetails/?id=…\n3725117707\nsteam://url/CommunityFilePage/…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "https://steamcommunity.com/sharedfiles/filedetails/?id=…\n3725117707\nsteam://url/CommunityFilePage/…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "https://steamcommunity.com/sharedfiles/filedetails/?id=…\n3725117707\nsteam://url/CommunityFilePage/…"
-          }
-        }
-      }
-    },
     "I am 18 or older" : {
       "comment" : "A button to confirm that the user is 18 or older.",
       "isCommentAutoGenerated" : true,
@@ -19093,36 +17980,6 @@
         }
       }
     },
-    "Installing Wallpaper Engine assets needs Loomscreen's Steam connector." : {
-      "comment" : "Engine-assets update blocked until SteamCMD runs through the connector.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Installing Wallpaper Engine assets needs Loomscreen's Steam connector."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper Engine のアセットをインストールするには Loomscreen の Steam コネクタが必要です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安装 Wallpaper Engine 素材需要 Loomscreen 的 Steam 连接器。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安裝 Wallpaper Engine 素材需要 Loomscreen 的 Steam 連接器。"
-          }
-        }
-      }
-    },
     "Instrument settings" : {
       "comment" : "Monitor widget settings popover: header subtitle.",
       "extractionState" : "manual",
@@ -19792,35 +18649,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "讓相容場景隨 Mac 上播放的音樂和聲音變化。"
-          }
-        }
-      }
-    },
-    "Let macOS pick — recommended for most Macs." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Let macOS pick — recommended for most Macs."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS に任せる — ほとんどの Mac におすすめです。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "由 macOS 自动选择——大多数 Mac 推荐此项。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "讓 macOS 選擇 — 建議大多數 Mac 使用。"
           }
         }
       }
@@ -21035,35 +19863,6 @@
         }
       }
     },
-    "Loomscreen never asks for Full Disk Access and never reads or stores your Steam password, Steam Guard codes, or session tokens." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen never asks for Full Disk Access and never reads or stores your Steam password, Steam Guard codes, or session tokens."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen がフルディスクアクセスを要求したり、Steam のパスワード、Steam Guard コード、セッショントークンを読み取ったり保存したりすることはありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 从不请求“完全磁盘访问”，也不会读取或存储你的 Steam 密码、Steam Guard 验证码或会话令牌。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 從不要求「完整磁碟存取」，也不會讀取或儲存你的 Steam 密碼、Steam Guard 驗證碼或工作階段權杖。"
-          }
-        }
-      }
-    },
     "Loomscreen never asks for Full Disk Access. Library access comes from one folder you pick, stored as a security-scoped bookmark." : {
       "comment" : "Workshop privacy point about file access.",
       "extractionState" : "manual",
@@ -22129,36 +20928,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "記憶體"
-          }
-        }
-      }
-    },
-    "Metal is not supported on this device." : {
-      "comment" : "Error shown when Metal device cannot be created.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Metal is not supported on this device."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このデバイスは Metal をサポートしていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此设备不支持 Metal。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此裝置不支援 Metal。"
           }
         }
       }
@@ -23936,58 +22705,6 @@
         }
       }
     },
-    "No resolution or bitrate caps. Heavier on older GPUs." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No resolution or bitrate caps. Heavier on older GPUs."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解像度やビットレートの上限はありません。古い GPU では負荷が高くなります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不限制分辨率或码率。在旧款 GPU 上更耗资源。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不限制解析度或位元率。舊款 GPU 負載較高。"
-          }
-        }
-      }
-    },
-    "No results for \"%@\"." : {
-      "comment" : "Empty Workshop search result. Placeholder is the query.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」の結果はありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有“%@”的结果。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "沒有「%@」的結果。"
-          }
-        }
-      }
-    },
     "No results for these filters." : {
       "comment" : "Empty Workshop result when type/age filters exclude everything.",
       "localizations" : {
@@ -24545,36 +23262,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "該檔案夾中的專案均無法匯入。"
-          }
-        }
-      }
-    },
-    "None selected" : {
-      "comment" : "Placeholder subtitle shown on a project file/directory row before the user has picked anything.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None selected"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未选择"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未選擇"
           }
         }
       }
@@ -26101,36 +24788,6 @@
         }
       }
     },
-    "Open the downloaded projects folder" : {
-      "comment" : "Storage settings.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open the downloaded projects folder"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード済みプロジェクトのフォルダを開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开已下载项目文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟已下載專案資料夾"
-          }
-        }
-      }
-    },
     "Open the folder containing the app's diagnostic logs." : {
       "comment" : "Button label to open the folder containing the app's diagnostic logs.",
       "isCommentAutoGenerated" : true,
@@ -26209,36 +24866,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自動開啟本機 Aerials 資料夾"
-          }
-        }
-      }
-    },
-    "Open the SteamCMD diagnostics sheet" : {
-      "comment" : "Tooltip for opening the diagnostics panel.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open the SteamCMD diagnostics sheet"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 診断シートを開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开 SteamCMD 诊断页"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打開 SteamCMD 診斷面板"
           }
         }
       }
@@ -29061,36 +27688,6 @@
         }
       }
     },
-    "Privacy and data details" : {
-      "comment" : "Accessibility label for the Workshop privacy button.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Privacy and data details"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プライバシーとデータの詳細"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隐私与数据详情"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隱私與資料詳情"
-          }
-        }
-      }
-    },
     "Private" : {
       "comment" : "Workshop item visibility.\nWorkshop paste error badge.",
       "localizations" : {
@@ -30978,65 +29575,6 @@
         }
       }
     },
-    "Remove cached files for %@" : {
-      "comment" : "Tooltip with dynamic Workshop ID. %@ is the workshop ID.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove cached files for %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ のキャッシュファイルを削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除 %@ 的缓存文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刪除 %@ 的快取檔案"
-          }
-        }
-      }
-    },
-    "Remove from history?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove from history?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "履歴から削除しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从历史记录中移除吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要從記錄中移除嗎？"
-          }
-        }
-      }
-    },
     "Remove from Library" : {
       "localizations" : {
         "ja" : {
@@ -31359,35 +29897,6 @@
         }
       }
     },
-    "Removes the current wallpaper from this screen" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Removes the current wallpaper from this screen"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この画面から現在の壁紙を削除します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从此屏幕移除当前壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從此螢幕移除目前桌布"
-          }
-        }
-      }
-    },
     "Removes the stored key from this Mac's Keychain. Your key remains active under your Steam account at steamcommunity.com/dev/apikey until you revoke it there." : {
       "comment" : "Tooltip on the Forget button in WorkshopSettingsView.",
       "localizations" : {
@@ -31521,36 +30030,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "渲染器診斷"
-          }
-        }
-      }
-    },
-    "Renderer diagnostics: capability %@. %@. %@" : {
-      "comment" : "A11y label for renderer diagnostics in DEBUG builds. Placeholders are capability tier, diagnostic text, and resolver summary.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Renderer diagnostics: capability %1$@. %2$@. %3$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "レンダラー診断：機能 %1$@。%2$@。%3$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染器诊断：能力 %1$@。%2$@。%3$@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "渲染器診斷：功能等級 %1$@。%2$@。%3$@"
           }
         }
       }
@@ -31748,35 +30227,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部重置"
-          }
-        }
-      }
-    },
-    "Reset all keyboard shortcuts?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reset all keyboard shortcuts?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてのキーボードショートカットをリセットしますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重置所有键盘快捷键吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要重置所有鍵盤快捷鍵嗎？"
           }
         }
       }
@@ -32100,35 +30550,6 @@
         }
       }
     },
-    "Reset this shortcut?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reset this shortcut?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このショートカットをリセットしますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重置此快捷键吗？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "要重置此快捷鍵嗎？"
-          }
-        }
-      }
-    },
     "Reset to Default" : {
       "localizations" : {
         "en" : {
@@ -32263,36 +30684,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "解析度標籤"
-          }
-        }
-      }
-    },
-    "Resolved / Missing" : {
-      "comment" : "Developer tools table column title for resource resolution counts.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Resolved / Missing"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "解決済み / 不足"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已解析 / 缺失"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已解析 / 缺少"
           }
         }
       }
@@ -33610,36 +32001,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "縮放"
-          }
-        }
-      }
-    },
-    "Scan the standard SteamCMD install locations" : {
-      "comment" : "Tooltip for automatic SteamCMD location scanner.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scan the standard SteamCMD install locations"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "標準の SteamCMD インストール先をスキャン"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "扫描标准 SteamCMD 安装路径"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "掃描標準 SteamCMD 安裝位置"
           }
         }
       }
@@ -35711,75 +34072,6 @@
         }
       }
     },
-    "Show only scene wallpapers" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーン壁紙のみ表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅显示场景壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅顯示場景桌布"
-          }
-        }
-      }
-    },
-    "Show only video wallpapers" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画壁紙のみ表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅显示视频壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅顯示影片桌布"
-          }
-        }
-      }
-    },
-    "Show only web / HTML wallpapers" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web / HTML 壁紙のみ表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅显示 Web / HTML 壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅顯示 Web / HTML 桌布"
-          }
-        }
-      }
-    },
     "Show or hide the wallpaper properties on the right" : {
       "comment" : "A description of the accessibility hint for the wallpaper properties panel toggle.",
       "isCommentAutoGenerated" : true,
@@ -36018,36 +34310,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示此 App 的記憶體用量"
-          }
-        }
-      }
-    },
-    "Show this item in the Workshop, or open its Steam page" : {
-      "comment" : "Legacy alias kept for translator parity if extraction normalizes wording.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show this item in the Workshop, or open its Steam page"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このアイテムを Workshop に表示するか、Steam ページを開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Workshop 中显示此项目，或打开其 Steam 页面"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Workshop 中顯示此項目，或開啟其 Steam 頁面"
           }
         }
       }
@@ -36981,37 +35243,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跨螢幕拼接"
-          }
-        }
-      }
-    },
-    "Span uses all connected displays as one virtual video canvas" : {
-      "comment" : "A description of the \"Span\" video display layout.",
-      "extractionState" : "manual",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Span uses all connected displays as one virtual video canvas"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「スパン」は接続されているすべてのディスプレイを 1 つの仮想ビデオキャンバスとして使います"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“跨屏”将所有已连接显示器视作一块虚拟画布播放"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「跨顯示器」會將所有已連接顯示器作為一個虛擬影片畫布"
           }
         }
       }
@@ -38576,35 +36807,6 @@
         }
       }
     },
-    "SteamCMD downloads need Loomscreen's background Steam connector. This build can read your authorized library, but it cannot reuse a Terminal Steam session. Full Disk Access is not required." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD downloads need Loomscreen's background Steam connector. This build can read your authorized library, but it cannot reuse a Terminal Steam session. Full Disk Access is not required."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD のダウンロードには Loomscreen のバックグラウンド Steam コネクタが必要です。このビルドは許可済みライブラリを読み取れますが、Terminal の Steam セッションは再利用できません。フルディスクアクセスは不要です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 下载需要 Loomscreen 的后台 Steam 连接器。此版本可以读取已授权的库，但无法复用 Terminal 的 Steam 会话。不需要“完全磁盘访问”。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 下載需要 Loomscreen 的背景 Steam 連線器。此版本可以讀取已授權的收藏庫，但無法重用 Terminal 的 Steam 工作階段。不需要「完整磁碟存取」。"
-          }
-        }
-      }
-    },
     "SteamCMD is not a verified Valve build." : {
       "comment" : "Workshop diagnostics error when the SteamCMD binary is not trusted.",
       "localizations" : {
@@ -38880,35 +37082,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "延展"
-          }
-        }
-      }
-    },
-    "Stretch to fill screen (may distort)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stretch to fill screen (may distort)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画面いっぱいに引き伸ばす（歪む場合があります）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拉伸填满屏幕（可能变形）"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "延展以填滿螢幕（可能變形）"
           }
         }
       }
@@ -40542,36 +38715,6 @@
         }
       }
     },
-    "These are the Wallpaper Engine projects you downloaded — not caches. Removing a project's folder deletes that wallpaper." : {
-      "comment" : "Storage settings.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "These are the Wallpaper Engine projects you downloaded — not caches. Removing a project's folder deletes that wallpaper."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードした Wallpaper Engine プロジェクトです（キャッシュではありません）。プロジェクトのフォルダを削除すると、その壁紙も削除されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这些是你下载的 Wallpaper Engine 项目,不是缓存。删除某个项目的文件夹会一并删除该壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "這些是你下載的 Wallpaper Engine 專案,不是快取。刪除某個專案的資料夾會一併刪除該桌布。"
-          }
-        }
-      }
-    },
     "Thirty Days" : {
       "localizations" : {
         "en" : {
@@ -40626,35 +38769,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這將允許桌布執行腳本、使用本機儲存空間並存取 WebGPU。只信任你信賴的來源。"
-          }
-        }
-      }
-    },
-    "This build can read the official Steam library, but authenticated downloads still need Loomscreen's background Steam connector. A Terminal login cannot be reused by the sandboxed app." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This build can read the official Steam library, but authenticated downloads still need Loomscreen's background Steam connector. A Terminal login cannot be reused by the sandboxed app."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このビルドは公式 Steam ライブラリを読み取れますが、認証が必要なダウンロードには Loomscreen のバックグラウンド Steam コネクタが必要です。サンドボックス化されたアプリは Terminal のログインを再利用できません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此版本可以读取官方 Steam 库，但经过身份验证的下载仍需要 Loomscreen 的后台 Steam 连接器。沙盒化 App 无法复用 Terminal 登录。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此版本可以讀取官方 Steam 收藏庫，但經過身分驗證的下載仍需要 Loomscreen 的背景 Steam 連線器。沙盒化 App 無法重用 Terminal 登入。"
           }
         }
       }
@@ -42417,36 +40531,6 @@
         }
       }
     },
-    "Turn mouse reactions on or off for scene and web wallpapers." : {
-      "comment" : "Global shortcut action description.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn mouse reactions on or off for scene and web wallpapers."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンとウェブの壁紙のマウス反応をオン/オフします。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启或关闭场景与网页壁纸的鼠标响应。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟或關閉場景與網頁桌布的滑鼠回應。"
-          }
-        }
-      }
-    },
     "Turn on access to start system audio capture" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -43529,36 +41613,6 @@
         }
       }
     },
-    "Used by weather-reactive effects like rain, snow, and fog." : {
-      "comment" : "Single-line subtitle under the Location source picker explaining what the choice drives.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Used by weather-reactive effects like rain, snow, and fog."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "雨・雪・霧などの天気連動エフェクトで使用します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用于雨、雪、雾等随天气联动的特效。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用於雨、雪、霧等隨天氣連動的特效。"
-          }
-        }
-      }
-    },
     "Using manual location" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -43635,35 +41689,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valve 的命令列下載器。自動尋找可辨識 Homebrew 或 tarball 安裝；找不到時請選擇執行檔或它的 steamcmd.sh 包裝指令碼。"
-          }
-        }
-      }
-    },
-    "Verify the selected Valve binary and your authorized Steam folder. Diagnostics never request Steam credentials." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verify the selected Valve binary and your authorized Steam folder. Diagnostics never request Steam credentials."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選択した Valve バイナリと許可済み Steam フォルダを確認します。診断が Steam の認証情報を要求することはありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "验证所选 Valve 二进制文件和已授权的 Steam 文件夹。诊断绝不会请求 Steam 凭据。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "驗證所選 Valve 二進位檔和已授權的 Steam 資料夾。診斷絕不會要求 Steam 憑證。"
           }
         }
       }
@@ -44028,36 +42053,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "影片、網頁，還有 Wallpaper Engine 場景——在每個螢幕上活起來。"
-          }
-        }
-      }
-    },
-    "View files" : {
-      "comment" : "Storage: opens the downloaded-projects file list.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View files"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ファイルを表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查看文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "檢視檔案"
           }
         }
       }
@@ -46374,29 +44369,6 @@
         }
       }
     },
-    "Windows-only items — a Windows .exe application wallpaper, or a project type macOS can't recognize. These can't run here." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Windows 専用アイテム — Windows .exe アプリケーション壁紙、または macOS が認識できないプロジェクトタイプです。ここでは実行できません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅限 Windows 的项目 — Windows .exe 应用程序壁纸，或 macOS 无法识别的项目类型。这些无法在这里运行。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅限 Windows 的項目 — Windows .exe 應用程式桌布，或 macOS 無法識別的專案類型。這些無法在這裡執行。"
-          }
-        }
-      }
-    },
     "Wired" : {
       "comment" : "Memory breakdown segment: wired memory.",
       "extractionState" : "manual",
@@ -47004,36 +44976,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你下載的創意工坊桌布，按 Steam 實際保存它們的位置計量。從「已安裝」標籤頁刪除桌布釋放的正是這部分空間。"
-          }
-        }
-      }
-    },
-    "Your installed wallpapers, largest first" : {
-      "comment" : "Storage settings.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your installed wallpapers, largest first"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インストール済みの壁紙（サイズの大きい順）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已安装的壁纸,按占用从大到小"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已安裝的桌布,依佔用由大到小"
           }
         }
       }
