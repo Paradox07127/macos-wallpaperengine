@@ -89,7 +89,7 @@ struct WPEFallbackCard: View {
         }
         .padding(32)
         .frame(maxWidth: 480)
-        .adaptiveGlassSurface(.roundedRectangle(24))
+        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
     }
 
     @ViewBuilder

@@ -30,8 +30,7 @@ struct TerminalCommandPanel: View {
                     Label("Copy", systemImage: "doc.on.clipboard")
                         .font(DesignTokens.Typography.caption)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .help(Text("Copy command to clipboard"))
 
                 Button {
@@ -40,8 +39,7 @@ struct TerminalCommandPanel: View {
                     Label("Terminal", systemImage: "terminal")
                         .font(DesignTokens.Typography.caption)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
                 .help(Text("Open Terminal.app"))
             }
         }

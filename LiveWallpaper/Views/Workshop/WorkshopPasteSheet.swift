@@ -35,7 +35,7 @@ struct WorkshopPasteSheet: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                     .fill(Color.accentColor.opacity(0.18))
                     .frame(width: 28, height: 28)
                 Image(systemName: "tray.and.arrow.down.fill")
@@ -57,8 +57,7 @@ struct WorkshopPasteSheet: View {
                 } label: {
                     Label("Download all", systemImage: "arrow.down.circle.fill")
                 }
-                .controlSize(.small)
-                .buttonStyle(.borderedProminent)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .help(Text("Download every queued item with SteamCMD"))
             }
 
@@ -67,7 +66,7 @@ struct WorkshopPasteSheet: View {
             } label: {
                 Image(systemName: "arrow.up.forward.app.fill")
             }
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, shape: .circle, size: .small)
             .disabled(model.rows.isEmpty)
             .help(Text("Open all in Steam"))
             .accessibilityLabel(Text("Open all in Steam"))
@@ -77,13 +76,14 @@ struct WorkshopPasteSheet: View {
             } label: {
                 Image(systemName: "trash")
             }
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, shape: .circle, size: .small)
+            .tint(DesignTokens.Colors.Status.danger)
             .disabled(model.rows.isEmpty)
             .help(Text("Clear queue"))
             .accessibilityLabel(Text("Clear queue"))
 
             Button("Done") { dismiss() }
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
                 .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
@@ -136,6 +136,7 @@ struct WorkshopPasteSheet: View {
                     Label("Add to queue", systemImage: "plus.circle.fill")
                         .font(DesignTokens.Typography.bodyEmphasized)
                 }
+                .adaptiveGlassButton(.prominent)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(model.rawInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

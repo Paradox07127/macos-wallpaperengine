@@ -78,6 +78,7 @@ struct OverlaysInspectorPanel: View {
             Toggle("", isOn: weatherEnabledBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .accessibilityLabel(Text("Weather overlay"))
         }
     }
@@ -163,6 +164,7 @@ struct OverlaysInspectorPanel: View {
             Toggle("", isOn: weatherReactiveBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .accessibilityLabel(Text("Weather-reactive effects"))
         }
     }

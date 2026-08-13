@@ -84,7 +84,7 @@ struct PlaylistRow: View {
         .frame(height: 50)
         .background(rowBackground)
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                 .strokeBorder(strokeColor, lineWidth: strokeWidth)
         )
         .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowOffset)
@@ -157,7 +157,7 @@ struct PlaylistRow: View {
     // MARK: - Visual style
 
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
             .fill(backgroundFill)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isHovering)
     }

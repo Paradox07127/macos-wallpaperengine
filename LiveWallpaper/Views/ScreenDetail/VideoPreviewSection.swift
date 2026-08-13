@@ -100,7 +100,7 @@ struct VideoPreviewSection: View {
                 endPoint: .bottom
             )
         )
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 16, bottomTrailingRadius: 16))
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: DesignTokens.Corner.preview, bottomTrailingRadius: DesignTokens.Corner.preview))
     }
 
     private func posterPreview(_ posterImage: NSImage) -> some View {
@@ -114,8 +114,7 @@ struct VideoPreviewSection: View {
             Button(action: startPreview) {
                 Label("Play Preview", systemImage: "play.fill")
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .adaptiveGlassButton(.prominent, size: .large)
             .accessibilityLabel(Text("Play preview"))
             .accessibilityHint(Text("Starts a temporary video preview for this settings panel"))
         }
@@ -135,8 +134,7 @@ struct VideoPreviewSection: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
             Button(errorMessage == nil ? "Load Preview" : "Retry Preview", action: startPreview)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .adaptiveGlassButton(.prominent, size: .small)
                 .accessibilityLabel(Text(errorMessage == nil ? "Load preview" : "Retry preview"))
                 .accessibilityHint(Text("Starts a temporary video preview for this settings panel"))
         }

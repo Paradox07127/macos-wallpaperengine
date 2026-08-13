@@ -370,6 +370,12 @@ extension ScreenManager {
 
     func handleGlobalSettingsChanged() {
         guard !isTerminating else { return }
+        // Both caches live in GlobalSettings, which a .lwconfig import replaces
+        // wholesale. Without re-reading them the imported names/overlays stay
+        // invisible until relaunch, and the next rename writes the pre-import
+        // dictionary back over them.
+        screenNames = SettingsManager.shared.loadScreenNames()
+        monitorOverlays = SettingsManager.shared.loadMonitorOverlays()
         updateFullScreenFallbackPolling()
         refreshPerformancePolicyForAllScreens()
     }

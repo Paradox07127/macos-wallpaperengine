@@ -407,9 +407,8 @@ struct ScreenDetailView: View {
             reduceMotion: reduceMotion,
             showsHeaderWallpaperActions: showsHeaderWallpaperActions,
             showBookmarks: $showBookmarks,
-            onReload: { screenManager.reloadWallpaperForScreen(screen) },
             onApplyToAll: requestApplyToAll,
-            onClearWallpaper: clearCurrentWallpaper,
+            onClearWallpaper: clearCurrentWallpaper
         )
     }
 

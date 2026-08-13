@@ -340,6 +340,7 @@ struct CommonPlaybackInspector: View {
                 Toggle("", isOn: syncToLockScreenBinding)
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .controlSize(.small)
                     .accessibilityLabel(Text("Capture this video's frame when locking"))
             }
         }
@@ -525,6 +526,7 @@ struct ContentSecurityInspector: View {
             Toggle("", isOn: htmlConfigBinding(\.useEphemeralStorage))
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .accessibilityLabel(Text("Ephemeral browsing data"))
         }
     }
@@ -538,6 +540,7 @@ struct ContentSecurityInspector: View {
             Toggle("", isOn: htmlConfigBinding(\.blockTrackers))
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .accessibilityLabel(Text("Block trackers"))
         }
     }
@@ -552,6 +555,7 @@ struct ContentSecurityInspector: View {
             Toggle("", isOn: htmlConfigBinding(\.cspEnforcementEnabled))
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .accessibilityLabel(Text("Enforce content security policy"))
         }
     }
@@ -566,6 +570,7 @@ struct ContentSecurityInspector: View {
             Toggle("", isOn: htmlConfigBinding(\.aggressiveSuspend))
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .accessibilityLabel(Text("Aggressive suspend"))
         }
     }
@@ -610,15 +615,9 @@ struct ContentSecurityInspector: View {
     @ViewBuilder
     private func trustRowAction(for origin: TrustedHTMLOrigin, isTrusted: Bool) -> some View {
         if trustStore.isBuiltInTrusted(origin) {
-            Text("Built-in")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.secondary.opacity(0.15), in: Capsule())
-                .fixedSize()
+            StatusChip("Built-in", tint: .secondary)
         } else if isTrusted {
-            Button("Revoke") {
+            Button("Revoke", role: .destructive) {
                 guard let source else { return }
                 _ = trustStore.revoke(origin)
                 screenManager.setHTMLWallpaper(
@@ -628,15 +627,14 @@ struct ContentSecurityInspector: View {
                     for: screen
                 )
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, size: .small)
+            .tint(DesignTokens.Colors.Status.danger)
             .fixedSize()
         } else if origin.isSecure {
             Button("Trust…") {
                 pendingTrustOrigin = origin
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            .adaptiveGlassButton(.prominent, size: .small)
             .fixedSize()
             .confirmationDialog(
                 Text("Trust \(origin.displayName) for JavaScript?"),

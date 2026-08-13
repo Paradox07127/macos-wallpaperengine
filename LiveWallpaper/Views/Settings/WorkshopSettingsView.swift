@@ -34,13 +34,12 @@ struct WorkshopSettingsView: View {
                     title: "Steam Web API key",
                     titleBadge: keyTitleBadge,
                     subtitle: "Your own free key — required to browse the Workshop online",
-                    info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only in this Mac's Keychain (no iCloud sync). Get one free at steamcommunity.com/dev/apikey."
+                    info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Get one free at steamcommunity.com/dev/apikey."
                 ) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         if workshopServices.hasWebAPIKey {
                             Button("Replace") { showingKeyEntry = true }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
+                                .adaptiveGlassButton(.regular, size: .small)
                                 .help(Text("Set a new Steam Web API key"))
                             Button("Forget", role: .destructive) {
                                 Task {
@@ -48,13 +47,12 @@ struct WorkshopSettingsView: View {
                                     await workshopServices.refreshAPIKeyStatus()
                                 }
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                            .adaptiveGlassButton(.regular, size: .small)
+                            .tint(DesignTokens.Colors.Status.danger)
                             .help(Text(verbatim: WorkshopAPIKeyOwnershipInfo.forgetTooltip))
                         } else {
                             Button("Set key") { showingKeyEntry = true }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
+                                .adaptiveGlassButton(.prominent, size: .small)
                                 .help(Text("Paste your Steam Web API key"))
                         }
                     }
@@ -70,8 +68,7 @@ struct WorkshopSettingsView: View {
                     info: "Loomscreen reads installed Workshop items directly from the official Steam library after one folder authorization. Authenticated SteamCMD downloads are a separate capability and require Loomscreen's background Steam connector."
                 ) {
                     Button("Configure") { showingDoctor = true }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .adaptiveGlassButton(.regular, size: .small)
                         .fixedSize()
                         .help(Text("Configure Steam library access and SteamCMD"))
                 }
@@ -260,7 +257,7 @@ struct WorkshopSettingsView: View {
                 }
                 Text("Downloading…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
                 Button("Cancel") { engineInstaller.cancel() }
-                    .buttonStyle(.bordered).controlSize(.small).fixedSize()
+                    .adaptiveGlassButton(.regular, size: .small).fixedSize()
             case .pruning:
                 ProgressView().controlSize(.small)
                 Text("Finishing…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
@@ -278,22 +275,22 @@ struct WorkshopSettingsView: View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             if engineInstaller.updateAvailable {
                 Button("Update") { preflightThen { engineInstaller.download(using: doctorService) } }
-                    .buttonStyle(.borderedProminent).controlSize(.small).fixedSize()
+                    .adaptiveGlassButton(.prominent, size: .small).fixedSize()
             } else {
                 Button("Check for updates") { preflightThen { engineInstaller.checkForUpdate(using: doctorService) } }
-                    .buttonStyle(.bordered).controlSize(.small).fixedSize()
+                    .adaptiveGlassButton(.regular, size: .small).fixedSize()
             }
             Button {
                 revealEngineAssetsInFinder()
             } label: {
                 Image(systemName: "folder")
             }
-            .buttonStyle(.bordered).controlSize(.small).fixedSize()
+            .adaptiveGlassButton(.regular, size: .small).fixedSize()
             .help(Text("Show the Wallpaper Engine assets folder in Finder"))
             .accessibilityLabel(Text("Show assets in Finder"))
 
             Button("Remove", role: .destructive) { showingRemoveConfirm = true }
-                .buttonStyle(.bordered).controlSize(.small).fixedSize()
+                .adaptiveGlassButton(.regular, size: .small).fixedSize()
                 .tint(DesignTokens.Colors.Status.danger)
                 .help(Text("Delete the downloaded Wallpaper Engine assets and unlink"))
                 .confirmationDialog(
@@ -313,13 +310,13 @@ struct WorkshopSettingsView: View {
     private var engineAssetsManualControl: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Button("Change") { Task { await requestManualEngineAssetsAccess() } }
-                .buttonStyle(.bordered).controlSize(.small).fixedSize()
+                .adaptiveGlassButton(.regular, size: .small).fixedSize()
                 .help(Text("Pick a different Wallpaper Engine install folder"))
             Button("Forget", role: .destructive) {
                 engineAssets.clearAccess()
                 engineInstaller.clearTransientStatus()
             }
-                .buttonStyle(.bordered).controlSize(.small).fixedSize()
+                .adaptiveGlassButton(.regular, size: .small).fixedSize()
                 .tint(DesignTokens.Colors.Status.danger)
                 .help(Text("Remove access to the Wallpaper Engine install folder"))
         }
@@ -331,10 +328,10 @@ struct WorkshopSettingsView: View {
             Button("Download from Steam") {
                 preflightThen { engineInstaller.download(using: doctorService) }
             }
-            .buttonStyle(.bordered).controlSize(.small).fixedSize()
+            .adaptiveGlassButton(.regular, size: .small).fixedSize()
             .help(Text("Download the copy of Wallpaper Engine you own for extra scene coverage"))
             Button("Link folder…") { Task { await requestManualEngineAssetsAccess() } }
-                .buttonStyle(.bordered).controlSize(.small).fixedSize()
+                .adaptiveGlassButton(.regular, size: .small).fixedSize()
                 .help(Text("Grant read-only access to a Wallpaper Engine install for extra scene coverage"))
         }
     }

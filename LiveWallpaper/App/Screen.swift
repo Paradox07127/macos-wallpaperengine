@@ -5,10 +5,24 @@ import Observation
 @MainActor @Observable
 final class Screen: Identifiable, Hashable {
     let id: CGDirectDisplayID
-    let name: String
+    /// macOS's own name for the panel, or a geometry string when it reports none.
+    let systemName: String
+    /// User override, re-applied by `ScreenManager` on every screen refresh
+    /// (`Screen` instances are rebuilt from scratch each time).
+    var customName: String?
+    /// What every UI surface shows. Trimmed-empty overrides fall back to the system name.
+    var name: String {
+        guard let customName, !customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return systemName
+        }
+        return customName
+    }
     let frame: CGRect
     let nsScreen: NSScreen
     let displayFingerprint: String
+    /// Set only for panels whose key changed when UUID identity was adopted;
+    /// `ScreenManager` uses it once to move their stored settings across.
+    let legacyDisplayFingerprint: String?
 
     // MARK: - Unified Runtime Session
 
@@ -152,11 +166,20 @@ final class Screen: Identifiable, Hashable {
             ?? UInt32(truncatingIfNeeded: Self.generateFallbackID(for: nsScreen))
 
         let screenName = nsScreen.localizedName
-        self.name = screenName.isEmpty
+        self.systemName = screenName.isEmpty
             ? "Display \(Int(frame.width))x\(Int(frame.height)) at (\(Int(frame.origin.x)),\(Int(frame.origin.y)))"
             : screenName
 
         self.displayFingerprint = nsScreen.displayFingerprint
+        self.legacyDisplayFingerprint = nsScreen.legacyDisplayFingerprint
+    }
+
+    /// Diagonal in inches from the panel's EDID physical size. Nil when the
+    /// display reports none — plenty of external panels report 0×0.
+    var diagonalInches: Double? {
+        let mm = CGDisplayScreenSize(id)
+        guard mm.width > 1, mm.height > 1 else { return nil }
+        return (mm.width * mm.width + mm.height * mm.height).squareRoot() / 25.4
     }
 
     deinit {

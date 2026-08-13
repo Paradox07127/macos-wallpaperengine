@@ -142,6 +142,85 @@ struct ConfigurationFingerprintMigrationTests {
         #expect(store.revision(for: 42) == 3)
     }
 
+    @Test("A serial-0 panel's config follows it onto its new UUID key")
+    func migratesLegacyFingerprintToUUIDKey() {
+        let store = WallpaperConfigurationStore(persistence: InMemoryConfigPersistence())
+        store.save(makeVideoConfig(screenID: 5, fingerprint: "13929:15830:0"))
+        store.save(makeVideoConfig(screenID: 2, fingerprint: "2513:32829:21573"))
+
+        #expect(store.migrateFingerprint(from: "13929:15830:0", to: "uuid:487D9D08"))
+
+        let all = store.loadAll()
+        #expect(all.first { $0.screenID == 5 }?.displayFingerprint == "uuid:487D9D08")
+        // The panel with a real serial keeps its untouched EDID key.
+        #expect(all.first { $0.screenID == 2 }?.displayFingerprint == "2513:32829:21573")
+    }
+
+    /// The whole point of the UUID switch: two identical serial-0 panels shared
+    /// one EDID key, so only the first may inherit that single stored config.
+    @Test("A second identical panel cannot claim an already-migrated config")
+    func refusesToMigrateOntoAnOccupiedKey() {
+        let store = WallpaperConfigurationStore(persistence: InMemoryConfigPersistence())
+        store.save(makeVideoConfig(screenID: 5, fingerprint: "13929:15830:0"))
+        store.save(makeVideoConfig(screenID: 6, fingerprint: "uuid:SECOND-PANEL"))
+
+        #expect(store.migrateFingerprint(from: "13929:15830:0", to: "uuid:SECOND-PANEL") == false)
+        #expect(store.loadAll().first { $0.screenID == 5 }?.displayFingerprint == "13929:15830:0")
+    }
+
+    /// Two identical serial-0 panels each had their own config under the SAME
+    /// legacy EDID key. Picking the first matching row would hand panel A the
+    /// config panel B saved — a permanent, silent wallpaper swap.
+    /// The array-backed fake keeps insertion order, and the second-listed panel
+    /// migrates first, so row-order selection reaches for the wrong row here
+    /// regardless of how the dictionary fake would have enumerated.
+    @Test("Duplicate legacy keys migrate by screen ID, not by row order")
+    func migratesTheRowBelongingToTheMigratingScreen() {
+        let store = WallpaperConfigurationStore(
+            persistence: DuplicateTolerantConfigPersistence([
+                makeVideoConfig(screenID: 5, fingerprint: "13929:15830:0"),
+                makeVideoConfig(screenID: 6, fingerprint: "13929:15830:0")
+            ])
+        )
+
+        #expect(store.migrateFingerprint(from: "13929:15830:0", to: "uuid:PANEL-B", preferring: 6))
+        #expect(store.migrateFingerprint(from: "13929:15830:0", to: "uuid:PANEL-A", preferring: 5))
+
+        let all = store.loadAll()
+        #expect(all.first { $0.screenID == 5 }?.displayFingerprint == "uuid:PANEL-A")
+        #expect(all.first { $0.screenID == 6 }?.displayFingerprint == "uuid:PANEL-B")
+    }
+
+    @Test("An ambiguous duplicate legacy key is left alone rather than guessed")
+    func refusesAmbiguousDuplicateLegacyKey() {
+        let store = WallpaperConfigurationStore(
+            persistence: DuplicateTolerantConfigPersistence([
+                makeVideoConfig(screenID: 5, fingerprint: "13929:15830:0"),
+                makeVideoConfig(screenID: 6, fingerprint: "13929:15830:0")
+            ])
+        )
+
+        // Screen ID changed across the upgrade, so nothing ties a row to it.
+        #expect(store.migrateFingerprint(from: "13929:15830:0", to: "uuid:PANEL-C", preferring: 99) == false)
+        #expect(store.loadAll().allSatisfy { $0.displayFingerprint == "13929:15830:0" })
+    }
+
+    @Test("Migration is a no-op when the display has nothing stored")
+    func migrationWithoutStoredConfigIsANoOp() {
+        let store = WallpaperConfigurationStore(persistence: InMemoryConfigPersistence())
+        #expect(store.migrateFingerprint(from: "13929:15830:0", to: "uuid:NEW") == false)
+        #expect(store.loadAll().isEmpty)
+    }
+
+    @Test("Unknown-fingerprint keys never migrate")
+    func unknownKeysAreLeftAlone() {
+        let store = WallpaperConfigurationStore(persistence: InMemoryConfigPersistence())
+        store.save(makeVideoConfig(screenID: 7, fingerprint: "unknown:0:0:0:Some Panel"))
+
+        #expect(store.migrateFingerprint(from: "unknown:0:0:0:Some Panel", to: "uuid:NEW") == false)
+        #expect(store.loadAll().first?.displayFingerprint == "unknown:0:0:0:Some Panel")
+    }
+
     private func makeVideoConfig(
         screenID: CGDirectDisplayID,
         fingerprint: String?

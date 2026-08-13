@@ -40,6 +40,7 @@ struct WorkshopOnboardingSheet: View {
                         .frame(maxWidth: 220)
                         .padding(.vertical, 4)
                 }
+                .adaptiveGlassButton(.prominent)
                 .keyboardShortcut(.defaultAction)
 
                 Button("Maybe later") { dismiss() }

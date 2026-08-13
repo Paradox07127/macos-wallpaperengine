@@ -132,9 +132,9 @@ struct ContentView: View {
                             .symbolEffect(.pulse, options: .continuouslyRepeating, isActive: isReloading)
                     }
                 }
-                .help(Text("Reload all wallpapers"))
-                .accessibilityLabel(Text("Reload all wallpapers"))
-                .accessibilityHint(Text("Reapplies the active wallpaper on every display"))
+                .help(Text("Reload display content"))
+                .accessibilityLabel(Text("Reload display"))
+                .accessibilityHint(Text("Reloads the wallpaper content for this screen"))
                 .disabled(screenManager.screens.isEmpty)
             }
         }
@@ -225,7 +225,7 @@ struct ContentView: View {
     }
 
     private func handleAddWallpaperPrompt(kind: String) {
-        guard let target = preferredAddWallpaperTarget() else { return }
+        guard let target = toolbarTargetScreen() else { return }
         selectAppNavigation(.screen(target.id))
 
         switch kind {
@@ -320,11 +320,11 @@ struct ContentView: View {
 
     /// Symbol effect is click feedback only — `reloadAllScreens()` is fire-and-forget.
     private func invokeReload() {
-        guard !isReloading else { return }
+        guard !isReloading, let target = toolbarTargetScreen() else { return }
         withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.2))) {
             isReloading = true
         }
-        screenManager.reloadAllScreens()
+        screenManager.reloadWallpaperForScreen(target)
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(500))
             withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.2))) {
@@ -333,7 +333,8 @@ struct ContentView: View {
         }
     }
 
-    private func preferredAddWallpaperTarget() -> Screen? {
+    /// The display the toolbar acts on: the selected one, else the first.
+    private func toolbarTargetScreen() -> Screen? {
         if case .screen(let id) = selectedNavigation,
            let match = screenManager.screens.first(where: { $0.id == id }) {
             return match
@@ -522,6 +523,44 @@ struct SidebarSectionHeader: View {
     }
 }
 
+// MARK: - Display rename
+
+/// Right-click rename for a display. Shared by the sidebar row and the Settings
+/// arrangement map so both offer the same two actions.
+struct ScreenRenameMenu: ViewModifier {
+    let screen: Screen
+
+    @Environment(ScreenManager.self) private var screenManager
+    @State private var isRenaming = false
+    @State private var draft = ""
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                Button("Rename…") {
+                    draft = screen.name
+                    isRenaming = true
+                }
+                if screen.customName != nil {
+                    Button("Use System Name") {
+                        screenManager.setCustomName(nil, for: screen)
+                    }
+                }
+            }
+            .alert("Rename Display", isPresented: $isRenaming) {
+                TextField("Display name", text: $draft)
+                Button("Cancel", role: .cancel) {}
+                Button("Rename") { screenManager.setCustomName(draft, for: screen) }
+            }
+    }
+}
+
+extension View {
+    func screenRenameMenu(for screen: Screen) -> some View {
+        modifier(ScreenRenameMenu(screen: screen))
+    }
+}
+
 // MARK: - Screen Row
 struct ScreenRow: View {
     var screen: Screen
@@ -543,6 +582,7 @@ struct ScreenRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 2)
+        .screenRenameMenu(for: screen)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(displayAccessibilityLabel)
         .accessibilityValue(accessibilityValue(for: summary))

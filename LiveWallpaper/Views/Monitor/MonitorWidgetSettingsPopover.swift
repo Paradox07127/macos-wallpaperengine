@@ -54,7 +54,7 @@ struct MonitorWidgetSettingsPopover: View {
         }
         .controlSize(.large)
         .buttonStyle(.borderless)
-        .tint(.red)
+        .destructiveControlTint()
     }
 
     private var hasKindOptions: Bool {

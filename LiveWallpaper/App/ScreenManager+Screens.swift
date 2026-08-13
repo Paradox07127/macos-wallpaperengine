@@ -15,6 +15,12 @@ extension ScreenManager {
     func refreshScreens(preserveRuntimeSessions: Bool = true) {
         guard !isTerminating else { return }
         let newScreens = displayRegistry.currentScreens()
+        migrateLegacyDisplayIdentities(of: newScreens)
+        // Screens are rebuilt from NSScreen on every refresh, so the user's names
+        // have to be re-attached here or they vanish on the next display change.
+        for screen in newScreens {
+            screen.customName = screenNames[screen.displayFingerprint]
+        }
         Logger.screensDetected(newScreens.count)
 
         let oldScreens = screens
@@ -499,5 +505,64 @@ extension ScreenManager {
 
         Logger.notice("All screens reloaded", category: .screenManager)
     }
-    
+
+    /// Move per-display settings from a panel's pre-UUID key to its current one.
+    /// Only panels that report EDID serial 0 have a key change at all; this runs
+    /// on every refresh so a display that was unplugged during the upgrade still
+    /// gets migrated the first time it comes back.
+    private func migrateLegacyDisplayIdentities(of newScreens: [Screen]) {
+        var namesChanged = false
+        var overlaysChanged = false
+
+        let defaults = UserDefaults.appScoped()
+        var sidebarOrder = SidebarDisplayOrder.decode(
+            defaults.data(forKey: SidebarDisplayOrder.preferencesKey) ?? Data()
+        )
+        let sidebarOrderBefore = sidebarOrder
+
+        for screen in newScreens {
+            guard let legacy = screen.legacyDisplayFingerprint else { continue }
+            let current = screen.displayFingerprint
+
+            if screenNames[current] == nil, let name = screenNames.removeValue(forKey: legacy) {
+                screenNames[current] = name
+                namesChanged = true
+            }
+            if monitorOverlays[current] == nil, let overlay = monitorOverlays.removeValue(forKey: legacy) {
+                monitorOverlays[current] = overlay
+                overlaysChanged = true
+            }
+            configurationStore.migrateFingerprint(from: legacy, to: current, preferring: screen.id)
+            // Without this the saved entry keeps the pre-UUID key, matches
+            // neither by (ID, fingerprint) nor by fingerprint, and the user's
+            // sidebar order silently resets to system order.
+            sidebarOrder = SidebarDisplayOrder.rekeyed(
+                sidebarOrder, displayID: screen.id, from: legacy, to: current
+            )
+        }
+
+        if namesChanged {
+            SettingsManager.shared.saveScreenNames(screenNames)
+        }
+        if overlaysChanged {
+            SettingsManager.shared.saveMonitorOverlays(monitorOverlays)
+        }
+        if sidebarOrder != sidebarOrderBefore {
+            defaults.set(SidebarDisplayOrder.encode(sidebarOrder), forKey: SidebarDisplayOrder.preferencesKey)
+        }
+    }
+
+    /// Rename a display. Blank input, or the system's own name, clears the
+    /// override rather than storing a redundant copy of it.
+    func setCustomName(_ name: String?, for screen: Screen) {
+        let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = screen.displayFingerprint
+        if trimmed.isEmpty || trimmed == screen.systemName {
+            screenNames.removeValue(forKey: key)
+        } else {
+            screenNames[key] = trimmed
+        }
+        screen.customName = screenNames[key]
+        SettingsManager.shared.saveScreenNames(screenNames)
+    }
 }

@@ -142,7 +142,7 @@ struct WPESceneSection: View {
                     } label: {
                         Image(systemName: "chevron.left")
                     }
-                    .adaptiveGlassButton(.regular)
+                    .adaptiveGlassButton(.regular, shape: .circle)
                     .controlSize(.regular)
                     .help(Text("Back to library"))
                     .accessibilityLabel(Text("Back to library"))

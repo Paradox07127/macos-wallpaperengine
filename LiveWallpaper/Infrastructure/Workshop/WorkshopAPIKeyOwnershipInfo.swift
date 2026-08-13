@@ -12,7 +12,7 @@ enum WorkshopAPIKeyOwnershipInfo {
         comment: "Reminder shown above the API-key entry field. Explains Valve's eligibility gate."
     )
     static let forgetTooltip = String(
-        localized: "Removes the stored key from this Mac's Keychain. Your key remains active under your Steam account at steamcommunity.com/dev/apikey until you revoke it there.",
+        localized: "Removes the stored key from this Mac. Your key remains active under your Steam account at steamcommunity.com/dev/apikey until you revoke it there.",
         comment: "Tooltip on the Forget button in WorkshopSettingsView."
     )
     static let passwordReassurance = String(

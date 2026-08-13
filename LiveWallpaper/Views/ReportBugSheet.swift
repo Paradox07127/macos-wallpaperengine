@@ -11,18 +11,18 @@ struct ReportBugSheet: View {
     @State private var sanitizedLogURL: URL?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                header
 
-            Divider()
+                Divider()
 
-            diagnosticPreview
-
-            Divider()
+                diagnosticPreview
+            }
+            .padding(20)
 
             footer
         }
-        .padding(20)
         .frame(
             minWidth: 520,
             idealWidth: 560,
@@ -92,34 +92,29 @@ struct ReportBugSheet: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            Spacer()
-
-            Button("Cancel") {
+        SheetFooterBar(
+            primaryTitle: "Continue in Browser",
+            primaryAction: {
+                BugReporter.openIssueInBrowser(report.issueURL)
+                onDismiss()
+                dismiss()
+            },
+            cancelTitle: "Cancel",
+            cancelAction: {
                 onDismiss()
                 dismiss()
             }
-            .keyboardShortcut(.cancelAction)
-
+        ) {
             if let logURL = sanitizedLogURL {
                 Button {
                     BugReporter.revealLogInFinder(logURL)
                 } label: {
                     Label("Show Log in Finder", systemImage: "folder")
                 }
+                .adaptiveGlassButton(.regular)
                 .help(Text("Open Finder and highlight the sanitized log file"))
                 .accessibilityLabel(Text("Show sanitized log in Finder"))
             }
-
-            Button {
-                BugReporter.openIssueInBrowser(report.issueURL)
-                onDismiss()
-                dismiss()
-            } label: {
-                Label("Continue in Browser", systemImage: "arrow.up.right.square")
-            }
-            .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
         }
     }
 

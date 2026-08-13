@@ -9,7 +9,6 @@ struct ScreenDetailHeader: View {
     let reduceMotion: Bool
     let showsHeaderWallpaperActions: Bool
     @Binding var showBookmarks: Bool
-    let onReload: () -> Void
     let onApplyToAll: () -> Void
     let onClearWallpaper: () -> Void
 
@@ -17,25 +16,19 @@ struct ScreenDetailHeader: View {
         DetailHeaderBar(
             systemImage: "display",
             title: {
-                HStack(spacing: 8) {
-                    Text(verbatim: screen.name)
-                        .help(Text(verbatim: screen.name))
-
-                    Button(action: onReload) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(.secondary)
-                    }
-                    // Same glass family as the header's action buttons, at
-                    // regular size so it stays proportionate to the title line.
-                    .adaptiveGlassButton(.regular, shape: .circle)
-                    .help(Text("Reload display content"))
-                    .accessibilityLabel(Text("Reload display"))
-                    .accessibilityHint(Text("Reloads the wallpaper content for this screen"))
-                }
+                // Reload lives in the window toolbar, with the other whole-display actions.
+                Text(verbatim: screen.name)
+                    .help(Text(verbatim: screen.name))
             },
             metadata: {
                 HStack(spacing: DesignTokens.DetailHeader.metadataSpacing) {
+                    // A renamed display still has to say which panel it is.
+                    if screen.customName != nil {
+                        InfoBadge(icon: "display", text: screen.systemName)
+                    }
+                    if let diagonal = screen.diagonalInches {
+                        InfoBadge(icon: "ruler", text: "\(Int(diagonal.rounded()))″")
+                    }
                     InfoBadge(icon: "arrow.up.left.and.arrow.down.right", text: "\(Int(screen.frame.width))×\(Int(screen.frame.height))")
                     InfoBadge(icon: "gauge.medium", text: "\(screenManager.getScreenRefreshRate(for: screen.id)) Hz")
                     if wallpaperSessionSummary.isConfigured {

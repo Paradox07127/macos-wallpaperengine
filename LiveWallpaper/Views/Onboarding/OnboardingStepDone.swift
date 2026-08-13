@@ -62,7 +62,7 @@ struct OnboardingStepDone: View {
                 Text("Open display settings")
                     .frame(minWidth: 140)
             }
-            .buttonStyle(GlassCapsuleButtonStyle(fontSize: 14, horizontalPadding: 24, verticalPadding: 10))
+            .buttonStyle(GlassCapsuleButtonStyle(preset: .large))
             .keyboardShortcut(.defaultAction)
             .accessibilityHint(Text("Close onboarding and open \(BundleIdentity.productDisplayName)"))
 

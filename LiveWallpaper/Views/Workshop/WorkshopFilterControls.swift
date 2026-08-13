@@ -29,8 +29,7 @@ struct WorkshopFiltersToggle: View {
             }
             .font(DesignTokens.Typography.caption)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .adaptiveGlassButton(.regular, size: .small)
         .disabled(isDisabled)
         .help(Text("Filter options"))
         .accessibilityLabel(Text("Filters"))

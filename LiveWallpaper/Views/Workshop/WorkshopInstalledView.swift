@@ -396,9 +396,16 @@ struct WorkshopInstalledView: View {
                 .font(DesignTokens.Typography.body)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: DesignTokens.Spacing.lg) {
-                ForEach(screenManager.screens, id: \.id) { screen in
-                    screenDropTarget(screen)
+            // Laid out in the system's own arrangement so the target you aim at
+            // is the panel in that physical position.
+            DisplayArrangementMap(
+                items: screenManager.screens.map {
+                    DisplayArrangementItem(id: $0.id, frame: $0.frame)
+                },
+                height: 110
+            ) { item, size in
+                if let screen = screenManager.screens.first(where: { $0.id == item.id }) {
+                    screenDropTarget(screen, size: size)
                 }
             }
         }
@@ -421,29 +428,31 @@ struct WorkshopInstalledView: View {
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 
-    private func screenDropTarget(_ screen: Screen) -> some View {
-        VStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.accentColor.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [5]))
-                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .frame(width: 150, height: 90)
-                .overlay {
+    private func screenDropTarget(_ screen: Screen, size: CGSize) -> some View {
+        RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+            .strokeBorder(Color.accentColor.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [5]))
+            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
+            .overlay {
+                VStack(spacing: 4) {
                     Image(systemName: "display")
-                        .font(.system(size: 30))
+                        .font(.system(size: size.height >= 60 ? 24 : 16))
                         .foregroundStyle(Color.accentColor)
+                    // A short panel has no room for both glyph and name.
+                    if size.height >= 46 {
+                        Text(verbatim: screen.name)
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.horizontal, 4)
+                    }
                 }
-            Text(verbatim: screen.name)
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: 150)
-        }
-        .contentShape(Rectangle())
-        .onDrop(of: [.plainText], isTargeted: nil) { providers in
-            handleScreenDrop(providers, to: screen)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Apply to \(screen.name)"))
+            }
+            .contentShape(Rectangle())
+            .onDrop(of: [.plainText], isTargeted: nil) { providers in
+                handleScreenDrop(providers, to: screen)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text("Apply to \(screen.name)"))
     }
 
     /// Small icon shown under the cursor while dragging — deliberately NOT the
@@ -453,7 +462,7 @@ struct WorkshopInstalledView: View {
             .font(.system(size: 22, weight: .semibold))
             .foregroundStyle(DesignTokens.Colors.onAccentFill)
             .frame(width: 54, height: 54)
-            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
     }
 
     private func handleScreenDrop(_ providers: [NSItemProvider], to screen: Screen) -> Bool {

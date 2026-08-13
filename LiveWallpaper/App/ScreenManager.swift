@@ -27,6 +27,9 @@ final class ScreenManager {
     /// Monitor overlay per display, keyed by `displayFingerprint`; write-through
     /// to global settings. Observed so the sidebar page and menu bar track edits.
     var monitorOverlays: [String: MonitorOverlayConfiguration] = SettingsManager.shared.loadMonitorOverlays()
+    /// User-assigned display names keyed by `displayFingerprint`; write-through
+    /// to global settings, re-applied to every rebuilt `Screen` on refresh.
+    var screenNames: [String: String] = SettingsManager.shared.loadScreenNames()
 
     @ObservationIgnored var cleanupTasks: Set<AnyCancellable> = []
     /// One-way application-termination latch.

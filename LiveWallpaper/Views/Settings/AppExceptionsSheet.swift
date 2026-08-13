@@ -14,7 +14,6 @@ struct AppExceptionsSheet: View {
             header
             Divider()
             content
-            Divider()
             footer
         }
         .frame(minWidth: 480, idealWidth: 540, maxWidth: 720, minHeight: 340, idealHeight: 440, maxHeight: 640)
@@ -80,22 +79,19 @@ struct AppExceptionsSheet: View {
     }
 
     private var footer: some View {
-        HStack {
+        SheetFooterBar(
+            primaryTitle: "Done",
+            primaryAction: { dismiss() }
+        ) {
             Button {
                 addApp()
             } label: {
                 Image(systemName: "plus")
             }
+            .adaptiveGlassButton(.regular, shape: .circle)
             .help(Text("Add an application"))
             .accessibilityLabel(Text("Add an application"))
-
-            Spacer()
-
-            Button("Done") { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
         }
-        .padding(12)
     }
 
     private func addApp() {

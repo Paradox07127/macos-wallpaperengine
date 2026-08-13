@@ -2,6 +2,7 @@ import Foundation
 import LiveWallpaperCore
 
 enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
+    case displayDefaultsArrangement
     case displayDefaultsVideo
     case displayDefaultsWeb
     case displayDefaultsScene

@@ -70,7 +70,7 @@ struct WeatherStatusBadge: View {
                     )
                         .font(.caption.weight(.semibold))
                 }
-                .buttonStyle(GlassCapsuleButtonStyle(fontSize: 10, horizontalPadding: 7, verticalPadding: 3))
+                .buttonStyle(GlassCapsuleButtonStyle(preset: .small))
                 .help(Text(
                     "Open System Settings → Privacy & Security → Location Services",
                     comment: "Tooltip for the Open Settings button on the weather badge."

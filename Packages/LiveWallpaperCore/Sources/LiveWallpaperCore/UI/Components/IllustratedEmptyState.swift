@@ -108,15 +108,13 @@ public struct IllustratedEmptyState<Extra: View>: View {
                         Button(role: primary.role, action: primary.action) {
                             Text(primary.title)
                         }
-                        .controlSize(.regular)
-                        .buttonStyle(.borderedProminent)
+                        .adaptiveGlassButton(.prominent, size: .regular)
                     }
                     if let secondary {
                         Button(role: secondary.role, action: secondary.action) {
                             Text(secondary.title)
                         }
-                        .controlSize(.regular)
-                        .buttonStyle(.bordered)
+                        .adaptiveGlassButton(.regular, size: .regular)
                     }
                 }
                 .padding(.top, DesignTokens.Spacing.xs)

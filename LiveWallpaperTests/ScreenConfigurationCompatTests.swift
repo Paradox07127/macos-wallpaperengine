@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import LiveWallpaperCore
 import Testing
@@ -217,5 +218,18 @@ struct ScreenConfigurationCompatTests {
             frameRateLimit: .fps60
         )
         #expect(config.frameRateLimit == .fps60)
+    }
+
+    /// Runs inside the sandboxed test host: proves the App Sandbox does not block
+    /// the per-display UUID that serial-0 panels are keyed by. Headless runners
+    /// have no displays, so this asserts nothing there rather than failing.
+    @MainActor
+    @Test("Every attached display yields a UUID under the App Sandbox")
+    func displayUUIDIsAvailableInsideTheSandbox() {
+        for screen in NSScreen.screens {
+            guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            else { continue }
+            #expect(NSScreen.displayUUID(for: displayID) != nil)
+        }
     }
 }

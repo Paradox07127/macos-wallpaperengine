@@ -230,6 +230,16 @@ final class SettingsManager {
         saveGlobalSettings(settings)
     }
 
+    func loadScreenNames() -> [String: String] {
+        loadGlobalSettings().screenNames
+    }
+
+    func saveScreenNames(_ names: [String: String]) {
+        var settings = loadGlobalSettings()
+        settings.screenNames = names
+        saveGlobalSettings(settings)
+    }
+
     // MARK: - Wallpaper Engine History (managed library, LRU-bounded)
 
     /// Upper bound on the managed library.

@@ -239,8 +239,7 @@ struct WorkshopBrowsePane: View {
                         Text("Previous")
                     }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
                 .disabled(!viewModel.canGoPrevPage)
 
                 HStack(spacing: 4) {
@@ -251,7 +250,9 @@ struct WorkshopBrowsePane: View {
                     TextField("", text: $pageJumpText)
                         .frame(width: 46)
                         .multilineTextAlignment(.center)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .padding(.vertical, 3)
+                        .adaptiveGlassSurface(.capsule, interactive: true)
                         .monospacedDigit()
                         .disabled(viewModel.isPaging || viewModel.isLoading)
                         .onSubmit { jumpToTypedPage() }
@@ -270,8 +271,7 @@ struct WorkshopBrowsePane: View {
                         Image(systemName: "chevron.right")
                     }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .adaptiveGlassButton(.regular, size: .small)
                 .disabled(!viewModel.canGoNextPage)
             }
             .padding(.vertical, DesignTokens.Spacing.lg)
@@ -413,8 +413,7 @@ struct WorkshopBrowsePane: View {
             } label: {
                 Label("Back to Browse", systemImage: "chevron.left")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+            .adaptiveGlassButton(.regular, size: .small)
             .disabled(viewModel.isLoading || viewModel.isPaging)
 
             Spacer(minLength: 0)
@@ -460,8 +459,7 @@ struct WorkshopBrowsePane: View {
                 .accessibilityLabel(Text("Steam is rate-limiting. Retry in \(Self.countdown(rateLimitRemaining))."))
 
                 Button("Retry") { Task { await viewModel.reload() } }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .adaptiveGlassButton(.regular, size: .small)
                     .disabled(rateLimitRemaining > 0)
             }
             .padding(.horizontal, DesignTokens.Spacing.md)

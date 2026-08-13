@@ -52,7 +52,7 @@ struct OnboardingStepWelcome: View {
                 Text("Continue")
                     .frame(minWidth: 140)
             }
-            .buttonStyle(GlassCapsuleButtonStyle(fontSize: 14, horizontalPadding: 24, verticalPadding: 10))
+            .buttonStyle(GlassCapsuleButtonStyle(preset: .large))
             .keyboardShortcut(.defaultAction)
             .accessibilityHint(Text("Proceed to choose your first wallpaper"))
 

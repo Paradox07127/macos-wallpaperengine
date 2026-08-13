@@ -20,12 +20,14 @@ extension WPECacheManagementView {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    Button {
+                    Button(role: .destructive) {
                         confirmPurgeTestArtifacts()
                     } label: {
                         Label("Delete test artifacts", systemImage: "hammer")
                     }
+                    .buttonStyle(.borderless)
                     .controlSize(.small)
+                    .destructiveControlTint()
                     StorageInfoButton {
                         infoNote("Scratch directories created by the test suites under the container's tmp folder. Debug builds only — no shipping code path writes them. Deleting them affects nothing but disk usage.")
                     }
