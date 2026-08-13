@@ -139,6 +139,7 @@ scripts/*
 !scripts/xcode_test_runner_self_test.py
 !scripts/release_contract_check.sh
 !scripts/release-app.sh
+!scripts/dmg_background.swift
 !scripts/check_entitlements.sh
 !scripts/check_entitlements_self_test.sh
 !scripts/entitlement_fingerprint.py

@@ -80,6 +80,8 @@ ARCHIVE_PATH="$OUTPUT_DIR/${ARTIFACT}-${VERSION}.xcarchive"
 APP_PATH="$STAGING_DIR/${APP_NAME}.app"
 DMG_PATH="$OUTPUT_DIR/${ARTIFACT}-${VERSION}.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
+DMG_BG_PATH="$OUTPUT_DIR/dmg-bg-${ARTIFACT}.tiff"
+README_NAME="READ ME — first launch.txt"
 
 if [[ "$PLAN" == "1" ]]; then
   echo "sku=$SKU"
@@ -134,7 +136,7 @@ else
 fi
 
 echo "== [$SKU] Cleaning previous artifacts =="
-rm -rf "$ARCHIVE_PATH" "$STAGING_DIR" "$DMG_PATH" "$SHA_PATH"
+rm -rf "$ARCHIVE_PATH" "$STAGING_DIR" "$DMG_PATH" "$SHA_PATH" "$DMG_BG_PATH"
 
 echo "== [$SKU] Archiving $SCHEME (Release, ad-hoc signed) =="
 xcodebuild archive \
@@ -208,11 +210,16 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-echo "== [$SKU] Adding /Applications symlink and READ-ME =="
-ln -sf /Applications "$STAGING_DIR/Applications"
+echo "== [$SKU] Adding READ-ME =="
+# No /Applications symlink here — create-dmg --app-drop-link adds it inside the
+# image. Staging one too would mount two Applications icons.
 
-cat > "$STAGING_DIR/READ ME — first launch.txt" <<EOF
+# The DMG background can only carry one language (Finder resolves a single
+# backgroundImageAlias), so the English-only image points here for the rest.
+cat > "$STAGING_DIR/$README_NAME" <<EOF
 $DISPLAY_NAME $VERSION
+
+────────────────────────────  English  ────────────────────────────
 
 This build is ad-hoc signed (no paid Apple Developer ID yet). On first
 launch macOS Gatekeeper will block it unless you run, one time, in Terminal:
@@ -220,18 +227,63 @@ launch macOS Gatekeeper will block it unless you run, one time, in Terminal:
     xattr -dr com.apple.quarantine "/Applications/${APP_NAME}.app"
 
 After that, double-click ${APP_NAME}.app like any other app.
+
+This command removes the "downloaded from the internet" quarantine flag that
+macOS puts on the app. It does not change the app itself.
+
+───────────────────────────  简体中文  ────────────────────────────
+
+本版本使用 ad-hoc 签名（尚未购买 Apple Developer ID），macOS 的 Gatekeeper
+会拦截首次启动。请在「终端」中执行一次以下命令：
+
+    xattr -dr com.apple.quarantine "/Applications/${APP_NAME}.app"
+
+之后就可以像普通 App 一样双击打开 ${APP_NAME}.app。
+
+该命令的作用是移除 macOS 给「从互联网下载的文件」加上的隔离标记，
+不会修改 App 本身。
 EOF
 
+echo "== [$SKU] Rendering DMG background =="
+# Import the window/icon geometry from the renderer rather than repeating it, so
+# the background image and Finder's icon placement cannot drift apart. Assign
+# first, then eval: `eval "$(cmd)"` would swallow a failing cmd's exit status.
+DMG_LAYOUT="$(swift "$ROOT/scripts/dmg_background.swift" --print-layout)" || {
+  echo "ERROR: could not read the DMG layout." >&2
+  exit 1
+}
+eval "$DMG_LAYOUT"
+[[ -n "${DMG_WINDOW_W:-}" && -n "${DMG_README_Y:-}" ]] || {
+  echo "ERROR: DMG layout import produced no values." >&2
+  exit 1
+}
+
+swift "$ROOT/scripts/dmg_background.swift" "$DMG_BG_PATH" "$APP_NAME" || {
+  echo "ERROR: could not render the DMG background." >&2
+  exit 1
+}
+
 echo "== [$SKU] Creating DMG =="
-hdiutil create \
-  -volname "$VOLNAME" \
-  -srcfolder "$STAGING_DIR" \
-  -ov \
-  -format UDZO \
-  -fs HFS+ \
-  "$DMG_PATH" \
+if ! command -v create-dmg >/dev/null 2>&1; then
+  echo "ERROR: create-dmg not found. Install it with: brew install create-dmg" >&2
+  exit 1
+fi
+# Geometry comes from DMG_* above; create-dmg defaults to HFS+, matching the
+# filesystem this script used before.
+create-dmg \
+  --volname "$VOLNAME" \
+  --background "$DMG_BG_PATH" \
+  --window-pos 200 120 \
+  --window-size "$DMG_WINDOW_W" "$DMG_WINDOW_H" \
+  --icon-size "$DMG_ICON_SIZE" \
+  --icon "${APP_NAME}.app" "$DMG_APP_X" "$DMG_APP_Y" \
+  --app-drop-link "$DMG_APPS_X" "$DMG_APPS_Y" \
+  --icon "$README_NAME" "$DMG_README_X" "$DMG_README_Y" \
+  --hide-extension "${APP_NAME}.app" \
+  --format UDZO \
+  "$DMG_PATH" "$STAGING_DIR" \
   > "$OUTPUT_DIR/dmg-$ARTIFACT.log" 2>&1 || {
-    echo "ERROR: hdiutil create failed. Tail of log:" >&2
+    echo "ERROR: create-dmg failed. Tail of log:" >&2
     tail -20 "$OUTPUT_DIR/dmg-$ARTIFACT.log" >&2
     exit 1
   }
