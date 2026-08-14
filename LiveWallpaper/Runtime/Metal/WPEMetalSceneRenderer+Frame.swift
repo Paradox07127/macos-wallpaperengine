@@ -277,7 +277,16 @@ extension WPEMetalSceneRenderer {
                 particleParallax: parallaxFrame,
                 textPayloads: textFrame.payloads,
                 frameSubmission: frameSubmission,
-                frameProduction: frameProduction
+                frameProduction: frameProduction,
+                // `presetSnapshot`, not the layered map: the layered map also
+                // carries `propertyOverrides`, which is whatever the user moved
+                // in the settings card. A wallpaper is free to declare its own
+                // property named `volume` or `wec_e` — the repo's own fixture
+                // declares `volume` — and reading the merged map would let an
+                // author's slider drive an engine setting.
+                colorCorrection: WPEEngineColorCorrection.parse(
+                    descriptor.presetSnapshot
+                ) ?? .neutral
             )
         }
         latestFrameProduction = frameProduction

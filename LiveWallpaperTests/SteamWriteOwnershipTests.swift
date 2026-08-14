@@ -81,12 +81,15 @@ struct SteamWriteOwnershipTests {
     }
 
     /// `SteamConnector.swift` is only compiled into the XPC target, so the gate
-    /// wiring is pinned at source level: every entry point that spawns the
-    /// user-selected binary must re-hash it against the app's verified digest
-    /// (`SteamCMDBinaryDigest.mayExecute` — behaviorally tested in
-    /// SteamCMDDoctorLifecycleTests) immediately before the spawn, and the
-    /// probe runner must pass its argv through the allowlist.
-    @Test("Connector spawn paths are digest-gated and probe argv is allowlisted")
+    /// wiring is pinned at source level: every entry point that spawns SteamCMD
+    /// must get the path from `resolvedExecutablePath()` — the connector's own
+    /// candidate list — and the probe runner must pass its argv through the
+    /// allowlist.
+    ///
+    /// This replaced a digest gate that could not hold: the app supplied both
+    /// the path and the digest it was compared against, so naming its own file
+    /// passed. Deriving the path is the gate now.
+    @Test("Connector spawn paths resolve their own binary and probe argv is allowlisted")
     func connectorSpawnPathsAreGated() throws {
         let connector = try Self.source("SteamConnector/SteamConnector.swift")
         for entryPoint in [
@@ -101,24 +104,33 @@ struct SteamWriteOwnershipTests {
                 Comment(rawValue: "\(entryPoint) not found in SteamConnector.swift")
             )
             // Counted, not just present: `installWallpaperEngineAssets` spawns
-            // twice and only the first one was gated, which a `contains` check
-            // reports as covered.
-            // `probeCachedLogin` spawns through a helper, so the floor of one gate
-            // covers it; the per-spawn count catches a second inline spawn sharing
-            // the first one's gate across a long-running run.
+            // twice and once only the first was gated, which a `contains` check
+            // reported as covered.
+            // `probeCachedLogin` spawns through a helper, so the floor of one
+            // resolution covers it; the per-spawn count catches a second inline
+            // spawn riding the first one's path across a long-running run.
             let spawns = body.components(separatedBy: "Self.runSteamCMD(").count - 1
-            let gates = body.components(separatedBy: "SteamCMDBinaryDigest.mayExecute").count - 1
+            let gates = body.components(separatedBy: "Self.resolvedExecutablePath()").count - 1
             #expect(
                 gates >= max(1, spawns),
-                Comment(rawValue: "\(entryPoint): \(spawns) inline spawn(s) but only \(gates) digest gate(s)")
+                Comment(rawValue: "\(entryPoint): \(spawns) inline spawn(s) but only \(gates) resolution(s)")
+            )
+            // The whole point: nothing here may take a path from the caller.
+            // Parameter list only — a body runs to the next non-private `func`,
+            // so it can swallow the private helper that legitimately takes one.
+            let signature = body.prefix { $0 != "{" }
+            #expect(
+                !signature.contains("steamCMDPath"),
+                Comment(rawValue: "\(entryPoint) accepts a caller-supplied binary path")
             )
         }
         let probe = try #require(Self.functionBody(of: "runSteamCMDProbe", in: connector))
         #expect(probe.contains("SteamCMDProbeArgumentPolicy.isAllowed"))
 
-        // The app side must carry the verified digest with each long request.
-        let client = try Self.source("LiveWallpaper/Infrastructure/Workshop/SteamConnectorClient.swift")
-        #expect(client.contains("expectedSHA256: expectedSHA256"))
+        // Control: the one function that legitimately takes a path is the shared
+        // spawn helper every entry point above funnels through.
+        let runner = try #require(Self.functionBody(of: "runSteamCMD", in: connector))
+        #expect(runner.contains("SteamCMDExecutionFence.refusesExecution"))
     }
 
     /// Text from `func <name>(` to the next top-level `func` (or EOF) — enough

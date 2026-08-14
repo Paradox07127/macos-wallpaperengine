@@ -9,6 +9,9 @@ final class WallpaperEngineImportService {
     enum ImportResult: Equatable, Sendable {
         case ready(WallpaperContent, origin: WPEOrigin)
         case unsupported(origin: WPEOrigin)
+        /// A preset item: values for someone else's wallpaper, not a wallpaper.
+        /// Callers register it in the preset library instead of installing it.
+        case workshopPreset(ScenePreset)
         case rejected(reason: String)
     }
 
@@ -32,8 +35,15 @@ final class WallpaperEngineImportService {
 
     func importProject(folder folderURL: URL) async throws -> ImportResult {
         let project = try WallpaperEngineProject.read(from: folderURL)
+
+        // A preset item restyles someone else's wallpaper and has no entry of
+        // its own. Routed here it would fall through to the missing-entry
+        // branch and be reported to the user as an unsupported wallpaper.
+        if let preset = project.scenePreset() {
+            return .workshopPreset(preset)
+        }
         guard let sourceBookmark = makeBookmark(folderURL) else {
-            return .rejected(reason: "Cannot create source folder bookmark")
+            return .rejected(reason: String(localized: "Cannot create source folder bookmark", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         switch project.type {
@@ -73,7 +83,7 @@ final class WallpaperEngineImportService {
     ) async -> ImportResult {
         guard let provider = try? await WPEPackageSceneAssetProvider.open(packageURL: pkgURL),
               provider.exists(atRelativePath: project.entryFile) else {
-            return .rejected(reason: "Missing video entry \(project.entryFile) in package")
+            return .rejected(reason: String(localized: "Missing video entry \(project.entryFile) in package", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         // Provider's staging dir is removed on deinit (after this scope), so
@@ -87,7 +97,7 @@ final class WallpaperEngineImportService {
 
 
         guard let videoBookmark = makeBookmark(pkgURL) else {
-            return .rejected(reason: "Cannot create video package bookmark")
+            return .rejected(reason: String(localized: "Cannot create video package bookmark", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         let origin = makeOrigin(
@@ -109,7 +119,7 @@ final class WallpaperEngineImportService {
     ) async -> ImportResult {
         guard let videoURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: project.entryFile),
               fileManager.fileExists(atPath: videoURL.path) else {
-            return .rejected(reason: "Missing video entry \(project.entryFile)")
+            return .rejected(reason: String(localized: "Missing video entry \(project.entryFile)", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         do {
@@ -119,7 +129,7 @@ final class WallpaperEngineImportService {
         }
 
         guard let videoBookmark = makeBookmark(videoURL) else {
-            return .rejected(reason: "Cannot create video bookmark")
+            return .rejected(reason: String(localized: "Cannot create video bookmark", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         let origin = makeOrigin(
@@ -148,11 +158,11 @@ final class WallpaperEngineImportService {
 
         guard let indexURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: project.entryFile),
               fileManager.fileExists(atPath: indexURL.path) else {
-            return .rejected(reason: "Missing web entry \(project.entryFile)")
+            return .rejected(reason: String(localized: "Missing web entry \(project.entryFile)", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         guard let folderBookmark = makeBookmark(folderURL) else {
-            return .rejected(reason: "Cannot create web folder bookmark")
+            return .rejected(reason: String(localized: "Cannot create web folder bookmark", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         let originKind = WallpaperEngineImportService.originKind(forSourceFolder: folderURL)
@@ -186,7 +196,7 @@ final class WallpaperEngineImportService {
         if let provider = try? await WPEPackageSceneAssetProvider.open(packageURL: pkgURL),
            provider.exists(atRelativePath: project.entryFile) {
             guard let folderBookmark = makeBookmark(folderURL) else {
-                return .rejected(reason: "Cannot create web folder bookmark")
+                return .rejected(reason: String(localized: "Cannot create web folder bookmark", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
             }
             let originKind = WallpaperEngineImportService.originKind(forSourceFolder: folderURL)
             let origin = makeOrigin(
@@ -209,7 +219,7 @@ final class WallpaperEngineImportService {
             return .ready(content, origin: origin)
         }
 
-        return .rejected(reason: "Missing web entry \(project.entryFile) in package")
+        return .rejected(reason: String(localized: "Missing web entry \(project.entryFile) in package", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
     }
 
 
@@ -272,7 +282,7 @@ final class WallpaperEngineImportService {
             ) {
                 return packageResult
             }
-            return .rejected(reason: "Packaged scene \(project.entryFile) could not be read from the package")
+            return .rejected(reason: String(localized: "Packaged scene \(project.entryFile) could not be read from the package", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         guard let entryURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: project.entryFile),
@@ -294,7 +304,7 @@ final class WallpaperEngineImportService {
         ) {
             return directoryResult
         }
-        return .rejected(reason: "Scene \(project.entryFile) could not be read from the source folder")
+        return .rejected(reason: String(localized: "Scene \(project.entryFile) could not be read from the source folder", comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
     }
 
     /// Returns `nil` when the package can't be opened/parsed for in-place use,

@@ -11,12 +11,19 @@ final class WPEImportCoordinator {
     enum PreparationOutcome: Sendable, Equatable {
         case ready(content: WallpaperContent, origin: WPEOrigin)
         case unsupported(origin: WPEOrigin)
+        /// A Workshop preset item: registered into the library, nothing to show
+        /// on a screen. Success — must not travel down the rejection path.
+        case registeredPreset(name: String)
         case rejected(reason: String)
     }
 
     enum ApplyOutcome: Sendable, Equatable {
         case applied(origin: WPEOrigin)
         case unsupported(origin: WPEOrigin)
+        /// The folder was a preset, not a wallpaper: it joined the library's
+        /// preset menu and no screen changed. Callers that gate on "a wallpaper
+        /// is now set" must not treat this as `applied`.
+        case registeredPreset(name: String)
         case rejected(reason: String)
     }
 
@@ -101,6 +108,12 @@ final class WPEImportCoordinator {
                 return .ready(content: content, origin: origin)
             case .unsupported(let origin):
                 return .unsupported(origin: origin)
+            case .workshopPreset(let preset):
+                // Not applicable to a screen: a preset has no wallpaper of its
+                // own. Registering it is the whole action, and the user aimed a
+                // picker or a drop at it, so it lifts any delete tombstone.
+                await SettingsManager.shared.registerScenePreset(preset, clearsDeleteTombstone: true)
+                return .registeredPreset(name: preset.name)
             case .rejected(let reason):
                 return .rejected(reason: reason)
             }
@@ -154,6 +167,10 @@ final class WPEImportCoordinator {
             )
             tracker.clearError(for: screen.id)
             return .unsupported(origin: origin)
+
+        case .registeredPreset(let name):
+            tracker.clearError(for: screen.id)
+            return .registeredPreset(name: name)
 
         case .rejected(let reason):
             tracker.recordError(.wpePackageInvalid(reason), for: screen.id)

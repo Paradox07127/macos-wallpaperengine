@@ -181,10 +181,10 @@ struct MenuBarContent: View {
     /// Thermal pressure has no percent — short word; over-wide localized values truncate.
     private func thermalShortLabel(for state: ProcessInfo.ThermalState) -> String {
         switch state {
-        case .nominal:  return String(localized: "OK", defaultValue: "OK", comment: "Menu bar THERM status: thermal pressure nominal. Keep short — ideally ≤4 Latin characters or equivalent width.")
-        case .fair:     return String(localized: "Warm", defaultValue: "Warm", comment: "Menu bar THERM status: thermal pressure fair. Keep short — ideally ≤4 Latin characters or equivalent width.")
-        case .serious:  return String(localized: "Hot", defaultValue: "Hot", comment: "Menu bar THERM status: thermal pressure serious. Keep short — ideally ≤4 Latin characters or equivalent width.")
-        case .critical: return String(localized: "Crit", defaultValue: "Crit", comment: "Menu bar THERM status: thermal pressure critical. Keep short — ideally ≤4 Latin characters or equivalent width.")
+        case .nominal:  return AppLanguagePreference.localizedString("OK", defaultValue: "OK")
+        case .fair:     return AppLanguagePreference.localizedString("Warm", defaultValue: "Warm")
+        case .serious:  return AppLanguagePreference.localizedString("Hot", defaultValue: "Hot")
+        case .critical: return AppLanguagePreference.localizedString("Crit", defaultValue: "Crit")
         @unknown default: return "—"
         }
     }
@@ -282,7 +282,9 @@ struct MenuBarContent: View {
         let source = displaySource(for: screen, summary: summary)
 
         guard let typeText = wallpaperTypeText(for: summary.wallpaperType) else {
-            return AttributedString(source.isEmpty ? "Not configured" : source)
+            return AttributedString(source.isEmpty
+                ? AppLanguagePreference.localizedString("Not configured")
+                : source)
         }
 
         var attributed = AttributedString(typeText)
@@ -310,7 +312,9 @@ struct MenuBarContent: View {
         let source = displaySource(for: screen, summary: summary)
 
         guard let typeText = wallpaperTypeText(for: summary.wallpaperType) else {
-            return source.isEmpty ? "Not configured" : source
+            return source.isEmpty
+                ? AppLanguagePreference.localizedString("Not configured")
+                : source
         }
 
         guard !source.isEmpty else { return typeText }
@@ -338,11 +342,11 @@ struct MenuBarContent: View {
     private func wallpaperTypeText(for type: WallpaperType?) -> String? {
         switch type {
         case .video:
-            return "Video"
+            return AppLanguagePreference.localizedString("Video")
         case .html:
-            return "Web"
+            return AppLanguagePreference.localizedString("Web")
         case .scene:
-            return "Scene"
+            return AppLanguagePreference.localizedString("Scene")
         case nil:
             return nil
         }
@@ -498,15 +502,15 @@ private enum DisplayVisualState: Equatable {
     var accessibilityLabel: String {
         switch self {
         case .active:
-            return "active"
+            return AppLanguagePreference.localizedString("active")
         case .paused:
-            return "paused"
+            return AppLanguagePreference.localizedString("paused")
         case .off:
-            return "off"
+            return AppLanguagePreference.localizedString("off")
         case .error:
-            return "error"
+            return AppLanguagePreference.localizedString("error")
         case .inactive:
-            return "idle"
+            return AppLanguagePreference.localizedString("idle")
         }
     }
 }

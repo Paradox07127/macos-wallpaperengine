@@ -15,8 +15,25 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
     public let preflightTier: WPEScenePreflightTier?
     /// Disk as `[String]` so unknown future flags round-trip without failing decode.
     public let preflightFeatureFlags: [WPESceneFeatureFlag]
-    /// User `project.json` property overrides; empty until the inspector is used.
-    public let propertyOverrides: [String: WallpaperEngineProjectPropertyValue]
+    /// The user's own increment, applied *on top of* `presetID`'s values —
+    /// not the full property set. Empty until the inspector is used.
+    public private(set) var propertyOverrides: [String: WallpaperEngineProjectPropertyValue]
+    /// `ScenePreset.id` of the applied preset, if any. Stored as a pointer
+    /// rather than baked into `propertyOverrides` so that dropping the
+    /// increment resets to the preset instead of to the scene defaults.
+    public private(set) var presetID: String?
+    /// The applied preset's values, carried alongside the pointer.
+    ///
+    /// Denormalised on purpose. The renderer receives a descriptor and nothing
+    /// else — it has no route to `GlobalSettings.scenePresets` — so a pointer
+    /// alone would mean the preset silently did nothing at render time. Keeping
+    /// it a separate layer from `propertyOverrides` is what preserves "drop the
+    /// increment, keep the preset".
+    ///
+    /// `presetID` stays the authority for library operations (rename, delete,
+    /// re-apply); `refreshingPresetSnapshot(in:)` re-syncs this copy whenever
+    /// the library is at hand.
+    public private(set) var presetSnapshot: [String: WallpaperEngineProjectPropertyValue]
 
     public init(
         workshopID: String,
@@ -27,7 +44,9 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         dependencyWorkshopIDs: [String] = [],
         preflightTier: WPEScenePreflightTier? = nil,
         preflightFeatureFlags: [WPESceneFeatureFlag] = [],
-        propertyOverrides: [String: WallpaperEngineProjectPropertyValue] = [:]
+        propertyOverrides: [String: WallpaperEngineProjectPropertyValue] = [:],
+        presetID: String? = nil,
+        presetSnapshot: [String: WallpaperEngineProjectPropertyValue] = [:]
     ) {
         self.workshopID = workshopID
         self.cacheRelativePath = cacheRelativePath
@@ -38,22 +57,87 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         self.preflightTier = preflightTier
         self.preflightFeatureFlags = preflightFeatureFlags
         self.propertyOverrides = propertyOverrides
+        self.presetID = presetID
+        self.presetSnapshot = presetSnapshot
     }
 
     public func withPropertyOverrides(
         _ overrides: [String: WallpaperEngineProjectPropertyValue]
     ) -> SceneDescriptor {
-        SceneDescriptor(
-            workshopID: workshopID,
-            cacheRelativePath: cacheRelativePath,
-            entryFile: entryFile,
-            capabilityTier: capabilityTier,
-            assetStorage: assetStorage,
-            dependencyWorkshopIDs: dependencyWorkshopIDs,
-            preflightTier: preflightTier,
-            preflightFeatureFlags: preflightFeatureFlags,
-            propertyOverrides: overrides
-        )
+        var copy = self
+        copy.propertyOverrides = overrides
+        return copy
+    }
+
+    /// Carries an existing preset layer (pointer + values) onto this descriptor
+    /// without touching the increment. Used by restore paths that move both
+    /// layers as a unit; use `applyingPreset(_:)` when the user picks a preset.
+    public func withPresetLayer(
+        id: String?,
+        snapshot: [String: WallpaperEngineProjectPropertyValue]
+    ) -> SceneDescriptor {
+        var copy = self
+        copy.presetID = id
+        copy.presetSnapshot = id == nil ? [:] : snapshot
+        return copy
+    }
+
+    /// Switching preset clears the increment: the old increment was authored
+    /// against the previous preset's values, so carrying it over would silently
+    /// re-apply edits the user made to a different look.
+    ///
+    /// Re-applying the preset already in place is a no-op, not a reset — a user
+    /// clicking the selected preset again has not asked to lose their edits.
+    /// A preset belonging to another wallpaper is refused outright.
+    public func applyingPreset(_ preset: ScenePreset?) -> SceneDescriptor {
+        if let preset {
+            guard preset.baseWorkshopID == workshopID else { return self }
+            // Same preset re-applied: keep the user's edits, but still take the
+            // values — the preset itself may have been edited since, and this is
+            // the one path that would otherwise leave a stale snapshot forever.
+            if preset.id == presetID {
+                return preset.values == presetSnapshot
+                    ? self
+                    : withPresetLayer(id: preset.id, snapshot: preset.values)
+            }
+        }
+        return withPresetLayer(id: preset?.id, snapshot: preset?.values ?? [:])
+            .withPropertyOverrides([:])
+    }
+
+    /// The preset this descriptor points at, if the library still holds one that
+    /// belongs to this scene.
+    ///
+    /// Two ways it can come back nil with a non-nil `presetID`: the preset was
+    /// deleted, or its `baseWorkshopID` names a different wallpaper. Both must
+    /// resolve to "no preset" rather than to someone else's values — a stale id
+    /// reused by a later preset would otherwise silently repaint the scene.
+    public func resolvedPreset(in library: [String: ScenePreset]) -> ScenePreset? {
+        guard let presetID, let preset = library[presetID] else { return nil }
+        guard preset.id == presetID, preset.baseWorkshopID == workshopID else { return nil }
+        return preset
+    }
+
+    /// Re-syncs the carried values against the library, and drops the whole
+    /// layer when the preset no longer resolves. Call wherever the library is
+    /// reachable — the snapshot is a cache, not a second source of truth.
+    public func refreshingPresetSnapshot(in library: [String: ScenePreset]) -> SceneDescriptor {
+        guard presetID != nil else { return self }
+        guard let preset = resolvedPreset(in: library) else {
+            return withPresetLayer(id: nil, snapshot: [:])
+        }
+        guard preset.values != presetSnapshot else { return self }
+        return withPresetLayer(id: preset.id, snapshot: preset.values)
+    }
+
+    /// Values to hand the renderer, before the property schema folds in the
+    /// scene's own defaults for keys nobody touched.
+    ///
+    /// This is what every render-path caller must use instead of reading
+    /// `propertyOverrides` directly: the increment alone is only half the look.
+    public func layeredPropertyValues() -> [String: WallpaperEngineProjectPropertyValue] {
+        guard presetID != nil, !presetSnapshot.isEmpty else { return propertyOverrides }
+        return presetSnapshot.merging(propertyOverrides) { _, userEdit in userEdit }
     }
 
     /// Same workshop item + entry (ignores overrides/preflight) for re-pick restore.
@@ -73,6 +157,8 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         case preflightTier
         case preflightFeatureFlags
         case propertyOverrides
+        case presetID
+        case presetSnapshot
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,6 +176,11 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
             [String: WallpaperEngineProjectPropertyValue].self,
             forKey: .propertyOverrides
         )) ?? [:]
+        presetID = try? c.decodeIfPresent(String.self, forKey: .presetID)
+        presetSnapshot = (try? c.decodeIfPresent(
+            [String: WallpaperEngineProjectPropertyValue].self,
+            forKey: .presetSnapshot
+        )) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -106,6 +197,10 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         try c.encode(preflightFeatureFlags.map(\.rawValue), forKey: .preflightFeatureFlags)
         if !propertyOverrides.isEmpty {
             try c.encode(propertyOverrides, forKey: .propertyOverrides)
+        }
+        try c.encodeIfPresent(presetID, forKey: .presetID)
+        if !presetSnapshot.isEmpty {
+            try c.encode(presetSnapshot, forKey: .presetSnapshot)
         }
     }
 }

@@ -288,15 +288,36 @@ struct OnboardingPickerView: View {
     }
 
     #if !LITE_BUILD
+    /// Finishing onboarding is a claim that a wallpaper is now on screen, so it
+    /// waits for an outcome that put one there. A Workshop *preset* folder is
+    /// the case that used to slip through: it joins the preset menu of a
+    /// wallpaper the user may not even own yet, and nothing gets displayed.
     private func applyScene(_ folderURL: URL, to targets: [Screen]) {
         let didStartScope = folderURL.startAccessingSecurityScopedResource()
         isImportingScene = true
         Task { @MainActor in
             defer { if didStartScope { folderURL.stopAccessingSecurityScopedResource() } }
+            var didConfigureAny = false
+            var presetName: String?
             for screen in targets {
-                await screenManager.importWallpaperEngineProject(at: folderURL, for: screen)
+                switch await screenManager.importWallpaperEngineProject(at: folderURL, for: screen) {
+                case .applied, .unsupported:
+                    didConfigureAny = true
+                case .registeredPreset(let name):
+                    presetName = name
+                case .rejected:
+                    break
+                }
             }
             isImportingScene = false
+            guard didConfigureAny else {
+                if let presetName {
+                    fail("“\(presetName)” is a preset, not a wallpaper. It was added to your presets — choose a wallpaper to continue.")
+                } else {
+                    fail("Couldn't set up that Wallpaper Engine project. Try another folder.")
+                }
+                return
+            }
             didConfigure(targets.first?.id)
         }
     }

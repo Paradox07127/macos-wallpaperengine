@@ -242,8 +242,12 @@
         /// The replace-while-queued window, run against a file that really
         /// changes. The gate moved into the connector with the spawn; this drives
         /// the same function the connector calls immediately before `Process.run`.
-        @Test("A binary replaced after Doctor trusted it is refused execution")
-        func binaryReplacedAfterTrustIsRefused() throws {
+        /// The digest gate this used to gate execution with is gone: the app
+        /// supplied both the path and the expected digest, so it proved only
+        /// that the app agreed with itself. Hashing survives as the Doctor's
+        /// self-update detector, and that is what is pinned here.
+        @Test("A replaced binary reads as a different digest")
+        func replacedBinaryHashesDifferently() throws {
             let fm = FileManager.default
             let root = temporaryRoot("binary-replacement")
             defer { try? fm.removeItem(at: root) }
@@ -253,14 +257,13 @@
 
             let path = binary.resolvingSymlinksInPath().path(percentEncoded: false)
             let trusted = try #require(SteamCMDBinaryDigest.sha256(ofFileAt: path))
-            #expect(SteamCMDBinaryDigest.mayExecute(path: path, expectedSHA256: trusted))
 
             try Data("attacker-version".utf8).write(to: binary, options: .atomic)
-            #expect(!SteamCMDBinaryDigest.mayExecute(path: path, expectedSHA256: trusted))
+            #expect(SteamCMDBinaryDigest.sha256(ofFileAt: path) != trusted)
 
-            // A vanished binary is refused, not treated as unchanged.
+            // A vanished binary reads as nil, not as unchanged.
             try fm.removeItem(at: binary)
-            #expect(!SteamCMDBinaryDigest.mayExecute(path: path, expectedSHA256: trusted))
+            #expect(SteamCMDBinaryDigest.sha256(ofFileAt: path) == nil)
         }
 
         @Test("The probe argv gate passes exactly the shapes the Doctor sends")

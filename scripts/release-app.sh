@@ -10,6 +10,10 @@
 #   scripts/release-app.sh --sku pro  --version 0.2.0 --dry-run
 #   scripts/release-app.sh --sku pro  --version 0.2.0 --plan
 #   scripts/release-app.sh --sku pro  --version 0.2.0 --skip-checks
+#   scripts/release-app.sh --sku lite --version 0.6.0-beta.1
+#
+# A --version with a pre-release suffix must match MARKETING_VERSION exactly, names its own
+# artifacts, and has to be published with `gh release create --prerelease`.
 #
 # Output (per SKU product name):
 #   build/release/<Product>-X.Y.Z.dmg
@@ -33,7 +37,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run)     DRY_RUN=1; shift ;;
     --plan)        PLAN=1; shift ;;
     --skip-checks) SKIP_CHECKS_FLAG=1; shift ;;
-    -h|--help)     sed -n '3,17p' "$0"; exit 0 ;;
+    -h|--help)     sed -n '3,21p' "$0"; exit 0 ;;
     *) echo "ERROR: unknown argument '$1'" >&2; exit 64 ;;
   esac
 done
@@ -42,10 +46,14 @@ if [[ -z "$VERSION" ]]; then
   echo "ERROR: --version is required (e.g. --version 0.2.0)" >&2
   exit 64
 fi
-if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "ERROR: --version must be major.minor.patch (got: $VERSION)" >&2
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "ERROR: --version must be major.minor.patch[-prerelease] (got: $VERSION)" >&2
   exit 64
 fi
+# A pre-release ships as its own artifact name and tag so it can never be mistaken for,
+# or overwrite, the final build of the same version.
+PRERELEASE=0
+[[ "$VERSION" == *-* ]] && PRERELEASE=1
 
 case "$SKU" in
   lite)
@@ -325,5 +333,10 @@ echo "============================================================"
 echo "  DMG:      $DMG_PATH"
 echo "  Size:     ${DMG_SIZE_MB} MB"
 echo "  SHA-256:  $SHA_PATH"
-echo "  Tag:      loomscreen-v${VERSION} (unified release; attach both SKUs)"
+if [[ "$PRERELEASE" == "1" ]]; then
+  echo "  Tag:      loomscreen-v${VERSION} — publish with 'gh release create --prerelease'"
+  echo "            (the in-app update check skips GitHub pre-releases)"
+else
+  echo "  Tag:      loomscreen-v${VERSION} (unified release; attach both SKUs)"
+fi
 echo "============================================================"

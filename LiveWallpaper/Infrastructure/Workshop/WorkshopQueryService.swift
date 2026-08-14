@@ -83,6 +83,11 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
     /// browse. Sort / search / tag filters don't apply in this mode (GetUserFiles
     /// ignores them); only `page` + `numperpage` matter.
     let creatorSteamID: String?
+    /// When set, restricts the query to published files that reference this
+    /// item. Steam's own wording for `child_publishedfileid` is "Find all items
+    /// that reference the given item", which is how a wallpaper's presets are
+    /// found: a preset declares the wallpaper it restyles as its dependency.
+    let childPublishedFileID: UInt64?
 
     init(
         sort: WorkshopSortMode,
@@ -98,7 +103,8 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         returnTags: Bool = true,
         returnMetadata: Bool = true,
         returnShortDescription: Bool = true,
-        creatorSteamID: String? = nil
+        creatorSteamID: String? = nil,
+        childPublishedFileID: UInt64? = nil
     ) {
         let normalizedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveSort: WorkshopSortMode = normalizedSearch.isEmpty ? sort : .search
@@ -121,6 +127,7 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         self.creatorSteamID = creatorSteamID?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nilIfEmptyWorkshopQuery
+        self.childPublishedFileID = childPublishedFileID
     }
 
     private static func canonicalLanguage(_ language: String?) -> String? {
@@ -158,6 +165,11 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         ]
         if !searchText.isEmpty {
             queryItems.append(URLQueryItem(name: "search_text", value: searchText))
+        }
+        if let childPublishedFileID {
+            queryItems.append(URLQueryItem(
+                name: "child_publishedfileid", value: String(childPublishedFileID)
+            ))
         }
         if let language {
             queryItems.append(URLQueryItem(name: "language", value: language))
@@ -240,7 +252,8 @@ enum WorkshopQueryCacheKey {
             returnTags: request.returnTags,
             returnMetadata: request.returnMetadata,
             returnShortDescription: request.returnShortDescription,
-            creatorSteamID: request.creatorSteamID
+            creatorSteamID: request.creatorSteamID,
+            childPublishedFileID: request.childPublishedFileID
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -267,6 +280,7 @@ enum WorkshopQueryCacheKey {
         let returnMetadata: Bool
         let returnShortDescription: Bool
         let creatorSteamID: String?
+        let childPublishedFileID: UInt64?
 
         private enum CodingKeys: String, CodingKey {
             case appid
@@ -284,6 +298,7 @@ enum WorkshopQueryCacheKey {
             case returnMetadata = "return_metadata"
             case returnShortDescription = "return_short_description"
             case creatorSteamID = "creator_steamid"
+            case childPublishedFileID = "child_publishedfileid"
         }
     }
 }

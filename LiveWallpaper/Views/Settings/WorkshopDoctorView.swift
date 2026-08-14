@@ -11,6 +11,13 @@ struct WorkshopDoctorView: View {
     @State private var showsAdvancedDiagnostics = false
     @State private var isDetectingBinary = false
     @State private var discoveredAccounts: [SteamAccountSummary] = []
+    @State private var managedInstaller = SteamCMDManagedInstallCoordinator()
+    @State private var showingInstallConsent = false
+    /// The window between "the connector reported installed" and "we confirmed
+    /// it launches". Without it the row falls back to `binaryDisplayPath`, which
+    /// is still nil, and reads "Not selected" moments after a successful install.
+    @State private var isVerifyingInstall = false
+    @State private var installTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +44,9 @@ struct WorkshopDoctorView: View {
             DiagnosticExportToast(isPresented: $showingToast)
                 .padding(.bottom, DesignTokens.Spacing.xl)
                 .allowsHitTesting(false)
+        }
+        .sheet(isPresented: $showingInstallConsent) {
+            SteamCMDManagedInstallSheet(onConfirm: runManagedInstall)
         }
         .task {
             await service.autoConfigureIfNeeded()
@@ -93,22 +103,11 @@ struct WorkshopDoctorView: View {
             WorkshopSetupRow(
                 icon: "terminal",
                 title: "SteamCMD",
-                detail: service.binaryDisplayPath ?? String(localized: "Not selected", comment: "SteamCMD step detail when no binary is bound."),
+                detail: binaryDetail,
                 state: binaryState,
-                info: "Valve's command-line downloader. Auto-detect finds a Homebrew or tarball install; otherwise pick the executable or its steamcmd.sh wrapper."
+                info: "Valve's command-line downloader. Loomscreen can install it for you, or find an existing Homebrew or tarball install; otherwise pick the executable or its steamcmd.sh wrapper."
             ) {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    if isDetectingBinary { ProgressView().controlSize(.small) }
-                    Menu {
-                        Button("Locate automatically") { autoDetectBinary() }
-                        Button("Choose…") { pickBinary() }
-                    } label: {
-                        Text(isBinaryReady ? "Change" : "Set up", bundle: .main)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .disabled(isDetectingBinary)
-                }
+                binaryControl
             }
 
             Divider()
@@ -132,6 +131,86 @@ struct WorkshopDoctorView: View {
                     .accessibilityLabel(Text("Setup error: \(setupError)"))
             }
         }
+    }
+
+    /// Three states, because the right action differs completely between them.
+    /// Most Macs have no SteamCMD, so for them the managed install is the whole
+    /// point of this row and belongs in a primary button, not behind a menu
+    /// labelled "Set up".
+    @ViewBuilder
+    private var binaryControl: some View {
+        if isBinaryBusy {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                ProgressView().controlSize(.small)
+                if isCancellableInstall {
+                    Button("Cancel") { cancelManagedInstall() }
+                        .adaptiveGlassButton(.regular, size: .small)
+                }
+            }
+        } else if isBinaryReady {
+            Menu {
+                binarySourceItems
+            } label: {
+                Text("Change", bundle: .main)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        } else {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Button("Install SteamCMD…") { showingInstallConsent = true }
+                    .adaptiveGlassButton(.prominent, size: .small)
+
+                Menu {
+                    binarySourceItems
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(Text("Other SteamCMD options"))
+            }
+        }
+    }
+
+    /// The defaults record is not the only way a managed install can be the one
+    /// in use: auto-detect deliberately rebinds a copy the connector rediscovers
+    /// even when the record is gone (cleared defaults, a restored container).
+    /// Keying the Remove action on the record alone left that copy sitting
+    /// outside the container with no way to remove it — while the consent sheet
+    /// had promised it could be removed from this screen.
+    private var hasManagedInstall: Bool {
+        if managedInstaller.managedInstall != nil { return true }
+        guard let bound = service.binaryPath else { return false }
+        return bound.hasPrefix(Self.managedInstallRoot + "/")
+    }
+
+    private static var managedInstallRoot: String {
+        SteamCMDManagedInstaller.canonicalInstallRoot(
+            home: AppleAerialsLibrary.realHomeDirectory()
+        ).path(percentEncoded: false)
+    }
+
+    @ViewBuilder
+    private var binarySourceItems: some View {
+        if !isBinaryReady {
+            Button("Install SteamCMD…") { showingInstallConsent = true }
+        }
+        Button("Locate automatically") { autoDetectBinary() }
+        if hasManagedInstall {
+            Divider()
+            Button("Remove the copy Loomscreen installed", role: .destructive) {
+                removeManagedInstall()
+            }
+        }
+    }
+
+    /// Only the download is genuinely interruptible. Once the archive is with
+    /// the connector it is unpacking, verifying and running `+quit` in a
+    /// process we cannot interrupt, and a Cancel button there would either lie
+    /// or leave a half-written payload behind.
+    private var isCancellableInstall: Bool {
+        managedInstaller.status == .downloading
     }
 
     /// Accounts from Steam `config.vdf` via the connector (sandbox cannot read that file).
@@ -220,31 +299,84 @@ struct WorkshopDoctorView: View {
         }
     }
 
-    private func pickBinary() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.treatsFilePackagesAsDirectories = false
-        panel.message = String(localized: "Pick the SteamCMD executable or its steamcmd.sh wrapper.", comment: "Open-panel message when choosing the SteamCMD binary in the Workshop diagnostics sheet.")
-        panel.prompt = String(localized: "Use Binary", comment: "Open-panel confirm button when choosing the SteamCMD binary.")
-        if let candidate = SteamCMDBinaryResolver.autoDetectCandidates().first {
-            panel.directoryURL = candidate.deletingLastPathComponent()
-        }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        setupError = nil
-        Task {
-            do { try await service.bindBinary(url) } catch { await MainActor.run { setupError = error.localizedDescription } }
-        }
-    }
-
+    /// Nothing to fall back to when detection finds nothing: pointing us at a
+    /// file by hand is no longer an option, because a path the app names is one
+    /// it can also rewrite between our checks and the connector's spawn. The
+    /// remaining answer is to let Loomscreen install its own copy.
     private func autoDetectBinary() {
         setupError = nil
         isDetectingBinary = true
         Task {
             let found = await service.autoDetectBinary()
             isDetectingBinary = false
-            if !found { pickBinary() }
+            if !found {
+                setupError = String(
+                    localized: "No SteamCMD found in the usual places. Use Install SteamCMD… to let Loomscreen set up its own copy.",
+                    comment: "Workshop setup error when auto-detection finds no SteamCMD and manual selection is not offered."
+                )
+            }
+        }
+    }
+
+    /// Installs, then binds through the normal auto-detect path rather than the
+    /// returned path: binding is what makes the rest of the Doctor consider
+    /// SteamCMD set up, and auto-detect asks the connector to launch the binary
+    /// instead of inferring from the install having reported success.
+    private func cancelManagedInstall() {
+        installTask?.cancel()
+        installTask = nil
+        managedInstaller.cancelInstall()
+        setupError = nil
+    }
+
+    private func runManagedInstall() {
+        setupError = nil
+        installTask = Task {
+            switch await managedInstaller.install() {
+            case .installed:
+                isVerifyingInstall = true
+                let bound = await service.autoDetectBinary()
+                isVerifyingInstall = false
+                if !bound {
+                    setupError = String(
+                        localized: "SteamCMD was installed but could not be started.",
+                        comment: "Workshop setup error after a managed SteamCMD install that will not launch."
+                    )
+                }
+            case .failed(let reason):
+                setupError = reason
+            case .idle, .downloading, .installing, .removing:
+                // Either a second install was already running and owns the
+                // outcome, or this one was cancelled — neither is an error.
+                break
+            }
+            installTask = nil
+        }
+    }
+
+    private func removeManagedInstall() {
+        setupError = nil
+        let installRoot = Self.managedInstallRoot
+        Task {
+            let removed = await managedInstaller.forget()
+            guard removed else {
+                // The files are still there and still work. Unbinding here would
+                // take a working SteamCMD away from the user as the visible
+                // result of a delete that did not happen. `forget()` keeps the
+                // install record on failure, so the Remove command stays in the
+                // menu and this is retryable.
+                setupError = String(
+                    localized: "Couldn't remove the SteamCMD copy Loomscreen installed.",
+                    comment: "Workshop setup error when removing a managed SteamCMD install fails."
+                )
+                return
+            }
+            // The bound path is the Mach-O inside the payload, not the root, so
+            // compare by containment.
+            if service.binaryPath?.hasPrefix(installRoot + "/") == true {
+                service.unbindBinary()
+                await service.autoDetectBinary()
+            }
         }
     }
 
@@ -313,9 +445,42 @@ struct WorkshopDoctorView: View {
         service.hasBoundBinary && service.isGreen(.binaryIdentity)
     }
 
+    /// Both the download and the connector-side unpack can take a while, so the
+    /// row reports which one is running rather than only spinning.
+    private var binaryDetail: String {
+        switch managedInstaller.status {
+        case .downloading:
+            return String(localized: "Downloading SteamCMD…", comment: "SteamCMD step detail while the bootstrap archive downloads.")
+        case .installing:
+            return String(localized: "Setting up SteamCMD…", comment: "SteamCMD step detail while the connector unpacks and verifies the install.")
+        case .removing:
+            return String(localized: "Removing SteamCMD…", comment: "SteamCMD step detail while the connector deletes the managed install.")
+        case .idle, .installed, .failed:
+            if isVerifyingInstall {
+                return String(
+                    localized: "Checking that SteamCMD runs…",
+                    comment: "SteamCMD step detail while the connector launches the freshly installed binary to confirm it works."
+                )
+            }
+            return service.binaryDisplayPath
+                ?? String(localized: "Not selected", comment: "SteamCMD step detail when no binary is bound.")
+        }
+    }
+
+    private var isBinaryBusy: Bool {
+        if isDetectingBinary || isVerifyingInstall { return true }
+        switch managedInstaller.status {
+        // Removing counts as busy: the menu that starts an install is disabled
+        // off this, and the coordinator now refuses one mid-removal anyway —
+        // offering a command that will be declined is worse than greying it out.
+        case .downloading, .installing, .removing: return true
+        case .idle, .installed, .failed: return false
+        }
+    }
+
     private var binaryState: WorkshopStepState {
+        if isBinaryBusy { return .working }
         guard service.hasBoundBinary else { return .notStarted }
-        if isDetectingBinary { return .working }
         switch service.probes[.binaryIdentity]?.status {
         case .green: return .ready
         case .red: return .attention
@@ -487,7 +652,7 @@ private struct ProbeRow: View {
                 .foregroundStyle(DesignTokens.Colors.Status.danger)
                 .accessibilityLabel(Text("Failed"))
         case .running:
-            ProgressView().controlSize(.small).accessibilityLabel("Running")
+            ProgressView().controlSize(.small).accessibilityLabel(Text("Running"))
         case .notRun:
             Image(systemName: "circle.dotted")
                 .font(.system(size: 17))
@@ -542,8 +707,12 @@ private struct ProbeRow: View {
     @ViewBuilder private var actionButtons: some View {
         switch (report.id, report.status) {
         case (.binaryIdentity, .red):
-            Button("Re-select SteamCMD") { pickBinary() }
-                .adaptiveGlassButton(.prominent, size: .small)
+            // Re-detect rather than re-select: the fix for a bad identity is a
+            // binary from a source we trust, not another path typed at us.
+            Button("Locate automatically") {
+                Task { await service.autoDetectBinary() }
+            }
+            .adaptiveGlassButton(.prominent, size: .small)
 
         case (.gatekeeperQuarantine, .yellow), (.gatekeeperQuarantine, .red):
             showCommandButton()
@@ -577,18 +746,6 @@ private struct ProbeRow: View {
         .help(Text("Re-run this probe"))
     }
 
-    private func pickBinary() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        if let candidate = SteamCMDBinaryResolver.autoDetectCandidates().first {
-            panel.directoryURL = candidate.deletingLastPathComponent()
-        }
-        if panel.runModal() == .OK, let url = panel.url {
-            Task { try? await service.bindBinary(url) }
-        }
-    }
 }
 
 // MARK: - Helpers

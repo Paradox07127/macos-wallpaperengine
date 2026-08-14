@@ -290,16 +290,39 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         activeWallpaper = .html(source: source, config: config)
     }
 
+    /// Re-syncs any carried preset values against the library, and drops the
+    /// layer when the preset is gone.
+    ///
+    /// `presetSnapshot` is a cache that rides along with the descriptor because
+    /// the renderer never sees `GlobalSettings`. Without a call to this on the
+    /// load path, editing or deleting a preset would leave every screen still
+    /// rendering the values it captured.
+    public func refreshingScenePresets(in library: [String: ScenePreset]) -> ScreenConfiguration {
+        var refreshed = self
+        if case .scene(let descriptor) = activeWallpaper {
+            refreshed.activeWallpaper = .scene(descriptor.refreshingPresetSnapshot(in: library))
+        }
+        if let saved = savedSceneDescriptor {
+            refreshed.savedSceneDescriptor = saved.refreshingPresetSnapshot(in: library)
+        }
+        return refreshed
+    }
+
     public mutating func setSceneWallpaper(_ descriptor: SceneDescriptor, origin: WPEOrigin?) {
         preserveCurrentVideoBookmarkIfNeeded()
         preserveCurrentHTMLIfNeeded()
-        // Same-scene re-pick after type switch restores last propertyOverrides.
+        // Same-scene re-pick after type switch restores the last look. Both
+        // layers travel together — restoring the increment without the preset
+        // it was authored against would apply the edits to bare scene defaults.
         var resolved = descriptor
         if descriptor.propertyOverrides.isEmpty,
+           descriptor.presetID == nil,
            let saved = savedSceneDescriptor,
            saved.isSameScene(as: descriptor),
-           !saved.propertyOverrides.isEmpty {
-            resolved = descriptor.withPropertyOverrides(saved.propertyOverrides)
+           !saved.propertyOverrides.isEmpty || saved.presetID != nil {
+            resolved = descriptor
+                .withPresetLayer(id: saved.presetID, snapshot: saved.presetSnapshot)
+                .withPropertyOverrides(saved.propertyOverrides)
         }
         activeWallpaper = .scene(resolved)
         wpeOrigin = origin

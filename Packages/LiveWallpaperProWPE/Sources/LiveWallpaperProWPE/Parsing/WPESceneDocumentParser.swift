@@ -1256,6 +1256,18 @@ public enum WPESceneDocumentParser {
             for (key, value) in dict {
                 resolved[key] = try resolveUserPropertyEnvelopes(in: value, userValues: userValues, depth: depth + 1)
             }
+            // The enable binding still has to be evaluated. Downstream seeds the
+            // field from `value`, which is the *disabled* state — leaving it
+            // alone means a layer whose gate is satisfied starts switched off
+            // and only an authored script could ever turn it on. Scene
+            // 3470764447 is the case in point: its day/night parent is
+            // `{script, user:{name:"display", condition:"4"}, value:false}`, and
+            // seeding `false` while its script uses an unsupported
+            // `scene.on("update")` form left the whole background unrendered
+            // whenever the user picked period 4.
+            if let gate = conditionGate(in: dict, userValues: userValues) {
+                resolved["value"] = gate
+            }
             return resolved
         }
 
@@ -1275,6 +1287,9 @@ public enum WPESceneDocumentParser {
         // Condition form (WPE style selector):
         // `{"user":{"name":K,"condition":"2"},"value":false}`. The field is
         // visible only while `userValues[K]` matches the condition literal.
+        //
+        // Shared with the script branch above, which needs the same verdict for
+        // its enable binding but must keep the rest of the envelope intact.
         if let user = dict["user"] as? [String: Any],
            let name = user["name"] as? String, !name.isEmpty,
            dict.keys.contains("value") {
@@ -1312,6 +1327,25 @@ public enum WPESceneDocumentParser {
             )
         }
         return resolved
+    }
+
+    /// The verdict of a condition-form `user` binding, or nil when the envelope
+    /// carries no such gate (or the current values cannot decide it, in which
+    /// case the caller's own fallback stands).
+    private static func conditionGate(
+        in dict: [String: Any],
+        userValues: [String: WallpaperEngineProjectPropertyValue]
+    ) -> Bool? {
+        guard let user = dict["user"] as? [String: Any],
+              let name = user["name"] as? String, !name.isEmpty,
+              // Only a genuine boolean field is a gate; a condition-form
+              // envelope around a scalar (alpha, scale) means something else.
+              WPEValueParser.strictBool(dict["value"]) != nil,
+              let condition = conditionString(from: user["condition"]),
+              let override = userValues[name] else {
+            return nil
+        }
+        return override.looselyMatches(.conditionLiteral(condition))
     }
 
     private static func jsonValue(for value: WallpaperEngineProjectPropertyValue) -> Any {

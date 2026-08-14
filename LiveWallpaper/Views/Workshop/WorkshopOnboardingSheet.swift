@@ -58,7 +58,7 @@ struct WorkshopOnboardingSheet: View {
         .onDisappear { hasShown = true }
     }
 
-    private func bullet(systemImage: String, text: String) -> some View {
+    private func bullet(systemImage: String, text: LocalizedStringKey) -> some View {
         HStack(alignment: .top, spacing: 10) {
             ZStack {
                 Circle()
@@ -68,7 +68,7 @@ struct WorkshopOnboardingSheet: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
             }
-            Text(verbatim: text)
+            Text(text)
                 .font(DesignTokens.Typography.body)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)

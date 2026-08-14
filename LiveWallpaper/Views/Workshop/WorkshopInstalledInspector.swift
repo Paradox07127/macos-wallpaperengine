@@ -34,6 +34,7 @@ struct WPEInstalledInspectorContent: View {
     let actions: Actions
 
     @Environment(\.openURL) private var openURL
+    @Environment(SteamCMDDoctorService.self) private var doctor
     @State private var showingApplyPopover = false
     /// WPE metadata read from the item's local `project.json` — no Steam API.
     /// nil until the off-main read completes; reloaded when the entry changes.
@@ -78,6 +79,18 @@ struct WPEInstalledInspectorContent: View {
                     if !activeScreenIDs.isEmpty { inUseRow }
 
                     applySection
+
+                    // Presets for a wallpaper you already own are worth
+                    // reaching without going back to the online tab. Workshop
+                    // items only — a folder import has no id to look up.
+                    if let itemID, let steamURL {
+                        Divider()
+                        WorkshopDetailPresetsSection(
+                            wallpaperID: itemID,
+                            communityURL: steamURL,
+                            doctor: doctor
+                        )
+                    }
 
                     infoSection
                 }

@@ -146,7 +146,7 @@ extension WPEMetalSceneRenderer {
         let id = descriptor.workshopID
 
         debugStage("read.entry", "resolving \(descriptor.entryFile)")
-        onProgress?("Reading scene")
+        onProgress?(String(localized: "Reading scene", comment: "Scene load progress: parsing the scene package."))
         try Task.checkCancellation()
         let entryReader = entryResolver
         let sceneDescriptor = descriptor
@@ -205,7 +205,7 @@ extension WPEMetalSceneRenderer {
         try Task.checkCancellation()
 
         debugStage("graph.build", "begin")
-        onProgress?("Building render graph")
+        onProgress?(String(localized: "Building render graph", comment: "Scene load progress: building the render graph."))
         let cacheRoot = cacheRootURL
         let mounts = dependencyMounts
         let engineRoot = effectiveEngineAssetsRootURL
@@ -221,7 +221,7 @@ extension WPEMetalSceneRenderer {
         try Task.checkCancellation()
 
         debugStage("pipeline.build", "begin")
-        onProgress?("Preparing render pipeline")
+        onProgress?(String(localized: "Preparing render pipeline", comment: "Scene load progress: compiling Metal pipeline state."))
         let pipeline = try await Task.detached(priority: .userInitiated) {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
@@ -374,7 +374,7 @@ extension WPEMetalSceneRenderer {
         }
 
         debugStage("textures.load", "begin (pipeline-driven)")
-        onProgress?("Loading textures")
+        onProgress?(String(localized: "Loading textures", comment: "Scene load progress: uploading textures."))
         try await loadTextures(for: pipeline, on: actor)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         indexOnDemandVideoLayers(pipeline: pipeline)
@@ -383,7 +383,7 @@ extension WPEMetalSceneRenderer {
         try Task.checkCancellation()
 
         debugStage("particles.load", "begin")
-        onProgress?("Loading particle systems")
+        onProgress?(String(localized: "Loading particle systems", comment: "Scene load progress: building particle systems."))
         await loadParticleSystems(from: document, on: actor)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         debugStage(
@@ -393,7 +393,7 @@ extension WPEMetalSceneRenderer {
         try Task.checkCancellation()
 
         debugStage("text.load", "begin")
-        onProgress?("Loading text pipeline")
+        onProgress?(String(localized: "Loading text pipeline", comment: "Scene load progress: building the text rendering pipeline."))
         beginSceneScriptVideoCommands()
         loadTextPipeline(from: document, scriptLoadToken: scriptLoadToken)
         debugStage("text.load.done", "objects=\(textObjects.count)")
@@ -436,7 +436,7 @@ extension WPEMetalSceneRenderer {
             scriptsAreBaked: &scriptsAreBaked
         )
         debugStage("render.firstFrame", "begin")
-        onProgress?("Rendering scene")
+        onProgress?(String(localized: "Rendering scene", comment: "Scene load progress: first frame is being drawn."))
 
         // Render the FIRST frame synchronously: it is read back on the CPU right
         // after load() by the scene-debug snapshot and the `renderedTexture`
@@ -513,6 +513,9 @@ extension WPEMetalSceneRenderer {
     func beginDeferredAudioStartup() {
         guard let document = pendingAudioStartupDocument else { return }
         pendingAudioStartupDocument = nil
+        // Engine-level keys share the layered map with the properties; the
+        // property filter drops them because they are not properties.
+        presetAudioSettings = WPEEngineAudioSettings.parse(descriptor.presetSnapshot)
         let sounds = document.soundObjects
         guard !sounds.isEmpty else {
             soundRuntime = nil
@@ -520,7 +523,7 @@ extension WPEMetalSceneRenderer {
         }
         let runtime = WPESoundRuntime(resolver: resourceResolver)
         runtime.setMuted(pendingAudioMuted)
-        runtime.setMasterVolume(pendingAudioVolume)
+        runtime.setMasterVolume(effectiveAudioVolume)
         let generation = loadGeneration
         let workshopID = descriptor.workshopID
         guard let actor = displayActor else { return }

@@ -82,7 +82,7 @@ struct MonitorWidgetSettingsPopover: View {
                     }
                 )) {
                     ForEach(allowed, id: \.self) { size in
-                        Text(verbatim: Self.sizeLabel(size)).tag(size)
+                        Text(Self.sizeLabel(size)).tag(size)
                     }
                 }
                 .labelsHidden()
@@ -346,7 +346,7 @@ struct MonitorWidgetSettingsPopover: View {
 
     // MARK: - Labels
 
-    static func sizeLabel(_ size: MonitorWidgetSize) -> String {
+    static func sizeLabel(_ size: MonitorWidgetSize) -> LocalizedStringKey {
         switch size {
         case .small: return "Small"
         case .medium: return "Medium"

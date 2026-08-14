@@ -17,10 +17,26 @@ struct SemanticVersionTests {
         #expect(SemanticVersion(parsing: "lwp-v0.4.1") == nil, "the retired lwp-v prefix must no longer parse")
     }
 
-    @Test("Strips suffix metadata after - or + from the patch component")
+    @Test("Keeps pre-release identifiers and orders them below the final release")
+    func parsesPrereleaseIdentifiers() {
+        #expect(SemanticVersion(parsing: "0.6.0-beta.1") != SemanticVersion(major: 0, minor: 6, patch: 0))
+        #expect(SemanticVersion(parsing: "0.6.0-beta.1") == SemanticVersion(
+            major: 0, minor: 6, patch: 0, prerelease: ["beta", "1"]
+        ))
+        #expect(SemanticVersion(parsing: "0.6.0-beta.1")! < SemanticVersion(parsing: "0.6.0")!)
+        #expect(SemanticVersion(parsing: "0.6.0-beta.1")! < SemanticVersion(parsing: "0.6.0-beta.2")!)
+        #expect(SemanticVersion(parsing: "0.6.0-beta.9")! < SemanticVersion(parsing: "0.6.0-rc.1")!)
+        #expect(SemanticVersion(parsing: "0.6.0-beta")! < SemanticVersion(parsing: "0.6.0-beta.1")!)
+        #expect(SemanticVersion(parsing: "0.5.1")! < SemanticVersion(parsing: "0.6.0-beta.1")!)
+        #expect(SemanticVersion(parsing: "loomscreen-v0.6.0-beta.1")! < SemanticVersion(parsing: "loomscreen-v0.6.0")!)
+    }
+
+    @Test("Ignores build metadata but not pre-release identifiers")
     func stripsSuffixMetadata() {
-        #expect(SemanticVersion(parsing: "1.0.0-beta1") == SemanticVersion(major: 1, minor: 0, patch: 0))
         #expect(SemanticVersion(parsing: "1.0.0+build42") == SemanticVersion(major: 1, minor: 0, patch: 0))
+        #expect(SemanticVersion(parsing: "1.0.0-beta.1+sha") == SemanticVersion(
+            major: 1, minor: 0, patch: 0, prerelease: ["beta", "1"]
+        ))
     }
 
     @Test("Defaults missing patch component to zero")
@@ -114,6 +130,28 @@ struct UpdateCheckerTests {
         await checker.checkNow(force: false)
 
         #expect(checker.status == .upToDate)
+    }
+
+    @Test("Offers the final release to someone running that version's pre-release build")
+    func offersFinalReleaseToPrereleaseBuild() async {
+        resetDefaults()
+        let transport = StubTransport(releases: [
+            release(tag: "loomscreen-v0.6.0", asset: "Loomscreen-0.6.0.dmg"),
+            release(tag: "loomscreen-v0.6.0-beta.2", prerelease: true)
+        ])
+        let checker = UpdateChecker(
+            transport: transport,
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "0.6.0-beta.1"
+        )
+
+        await checker.checkNow(force: false)
+
+        guard case .available(let release) = checker.status else {
+            Issue.record("Expected .available, got \(String(describing: checker.status))")
+            return
+        }
+        #expect(release.tagName == "loomscreen-v0.6.0")
     }
 
     @Test("Ignores tags missing the loomscreen-v prefix (e.g. Pro tags)")

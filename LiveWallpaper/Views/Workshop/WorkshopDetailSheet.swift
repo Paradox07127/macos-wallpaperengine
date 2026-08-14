@@ -58,6 +58,13 @@ struct WorkshopInspectorContent: View {
                     actionsColumn
                     downloadStatusNote
 
+                    Divider()
+                    WorkshopDetailPresetsSection(
+                        wallpaperID: item.id,
+                        communityURL: item.steamCommunityURL,
+                        doctor: doctor
+                    )
+
                     if !item.tags.isEmpty {
                         tagsSection
                     }
@@ -486,13 +493,17 @@ struct WorkshopInspectorContent: View {
     }
 
     private func formatSubs(_ count: Int) -> String {
+        // The magnitude suffix is formatted first so the catalog key stays a plain
+        // "%@M subs" — a %.1f inside a localized key would fight per-locale decimals.
         if count >= 1_000_000 {
-            return String(format: "%.1fM subs", locale: .current, Double(count) / 1_000_000.0)
+            let scaled = String(format: "%.1f", locale: .current, Double(count) / 1_000_000.0)
+            return String(localized: "\(scaled)M subs", comment: "Workshop item subscriber count, millions.")
         }
         if count >= 1_000 {
-            return String(format: "%.1fK subs", locale: .current, Double(count) / 1_000.0)
+            let scaled = String(format: "%.1f", locale: .current, Double(count) / 1_000.0)
+            return String(localized: "\(scaled)K subs", comment: "Workshop item subscriber count, thousands.")
         }
-        return "\(count) subs"
+        return String(localized: "\(count) subs", comment: "Workshop item subscriber count.")
     }
 
     private static let dateFormatter: DateFormatter = {

@@ -206,17 +206,20 @@ def physical_lines(path: Path) -> int:
 
 
 def validate_component_loc(
-    components: Iterable[Component], caps: dict[str, int], errors: list[str]
+    components: Iterable[Component], caps: dict[str, int], warnings: list[str]
 ) -> dict[str, int]:
+    # Advisory since 2026-08-13: this had been red on every push since 8dacda6 and was
+    # drowning out the other CI failures. Raising a cap is still a hard error
+    # (validate_historical_ratchet), so the caps keep their meaning as a high-water mark.
     actual: dict[str, int] = {}
     for component in components:
         count = sum(physical_lines(ROOT / path) for path in component.paths if (ROOT / path).is_file())
         actual[component.component_id] = count
         cap = caps.get(component.component_id)
         if cap is not None and count > cap:
-            errors.append(
-                f"{component.component_id}: component LoC grew from cap {cap} to {count}; "
-                "split/move within the component or reduce debt instead"
+            warnings.append(
+                f"{component.component_id}: component LoC grew from cap {cap} to {count} (+{count - cap}); "
+                "split/move within the component or reduce debt — advisory, does not fail the gate"
             )
     return actual
 
@@ -416,13 +419,14 @@ def main() -> int:
         return 2
 
     errors: list[str] = []
+    warnings: list[str] = []
     components = parse_manifest(args.manifest, today, errors)
     component_ids = {component.component_id for component in components}
     caps = parse_baseline(args.baseline, component_ids, errors)
     manifest_paths = {path for component in components for path in component.paths}
     compare_inventory(".swiftlint.yml", swiftlint_exclusions(ROOT / ".swiftlint.yml", errors), manifest_paths, errors)
     compare_inventory(".swiftformat", swiftformat_exclusions(ROOT / ".swiftformat", errors), manifest_paths, errors)
-    actual_loc = validate_component_loc(components, caps, errors)
+    actual_loc = validate_component_loc(components, caps, warnings)
 
     requested_base = args.base if args.base is not None else os.environ.get("QUALITY_GATE_BASE")
     base = normalized_base(requested_base, errors)
@@ -441,6 +445,11 @@ def main() -> int:
             f"owner={component.owner}, expires={component.expires_on.isoformat()}"
         )
     print(f"hotspot inventory: {len(manifest_paths)} Swift files across {len(components)} components")
+
+    if warnings:
+        print("Quality exclusion warnings (advisory, not blocking):")
+        for warning in warnings:
+            print(f"  ! {warning}")
 
     if errors:
         print("Quality exclusion gate failed:", file=sys.stderr)

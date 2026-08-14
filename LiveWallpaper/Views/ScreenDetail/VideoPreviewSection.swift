@@ -128,19 +128,30 @@ struct VideoPreviewSection: View {
             Image(systemName: errorMessage == nil ? (previewController.isLoading ? "hourglass" : "photo") : "exclamationmark.triangle")
                 .font(.system(size: 36))
                 .foregroundStyle(errorMessage == nil ? Color.secondary : DesignTokens.Colors.Status.warning)
-            Text(errorMessage ?? (previewController.isLoading ? "Loading preview..." : "Preview paused"))
+            previewMessage(errorMessage)
                 .font(.subheadline)
                 .foregroundStyle(errorMessage == nil ? Color.secondary : Color.primary)
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
-            Button(errorMessage == nil ? "Load Preview" : "Retry Preview", action: startPreview)
+            Button(action: startPreview) {
+                if errorMessage == nil { Text("Load Preview") } else { Text("Retry Preview") }
+            }
                 .adaptiveGlassButton(.prominent, size: .small)
-                .accessibilityLabel(Text(errorMessage == nil ? "Load preview" : "Retry preview"))
+                .accessibilityLabel(errorMessage == nil ? Text("Load preview") : Text("Retry preview"))
                 .accessibilityHint(Text("Starts a temporary video preview for this settings panel"))
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
         .screenPreviewChrome(stroke: true, shadow: false)
+    }
+
+    /// Branches into separate `Text` values so the two idle states keep their catalog
+    /// lookup; a ternary would collapse them to `String` and render English forever.
+    private func previewMessage(_ errorMessage: String?) -> Text {
+        if let errorMessage {
+            return Text(verbatim: errorMessage)
+        }
+        return previewController.isLoading ? Text("Loading preview...") : Text("Preview paused")
     }
 }

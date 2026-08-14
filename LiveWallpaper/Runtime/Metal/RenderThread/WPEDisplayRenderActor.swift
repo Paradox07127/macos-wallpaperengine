@@ -380,7 +380,7 @@ actor WPEDisplayRenderActor {
             return
         }
         runtime.setMuted(renderer.pendingAudioMuted)
-        runtime.setMasterVolume(renderer.pendingAudioVolume)
+        runtime.setMasterVolume(renderer.effectiveAudioVolume)
         renderer.soundRuntime = runtime
         // Seed the suspend flag from the live profile so the run-state gate is
         // correct BEFORE any later mute toggle: `pause()` records isSuspended so a

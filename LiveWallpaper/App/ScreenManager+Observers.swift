@@ -24,6 +24,13 @@ extension ScreenManager {
             }
             .store(in: &cleanupTasks)
 
+        NotificationCenter.default.publisher(for: .scenePresetLibraryDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handleScenePresetLibraryChange()
+            }
+            .store(in: &cleanupTasks)
+
         NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in

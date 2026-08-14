@@ -157,6 +157,12 @@ struct WorkshopPasteRowCard: View {
                 Label("Installed", systemImage: "checkmark.circle.fill")
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(DesignTokens.Colors.Status.active)
+            case .succeededAsPreset:
+                // A preset is not a wallpaper, and saying "Installed" here sends
+                // the user looking for it in the library.
+                Label("Preset added", systemImage: "checkmark.circle.fill")
+                    .font(DesignTokens.Typography.body)
+                    .foregroundStyle(DesignTokens.Colors.Status.active)
             case .failed(let reason):
                 Button(action: onDownload) {
                     Label("Retry download", systemImage: "arrow.down.circle")
@@ -401,7 +407,9 @@ private struct WorkshopRowErrorStrip: View {
 
 /// Shows a fallback icon when `WorkshopPreviewImageLoader` rejects the URL
 /// (allow-list miss, wrong content-type, oversize, etc.).
-private struct WorkshopPreviewImage: View {
+/// Shared with the detail sheet's preset list; both show a small allow-listed
+/// Workshop preview and must fail the same quiet way.
+struct WorkshopPreviewImage: View {
     let url: URL
     @State private var image: NSImage?
     @State private var didFail = false

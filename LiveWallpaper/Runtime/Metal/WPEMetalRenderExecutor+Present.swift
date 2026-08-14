@@ -314,4 +314,78 @@ extension WPEMetalRenderExecutor {
     }
 
 }
+
+// MARK: - Engine colour correction
+
+extension WPEMetalRenderExecutor {
+
+    /// Applies Wallpaper Engine's per-wallpaper colour correction to a finished
+    /// frame, returning the texture to present.
+    ///
+    /// Returns `output` untouched when the correction is an identity — the
+    /// common case, since only a preset that adjusted the sliders carries a
+    /// non-neutral one, and a full-frame 4K pass that provably changes nothing
+    /// is not worth its bandwidth.
+    func encodeColorCorrectionIfNeeded(
+        _ correction: WPEEngineColorCorrection,
+        output: MTLTexture,
+        commandBuffer: MTLCommandBuffer
+    ) throws -> MTLTexture {
+        guard !correction.isIdentity else { return output }
+
+        // From the output pool, not a texture of its own: this one *is* the
+        // frame once it is returned, so it has to obey the same reuse rules —
+        // `makeOutputTexture` refuses to recycle anything still in flight or
+        // held as history. A private, permanently-reused scratch texture let a
+        // later frame overwrite the one a detached poster readback was still
+        // reading, and never came back on reload.
+        let destination = try makeOutputTexture(
+            size: CGSize(width: output.width, height: output.height)
+        )
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = destination
+        // Every pixel is written by the fullscreen draw, so the prior contents
+        // are dead — loading them would cost a 4K read for nothing.
+        descriptor.colorAttachments[0].loadAction = .dontCare
+        descriptor.colorAttachments[0].storeAction = .store
+        gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "colorCorrection")
+
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+            throw WPEMetalRenderExecutorError.commandBufferFailed
+        }
+        defer { encoder.endEncoding() }
+
+        encoder.setRenderPipelineState(try renderPipeline(
+            vertexName: "wpe_fullscreen_vertex",
+            fragmentName: "wpe_color_correction_fragment",
+            // "disabled": the draw replaces the target outright. Any blend mode
+            // here would read the `.dontCare` contents above.
+            blendMode: "disabled",
+            colorPixelFormat: destination.pixelFormat,
+            depthPixelFormat: .invalid
+        ))
+        var uniforms = WPEColorCorrectionUniforms(
+            brightness: Float(correction.brightness),
+            contrast: Float(correction.contrast),
+            saturation: Float(correction.saturation),
+            hueRadians: Float(correction.hueDegrees * .pi / 180)
+        )
+        encoder.setFragmentTexture(output, index: 0)
+        encoder.setFragmentBytes(
+            &uniforms, length: MemoryLayout<WPEColorCorrectionUniforms>.stride, index: 0
+        )
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        return destination
+    }
+
+}
+
+/// Mirrors `WPEColorCorrectionUniforms` in WPEMetalBuiltins.metal.
+struct WPEColorCorrectionUniforms {
+    var brightness: Float
+    var contrast: Float
+    var saturation: Float
+    var hueRadians: Float
+}
+
 #endif
