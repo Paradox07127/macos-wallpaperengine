@@ -26,7 +26,6 @@ struct WPEProjectSettingsPresentation: Equatable {
     let values: [String: WallpaperEngineProjectPropertyValue]
     let sections: [Section]
     let visibleKeys: Set<String>
-    let hasVisibleOverrides: Bool
 
     init(
         schema: WallpaperEngineProjectPropertySchema,
@@ -92,7 +91,6 @@ struct WPEProjectSettingsPresentation: Equatable {
         self.values = values
         self.sections = sections
         self.visibleKeys = visibleKeys
-        self.hasVisibleOverrides = overrides.keys.contains { visibleKeys.contains($0) }
     }
 
     static func isSceneInteractive(_ type: WallpaperEngineProjectPropertySchema.PropertyType) -> Bool {

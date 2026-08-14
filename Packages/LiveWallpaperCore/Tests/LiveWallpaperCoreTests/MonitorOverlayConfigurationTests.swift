@@ -47,7 +47,7 @@ struct MonitorOverlayConfigurationTests {
         enum Key: String, CodingKey { case overlay }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Key.self)
-            decoded = MonitorOverlayConfiguration.decodeIfPresent(from: c, forKey: .overlay)
+            decoded = (try? c.decodeIfPresent(MonitorOverlayConfiguration.self, forKey: .overlay)) ?? nil
         }
     }
 

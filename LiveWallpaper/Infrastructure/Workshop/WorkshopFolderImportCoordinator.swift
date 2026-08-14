@@ -77,6 +77,14 @@ final class WorkshopFolderImportCoordinator {
         // Skip items the user explicitly deleted so a still-present Steam item
         // does not silently reappear after removal from the Loomscreen library.
         known.formUnion(settings.deletedWorkshopIDs)
+        // A registered preset leaves no history entry, so without this the scan
+        // re-registers every downloaded preset on each pass — overwriting a
+        // local rename and restamping `createdAt`, which reads downstream as a
+        // brand-new preset every time.
+        known.formUnion(settings.scenePresets.values.compactMap {
+            if case .workshop(let workshopID) = $0.source { return workshopID }
+            return nil
+        })
         var added = 0
         var repaired = 0
         let staleIDs = Set(
@@ -142,6 +150,12 @@ final class WorkshopFolderImportCoordinator {
                     WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil),
                     clearsDeleteTombstone: deliberate,
                     preservesHistory: preservesHistory
+                )
+                return true
+            case .workshopPreset(let preset):
+                await SettingsManager.shared.registerScenePreset(
+                    preset,
+                    clearsDeleteTombstone: deliberate
                 )
                 return true
             case .rejected(let reason):

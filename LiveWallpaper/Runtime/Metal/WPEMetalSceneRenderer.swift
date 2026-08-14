@@ -370,6 +370,11 @@ final class WPEMetalSceneRenderer: NSObject {
     /// them once the off-main start finishes, in case they changed meanwhile).
     var pendingAudioMuted: Bool = false
     var pendingAudioVolume: Double = 1.0
+    /// The applied preset's own level for this wallpaper, multiplied with the
+    /// user's master volume rather than replacing it: a preset says how loud
+    /// this wallpaper should be relative to everything else, not how loud this
+    /// Mac should be.
+    var presetAudioSettings: WPEEngineAudioSettings?
 
     var hasPresentedFrame: Bool {
         completedPresentGeneration == loadGeneration

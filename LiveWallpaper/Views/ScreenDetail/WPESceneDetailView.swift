@@ -70,8 +70,11 @@ struct WPESceneDetailView: View {
     @State private var previewSession: SceneWallpaperSession?
 
     private var previewTaskIdentity: ScenePreviewTaskIdentity {
+        // Must be the same layering `stageScenePropertyPosterCommit` stages with
+        // (`ScreenManager+SceneMutation`): keyed on the increment alone, a
+        // preset-carrying descriptor never matches its own staged commit.
         let overridesRevision = ScenePropertyOverridesRevision(
-            descriptor.propertyOverrides
+            descriptor.layeredPropertyValues()
         )
         return ScenePreviewTaskIdentity(
             workshopID: descriptor.workshopID,

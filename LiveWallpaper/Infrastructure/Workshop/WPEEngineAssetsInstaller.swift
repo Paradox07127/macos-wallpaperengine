@@ -122,22 +122,15 @@ final class WPEEngineAssetsInstaller {
     private func run(using doctor: SteamCMDDoctorService, attempt: UUID) async {
         // Prefer adopting an existing install over re-downloading.
         if adoptExistingInstallIfPresent(doctor: doctor, attempt: attempt) { return }
-        guard let account = doctor.username, let binary = try? doctor.resolveBinaryURL() else {
+        guard let account = doctor.username, (try? doctor.resolveBinaryURL()) != nil else {
             fail(String(
                 localized: "Choose your Steam account and SteamCMD in Settings → Workshop → Steam connection first.",
                 comment: "Engine-assets install blocked because the Steam connection is not configured."
             ))
             return
         }
-        // No verified digest on file → refuse rather than spawn ungated.
-        guard let expectedSHA256 = doctor.lastBinarySHA256 else {
-            fail(String(localized: "SteamCMD could not be launched. Re-select it in the setup list.", comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."))
-            return
-        }
         let result = await SteamConnectorClient.installWallpaperEngineAssets(
             accountName: account,
-            steamCMDPath: binary.path(percentEncoded: false),
-            expectedSHA256: expectedSHA256,
             onProgress: { [weak self] update in
                 Task { @MainActor [weak self] in
                     guard let self, currentAttempt == attempt else { return }
@@ -282,12 +275,9 @@ final class WPEEngineAssetsInstaller {
         updateCheckOutcome = .checking
         task = Task { [weak self] in
             guard let account = doctor.username,
-                  let binary = try? doctor.resolveBinaryURL(),
-                  let expectedSHA256 = doctor.lastBinarySHA256 else { return }
+                  (try? doctor.resolveBinaryURL()) != nil else { return }
             let latest = await SteamConnectorClient.latestWallpaperEngineBuildID(
-                accountName: account,
-                steamCMDPath: binary.path(percentEncoded: false),
-                expectedSHA256: expectedSHA256
+                accountName: account
             )
             guard let self, currentAttempt == attempt else { return }
             task = nil

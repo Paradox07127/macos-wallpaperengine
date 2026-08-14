@@ -351,9 +351,19 @@ struct MonitorRuntimeLeaseChurnCharacterizationTests {
         _ runtime: MonitorRuntime,
         reaches target: UInt64
     ) async -> Bool {
-        for _ in 0 ..< 10000 {
+        // Wait on a clock, not on a yield count: the caller deliberately blocks the rebuild
+        // worker, and on a CI runner 10,000 yields burned out in 30ms before the pending
+        // slot commands were ever scheduled (run 31726418994). Locally it settles in ~6ms.
+        let deadline = ContinuousClock.now + .seconds(5)
+        var spins = 0
+        while ContinuousClock.now < deadline {
             if await runtime.debugRebuildRevision >= target { return true }
-            await Task.yield()
+            spins += 1
+            if spins < 1000 {
+                await Task.yield()
+            } else {
+                try? await Task.sleep(for: .milliseconds(1))
+            }
         }
         return await runtime.debugRebuildRevision >= target
     }

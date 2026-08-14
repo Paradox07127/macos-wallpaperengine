@@ -15,11 +15,11 @@ enum DoctorProbeKind: String, Sendable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .binaryIdentity: return "SteamCMD binary identity"
-        case .codeSignature: return "Code signature"
-        case .gatekeeperQuarantine: return "Gatekeeper / quarantine"
-        case .workingDirectory: return "Steam Library access"
-        case .cachedLogin: return "Steam sign-in"
+        case .binaryIdentity: return String(localized: "SteamCMD binary identity", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+        case .codeSignature: return String(localized: "Code signature", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+        case .gatekeeperQuarantine: return String(localized: "Gatekeeper / quarantine", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+        case .workingDirectory: return String(localized: "Steam Library access", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+        case .cachedLogin: return String(localized: "Steam sign-in", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
         }
     }
 
@@ -111,7 +111,13 @@ enum WorkshopItemDownloadResult<Imported: Sendable>: Sendable {
 final class SteamCMDDoctorService {
 
     private enum Keys {
-        static let binaryPath = "loomscreen.workshop.doctor.binaryPath"
+        /// `.v2` because the `.v1` value could be any path the user picked in an
+        /// open panel, and those are exactly the paths we no longer execute.
+        /// Re-keying retires them without needing a rule for telling one apart;
+        /// auto-detect re-binds on the next use, silently for anyone whose
+        /// SteamCMD is a managed or package-manager install.
+        static let binaryPath = "loomscreen.workshop.doctor.binaryPath.v2"
+        static let legacyPickedBinaryPath = "loomscreen.workshop.doctor.binaryPath"
         static let workdirBookmark = "loomscreen.workshop.doctor.workdirBookmark"
         static let binarySHA256 = "loomscreen.workshop.doctor.binarySHA256"
         static let username = "loomscreen.workshop.doctor.username"
@@ -220,22 +226,33 @@ final class SteamCMDDoctorService {
         self.probes = Dictionary(uniqueKeysWithValues: DoctorProbeKind.allCases.map { kind in
             (kind, DoctorProbeReport(id: kind, status: .notRun, lastRun: .distantPast))
         })
+        retireLegacyPickedBinaryBinding()
         refreshDisplayPaths()
+    }
+
+    /// Drops a binding made when the user could still point us at any file. The
+    /// stored digest goes with it — it describes a binary we will not run.
+    private func retireLegacyPickedBinaryBinding() {
+        guard defaults.object(forKey: Keys.legacyPickedBinaryPath) != nil else { return }
+        defaults.removeObject(forKey: Keys.legacyPickedBinaryPath)
+        if defaults.string(forKey: Keys.binaryPath) == nil {
+            defaults.removeObject(forKey: Keys.binarySHA256)
+        }
+        Logger.info(
+            "Retired a pre-managed SteamCMD binding; auto-detect will re-bind",
+            category: .workshop
+        )
     }
 
     // MARK: - Binding
 
-    /// Bind user pick; connector resolves/hashes wrappers (store path, not bookmark).
-    func bindBinary(_ userPickedURL: URL) async throws {
-        let pickedAccess = userPickedURL.startAccessingSecurityScopedResource()
-        defer { if pickedAccess { userPickedURL.stopAccessingSecurityScopedResource() } }
-
-        let picked = userPickedURL.resolvingSymlinksInPath().standardizedFileURL
-            .path(percentEncoded: false)
-        guard let located = await SteamConnectorClient.locateSteamCMDBinary(pickedPath: picked),
-              let path = located.canonicalPath else {
-            throw SteamCMDDoctorError.binaryResolution(.notMachO)
-        }
+    /// Records the binary the connector resolved from its own candidate list.
+    ///
+    /// There is no "bind what the user picked" any more: an app-named path is
+    /// one the app can rewrite between our checks and the connector's spawn,
+    /// and nothing on macOS binds a signature verdict to the inode that ends up
+    /// executed. Every path stored here came back from the connector.
+    func bindResolvedBinary(_ path: String) async throws {
         let inspection = await SteamConnectorClient.inspectSteamCMDBinary(path: path)
         if let reason = inspection?.unavailableReason {
             // Busy is not "bad binary": refusing the bind with a resolution error
@@ -263,13 +280,46 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Auto-bind from /opt/homebrew|/usr/local|/opt/local only (no login-shell PATH).
+    /// Drops the current binding. Only for when the binary it names is known to
+    /// be gone — removing a managed install leaves the stored path pointing at
+    /// nothing, and the Doctor would keep displaying it as the chosen SteamCMD.
+    func unbindBinary() {
+        binaryPath = nil
+        lastBinarySHA256 = nil
+        verifiedBinarySHA256 = nil
+        for kind in DoctorProbeKind.allCases where kind != .workingDirectory {
+            setProbe(kind, status: .notRun)
+        }
+    }
+
+    /// Auto-bind, managed install first and then the three package-manager
+    /// locations. This is now the only way a binary ever gets bound.
+    ///
+    /// The managed install wins over a package-manager one because we installed
+    /// it: its provenance was digest-checked and its signature verified against
+    /// Valve's team id, which is more than we know about an arbitrary
+    /// `/usr/local/bin/steamcmd`.
     @discardableResult
     func autoDetectBinary() async -> Bool {
-        guard let located = await SteamConnectorClient.locateSteamCMDBinary(pickedPath: nil),
+        // Ask the connector for the whole verdict rather than assembling one
+        // here: it is the only process that can actually launch the binary, and
+        // this app's previous path-existence inference reported green while
+        // SteamCMD could not start at all.
+        // No managed path is sent: the connector derives its own install root,
+        // so auto-detect also finds a managed copy whose app-side record was
+        // lost — which is exactly the state a failed removal leaves behind.
+        if let diagnosis = await SteamConnectorClient.diagnoseSteamCMD() {
+            // A reached verdict is the answer, either way. Falling through to
+            // the old locate/bind on a negative one would bind a path we just
+            // proved cannot launch and report success for having stored it.
+            guard diagnosis.isUsable, let resolved = diagnosis.canonicalPath else { return false }
+            return (try? await bindResolvedBinary(resolved)) != nil
+        }
+        // Only an unreachable connector falls through.
+        guard let located = await SteamConnectorClient.locateSteamCMDBinary(),
               let path = located.canonicalPath else { return false }
         do {
-            try await bindBinary(URL(fileURLWithPath: path))
+            try await bindResolvedBinary(path)
             return true
         } catch {
             return false
@@ -405,7 +455,7 @@ final class SteamCMDDoctorService {
             defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
             guard var executionAuthorization = await trustedExecutionAuthorization(for: binary) else {
                 setProbe(.binaryIdentity, status: .red(
-                    message: "SteamCMD isn't a verified Valve build, so it wasn't run. Re-select the official SteamCMD.",
+                    message: String(localized: "SteamCMD isn't a verified Valve build, so it wasn't run. Re-select the official SteamCMD.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
@@ -420,7 +470,7 @@ final class SteamCMDDoctorService {
                 // trust before launching whatever is there now.
                 guard let refreshedAuthorization = await trustedExecutionAuthorization(for: binary) else {
                     setProbe(.binaryIdentity, status: .red(
-                        message: "SteamCMD isn't a verified Valve build, so it wasn't run. Re-select the official SteamCMD.",
+                        message: String(localized: "SteamCMD isn't a verified Valve build, so it wasn't run. Re-select the official SteamCMD.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                         command: nil
                     ))
                     return
@@ -431,7 +481,7 @@ final class SteamCMDDoctorService {
             }
             if result.timedOut {
                 setProbe(.binaryIdentity, status: .red(
-                    message: redacted("SteamCMD identity probe timed out after 30 seconds."),
+                    message: redacted(String(localized: "SteamCMD identity probe timed out after 30 seconds.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")),
                     command: redacted(command(binary: binary, args: ["+quit"]))
                 ))
                 return
@@ -439,18 +489,18 @@ final class SteamCMDDoctorService {
             guard Self.matches(Self.identityBannerPattern, in: result.stdout) else {
                 setProbe(.binaryIdentity, status: .red(
                     message: retriedAfterSelfUpdate
-                        ? "SteamCMD is still updating itself and hasn't printed the Valve identity banner yet. Wait for the update to finish, then run this probe again."
-                        : "SteamCMD did not print the expected Valve identity banner. Use Export diagnostics for the raw output.",
+                        ? String(localized: "SteamCMD is still updating itself and hasn't printed the Valve identity banner yet. Wait for the update to finish, then run this probe again.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+                        : String(localized: "SteamCMD did not print the expected Valve identity banner. Use Export diagnostics for the raw output.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: redacted(command(binary: binary, args: ["+quit"]))
                 ))
                 return
             }
 
-            var detail = "SteamCMD identity verified."
+            var detail = String(localized: "SteamCMD identity verified.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
             let rehashPath = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
             if let currentSHA = await SteamConnectorClient.inspectSteamCMDBinary(path: rehashPath)?.sha256 {
                 if let previous = lastBinarySHA256, previous != currentSHA {
-                    detail = "SteamCMD updated itself (SHA-256 changed) — that's normal."
+                    detail = String(localized: "SteamCMD updated itself (SHA-256 changed) — that's normal.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
                 }
                 lastBinarySHA256 = currentSHA
             }
@@ -471,31 +521,31 @@ final class SteamCMDDoctorService {
             guard let result, result.unavailableReason == nil else {
                 setProbe(.codeSignature, status: .yellow(
                     message: result?.unavailableReason == nil
-                        ? "Loomscreen's Steam connector did not respond, so the signature wasn't checked."
-                        : "Loomscreen's Steam connector was busy, so the signature wasn't checked. Try again.",
+                        ? String(localized: "Loomscreen's Steam connector did not respond, so the signature wasn't checked.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+                        : String(localized: "Loomscreen's Steam connector was busy, so the signature wasn't checked. Try again.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
             }
             guard result.exists else {
                 setProbe(.codeSignature, status: .red(
-                    message: "SteamCMD is no longer at the selected path. Re-select it.",
+                    message: String(localized: "SteamCMD is no longer where Loomscreen found it. Run Locate automatically again.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
             }
             if result.signatureValid, result.teamIdentifier == Self.valveTeamIdentifier {
                 let detail = result.isHardenedRuntime
-                    ? "Verified Valve build (TeamIdentifier=MXGJJ98X76, Hardened Runtime)."
-                    : "Verified Valve build (TeamIdentifier=MXGJJ98X76)."
+                    ? String(localized: "Verified Valve build (TeamIdentifier=MXGJJ98X76, Hardened Runtime).", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+                    : String(localized: "Verified Valve build (TeamIdentifier=MXGJJ98X76).", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
                 setProbe(.codeSignature, status: .green(detail: redacted(detail)))
             } else {
                 let team = result.teamIdentifier ?? "none"
                 let reason = result.signatureValid
-                    ? "SteamCMD is signed by an unverified team (TeamIdentifier=\(team))."
-                    : "SteamCMD signature is missing or could not be verified."
+                    ? String(localized: "SteamCMD is signed by an unverified team (TeamIdentifier=\(team)).", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+                    : String(localized: "SteamCMD signature is missing or could not be verified.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
                 setProbe(.codeSignature, status: .yellow(
-                    message: redacted("Unverified build. \(reason)"),
+                    message: redacted(String(localized: "Unverified build. \(reason)", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")),
                     command: redacted(command(
                         binary: URL(fileURLWithPath: "/usr/bin/codesign"),
                         args: ["-dv", "--verbose=4", binary.path(percentEncoded: false)]
@@ -517,14 +567,14 @@ final class SteamCMDDoctorService {
             // Unavailable replies default isQuarantined=false — don't treat as clean.
             guard let quarantineCheck, quarantineCheck.unavailableReason == nil else {
                 setProbe(.gatekeeperQuarantine, status: .yellow(
-                    message: "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again.",
+                    message: String(localized: "Loomscreen's Steam connector didn't answer, so the quarantine attribute wasn't checked. Try again.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
             }
             if quarantineCheck.isQuarantined {
                 setProbe(.gatekeeperQuarantine, status: .red(
-                    message: redacted("SteamCMD has the Gatekeeper quarantine attribute. macOS may block it on launch."),
+                    message: redacted(String(localized: "SteamCMD has the Gatekeeper quarantine attribute. macOS may block it on launch.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")),
                     command: redacted(xattrCommand(for: binary))
                 ))
                 return
@@ -532,13 +582,13 @@ final class SteamCMDDoctorService {
 
             // Identity already launched SteamCMD → skip heavier anonymous login probe.
             if isGreen(.binaryIdentity) {
-                setProbe(.gatekeeperQuarantine, status: .green(detail: "SteamCMD launches without Gatekeeper interference."))
+                setProbe(.gatekeeperQuarantine, status: .green(detail: String(localized: "SteamCMD launches without Gatekeeper interference.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")))
                 return
             }
 
             guard let executionAuthorization = await trustedExecutionAuthorization(for: binary) else {
                 setProbe(.gatekeeperQuarantine, status: .red(
-                    message: "SteamCMD isn't a verified Valve build, so it wasn't run.",
+                    message: String(localized: "SteamCMD isn't a verified Valve build, so it wasn't run.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: nil
                 ))
                 return
@@ -548,10 +598,10 @@ final class SteamCMDDoctorService {
             if !result.timedOut,
                !result.killed,
                combined.contains("Steam Console Client") || result.exitCode == 0 {
-                setProbe(.gatekeeperQuarantine, status: .green(detail: "SteamCMD launches without Gatekeeper interference."))
+                setProbe(.gatekeeperQuarantine, status: .green(detail: String(localized: "SteamCMD launches without Gatekeeper interference.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")))
             } else {
                 setProbe(.gatekeeperQuarantine, status: .red(
-                    message: "SteamCMD failed the launch sanity check. If macOS blocked it, clear the quarantine attribute.",
+                    message: String(localized: "SteamCMD failed the launch sanity check. If macOS blocked it, clear the quarantine attribute.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
                     command: redacted(xattrCommand(for: binary))
                 ))
             }
@@ -570,7 +620,7 @@ final class SteamCMDDoctorService {
             guard fileManager.fileExists(atPath: workdir.path(percentEncoded: false), isDirectory: &isDirectory),
                   isDirectory.boolValue else {
                 setProbe(.workingDirectory, status: .red(
-                    message: redacted("Steam Library folder is missing."),
+                    message: redacted(String(localized: "Steam Library folder is missing.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")),
                     command: nil
                 ))
                 return
@@ -581,12 +631,12 @@ final class SteamCMDDoctorService {
                 .appendingPathComponent("config.vdf", isDirectory: false)
             guard fileManager.isReadableFile(atPath: config.path(percentEncoded: false)) else {
                 setProbe(.workingDirectory, status: .red(
-                    message: redacted("Steam Library is not readable."),
+                    message: redacted(String(localized: "Steam Library is not readable.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")),
                     command: nil
                 ))
                 return
             }
-            setProbe(.workingDirectory, status: .green(detail: redacted("Steam Library is readable.")))
+            setProbe(.workingDirectory, status: .green(detail: redacted(String(localized: "Steam Library is readable.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."))))
         } catch {
             setProbe(.workingDirectory, status: .red(message: redacted(error.localizedDescription), command: nil))
         }
@@ -615,7 +665,7 @@ final class SteamCMDDoctorService {
             return
         }
 
-        guard let expectedSHA256 = lastBinarySHA256 else {
+        guard lastBinarySHA256 != nil else {
             // A bound binary always records its digest at bind time; missing
             // digest means the binding is incomplete — same remedy as unbound.
             setProbe(.cachedLogin, status: .yellow(
@@ -628,11 +678,7 @@ final class SteamCMDDoctorService {
             return
         }
 
-        let result = await SteamConnectorClient.probeCachedLogin(
-            accountName: username,
-            steamCMDPath: binary.path(percentEncoded: false),
-            expectedSHA256: expectedSHA256
-        )
+        let result = await SteamConnectorClient.probeCachedLogin(accountName: username)
         guard let result else {
             setProbe(.cachedLogin, status: .red(
                 message: String(
@@ -749,7 +795,7 @@ final class SteamCMDDoctorService {
         do {
             return try await operationCoordinator.withOperation(.workshopDownload) { [weak self] _ in
                 guard let self else {
-                    return .failed(reason: "Workshop download owner was released.")
+                    return .failed(reason: String(localized: "Workshop download owner was released.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."))
                 }
                 return await performDownloadWorkshopItem(
                     itemID,
@@ -758,7 +804,7 @@ final class SteamCMDDoctorService {
                 )
             }
         } catch is CancellationError {
-            return .failed(reason: "Download cancelled.")
+            return .failed(reason: String(localized: "Download cancelled.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."))
         } catch {
             return .failed(reason: redacted(error.localizedDescription))
         }
@@ -771,23 +817,23 @@ final class SteamCMDDoctorService {
         onContentReady: @MainActor @Sendable (URL) async -> Imported
     ) async -> WorkshopItemDownloadResult<Imported> {
         guard let username, SteamCMDScriptWriter.validateUsername(username) else {
-            return .notConfigured(reason: "Choose your Steam account in the Steam connection sheet first.")
+            return .notConfigured(reason: String(localized: "Choose your Steam account in the Steam connection sheet first.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."))
         }
-        guard let binary = try? resolveBinaryURL() else {
+        guard (try? resolveBinaryURL()) != nil else {
             return .notConfigured(reason: SteamCMDDoctorError.missingBinaryBinding.errorDescription ?? "No SteamCMD binary is selected.")
         }
         guard let steamRoot = try? resolveWorkdirURL() else {
             return .notConfigured(reason: SteamCMDDoctorError.missingWorkdirBinding.errorDescription ?? "No Steam Library is authorized.")
         }
         guard isGreen(.cachedLogin) else { return .loginRequired }
-        // No verified digest → refuse spawn (connector re-hashes expectedSHA256).
-        guard let expectedSHA256 = lastBinarySHA256 else { return .untrustedBinary }
+        // No digest on file means the binding never completed its identity
+        // probe. The connector picks the binary now, so this is a readiness
+        // check, not an authorization one.
+        guard lastBinarySHA256 != nil else { return .untrustedBinary }
 
         let result = await SteamConnectorClient.downloadWorkshopItem(
             workshopID: String(itemID),
             accountName: username,
-            steamCMDPath: binary.path(percentEncoded: false),
-            expectedSHA256: expectedSHA256,
             onProgress: { update in
                 guard let fraction = update.fraction else { return }
                 onProgress?(fraction * 100, update.downloadedBytes, update.totalBytes)
@@ -801,7 +847,7 @@ final class SteamCMDDoctorService {
         }
         switch result.outcome {
         case .downloaded:
-            guard let path = result.itemPath else { return .failed(reason: "Download reported no folder.") }
+            guard let path = result.itemPath else { return .failed(reason: String(localized: "Download reported no folder.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")) }
             // The import reads the folder and mints its own per-project bookmark,
             // so the Steam-library scope has to stay open across the handoff.
             let scope = steamRoot.startAccessingSecurityScopedResource()
@@ -885,8 +931,11 @@ final class SteamCMDDoctorService {
         let killed: Bool
     }
 
-    /// A binary the app has decided to trust, plus the digest that decision was
-    /// made against. The digest travels to the connector with every probe.
+    /// Proof that the Doctor evaluated the binary and found it trustworthy.
+    ///
+    /// A token, not an instruction: it no longer travels to the connector,
+    /// which picks and runs its own binary. Holding one is what makes a probe
+    /// body allowed to probe, and the fields are what the report renders.
     struct SteamCMDBinaryExecutionAuthorization: Equatable, Sendable {
         let canonicalPath: String
         let sha256: String
@@ -898,16 +947,16 @@ final class SteamCMDDoctorService {
     /// The connector merges the child's stdout and stderr into one stream — they
     /// share a pipe there so interleaving stays faithful — so `stderr` is empty
     /// and callers that concatenate the two are unaffected. An unreachable
-    /// connector, or a refusal because the binary changed under us, both surface
-    /// as `killed`: neither is a verdict about SteamCMD itself.
+    /// connector, or a refusal because no binary resolved, both surface as
+    /// `killed`: neither is a verdict about SteamCMD itself.
+    ///
+    /// The authorization is required but not forwarded — see its own doc.
     private static func probe(
         _ authorization: SteamCMDBinaryExecutionAuthorization,
         args: [String],
         timeout: TimeInterval = 30
     ) async -> SteamCMDRunResult {
         guard let run = await SteamConnectorClient.runSteamCMDProbe(
-            path: authorization.canonicalPath,
-            expectedSHA256: authorization.sha256,
             arguments: args,
             timeout: timeout
         ) else {
@@ -933,13 +982,14 @@ final class SteamCMDDoctorService {
         )
     }
 
-    /// Trust decision stays here — it is the app that knows what the user
-    /// authorized — but every read of the file happens in the connector, so the
-    /// sandboxed bundle never needs access to `/opt/homebrew` and friends.
+    /// Whether the Doctor considers the bound binary usable. Every read of the
+    /// file happens in the connector, so the sandboxed bundle never needs access
+    /// to `/opt/homebrew` and friends.
     ///
-    /// The returned SHA travels with each probe: the connector re-hashes
-    /// immediately before spawning, which is what closes the replace-while-queued
-    /// window that a check here alone could not.
+    /// This is a readiness verdict for the UI, not an execution authorization:
+    /// what the connector runs is what the connector resolves. An app-side check
+    /// could never have authorized a spawn anyway — the file can change between
+    /// the check and the exec, and nothing on macOS binds the two.
     private func trustedExecutionAuthorization(
         for binary: URL
     ) async -> SteamCMDBinaryExecutionAuthorization? {

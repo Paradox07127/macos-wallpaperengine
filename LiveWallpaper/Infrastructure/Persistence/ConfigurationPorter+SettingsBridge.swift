@@ -25,6 +25,9 @@ extension ConfigurationPorter {
 
         if let global = bundle.globalSettings {
             manager.saveGlobalSettings(global)
+            // The imported library may rename or delete presets the cached
+            // configurations still carry snapshots of.
+            manager.reconcileScenePresetSnapshots()
             summary.didRestoreGlobalSettings = true
         }
 

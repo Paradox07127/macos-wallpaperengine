@@ -32,6 +32,12 @@ extension Notification.Name {
     /// Requests an Add Wallpaper picker from the main window; `userInfo["kind"]` identifies the source type.
     public static let promptAddWallpaper = Notification.Name("PromptAddWallpaper")
 
+    /// A scene preset was added, renamed, or deleted. Two listeners, both
+    /// holding state the library write cannot reach on its own: the per-screen
+    /// configuration cache (whose copies carry a denormalized preset snapshot)
+    /// and any open settings card showing the preset list.
+    public static let scenePresetLibraryDidChange = Notification.Name("ScenePresetLibraryDidChange")
+
     /// Wallpaper Engine install-root bookmark was set or cleared. Runtime
     /// scenes use it to mount WPE's bundled framework assets, and the Scene
     /// section's onboarding banner watches it to dismiss itself once granted.

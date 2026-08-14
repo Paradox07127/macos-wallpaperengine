@@ -48,11 +48,4 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
     }
 
     /// Absent or corrupt key → nil (caller keeps default).
-    public static func decodeIfPresent<K: CodingKey>(
-        from container: KeyedDecodingContainer<K>,
-        forKey key: K
-    ) -> MonitorOverlayConfiguration? {
-        guard container.contains(key) else { return nil }
-        return try? container.decode(MonitorOverlayConfiguration.self, forKey: key)
-    }
 }

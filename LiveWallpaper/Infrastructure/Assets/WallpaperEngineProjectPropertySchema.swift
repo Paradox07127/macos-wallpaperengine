@@ -64,18 +64,43 @@ struct WallpaperEngineProjectPropertySchema: Equatable, Sendable {
         defaultValues.merging(overrides) { _, override in override }
     }
 
-    /// Schema defaults + descriptor overrides (overrides-only if no project.json).
+    /// Keeps only values this wallpaper actually declares as editable.
+    ///
+    /// A Workshop preset's `preset` map carries an entry for **every** property
+    /// row, including the decorative `text` / `group` ones whose value is an
+    /// empty string. `effectiveValues` merges unconditionally, so those empty
+    /// strings won over real schema defaults the moment the preset layer
+    /// started reaching the renderer — every image layer in a preset-carrying
+    /// scene rendered with no output while text layers were unaffected.
+    ///
+    /// Also drops keys this wallpaper no longer declares, which is what a
+    /// preset authored against an older revision leaves behind.
+    func declaredEditableValues(
+        _ values: [String: WallpaperEngineProjectPropertyValue]
+    ) -> [String: WallpaperEngineProjectPropertyValue] {
+        guard !properties.isEmpty else { return values }
+        let editable = Set(properties.lazy.filter { $0.type.isEditable }.map(\.key))
+        return values.filter { editable.contains($0.key) }
+    }
+
+    /// Schema defaults + the descriptor's preset layer + the user's increment
+    /// (the last two alone if no project.json).
+    ///
+    /// Reads `layeredPropertyValues()`, never `propertyOverrides`: the increment
+    /// on its own is half the look, so a descriptor carrying a preset would
+    /// render as bare scene defaults.
     static func effectiveSceneValues(
         descriptor: SceneDescriptor,
         cacheRootURL: URL
     ) -> [String: WallpaperEngineProjectPropertyValue] {
+        let layered = descriptor.layeredPropertyValues()
         do {
-            return try read(
-                from: cacheRootURL,
-                includeSchemeColor: true
-            ).effectiveValues(overrides: descriptor.propertyOverrides)
+            let schema = try read(from: cacheRootURL, includeSchemeColor: true)
+            return schema.effectiveValues(
+                overrides: schema.declaredEditableValues(layered)
+            )
         } catch {
-            return descriptor.propertyOverrides
+            return layered
         }
     }
 

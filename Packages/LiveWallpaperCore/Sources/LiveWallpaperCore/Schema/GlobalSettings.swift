@@ -52,6 +52,10 @@ public struct GlobalSettings: Codable, Sendable {
     /// Lower frame rate when covered or on battery.
     public var adaptiveFrameRateEnabled: Bool = false
 
+    /// Preset library, keyed by `ScenePreset.id`. Global rather than per-screen
+    /// so one saved look can be applied to any display showing that scene.
+    public var scenePresets: [String: ScenePreset] = [:]
+
     public static let defaultVideoCacheBytes: Int = 150 * 1024 * 1024
     /// Settings slider ceiling (RAM / auto-policy guard).
     public static let maxVideoCacheBytes: Int = 1024 * 1024 * 1024
@@ -137,37 +141,12 @@ public struct GlobalSettings: Codable, Sendable {
         videoCacheMaxBytesPerScreen = GlobalSettings.clampedVideoCacheBytes(storedCache)
         displayDefaults = (try? c.decodeIfPresent(DisplayDefaults.self, forKey: .displayDefaults)) ?? DisplayDefaults()
         // Lossy: one unreadable display's overlay must not drop every other display's.
-        monitorOverlays = Self.decodeLossyOverlays(from: c, forKey: .monitorOverlays)
+        monitorOverlays = c.decodeLossyStringDictionary(forKey: .monitorOverlays) ?? [:]
         screenNames = (try? c.decodeIfPresent([String: String].self, forKey: .screenNames)) ?? [:]
         audioResponseEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .audioResponseEnabled)) ?? false
         adaptiveFrameRateEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .adaptiveFrameRateEnabled)) ?? false
-    }
-
-    /// Skip malformed per-display entries; absent/non-object → empty.
-    private static func decodeLossyOverlays<Key: CodingKey>(
-        from container: KeyedDecodingContainer<Key>,
-        forKey key: Key
-    ) -> [String: MonitorOverlayConfiguration] {
-        guard let nested = try? container.nestedContainer(
-            keyedBy: DisplayFingerprintKey.self,
-            forKey: key
-        ) else { return [:] }
-        var result: [String: MonitorOverlayConfiguration] = [:]
-        for fingerprint in nested.allKeys {
-            guard let overlay = MonitorOverlayConfiguration.decodeIfPresent(
-                from: nested, forKey: fingerprint
-            ) else { continue }
-            result[fingerprint.stringValue] = overlay
-        }
-        return result
-    }
-
-    /// Arbitrary display fingerprints as coding keys.
-    private struct DisplayFingerprintKey: CodingKey {
-        let stringValue: String
-        var intValue: Int? { nil }
-        init?(stringValue: String) { self.stringValue = stringValue }
-        init?(intValue: Int) { nil }
+        // Lossy: one unreadable preset must not drop the rest of the library.
+        scenePresets = c.decodeLossyStringDictionary(forKey: .scenePresets) ?? [:]
     }
 
     /// Skip malformed elements; absent/non-array → empty.
@@ -197,5 +176,35 @@ public struct GlobalSettings: Codable, Sendable {
 private struct AnyDecodableSkip: Decodable {
     init(from decoder: Decoder) throws {
         _ = try? decoder.singleValueContainer()
+    }
+}
+
+/// Arbitrary strings (display fingerprints, preset ids, property names) as
+/// coding keys for dictionary-shaped JSON.
+public struct StringDictionaryKey: CodingKey, Sendable {
+    public let stringValue: String
+    public var intValue: Int? { nil }
+    public init?(stringValue: String) { self.stringValue = stringValue }
+    public init?(intValue: Int) { nil }
+}
+
+extension KeyedDecodingContainer {
+    /// Lossy string-keyed dictionary decode: one unreadable value drops that
+    /// entry, not the whole map. nil when the key is absent or not an object —
+    /// callers that treat "present but empty" differently from "absent" (the
+    /// preset map does) branch on that.
+    public func decodeLossyStringDictionary<Value: Decodable>(
+        forKey key: Key
+    ) -> [String: Value]? {
+        guard contains(key) else { return nil }
+        guard let nested = try? nestedContainer(keyedBy: StringDictionaryKey.self, forKey: key) else {
+            return nil
+        }
+        var result: [String: Value] = [:]
+        for nestedKey in nested.allKeys {
+            guard let value = try? nested.decode(Value.self, forKey: nestedKey) else { continue }
+            result[nestedKey.stringValue] = value
+        }
+        return result
     }
 }

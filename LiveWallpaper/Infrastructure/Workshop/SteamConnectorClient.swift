@@ -16,18 +16,9 @@ enum SteamConnectorClient {
         return (try? JSONDecoder().decode([SteamAccountSummary].self, from: data)) ?? []
     }
 
-    static func probeCachedLogin(
-        accountName: String,
-        steamCMDPath: String,
-        expectedSHA256: String
-    ) async -> SteamCachedLoginResult? {
+    static func probeCachedLogin(accountName: String) async -> SteamCachedLoginResult? {
         guard let data = await call({ connector, reply in
-            connector.probeCachedLogin(
-                accountName: accountName,
-                steamCMDPath: steamCMDPath,
-                expectedSHA256: expectedSHA256,
-                with: reply
-            )
+            connector.probeCachedLogin(accountName: accountName, with: reply)
         }) else { return nil }
         return try? JSONDecoder().decode(SteamCachedLoginResult.self, from: data)
     }
@@ -40,29 +31,58 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDBinaryInspection.self, from: $0) }
     }
 
-    /// Resolves a SteamCMD path to the Mach-O we would execute. `pickedPath` nil
-    /// means "try the three package-manager locations".
-    static func locateSteamCMDBinary(pickedPath: String?) async -> SteamCMDBinaryLocation? {
+    /// The Mach-O the connector would execute, resolved from its own candidate
+    /// list. Takes no path: the app does not get to name what runs.
+    static func locateSteamCMDBinary() async -> SteamCMDBinaryLocation? {
         let data = await call { connector, reply in
-            connector.locateSteamCMDBinary(pickedPath: pickedPath, with: reply)
+            connector.locateSteamCMDBinary(with: reply)
         }
         return data.flatMap { try? JSONDecoder().decode(SteamCMDBinaryLocation.self, from: $0) }
     }
 
-    /// Runs one Doctor probe. `expectedSHA256` is the digest the caller verified;
-    /// the connector re-hashes before spawning and refuses on any change.
+    /// Hands a verified bootstrap archive to the connector to unpack into a
+    /// managed install. The app cannot unpack it itself: the sandbox stamps
+    /// `com.apple.quarantine` on everything this process writes, and a
+    /// quarantined bare CLI Mach-O cannot be spawned at all.
+    static func installManagedSteamCMD(
+        tarballPath: String
+    ) async -> SteamCMDManagedInstallResult? {
+        let data = await call { connector, reply in
+            connector.installManagedSteamCMD(tarballPath: tarballPath, with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(SteamCMDManagedInstallResult.self, from: $0) }
+    }
+
+    /// Deletes the managed install. The app cannot do this itself — the payload
+    /// is deliberately outside its container.
+    static func removeManagedSteamCMD() async -> SteamCMDManagedRemovalResult? {
+        let data = await call { connector, reply in
+            connector.removeManagedSteamCMD(with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(SteamCMDManagedRemovalResult.self, from: $0) }
+    }
+
+    /// Whether SteamCMD works on this Mac, decided by the one process that can
+    /// spawn it — resolution, signature, quarantine, and a real `steamcmd +quit`
+    /// run. Slow by nature; the app renders the result rather than re-deriving
+    /// any part of it. nil means the connector was unreachable.
+    static func diagnoseSteamCMD(
+        launchTimeout: TimeInterval = SteamCMDDiagnosisProbe.defaultLaunchTimeout
+    ) async -> SteamCMDDiagnosis? {
+        let request = SteamCMDDiagnosisRequest(launchTimeout: launchTimeout)
+        guard let payload = try? JSONEncoder().encode(request) else { return nil }
+        let data = await call { connector, reply in
+            connector.diagnoseSteamCMD(payload, with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(SteamCMDDiagnosis.self, from: $0) }
+    }
+
+    /// Runs one Doctor probe. Which binary it runs is the connector's call.
     static func runSteamCMDProbe(
-        path: String,
-        expectedSHA256: String,
         arguments: [String],
         timeout: TimeInterval
     ) async -> SteamCMDProbeRun? {
-        let request = SteamCMDProbeRequest(
-            path: path,
-            expectedSHA256: expectedSHA256,
-            arguments: arguments,
-            timeout: timeout
-        )
+        let request = SteamCMDProbeRequest(arguments: arguments, timeout: timeout)
         guard let payload = try? JSONEncoder().encode(request) else { return nil }
         let data = await call { connector, reply in
             connector.runSteamCMDProbe(payload, with: reply)
@@ -72,20 +92,13 @@ enum SteamConnectorClient {
 
     // MARK: - Long operations
 
-    /// Long-running app_update with progress; connector re-checks expectedSHA256.
+    /// Long-running app_update with progress.
     static func installWallpaperEngineAssets(
         accountName: String,
-        steamCMDPath: String,
-        expectedSHA256: String,
         onProgress: @escaping @Sendable (SteamOperationProgress) -> Void
     ) async -> SteamEngineAssetsResult? {
         let data = await call(onProgress: onProgress) { connector, reply in
-            connector.installWallpaperEngineAssets(
-                accountName: accountName,
-                steamCMDPath: steamCMDPath,
-                expectedSHA256: expectedSHA256,
-                with: reply
-            )
+            connector.installWallpaperEngineAssets(accountName: accountName, with: reply)
         }
         return data.flatMap { try? JSONDecoder().decode(SteamEngineAssetsResult.self, from: $0) }
     }
@@ -93,16 +106,12 @@ enum SteamConnectorClient {
     static func downloadWorkshopItem(
         workshopID: String,
         accountName: String,
-        steamCMDPath: String,
-        expectedSHA256: String,
         onProgress: @escaping @Sendable (SteamOperationProgress) -> Void
     ) async -> SteamWorkshopDownloadResult? {
         let data = await call(onProgress: onProgress) { connector, reply in
             connector.downloadWorkshopItem(
                 workshopID: workshopID,
                 accountName: accountName,
-                steamCMDPath: steamCMDPath,
-                expectedSHA256: expectedSHA256,
                 with: reply
             )
         }
@@ -118,18 +127,9 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamDeleteResult.self, from: $0) }
     }
 
-    static func latestWallpaperEngineBuildID(
-        accountName: String,
-        steamCMDPath: String,
-        expectedSHA256: String
-    ) async -> String? {
+    static func latestWallpaperEngineBuildID(accountName: String) async -> String? {
         let data = await call { connector, reply in
-            connector.latestWallpaperEngineBuildID(
-                accountName: accountName,
-                steamCMDPath: steamCMDPath,
-                expectedSHA256: expectedSHA256,
-                with: reply
-            )
+            connector.latestWallpaperEngineBuildID(accountName: accountName, with: reply)
         }
         return data.flatMap { try? JSONDecoder().decode(String?.self, from: $0) } ?? nil
     }

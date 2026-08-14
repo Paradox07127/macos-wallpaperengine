@@ -1778,3 +1778,50 @@ fragment half4 wpe_effect_shake_fragment(
     float2 uv = clamp(in.uv + jitter, float2(0.0), float2(1.0));
     return texture0.sample(linearSampler, uv);
 }
+
+// MARK: - Engine colour correction
+
+/// Wallpaper Engine's per-wallpaper colour correction, applied to the finished
+/// frame. Values arrive already mapped to the same semantics the video path's
+/// `CIColorControls` uses, so one slider position means the same thing whichever
+/// wallpaper type it lands on.
+struct WPEColorCorrectionUniforms {
+    float brightness;   // additive, -1...1, 0 neutral
+    float contrast;     // around mid grey, 0...2, 1 neutral
+    float saturation;   // against luma, 0...2, 1 neutral
+    float hueRadians;   // -pi...pi, 0 neutral
+};
+
+fragment half4 wpe_color_correction_fragment(
+    WPEVertexOut in [[stage_in]],
+    texture2d<half> source [[texture(0)]],
+    constant WPEColorCorrectionUniforms &settings [[buffer(0)]]
+) {
+    constexpr sampler nearest(filter::nearest, address::clamp_to_edge);
+    half4 texel = source.sample(nearest, in.uv);
+
+    // Un-premultiply first: the scene composite is premultiplied, and scaling
+    // premultiplied colour by contrast/saturation would drag the alpha-weighted
+    // value instead of the colour, tinting anything partially transparent.
+    half alpha = texel.a;
+    float3 rgb = alpha > 0.0h ? float3(texel.rgb / alpha) : float3(texel.rgb);
+
+    // Hue: rotate around the luma axis. The matrix form avoids an RGB→HSV→RGB
+    // round trip, which loses precision on the half-float targets used here.
+    float angle = settings.hueRadians;
+    if (angle != 0.0) {
+        float c = cos(angle);
+        float s = sin(angle);
+        const float3 k = float3(0.57735);  // 1/sqrt(3), the grey axis
+        rgb = rgb * c + cross(k, rgb) * s + k * dot(k, rgb) * (1.0 - c);
+    }
+
+    // Rec. 709 luma, matching the coefficients the transpiled WPE shaders use.
+    float luma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+    rgb = mix(float3(luma), rgb, settings.saturation);
+    rgb = (rgb - 0.5) * settings.contrast + 0.5;
+    rgb = rgb + settings.brightness;
+
+    rgb = clamp(rgb, 0.0, 1.0);
+    return half4(half3(rgb) * alpha, alpha);
+}

@@ -160,6 +160,6 @@ extension GeneralSettingsView {
             return "\(perScreenMB) MB"
         }
         let totalMB = perScreenMB * screenCount
-        return "\(perScreenMB) MB · \(totalMB) MB total"
+        return String(localized: "\(perScreenMB) MB · \(totalMB) MB total", comment: "Video cache budget subtitle: per-screen budget then the multi-screen total.")
     }
 }

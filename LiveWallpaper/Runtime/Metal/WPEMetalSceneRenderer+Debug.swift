@@ -302,9 +302,12 @@ extension WPEMetalSceneRenderer {
     /// DEBUG-only `MTLCaptureManager` wrap around `renderCurrentFrame()`. When
     /// `UserDefaults.standard.string(forKey: "WPEMetalCaptureScene")` matches
     /// the active scene's workshopID, the render's `MTLCommandBuffer` is
-    /// captured to a `.gputrace` file under `/tmp` so a maintainer can open
-    /// it in Xcode and inspect every render-pass attachment, bound texture,
-    /// uniform buffer, and translated MSL source for that scene.
+    /// captured to a `.gputrace` file so a maintainer can open it in Xcode and
+    /// inspect every render-pass attachment, bound texture, uniform buffer, and
+    /// translated MSL source for that scene. It lands next to the per-pass PNGs
+    /// in App Support/LiveWallpaper/gpu-traces/ — see `makeCaptureURL`, which is
+    /// the authority; this app is sandboxed, so that resolves inside the
+    /// container.
     ///
     /// Triggered via:
     ///   defaults write com.loomscreen.pro WPEMetalCaptureScene 3669681034

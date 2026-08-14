@@ -447,7 +447,10 @@ final class WPEMetalRenderExecutor {
         particleParallax: WPECameraParallaxFrame = .neutral,
         textPayloads: [String: WPETextRenderPayload] = [:],
         frameSubmission: WPEMetalFrameSubmissionLease? = nil,
-        frameProduction: WPEMetalFrameProductionCompletion? = nil
+        frameProduction: WPEMetalFrameProductionCompletion? = nil,
+        /// Wallpaper Engine's per-wallpaper colour grade, from the applied preset.
+        /// Defaulted so the many call sites that never carry one stay unchanged.
+        colorCorrection: WPEEngineColorCorrection = .neutral
     ) throws -> MTLTexture {
         // Async submission: take a permit up front so the CPU blocks here (rather
         // than queuing another frame) once `maxFramesInFlight` are outstanding.
@@ -849,6 +852,11 @@ final class WPEMetalRenderExecutor {
             output: output,
             commandBuffer: commandBuffer
         )
+        // Last, so it grades the finished frame — bloom included — the way
+        // Wallpaper Engine's own correction sits after the scene, not inside it.
+        let graded = try encodeColorCorrectionIfNeeded(
+            colorCorrection, output: output, commandBuffer: commandBuffer
+        )
 
         recyclePaletteBuffersOnCompletion(of: commandBuffer)
         let frameSubmissionCompletion = frameSubmission?.registerSubmission()
@@ -916,7 +924,7 @@ final class WPEMetalRenderExecutor {
             // effect needs named-target history (none in the corpus today).
             namedTextures: [:]
         )
-        return output
+        return graded
     }
 
     /// Slots this layout occupies, matching the per-shader `WPEUniforms.vals[]` the transpiler emits.
@@ -2428,6 +2436,7 @@ final class WPEMetalRenderExecutor {
     /// Kill switch: `defaults write com.loomscreen.pro WPEMetalSceneBloomEnabled -bool NO`.
     static let isSceneBloomEnabled: Bool =
         (UserDefaults.standard.object(forKey: "WPEMetalSceneBloomEnabled") as? Bool) ?? true
+
 
     var bloomLevelTextures: [MTLTexture] = []
     /// Backs `bloomLevelTextures` from one placement heap (same `.tracked` mechanism as the FBO

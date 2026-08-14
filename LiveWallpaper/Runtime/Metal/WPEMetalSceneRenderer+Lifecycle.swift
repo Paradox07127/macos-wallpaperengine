@@ -488,7 +488,14 @@ extension WPEMetalSceneRenderer {
     /// deferred audio-startup boundary.
     func setAudioVolume(_ volume: Double) {
         pendingAudioVolume = volume
-        soundRuntime?.setMasterVolume(volume)
+        soundRuntime?.setMasterVolume(effectiveAudioVolume)
+    }
+
+    /// The user's master level scaled by the applied preset's own.
+    var effectiveAudioVolume: Double {
+        WPEEngineAudioSettings.effectiveVolume(
+            master: pendingAudioVolume, preset: presetAudioSettings
+        )
     }
 
     /// True when something on stage actually changes between frames — a dynamic

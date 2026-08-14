@@ -175,6 +175,6 @@ extension GeneralSettingsView {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "–"
         let build = info?["CFBundleVersion"] as? String ?? "–"
-        return "Version \(version) (\(build))"
+        return String(localized: "Version \(version) (\(build))", comment: "About tab version line. Placeholders are marketing version and build number.")
     }
 }

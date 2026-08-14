@@ -32,7 +32,6 @@ SUITES=(
   MonitorRuntimeLeaseChurnCharacterizationTests
   MonitorSamplerOwnershipCharacterizationTests
   MonitorSuspendEnergyTests
-  PIISanitizerTests
   RepositoryRootTests
   SchemeEnvironmentContractTests
   SecurityScopedBookmarkResolverTests

@@ -210,23 +210,23 @@ struct SteamWebAPIKeyEntrySheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .wrongShape:
-            label(text: "Key must be 32 hexadecimal characters.", tint: DesignTokens.Colors.Status.danger, system: "xmark.circle.fill")
+            label(text: Text("Key must be 32 hexadecimal characters."), tint: DesignTokens.Colors.Status.danger, system: "xmark.circle.fill")
         case .validating:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
                 Text("Checking with Steam…").font(.caption).foregroundStyle(.secondary)
             }
         case .valid:
-            label(text: "Key validated.", tint: DesignTokens.Colors.Status.active, system: "checkmark.circle.fill")
+            label(text: Text("Key validated."), tint: DesignTokens.Colors.Status.active, system: "checkmark.circle.fill")
         case .error(let message):
-            label(text: message, tint: DesignTokens.Colors.Status.danger, system: "exclamationmark.triangle.fill")
+            label(text: Text(verbatim: message), tint: DesignTokens.Colors.Status.danger, system: "exclamationmark.triangle.fill")
         }
     }
 
-    private func label(text: String, tint: Color, system: String) -> some View {
+    private func label(text: Text, tint: Color, system: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: system).foregroundStyle(tint).imageScale(.small)
-            Text(text).font(.caption).foregroundStyle(tint)
+            text.font(.caption).foregroundStyle(tint)
         }
     }
 

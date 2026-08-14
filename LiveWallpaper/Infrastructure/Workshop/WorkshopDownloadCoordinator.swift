@@ -15,7 +15,20 @@ final class WorkshopDownloadCoordinator {
         case downloading
         case importing
         case succeeded
+        /// The item turned out to be a preset for `baseWorkshopID`, not a
+        /// wallpaper. Separate from `succeeded` because it lands somewhere else
+        /// and the user has to be told where.
+        case succeededAsPreset(baseWorkshopID: String)
         case failed(String)
+
+        /// Anything that finished without an error, for callers that only care
+        /// whether the item is still in flight.
+        var isSuccess: Bool {
+            switch self {
+            case .succeeded, .succeededAsPreset: return true
+            case .idle, .downloading, .importing, .failed: return false
+            }
+        }
     }
 
     struct DownloadProgressBytes: Equatable, Sendable {
@@ -127,7 +140,7 @@ final class WorkshopDownloadCoordinator {
 
         switch result {
         case .imported(let importResult):
-            finishImport(importResult, itemID: itemID, title: title)
+            await finishImport(importResult, itemID: itemID, title: title)
         case .notConfigured(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         case .loginRequired:
@@ -167,7 +180,7 @@ final class WorkshopDownloadCoordinator {
         progressBytes[itemID] = nil
     }
 
-    private func finishImport(_ result: WallpaperEngineImportService.ImportResult?, itemID: UInt64, title: String) {
+    private func finishImport(_ result: WallpaperEngineImportService.ImportResult?, itemID: UInt64, title: String) async {
         guard let result else {
             finish(itemID: itemID, title: title, phase: .failed(String(localized: "Couldn't read the downloaded files.", comment: "Workshop import failed: unreadable download.")))
             return
@@ -182,6 +195,17 @@ final class WorkshopDownloadCoordinator {
             )
             Logger.info("Imported downloaded Workshop item into the library", category: .workshop)
             finish(itemID: itemID, title: title, phase: .succeeded)
+        case .workshopPreset(let preset):
+            // Same explicit re-acquire as the wallpaper branch above: lift any
+            // tombstone left by an earlier delete.
+            await SettingsManager.shared.registerScenePreset(preset, clearsDeleteTombstone: true)
+            Logger.info("Registered a downloaded Workshop preset", category: .workshop)
+            // Deliberately not the shared success toast: a preset does not
+            // become an entry in the wallpaper library, so "Added to your
+            // library" would send the user looking somewhere it will never be.
+            finish(itemID: itemID, title: title, phase: .succeededAsPreset(
+                baseWorkshopID: preset.baseWorkshopID
+            ))
         case .rejected(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         }
@@ -197,6 +221,23 @@ final class WorkshopDownloadCoordinator {
                 headline: String(localized: "Downloaded", comment: "Workshop download success toast headline."),
                 title: title,
                 message: String(localized: "Added to your library.", comment: "Workshop download success toast subtitle."),
+                isSuccess: true
+            )
+        case .succeededAsPreset(let baseWorkshopID):
+            let hasBase = SettingsManager.shared.loadGlobalSettings()
+                .recentWPEImports.contains { $0.origin.workshopID == baseWorkshopID }
+            WorkshopToastCenter.shared.post(
+                headline: String(localized: "Preset added", comment: "Workshop preset download success toast headline."),
+                title: title,
+                message: hasBase
+                    ? String(
+                        localized: "Pick it under Preset in that wallpaper's scene settings.",
+                        comment: "Workshop preset download success toast subtitle when the base wallpaper is installed."
+                    )
+                    : String(
+                        localized: "Download wallpaper \(baseWorkshopID) to use it — a preset only restyles the wallpaper it was made for.",
+                        comment: "Workshop preset download toast subtitle when the base wallpaper is missing; %@ is its Workshop ID."
+                    ),
                 isSuccess: true
             )
         case .failed(let message):

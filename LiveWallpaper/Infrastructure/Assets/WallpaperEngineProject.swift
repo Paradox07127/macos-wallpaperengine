@@ -18,6 +18,51 @@ struct WallpaperEngineProject: Sendable, Equatable {
     /// `bin/` directory contains a Windows `.dll` plugin. macOS cannot run
     /// these; surfaced so the UI can show a permanent "won't run" badge.
     let requiresWindowsPlugin: Bool
+    /// Workshop *preset* items carry a singular `dependency` naming the base
+    /// wallpaper they restyle. Unrelated to the plural `dependencies` array
+    /// above, which lists asset packs — do not merge the two.
+    let presetBaseWorkshopID: String?
+    /// Property overrides the preset applies on top of the base wallpaper.
+    /// `nil` when the manifest has no `preset` key at all; an empty map is a
+    /// preset that happens to override nothing.
+    let presetValues: [String: WallpaperEngineProjectPropertyValue]?
+
+    init(
+        workshopID: String,
+        title: String,
+        entryFile: String,
+        type: WPEType,
+        previewFileName: String?,
+        propertyCount: Int,
+        dependencyWorkshopIDs: [String],
+        requiresWindowsPlugin: Bool,
+        presetBaseWorkshopID: String? = nil,
+        presetValues: [String: WallpaperEngineProjectPropertyValue]? = nil
+    ) {
+        self.workshopID = workshopID
+        self.title = title
+        self.entryFile = entryFile
+        self.type = type
+        self.previewFileName = previewFileName
+        self.propertyCount = propertyCount
+        self.dependencyWorkshopIDs = dependencyWorkshopIDs
+        self.requiresWindowsPlugin = requiresWindowsPlugin
+        self.presetBaseWorkshopID = presetBaseWorkshopID
+        self.presetValues = presetValues
+    }
+
+    /// The library entry a downloaded preset item becomes. Returns nil for an
+    /// ordinary wallpaper, so callers can branch on the manifest alone instead
+    /// of importing a preset as a wallpaper with no renderable entry.
+    func scenePreset() -> ScenePreset? {
+        guard let presetBaseWorkshopID, let presetValues else { return nil }
+        return .workshop(
+            workshopID: workshopID,
+            name: title,
+            baseWorkshopID: presetBaseWorkshopID,
+            values: presetValues
+        )
+    }
 
     static func read(from folder: URL) throws -> Self {
         let manifestURL = folder.appendingPathComponent("project.json")
@@ -43,7 +88,28 @@ struct WallpaperEngineProject: Sendable, Equatable {
         guard WPEPathSafety.isSafeWorkshopID(workshopID) else {
             throw WPEProjectError.manifestMalformed("Invalid workshop id")
         }
-        guard let entryFile = Self.trimmed(decoded.file), WPEPathSafety.isSafeRelativePath(entryFile) else {
+
+        let presetBase = Self.trimmed(decoded.dependency).flatMap {
+            Self.looksLikeWorkshopID($0) ? $0 : nil
+        }
+        let declaresPreset = presetBase != nil && decoded.preset != nil
+
+        // A preset restyles someone else's wallpaper, so it has no renderable
+        // entry of its own. Requiring `file` here is what made downloaded
+        // presets surface as corrupt wallpapers.
+        //
+        // Only an ABSENT `file` is excused. A present-but-unsafe one ("../..",
+        // an absolute path) stays malformed for presets too: treating it as
+        // "no entry" would launder a path-traversal attempt into a valid object.
+        let entryFile: String
+        if let file = Self.trimmed(decoded.file) {
+            guard WPEPathSafety.isSafeRelativePath(file) else {
+                throw WPEProjectError.manifestMalformed("Invalid project entry file")
+            }
+            entryFile = file
+        } else if declaresPreset, !decoded.fileKeyPresent {
+            entryFile = ""
+        } else {
             throw WPEProjectError.manifestMalformed("Invalid project entry file")
         }
 
@@ -55,7 +121,9 @@ struct WallpaperEngineProject: Sendable, Equatable {
             previewFileName: Self.resolvePreviewFileName(decoded.preview, in: folder),
             propertyCount: decoded.general?.properties?.count ?? 0,
             dependencyWorkshopIDs: Self.collectDependencyWorkshopIDs(from: decoded),
-            requiresWindowsPlugin: Self.detectsWindowsPlugin(in: folder)
+            requiresWindowsPlugin: Self.detectsWindowsPlugin(in: folder),
+            presetBaseWorkshopID: declaresPreset ? presetBase : nil,
+            presetValues: declaresPreset ? (decoded.preset ?? [:]) : nil
         )
     }
 
@@ -134,6 +202,13 @@ private struct DecodedManifest: Decodable, Sendable {
     let preview: String?
     let general: DecodedGeneral?
     let dependencies: [String]?
+    let dependency: String?
+    let preset: [String: WallpaperEngineProjectPropertyValue]?
+    /// Whether the manifest carried a `file` key at all. `null`, `""` and a
+    /// whitespace string all decode to a nil `file`, but they are authored
+    /// mistakes rather than "this item has no entry" — only a preset with the
+    /// key genuinely absent may skip the entry requirement.
+    let fileKeyPresent: Bool
 
     private enum CodingKeys: String, CodingKey {
         case workshopid
@@ -143,6 +218,8 @@ private struct DecodedManifest: Decodable, Sendable {
         case preview
         case general
         case dependencies
+        case dependency
+        case preset
     }
 
     init(from decoder: Decoder) throws {
@@ -154,6 +231,9 @@ private struct DecodedManifest: Decodable, Sendable {
         preview = try container.decodeFlexibleString(forKey: .preview)
         general = try? container.decode(DecodedGeneral.self, forKey: .general)
         dependencies = try container.decodeFlexibleStringArray(forKey: .dependencies)
+        dependency = try container.decodeFlexibleString(forKey: .dependency)
+        preset = container.decodeLossyStringDictionary(forKey: .preset)
+        fileKeyPresent = container.contains(.file)
     }
 }
 
@@ -204,5 +284,6 @@ private extension KeyedDecodingContainer {
     }
 
     private struct Empty: Decodable { init(from decoder: Decoder) throws {} }
+
 }
 #endif

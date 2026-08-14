@@ -108,9 +108,134 @@ final class SettingsManager {
         persistConfigurations(configurations)
     }
 
+    /// Adds or replaces a preset in the library. Workshop presets key on their
+    /// own workshop id, so a re-download updates in place.
+    ///
+    /// `clearsDeleteTombstone`: same rule as `recordWPEImport` — `true` only
+    /// for an explicit user re-acquire, never for the passive library scan.
+    /// `thenPersist` is awaited after the library is written and *before*
+    /// observers are told about it. A caller that must also update a descriptor — saving
+    /// over the applied preset clears the increment it just absorbed — has no
+    /// safe order without this: notifying first lets
+    /// `handleScenePresetLibraryChange` republish {new snapshot + the old
+    /// increment still on disk} in a Task that races the caller's own write,
+    /// and persisting first is worse, because `refreshingPresetSnapshot` drops
+    /// a preset id the library does not have yet.
+    func registerScenePreset(
+        _ preset: ScenePreset,
+        clearsDeleteTombstone: Bool = false,
+        thenPersist: (() async -> Void)? = nil
+    ) async {
+        var settings = loadGlobalSettings()
+        var changed = false
+        if clearsDeleteTombstone, case .workshop(let workshopID) = preset.source {
+            let kept = settings.deletedWorkshopIDs.filter { $0 != workshopID }
+            if kept.count != settings.deletedWorkshopIDs.count {
+                settings.deletedWorkshopIDs = kept
+                changed = true
+            }
+        }
+        // A re-download brings Steam's title back, but the name is the one part
+        // of a Workshop preset the user owns — `renameScenePreset` treats it as
+        // a local label. Refreshing values while keeping the stored name is what
+        // makes "update in place" not mean "undo the rename".
+        var incoming = preset
+        if let stored = settings.scenePresets[preset.id], stored.hasUserAssignedName {
+            incoming = incoming.renamed(to: stored.name)
+        }
+        if settings.scenePresets[incoming.id] != incoming {
+            settings.scenePresets[incoming.id] = incoming
+            changed = true
+        }
+        guard changed else {
+            await thenPersist?()
+            return
+        }
+        saveGlobalSettings(settings)
+        // Awaited, not fired: the hook's whole job is to get the descriptor on
+        // disk before observers are told the library moved. A non-awaited hook
+        // returned while its own write was still in flight, so the notification
+        // below could republish {new snapshot + the old increment} and win.
+        await thenPersist?()
+        reconcileScenePresetSnapshots()
+    }
+
+    /// Drops a preset from the library. Configurations pointing at it fall back
+    /// to their own increment on the next reconcile — `refreshingScenePresets`
+    /// treats a missing id as "no preset", so nothing is left applying values
+    /// that no longer exist.
+    func removeScenePreset(id: String) {
+        var settings = loadGlobalSettings()
+        guard let removed = settings.scenePresets.removeValue(forKey: id) else { return }
+        // A downloaded preset's folder stays in the SteamCMD download tree, and
+        // the library scan walks that tree. Without a tombstone the next visit
+        // to the Workshop pane re-registers what was just deleted.
+        if case .workshop(let workshopID) = removed.source {
+            _ = Self.insertDeleteTombstone(workshopID: workshopID, into: &settings)
+        }
+        saveGlobalSettings(settings)
+        reconcileScenePresetSnapshots()
+    }
+
+    /// Renames in place. The id is what configurations point at, so this never
+    /// touches the pointer — only the label.
+    func renameScenePreset(id: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var settings = loadGlobalSettings()
+        guard let preset = settings.scenePresets[id], !trimmed.isEmpty, preset.name != trimmed else {
+            return
+        }
+        settings.scenePresets[id] = preset.renamed(to: trimmed)
+        saveGlobalSettings(settings)
+        reconcileScenePresetSnapshots()
+    }
+
+    /// The locally saved preset a "save as" would replace, matched on the
+    /// trimmed display name within one base wallpaper. Without this, saving the
+    /// same name twice produces two entries the picker cannot tell apart.
+    ///
+    /// Workshop presets are deliberately excluded: their id *is* their workshop
+    /// id, so reusing it would overwrite a downloaded item with local values
+    /// and the next re-download would silently undo the user's work.
+    func existingLocalScenePreset(named name: String, baseWorkshopID: String) -> ScenePreset? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return loadGlobalSettings().scenePresets.values.first {
+            $0.source == .local
+                && $0.baseWorkshopID == baseWorkshopID
+                && $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .localizedCaseInsensitiveCompare(trimmed) == .orderedSame
+        }
+    }
+
+    /// Re-maps every cached configuration's preset snapshot against the current
+    /// library — in memory, not by dropping the cache, which would force a
+    /// synchronous main-actor disk read on the next access. Two callers: the
+    /// incremental path (`registerScenePreset`) and configuration import, which
+    /// replaces `scenePresets` wholesale through `saveGlobalSettings`. The disk
+    /// copies stay stale until the next `loadConfigurations`, which reconciles
+    /// on read.
+    func reconcileScenePresetSnapshots() {
+        let library = loadGlobalSettings().scenePresets
+        cachedConfigurations = cachedConfigurations?.map {
+            $0.refreshingScenePresets(in: library)
+        }
+        // `WallpaperConfigurationStore` keeps its own per-display copies, read
+        // through this type once and then served from there. Without this the
+        // renderer keeps the old snapshot until relaunch, and the next save
+        // writes the stale values back to disk.
+        NotificationCenter.default.post(name: .scenePresetLibraryDidChange, object: nil)
+    }
+
     func loadConfigurations() -> [ScreenConfiguration] {
         if let cached = cachedConfigurations { return cached }
-        let configs = screenConfigStore.read() ?? []
+        // Preset values ride along inside each descriptor so the renderer can
+        // stay ignorant of the library; this is where they get reconciled with
+        // what the library actually holds now.
+        let library = loadGlobalSettings().scenePresets
+        let configs = (screenConfigStore.read() ?? []).map {
+            $0.refreshingScenePresets(in: library)
+        }
         cachedConfigurations = configs
         return configs
     }

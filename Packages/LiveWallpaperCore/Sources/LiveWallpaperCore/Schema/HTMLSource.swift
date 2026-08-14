@@ -150,9 +150,9 @@ public enum HTMLSource: Codable, Equatable, Sendable {
     public var displayName: String {
         switch self {
         case .file(let bookmark):
-            return ResourceUtilities.resolveBookmarkName(bookmark) ?? "Local file"
+            return ResourceUtilities.resolveBookmarkName(bookmark) ?? String(localized: "Local file", comment: "HTML source display name fallback when the bookmark name cannot be resolved.")
         case .folder(let bookmark, let index):
-            let folderName = ResourceUtilities.resolveBookmarkName(bookmark) ?? "Folder"
+            let folderName = ResourceUtilities.resolveBookmarkName(bookmark) ?? String(localized: "Folder", comment: "HTML source display name fallback when the bookmark name cannot be resolved.")
             return "\(folderName)/\(index)"
         case .url(let url):
             return url.host ?? url.absoluteString

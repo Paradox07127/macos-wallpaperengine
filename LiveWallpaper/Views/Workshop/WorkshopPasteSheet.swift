@@ -251,9 +251,15 @@ struct WorkshopPasteSheet: View {
 
     private func summaryString(_ summary: WorkshopPasteQueueModel.IngestionSummary) -> String {
         var fragments: [String] = []
-        if summary.added > 0 { fragments.append("\(summary.added) added") }
-        if summary.duplicates > 0 { fragments.append("\(summary.duplicates) duplicate") }
-        if summary.invalid > 0 { fragments.append("\(summary.invalid) invalid") }
+        if summary.added > 0 {
+            fragments.append(String(localized: "\(summary.added) added", comment: "Paste queue ingestion summary fragment."))
+        }
+        if summary.duplicates > 0 {
+            fragments.append(String(localized: "\(summary.duplicates) duplicate", comment: "Paste queue ingestion summary fragment."))
+        }
+        if summary.invalid > 0 {
+            fragments.append(String(localized: "\(summary.invalid) invalid", comment: "Paste queue ingestion summary fragment."))
+        }
         return fragments.joined(separator: " · ")
     }
 }

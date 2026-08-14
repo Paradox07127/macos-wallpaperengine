@@ -308,7 +308,6 @@ struct WallpaperEngineProjectPropertiesTests {
         #expect(presentation.sections[1].properties.map(\.key) == ["dockEnabled"])
         #expect(!presentation.visibleKeys.contains("schemecolor"))
         #expect(!presentation.visibleKeys.contains("support"))
-        #expect(!presentation.hasVisibleOverrides)
     }
 
     @Test("Scene settings presentation recomputes section children from overrides")
@@ -337,7 +336,6 @@ struct WallpaperEngineProjectPropertiesTests {
 
         #expect(presentation.sections.count == 1)
         #expect(presentation.sections[0].properties.map(\.key) == ["dockEnabled", "dockSize"])
-        #expect(presentation.hasVisibleOverrides)
     }
 
     @Test("Scene settings presentation hides a conditioned group without dropping ungrouped controls")
@@ -577,5 +575,230 @@ struct WallpaperEngineProjectPropertiesTests {
         // Combo option values go through the same coercion.
         let interp = try #require(schema.properties.first { $0.key == "interp" })
         #expect(interp.options.map(\.value) == [.number(0), .number(1)])
+    }
+}
+
+@Suite("Wallpaper Engine workshop preset manifests")
+struct WallpaperEnginePresetManifestTests {
+    private func project(_ manifest: String) throws -> WallpaperEngineProject {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("preset-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
+        return try WallpaperEngineProject.read(from: folder)
+    }
+
+    @Test("Preset manifest yields base workshop id and override values")
+    func parsesPresetFields() throws {
+        let parsed = try project("""
+        {
+          "workshopid": "3509243656", "title": "Sunset Restyle", "type": "Scene",
+          "dependency": "3448877775",
+          "preset": { "skycolor": "1 0.4 0.2", "windspeed": 0.35, "rain": false }
+        }
+        """)
+
+        #expect(parsed.scenePreset() != nil)
+        #expect(parsed.presetBaseWorkshopID == "3448877775")
+        #expect(parsed.presetValues?["skycolor"] == .string("1 0.4 0.2"))
+        #expect(parsed.presetValues?["windspeed"] == .number(0.35))
+        #expect(parsed.presetValues?["rain"] == .bool(false))
+        // The base wallpaper supplies the renderable entry, so a missing `file`
+        // must not read as a corrupt manifest.
+        #expect(parsed.entryFile.isEmpty)
+    }
+
+    @Test("Singular dependency stays out of the plural asset-pack list")
+    func presetBaseIsNotAnAssetPackDependency() throws {
+        let parsed = try project("""
+        {
+          "workshopid": "3509243656", "file": "scene.json", "type": "Scene",
+          "dependency": "3448877775",
+          "dependencies": ["1234567890"],
+          "preset": { "windspeed": 0.35 }
+        }
+        """)
+
+        #expect(parsed.presetBaseWorkshopID == "3448877775")
+        #expect(parsed.dependencyWorkshopIDs == ["1234567890"])
+    }
+
+    @Test("A dependency without a preset map is an ordinary wallpaper")
+    func dependencyAloneIsNotAPreset() throws {
+        let parsed = try project("""
+        {
+          "workshopid": "3509243656", "file": "scene.json", "type": "Scene",
+          "dependency": "3448877775"
+        }
+        """)
+
+        #expect(parsed.scenePreset() == nil)
+        #expect(parsed.presetBaseWorkshopID == nil)
+        #expect(parsed.presetValues == nil)
+    }
+
+    @Test("An empty preset map is still a preset")
+    func emptyPresetMapIsStillAPreset() throws {
+        let parsed = try project("""
+        {
+          "workshopid": "3509243656", "type": "Scene",
+          "dependency": "3448877775", "preset": {}
+        }
+        """)
+
+        #expect(parsed.scenePreset() != nil)
+        #expect(parsed.presetValues == [:])
+    }
+
+    @Test("Unreadable preset values are dropped, not fatal to the manifest")
+    func unsupportedPresetValueShapesAreSkipped() throws {
+        let parsed = try project("""
+        {
+          "workshopid": "3509243656", "type": "Scene",
+          "dependency": "3448877775",
+          "preset": { "windspeed": 0.35, "future": { "nested": 1 }, "list": [1, 2] }
+        }
+        """)
+
+        #expect(parsed.scenePreset() != nil)
+        #expect(parsed.presetValues?["windspeed"] == .number(0.35))
+        #expect(parsed.presetValues?["future"] == nil)
+        #expect(parsed.presetValues?["list"] == nil)
+        #expect(parsed.presetValues?.count == 1)
+    }
+
+    @Test("A non-preset manifest still rejects a missing entry file")
+    func missingEntryFileStillFailsForOrdinaryWallpapers() throws {
+        #expect(throws: WPEProjectError.self) {
+            _ = try project("""
+            { "workshopid": "3509243656", "title": "Broken", "type": "Scene" }
+            """)
+        }
+    }
+}
+@Suite("Wallpaper Engine preset entry-file states")
+struct WallpaperEnginePresetEntryFileTests {
+    private func project(_ manifest: String) throws -> WallpaperEngineProject {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("entry-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data(manifest.utf8).write(to: folder.appendingPathComponent("project.json"))
+        return try WallpaperEngineProject.read(from: folder)
+    }
+
+    private let base = #""workshopid": "3509243656", "type": "Scene", "dependency": "3448877775", "preset": {"a": 1}"#
+
+    @Test("Control: a preset with no file key at all is accepted")
+    func absentFileKeyIsAccepted() throws {
+        let parsed = try project("{ \(base) }")
+        #expect(parsed.scenePreset() != nil)
+        #expect(parsed.entryFile.isEmpty)
+    }
+
+    @Test("A present-but-unusable file key is malformed, even for a preset")
+    func presentButUnusableFileIsMalformed() throws {
+        // null / "" / whitespace all decode to a nil `file`, but they are author
+        // mistakes — only an absent key means "this item has no entry".
+        for bad in ["null", "\"\"", "\"   \""] {
+            #expect(throws: WPEProjectError.self) {
+                _ = try project("{ \(base), \"file\": \(bad) }")
+            }
+        }
+    }
+
+    @Test("An unsafe file path stays malformed for a preset")
+    func unsafeFileIsMalformedForPreset() {
+        #expect(throws: WPEProjectError.self) {
+            _ = try project("{ \(base), \"file\": \"../../escape\" }")
+        }
+    }
+
+    @Test("A preset converts to a library entry; an ordinary wallpaper does not")
+    func presetConvertsToScenePreset() throws {
+        let preset = try #require(try project("{ \(base), \"title\": \"Sunset\" }").scenePreset())
+        #expect(preset.id == "3509243656")
+        #expect(preset.baseWorkshopID == "3448877775")
+        #expect(preset.name == "Sunset")
+        #expect(preset.source == .workshop(workshopID: preset.id))
+
+        // Control: without both preset halves there is nothing to convert.
+        let ordinary = try project(#"{ "workshopid": "3509243656", "type": "Scene", "file": "scene.pkg" }"#)
+        #expect(ordinary.scenePreset() == nil)
+    }
+}
+
+/// A Workshop preset's `preset` map mirrors the manifest's whole property list,
+/// decorative rows included. Those rows carry an empty string, and merging them
+/// over the schema defaults is what blanked every image layer in a scene once
+/// the preset layer started reaching the renderer.
+@Suite("Preset layer is filtered to declared editable properties")
+struct ScenePresetLayerFilterTests {
+    private let manifest = """
+    {
+      "general": { "properties": {
+        "brightness":  { "type": "slider", "value": 1.0, "min": 0, "max": 2, "text": "Brightness" },
+        "tint":        { "type": "color",  "value": "1 1 1", "text": "Tint" },
+        "caption":     { "type": "textinput", "value": "hello", "text": "Caption" },
+        "_2222":       { "type": "text",   "value": "", "text": "— section label —" },
+        "maingroup":   { "type": "group",  "value": "", "text": "Main settings" }
+      } }
+    }
+    """
+
+    private func schema() throws -> WallpaperEngineProjectPropertySchema {
+        try WallpaperEngineProjectPropertySchema.parse(
+            data: Data(manifest.utf8), preferredLanguages: ["en-US"]
+        )
+    }
+
+    @Test("A decorative row's empty value cannot clobber a real default")
+    func decorativeEmptyValuesAreDropped() throws {
+        let schema = try schema()
+        // Exactly the shape observed on disk: every row present, decorative
+        // ones empty.
+        let presetLayer: [String: WallpaperEngineProjectPropertyValue] = [
+            "brightness": .number(0.4),
+            "_2222": .string(""),
+            "maingroup": .string("")
+        ]
+
+        let filtered = schema.declaredEditableValues(presetLayer)
+        #expect(filtered["_2222"] == nil)
+        #expect(filtered["maingroup"] == nil)
+        // Control: the real value must survive, or the filter is just breaking
+        // presets a different way.
+        #expect(filtered["brightness"] == .number(0.4))
+
+        let effective = schema.effectiveValues(overrides: filtered)
+        #expect(effective["brightness"] == .number(0.4))
+        #expect(effective["tint"] == .string("1 1 1"))
+    }
+
+    @Test("An empty value the user really typed into a text field survives")
+    func editableEmptyStringSurvives() throws {
+        let filtered = try schema().declaredEditableValues(["caption": .string("")])
+        // `textinput` is editable, so clearing it is a real edit — this is why
+        // the filter keys on the declared type rather than on emptiness.
+        #expect(filtered["caption"] == .string(""))
+    }
+
+    @Test("Keys this wallpaper no longer declares are dropped")
+    func undeclaredKeysAreDropped() throws {
+        let filtered = try schema().declaredEditableValues([
+            "brightness": .number(0.4),
+            "removedInAnUpdate": .number(9)
+        ])
+        #expect(filtered["removedInAnUpdate"] == nil)
+        #expect(filtered.count == 1)
+    }
+
+    @Test("Control: with no schema at all the layer passes through untouched")
+    func emptySchemaIsPassThrough() throws {
+        let empty = try WallpaperEngineProjectPropertySchema.parse(data: Data("{}".utf8))
+        let layer: [String: WallpaperEngineProjectPropertyValue] = ["anything": .number(1)]
+        // A wallpaper we cannot read a schema for must not lose its overrides.
+        #expect(empty.declaredEditableValues(layer) == layer)
     }
 }
