@@ -10,7 +10,7 @@ final class ClaudeAgentSource: MonitorDataSource {
 
     private let engine: Engine
 
-    init(rootURL: URL, cursorStore: MonitorTailCursorStore? = nil) {
+    init(rootURL: URL, cursorStore: TailCursorStore? = nil) {
         self.engine = Engine(rootURL: rootURL, cursorStore: cursorStore)
     }
 
@@ -50,7 +50,7 @@ final class ClaudeAgentSource: MonitorDataSource {
 private actor Engine {
     private let rootURL: URL
     private let scanner: ClaudeSessionScanner
-    private let cursorStore: MonitorTailCursorStore?
+    private let cursorStore: TailCursorStore?
 
     private var sink: (any MonitorSnapshotSink)?
     private var pollTask: Task<Void, Never>?
@@ -72,7 +72,7 @@ private actor Engine {
     private static let endedRetention: TimeInterval = 2 * 3600
     private static let ioFailureThreshold = 3
 
-    init(rootURL: URL, cursorStore: MonitorTailCursorStore?) {
+    init(rootURL: URL, cursorStore: TailCursorStore?) {
         self.rootURL = rootURL
         self.scanner = ClaudeSessionScanner(rootURL: rootURL)
         self.cursorStore = cursorStore

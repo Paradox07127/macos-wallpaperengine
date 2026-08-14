@@ -12,10 +12,10 @@ struct LogPrivacySourceAuditTests {
             "self.descriptor.workshopID": 1,
             "self.rendererSignpostID": 1,
         ],
-        "LiveWallpaper/Monitor/MonitorRuntime.swift": [
+        "LiveWallpaper/Monitor/Runtime.swift": [
             "built.map(\\.sourceID).joined(separator:\",\")": 1,
         ],
-        "LiveWallpaper/Monitor/MonitorSourceAuthorization.swift": [
+        "LiveWallpaper/Monitor/SourceAuthorization.swift": [
             "provider.defaultDirectoryName": 6,
         ],
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/App/Logger.swift": [

@@ -34,10 +34,10 @@ struct DefaultsIsolationTests {
 
         let serviceFiles = [
             "LiveWallpaper/Infrastructure/Services/UpdateChecker.swift",
-            "LiveWallpaper/Monitor/MonitorSourceAuthorization.swift",
+            "LiveWallpaper/Monitor/SourceAuthorization.swift",
             "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift",
-            "LiveWallpaper/Views/Workshop/WorkshopBrowseViewModel.swift",
-            "LiveWallpaper/Views/Workshop/WorkshopBrowseFilterRibbon.swift"
+            "LiveWallpaper/Views/Workshop/BrowseViewModel.swift",
+            "LiveWallpaper/Views/Workshop/BrowseFilterRibbon.swift"
         ]
         for relativePath in serviceFiles {
             let source = try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
@@ -45,9 +45,9 @@ struct DefaultsIsolationTests {
         }
 
         let appStorageFiles = [
-            "LiveWallpaper/Views/Settings/WorkshopBadgeSettingsSection.swift",
-            "LiveWallpaper/Views/Workshop/WorkshopBrowseCard.swift",
-            "LiveWallpaper/Views/ScreenDetail/WPEHistoryRow.swift",
+            "LiveWallpaper/Views/Settings/WorkshopBadgeSection.swift",
+            "LiveWallpaper/Views/Workshop/BrowseCard.swift",
+            "LiveWallpaper/Views/ScreenDetail/HistoryRow.swift",
             "LiveWallpaper/Views/Settings/WorkshopSettingsView.swift"
         ]
         for relativePath in appStorageFiles {

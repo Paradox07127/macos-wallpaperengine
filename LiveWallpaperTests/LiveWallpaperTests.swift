@@ -25,7 +25,7 @@ struct SettingsWindowLayoutTests {
 
     @Test("Preview area caps media previews to the available low-height viewport")
     func previewAreaCapsMediaPreviewsToAvailableHeight() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScreenDetailPreviewArea.swift")
+        let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
 
         #expect(source.contains("GeometryReader"))
         #expect(source.contains("cappedPreviewHeight"))
@@ -35,7 +35,7 @@ struct SettingsWindowLayoutTests {
 
     @Test("HTML preview area uses the same non-scrolling left layout as video and scene")
     func htmlPreviewAreaUsesNonScrollingLeftLayout() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScreenDetailPreviewArea.swift")
+        let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
         let htmlContent = try #require(Self.slice(
             source,
             from: "private var htmlContent",
@@ -50,7 +50,7 @@ struct SettingsWindowLayoutTests {
 
     @Test("HTML rendering diagnostics live inside the preview overlay")
     func htmlRenderingDiagnosticsLiveInsidePreviewOverlay() throws {
-        let inspectorPanel = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScreenDetailInspectorPanel.swift")
+        let inspectorPanel = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/DetailInspectorPanel.swift")
         let previewSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLPreviewSection.swift")
 
         #expect(!inspectorPanel.contains("HTMLRenderingDiagnosticsInspector("))
@@ -72,7 +72,7 @@ struct SettingsWindowLayoutTests {
 
     @Test("HTML source controls use a compact row below preview")
     func htmlSourceControlsUseCompactRowBelowPreview() throws {
-        let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScreenDetailPreviewArea.swift")
+        let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
         let sourceSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLSourceSection.swift")
 
         #expect(previewArea.contains("private let htmlSourceReservedHeight: CGFloat = 88"))
@@ -84,7 +84,7 @@ struct SettingsWindowLayoutTests {
 
     @Test("HTML preview area uses uniform outer padding")
     func htmlPreviewAreaUsesUniformOuterPadding() throws {
-        let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScreenDetailPreviewArea.swift")
+        let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
         let htmlContent = try #require(Self.slice(
             previewArea,
             from: "private var htmlContent",
@@ -113,7 +113,7 @@ struct SettingsWindowLayoutTests {
 
     @Test("Inspector resize drag clamps at minimum before drag-to-close")
     func inspectorResizeDragClampsAtMinimumBeforeDragToClose() throws {
-        let split = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ResizableInspectorSplit.swift")
+        let split = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/InspectorSplit.swift")
         let handle = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/InspectorResizeHandle.swift")
 
         #expect(split.contains("private var dragLowerBound: CGFloat { minWidth }"))
@@ -126,7 +126,7 @@ struct SettingsWindowLayoutTests {
     @Test("HTML wallpaper type is presented to users as Web")
     func htmlWallpaperTypeIsPresentedAsWeb() throws {
         let wallpaperType = try Self.readSourceFile("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Schema/WallpaperType.swift")
-        let emptyStateGuide = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/EmptyStateGuideView.swift")
+        let emptyStateGuide = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/EmptyGuide.swift")
 
         #expect(wallpaperType.contains("case .html: return \"Web\""))
         #expect(!wallpaperType.contains("case .html: return \"HTML\""))
@@ -139,8 +139,8 @@ struct SettingsWindowLayoutTests {
         #expect(VideoFitMode.videoModes == [.aspectFill, .aspectFit, .stretch])
         #expect(VideoFitMode.sceneModes == [.aspectFill, .aspectFit, .stretch, .center])
 
-        let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScreenDetailPreviewArea.swift")
-        let playbackInspector = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/CommonPlaybackInspector.swift")
+        let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
+        let playbackInspector = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PlaybackInspector.swift")
 
         // The fit-mode picker is a GlassSegmentedPicker fed `values:`; the probe
         // pins WHICH mode list each surface iterates, not the control used.

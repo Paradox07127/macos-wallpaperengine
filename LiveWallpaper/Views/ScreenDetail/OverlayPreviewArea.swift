@@ -6,7 +6,7 @@ import SwiftUI
 /// pages keep the wallpaper as backdrop and layer their own thing on it.
 struct OverlayPreviewArea: View {
     let screen: Screen
-    let draft: ScreenDetailDraftState
+    let draft: DraftState
     let screenManager: ScreenManager
     let kind: OverlayKind
     let backdrop: MonitorPreviewBackdrop
@@ -17,7 +17,7 @@ struct OverlayPreviewArea: View {
             case .monitor:
                 // The board preview owns drag-to-arrange, and already draws
                 // itself on the shared canvas.
-                MonitorBoardPreviewArea(
+                BoardPreviewArea(
                     screen: screen,
                     screenManager: screenManager,
                     backdrop: backdrop

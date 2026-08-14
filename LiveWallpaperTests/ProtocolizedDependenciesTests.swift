@@ -104,7 +104,7 @@ struct ProtocolizedDependenciesTests {
         #expect(manager.isTerminating)
         #expect(displayRegistry.currentScreensCallCount == readsBeforeTermination)
         #expect(manager.screens.allSatisfy { $0.runtimeSession == nil })
-        #expect(!MonitorOverlayController.shared.hasActiveOverlay)
+        #expect(!OverlayController.shared.hasActiveOverlay)
         #expect(!manager.effectsCoordinatorWasInitialized, "Quit must not instantiate unused weather/effects services")
         #expect(fullScreenDetector.setFallbackPollingEnabledValues.last == false)
         #expect(fullScreenDetector.stopCallCount == 1)
@@ -572,7 +572,7 @@ struct ProtocolizedDependenciesTests {
             "LiveWallpaper/Runtime/Session/SceneWallpaperSession.swift"
         )
         let settings = try RepositoryRoot.source(
-            "LiveWallpaper/Views/GeneralSettingsAudioSection.swift"
+            "LiveWallpaper/Views/Settings/AudioSection.swift"
         )
         let actor = try RepositoryRoot.source(
             "LiveWallpaper/Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift"

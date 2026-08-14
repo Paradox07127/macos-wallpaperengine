@@ -20,7 +20,7 @@ struct SteamWriteOwnershipTests {
     private static let appSources = [
         "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift",
         "LiveWallpaper/Infrastructure/Workshop/WPEEngineAssetsInstaller.swift",
-        "LiveWallpaper/Views/Workshop/WorkshopInstalledLibraryModel.swift"
+        "LiveWallpaper/Views/Workshop/InstalledLibrary.swift"
     ]
 
     @Test("Workshop download and delete go through the connector")
@@ -31,7 +31,7 @@ struct SteamWriteOwnershipTests {
         let model = try Self.source(Self.appSources[2])
         #expect(model.contains("deleteSharedRepositoryItem"))
 
-        let view = try Self.source("LiveWallpaper/Views/Workshop/WorkshopInstalledView.swift")
+        let view = try Self.source("LiveWallpaper/Views/Workshop/InstalledView.swift")
         #expect(view.contains("SteamConnectorClient.deleteWorkshopItem"))
     }
 

@@ -79,7 +79,7 @@ struct LocalizationCoverageTests {
 
     @Test("Shortcut action copy remains localizable at render time")
     func shortcutActionCopyRemainsLocalizableAtRenderTime() throws {
-        let shortcutView = try Self.projectFile("LiveWallpaper/Views/Settings/ShortcutsSettingsView.swift")
+        let shortcutView = try Self.projectFile("LiveWallpaper/Views/Settings/ShortcutsView.swift")
         let actionModel = try Self.projectFile("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Schema/GlobalShortcutAction.swift")
 
         #expect(!shortcutView.contains("Text(verbatim: action.displayName)"))
@@ -110,7 +110,7 @@ struct LocalizationCoverageTests {
             }
         }
 
-        let source = try Self.projectFile("LiveWallpaper/Views/Onboarding/OnboardingPickerView.swift")
+        let source = try Self.projectFile("LiveWallpaper/Views/Onboarding/PickerView.swift")
         #expect(source.contains("unsupportedFileTypeMessage(sceneCapable: Bool) -> LocalizedStringResource"))
         #expect(source.contains("return \"That file type isn't supported. Pick a video or web page.\""))
         #expect(source.contains("return \"That file type isn't supported. Pick a video, web page, or scene.\""))

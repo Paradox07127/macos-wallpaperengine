@@ -7,7 +7,7 @@ extension ScreenManager {
     /// Reconcile the Monitor overlay for every live display against its persisted config.
     func reconcileMonitorOverlays() {
         guard !isTerminating else {
-            MonitorOverlayController.shared.teardownAll()
+            OverlayController.shared.teardownAll()
             updateFullScreenFallbackPolling()
             return
         }
@@ -16,13 +16,13 @@ extension ScreenManager {
         }
         // Suspend before host create so occluded overlays never get a prime snapshot.
         refreshMonitorOverlayVisibility()
-        MonitorOverlayController.shared.onOverlayEdited = { [weak self] screenID, board in
+        OverlayController.shared.onOverlayEdited = { [weak self] screenID, board in
             self?.persistMonitorOverlayBoard(board, screenID: screenID)
         }
-        MonitorOverlayController.shared.retainOnly(Set(screens.map(\.id)))
+        OverlayController.shared.retainOnly(Set(screens.map(\.id)))
         for screen in screens {
             let frame = displayRegistry.findNSScreen(for: screen.id)?.frame ?? screen.frame
-            MonitorOverlayController.shared.apply(
+            OverlayController.shared.apply(
                 overlay: monitorOverlays[screen.displayFingerprint],
                 screenID: screen.id,
                 screenFrame: frame
@@ -37,7 +37,7 @@ extension ScreenManager {
         let occludedScreenIDs = Set(screens.compactMap { screen in
             fullScreenDetector.isDesktopOccluded(for: screen.id) ? screen.id : nil
         })
-        MonitorOverlayController.shared.updateVisibility(
+        OverlayController.shared.updateVisibility(
             isUserAbsent: isUserAbsent,
             occludedScreenIDs: occludedScreenIDs
         )

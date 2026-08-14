@@ -4,7 +4,7 @@ public enum EmptyStateVariant {
     case standard
     /// Renders a solid accent-tinted drop-target frame so the affordance
     /// is discoverable without dragging anything onto the area first.
-    /// Pairs with the active `dragHintOverlay` in `ScreenDetailPreviewArea`
+    /// Pairs with the active `dragHintOverlay` in `PreviewArea`
     /// — the empty state is the ambient/idle state, the overlay is the
     /// stronger activated state, sharing the same shape and accent.
     case dropTarget

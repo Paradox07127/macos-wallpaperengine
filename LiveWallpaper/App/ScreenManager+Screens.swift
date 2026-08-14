@@ -160,7 +160,7 @@ extension ScreenManager {
     func tearDownForTermination() {
         guard !isTerminating else { return }
 
-        MonitorOverlayController.shared.teardownAll()
+        OverlayController.shared.teardownAll()
         isTerminating = true
         memoryPressureWatcher.stop()
 

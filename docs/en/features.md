@@ -14,7 +14,7 @@ Authoritative capability gate: [`ProductCapabilities.swift`](../../Packages/Live
   - Per-display rows: status, play/pause, prev/next (playlist mode), volume.
   - Live usage strip (CPU / GPU / RAM / thermal pressure).
   - Manage, General Settings, reload-all, quit.
-- **Settings window** (`LiveWallpaper/Views/ContentView.swift`, `LiveWallpaper/Views/Settings/SettingsNavigation.swift`)
+- **Settings window** (`LiveWallpaper/Views/ContentView.swift`, `LiveWallpaper/Views/Settings/Navigation.swift`)
   - Sidebar: per-display pages, Bookmarks, Apple Aerials, Steam Workshop (Pro).
   - Settings tabs — availability varies by SKU:
 
@@ -92,15 +92,15 @@ preset be renamed, re-saved, and exported like a local one.
   Both read the preset snapshot rather than the layered map, so a wallpaper that
   declares its own property named `volume` cannot drive the engine setting.
 - UI: the **Preset** row in the scene settings card
-  (`LiveWallpaper/Views/ScreenDetail/WPEScenePresetBar.swift`) — a picker split
+  (`LiveWallpaper/Views/ScreenDetail/ScenePresetBar.swift`) — a picker split
   into *Saved by you* and *From the Workshop*, plus save / rename / delete.
   Workshop wallpaper pages list the presets published for that wallpaper
-  (`LiveWallpaper/Views/Workshop/WorkshopDetailPresetsSection.swift`); listing
+  (`LiveWallpaper/Views/Workshop/DetailPresetsSection.swift`); listing
   them needs a Steam Web API key, downloading one needs SteamCMD.
 
 ## 2) Playback & automation
 
-- **Playlists** (`LiveWallpaper/Views/PlaylistSection.swift`, `LiveWallpaper/Policies/PlaylistPolicy.swift`) — drag-reorder, shuffle, 1–1440 min rotation, apply to one or all displays.
+- **Playlists** (`LiveWallpaper/Views/Playlist/PlaylistSection.swift`, `LiveWallpaper/Policies/PlaylistPolicy.swift`) — drag-reorder, shuffle, 1–1440 min rotation, apply to one or all displays.
 - **Schedule** (`LiveWallpaper/Views/ScheduleSection/`, `LiveWallpaper/Policies/SchedulePolicy.swift`) — time slots with presets, conflict detection, fallback to the primary wallpaper.
 - **Coordinator** (`LiveWallpaper/Policies/WallpaperAutomationCoordinator.swift`) — one 60-second tick, running only while some display actually has automation; stops entirely during lock/sleep and reconciles once on wake.
 - **Bookmarks** (`Schema/WallpaperBookmark.swift`, `LiveWallpaper/App/ScreenManager+Bookmarks.swift`) — snapshot content plus playback/overlay state. The Monitor board layout deliberately stays per-display and is not part of a bookmark.

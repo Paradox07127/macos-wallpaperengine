@@ -316,7 +316,11 @@ struct HTMLBookmarkPersistenceTests {
 
     @Test("Settings persistence exposes no executor-unsafe HTML Target")
     func actorSafetySourceContract() throws {
+        // Two files since bookmark validation was split out; the actor-safety
+        // contract is on the settings-persistence surface, not on one file.
         let source = try RepositoryRoot.source("LiveWallpaper/App/SettingsManager.swift")
+            + "\n"
+            + RepositoryRoot.source("LiveWallpaper/App/SettingsManager+BookmarkValidation.swift")
         #expect(!source.contains("htmlBookmarkRefreshTarget"))
         #expect(!source.contains("MainActor.assumeIsolated"))
         #expect(source.contains("func persistRefreshedHTMLBookmark("))

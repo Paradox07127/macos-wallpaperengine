@@ -184,7 +184,7 @@ struct ClaudeSessionModel {
         if let branch = line.gitBranch, !branch.isEmpty { gitBranch = branch }
 
         if let ts = line.timestamp?.timeIntervalSince1970 {
-            MonitorAgentSignalDeriver.appendRecentEventTime(&recentEventTimes, ts)
+            AgentSignalDeriver.appendRecentEventTime(&recentEventTimes, ts)
         }
 
         guard !line.isSidechain else { return }
@@ -197,7 +197,7 @@ struct ClaudeSessionModel {
             recordToolUses(from: line)
             if let stop = line.stopReason { lastAssistantStopReason = stop }
             if let tool = line.toolNames.last {
-                lastToolName = MonitorAgentSignalDeriver.sanitizedToolName(tool)
+                lastToolName = AgentSignalDeriver.sanitizedToolName(tool)
             }
             // The assistant just spoke, so nothing is awaiting the model.
             lastInboundAwaitsModel = false
@@ -251,11 +251,11 @@ struct ClaudeSessionModel {
                 let dropped = outstandingToolIDs.removeFirst()
                 outstandingAskIDs.remove(dropped)
             }
-            guard let name = MonitorAgentSignalDeriver.sanitizedToolName(use.name) else { continue }
+            guard let name = AgentSignalDeriver.sanitizedToolName(use.name) else { continue }
             recentTools.append(MonitorAgentToolEvent(name: name, at: at, ok: nil))
             recentToolIDs.append(id)
         }
-        let cap = MonitorAgentSignalDeriver.recentToolCap * 3
+        let cap = AgentSignalDeriver.recentToolCap * 3
         if recentTools.count > cap {
             recentTools = Array(recentTools.suffix(cap))
             recentToolIDs = Array(recentToolIDs.suffix(cap))
@@ -339,8 +339,8 @@ struct ClaudeSessionModel {
 
     func snapshot(now: Date, processAlive: Bool, freshnessTimeout: TimeInterval = 180) -> MonitorAgentSessionState {
         let currentStatus = status(now: now, processAlive: processAlive, freshnessTimeout: freshnessTimeout)
-        let tools = MonitorAgentSignalDeriver.trimmedTools(recentTools)
-        let warning = MonitorAgentSignalDeriver.warning(
+        let tools = AgentSignalDeriver.trimmedTools(recentTools)
+        let warning = AgentSignalDeriver.warning(
             recentTools: recentTools,
             status: currentStatus,
             processAlive: processAlive,
@@ -361,7 +361,7 @@ struct ClaudeSessionModel {
             turnCount: turnCount,
             tokens: tokens
         )
-        state.recentEventTimes = MonitorAgentSignalDeriver.trimmedEventTimes(recentEventTimes)
+        state.recentEventTimes = AgentSignalDeriver.trimmedEventTimes(recentEventTimes)
         state.recentTools = tools
         state.warning = warning
         state.worktreeName = worktreeName
