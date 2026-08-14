@@ -6,6 +6,15 @@ import Foundation
 enum MonitorAgentProvider: String, Codable, Sendable, CaseIterable {
     case claude
     case codex
+
+    /// Brand names, so deliberately not localized — but not the raw case name
+    /// either, which is what VoiceOver was reading out lowercased.
+    var displayName: String {
+        switch self {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        }
+    }
 }
 
 enum MonitorAgentStatus: String, Codable, Sendable {

@@ -548,7 +548,7 @@ private struct AgentProviderMark: View {
             }
         }
         .frame(width: size, height: size)
-        .accessibilityLabel(Text(verbatim: provider.rawValue))
+        .accessibilityLabel(Text(verbatim: provider.displayName))
     }
 
     private var assetName: String {
