@@ -49,7 +49,6 @@
 		0C322C002D6950490033C48B /* LiveWallpaperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiveWallpaperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0CA00000000000000000B000 /* Loomscreen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Loomscreen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5C8FFA9301D663800D85832 /* SteamConnector.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = SteamConnector.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
-		F5DF2D3C302E876F00D5A3BC /* SceneRunner.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = SceneRunner.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -75,13 +74,6 @@
 			);
 			target = 0C322BEE2D6950480033C48B /* LiveWallpaper */;
 		};
-		F5DF2D4B302E876F00D5A3BC /* Exceptions for "SceneRunner" folder in "SceneRunner" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = F5DF2D3B302E876F00D5A3BC /* SceneRunner */;
-		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -105,14 +97,6 @@
 				F5C8FFB8301D663800D85832 /* Exceptions for "SteamConnector" folder in "SteamConnector" target */,
 			);
 			path = SteamConnector;
-			sourceTree = "<group>";
-		};
-		F5DF2D3D302E876F00D5A3BC /* SceneRunner */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				F5DF2D4B302E876F00D5A3BC /* Exceptions for "SceneRunner" folder in "SceneRunner" target */,
-			);
-			path = SceneRunner;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -149,13 +133,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F5DF2D39302E876F00D5A3BC /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -165,7 +142,6 @@
 				0C322BF12D6950480033C48B /* LiveWallpaper */,
 				0C322C032D6950490033C48B /* LiveWallpaperTests */,
 				F5C8FFAA301D663800D85832 /* SteamConnector */,
-				F5DF2D3D302E876F00D5A3BC /* SceneRunner */,
 				0C322BF02D6950480033C48B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -177,7 +153,6 @@
 				0CA00000000000000000B000 /* Loomscreen.app */,
 				0C322C002D6950490033C48B /* LiveWallpaperTests.xctest */,
 				F5C8FFA9301D663800D85832 /* SteamConnector.xpc */,
-				F5DF2D3C302E876F00D5A3BC /* SceneRunner.xpc */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -277,28 +252,6 @@
 			productReference = F5C8FFA9301D663800D85832 /* SteamConnector.xpc */;
 			productType = "com.apple.product-type.xpc-service";
 		};
-		F5DF2D3B302E876F00D5A3BC /* SceneRunner */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = F5DF2D48302E876F00D5A3BC /* Build configuration list for PBXNativeTarget "SceneRunner" */;
-			buildPhases = (
-				F5DF2D38302E876F00D5A3BC /* Sources */,
-				F5DF2D39302E876F00D5A3BC /* Frameworks */,
-				F5DF2D3A302E876F00D5A3BC /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				F5DF2D3D302E876F00D5A3BC /* SceneRunner */,
-			);
-			name = SceneRunner;
-			packageProductDependencies = (
-			);
-			productName = SceneRunner;
-			productReference = F5DF2D3C302E876F00D5A3BC /* SceneRunner.xpc */;
-			productType = "com.apple.product-type.xpc-service";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -320,9 +273,6 @@
 						CreatedOnToolsVersion = 16.2;
 					};
 					F5C8FFA8301D663800D85832 = {
-						CreatedOnToolsVersion = 27.0;
-					};
-					F5DF2D3B302E876F00D5A3BC = {
 						CreatedOnToolsVersion = 27.0;
 					};
 				};
@@ -352,7 +302,6 @@
 				0CA00000000000000000B001 /* LiveWallpaperLite */,
 				0C322BFF2D6950490033C48B /* LiveWallpaperTests */,
 				F5C8FFA8301D663800D85832 /* SteamConnector */,
-				F5DF2D3B302E876F00D5A3BC /* SceneRunner */,
 			);
 		};
 /* End PBXProject section */
@@ -386,13 +335,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F5DF2D3A302E876F00D5A3BC /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -418,13 +360,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F5C8FFA5301D663800D85832 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		F5DF2D38302E876F00D5A3BC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -798,60 +733,6 @@
 			};
 			name = Release;
 		};
-		F5DF2D49302E876F00D5A3BC /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = FWJP4B62U7;
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = SceneRunner/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = SceneRunner;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.SceneRunner;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
-		};
-		F5DF2D4A302E876F00D5A3BC /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = FWJP4B62U7;
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = SceneRunner/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = SceneRunner;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro.SceneRunner;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -896,15 +777,6 @@
 			buildConfigurations = (
 				F5C8FFB6301D663800D85832 /* Debug */,
 				F5C8FFB7301D663800D85832 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		F5DF2D48302E876F00D5A3BC /* Build configuration list for PBXNativeTarget "SceneRunner" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				F5DF2D49302E876F00D5A3BC /* Debug */,
-				F5DF2D4A302E876F00D5A3BC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

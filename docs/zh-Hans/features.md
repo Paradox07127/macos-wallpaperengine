@@ -148,5 +148,3 @@ Releases，12 小时节流，失败后退避 1 小时，支持跳过某个版本
 - 设置：`LiveWallpaper/Views/Settings/`
 - WPE 运行时：`LiveWallpaper/Runtime/`（Metal 渲染器、场景运行时）
 - 创意工坊栈：`LiveWallpaper/Infrastructure/Workshop/`、`SteamConnector/`
-- `SceneRunner/` —— 进程外场景渲染器，目前只是隔离方案的可行性探针（用来证明在那边写出的
-  `IOSurface` 能被沙盒中的应用读到）。还没有任何渲染真的走这条路。

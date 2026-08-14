@@ -173,6 +173,3 @@ that call site so a gate cannot creep back in.
 - Settings: `LiveWallpaper/Views/Settings/`
 - WPE runtime: `LiveWallpaper/Runtime/` (Metal renderer, scene runtime)
 - Workshop stack: `LiveWallpaper/Infrastructure/Workshop/`, `SteamConnector/`
-- `SceneRunner/` — an out-of-process scene renderer, currently only the
-  feasibility probe for the isolation plan (it proves an `IOSurface` written
-  there is readable by the sandboxed app). No rendering runs through it yet.
