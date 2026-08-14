@@ -3,7 +3,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct PasteRowCard: View {
-    let row: WorkshopPasteQueueModel.Row
+    let row: WorkshopPasteQueueModel.QueueRow
     let onRetry: () -> Void
     let onRemove: () -> Void
     let onOpenInSteam: () -> Void

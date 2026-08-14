@@ -9,7 +9,7 @@ import Observation
 @Observable
 final class WorkshopPasteQueueModel {
 
-    struct Row: Identifiable, Sendable {
+    struct QueueRow: Identifiable, Sendable {
         let id: UUID
         let publishedFileID: UInt64?
         let originalInput: String
@@ -35,7 +35,7 @@ final class WorkshopPasteQueueModel {
     }
 
     private(set) var rawInput: String = ""
-    private(set) var rows: [Row] = []
+    private(set) var rows: [QueueRow] = []
     private(set) var lastIngestionSummary: IngestionSummary?
 
     struct IngestionSummary: Equatable, Sendable {
@@ -78,7 +78,7 @@ final class WorkshopPasteQueueModel {
                     duplicates += 1
                     continue
                 }
-                let row = Row(
+                let row = QueueRow(
                     id: UUID(),
                     publishedFileID: id,
                     originalInput: original,
@@ -90,7 +90,7 @@ final class WorkshopPasteQueueModel {
                 added += 1
                 scheduleMetadataFetch(rowID: row.id, publishedFileID: id)
             case .invalid(let reason, let original):
-                let row = Row(
+                let row = QueueRow(
                     id: UUID(),
                     publishedFileID: nil,
                     originalInput: original,

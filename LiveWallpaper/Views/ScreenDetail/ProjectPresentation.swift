@@ -9,7 +9,7 @@ struct WPEProjectSettingsPresentation: Equatable {
         let properties: [WallpaperEngineProjectPropertySchema.Property]
     }
 
-    enum Row: Identifiable, Equatable {
+    enum SettingsRow: Identifiable, Equatable {
         case sectionHeader(Section)
         case property(WallpaperEngineProjectPropertySchema.Property)
 
@@ -107,16 +107,16 @@ struct WPEProjectSettingsPresentation: Equatable {
         sectionIDs.intersection(sections.map(\.id))
     }
 
-    func rows(expandedSectionIDs: Set<String>) -> [Row] {
+    func rows(expandedSectionIDs: Set<String>) -> [SettingsRow] {
         if sections.count == 1, sections.first?.id == "__ungrouped" {
             guard let section = sections.first else { return [] }
-            return section.properties.map(Row.property)
+            return section.properties.map(SettingsRow.property)
         }
 
-        return sections.flatMap { section -> [Row] in
-            var rows: [Row] = [.sectionHeader(section)]
+        return sections.flatMap { section -> [SettingsRow] in
+            var rows: [SettingsRow] = [.sectionHeader(section)]
             guard expandedSectionIDs.contains(section.id) else { return rows }
-            rows.append(contentsOf: section.properties.map(Row.property))
+            rows.append(contentsOf: section.properties.map(SettingsRow.property))
             return rows
         }
     }
