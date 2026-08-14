@@ -27,11 +27,11 @@ SUITES=(
   HTMLTrustVerdictTests
   LogPrivacySourceAuditTests
   LocalizationCoverageTests
-  MonitorBoardPlacementAccessibilityCharacterizationTests
-  MonitorOverlayVisibilityLifecycleCharacterizationTests
-  MonitorRuntimeLeaseChurnCharacterizationTests
-  MonitorSamplerOwnershipCharacterizationTests
-  MonitorSuspendEnergyTests
+  BoardPlacementAccessibilityCharacterizationTests
+  OverlayVisibilityLifecycleCharacterizationTests
+  RuntimeLeaseChurnCharacterizationTests
+  SamplerOwnershipCharacterizationTests
+  SuspendEnergyTests
   RepositoryRootTests
   SchemeEnvironmentContractTests
   SecurityScopedBookmarkResolverTests
@@ -44,7 +44,7 @@ SUITES=(
   WPESceneScriptB2bResourceLimitTests
   WPESceneScriptContainmentCharacterizationTests
   WPEUploadCancellationOracleTests
-  WorkshopInstalledOwnershipCharacterizationTests
+  InstalledOwnershipCharacterizationTests
 )
 
 action="test"

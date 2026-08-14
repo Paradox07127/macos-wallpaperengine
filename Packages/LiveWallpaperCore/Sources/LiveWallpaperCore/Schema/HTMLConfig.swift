@@ -235,7 +235,6 @@ public struct HTMLConfig: Codable, Equatable, Sendable {
     public static func clampedTransformRotation(_ value: Double) -> Double {
         guard value.isFinite else { return 0 }
         // Normalize to (-360, 360] so the persisted value stays readable.
-        let wrapped = value.truncatingRemainder(dividingBy: 360)
-        return wrapped
+        return value.truncatingRemainder(dividingBy: 360)
     }
 }

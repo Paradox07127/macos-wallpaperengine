@@ -10,7 +10,7 @@ enum AppTerminationCoordinator {
             stopMonitorProducers: { await MonitorRuntime.shared.shutdown() },
             flushMonitorCursors: {
                 await runBlockingOffMainActor {
-                    MonitorSourceRegistration.flushCursorStoreForTermination()
+                    SourceRegistration.flushCursorStoreForTermination()
                 }
             },
             flushSettings: { await SettingsManager.shared.flushPendingConfigurationWrites() }

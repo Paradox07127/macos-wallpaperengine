@@ -27,7 +27,7 @@ enum TestTempArtifacts {
         "LiveWallpaper-local-access-",
         "LiveWallpaper-local-video-",
         "LiveWallpaperSchemeTests-",
-        "MonitorTailCursorStoreTests-",
+        "TailCursorStoreTests-",
         "ProtocolizedDependencies-",
         "SceneResourceResolverTests-",
         "SettingsManagerMigrationTests-",

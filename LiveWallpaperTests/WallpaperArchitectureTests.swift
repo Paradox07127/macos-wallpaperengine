@@ -951,7 +951,7 @@ struct WallpaperVideoPlayerStartupPolicyTests {
 
     @Test("Scene preview does not synchronously render a live poster on MainActor")
     func scenePreviewUsesNextFramePosterCapture() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WPESceneDetailView.swift")
+        let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
 
         #expect(source.contains("captureLivePosterFromNextFrame"))
         #expect(!source.contains("renderer.captureLivePoster()"))
@@ -981,8 +981,8 @@ struct WallpaperVideoPlayerStartupPolicyTests {
 
     @Test("Scene detail fallback preview is a bounded static poster and releases ImageIO state")
     func sceneDetailPreviewFallbackDoesNotRetainAnimatedPreviewState() throws {
-        let detail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WPESceneDetailView.swift")
-        let preview = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WPEPreviewView.swift")
+        let detail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
+        let preview = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
 
         #expect(preview.contains("case staticPoster"))
         #expect(detail.contains("playbackMode: .staticPoster"))
@@ -995,7 +995,7 @@ struct WallpaperVideoPlayerStartupPolicyTests {
 
     @Test("Scene preview keeps abnormal poster ratios inside the screen frame")
     func scenePreviewFitsAbnormalPosterRatiosInsideScreenFrame() throws {
-        let detail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WPESceneDetailView.swift")
+        let detail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
 
         #expect(detail.contains("GeometryReader"))
         #expect(detail.contains("screenPreviewSize"))
@@ -1006,7 +1006,7 @@ struct WallpaperVideoPlayerStartupPolicyTests {
     @Test("Scene preview polling is lifecycle-owned and stops at terminal state")
     func scenePreviewDoesNotOwnPermanentTimer() throws {
         let detail = try Self.readSourceFile(
-            "LiveWallpaper/Views/ScreenDetail/WPESceneDetailView.swift"
+            "LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift"
         )
 
         #expect(detail.contains(".task(id: previewTaskIdentity)"))
@@ -1021,7 +1021,7 @@ struct WallpaperVideoPlayerStartupPolicyTests {
     @Test("Scene diagnostic inventory is not owned by the SwiftUI view")
     func sceneDiagnosticsAreSeparatedFromPreviewLifecycle() throws {
         let detail = try Self.readSourceFile(
-            "LiveWallpaper/Views/ScreenDetail/WPESceneDetailView.swift"
+            "LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift"
         )
         let report = try Self.readSourceFile(
             "LiveWallpaper/Runtime/Diagnostics/WPERenderDiagnosticReport.swift"
@@ -2481,7 +2481,7 @@ struct ScreenRuntimeOwnershipTests {
             "LiveWallpaper/Runtime/Metal/RenderThread/WPEDisplayRenderActor.swift"
         )
         let scenePreviewSource = try RepositoryRoot.source(
-            "LiveWallpaper/Views/ScreenDetail/WPESceneDetailView.swift"
+            "LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift"
         )
         let wallpaperSource = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager+Wallpaper.swift"

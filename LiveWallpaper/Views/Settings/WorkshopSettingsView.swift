@@ -163,7 +163,7 @@ struct WorkshopSettingsView: View {
                 SettingsSearchSectionHeader("Content", anchor: .workshopContent)
             }
 
-            WorkshopBadgeSettingsSection()
+            WorkshopBadgeSection()
         }
         .settingsFormChrome()
         .settingsSearchAnchorScroller(
@@ -175,7 +175,7 @@ struct WorkshopSettingsView: View {
             ]
         )
         .overlay(alignment: .bottomTrailing) {
-            WorkshopDownloadToastHost()
+            DownloadToastHost()
                 .padding(DesignTokens.Spacing.lg)
         }
         .sheet(isPresented: $showingKeyEntry) {

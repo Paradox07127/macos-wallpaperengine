@@ -48,7 +48,7 @@ struct CodexSessionModel: Sendable {
         let timestamp = Self.timestamp(from: line, payload: payload)
         if let timestamp {
             markFresh(at: timestamp)
-            MonitorAgentSignalDeriver.appendRecentEventTime(&recentEventTimes, timestamp.timeIntervalSince1970)
+            AgentSignalDeriver.appendRecentEventTime(&recentEventTimes, timestamp.timeIntervalSince1970)
         }
 
         if let discoveredModel = Self.discoveredModel(in: payload) {
@@ -128,9 +128,9 @@ struct CodexSessionModel: Sendable {
             turnCount: turnCount,
             tokens: tokens,
         )
-        state.recentEventTimes = MonitorAgentSignalDeriver.trimmedEventTimes(recentEventTimes)
-        state.recentTools = MonitorAgentSignalDeriver.trimmedTools(recentTools)
-        state.warning = MonitorAgentSignalDeriver.warning(
+        state.recentEventTimes = AgentSignalDeriver.trimmedEventTimes(recentEventTimes)
+        state.recentTools = AgentSignalDeriver.trimmedTools(recentTools)
+        state.warning = AgentSignalDeriver.warning(
             recentTools: recentTools,
             status: currentStatus,
             processAlive: processAlive,
@@ -245,8 +245,8 @@ struct CodexSessionModel: Sendable {
         lastToolName = toolName
         let at = timestamp?.timeIntervalSince1970 ?? lastEventAt?.timeIntervalSince1970 ?? 0
         recentTools.append(MonitorAgentToolEvent(name: toolName, at: at, ok: nil))
-        if recentTools.count > MonitorAgentSignalDeriver.recentToolCap * 3 {
-            recentTools = Array(recentTools.suffix(MonitorAgentSignalDeriver.recentToolCap * 3))
+        if recentTools.count > AgentSignalDeriver.recentToolCap * 3 {
+            recentTools = Array(recentTools.suffix(AgentSignalDeriver.recentToolCap * 3))
         }
         if let timestamp {
             markTerminal(false, at: timestamp)
@@ -369,7 +369,7 @@ struct CodexSessionModel: Sendable {
     }
 
     private static func sanitizedToolName(_ value: String) -> String? {
-        guard let name = MonitorAgentSignalDeriver.sanitizedToolName(value) else { return nil }
+        guard let name = AgentSignalDeriver.sanitizedToolName(value) else { return nil }
         if name == "exec_command" {
             return "shell"
         }

@@ -24,7 +24,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
     private let loadAverageSampler: @Sendable () -> [Double]?
     private let pressure: any MemoryPressureReading
     private let state = MetricsState()
-    private let netPath = MonitorNetworkPathObserver()
+    private let netPath = NetworkPathObserver()
 
     init(
         includeTopProcesses: Bool = false,
@@ -100,7 +100,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         private var lastANE: SystemMetricsSamplers.ANESample?
         private var lastANESampledAt: Date?
         /// Lazily opened on the first sensors-enabled tick; caches its SMC connection.
-        private var sensorSampler: MonitorSensorSampler?
+        private var sensorSampler: SensorSampler?
         private var cpuInfo: MonitorCPUInfo?
         private var gpuDeviceName: String?
 
@@ -110,7 +110,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             options: Options,
             loadAverageSampler: @escaping @Sendable () -> [Double]?,
             pressure: any MemoryPressureReading,
-            netPath: MonitorNetworkPathObserver,
+            netPath: NetworkPathObserver,
             sink: any MonitorSnapshotSink
         ) {
             task?.cancel()
@@ -150,7 +150,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             options: Options,
             loadAverageSampler: @Sendable () -> [Double]?,
             pressure: any MemoryPressureReading,
-            netPath: MonitorNetworkPathObserver,
+            netPath: NetworkPathObserver,
             sink: any MonitorSnapshotSink
         ) async {
             updateCount += 1
@@ -229,7 +229,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             var sensors: MonitorSensorReadings?
             if options.sensors {
                 if sensorSampler == nil {
-                    sensorSampler = MonitorSensorSampler()
+                    sensorSampler = SensorSampler()
                 }
                 sensors = sensorSampler?.sample()
             }

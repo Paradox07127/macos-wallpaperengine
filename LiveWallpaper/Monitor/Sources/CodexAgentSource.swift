@@ -15,10 +15,10 @@ final class CodexAgentSource: MonitorDataSource {
     }
 
     private let rootURL: URL
-    private let cursorStore: MonitorTailCursorStore?
+    private let cursorStore: TailCursorStore?
     private let lifecycle = OSAllocatedUnfairLock(initialState: Lifecycle())
 
-    init(rootURL: URL, cursorStore: MonitorTailCursorStore? = nil) {
+    init(rootURL: URL, cursorStore: TailCursorStore? = nil) {
         self.rootURL = rootURL
         self.cursorStore = cursorStore
     }

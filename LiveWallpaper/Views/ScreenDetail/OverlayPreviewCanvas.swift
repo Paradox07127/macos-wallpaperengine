@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The display-shaped stage both overlay pages arrange against: a still of what
 /// the display is playing, fitted to its aspect ratio, with the page's own layer
-/// on top. Extracted from `MonitorBoardPreviewArea` when overlays split into
+/// on top. Extracted from `BoardPreviewArea` when overlays split into
 /// Weather and Monitor pages — otherwise the two pages would each draw their own
 /// slightly different rectangle.
 struct OverlayPreviewCanvas<Content: View>: View {

@@ -17,8 +17,9 @@ final class SettingsManager {
     private let screenConfigStore: AtomicFileStore<[ScreenConfiguration]>
     private let globalSettingsStore: AtomicFileStore<GlobalSettings>
     private let wallpaperBookmarksStore: AtomicFileStore<[WallpaperBookmark]>
-    private let bookmarkResolver: SecurityScopedBookmarkResolver
-    private let persistWPEBookmarkOwnerRefresh: @MainActor (WPEOrigin, Data) -> Void
+    let bookmarkResolver: SecurityScopedBookmarkResolver
+    private let loginItemController = LoginItemController()
+    let persistWPEBookmarkOwnerRefresh: @MainActor (WPEOrigin, Data) -> Void
     private let defaults: UserDefaults
 
     /// Serial off-MainActor writer for all three file stores (configs, global settings, bookmarks).
@@ -28,7 +29,6 @@ final class SettingsManager {
     private var configurationWriteGeneration: UInt64 = 0
     private var globalSettingsWriteGeneration: UInt64 = 0
     private var bookmarksWriteGeneration: UInt64 = 0
-    private var loginItemValidationGeneration: UInt64 = 0
 
     private enum Keys {
         static let screenConfigurations = "screenConfigurations"
@@ -308,7 +308,7 @@ final class SettingsManager {
         let previousStartOnLogin = cachedGlobalSettings?.startOnLogin ?? loadGlobalSettings().startOnLogin
         cachedGlobalSettings = settings
         if previousStartOnLogin != settings.startOnLogin {
-            applyStartOnLoginSetting(settings.startOnLogin)
+            loginItemController.apply(startOnLogin: settings.startOnLogin)
         }
 
         globalSettingsWriteGeneration &+= 1
@@ -542,98 +542,6 @@ final class SettingsManager {
         }
     }
 
-    private func applyStartOnLoginSetting(_ startOnLogin: Bool) {
-        let service = SMAppService.mainApp
-        loginItemValidationGeneration &+= 1
-        let statusBefore = service.status
-        Logger.debug(
-            "applyStartOnLoginSetting target=\(startOnLogin) statusBefore=\(describe(statusBefore)) bundlePath=\(Bundle.main.bundlePath)",
-            category: .settings
-        )
-
-        do {
-            if startOnLogin {
-                if statusBefore == .notRegistered || statusBefore == .notFound {
-                    try service.register()
-                }
-            } else {
-                if statusBefore == .enabled || statusBefore == .requiresApproval {
-                    try service.unregister()
-                }
-            }
-        } catch {
-            Logger.error(
-                "SMAppService.\(startOnLogin ? "register" : "unregister") threw: \(error.localizedDescription)",
-                category: .settings
-            )
-            postLoginItemFailure(reason: .registrationFailed(error))
-            return
-        }
-
-        let statusAfter = service.status
-        Logger.debug("SMAppService statusAfter=\(describe(statusAfter))", category: .settings)
-
-        if loginItemStatus(statusAfter, matches: startOnLogin) {
-            return
-        }
-
-        scheduleLoginItemStatusValidation(targetEnabled: startOnLogin)
-    }
-
-    private func describe(_ status: SMAppService.Status) -> String {
-        switch status {
-        case .notRegistered:    return "notRegistered"
-        case .enabled:          return "enabled"
-        case .requiresApproval: return "requiresApproval"
-        case .notFound:         return "notFound"
-        @unknown default:       return "unknown(\(status.rawValue))"
-        }
-    }
-
-    private func loginItemStatus(_ status: SMAppService.Status, matches targetEnabled: Bool) -> Bool {
-        switch (targetEnabled, status) {
-        case (true, .enabled), (false, .notRegistered), (false, .notFound):
-            return true
-        default:
-            return false
-        }
-    }
-
-    private func scheduleLoginItemStatusValidation(targetEnabled: Bool) {
-        loginItemValidationGeneration &+= 1
-        let generation = loginItemValidationGeneration
-
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_250_000_000)
-            guard let self, self.loginItemValidationGeneration == generation else { return }
-
-            let status = SMAppService.mainApp.status
-            Logger.debug("SMAppService delayedStatus=\(self.describe(status))", category: .settings)
-            guard !self.loginItemStatus(status, matches: targetEnabled) else { return }
-
-            switch (targetEnabled, status) {
-            case (true, .requiresApproval):
-                Logger.warning("Login item registered but requires user approval in System Settings", category: .settings)
-                self.postLoginItemFailure(reason: .requiresApproval)
-            case (true, .notRegistered), (true, .notFound):
-                Logger.error("Login item register() returned without error but delayed status is \(self.describe(status)); app may not be in /Applications/ or signing is rejected", category: .settings)
-                self.postLoginItemFailure(reason: .registrationSilentlyFailed)
-            case (false, _):
-                Logger.warning("Login item disable target=false but delayed status=\(self.describe(status))", category: .settings)
-            default:
-                break
-            }
-        }
-    }
-
-    private func postLoginItemFailure(reason: LoginItemFailure) {
-        NotificationCenter.default.post(
-            name: .loginItemRegistrationDidFail,
-            object: nil,
-            userInfo: ["reason": reason]
-        )
-    }
-
     // MARK: - Clean Settings
 
     func cleanSettingsForScreen(_ screenID: CGDirectDisplayID) {
@@ -674,13 +582,13 @@ final class SettingsManager {
         // Keys owned by other components; literals on purpose (see their owners).
         defaults.removeObject(forKey: "WPELibrary.RootBookmark.v1")          // WPEDependencyMountResolver
         defaults.removeObject(forKey: "loomscreen.sidebar.displayOrder.v1")  // SidebarDisplayOrder.preferencesKey
-        defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // MonitorSourceAuthorization
-        defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // MonitorSourceAuthorization
+        defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // SourceAuthorization
+        defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // SourceAuthorization
 
         BookmarkStore.shared.resetAfterSettingsCleared()
         TrustedHostStore.shared.resetAfterSettingsCleared()
         if applyLoginSetting {
-            applyStartOnLoginSetting(false)
+            loginItemController.apply(startOnLogin: false)
         }
     }
 
@@ -751,189 +659,6 @@ final class SettingsManager {
         let storedVersion = defaults.integer(forKey: Keys.blobSchemaVersion)
         guard storedVersion < Self.currentBlobSchemaVersion else { return }
         defaults.set(Self.currentBlobSchemaVersion, forKey: Keys.blobSchemaVersion)
-    }
-
-    // MARK: - Validation
-
-    func validateConfiguration(for screenID: CGDirectDisplayID) -> Bool {
-        guard let configuration = loadConfigurations().first(where: { $0.screenID == screenID }) else { return false }
-
-        guard let definition = WallpaperSessionDefinition(configuration: configuration) else {
-            Logger.error("Malformed wallpaper configuration for screen \(screenID)", category: .settings)
-            return false
-        }
-
-        switch definition {
-        case .video(let bookmarkData, _):
-            return validateVideoBookmark(bookmarkData, for: screenID, configuration: configuration)
-        case .html(let source, _):
-            return validateHTMLSource(source, for: screenID)
-        case .scene(let descriptor):
-            return !descriptor.workshopID.isEmpty
-                && !descriptor.cacheRelativePath.isEmpty
-                && !descriptor.entryFile.isEmpty
-        }
-    }
-
-    private func validateVideoBookmark(
-        _ bookmarkData: Data,
-        for screenID: CGDirectDisplayID,
-        configuration: ScreenConfiguration
-    ) -> Bool {
-        switch bookmarkResolver.resolve(bookmarkData, target: .transient) {
-        case .success(let resolved):
-            let url = resolved.url
-            if resolved.didRefresh {
-                let updatedConfig = configuration.withUpdatedActiveBookmark(resolved.bookmarkData)
-                saveConfiguration(updatedConfig)
-                Logger.info("Refreshed stale bookmark for screen \(screenID)", category: .fileAccess)
-            }
-
-            let canAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if canAccess {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            guard canAccess else {
-                if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
-                    // Fail-open by design: existence-only pass avoids deleting a
-                    // config over a transient scope failure.
-                    Logger.warning(
-                        "Video bookmark for screen \(screenID) passed validation on file existence only (security scope unavailable)",
-                        category: .fileAccess
-                    )
-                    return true
-                }
-                Logger.error("Cannot access file for screen \(screenID)", category: .fileAccess)
-                return false
-            }
-            return true
-
-        case .failure(let failure):
-            Logger.error("Failed to resolve bookmark for screen \(screenID): \(failure.localizedDescription)", category: .fileAccess)
-            return false
-        }
-    }
-
-    private func validateHTMLSource(_ source: HTMLSource, for screenID: CGDirectDisplayID) -> Bool {
-        switch source {
-        case .inline:
-            return true
-        case .url(let url):
-            guard let scheme = url.scheme?.lowercased(),
-                  scheme == "http" || scheme == "https" else {
-                Logger.error("Invalid remote HTML URL for screen \(screenID): unsupported scheme '\(url.scheme ?? "none")'", category: .fileAccess)
-                return false
-            }
-            return true
-        case .file(let bookmarkData):
-            return validateLocalHTMLBookmark(bookmarkData, indexFileName: nil, for: screenID)
-        case .folder(let bookmarkData, let indexFileName):
-            return validateLocalHTMLBookmark(bookmarkData, indexFileName: indexFileName, for: screenID)
-        }
-    }
-
-    private func validateLocalHTMLBookmark(
-        _ bookmarkData: Data,
-        indexFileName: String?,
-        for screenID: CGDirectDisplayID
-    ) -> Bool {
-        switch bookmarkResolver.resolve(bookmarkData, target: .transient) {
-        case .success(let resolved):
-            let url = resolved.url
-            if resolved.didRefresh {
-                persistRefreshedHTMLBookmark(
-                    matching: bookmarkData,
-                    with: resolved.bookmarkData,
-                    for: screenID
-                )
-            }
-
-            let canAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if canAccess {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            guard canAccess || FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
-                Logger.error("Cannot access local HTML resource for screen \(screenID)", category: .fileAccess)
-                return false
-            }
-            if !canAccess {
-                // Fail-open by design: existence-only pass avoids deleting a
-                // config over a transient scope failure.
-                Logger.warning(
-                    "HTML bookmark for screen \(screenID) passed validation on file existence only (security scope unavailable)",
-                    category: .fileAccess
-                )
-            }
-
-            if let indexFileName {
-                let escapedIndex = indexFileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? indexFileName
-                guard let requestURL = URL(string: "\(FolderURLSchemeHandler.scheme)://\(FolderURLSchemeHandler.host)/\(escapedIndex)") else {
-                    Logger.error("Invalid HTML folder index name for screen \(screenID): \(indexFileName)", category: .fileAccess)
-                    return false
-                }
-                do {
-                    let indexURL = try FolderURLSchemeHandler.resolvedFileURL(
-                        for: requestURL,
-                        inside: url
-                    )
-                    return FileManager.default.fileExists(atPath: indexURL.path(percentEncoded: false))
-                } catch {
-                    Logger.error("Failed to resolve HTML folder index for screen \(screenID): \(error.localizedDescription)", category: .fileAccess)
-                    return false
-                }
-            }
-
-            return FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
-
-        case .failure(let failure):
-            Logger.error("Failed to resolve local HTML bookmark for screen \(screenID): \(failure.localizedDescription)", category: .fileAccess)
-            return false
-        }
-    }
-
-    /// Actor-safe persistent owner used by validation.
-    @discardableResult
-    func persistRefreshedHTMLBookmark(
-        matching original: Data,
-        with refreshed: Data,
-        for screenID: CGDirectDisplayID
-    ) -> Bool {
-        guard let current = getConfiguration(for: screenID) else { return false }
-
-        let updated: ScreenConfiguration?
-        if let origin = current.wpeOrigin,
-           origin.sourceFolderBookmark == original {
-            updated = current.replacingWPEOriginBookmark(
-                workshopID: origin.workshopID,
-                matching: original,
-                with: refreshed
-            )
-            _ = replaceWPEHistorySourceBookmark(
-                workshopID: origin.workshopID,
-                matching: original,
-                with: refreshed
-            )
-            persistWPEBookmarkOwnerRefresh(origin, refreshed)
-        } else {
-            updated = current.replacingHTMLBookmark(
-                matching: original,
-                with: refreshed
-            )
-        }
-
-        guard let updated else {
-            Logger.info(
-                "[bookmark/screenHTML] skipped stale refresh save — stored bookmark changed between resolve and save",
-                category: .fileAccess
-            )
-            return false
-        }
-        saveConfiguration(updated)
-        return true
     }
 
     // MARK: - User Preferences

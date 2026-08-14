@@ -163,7 +163,7 @@ struct HTMLTrustVerdictTests {
             "LiveWallpaper/Views/ScreenDetail/HTMLPreviewSection.swift"
         )
         let bookmarks = try RepositoryRoot.source(
-            "LiveWallpaper/Views/BookmarksLibraryView.swift"
+            "LiveWallpaper/Views/Bookmarks/LibraryView.swift"
         )
 
         #expect(requestContract.contains("struct HTMLSnapshotRequest"))

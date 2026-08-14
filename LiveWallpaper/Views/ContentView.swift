@@ -662,7 +662,7 @@ struct DetailContent: View {
 
             case .workshop:
                 #if !LITE_BUILD
-                WorkshopPaneView()
+                PaneView()
                 #else
                 EmptyView()
                 #endif

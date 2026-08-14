@@ -14,7 +14,7 @@
   - 每台显示器一行：状态、播放/暂停、上一张/下一张（播放列表模式）、音量。
   - 实时占用条（CPU / GPU / 内存 / 温度压力）。
   - 管理、通用设置、全部重新加载、退出。
-- **设置窗口**（`LiveWallpaper/Views/ContentView.swift`、`LiveWallpaper/Views/Settings/SettingsNavigation.swift`）
+- **设置窗口**（`LiveWallpaper/Views/ContentView.swift`、`LiveWallpaper/Views/Settings/Navigation.swift`）
   - 侧栏：每台显示器的页面、书签、Apple Aerials、Steam 创意工坊（Pro）。
   - 设置页——是否可用取决于 SKU：
 
@@ -75,11 +75,11 @@ Retina 物理像素布局、临时存储（创意工坊导入强制开启）、C
   - **音量**（0–100）会变成一个增益，与你的主音量**相乘**而不是替换它 —— `Schema/WPEEngineAudioSettings.swift`。
 
   两者读的都是预设快照而非合并后的映射表，所以一张声明了自己名为 `volume` 属性的壁纸没法驱动引擎设置。
-- 界面：场景设置卡片里的**预设**那一行（`LiveWallpaper/Views/ScreenDetail/WPEScenePresetBar.swift`）——选择器分为*你保存的*与*来自创意工坊*两组，另有保存 / 重命名 / 删除。创意工坊的壁纸页会列出为该壁纸发布的预设（`LiveWallpaper/Views/Workshop/WorkshopDetailPresetsSection.swift`）；列出它们需要 Steam Web API key，下载则需要 SteamCMD。
+- 界面：场景设置卡片里的**预设**那一行（`LiveWallpaper/Views/ScreenDetail/ScenePresetBar.swift`）——选择器分为*你保存的*与*来自创意工坊*两组，另有保存 / 重命名 / 删除。创意工坊的壁纸页会列出为该壁纸发布的预设（`LiveWallpaper/Views/Workshop/DetailPresetsSection.swift`）；列出它们需要 Steam Web API key，下载则需要 SteamCMD。
 
 ## 2）播放与自动化
 
-- **播放列表**（`LiveWallpaper/Views/PlaylistSection.swift`、`LiveWallpaper/Policies/PlaylistPolicy.swift`）—— 拖拽排序、随机、1–1440 分钟轮换、应用到一台或所有显示器。
+- **播放列表**（`LiveWallpaper/Views/Playlist/PlaylistSection.swift`、`LiveWallpaper/Policies/PlaylistPolicy.swift`）—— 拖拽排序、随机、1–1440 分钟轮换、应用到一台或所有显示器。
 - **计划**（`LiveWallpaper/Views/ScheduleSection/`、`LiveWallpaper/Policies/SchedulePolicy.swift`）—— 带预设时段、冲突检测、回落到主壁纸。
 - **协调器**（`LiveWallpaper/Policies/WallpaperAutomationCoordinator.swift`）—— 单个 60 秒 tick，只在确实有显示器启用了自动化时才运行；锁屏/休眠期间完全停止，唤醒后只对齐一次。
 - **书签**（`Schema/WallpaperBookmark.swift`、`LiveWallpaper/App/ScreenManager+Bookmarks.swift`）—— 快照内容加播放/叠加层状态。监控面板的布局刻意保持按显示器独立，不进书签。
