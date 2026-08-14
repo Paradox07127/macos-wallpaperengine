@@ -21,7 +21,7 @@ struct Header: View {
                     .help(Text(verbatim: screen.name))
             },
             metadata: {
-                HStack(spacing: DesignTokens.Header.metadataSpacing) {
+                HStack(spacing: DesignTokens.DetailHeader.metadataSpacing) {
                     // A renamed display still has to say which panel it is.
                     if screen.customName != nil {
                         InfoBadge(icon: "display", text: screen.systemName)
