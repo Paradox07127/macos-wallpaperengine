@@ -61,9 +61,7 @@ final class MonitorBoardHostView: NSView {
 
         hostingView.frame = bounds
         hostingView.autoresizingMask = [.width, .height]
-        if #available(macOS 13.0, *) {
-            hostingView.sizingOptions = []
-        }
+        hostingView.sizingOptions = []
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         addSubview(hostingView)

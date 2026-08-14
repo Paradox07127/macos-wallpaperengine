@@ -2,9 +2,6 @@
 import AppKit
 import QuartzCore
 
-/// Drives per-display frame pacing through a display link on the render thread.
-/// Main-thread backing continues to use the MTKView surface directly.
-
 /// Target of the AppKit-vended `CADisplayLink`. Because the link is added to the
 /// render thread's run loop, `step(_:)` fires there — it enters the actor's
 /// isolation synchronously and produces exactly one frame, the same shape the old

@@ -7,37 +7,19 @@ import MetalKit
 import os
 import simd
 
-/// Shared classifier for WPE compose/project utility layers, so the dispatcher,
-/// target pool, and executor branch on one definition instead of duplicating
-/// path checks.
 enum WPEMetalSceneCaptureUtilityModels {
-    /// WPE `fullscreen`/`passthrough` utility models — `composelayer.json`,
-    /// `projectlayer.json`, and `fullscreenlayer.json` (the post-process /
-    /// depth-of-field carrier) — all capture the full frame and MUST render
-    /// fullscreen with a scene-sized composite. Drawing them at their authored
-    /// object footprint shrinks the result into a "picture-in-picture" panel
-    /// (e.g. scene 3479521040's DoF layer was a `fullscreenlayer`). Tolerates a
-    /// leading `../<dependencyID>/` resolver prefix.
+    /// `fullscreenlayer.json` / `projectlayer.json` always render full-frame;
+    /// a spatial `composelayer.json` may be `.subregion` (see `outputGeometry`).
     static func isSceneCaptureUtilityModelPath(_ path: String) -> Bool {
         WPEUtilityModelKind.isUtilityModelPath(path)
     }
 
-    /// Output geometry for a scene-capture utility (passthrough) layer's scene
-    /// composite. Fullscreen/project utility layers capture 1:1 full-frame (the
-    /// 98f79b5 lesson); a plain `composelayer.json` that hosts a spatial effect
-    /// authored into a real sub-rect captures the matching scene area into its
-    /// local target and is confined to that box.
     enum OutputGeometry { case fullscreen, subregion }
 
-    /// `fullscreenlayer.json` (DoF/post-process) and `projectlayer.json`
-    /// (projection/autosize) always cover the frame. A `composelayer.json`
-    /// stays fullscreen too unless its authored footprint is a safe sub-scene
-    /// rectangle: finite, mirrorable by the object-quad path, and clearly
-    /// smaller than the scene. Oversized / full-coverage compose layers stay
-    /// fullscreen — this preserves 98f79b5's decision for scene 3479521040's
-    /// 5000×2300 rotated passthrough layer. Small z-rotated local compose
-    /// layers (scene 2986828130's prism/audio box) stay subregion and capture
-    /// the matching scene area into their local target.
+    /// Fullscreen/project always cover the frame. A composelayer stays fullscreen
+    /// unless its authored footprint is a safe sub-rect: oversized coverage keeps
+    /// 3479521040's 5000×2300 rotated passthrough fullscreen (98f79b5); small
+    /// z-rotated compose (2986828130) stays `.subregion`.
     static func outputGeometry(
         path: String,
         geometry: WPERenderLayerGeometry,

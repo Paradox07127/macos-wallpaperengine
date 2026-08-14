@@ -114,7 +114,7 @@ extension WPEMetalRenderExecutor {
         //     `perspectiveDepthScale` only grows near particles, never shrinks far ones,
         //     so the full `speed*length`≈15× stretch turned every 32×128 drop into a
         //     full-screen line. 1× keeps the bare 4:1 drop the team validated, now
-        //     correctly oriented, until real perspective far-shrink exists.
+        //     correctly oriented.
         if let trail = system.definition.trailRenderer, trail.kind == .sprite {
             if system.definition.isPerspective {
                 projection.trail = SIMD4<Float>(0, Float(trail.maxLength), 1, 1)
@@ -245,34 +245,12 @@ extension WPEMetalRenderExecutor {
         return true
     }
 
-    /// Mirrors `WPEParticleSpriteParams` in `WPEMetalBuiltins.metal` —
-    /// `grid.xy = (cols, rows)`, `grid.z = frameCount` (loop modulo),
-    /// `grid.w = 1` flags an r8 alpha-mask atlas (fog particles) so the
-    /// fragment shader pulls colour from the per-particle tint and uses
-    /// the texture sample only as the opacity.
-    ///
-    /// `frameRectMode.x = 1` switches the vertex shader from uniform-grid
-    /// slicing to explicit `frameRects` from buffer(4); `.y` is the rect count;
-    /// `.z` is the material overbright colour multiplier (1 = unchanged).
+    /// Mirrors `WPEParticleSpriteParams` in `WPEMetalBuiltins.metal`:
+    /// `grid` = (cols, rows, frameCount, r8-mask); `frameRectMode` = (explicit-rects, count, overbright, refractAmount); `tintAndMask.w` flags opacity mask.
     struct WPEParticleSpriteParams {
         var grid: SIMD4<Float>
         var frameRectMode: SIMD4<Float>
-        /// Compose-group effect baked from the particle's parent composelayer:
-        /// `.xyz` = tint colour multiplier (1,1,1 = none), `.w` = 1 when an
-        /// opacity mask is bound at fragment texture(1).
         var tintAndMask: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 0)
-    }
-
-    func genericParticleUniforms(for pass: WPEPreparedRenderPass) -> WPEGenericParticleUniforms {
-        WPEGenericParticleUniforms(
-            color: WPEMetalShaderInputs.colorVector(for: pass),
-            sizeAndAge: SIMD4<Float>(
-                WPEMetalShaderInputs.floatScalar(named: ["g_Alpha", "u_Alpha", "alpha"], in: pass, default: 1),
-                WPEMetalShaderInputs.floatScalar(named: ["g_Brightness", "u_Brightness", "brightness"], in: pass, default: 1),
-                0,
-                0
-            )
-        )
     }
 
 }

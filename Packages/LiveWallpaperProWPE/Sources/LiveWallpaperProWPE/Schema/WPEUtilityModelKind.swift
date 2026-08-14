@@ -19,7 +19,6 @@ public enum WPEUtilityModelKind: String, CaseIterable, Equatable, Sendable {
         return nil
     }
 
-    /// Returns whether the path identifies any scene-capture utility model.
     public static func isUtilityModelPath(_ path: String) -> Bool {
         classify(path) != nil
     }

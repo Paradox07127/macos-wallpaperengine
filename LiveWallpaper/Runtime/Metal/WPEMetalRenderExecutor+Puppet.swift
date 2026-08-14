@@ -618,9 +618,8 @@ extension WPEMetalRenderExecutor {
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
         guard !meshes.isEmpty else { return false }
 
-        let normalizedShader = WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.pass.shader)
-        guard normalizedShader == BuiltinShaderName.genericImage2
-                || normalizedShader == BuiltinShaderName.genericImage4 else {
+        let shaderKind = WPEBuiltinShaderKind(normalizing: pass.pass.shader)
+        guard shaderKind == .genericImage2 || shaderKind == .genericImage4 else {
             return false
         }
 
@@ -631,7 +630,7 @@ extension WPEMetalRenderExecutor {
             frameState: frameState,
             currentTargetID: destination.id
         )
-        if normalizedShader == BuiltinShaderName.genericImage4 {
+        if shaderKind == .genericImage4 {
             // generic4 MODEL material semantics differ from the image-layer path:
             // slot 1 is the normal map (unused), slot 2 the PBR component map
             // whose ALPHA is the emissive mask; tint/emissive come from the
@@ -741,9 +740,8 @@ extension WPEMetalRenderExecutor {
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
         guard !meshes.isEmpty else { return false }
 
-        let normalizedShader = WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.pass.shader)
-        guard normalizedShader == BuiltinShaderName.genericImage2
-                || normalizedShader == BuiltinShaderName.genericImage4 else {
+        let shaderKind = WPEBuiltinShaderKind(normalizing: pass.pass.shader)
+        guard shaderKind == .genericImage2 || shaderKind == .genericImage4 else {
             return false
         }
 
@@ -755,7 +753,7 @@ extension WPEMetalRenderExecutor {
             currentTargetID: destination.id
         )
 
-        let fragmentName = normalizedShader == BuiltinShaderName.genericImage4
+        let fragmentName = shaderKind == .genericImage4
             ? "wpe_genericimage4_fragment"
             : "wpe_genericimage2_fragment"
         encoder.setRenderPipelineState(try renderPipeline(
@@ -775,7 +773,7 @@ extension WPEMetalRenderExecutor {
         let maskBindingName: String?
         let maskFallbackToPrimary: Bool
         #endif
-        if normalizedShader == BuiltinShaderName.genericImage4 {
+        if shaderKind == .genericImage4 {
             // A clip-composite binding (slot 8) is consumed by the dedicated clip pass; the
             // injected slot-1 mask must NOT be applied as a flat static mask to every part here.
             let maskRef = hasPuppetClipCompositeBinding(pass, layer: layer)
@@ -948,7 +946,7 @@ extension WPEMetalRenderExecutor {
         }
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
         guard !meshes.isEmpty else { return false }
-        guard WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.pass.shader) == BuiltinShaderName.copy else {
+        guard WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .copy else {
             return false
         }
 
@@ -1307,7 +1305,7 @@ extension WPEMetalRenderExecutor {
     private func puppetClipMaterialPass(in layer: WPERenderLayer) -> WPERenderPass? {
         layer.passes.first { pass in
             guard case .material = pass.phase,
-                  WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.shader) == BuiltinShaderName.genericImage4 else {
+                  WPEBuiltinShaderKind(normalizing: pass.shader) == .genericImage4 else {
                 return false
             }
             return hasPuppetClipCompositeBinding(pass, layer: layer)
@@ -1325,7 +1323,7 @@ extension WPEMetalRenderExecutor {
     ) -> PuppetClipCompositePlan? {
         guard Self.puppetClipCompositeEnabled,
               hasPuppetClipCompositeBinding(pass, layer: layer),
-              WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.shader) == BuiltinShaderName.genericImage4,
+              WPEBuiltinShaderKind(normalizing: pass.shader) == .genericImage4,
               let clipTargetReference = pass.textures[8],
               case .fbo(let clipTargetName) = clipTargetReference,
               renderableMeshes.count == 1,
@@ -1403,7 +1401,7 @@ extension WPEMetalRenderExecutor {
     private func layerHasDeferredWarpTarget(_ layer: WPERenderLayer) -> Bool {
         layer.passes.contains { pass in
             guard isDeferredWarpTarget(pass.target, layer: layer) else { return false }
-            return WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.shader) == BuiltinShaderName.copy
+            return WPEBuiltinShaderKind(normalizing: pass.shader) == .copy
         }
     }
 
@@ -1920,7 +1918,7 @@ extension WPEMetalRenderExecutor {
         frameState: inout WPEMetalFrameState
     ) throws -> Bool {
         guard isDeferredWarpTarget(pass.pass.target, layer: layer),
-              WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.pass.shader) == BuiltinShaderName.copy,
+              WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .copy,
               let clipMaterialPass = puppetClipMaterialPass(in: layer) else {
             return false
         }

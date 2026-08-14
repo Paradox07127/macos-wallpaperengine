@@ -43,7 +43,6 @@ struct WPEUniformSlot: Equatable {
 
 struct WPESamplerDecl: Equatable {
     let name: String
-    let comment: String?
 
     static func parse(line: String) -> Self? {
         guard line.hasPrefix("uniform ") else { return nil }
@@ -54,8 +53,7 @@ struct WPESamplerDecl: Equatable {
         guard let head = parts.first else { return nil }
         let name = head.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return nil }
-        let comment = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : nil
-        return Self(name: name, comment: comment)
+        return Self(name: name)
     }
 }
 

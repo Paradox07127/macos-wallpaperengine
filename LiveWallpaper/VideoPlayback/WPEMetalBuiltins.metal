@@ -49,7 +49,6 @@ struct WPEComposeLayerUniforms {
     float4 flags; // x = CLEARALPHA
 };
 
-// ---------------------------------------------------------------------------
 // WPE `common_blending.h` ApplyBlending — MSL port.
 //
 // Integers match Wallpaper Engine's authoritative `#if BLENDMODE == N` chain
@@ -57,7 +56,6 @@ struct WPEComposeLayerUniforms {
 // for workshop shaders (WPERenderPipelineBuilder "common_blending.h"), kept in
 // lockstep with it. Only reachable for modes a fixed-function Metal blend
 // descriptor cannot express — those still take the cheap blend-state path.
-// ---------------------------------------------------------------------------
 
 static inline float wpe_s_colorBurn(float b, float s)   { return (s == 0.0) ? 0.0 : max(1.0 - (1.0 - b) / s, 0.0); }
 static inline float wpe_s_colorDodge(float b, float s)  { return (s == 1.0) ? 1.0 : min(b / (1.0 - s), 1.0); }
@@ -1421,11 +1419,11 @@ fragment half4 wpe_genericparticle_fragment(
 }
 
 // Native MSL implementations of the most-common WPE effect
-// shaders (per-corpus frequency: opacity 7, scroll 10, pulse 9, iris 6,
-// shine_gaussian 6). All take a single source texture and emit an
-// effect-modulated copy. These cover the simple 1-pass effects that
-// dominate the long tail; multi-pass blur/lightshafts still need the
-// translator.
+// shaders (per-corpus frequency: opacity 7, scroll 10, pulse 9, iris 6).
+// All take a single source texture and emit an effect-modulated copy.
+// These cover the simple 1-pass effects that dominate the long tail;
+// multi-pass blur/lightshafts and shine_gaussian (corpus frequency 6)
+// still go through the translator.
 
 struct WPEOpacityUniforms {
     float opacity;
@@ -1597,9 +1595,11 @@ fragment half4 wpe_effect_waterwaves_fragment(
     return texture0.sample(linearSampler, uv);
 }
 
-// Single-pass effect approximations used across
-// the corpus. These are visually plausible drop-ins; the shader translator
-// will replace them with the WPE-original output when it ships.
+// Single-pass effect approximations used across the corpus: visually
+// plausible drop-ins, not ports of the WPE originals. The translator has
+// shipped and takes the pass whenever the package supplies the effect's GLSL
+// (WPEShaderProgram.isBuiltin == false); these run for passes that fall back
+// to a hand-authored builtin program, so they are not temporary scaffolding.
 
 struct WPESpinUniforms {
     float angularSpeed;  // radians per second
@@ -1703,8 +1703,6 @@ fragment half4 wpe_effect_blend_fragment(
     float3 rgb = mix(sampled.rgb, sampled.rgb * uniforms.color.rgb, o);
     return half4(float4(rgb, sampled.a));
 }
-
-// Additional single-pass effects.
 
 struct WPEWaterFlowUniforms {
     float2 direction;    // unit-vector flow direction in UV space

@@ -5,9 +5,9 @@
     extension WPEMetalSceneRenderer {
         // MARK: - Script Tick Dispatch
 
-        /// Each family applies its newest completed value and contributes its next
-        /// tick to this frame's batch; `renderCurrentFrame` submits the batch once,
-        /// so a scene's script count costs dispatches only up to the worker width.
+        // Each family applies its newest completed value and contributes its next
+        // tick to this frame's batch; `renderCurrentFrame` submits the batch once,
+        // so a scene's script count costs dispatches only up to the worker width.
 
         func tickLayerScript(
             _ instance: WPELayerScriptInstance,
@@ -46,19 +46,20 @@
 
         /// Cursor events fire inside the frame path, so they are enqueued
         /// fire-and-forget: the handler's output drains through the next frame's
-        /// tick, and the frame never waits on a script engine.
+        /// tick (`batchTick` takes it off `asyncOutcomeSlot`), and the frame never
+        /// waits on a script engine. Returning nothing is the point — an optional
+        /// return here reads like the caller can apply the output in the same frame.
         func dispatchScriptCursorEvent(
             _ instance: WPELayerScriptInstance,
             event: WPELayerScriptCursorEvent,
             pointerFrame: WPEPointerFrame,
             runtimeSeconds: Double
-        ) -> WPELayerScriptOutput? {
+        ) {
             instance.liveDispatchCursorEvent(
                 event,
                 pointerFrame: pointerFrame,
                 runtimeSeconds: runtimeSeconds
             )
-            return nil
         }
 
         /// Load/settings property pushes stay bounded-synchronous, and fold their

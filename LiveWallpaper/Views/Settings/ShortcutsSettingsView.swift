@@ -322,6 +322,7 @@ private struct KeyCaptureMonitor: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         let onCapture: (GlobalShortcutBinding) -> Void
+        // deinit runs nonisolated even on a @MainActor class, and must remove the monitor synchronously there.
         nonisolated(unsafe) private var localMonitor: Any?
 
         init(onCapture: @escaping (GlobalShortcutBinding) -> Void) {

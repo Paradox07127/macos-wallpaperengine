@@ -11,14 +11,6 @@ extension WPEShaderTranspiler {
         var branchTaken: Bool
     }
 
-    /// Exposed for the vertex-uniform merge: a uniform declared only inside an
-    /// INACTIVE `#if` branch of the fragment must not count as "already
-    /// declared", or the merge skips it and the strip then removes it entirely
-    /// (auto_sway declares g_Speed/g_Inertia only under `AA_VERSION == 1`).
-    static func sourceWithInactiveBranchesStripped(_ source: String) -> String {
-        stripInactivePreprocessorBranches(in: source)
-    }
-
     static func stripInactivePreprocessorBranches(in source: String) -> String {
         var macroValues: [String: Int] = [:]
         var definedMacros: Set<String> = []

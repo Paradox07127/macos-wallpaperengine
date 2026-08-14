@@ -427,17 +427,8 @@ struct WPESceneCustomSettingsCard: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
-                    // Option labels are author-supplied (song titles, preset names)
-                    // with no length bound. `.fixedSize()` made the menu demand its
-                    // ideal width — the LONGEST label — which pushed the settings
-                    // column past the panel. Staying compressible is what keeps the
-                    // panel intact; no max width is needed for that.
-                    //
-                    // But `SettingRow` gives its title `maxWidth: .infinity`
-                    // AND `layoutPriority(1)`, so a merely-compressible control loses
-                    // every point of the row and collapses to a bare chevron. Matching
-                    // that priority makes the two share the row, and `minWidth` keeps
-                    // the menu clickable when the title is long.
+                    // Same compressible-menu-width rationale as the project settings
+                    // card's identical combo row (`WPEProjectCustomSettingsCard`).
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(minWidth: 96, alignment: .trailing)

@@ -26,6 +26,16 @@ enum MonitorAgentSignalDeriver {
         return name.isEmpty ? nil : name
     }
 
+    /// Ingestion-time buffer growth guard: append, then only pay for a trim once
+    /// the buffer reaches 2× the eventual display cap (`trimmedEventTimes` does
+    /// the final sort+cap at snapshot time).
+    static func appendRecentEventTime(_ times: inout [Double], _ time: Double) {
+        times.append(time)
+        if times.count > recentEventCap * 2 {
+            times = Array(times.suffix(recentEventCap))
+        }
+    }
+
     static func trimmedEventTimes(_ times: [Double], cap: Int = recentEventCap) -> [Double]? {
         guard !times.isEmpty else { return nil }
         let sorted = times.sorted()

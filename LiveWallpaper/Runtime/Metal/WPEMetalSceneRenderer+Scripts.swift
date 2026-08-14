@@ -4,9 +4,10 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import MetalKit
 
-/// Main-actor mutation journal for `thisLayer` transform assignments. The load
-/// generation is part of the key so an outcome from a retired scene can never
-/// move an object in the replacement scene that reused its objectID.
+/// Mutation journal for `thisLayer` transform assignments, owned by the renderer
+/// (so display-actor isolated, not `@MainActor`). The load generation is part of
+/// the key so an outcome from a retired scene can never move an object in the
+/// replacement scene that reused its objectID.
 struct WPESceneScriptTransformMutationJournal: Equatable {
     struct Key: Hashable {
         let objectID: String
@@ -454,10 +455,7 @@ extension WPEMetalSceneRenderer {
         let height = Double(max(sceneRenderSize.height, 1))
         let pointerPixels = pointer.map { SIMD2<Double>($0.x * width, $0.y * height) }
 
-        func dispatch(
-            _ instances: [String: WPELayerScriptInstance],
-            apply: (WPELayerScriptOutput, String) -> Void
-        ) {
+        func dispatch(_ instances: [String: WPELayerScriptInstance]) {
             for (objectID, instance) in instances {
                 let inside: Bool
                 if let pointerPixels, let geometry = geometryByID[objectID] {
@@ -468,18 +466,16 @@ extension WPEMetalSceneRenderer {
                 let previous = layerHoverStates[objectID] ?? false
                 guard inside != previous else { continue }
                 layerHoverStates[objectID] = inside
-                if let output = dispatchScriptCursorEvent(
+                dispatchScriptCursorEvent(
                     instance,
                     event: inside ? .enter : .leave,
                     pointerFrame: pointerFrame,
                     runtimeSeconds: runtimeSeconds
-                ) {
-                    apply(output, objectID)
-                }
+                )
             }
         }
-        dispatch(layerScriptInstances) { applyLayerScriptOutput($0, ownObjectID: $1) }
-        dispatch(layerAlphaScriptInstances) { applyLayerAlphaScriptOutput($0, ownObjectID: $1) }
+        dispatch(layerScriptInstances)
+        dispatch(layerAlphaScriptInstances)
 
         if hoverCursorDebugEnabled, let pointerPixels {
             hoverDebugCounter += 1
@@ -562,25 +558,21 @@ extension WPEMetalSceneRenderer {
         guard !events.isEmpty else { return }
 
         for event in events {
-            for (objectID, instance) in layerScriptInstances {
-                if let output = dispatchScriptCursorEvent(
+            for instance in layerScriptInstances.values {
+                dispatchScriptCursorEvent(
                     instance,
                     event: event,
                     pointerFrame: current,
                     runtimeSeconds: runtimeSeconds
-                ) {
-                    applyLayerScriptOutput(output, ownObjectID: objectID)
-                }
+                )
             }
-            for (objectID, instance) in layerAlphaScriptInstances {
-                if let output = dispatchScriptCursorEvent(
+            for instance in layerAlphaScriptInstances.values {
+                dispatchScriptCursorEvent(
                     instance,
                     event: event,
                     pointerFrame: current,
                     runtimeSeconds: runtimeSeconds
-                ) {
-                    applyLayerAlphaScriptOutput(output, ownObjectID: objectID)
-                }
+                )
             }
         }
     }

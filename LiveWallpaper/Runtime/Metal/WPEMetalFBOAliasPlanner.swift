@@ -5,9 +5,10 @@ import Foundation
 /// each one an OFFSET in a single shared heap such that targets whose
 /// within-frame lifetimes do NOT overlap may share the same memory, while
 /// targets that ARE alive at the same time never overlap. The lever that turns
-/// "sum of every FBO" into "≈ peak concurrent". The GPU step (allocating the
-/// heap + placing textures + hazard fences) consumes `Plan.heapSize` and
-/// `Placement.offset`.
+/// "sum of every FBO" into "≈ peak concurrent". The GPU step
+/// (`WPEMetalRenderTargetPool.prepareAliasPlan`) consumes only `Plan.heapSize`:
+/// the heap is `.automatic`, so Metal does the actual suballocation and the
+/// offsets here exist to prove that size is enough.
 ///
 /// Algorithm: a classic time-ordered offset allocator. Intervals are placed in
 /// start order (largest first on ties); each is given the lowest offset whose

@@ -139,7 +139,8 @@ struct ScheduleTimelineEditor: View {
         ).timelineSegments()
 
         ForEach(Array(segments.enumerated()), id: \.offset) { offset, segment in
-            // Wrap slots whose second half is empty (e.g.
+            // A wrap slot with an empty half (e.g. 23:00–24:00) collapses to a single
+            // segment that must still show both handles, hence the offset fallback.
             let isLeadingPart = !segment.wraps || offset == 0
             let isTrailingPart = !segment.wraps || offset == segments.count - 1
             let x = CGFloat(segment.start) * hourWidth

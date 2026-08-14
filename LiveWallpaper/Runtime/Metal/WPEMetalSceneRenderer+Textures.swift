@@ -7,67 +7,36 @@ import MetalKit
 extension WPEMetalSceneRenderer {
     // MARK: - Loaded texture resource types
 
-    /// Differentiates between a one-shot static texture and a
-    /// dynamic source (animated TEX or video) so the renderer can either
-    /// stuff the result into `loadedTextures` or hold the source for
-    /// per-frame refresh via `texturesForCurrentFrame(time:)`.
     enum WPELoadedTextureResource {
         case staticTexture(MTLTexture)
         case dynamicSource(WPEDynamicTextureSource)
     }
 
-    /// One unique external texture to load, captured before fan-out so the
-    /// off-actor lane never races on a shared dedup map.
+    /// Captured before fan-out so the off-actor lane never races on a shared dedup map.
     private struct WPETextureLoadJob: Sendable {
         let path: String
         let layerName: String
         let candidates: [String]
-        /// Slot 0 IS the layer, so its texture must resolve. An auxiliary slot
-        /// that doesn't is treated as unbound (the dispatcher binds the primary
-        /// instead) rather than failing the whole scene — Wallpaper Engine
-        /// renders scenes whose trailing slots reference junk.
+        /// Slot 0 must resolve. A missing auxiliary slot is unbound (dispatcher binds primary) rather than failing the scene.
         let isRequired: Bool
     }
 
-    /// Outcome of the off-actor resolve+upload lane. `staticTexture` carries a
-    /// fully-built Metal texture (a thread-safe object) back to the main actor;
-    /// `needsOnActor` flags a dynamic/video/animated/heavy-streaming source
-    /// whose construction is `@MainActor`-isolated and is handled serially.
-    /// `@unchecked Sendable` is the idiomatic escape hatch for ferrying an
-    /// `MTLTexture` (documented thread-safe) across the actor hop.
-    enum WPEParallelTextureResult: @unchecked Sendable {
+    enum WPEParallelTextureResult: @unchecked Sendable { // MTLTexture is documented thread-safe; ferries it across the actor hop.
         case staticTexture(MTLTexture)
         case needsOnActor
-        /// An auxiliary slot whose file does not resolve. Nothing is registered,
-        /// so the encode path treats the slot as unbound.
         case skipped
     }
 
     // MARK: - Shader prewarm
 
-    /// Off-thread shader-transpile pre-warm. Builds the deterministic, runtime-independent
-    /// compile request for every custom-shader pass on the main actor (deduped by cache key),
-    /// then translates + makeLibrary's them in parallel OFF the main actor and seeds
-    /// `executor.translatedShaderCache` — so the first synchronous `render()` gets cache hits
-    /// instead of paying the ~1.9s lazy GLSL→MSL transpile inline. Launched as an `async let`
-    /// during the load window (overlapping texture/particle/text load) and awaited at the
-    /// render.firstFrame gate. Flag-gated; per-pass failures are swallowed (the real first
-    /// render re-hits and records them as today). Respects `loadGeneration` so a superseded
-    /// load never seeds. Captures only `Sendable` values (the compiler protocol is `Sendable`,
-    /// requests are `Sendable`) — never the non-`Sendable` executor.
     func prewarmCustomShaders(
         for pipeline: WPEPreparedRenderPipeline,
         on actor: isolated WPEDisplayRenderActor
     ) async {
-        // Always pre-compile before the first-frame encode: compiling a pipeline
-        // state inline during an open render encoder corrupts the pass (3660962877
-        // black bg + green quad).
+        // Must pre-compile before first-frame encode: inline compile during an open encoder corrupts the pass (3660962877 black + green quad).
         let generation = loadGeneration
         debugStage("shader.prewarm", "begin")
 
-        // Build + dedup requests on the main actor (the preprocess is cheap; only the
-        // translate+makeLibrary that follows is the heavy CPU). recordFailure:false keeps
-        // the warm silent — the real first-frame render stays the sole failure recorder.
         var requestsByKey: [String: WPEShaderCompileRequest] = [:]
         for layer in pipeline.layers {
             for pass in layer.passes where pass.shader?.isBuiltin == false {
@@ -96,8 +65,7 @@ extension WPEMetalSceneRenderer {
                     next += 1
                     group.addTask(priority: .userInitiated) {
                         try Task.checkCancellation()
-                        // Swallow an unsupported shader: leave it uncached so the real
-                        // first-frame render re-hits compileCustomShader and records it.
+                        // Leave unsupported shaders uncached so the real first-frame compile records them.
                         guard let result = try? compiler.compile(request, recordFailure: false) else {
                             return nil
                         }
@@ -118,7 +86,7 @@ extension WPEMetalSceneRenderer {
                 return collected
             }
         } catch {
-            // A superseded load cancelled the group mid-drain; drop the partial results.
+            // Superseded load cancelled the group mid-drain; drop the partial results.
             debugStage("shader.prewarm.cancelled", "\(error)")
             return
         }
@@ -127,12 +95,7 @@ extension WPEMetalSceneRenderer {
         executor.seedTranslatedShaderCache(warmed)
         debugStage("shader.prewarm.done", "warmed=\(warmed.count)/\(requests.count)")
 
-        // Second parallel phase: pre-build the pipeline STATES too. makeRenderPipelineState
-        // is the dominant residual first-frame cost (transpile/makeLibrary above are already
-        // warmed) and was still compiled lazily & serially on the render thread. Enumerate
-        // each pass's (shader, blend) against the scene's dominant color format and the two
-        // common vertex functions (fullscreen + object-quad); dedup by pipeline identity.
-        // Over-/under-prediction only changes the cache-hit rate, never correctness.
+        // Pre-build pipeline states too. Over-/under-prediction only changes cache-hit rate, never correctness.
         var resultByKey: [String: WPEShaderCompileResult] = [:]
         for entry in warmed { resultByKey[entry.key] = entry.result }
         let sceneColorFormat: MTLPixelFormat = cameraUniforms.sceneHDR
@@ -170,9 +133,7 @@ extension WPEMetalSceneRenderer {
             debugStage("pipeline.prewarm.done", "combos=0")
             return
         }
-        // Compile the pipeline states in parallel OFF the render thread (mirrors the
-        // translation task group above — captures only the `@unchecked Sendable` prewarm
-        // requests, never the executor), then seed synchronously before the first frame.
+        // Off the render thread: captures only the `@unchecked Sendable` prewarm requests, never the executor.
         let pipeWidth = max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 1))
         let built: [WPEMetalRenderExecutor.WPEPrewarmedPipeline] = await withTaskGroup(
             of: WPEMetalRenderExecutor.WPEPrewarmedPipeline?.self
@@ -214,10 +175,6 @@ extension WPEMetalSceneRenderer {
         dynamicTextureSources = [:]
         resetTextureCacheBudgetState()
 
-        // Collect the unique external textures in pipeline order. Deduping up
-        // front (instead of the old per-iteration map check) means concurrent
-        // resolves never touch the same path, so the @MainActor texture maps
-        // are written exactly once each, on this actor.
         var jobs: [WPETextureLoadJob] = []
         var seen = Set<String>()
         for layer in pipeline.layers {
@@ -237,8 +194,7 @@ extension WPEMetalSceneRenderer {
             for preparedPass in layer.passes {
                 for role in textureReferenceRoles(for: preparedPass) {
                     if let path = externalTexturePath(for: role.reference),
-                       // Synthetic text paths are render-graph routing tokens;
-                       // the renderer-owned glyph pass has no disk texture.
+                       // Synthetic text paths are graph routing tokens; the glyph pass has no disk texture.
                        !WPETextLayerSynthesis.isTargetPath(path),
                        seen.insert(path).inserted {
                         jobs.append(WPETextureLoadJob(
@@ -253,15 +209,11 @@ extension WPEMetalSceneRenderer {
         }
         guard !jobs.isEmpty else { return }
 
-        // Snapshot the load generation so a reload/cleanup that resets the maps
-        // mid-flight can't get a stale texture written into the new load.
+        // Snapshot generation so a mid-flight reload cannot write a stale texture into the new load.
         let generation = loadGeneration
         let resolver = resourceResolver
         let loader = textureLoader
         let threshold = Self.lazyAnimationRawByteThreshold
-        // Width bounded like the upload lane: parallelizes the per-texture
-        // inflate (the on-main serial cost today) without over-subscribing the
-        // upload queue, which keeps its own 1-2 slot admission bound.
         let width = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
 
         try await withThrowingTaskGroup(of: (Int, WPEParallelTextureResult).self) { group in
@@ -285,11 +237,7 @@ extension WPEMetalSceneRenderer {
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch {
-                        // An auxiliary slot the author left broken must not kill
-                        // the scene: leaving it unloaded lets the dispatcher's
-                        // slot>0 fallback bind the primary at encode time, which
-                        // is what the encode path already does for a slot the
-                        // pass never declared.
+                        // A broken auxiliary slot must not kill the scene; encode binds the primary instead.
                         guard job.isRequired else { return (index, .skipped) }
                         throw WPEMetalTextureLoadContextError(layerName: job.layerName, path: job.path, underlying: error)
                     }
@@ -320,10 +268,7 @@ extension WPEMetalSceneRenderer {
                         category: .wpeRender
                     )
                 case .needsOnActor:
-                    // Rare: video / multi-frame animation / heavy-streaming
-                    // `.tex`. Their source construction is @MainActor-only, so
-                    // route through the untouched serial resolver rather than
-                    // duplicating that logic in the parallel lane.
+                    // Video / multi-frame / heavy-streaming construction is actor-isolated; reuse the serial resolver.
                     try await loadDynamicTextureOnActor(
                         path: jobs[index].path,
                         layerName: jobs[index].layerName,
@@ -338,10 +283,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Off-actor: resolve + upload a *static* texture, or report that the
-    /// reference needs @MainActor construction. Mirrors the candidate-walk in
-    /// `makeTextureResource`; only the static-image / static-payload branches
-    /// build here (the upload still flows through the bounded upload queue).
     nonisolated static func resolveStaticTextureOrDefer(
         relativePath: String,
         label: String,
@@ -385,10 +326,6 @@ extension WPEMetalSceneRenderer {
         throw lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
     }
 
-    /// `nonisolated` heavy-`.tex` probe matching `resolveStreamingPayloadIfHeavy`'s
-    /// decision (same threshold + probe candidates), minus the opt-in debug
-    /// marks. When this returns true the on-actor path re-resolves and builds
-    /// the lazy streaming source.
     private nonisolated static func detectHeavyStreaming(
         _ candidate: String,
         resolver: WPEMultiRootResourceResolver,
@@ -415,9 +352,6 @@ extension WPEMetalSceneRenderer {
         return false
     }
 
-    /// On-actor build for the dynamic/video/animated/heavy-streaming minority,
-    /// reusing the serial `makeTextureResource`. Paths are pre-deduped by the
-    /// caller, so no map guard is needed here.
     func loadDynamicTextureOnActor(
         path: String,
         layerName: String,
@@ -426,9 +360,7 @@ extension WPEMetalSceneRenderer {
     ) async throws {
         do {
             let resource = try await makeTextureResource(relativePath: path, label: "WPE texture \(path)", on: actor)
-            // `publicationAllowed` is an async hop (ticket admission); re-check
-            // cancellation AFTER it resumes so a cancel during the hop is caught at
-            // the last moment before publishing into renderer state.
+            // `publicationAllowed` is an async hop; re-check after it resumes so a cancel during the hop does not publish.
             guard await publicationAllowed() else { throw CancellationError() }
             try Task.checkCancellation()
             switch resource {
@@ -449,8 +381,7 @@ extension WPEMetalSceneRenderer {
                 }
             }
         } catch is CancellationError {
-            // Keep cancellation transparent — wrapping it in the load-context
-            // error would defeat the session's `catch is CancellationError`.
+            // Keep cancellation transparent; wrapping it would defeat the session's `catch is CancellationError`.
             throw CancellationError()
         } catch {
             throw WPEMetalTextureLoadContextError(layerName: layerName, path: path, underlying: error)
@@ -468,13 +399,7 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Tags the primary so the loader knows which failures are fatal.
-    ///
-    /// The tag is applied BEFORE the external-only filter on purpose. Effect
-    /// passes routinely read `.previous`/`.fbo` in slot 0; filtering first left
-    /// whichever auxiliary slot survived sitting at index 0, so "index 0 is the
-    /// primary" promoted it to mandatory and one junk slot-4 image aborted the
-    /// whole scene load — the thing the optional-auxiliary rule exists to stop.
+    /// Tag before the external-only filter. Filtering first left an auxiliary at index 0, so a junk slot-4 image aborted the scene.
     func textureReferenceRoles(
         for pass: WPEPreparedRenderPass
     ) -> [(reference: WPETextureReference, isRequired: Bool)] {
@@ -503,13 +428,11 @@ extension WPEMetalSceneRenderer {
             if let mask = pass.textureBindings[1] ?? pass.pass.textures[1] {
                 refs.append((mask, false))
             }
-            // generic4 MODEL materials carry the PBR component map (emissive
-            // mask) in slot 2 — the scene-model fragment samples it.
+            // generic4 MODEL materials put the PBR component map (emissive mask) in slot 2.
             if let componentMap = pass.textureBindings[2] ?? pass.pass.textures[2] {
                 refs.append((componentMap, false))
             }
-            // The graph builder parks every authored MDLV clip-group mask in renderer-internal
-            // slots. They are not shader samplers; the puppet clip encoder resolves them per group.
+            // MDLV clip-group masks live in renderer-internal slots. They are not shader samplers; the puppet clip encoder resolves them per group.
             for slot in pass.textureBindings.keys.sorted()
                 where WPERenderTargetNames.PuppetClip.isMaskBindingSlot(slot) {
                 if let mask = pass.textureBindings[slot] {
@@ -524,9 +447,7 @@ extension WPEMetalSceneRenderer {
                 ?? pass.pass.textures[0]
                 ?? pass.pass.source
             var refs: [(reference: WPETextureReference, isRequired: Bool)] = [(reference, true)]
-            // Same span the custom-shader dispatcher binds. It used to stop at 4
-            // while the dispatcher walked every slot, so a pass declaring a
-            // higher slot could only ever miss at encode time.
+            // Match the dispatcher slot span. Stopping at 4 used to miss higher authored slots until encode.
             for slot in 1..<WPEShaderTranspiler.customTextureSlotCount {
                 if let extra = pass.pass.binds[slot] ?? pass.textureBindings[slot] ?? pass.pass.textures[slot] {
                     refs.append((extra, false))
@@ -537,7 +458,6 @@ extension WPEMetalSceneRenderer {
     }
 
 
-    /// Returns a loaded resource so callers can route videos and animations through dynamic sources.
     func makeTextureResource(
         relativePath: String,
         label: String,
@@ -556,9 +476,7 @@ extension WPEMetalSceneRenderer {
                                 from: streaming,
                                 label: label
                             )
-                            // Completion pump: a finished off-thread decode hops back
-                            // into this actor and lands immediately (pre-3c contract),
-                            // rather than at the next frame tick.
+                            // Finished off-thread decode hops back into this actor immediately (pre-3c), not on the next frame tick.
                             source.onPrefetchComplete = { [weak actor] in
                                 guard let actor else { return }
                                 Task { await actor.harvestLazyPrefetches() }
@@ -606,13 +524,7 @@ extension WPEMetalSceneRenderer {
         throw lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
     }
 
-    /// Returns a streaming payload only when the source is a `.tex` whose
-    /// total raw image footprint clears the lazy threshold. Anything
-    /// smaller falls through to the eager path so single-frame textures
-    /// and tiny sprite-sheets don't pay the per-frame decompression cost.
-    /// Accepts both `.tex`-suffixed candidates and bare names (probes
-    /// `<bare>` and `materials/<bare>.tex` in the same order the eager
-    /// path uses).
+    /// Lazy only when `.tex` raw bytes clear the threshold. Tiny sheets stay eager so they do not pay per-frame decompress.
     private func resolveStreamingPayloadIfHeavy(_ candidate: String) throws -> WPETexStreamingPayload? {
         try Task.checkCancellation()
         let probeCandidates: [String]
@@ -674,7 +586,6 @@ extension WPEMetalSceneRenderer {
         return nil
     }
 
-    /// Stages MP4 bytes in the process cache and constructs a device-bound video texture source.
     private func makeVideoTextureSource(
         from payload: WPETexTexturePayload,
         label: String,
@@ -684,9 +595,7 @@ extension WPEMetalSceneRenderer {
         guard let videoPayload = payload.videoPayload else {
             throw WPEMetalTextureLoaderError.malformedPayload("missing video payload")
         }
-        // Stage into the per-scene disk cache keyed by workshop ID + content
-        // hash, so repeated extractions dedup and launch GC can reclaim videos
-        // for scenes that are no longer installed.
+        // Disk cache keyed by workshop ID + content hash so launch GC can reclaim uninstalled scenes.
         let url = try await WPEVideoTextureDiskCache.shared.store(
             videoPayload.bytes,
             workshopID: descriptor.workshopID
@@ -696,8 +605,7 @@ extension WPEMetalSceneRenderer {
             let source = try WPEVideoTextureSource(
                 device: executor.textureSourceDevice,
                 videoURL: url,
-                // Release the lease (keep the file for reuse) rather than
-                // deleting — the cache owns its lifetime now.
+                // Release the lease (keep the file); the cache owns lifetime now.
                 onInvalidate: { staleURL in
                     Task.detached(priority: .utility) {
                         await WPEVideoTextureDiskCache.shared.release(staleURL)
@@ -712,7 +620,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Returns a transparent placeholder until a dynamic source decodes its first frame.
     func makeDynamicPlaceholderTexture(label: String) throws -> MTLTexture {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: WPEMetalRenderExecutor.outputPixelFormat,
@@ -793,17 +700,12 @@ extension WPEMetalSceneRenderer {
         guard textureCacheBudgetBytesInUse != nil else { return }
         textureCacheBudgetBytesInUse = nil
         textureCacheLRU.removeAll()
-        // Budget turned off mid-session: reload anything previously evicted so the
-        // eager-resident invariant holds again.
+        // Budget off mid-session: reload evicted textures so the eager-resident invariant holds again.
         for path in staticTextureCacheRecords.keys where loadedTextures[path] == nil {
             scheduleStaticTextureReload(for: path)
         }
     }
 
-    /// External texture paths the upcoming frame actually samples, restricted to
-    /// reloadable static ones (the only eviction candidates). Memoized on a
-    /// cheap O(layers) signature — the full layers × passes × refs walk only
-    /// reruns when visibility/shape or the record set actually changed.
     private func activeStaticTexturePaths(for pipeline: WPEPreparedRenderPipeline) -> Set<String> {
         var hasher = Hasher()
         hasher.combine(loadGeneration)
@@ -827,8 +729,7 @@ extension WPEMetalSceneRenderer {
     private func activeExternalTexturePaths(for pipeline: WPEPreparedRenderPipeline) -> Set<String> {
         var paths = Set<String>()
         for layer in pipeline.layers {
-            // A plain image layer with no passes is still drawn (encodeCopy) when
-            // visible, so its image texture is sampled and must stay protected.
+            // Pass-less visible image layers still encodeCopy, so their texture must stay protected.
             if layer.passes.isEmpty {
                 if layer.graphLayer.visible,
                    let path = externalTexturePath(for: .image(layer.graphLayer.imagePath)) {
@@ -837,8 +738,7 @@ extension WPEMetalSceneRenderer {
                 continue
             }
             for pass in layer.passes {
-                // Hidden layers still encode composite/FBO passes (dependents may
-                // sample them); only their scene draw is skipped — mirror that here.
+                // Hidden layers still encode composite/FBO (dependents may sample them); only scene draw is skipped.
                 if !layer.graphLayer.visible {
                     switch pass.pass.target {
                     case .scene:
@@ -857,9 +757,6 @@ extension WPEMetalSceneRenderer {
         return paths
     }
 
-    /// Guarantee every active static path has at least a placeholder this frame
-    /// (so an evicted texture never renders as a missing/black draw) and queue a
-    /// reload for any that are missing or placeholder-only.
     private func ensureActiveStaticTexturesResident(_ activePaths: Set<String>) throws {
         for path in activePaths {
             if loadedTextures[path] == nil {
@@ -888,8 +785,7 @@ extension WPEMetalSceneRenderer {
     }
 
     static func textureResidentBytes(for texture: MTLTexture) -> Int {
-        // BC formats are block-compressed in VRAM (the texture loader uploads them
-        // compressed); per-pixel math would 4-6x over-count the budget.
+        // BC is stored compressed in VRAM; per-pixel math would 4-6x over-count the budget.
         let baseBytes: Int
         switch texture.pixelFormat {
         case .bc1_rgba, .bc1_rgba_srgb:
@@ -900,8 +796,7 @@ extension WPEMetalSceneRenderer {
         default:
             baseBytes = texture.width * texture.height * textureCacheBytesPerPixel(for: texture.pixelFormat)
         }
-        // No loader path generates mips today; the 4/3 mip-chain bound keeps the
-        // estimate honest if one ever does.
+        // No loader path generates mips today; 4/3 keeps the estimate honest if one ever does.
         return texture.mipmapLevelCount > 1 ? baseBytes * 4 / 3 : baseBytes
     }
 
@@ -920,8 +815,6 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Per-frame textures
 
-    /// Pulls fresh `MTLTexture`s from dynamic sources and enforces the
-    /// optional static-texture VRAM budget before every render call.
     func texturesForCurrentFrame(
         time: TimeInterval,
         pipeline: WPEPreparedRenderPipeline,
@@ -933,9 +826,7 @@ extension WPEMetalSceneRenderer {
             }
         }
 
-        // Zero overhead on the unbounded (budget off, nothing evicted) path:
-        // only walk active paths when the budget is/was active or a placeholder
-        // still awaits reload.
+        // Skip the active-path walk unless the budget is/was on or a placeholder still awaits reload.
         if textureCacheBudgetBytesResolved != nil
             || textureCacheBudgetBytesInUse != nil
             || !staticTexturePlaceholderPaths.isEmpty {
@@ -963,33 +854,26 @@ extension WPEMetalSceneRenderer {
         Self.shouldTryTexturePayload(path)
     }
 
-    /// `nonisolated` twin so the off-actor parallel-resolve lane can make the
-    /// same `.tex`-vs-raster decision the on-actor path uses.
+    /// `nonisolated` twin for the off-actor lane: same `.tex`-vs-raster decision as the on-actor path.
     private nonisolated static func shouldTryTexturePayload(_ path: String) -> Bool {
         let extensionName = (path as NSString).pathExtension.lowercased()
         return !knownRawImageExtensions.contains(extensionName)
     }
 
-    /// Raster image extensions that `WPETextureLoader` can load via ImageIO
-    /// without going through the `.tex` container. Path lookups ending in one
-    /// of these are taken at face value; anything else (including names that
-    /// merely *look* like they end in an extension because they contain a dot)
-    /// goes through the materials/-prefix fallback below.
+    /// ImageIO raster extensions taken at face value. A name that merely contains a dot still goes through the materials/ fallback.
     nonisolated static let knownRawImageExtensions: Set<String> = [
         "png", "jpg", "jpeg", "tga", "dds", "bmp", "gif", "webp"
     ]
 
     // MARK: - Path candidate resolution
 
-    /// Visible to `@testable` test suites that probe the candidate generator without spinning up a full renderer fixture.
     func textureCandidates(for path: String) -> [String] {
         let extensionName = (path as NSString).pathExtension.lowercased()
         if extensionName == "tex" || extensionName == "json" {
             return [path]
         }
         if !extensionName.isEmpty, Self.knownRawImageExtensions.contains(extensionName) {
-            // WPE stores converted source images as `<name>.<ext>.tex`; try both
-            // literal and converted paths, including the `materials/` root.
+            // Converted sources live as `<name>.<ext>.tex`; try literal, converted, and `materials/`.
             var candidates = [path, "\(path).tex"]
             let anchored = ["materials/", "models/", "shaders/", "fonts/",
                             "scripts/", "particles/", "sounds/", "scenes/", "../", "_"]
@@ -1035,12 +919,7 @@ extension WPEMetalSceneRenderer {
                     "\(path).jpg",
                     "\(path).jpeg"
                 ]
-                // Model materials commonly preserve their source-relative
-                // texture name (`models/foo/diffuse`) while the package stores
-                // the converted payload under `materials/models/foo/diffuse.tex`.
-                // `models/` is anchored for actual model resources, but it is
-                // not an exclusive root when the string came from a material's
-                // texture slot (3589454154's asteroid/ring pair).
+                // `models/` is not exclusive for material texture slots (3589454154 asteroid/ring: `models/foo/diffuse` → `materials/models/foo/diffuse.tex`).
                 if path.hasPrefix("models/") {
                     candidates.insert(contentsOf: [
                         "materials/\(path).tex",
@@ -1082,7 +961,6 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Load diagnostics
 
-    /// Maps any error raised during `performLoad()` onto the shared `SceneLoadDiagnostic` taxonomy so the UI gets one consistent failure-reporting path.
     func diagnostic(for error: Error) -> SceneLoadDiagnostic {
         diagnostic(for: error, fallbackPath: nil, layerName: "scene")
     }
@@ -1125,11 +1003,7 @@ extension WPEMetalSceneRenderer {
                 case .image(let path), .asset(let path):
                     return .fileMissing(layer: layerName, path: path)
                 case .fbo(let name):
-                    // A named render target, not a file on disk — "file missing" was
-                    // misleading. A first-frame read of an unwritten DECLARED FBO is
-                    // now zero-filled, so reaching here means an UNDECLARED target: a
-                    // graph/transpile bug. `reason` is developer-facing only (the
-                    // user-visible `.materialUnresolved` string ignores it).
+                    // Named RT, not a file. Unwritten declared FBOs are zero-filled; reaching here is an undeclared target (graph/transpile bug).
                     return .materialUnresolved(
                         layer: layerName,
                         reason: "Render target \"\(name)\" is not produced by any pass."
@@ -1175,9 +1049,6 @@ extension WPEMetalSceneRenderer {
     }
 }
 
-/// Filters out FBO and previous-frame references at the texture-discovery
-/// layer so the renderer never tries to load an in-graph FBO from disk.
-/// Those references resolve at executor time via the frame state.
 private extension WPETextureReference {
     var isExternalTextureReference: Bool {
         switch self {

@@ -9,16 +9,6 @@ import os
 import simd
 
 final class WPEMetalRenderExecutor {
-    /// Builtin shader identities compared across the material/model helpers. `copy`,
-    /// `genericImage2`, `genericImage4` match against `normalizedBuiltinShaderName`;
-    /// `godraysCombine` is the raw (lowercased) shader path used for source-aliasing.
-    enum BuiltinShaderName {
-        static let copy = "copy"
-        static let genericImage2 = "genericimage2"
-        static let genericImage4 = "genericimage4"
-        static let godraysCombine = "effects/godrays_combine"
-    }
-
     /// Every offscreen target and the on-screen swapchain share
     /// a single sRGB pixel format so render pipelines built for the offscreen
     /// pass can be reused by `present()` without re-creation, and so the
@@ -92,7 +82,6 @@ final class WPEMetalRenderExecutor {
         return max(0, mib) * 1_048_576
     }()
 
-    /// Mirrors the slot-0 precedence used by
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
     /// The app's compiled `.metallib`, fetched once in `init` — `makeDefaultLibrary()`
@@ -905,23 +894,16 @@ final class WPEMetalRenderExecutor {
         previousFrameHistory = PreviousFrameHistory(
             sceneSize: size,
             sceneTexture: frameState.latestSceneTexture,
-            // Carry ONLY targets actually read back via cross-frame `.previous`
-            // (persistent feedback). Scene aliases and effect scratch buffers
-            // (`_rt_HalfCompoBuffer*` etc.) are recomputed every frame and must
-            // not persist, or the shine chain ramps the layer white over ~5s.
-            // Do NOT carry named FBOs across frames. They are per-frame scratch
+            // Never carry named FBOs across frames: they are per-frame scratch
             // (`_rt_HalfCompoBuffer*` shine cast/gaussian) or same-frame ping-pong
-            // composites (`_rt_imageLayerComposite_*`), none of which represent
-            // last-frame state. Carrying them let the shine chain re-blend its
-            // own previous output and, via `saturate(albedo.a + rays.a)`, ramp
-            // the whole layer to white within ~5s (scene 3526278753).
+            // composites (`_rt_imageLayerComposite_*`), so carrying them let the
+            // shine chain re-blend its own output and, via
+            // `saturate(albedo.a + rays.a)`, ramp the layer white in ~5s (3526278753).
             // Cross-frame scene feedback still works through `sceneTexture` above.
             // A precise "carry only `.previous`-read targets" filter was tried and
             // REGRESSED: effect-bind `{name:"previous"}` lowers to the SAME
-            // `.previous` token as true cross-frame feedback, so it mis-carried
-            // the shine composite and the white-out returned. Empty carry is the
-            // verified-correct behavior; revisit only if a real persistent-trail
-            // effect needs named-target history (none in the corpus today).
+            // `.previous` token as true cross-frame feedback, so it mis-carried the
+            // shine composite and the white-out returned.
             namedTextures: [:]
         )
         return graded
@@ -956,8 +938,7 @@ final class WPEMetalRenderExecutor {
     func packTranslatedUniforms(
         values: [String: WPESceneShaderConstantValue],
         layout: [WPEUniformSlot],
-        texturesBySlot: [Int: MTLTexture] = [:],
-        destinationTexture: MTLTexture? = nil
+        texturesBySlot: [Int: MTLTexture] = [:]
     ) -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
         for u in layout {
@@ -1582,7 +1563,6 @@ final class WPEMetalRenderExecutor {
         encoder.endEncoding()
     }
 
-    /// Seeds the secondary ping-pong slot so blend and depth loads have a defined source.
     func copyTexture(
         _ source: MTLTexture,
         to destination: MTLTexture,
@@ -2302,7 +2282,6 @@ final class WPEMetalRenderExecutor {
     }
     #endif
 
-    /// Packs scene uniforms for the `genericimage*` builtins.
     /// Developer-only image brightness/color diagnostic; gated by its own key so it
     /// is independent of the unrelated audio-reactive DSP log toggle.
     private static let imageUniformDebugEnabled = UserDefaults.standard.bool(forKey: "WPEImageUniformDebugLog")
@@ -2461,9 +2440,7 @@ final class WPEMetalRenderExecutor {
     }
 
     static func requiresDiscreteDestinationForSourceAliasing(_ pass: WPEPreparedRenderPass) -> Bool {
-        let shaderName = pass.pass.shader.lowercased()
-        return shaderName == BuiltinShaderName.godraysCombine
-            || shaderName.hasSuffix("/" + BuiltinShaderName.godraysCombine)
+        WPEBuiltinShaderName.isGodraysCombine(pass.pass.shader)
     }
 
     func passReadsCurrentTarget(_ pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID) -> Bool {
@@ -2526,7 +2503,7 @@ final class WPEMetalRenderExecutor {
         }
         colorAttachment.pixelFormat = colorPixelFormat
         descriptor.depthAttachmentPixelFormat = depthPixelFormat
-        Self.applyBlendMode(blendMode.lowercased(), to: colorAttachment)
+        WPEMetalPipelineCache.applyBlendMode(blendMode.lowercased(), to: colorAttachment)
         WPEMetalPipelineCache.applyAlphaWritePolicy(alphaWritePolicy, to: colorAttachment)
         let state: MTLRenderPipelineState
         do {
@@ -2595,7 +2572,7 @@ final class WPEMetalRenderExecutor {
         guard let colorAttachment = descriptor.colorAttachments[0] else { return nil }
         colorAttachment.pixelFormat = prewarm.colorPixelFormat
         descriptor.depthAttachmentPixelFormat = prewarm.depthPixelFormat
-        applyBlendMode(prewarm.blendMode.lowercased(), to: colorAttachment)
+        WPEMetalPipelineCache.applyBlendMode(prewarm.blendMode.lowercased(), to: colorAttachment)
         WPEMetalPipelineCache.applyAlphaWritePolicy(prewarm.alphaWritePolicy, to: colorAttachment)
         guard let state = try? prewarm.device.makeRenderPipelineState(descriptor: descriptor) else {
             return nil
@@ -2617,8 +2594,7 @@ final class WPEMetalRenderExecutor {
     func packTranslatedUniforms(
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
-        texturesBySlot: [Int: MTLTexture] = [:],
-        destinationTexture: MTLTexture? = nil
+        texturesBySlot: [Int: MTLTexture] = [:]
     ) -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
         for u in layout {
@@ -2820,68 +2796,6 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    /// Mirrors WPEMetalPipelineCache.applyBlendMode so the translated pipeline path uses the same blend arithmetic as built-ins.
-    private static func applyBlendMode(_ mode: String, to attachment: MTLRenderPipelineColorAttachmentDescriptor) {
-        switch mode {
-        case "disabled", "premultiplieddisabled":
-            attachment.isBlendingEnabled = false
-        case "premultiplied", "premultipliednormal", "premultipliedtranslucent", "premultipliednormalmapped":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .one
-            attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        case "premultipliedadditive":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .one
-            attachment.destinationRGBBlendFactor = .one
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .one
-        case "additive":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .sourceAlpha
-            attachment.destinationRGBBlendFactor = .one
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .one
-        case "premultipliedmultiply":
-            fallthrough
-        case "multiply":
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .destinationColor
-            attachment.destinationRGBBlendFactor = .zero
-            attachment.sourceAlphaBlendFactor = .zero
-            attachment.destinationAlphaBlendFactor = .one
-        case "premultipliedscreen", "screen":
-            // Premultiplied source: src + dst·(1−src) ≡ WPE's alpha-weighted
-            // screen mix(dst, screen(dst,src), a) — black pixels leave dst intact.
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .one
-            attachment.destinationRGBBlendFactor = .oneMinusSourceColor
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        case "translucent":
-            fallthrough
-        default:
-            attachment.isBlendingEnabled = true
-            attachment.rgbBlendOperation = .add
-            attachment.alphaBlendOperation = .add
-            attachment.sourceRGBBlendFactor = .sourceAlpha
-            attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            attachment.sourceAlphaBlendFactor = .one
-            attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-        }
-    }
-
     /// Texture slots whose bound source is a WPE render target (an FBO/layer
     /// composite or the previous-frame buffer). Those targets already store
     /// premultiplied RGB, so a transpiled straight-alpha shader must
@@ -2920,7 +2834,6 @@ final class WPEMetalRenderExecutor {
             .hasPrefix("premultiplied")
     }
 
-    /// Run the WPE preprocessor + `WPESwiftShaderCompiler` over the given prepared pass.
     /// Build the deterministic, runtime-independent compile request for a custom-shader
     /// pass — the cheap preprocess half of `compileCustomShader`, factored out so the
     /// off-thread pre-warm computes the IDENTICAL `translationCacheKey` (a load-time warm

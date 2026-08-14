@@ -42,7 +42,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     private static let noExecutableReason =
         "No SteamCMD available at any location this process is willing to run"
 
-    /// The binary this process will run, resolved from its own candidate list.
+    /// The binary every operation actually spawns, resolved from its own
+    /// candidate list.
     ///
     /// Callers used to name it and pass a digest to be re-checked before the
     /// spawn. That gate proved nothing: the caller supplied the path *and* the
@@ -51,7 +52,6 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// inode that ends up executed (no `fexecve`). Deriving the path is what
     /// closes it: everything reachable here sits outside the app's sandbox, so
     /// there is nothing for it to replace.
-    /// The binary every operation actually spawns.
     ///
     /// Applies the SAME trust gates the diagnosis does — Valve's signature and
     /// no quarantine — and moves to the next candidate when one fails. Without

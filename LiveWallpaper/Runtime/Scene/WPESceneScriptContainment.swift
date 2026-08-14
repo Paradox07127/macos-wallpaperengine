@@ -95,11 +95,6 @@
         init(width: Int) {
             precondition(width > 0, "SceneScript batch width must be positive")
             self.width = width
-            // `.workItem` pops the autorelease pool after EVERY dispatched block.
-            // The default (.inherit → "unspecified times, when the thread idles")
-            // never fires under a continuous 30 fps tick stream, so per-tick ObjC
-            // temporaries (JSValue boxing in the audio bridge, exception objects)
-            // accumulated for the whole session — sampled at 6.3 GB on 2955378002.
             state = OSAllocatedUnfairLock(initialState: State(
                 lanes: (0 ..< width).map { Self.makeLaneRecord(slot: $0, generation: 0) }
             ))
@@ -137,6 +132,11 @@
         }
 
         private static func makeLaneRecord(slot: Int, generation: UInt64) -> LaneRecord {
+            // `.workItem` pops the autorelease pool after EVERY dispatched block.
+            // The default (.inherit → "unspecified times, when the thread idles")
+            // never fires under a continuous 30 fps tick stream, so per-tick ObjC
+            // temporaries (JSValue boxing in the audio bridge, exception objects)
+            // accumulated for the whole session — sampled at 6.3 GB on 2955378002.
             LaneRecord(
                 queue: DispatchQueue(
                     label: "com.livewallpaper.wpe-script-batch.\(slot).\(generation)",

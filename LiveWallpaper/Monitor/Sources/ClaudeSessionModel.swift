@@ -184,10 +184,7 @@ struct ClaudeSessionModel {
         if let branch = line.gitBranch, !branch.isEmpty { gitBranch = branch }
 
         if let ts = line.timestamp?.timeIntervalSince1970 {
-            recentEventTimes.append(ts)
-            if recentEventTimes.count > MonitorAgentSignalDeriver.recentEventCap * 2 {
-                recentEventTimes = Array(recentEventTimes.suffix(MonitorAgentSignalDeriver.recentEventCap))
-            }
+            MonitorAgentSignalDeriver.appendRecentEventTime(&recentEventTimes, ts)
         }
 
         guard !line.isSidechain else { return }

@@ -214,9 +214,8 @@ protocol WPERenderSurfaceClient: AnyObject {
 /// The renderer-to-surface control seam. One method per main-thread entry
 /// the renderer drove synchronously before; every method is **non-blocking
 /// delivery** — callable from any thread, guaranteed to land on the main thread.
-/// `Sendable` so the renderer can hold `any WPESurfaceControl` after it leaves
-/// `@MainActor`. Today the sole caller is still `@MainActor`, so each call takes
-/// the synchronous branch and behavior is byte-identical to the old direct calls.
+/// `Sendable` because the renderer is no longer `@MainActor` — it lives in
+/// `WPEDisplayRenderActor` and holds `any WPESurfaceControl` across that boundary.
 protocol WPESurfaceControl: Sendable {
     func applyPacing(_ update: WPERenderPacingUpdate)
     func setNeedsRedraw()
@@ -252,9 +251,8 @@ extension WPERenderSurface: WPESurfaceControl {
     }
 
     /// Non-blocking delivery to main: synchronous when the caller is already on
-    /// the main thread — today's only path, the renderer is still `@MainActor` —
-    /// so behavior is unchanged; otherwise a `@MainActor` `Task` (future callers
-    /// off the render actor). Never blocks the caller.
+    /// the main thread, otherwise a `@MainActor` `Task` — the render-actor path.
+    /// Never blocks the caller.
     private nonisolated func deliver(_ body: @escaping @MainActor (WPERenderSurface) -> Void) {
         if Thread.isMainThread {
             MainActor.assumeIsolated { body(self) }

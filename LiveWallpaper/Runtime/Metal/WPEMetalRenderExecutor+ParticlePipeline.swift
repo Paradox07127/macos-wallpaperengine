@@ -7,9 +7,6 @@ import MetalKit
 import os
 import simd
 
-// GPU-resource setup for particle passes: the blend-mode pipeline-state cache and
-// the refraction-background snapshot. Split out of +Particles so the hotspot file
-// stays lean.
 extension WPEMetalRenderExecutor {
     struct ParticlePipelineKey: Hashable {
         let pixelFormat: UInt

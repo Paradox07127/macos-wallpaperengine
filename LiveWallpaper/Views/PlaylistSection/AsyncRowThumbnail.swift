@@ -66,7 +66,7 @@ struct AsyncRowThumbnail: View {
         Self.cacheKey(for: bookmark)
     }
 
-    /// Stable key used by the row + by external invalidate paths (e.g.
+    /// Stable key used by the row + by external invalidate paths (e.g. `PlaylistSection.invalidateCaches`).
     static func cacheKey(for bookmark: Data) -> String {
         "playlist-row-thumb::\(bookmark.base64EncodedString())"
     }

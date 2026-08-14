@@ -42,7 +42,7 @@ struct WPEMetalShaderDispatcherTests {
     @Test("Builtin shader kind raw values are normalizer fixed points")
     func builtinShaderKindRawValuesAreNormalizerFixedPoints() {
         for kind in WPEBuiltinShaderKind.allCases {
-            #expect(WPEMetalShaderInputs.normalizedBuiltinShaderName(kind.rawValue) == kind.rawValue)
+            #expect(WPEBuiltinShaderName.normalized(kind.rawValue) == kind.rawValue)
         }
     }
 

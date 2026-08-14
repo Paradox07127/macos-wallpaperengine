@@ -48,10 +48,7 @@ struct CodexSessionModel: Sendable {
         let timestamp = Self.timestamp(from: line, payload: payload)
         if let timestamp {
             markFresh(at: timestamp)
-            recentEventTimes.append(timestamp.timeIntervalSince1970)
-            if recentEventTimes.count > MonitorAgentSignalDeriver.recentEventCap * 2 {
-                recentEventTimes = Array(recentEventTimes.suffix(MonitorAgentSignalDeriver.recentEventCap))
-            }
+            MonitorAgentSignalDeriver.appendRecentEventTime(&recentEventTimes, timestamp.timeIntervalSince1970)
         }
 
         if let discoveredModel = Self.discoveredModel(in: payload) {

@@ -5,262 +5,139 @@ import LiveWallpaperProWPE
 import MetalKit
 import os
 
-/// Wraps a texture-load failure with the requested asset path AND the WPE
-/// object/layer name that referenced it so the H1 diagnostic mapper can
-/// blame the exact file and surface the failing layer instead of falling
-/// back to the scene entry point.
+/// Path + layer name so the H1 diagnostic mapper blames the failing layer, not the scene entry.
 struct WPEMetalTextureLoadContextError: Error {
     let layerName: String
     let path: String
     let underlying: any Error
 }
 
-// Runtime-config protocol conformances (performance / frame-rate / audio) were
-// lifted onto `WPERendererConfigAdapter` (SceneWallpaperSession.swift) so the
-// session, not the renderer, is what consumers depend on. The methods below stay
-// public on the renderer for the adapter to forward into.
-//
-// The renderer is not `@MainActor`; it lives inside a single
-// `WPEDisplayRenderActor`'s isolation — frame path / setters via named actor
-// methods, async surfaces (load/reload/…) via methods that take
-// `isolated WPEDisplayRenderActor`. It is non-`Sendable`, so the compiler keeps
-// it in that one domain; the actor's backing thread (main by default, a
-// dedicated render thread when the off-main flag is set) is the only variable.
-// Sync tails that must spawn work (deferred audio, on-demand video,
-// static-texture reload) re-enter through the weakly-held `displayActor`.
+// Not `@MainActor`: lives in one `WPEDisplayRenderActor`. Sync tails (audio,
+// on-demand video, static reload) re-enter via the weakly-held `displayActor`.
 final class WPEMetalSceneRenderer: NSObject {
-    /// The actor this renderer is isolated to (set by `WPEDisplayRenderActor
-    /// .adopt`). Weak: the actor owns the renderer strongly, this points back so
-    /// sync task-spawning tails can capture the actor (Sendable) and re-enter the
-    /// isolation instead of capturing `self`. Nil only before adoption / after
-    /// teardown, in which case those tails no-op.
+    /// Weak back-pointer so Sendable tails re-enter actor isolation instead of capturing `self`.
     weak var displayActor: WPEDisplayRenderActor?
 
     #if DEBUG
-    /// Test-only strong reference to the surface built by the `frame:device:`
-    /// convenience init, so tests can reach the MTKView via `nsView`. Never set by
-    /// the production designated init (which takes only Sendable seams), so the
-    /// production renderer's region stays free of the surface.
+    /// Test-only convenience-init surface. Production init takes Sendable seams so this stays nil.
     var debugSurface: WPERenderSurface?
     #endif
 
     let descriptor: SceneDescriptor
     let cacheRootURL: URL
     let dependencyMounts: [WPEAssetMount]
-    /// Resolved Wallpaper Engine install root (the directory that contains
-    /// `assets/`). Captured at init for graph + pipeline builder use; the
-    /// security scope is owned here for the lifetime of the renderer.
+    /// Install root that contains `assets/`. This object owns the security scope for its lifetime.
     private let engineAssetsRootURL: URL?
-    /// `engineAssetsRootURL` gated by access: nil when an external (non-container)
-    /// root's security scope failed to open, else the usable root. Graph/pipeline
-    /// builders must use THIS, not the raw root, so a scope-denied manual link
-    /// never feeds the resolver.
+    /// Usable engine-assets root: nil if an external scope failed to open. Builders must use this, not the raw root.
     let effectiveEngineAssetsRootURL: URL?
-    /// `(unsafe)` because `deinit` is non-isolated and needs to clear the
-    /// reference + drop the scope. All other writes happen on `@MainActor`
-    /// (`cleanup()`), so observed mutation is single-threaded.
+    /// `(unsafe)`: `deinit` is nonisolated and must drop the security scope.
+    /// Other writes stay on the display-actor isolation, so mutation is single-threaded.
     nonisolated(unsafe) var activeEngineAssetsRootURL: URL?
     let entryResolver: SceneResourceResolver
     let resourceResolver: WPEMultiRootResourceResolver
-    /// Non-nil for package-/source-backed scenes — threaded into the graph and
-    /// pipeline builders so they resolve from the same in-place source. `nil`
-    /// keeps the legacy directory-backed (cache root URL) construction.
     let sceneAssetProvider: (any WPESceneAssetProvider)?
-    /// Root holding `project.json` for the property schema. For package-/source-
-    /// backed scenes this is the source folder (zero-cache — nothing extracted);
-    /// `nil` falls back to `cacheRootURL` (legacy extracted cache).
     let projectManifestRootURL: URL?
     let resolutionTracer: WPEResolutionTracer
-    /// Non-blocking control seam to the surface. Every renderer call site
-    /// that drove the view goes through this `Sendable` handle. Because it is a
-    /// `Sendable` existential, the surface (and the delivery shim + render actor it
-    /// transitively references) sit in a **separate** isolation region from the
-    /// renderer — that is what keeps the renderer `sending`-adoptable into the
-    /// actor. The renderer therefore holds no strong `WPERenderSurface` and no
-    /// shim; the surface owns the shim and the session owns the surface.
+    /// Sendable surface handle: keeps the renderer region separate so it stays `sending`-adoptable.
     let surfaceControl: any WPESurfaceControl
-    /// Render-path pointer source, fed by the surface's publisher + view. Same
-    /// instance the surface owns.
     let mailbox: WPEPointerMailbox
-    /// The view's `CAMetalLayer`, the present/drawable source, held via a Sendable
-    /// wrapper so the renderer's region does not reach the main-thread surface.
+    /// Sendable `CAMetalLayer` wrapper so the renderer region does not reach the main-thread surface.
     let metalLayer: WPEPresentLayer
-    /// Drawable pixel size pushed from the surface (`updateSurfaceGeometry`).
-    /// Read by the perspective native-resolution path in `performLoad`.
     var surfaceDrawableSize: CGSize
     let executor: WPEMetalRenderExecutor
     let textureLoader: WPEMetalTextureLoader
     var outputTexture: MTLTexture?
-    /// Producer-chain completion associated with `outputTexture`. The transient
-    /// value is replaced by each `renderCurrentFrame`; callers publish it beside
-    /// the returned texture so cached static-frame re-presents keep the proof.
+    /// Transient producer-chain completion; published with the texture so static-frame re-presents keep the proof.
     var outputFrameProduction: WPEMetalFrameProductionCompletion?
     var latestFrameProduction: WPEMetalFrameProductionCompletion?
-    /// How the final scene texture is fitted onto the screen drawable. Defaults
-    /// to `.cover` (crop-to-fill), matching the persisted `fitMode` default, so
-    /// non-16:9 displays don't distort the scene. Pushed in from the session.
     var presentFitMode: WPEPresentFitMode = .cover
-    /// Active particle systems and the per-system sprite
-    /// texture. Built on load from the scene's `particleObjects`; ticked
-    /// + drawn each frame.
     var particleSystems: [WPEParticleSystem] = []
     var particleTextures: [ObjectIdentifier: MTLTexture] = [:]
-    /// Refraction normal map (`g_Texture1`) for REFRACT particle systems, keyed
-    /// like `particleTextures`. Absent ⇒ the system renders as a flat sprite.
+    /// REFRACT `g_Texture1`. Absent ⇒ the system renders as a flat sprite.
     var particleNormalTextures: [ObjectIdentifier: MTLTexture] = [:]
-    /// The unified glyph-mesh text renderer (layout + R8 atlas), built at
-    /// load time for scenes with text objects.
     var textMeshRenderer: WPETextMeshRenderer?
     var textObjects: [WPESceneTextObject] = []
-    /// Text graph plans. Plain text is Direct; effects/background dependencies
-    /// use exact-layout Offscreen surfaces owned by the normal target pool.
+    /// Plain text is Direct; effect/background text uses Offscreen surfaces from the normal target pool.
     var textRenderPlans: [WPETextRenderPlan] = []
-    /// Shared with `textMeshRenderer` so target sizing and glyph rasterization
-    /// resolve the same typeface.
+    /// Shared with `textMeshRenderer` so sizing and glyph rasterization resolve the same typeface.
     var textFontResolver: WPETextFontResolver?
-    /// Last exact layout for each object, keyed by layout-affecting state.
     var textLayoutCache: [String: WPETextLayoutCacheEntry] = [:]
-    /// Audio runtime publishing live FFT bins into the
-    /// runtime uniform that audio-reactive shaders sample. Optional —
-    /// scenes without sound objects skip this entirely.
     var soundRuntime: WPESoundRuntime?
-    /// `WPEAudioDebugLog -bool YES` → throttled per-second log of what the
-    /// renderer actually sees on the shared audio broker, to diagnose
-    /// audio-reactive scenes that don't move.
+    /// `WPEAudioDebugLog -bool YES`: throttled log of what this renderer sees on the audio broker.
     let audioDebugLogEnabled = UserDefaults.standard.bool(forKey: "WPEAudioDebugLog")
     var audioDiagCounter = 0
-    /// Per-text-object SceneScript instances. Keyed by
-    /// the text object's id so the renderer can look up the latest
-    /// scripted value when rasterizing.
     var textScriptInstances: [String: WPESceneScriptInstance] = [:]
-    /// Layer (image-object) SceneScripts keyed by objectID — visible-scripts that
-    /// drive a layer's visibility/alpha and its video texture (e.g. an intro that
-    /// plays once then hides). Empty for the common no-layer-script scene.
     var layerScriptInstances: [String: WPELayerScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
-    /// Explicit origin/scale/angles assignments made by layer SceneScripts.
-    /// Kept outside `lastStableScriptTransforms` so unassigned authored
-    /// animation fields continue advancing every frame.
+    /// Kept outside `lastStableScriptTransforms` so unassigned authored animation keeps advancing.
     var layerTransformMutationJournal = WPESceneScriptTransformMutationJournal()
-    /// TEXT objects' own visible/alpha SceneScripts (3509243656's login-intro
-    /// texts fade themselves out) — same machinery as image layer scripts, but
-    /// outputs land in `liveTextVisibility`/`liveTextAlpha` for the text loop.
+    /// TEXT visible/alpha scripts (3509243656 login-intro fades). Outputs land in `liveTextVisibility`/`liveTextAlpha`.
     var textVisibleScriptInstances: [String: WPELayerScriptInstance] = [:]
     var textAlphaScriptInstances: [String: WPELayerScriptInstance] = [:]
     var liveTextAlpha: [String: Double] = [:]
-    /// Current hover state per scripted layer (cursorEnter/Leave transitions).
     var layerHoverStates: [String: Bool] = [:]
     var sceneScriptSharedState: WPESharedScriptState?
-    /// This display's own script workers, nil while the batch path is off. One set
-    /// per renderer so a script-heavy display can never delay a light one's ticks —
-    /// the shared governor's cross-domain fairness only ever approximated that.
+    /// Per-renderer workers so a script-heavy display cannot delay a light one's ticks.
     let sceneScriptBatchDispatcher = WPESceneScriptBatchDispatcher(
         width: WPESceneScriptContainmentDefaults.batchWorkerWidth
     )
-    /// This frame's collected script work, submitted once when the frame's script
-    /// phase ends. Cleared at the top of every frame.
     var pendingSceneScriptBatchJobs: [WPESceneScriptBatchDispatcher.Job] = []
     let sceneScriptLoadState = WPESceneScriptLoadState()
-    /// Last complete cross-family presentation. If a runtime resource ceiling
-    /// latches between script families, transforms/text stay on this snapshot
-    /// instead of falling back to their baked values while layer state freezes.
+    /// Last complete cross-family presentation. A mid-family resource-ceiling latch keeps transforms/text here instead of baking them while layers freeze.
     var lastStableScriptTransforms = LiveScriptTransforms()
     var lastStableScriptTextByID: [String: String] = [:]
     var sceneScriptVideoCommandBuffer = WPESceneScriptVideoCommandBuffer()
-    /// Staged with the SceneScript video transaction. The eventual AVPlayer
-    /// seek is allowed only after every script family and frame encode succeed.
+    /// Staged with the SceneScript video transaction. AVPlayer seek waits until every script family and frame encode succeed.
     var sceneScriptIntroPhaseAlignPending = false
-    /// Stable renderer identity for signposts, so a trace can tell two displays'
-    /// frames apart. Derived without touching actor state.
+    /// Signpost identity derived without touching actor state, so two displays' frames stay distinct in a trace.
     nonisolated var rendererSignpostID: UInt64 {
         UInt64(UInt(bitPattern: ObjectIdentifier(self)))
     }
-    /// Image-object alpha field scripts keyed by objectID. These return an alpha
-    /// scalar from `update(value)` and intentionally do not affect visibility.
+    /// Alpha-field scripts. They return a scalar and intentionally do not affect visibility.
     var layerAlphaScriptInstances: [String: WPELayerScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
-    /// Image-object origin SceneScripts keyed by objectID. These are dynamic
-    /// transform scripts, e.g. cursor-follow flowers that assign
-    /// `origin = input.cursorWorldPosition` every frame.
     var dynamicOriginScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
-    /// Keyframed object `origin` tracks, keyed by objectID. Same live-transform
-    /// map as the origin SCRIPTS above, so the existing parent→child composition
-    /// carries a moving group onto its children (3448877775's meteor emitter is a
-    /// bare transform host whose sweep is what gates its shooting stars).
+    /// Keyframed `origin` on the same live-transform map as origin scripts (3448877775 meteor host gates its stars).
     var dynamicOriginAnimations: [String: WPESceneAnimatedValue] = [:]
-    /// Image-object scale SceneScripts keyed by objectID. Used by scenes that
-    /// drive body sizes or link lengths from shared simulation state.
     var dynamicScaleScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
-    /// Image-object angles SceneScripts keyed by objectID. Used by camera/control
-    /// rigs such as drag-to-rotate scene roots.
     var dynamicAnglesScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
-    /// Image/text-object `color` SceneScripts keyed by objectID. Same Vec3 engine
-    /// as the transform scripts; the value lands on the layer's tint instead.
     var dynamicColorScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
-    /// Shader-constant SceneScripts, keyed by render-pass id and uniform name.
-    /// WPE lets a script drive any shader property; these run through the same
-    /// Vec3 engine, narrowed to the authored constant's arity on the way out.
     var effectConstantScriptInstances: [WPEEffectConstantScriptKey: WPEDynamicTransformScriptInstance] = [:]
-    /// Effect-visibility SceneScripts for script-gated hidden effects, keyed by
-    /// `WPEPassVisibilityGate.id` (authored source + seed) so the dozen clones of
-    /// one effect across a scene share a single JS instance.
+    /// Keyed by `WPEPassVisibilityGate.id` so clones of one effect share a single JS instance.
     var effectVisibilityScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:]
-    /// Memoized load-scoped part of `staticCacheExcludedLayerIDs` (the five
-    /// installed-script key sets above). Cleared via `didSet` on EVERY mutation
-    /// of those dictionaries, so no install/teardown path can leave it stale.
+    /// Load-scoped memo of installed-script layer IDs. Cleared by `didSet` on every mutation of those dictionaries.
     var cachedInstalledScriptLayerIDs: Set<String>?
-    /// Non-rendered transform hosts keyed by objectID. These are WPE `solid`
-    /// groups that move/render no pixels themselves but compose into child layers.
+    /// WPE `solid` groups: no pixels, but they compose into child layers.
     var transformHostLocalTransformsByID: [String: WPERenderObjectTransform] = [:]
-    /// objectID → the `dynamicTextureSources` key of the layer's video source, so
-    /// a layer script's `getVideoTexture()` commands reach the right player.
-    /// Populated for ALL video-backed layers (a button script drives a different
-    /// layer's video via `thisScene.getLayer(name)`), not just scripted ones.
+    /// Video source key for `getVideoTexture()`. Populated for ALL video layers, not just scripted ones.
     var layerVideoSourceKey: [String: String] = [:]
-    /// Layer name → objectID, so a script's `thisScene.getLayer(name)` output can
-    /// be resolved to the target layer.
     var layerObjectIDByName: [String: String] = [:]
-    /// objectID → texture key for scene-output-only video layers (never a hidden
-    /// composite source), kept resident only while visible. Each
-    /// `WPEVideoTextureSource` holds its whole MP4 + decode buffers (~300 MB per 4K
-    /// source), so a multi-video scene that shows one at a time otherwise pays for
-    /// all of them. `reconcileVideoResidency` flips residency per frame.
+    /// Scene-output-only videos, resident while visible. Each 4K source is ~300 MB; `reconcileVideoResidency` flips per frame.
     var onDemandVideoKeyByID: [String: String] = [:]
-    /// Texture keys whose rebuild is in flight, so a layer staying visible across
-    /// frames doesn't spawn a duplicate Task while the first resolves.
+    /// In-flight rebuilds, so a still-visible layer does not spawn a duplicate Task.
     var onDemandVideoLoading: Set<String> = []
-    /// Live per-layer alpha overrides driven by layer scripts (objectID → alpha).
     var liveLayerAlpha: [String: Double] = [:]
-    /// Runtime-created image layers keyed by renderer-unique objectID. Produced
-    /// by layer SceneScript `thisScene.createLayer(...)` handles.
     var liveCreatedLayers: [String: WPECreatedLayerScriptState] = [:]
-    /// Prepared one-pass templates keyed by model path. Hidden template layers
-    /// are retained by the graph builder only when a script references them.
+    /// Hidden template layers are retained only when a script references them.
     var createdLayerTemplatesByImagePath: [String: WPEPreparedRenderLayer] = [:]
-    /// Intro→loop phase alignment: an intro overlay (`introPhaseSource`) and the
-    /// free-running loop it reveals (`loopPhaseSource`) are often the same
-    /// animation a few seconds out of phase, with nothing in the scripts wiring the
-    /// handoff. We measure the offset once (`intro@t ≈ loop@(t+offset)`) and slave
-    /// the loop's playhead to lead the intro by it, so the crossfade is seamless.
+    /// Intro and loop are often the same clip out of phase. Measure `intro@t ≈ loop@(t+offset)` once and slave the loop playhead.
     var introPhaseSource: WPEVideoTextureSource?
     var loopPhaseSource: WPEVideoTextureSource?
     var introLoopOffset: TimeInterval?
     /// Bumped per reload so a slow async measurement from a prior scene is ignored.
     var introPhaseToken = 0
     var loadedTextures: [String: MTLTexture] = [:]
-    /// Reloadable static-texture bookkeeping for the optional VRAM budget
-    /// (`textureCacheBudgetBytes`). Inactive over-budget entries are evicted and
-    /// reloaded on demand; dynamic/video sources are never tracked here.
+    /// VRAM-budget bookkeeping. Dynamic/video sources are never tracked here.
     struct StaticTextureCacheRecord: Sendable {
         let layerName: String
         let candidates: [String]
@@ -269,32 +146,19 @@ final class WPEMetalSceneRenderer: NSObject {
     var staticTextureCacheRecords: [String: StaticTextureCacheRecord] = [:]
     var textureCacheLRU = WPEMetalTextureCacheLRU(budgetBytes: 0)
     var textureCacheBudgetBytesInUse: Int?
-    /// Per-load snapshot of `Self.textureCacheBudgetBytes` — the frame path must
-    /// never read UserDefaults (per-frame defaults reads showed up hot in the C2
-    /// flag-freeze pass).
+    /// Per-load snapshot of `Self.textureCacheBudgetBytes`. The frame path must never read UserDefaults.
     var textureCacheBudgetBytesResolved: Int?
     var staticTexturePlaceholderPaths: Set<String> = []
-    /// Owns admission, generation tickets and retained task handles for
-    /// on-demand static-texture residency reloads.
     let staticTextureReloadTaskOwner = WPEStaticTextureReloadTaskOwner()
     var staticTextureReloadThrottles: [String: WPEStaticTextureReloadThrottle] = [:]
-    /// Memoizes `activeStaticTexturePaths` (the budget's only per-frame walk).
-    /// Keyed by a per-layer visibility/shape signature: script or property flips
-    /// recompute, static frames reuse. A hash collision only mis-protects for
-    /// one frame and self-heals via the placeholder+reload path.
+    /// Memo of `activeStaticTexturePaths`. A hash collision only mis-protects for one frame; placeholder+reload self-heals.
     var cachedActiveStaticPaths: Set<String> = []
     var cachedActiveStaticSignature: Int?
     var staticTextureRecordsEpoch = 0
-    /// Animated and video texture sources keyed by the same path
-    /// the executor uses to look up `MTLTexture` for each pass. Populated
-    /// during `performLoad()`; refreshed each render via
-    /// `texturesForCurrentFrame(time:pipeline:)` so the executor sees the live frame.
     var dynamicTextureSources: [String: WPEDynamicTextureSource] = [:] {
         didSet { cachedDynamicTextureNames = nil }
     }
-    /// Memoized `Set(dynamicTextureSources.keys)` for the per-frame render call.
-    /// All mutations are cold (load, lazy video rebuild, residency release,
-    /// teardown) and each clears this via `didSet`; the frame path only reads.
+    /// Memo of `dynamicTextureSources.keys`. Mutations are cold and clear it via `didSet`; the frame path only reads.
     private var cachedDynamicTextureNames: Set<String>?
     var dynamicTextureNames: Set<String> {
         if let cached = cachedDynamicTextureNames { return cached }
@@ -305,130 +169,73 @@ final class WPEMetalSceneRenderer: NSObject {
     var sceneRenderSize: CGSize = CGSize(width: 1, height: 1)
     var cameraUniforms: WPEMetalCameraUniforms = .identity
     var frameClock: WPEMetalFrameClock
-    /// Frozen frame globals when the render oracle is enabled (read once at load);
-    /// `nil` in production, so the real clock/pointer drive every frame unchanged.
+    /// Oracle-only frozen frame globals (read once at load). `nil` in production.
     let oracleFrameOverride = WPEOracleMode.loadFrameOverride()
     let pointerSampler: WPEMetalPointerSampler
     let snapshotter: WPEMetalTextureSnapshotter
     var cachedSnapshot: NSImage?
     var pendingLivePosterCaptures: [UUID: CheckedContinuation<NSImage?, Never>] = [:]
     var didLoad = false
-    /// Bumped on every load and on teardown (`reload`/`cleanup`) so a deferred
-    /// task — e.g. the off-critical-path audio startup — can detect that the
-    /// renderer has since reloaded or torn down and bail on a stale scene.
+    /// Bumped on load/teardown so a deferred task can bail on a stale scene.
     var loadGeneration = 0
-    /// Set at the end of `performLoad` for scenes with sound; consumed by the
-    /// first successful `present` in `draw(in:)`, so audio startup begins only
-    /// after the first frame is actually on screen.
+    /// Sound scenes only; consumed by the first successful `present` so audio starts after the first on-screen frame.
     var pendingAudioStartupDocument: WPESceneDocument?
-    /// The in-flight off-main audio-startup task, tracked so `reload`/`cleanup`
-    /// can cancel it.
     var deferredAudioStartupTask: Task<Void, Never>?
 
     #if DEBUG
-    /// Test-only: audio startup is deferred (waiting on the first present), not yet started.
     var debugAudioStartupPending: Bool { pendingAudioStartupDocument != nil }
-    /// Test-only: the sound runtime has been published (audio actually started).
     var debugSoundRuntimeActive: Bool { soundRuntime != nil }
     #endif
-    /// Scene-level camera parallax: the parsed settings plus the per-frame
-    /// exponential smoother that drives every layer's depth shift. Neutral when
-    /// the scene disables parallax.
+    /// Scene-level camera parallax plus the per-frame ramp that drives each layer's depth shift.
     var cameraParallaxSettings: WPESceneCameraParallaxSettings = .disabled
     var cameraParallaxSmoother = WPECameraParallaxSmoother()
-    /// Per-machine magnitude multiplier for camera parallax. Defaults to
-    /// `WPECameraParallaxFrame.defaultGain`. Read once at load — set it with
-    /// `defaults write com.loomscreen.pro WPEParallaxGain <number>` and reload
-    /// the wallpaper to apply.
+    /// Per-machine parallax multiplier. `defaults write com.loomscreen.pro WPEParallaxGain <number>` then reload.
     let cameraParallaxGain = WPEMetalSceneRenderer.resolvedParallaxGain()
     var currentProfile: WallpaperPerformanceProfile = .quality
-    /// When false, the per-frame pointer is pinned to the screen center so the
-    /// scene stops reacting to the cursor (camera parallax freezes, pointer
-    /// shaders see a constant). Driven by the per-screen "Follow Cursor"
-    /// playback toggle; default on preserves the historical behavior.
+    /// False pins the pointer to screen center. Default on preserves historical Follow-Cursor behavior.
     var mouseInteractionEnabled = true
-    /// Previous frame's pointer UV, fed as the official `g_PointerPositionLast`.
     var previousPointer = SIMD2<Double>(0.5, 0.5)
-    /// Tracks the live/inactive edge so pointer-spawned particles can be removed
-    /// as soon as the cursor leaves this renderer's screen.
+    /// Live/inactive edge so pointer-spawned particles drop as soon as the cursor leaves this screen.
     var previousPointerWasLive = false
-    /// Previous captured pointer/button frame used to emit SceneScript cursor
-    /// down/up edges exactly once per transition.
+    /// Previous pointer/button frame so SceneScript cursor down/up edges fire once per transition.
     var previousLayerScriptPointerFrame = WPEPointerFrame.neutral
-    /// User-selected frame rate ceiling, applied to the surface's
-    /// `preferredFramesPerSecond` whenever the renderer is not suspended.
-    /// Defaults to the WPE-compatible
-    /// 30 FPS until `setFrameRateLimit(_:)` overrides it.
     var userPreferredFPS: Int = WPEMetalSceneRenderer.defaultPreferredFPS
-    /// System-driven background throttle (adaptive frame rate). Layered on top
-    /// of `userPreferredFPS` via `effectiveFPS` so it never clobbers the user's
-    /// saved ceiling — clearing it restores the exact prior rate.
     var adaptiveThrottleActive = false
-    /// Inspector mute state cached here so callers that arrive before the
-    /// deferred audio startup can still record intent; `beginDeferredAudioStartup`
-    /// reads these to seed `WPESoundRuntime` at the right level (and re-applies
-    /// them once the off-main start finishes, in case they changed meanwhile).
+    /// Cached so callers arriving before deferred audio startup still record mute/volume; re-applied just before `play()`.
     var pendingAudioMuted: Bool = false
     var pendingAudioVolume: Double = 1.0
-    /// The applied preset's own level for this wallpaper, multiplied with the
-    /// user's master volume rather than replacing it: a preset says how loud
-    /// this wallpaper should be relative to everything else, not how loud this
-    /// Mac should be.
+    /// Preset level multiplies the master volume; it does not replace it.
     var presetAudioSettings: WPEEngineAudioSettings?
 
     var hasPresentedFrame: Bool {
         completedPresentGeneration == loadGeneration
     }
-    /// The load generation whose present command buffer most recently completed
-    /// successfully. Readiness must key off this token, not merely `commit()`,
-    /// because Metal can report an asynchronous GPU failure afterwards.
+    /// Last load generation whose present command buffer completed. Readiness keys off this, not `commit()`, because Metal can fail asynchronously afterwards.
     var completedPresentGeneration: Int?
-    /// Records a terminal present failure for the current not-yet-ready load so
-    /// session preparation can fail promptly instead of waiting for its timeout.
+    /// Terminal present failure for a not-yet-ready load, so session prep fails promptly instead of waiting out its timeout.
     var failedPresentGeneration: Int?
     var loadDiagnostics: SceneLoadDiagnostic?
     var renderGraph: WPERenderGraph?
     var renderPipeline: WPEPreparedRenderPipeline?
-    /// True when the pipeline has effect / custom-shader passes (scroll,
-    /// waterwaves, pulse, audio bars, …). These animate every frame via
-    /// `g_Time` / `g_AudioSpectrum*`, so the view must run continuously even
-    /// when there are no dynamic textures or particles — otherwise the scene
-    /// renders one frame and freezes. Computed once per load.
+    /// Effect / custom-shader passes animate via `g_Time` / `g_AudioSpectrum*`. Without this the view draws one frame and freezes.
     var hasAnimatedShaderPasses = false
-    /// WPE `general.supportsaudioprocessing`. An audio-reactive scene must stay
-    /// on the continuous-frame path so `g_AudioSpectrum*` re-samples every frame
-    /// — `pipelineHasAnimatedPasses` only catches audio shaders under
-    /// `effects/`/`workshop/`, so a custom-path audio shader would otherwise
-    /// freeze on the static/on-demand path.
+    /// WPE `general.supportsaudioprocessing`. `pipelineHasAnimatedPasses` misses custom-path audio shaders, which would otherwise freeze on the static path.
     var sceneSupportsAudioProcessing = false
-    /// This frame's scripted shader constants, keyed by pass id. Rebuilt each
-    /// frame in the script tick and consumed by `addingMetalRuntimeUniforms`.
     var liveEffectConstants: [String: [String: WPESceneShaderConstantValue]] = [:]
-    /// This frame's resolved effect-visibility gates, keyed by gate id. Seeded
-    /// from the authored `visible` at load, then re-ticked every frame.
     var liveEffectVisibility: [String: Bool] = [:]
     var lastRuntimeUniforms: WPEMetalRuntimeUniforms?
     var lastFramePipeline: WPEPreparedRenderPipeline?
-    /// Property-key → render-target bindings for the loaded scene, used by the
-    /// incremental settings-apply path. Empty until `load()` completes.
     var scenePropertyBindings: [String: [WPEScenePropertyBinding]] = [:]
-    /// Live per-object visibility, seeded from the document and mutated by
-    /// `applyScenePropertyPatch` so a settings toggle takes effect without reload.
     var liveLayerVisibility: [String: Bool] = [:]
     var liveTextVisibility: [String: Bool] = [:]
-    /// Object hierarchy + own baked visibility (groups included), used to fold a
-    /// layer script's `visible` against its ancestors' CURRENT visibility so a
-    /// script can't show a layer under a hidden ancestor. See `WPESceneDocument`.
+    /// Fold a layer script's `visible` against ancestors' CURRENT visibility so a script cannot show a layer under a hidden ancestor.
     var objectParentByID: [String: String] = [:]
     var ownVisibilityByID: [String: Bool] = [:]
-    /// Authored parallax depth / origin for EVERY object (groups included), for
-    /// the rigid-subtree root walk shared by layers and particle systems.
+    /// Authored parallax depth/origin for every object, including groups, for the rigid-subtree root walk.
     var parallaxAuthoredDepthByObjectID: [String: SIMD2<Double>] = [:]
     var parallaxAuthoredOriginByObjectID: [String: SIMD2<Double>] = [:]
 
-    /// Test hook: reads a value from the scene's shared script store after a
-    /// render, so a test can assert a HIDDEN text object's compute script ran
-    /// (populated `shared`) rather than being skipped by the visibility filter.
+    /// Test hook: assert a HIDDEN text object's compute script still ran (`shared` populated).
     func sharedScriptValueForTesting(_ key: String) -> Any? {
         sceneScriptSharedState?.get(key)
     }
@@ -437,15 +244,12 @@ final class WPEMetalSceneRenderer: NSObject {
     var resolutionDiagnostics: WPEResolutionDiagnosticsSnapshot {
         resolutionTracer.snapshot()
     }
-    /// GPU command-buffer errors observed since load — surfaced in the scene
-    /// diagnostic log because they fire post-return on a GPU thread and never
-    /// reach `loadDiagnostics`.
+    /// GPU command-buffer errors since load. They fire post-return on a GPU thread and never reach `loadDiagnostics`.
     var gpuErrorSummary: (count: Int, last: String?) {
         executor.gpuErrorSink.summary
     }
 
-    /// Custom-shader compile failures (the only Release-visible signal — the dump
-    /// is hard-off there). A failed pass is silently skipped.
+    /// Custom-shader compile failures (the only Release-visible signal). A failed pass is silently skipped.
     var shaderErrorSummary: (count: Int, entries: [(shader: String, reason: String)]) {
         executor.shaderErrorSink.summary
     }
@@ -472,17 +276,12 @@ final class WPEMetalSceneRenderer: NSObject {
         self.engineAssetsRootURL = engineAssetsRootURL
         let executor = try WPEMetalRenderExecutor(device: device)
         let resolutionTracer = WPEResolutionTracer()
-        // A managed (in-app-downloaded) install lives inside our sandbox
-        // container — it's always readable and has no security scope to open, so
-        // don't gate it on `startAccessingSecurityScopedResource()` (which
-        // returns false for container-internal paths).
+        // Container-internal installs have no security scope; `startAccessingSecurityScopedResource()` returns false for them.
         let needsScope = engineAssetsRootURL.map { !WPEEngineAssetsLibrary.isContainerInternal($0) } ?? false
         let didStartEngineAssetsAccess = needsScope
             ? (engineAssetsRootURL?.startAccessingSecurityScopedResource() ?? false)
             : false
-        // Feed the engine-assets root to the resolver when it needs no scope
-        // (container-internal) or its security scope actually opened — otherwise
-        // the resolver would attempt reads from an unauthorized root.
+        // Only feed the resolver a root that needs no scope or whose scope actually opened.
         let effectiveEngineAssetsRootURL: URL? = engineAssetsRootURL.flatMap {
             (!needsScope || didStartEngineAssetsAccess) ? $0 : nil
         }
@@ -511,12 +310,6 @@ final class WPEMetalSceneRenderer: NSObject {
         self.resolutionTracer = resolutionTracer
         self.executor = executor
         self.textureLoader = WPEMetalTextureLoader(device: device)
-        // The renderer receives only the surface's `Sendable` seams (control
-        // handle, mailbox, present-layer wrapper, drawable size) — never the whole
-        // `WPERenderSurface`. Taking a non-Sendable surface here would merge the
-        // renderer's isolation region with the main-thread surface's and block the
-        // `sending` adoption into the render actor. The builder wires the delivery
-        // shim onto the surface itself.
         self.surfaceControl = surfaceControl
         self.mailbox = mailbox
         self.metalLayer = presentLayer
@@ -535,10 +328,7 @@ final class WPEMetalSceneRenderer: NSObject {
 
     }
 
-    /// Legacy/test convenience: builds the main-thread surface here (so it must be
-    /// `@MainActor`), extracts its `Sendable` seams, and forwards to the injecting
-    /// designated init. Keeps existing `frame:device:` call sites compiling. The
-    /// production path goes through the session builder, which also wires the shim.
+    /// Legacy/test convenience: builds the main-thread surface here (hence `@MainActor`) and forwards Sendable seams.
     @MainActor
     convenience init(
         descriptor: SceneDescriptor,
@@ -575,24 +365,15 @@ final class WPEMetalSceneRenderer: NSObject {
         #endif
     }
 
-    /// Surface geometry push (main-thread MTKView drawable size). No live
-    /// consumer beyond `performLoad`'s perspective native-resolution sizing today.
     func updateSurfaceGeometry(drawableSize: CGSize) {
         surfaceDrawableSize = drawableSize
     }
-
 
     #if DEBUG
     var didDumpScenePassesOverTime = false
     #endif
 
-    /// Camera-parallax magnitude multiplier. Reads `WPEParallaxGain` from the
-    /// app's `com.loomscreen.pro` suite first, then the process `.standard`
-    /// domain (which IS that suite in the renderer process), falling back to the
-    /// built-in default when the key is absent. A present value is normalized by
-    /// `WPECameraParallaxFrame.clampedGain` (0 honored = parallax off, negatives
-    /// clamp to 0, capped at `maxGain`). Tune to match Wallpaper Engine with:
-    ///   defaults write com.loomscreen.pro WPEParallaxGain 0.8
+    /// `WPEParallaxGain` from `com.loomscreen.pro` then `.standard`. Present values go through `clampedGain`.
     private static func resolvedParallaxGain() -> Double {
         for defaults in [UserDefaults.appSuite, .standard] {
             guard defaults.object(forKey: "WPEParallaxGain") != nil else { continue }
@@ -601,27 +382,16 @@ final class WPEMetalSceneRenderer: NSObject {
         return WPECameraParallaxFrame.defaultGain
     }
 
-
-
-
-
-
     var hoverDebugCounter = 0
-
-
 
     deinit {
         sceneScriptLoadState.retireCurrent()
         stopEngineAssetsAccessIfNeeded()
-        // Backstop for renderers dropped without an explicit cleanup()/reload():
-        // video sources hold a running AVQueuePlayer that AVFoundation retains on
-        // its own CoreMedia threads, so ARC alone never stops the decoder.
-        // `releaseDynamicTextureSources` and each source's `invalidate` are idempotent.
+        // Backstop if cleanup()/reload() never ran: AVFoundation retains AVQueuePlayer on CoreMedia threads, so ARC will not stop the decoder.
         releaseDynamicTextureSources()
     }
 
-    /// Suppresses repeat `draw(in:)` failure logs within a failure streak so a
-    /// broken pipeline warns once, not once per frame.
+    /// Suppresses repeat `draw(in:)` failure logs so a broken pipeline warns once, not once per frame.
     var didLogFrameFailure = false
 
 }

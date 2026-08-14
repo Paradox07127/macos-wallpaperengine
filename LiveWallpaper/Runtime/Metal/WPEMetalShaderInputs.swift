@@ -121,10 +121,6 @@ enum WPEMetalShaderInputs {
         return nil
     }
 
-    static func normalizedBuiltinShaderName(_ shaderName: String) -> String {
-        WPEBuiltinShaderName.normalized(shaderName, genericImageAsCopy: false)
-    }
-
     /// Looks up `pass.uniformValues` (runtime-merged) first, then `pass.pass.constants` (authored defaults).
     static func floatScalar(
         named name: String,

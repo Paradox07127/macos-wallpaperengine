@@ -68,6 +68,10 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     /// Drops stale `takeSnapshot` replies after a later resume/suspend flip.
     var snapshotGeneration: UInt64 = 0
     /// Drives `.fair` RAF throttle independent of ScreenManager suspend/quality.
+    ///
+    /// `nonisolated(unsafe)`: only mutated from MainActor code, but deinit
+    /// (released on an arbitrary queue) also removes the observer, which Swift 6
+    /// can't prove safe.
     nonisolated(unsafe) var thermalObserver: NSObjectProtocol?
     var lastRafThrottleRatio: Int = 1
 

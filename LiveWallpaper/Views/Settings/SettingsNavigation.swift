@@ -171,7 +171,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             destination: .advanced,
             title: "Advanced",
             systemImage: "slider.horizontal.3",
-            keywords: ["developer mode", "logs", "diagnostics"]
+            keywords: ["logs", "diagnostics"]
         ),
         SettingsNavigationItem(
             destination: .about,
