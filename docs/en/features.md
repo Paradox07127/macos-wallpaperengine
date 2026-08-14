@@ -1,9 +1,11 @@
 # Feature Guide
 
+**English** · [简体中文](../zh-Hans/features.md)
+
 The authoritative map from user-facing features to their implementation. For a
 task-oriented walkthrough, use [quick-start.md](quick-start.md) instead.
 
-Authoritative capability gate: [`ProductCapabilities.swift`](../Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift).
+Authoritative capability gate: [`ProductCapabilities.swift`](../../Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift).
 
 ## 0) App surfaces
 
@@ -28,7 +30,7 @@ Authoritative capability gate: [`ProductCapabilities.swift`](../Packages/LiveWal
 | Backup & Restore | both | `.lwconfig` export / import |
 | Workshop | Pro | API key, SteamCMD doctor, engine-asset updates, content filters |
 | Advanced | both | Diagnostics export, bug report, log folder |
-| About | both | Version, links, Welcome Tour; **Lite adds** the update banner |
+| About | both | Version, links, Welcome Tour, update banner |
 
 ## 1) Wallpaper types
 
@@ -62,6 +64,39 @@ sidebar library.
 - Sources: local project folders (read in place) or Steam Workshop downloads.
 - Scene-specific controls: fit mode incl. Center, cursor parallax, click interaction.
 - Projects requiring Windows executables are skipped on import.
+
+#### Scene presets (Pro)
+
+A preset is a named set of `project.json` property values bound to one base
+wallpaper (`Schema/ScenePreset.swift`). Downloaded Workshop preset items and
+"save my current values" are the *same* object, which is what lets a downloaded
+preset be renamed, re-saved, and exported like a local one.
+
+- **Applied as a layer, never baked in**: scene defaults → preset → your
+  per-display increment. "Reset to preset" is therefore just dropping the
+  increment.
+- Presets also carry Wallpaper Engine's own per-wallpaper application settings,
+  which are *not* `project.json` properties and so are not in the wallpaper's
+  schema:
+  - **Colour correction** (`wec_e` enable flag plus brightness / contrast /
+    saturation / hue on a 0–100 scale, 50 neutral) becomes a full-frame post
+    pass, skipped entirely when the values are neutral —
+    `Schema/WPEEngineColorCorrection.swift`,
+    `Runtime/Metal/WPEMetalRenderExecutor+Present.swift`. The neutral point and
+    enable flag were established from real published presets; the transfer
+    curves are matched to the app's own video colour controls rather than being
+    bit-exact with Wallpaper Engine.
+  - **Volume** (0–100) becomes a gain that *multiplies* your master volume
+    instead of replacing it — `Schema/WPEEngineAudioSettings.swift`.
+
+  Both read the preset snapshot rather than the layered map, so a wallpaper that
+  declares its own property named `volume` cannot drive the engine setting.
+- UI: the **Preset** row in the scene settings card
+  (`LiveWallpaper/Views/ScreenDetail/WPEScenePresetBar.swift`) — a picker split
+  into *Saved by you* and *From the Workshop*, plus save / rename / delete.
+  Workshop wallpaper pages list the presets published for that wallpaper
+  (`LiveWallpaper/Views/Workshop/WorkshopDetailPresetsSection.swift`); listing
+  them needs a Steam Web API key, downloading one needs SteamCMD.
 
 ## 2) Playback & automation
 
@@ -100,17 +135,24 @@ occlusion, battery, Low Power Mode, per-app rules).
 ## 6) Workshop (Pro)
 
 - **SteamConnector** (`SteamConnector/`) — XPC helper that runs SteamCMD serially, verifies its code signature and SHA-256, discovers cached Steam logins, and downloads Workshop items with your account.
+- **Managed SteamCMD install** (`Workshop/SteamCMDManagedInstallCoordinator.swift`) — the app asks, the connector does the work: fetch Valve's package manifest, download each package, reject anything whose SHA-256 doesn't match the manifest, unpack into a staging directory, and keep the result only if the installed binary's code signature and team identifier are Valve's. A failure at any step rolls back to whatever was installed before. Additive — package-manager detection and manually chosen binaries are unchanged, and every run path applies the same trust gates.
 - **Online browse** (`LiveWallpaper/Infrastructure/Workshop/WorkshopQueryService.swift`) — Steam Web API queries with paging, caching, rate limiting, creator resolution; maturity blur and content filters in settings.
 - **Engine assets** (`LiveWallpaper/Infrastructure/Workshop/WPEEngineAssetsInstaller.swift`) — one-time SteamCMD download of shared Wallpaper Engine assets, with build-ID update checks.
 - **Doctor** (`LiveWallpaper/Infrastructure/Workshop/Doctor/`) — guided setup and diagnostics for the whole chain.
 
-## 7) Updates (Lite)
+## 7) Updates (both editions)
 
 `LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` — GitHub Releases
 check at launch, 12-hour throttle, 1-hour failure backoff, skip-a-version
 support. Hardened: trusted host only, 512 KB response cap, release-notes
 truncation, URL allowlisting. It only opens the Releases page — nothing
-auto-installs. Pro has no in-app updater.
+auto-installs.
+
+The check is deliberately SKU-agnostic: it compares `CFBundleShortVersionString`
+against the newest release **tag** and never looks at assets, so one release
+carrying both DMGs serves both editions. Enabling it for Pro is why there is no
+`#if` around the banner — `GeneralSettingsOwnershipCharacterizationTests` pins
+that call site so a gate cannot creep back in.
 
 ## 8) Security & privacy
 
@@ -131,3 +173,6 @@ auto-installs. Pro has no in-app updater.
 - Settings: `LiveWallpaper/Views/Settings/`
 - WPE runtime: `LiveWallpaper/Runtime/` (Metal renderer, scene runtime)
 - Workshop stack: `LiveWallpaper/Infrastructure/Workshop/`, `SteamConnector/`
+- `SceneRunner/` — an out-of-process scene renderer, currently only the
+  feasibility probe for the isolation plan (it proves an `IOSurface` written
+  there is readable by the sandboxed app). No rendering runs through it yet.

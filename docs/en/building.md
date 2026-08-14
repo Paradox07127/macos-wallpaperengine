@@ -1,5 +1,7 @@
 # Build from source
 
+**English** · [简体中文](../zh-Hans/building.md)
+
 ## Requirements
 
 - macOS 14.6+ on an **Apple Silicon** Mac
@@ -90,5 +92,5 @@ isolated between runner processes.
 
 ## Packaging a release
 
-See [`RELEASING.md`](../RELEASING.md) for the maintainer-only ad-hoc DMG
+See [`releasing.md`](releasing.md) for the maintainer-only ad-hoc DMG
 packaging flow, preflight checklist, and current updater status.

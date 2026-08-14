@@ -112,13 +112,9 @@ trace/
 .playwright-cli/
 scripts/
 skills/
-docs/review/
-# Review write-ups stay local, same as docs/review/.
-docs/implementation-review-plan.md
-# WPE parity/leak investigation ledgers stay local too.
-docs/wpe-parity/
-docs/leak/
-docs/wpe-pipeline-review-*.md
+# Every local-only write-up lives here: review reports, plans, and the WPE
+# parity/leak ledgers. docs/ is public documentation only.
+.notes/
 archived/
 CLAUDE.md
 LiveWallpaperTests/Fixtures

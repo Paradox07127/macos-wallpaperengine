@@ -1,7 +1,9 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Throttled GitHub release checker used by Loomscreen Lite.
+/// Throttled GitHub release checker. Compares against the tag only — both SKUs
+/// share one release and one `MARKETING_VERSION`, so no asset matching is
+/// involved and the same check serves Lite and Pro.
 @MainActor
 @Observable
 final class UpdateChecker {

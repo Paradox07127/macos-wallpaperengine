@@ -1,5 +1,7 @@
 # Quick Start
 
+**English** · [简体中文](../zh-Hans/quick-start.md)
+
 From zero to your first wallpaper, then the features you'll actually use daily.
 Install steps live in [install.md](install.md); the full feature ↔ code map in
 [features.md](features.md).
@@ -25,7 +27,7 @@ Skipping onboarding is fine — everything below works from the Settings window.
 2. Choose the wallpaper type: **Video / Web / Scene** (Scene is Pro-only; Lite shows only what it can render).
 3. Pick the source in the preview area — file picker or drag & drop onto the display row.
 4. Tune in the inspector:
-   - **Wallpaper** tab — volume/mute, frame-rate cap (15/24/30/60/off), fit mode, video color space (including HDR), playback speed; web pages add JavaScript, tracker blocking, custom CSS, and auto-refresh; scenes add cursor parallax and click interaction.
+   - **Wallpaper** tab — volume/mute, frame-rate cap (15/24/30/60/off), fit mode, video color space (including HDR), playback speed; web pages add JavaScript, tracker blocking, custom CSS, and auto-refresh; scenes add cursor parallax, click interaction, and a **Preset** row.
    - **Overlays** tab — particle effects (snow, rain, sakura, fireflies…), weather-reactive mode, and the Monitor board. Overlays stack on top of any wallpaper type.
 5. State persists as you interact — there is no separate save step.
 
@@ -64,14 +66,39 @@ toggle mouse interaction, show/hide all wallpapers, reload all wallpapers.
 The Steam Workshop page needs one-time setup, guided in-app:
 
 1. Open **Steam Workshop** in the sidebar — the **Steam connection** page lists each prerequisite and offers auto-configuration.
-2. **SteamCMD** — Loomscreen detects (or helps install) Valve's command-line tool and verifies its signature. Downloads run through it with your own Steam account; discovered accounts with cached logins are offered automatically.
+2. **SteamCMD** — downloads run through Valve's command-line tool using your own
+   Steam account; accounts with a cached login are discovered and offered
+   automatically. Three ways to get the tool, all on the Steam connection page:
+   - **Install SteamCMD…** — Loomscreen installs a managed copy. It fetches
+     Valve's package manifest, checks every download against the manifest's
+     SHA-256, unpacks it, and keeps the result only if the binary's code
+     signature and team identifier are Valve's. If any step fails it rolls back
+     and leaves your previous setup alone.
+   - **Locate automatically** — finds an existing install (Homebrew,
+     `/usr/local/bin`, and friends).
+   - **Choose SteamCMD…** — point at a binary yourself. It goes through the same
+     signature and checksum gates as everything else, on every run rather than
+     only when you pick it.
 3. **Steam Web API key** — needed only for *browsing* the Workshop in-app. Get one free at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey); Loomscreen stores it in its sandboxed Application Support directory with owner-only permissions and does not intentionally sync it.
 4. **Engine assets** — scenes reference shared Wallpaper Engine assets; Loomscreen downloads them once via SteamCMD and can check for updates on launch (**Settings → Workshop**).
 
 Then browse, filter, and download scenes directly, or link a local scene folder
 from disk — assets are read in place, not copied.
 
-## 9) After the first day
+## 9) Scene presets (Pro)
+
+A wallpaper's page in the Workshop also lists the **presets** its community has
+published — a preset is a saved set of that wallpaper's own settings, plus the
+colour correction and volume its author chose. Download one and it appears in
+the **Preset** row of the scene settings card.
+
+The row separates *Saved by you* from *From the Workshop*, and its menu offers
+**Save current values as a preset…**, **Rename…**, and **Delete preset**. A
+preset is a layer over the scene's defaults, and your own tweaks are a layer on
+top of that — so anything you change afterwards stays yours, and deleting the
+preset keeps your changes.
+
+## 10) After the first day
 
 - Revisit **Settings → Performance**: pause rules (full-screen, battery, Low Power Mode, occlusion), per-app exceptions — including **never pause** for apps that should always keep the wallpaper alive — and the video RAM preload budget.
 - Export a `.lwconfig` backup from **Settings → Backup & Restore**.
