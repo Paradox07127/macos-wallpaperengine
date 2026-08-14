@@ -8,7 +8,7 @@ public protocol BookmarkPersisting {
     func save(_ bookmarks: [WallpaperBookmark])
 }
 
-/// Saved wallpaper shortcuts. App-wired `.shared` lives in BookmarkStore+Shared.
+/// Saved wallpaper shortcuts. App-wired `.shared` lives in SettingsManagerStoreBindings.swift.
 @MainActor
 @Observable
 public final class BookmarkStore {

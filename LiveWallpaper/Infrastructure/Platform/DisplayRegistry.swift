@@ -1,6 +1,14 @@
 import AppKit
 
 @MainActor
+protocol DisplayRegistering: AnyObject {
+    func currentScreens() -> [Screen]
+    func findNSScreen(for screenID: CGDirectDisplayID) -> NSScreen?
+}
+
+extension DisplayRegistry: DisplayRegistering {}
+
+@MainActor
 final class DisplayRegistry {
     func currentScreens() -> [Screen] {
         NSScreen.screens.map(Screen.init(nsScreen:))

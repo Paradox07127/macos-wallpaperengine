@@ -275,7 +275,12 @@
 
         @Test("Production timeout/fail-close wiring has one bounded quarantine owner")
         func productionWiringSourceOracle() throws {
+            // Two files since the layer-script engine was split out of the
+            // runtime; the wiring contract below is on the subsystem, not on
+            // whichever half a given call site happens to live in.
             let runtime = try Self.read("LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift")
+                + "\n"
+                + Self.read("LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift")
             let resources = try Self.read("LiveWallpaper/Runtime/Scene/WPESceneScriptResourceBudget.swift")
             let rendererContainment = try Self.read(
                 "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptContainment.swift"
