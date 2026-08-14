@@ -1,7 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {},
+    "" : {
+
+    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -28,35 +30,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "· %lld 核 GPU"
-          }
-        }
-      }
-    },
-    "Removing SteamCMD…" : {
-      "comment" : "SteamCMD step detail while the connector deletes the managed install.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Removing SteamCMD…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD を削除中…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在删除 SteamCMD…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在刪除 SteamCMD…"
           }
         }
       }
@@ -32447,6 +32420,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從此 Mac 移除已儲存的金鑰。在你前往 steamcommunity.com/dev/apikey 撤銷之前，該金鑰仍會在你的 Steam 帳戶下保持有效。"
+          }
+        }
+      }
+    },
+    "Removing SteamCMD…" : {
+      "comment" : "SteamCMD step detail while the connector deletes the managed install.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removing SteamCMD…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD を削除中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在删除 SteamCMD…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在刪除 SteamCMD…"
           }
         }
       }

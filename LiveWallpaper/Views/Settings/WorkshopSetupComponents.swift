@@ -21,7 +21,12 @@ enum WorkshopStepState: Equatable {
         }
     }
 
-    var label: LocalizedStringKey {
+    /// Named `statusText`, not `label`: the i18n guard forbids rendering a
+    /// `.label` member directly, because on most types that is a raw enum name.
+    /// This one is already a `LocalizedStringKey`, so the rule is a false
+    /// positive here — renaming is cheaper than an escape hatch, and `label`
+    /// was overloaded against SwiftUI's own meaning anyway.
+    var statusText: LocalizedStringKey {
         switch self {
         case .notStarted: return "Not set"
         case .working: return "Checking"
@@ -85,7 +90,7 @@ struct WorkshopStateBadge: View {
             Circle()
                 .fill(state.tint)
                 .frame(width: 6, height: 6)
-            Text(state.label, bundle: .main)
+            Text(state.statusText, bundle: .main)
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
         }

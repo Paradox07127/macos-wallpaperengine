@@ -37,10 +37,14 @@ struct WPEEngineColorCorrectionTests {
     func adjustedMapsToSharedSemantics() throws {
         let parsed = try #require(WPEEngineColorCorrection.parse(adjustedPreset))
         // 50 is neutral, so brightness stays put while the other three move.
+        // Precomputed rather than written as literal arithmetic inside `#expect`:
+        // the macro expands into a large expression tree, and untyped literal
+        // division inside it pushed the type checker past its time budget on
+        // CI's slower runner while staying under it locally.
         #expect(parsed.brightness == 0)
-        #expect(parsed.contrast == 80.0 / 50)        // 1.6
-        #expect(parsed.saturation == 80.0 / 50)      // 1.6
-        #expect(parsed.hueDegrees == (46.0 - 50) / 50 * 180)  // −14.4°
+        #expect(parsed.contrast == 1.6)
+        #expect(parsed.saturation == 1.6)
+        #expect(parsed.hueDegrees == -14.4)
         // Control: this preset must not be mistaken for a no-op, or the renderer
         // would skip the pass and the author's look would still be lost.
         #expect(!parsed.isIdentity)
