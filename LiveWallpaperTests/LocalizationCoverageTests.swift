@@ -116,7 +116,7 @@ struct LocalizationCoverageTests {
         #expect(source.contains("return \"That file type isn't supported. Pick a video, web page, or scene.\""))
         #expect(
             Self.hasDirectOnboardingSceneCapabilityWiring(source),
-            "OnboardingPickerView.sceneCapable must directly use the tested .scene catalog policy"
+            "PickerView.sceneCapable must directly use the tested .scene catalog policy"
         )
         #expect(
             Self.hasDirectOnboardingSceneCapabilityPolicy(source),

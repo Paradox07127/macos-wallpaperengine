@@ -11,7 +11,7 @@ struct SuspendEnergyTests {
 
     @Test("Pausing the only lease tears the pipeline down, sources and all")
     func pauseStopsPipeline() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietSystemOptions())
         await lease.waitUntilSettled()
 
@@ -28,7 +28,7 @@ struct SuspendEnergyTests {
 
     @Test("A paused lease is kept, not released — resume stays cheap")
     func pauseRetainsLease() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietSystemOptions())
         await lease.setPaused(true).value
 
@@ -40,7 +40,7 @@ struct SuspendEnergyTests {
 
     @Test("Resuming a paused lease brings the pipeline back")
     func resumeRestartsPipeline() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietSystemOptions())
         await lease.setPaused(true).value
         #expect(await runtime.debugActiveSourceCount == 0)
@@ -54,7 +54,7 @@ struct SuspendEnergyTests {
 
     @Test("One suspended display never starves another that is still visible")
     func pausedLeaseDoesNotStopOtherDisplays() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let suspended = runtime.makeLeaseSlot().acquire(options: quietSystemOptions(kinds: [.processes]))
         let visible = runtime.makeLeaseSlot().acquire(options: quietSystemOptions(kinds: [.network]))
         await suspended.waitUntilSettled()
@@ -65,7 +65,7 @@ struct SuspendEnergyTests {
         #expect(await runtime.debugActiveSourceCount == 1)
         let options = await runtime.debugActiveOptions
         #expect(options?.activeWidgetKinds == [.network])
-        #expect(MonitorRuntime.systemOptions(for: options?.activeWidgetKinds ?? []).topProcesses == false)
+        #expect(Runtime.systemOptions(for: options?.activeWidgetKinds ?? []).topProcesses == false)
 
         await suspended.release().value
         await visible.release().value
@@ -73,7 +73,7 @@ struct SuspendEnergyTests {
 
     @Test("A live-config refresh does not silently un-pause a suspended lease")
     func updateOptionsPreservesPause() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietSystemOptions())
         await lease.setPaused(true).value
 
@@ -87,7 +87,7 @@ struct SuspendEnergyTests {
 
     @Test("An immediate pause is sequenced behind its own acquire")
     func immediatePauseIsHonoured() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietSystemOptions())
 
         await lease.setPaused(true).value
@@ -100,7 +100,7 @@ struct SuspendEnergyTests {
 
     @Test("Pausing an already-released lease cannot resurrect it")
     func pauseAfterReleaseDoesNotResurrect() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietSystemOptions())
         await lease.release().value
 
@@ -111,7 +111,7 @@ struct SuspendEnergyTests {
 
     @Test("A pause trailing its own release cannot poison the next lease on that ID")
     func pauseAfterReleaseCannotPoisonReuse() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let slot = runtime.makeLeaseSlot()
         let oldLease = slot.acquire(options: quietSystemOptions())
         await oldLease.release().value
@@ -130,7 +130,7 @@ struct SuspendEnergyTests {
     @Test("Every lease paused tears the samplers down but keeps the grants open")
     func pauseKeepsGrantsOpen() async {
         let spy = GrantSpy()
-        let runtime = MonitorRuntime(grants: spy.access)
+        let runtime = Runtime(grants: spy.access)
         let lease = runtime.makeLeaseSlot().acquire(options: agentOptions())
         await lease.waitUntilSettled()
         #expect(await spy.resolveCount == 1)
@@ -152,7 +152,7 @@ struct SuspendEnergyTests {
     @Test("Releasing the last lease while it is paused still closes the grants")
     func releaseWhilePausedClosesGrants() async {
         let spy = GrantSpy()
-        let runtime = MonitorRuntime(grants: spy.access)
+        let runtime = Runtime(grants: spy.access)
         let lease = runtime.makeLeaseSlot().acquire(options: agentOptions())
         await lease.setPaused(true).value
         #expect(await spy.releaseCount == 0)
@@ -164,7 +164,7 @@ struct SuspendEnergyTests {
     @Test("A system-only lease holds no grants")
     func systemOnlyLeaseHoldsNoGrants() async {
         let spy = GrantSpy()
-        let runtime = MonitorRuntime(grants: spy.access)
+        let runtime = Runtime(grants: spy.access)
         let lease = runtime.makeLeaseSlot().acquire(options: quietSystemOptions())
         await lease.waitUntilSettled()
 
@@ -175,7 +175,7 @@ struct SuspendEnergyTests {
     @MainActor
     @Test("The board host publishes suspend independently of reduce-motion")
     func boardHostCarriesSuspendFlag() {
-        let host = BoardHostView(
+        let host = HostView(
             frame: NSRect(x: 0, y: 0, width: 800, height: 600),
             configuration: MonitorBoardConfiguration(widgets: [], reduceMotionOverride: false)
         )

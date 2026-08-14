@@ -25,7 +25,7 @@ private struct AIEngineContent: View {
     let cellHeight: CGFloat
 
     private var system: MonitorSystemSnapshot? { context.snapshot.system }
-    private var scale: MonitorDesign.TypeScale { .init(cellHeight: cellHeight) }
+    private var scale: Design.TypeScale { .init(cellHeight: cellHeight) }
 
     /// The honest tri-state.
     private var state: Widget.DisplayState {
@@ -57,17 +57,17 @@ private struct AIEngineContent: View {
         if state == .unsampled {
             Text(verbatim: "-")
                 .tracking(0.5)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
         } else {
             HStack(spacing: 6) {
                 if let right = headerRightLabel {
                     Text(verbatim: right)
-                        .font(MonitorDesign.labelFont(size: scale.label))
-                        .foregroundStyle(MonitorDesign.inkMuted)
+                        .font(Design.labelFont(size: scale.label))
+                        .foregroundStyle(Design.inkMuted)
                 }
                 if hasANEFootprint {
                     Circle()
-                        .fill(MonitorDesign.signalAmber)
+                        .fill(Design.signalAmber)
                         .frame(width: 6, height: 6)
                 }
             }
@@ -100,9 +100,9 @@ private struct AIEngineContent: View {
             footprintIndicator(heroFactor: 0.72)
             topApp
             Text("ri_neural_footprint · no util", bundle: .main)
-                .font(MonitorDesign.captionFont(size: scale.caption * 0.92))
+                .font(Design.captionFont(size: scale.caption * 0.92))
                 .tracking(scale.caption * 0.05)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .monitorChip(scale)
@@ -117,16 +117,16 @@ private struct AIEngineContent: View {
             Spacer(minLength: 0)
             HStack(spacing: 7) {
                 Circle()
-                    .fill(MonitorDesign.signalIdle.opacity(0.6))
+                    .fill(Design.signalIdle.opacity(0.6))
                     .frame(width: 9, height: 9)
                 Text("ANE Memory", bundle: .main)
-                    .font(MonitorDesign.heroFont(size: scale.hero * 0.5))
+                    .font(Design.heroFont(size: scale.hero * 0.5))
                     .tracking(scale.label * 0.12)
-                    .foregroundStyle(MonitorDesign.inkMuted)
+                    .foregroundStyle(Design.inkMuted)
             }
             Text(verbatim: "-")
-                .font(MonitorDesign.captionFont(size: scale.caption))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.captionFont(size: scale.caption))
+                .foregroundStyle(Design.inkFaint)
                 .multilineTextAlignment(.center)
             Spacer(minLength: 0)
         }
@@ -181,8 +181,8 @@ private struct AIEngineContent: View {
                 largeFootprintHeader
                 if let list = processes {
                     Rectangle()
-                        .fill(MonitorDesign.hairline)
-                        .frame(height: MonitorDesign.hairlineWidth)
+                        .fill(Design.hairline)
+                        .frame(height: Design.hairlineWidth)
                         .opacity(0.7)
                     processList(
                         Widget.rankedProcesses(list),
@@ -211,9 +211,9 @@ private struct AIEngineContent: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             Text("ri_neural_footprint · no util", bundle: .main)
-                .font(MonitorDesign.captionFont(size: scale.caption * 0.92))
+                .font(Design.captionFont(size: scale.caption * 0.92))
                 .tracking(scale.caption * 0.05)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
                 .monitorChip(scale)
             Spacer(minLength: 0)
         }
@@ -226,12 +226,12 @@ private struct AIEngineContent: View {
         HStack(spacing: 7) {
             HStack(spacing: 7) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(MonitorDesign.neuralDim)
+                    .fill(Design.neuralDim)
                     .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
                     .opacity(0.8)
                 Text("ri_neural_footprint · no util", bundle: .main)
-                    .font(MonitorDesign.captionFont(size: scale.caption * 0.9))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.captionFont(size: scale.caption * 0.9))
+                    .foregroundStyle(Design.inkFaint)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -245,7 +245,7 @@ private struct AIEngineContent: View {
     private func footprintIndicator(heroFactor: CGFloat) -> some View {
         HStack(spacing: scale.hero * heroFactor * 0.28) {
             Circle()
-                .fill(hasANEFootprint ? MonitorDesign.neural : MonitorDesign.signalIdle)
+                .fill(hasANEFootprint ? Design.neural : Design.signalIdle)
                 .frame(width: scale.hero * heroFactor * 0.42,
                        height: scale.hero * heroFactor * 0.42)
             footprintValue(totalFootprintBytes ?? 0, size: scale.hero * heroFactor)
@@ -258,19 +258,19 @@ private struct AIEngineContent: View {
             if hasANEFootprint, let busiest = Widget.busiestProcess(processes ?? []) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(verbatim: busiest.name)
-                        .font(MonitorDesign.subFont(size: scale.caption))
-                        .foregroundStyle(MonitorDesign.inkPrimary)
+                        .font(Design.subFont(size: scale.caption))
+                        .foregroundStyle(Design.inkPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Text(verbatim: "·")
-                        .font(MonitorDesign.captionFont(size: scale.caption))
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .font(Design.captionFont(size: scale.caption))
+                        .foregroundStyle(Design.inkFaint)
                     footprintValue(busiest.footprintBytes, size: scale.caption)
                 }
             } else {
                 Text("No attributed memory", bundle: .main)
-                    .font(MonitorDesign.captionFont(size: scale.caption))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.captionFont(size: scale.caption))
+                    .foregroundStyle(Design.inkFaint)
             }
         }
         .monitorChip(scale)
@@ -280,11 +280,11 @@ private struct AIEngineContent: View {
         let parts = Widget.splitBytes(bytes)
         return (Text(verbatim: parts.value)
             + Text(verbatim: parts.unit)
-                .font(MonitorDesign.labelFont(size: size * 0.7))
-                .foregroundStyle(MonitorDesign.inkFaint))
-            .font(MonitorDesign.subFont(size: size))
+                .font(Design.labelFont(size: size * 0.7))
+                .foregroundStyle(Design.inkFaint))
+            .font(Design.subFont(size: size))
             .monospacedDigit()
-            .foregroundStyle(MonitorDesign.neuralValue)
+            .foregroundStyle(Design.neuralValue)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
     }
@@ -298,9 +298,9 @@ private struct AIEngineContent: View {
                 Text(verbatim: "ANE MEM")
                     .frame(width: memColumnWidth, alignment: .trailing)
             }
-            .font(MonitorDesign.labelFont(size: scale.label * 0.98))
+            .font(Design.labelFont(size: scale.label * 0.98))
             .tracking(scale.label * 0.08)
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .foregroundStyle(Design.inkFaint)
 
             ForEach(Array(list.enumerated()), id: \.offset) { _, proc in
                 processRow(proc, topFootprint: top, barHeight: barHeight)
@@ -313,12 +313,12 @@ private struct AIEngineContent: View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(MonitorDesign.neuralDim)
+                    .fill(Design.neuralDim)
                     .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
                     .opacity(0.85)
                 Text(verbatim: proc.name)
                     .font(.system(size: scale.caption, weight: .medium, design: .rounded))
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .foregroundStyle(Design.inkPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -373,7 +373,7 @@ extension AIEngineWidgetView {
     }
 
     nonisolated static func splitBytes(_ bytes: UInt64) -> (value: String, unit: String) {
-        splitFormatted(MonitorFormat.bytes(bytes))
+        splitFormatted(Format.bytes(bytes))
     }
 
     nonisolated static func splitFormatted(_ text: String) -> (value: String, unit: String) {
@@ -393,7 +393,7 @@ private struct ANEBar: View {
             let clamped = min(1, max(0, fraction))
             ZStack(alignment: .leading) {
                 Capsule(style: .continuous)
-                    .fill(MonitorDesign.track2)
+                    .fill(Design.track2)
                     .overlay(
                         Capsule(style: .continuous)
                             .strokeBorder(Color.black.opacity(0.25), lineWidth: 1)
@@ -401,7 +401,7 @@ private struct ANEBar: View {
                 Capsule(style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [MonitorDesign.oklch(0.54, 0.06, 300), MonitorDesign.neural],
+                            colors: [Design.oklch(0.54, 0.06, 300), Design.neural],
                             startPoint: .leading, endPoint: .trailing
                         )
                     )
@@ -412,7 +412,7 @@ private struct ANEBar: View {
 }
 
 // MARK: - ANE memory palette
-private extension MonitorDesign {
+private extension Design {
     static let neural = oklch(0.72, 0.11, 300)
     static let neuralDim = oklch(0.60, 0.07, 300)
     static let neuralValue = oklch(0.85, 0.055, 300)
@@ -469,7 +469,7 @@ private func defaultANEProcesses() -> [MonitorANEProcess] {
             .frame(width: 170, height: 170)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("ANE Memory · M") {
@@ -484,7 +484,7 @@ private func defaultANEProcesses() -> [MonitorANEProcess] {
             .frame(width: 364, height: 170)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("ANE Memory · L") {
@@ -496,6 +496,6 @@ private func defaultANEProcesses() -> [MonitorANEProcess] {
             .frame(width: 364, height: 376)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 #endif

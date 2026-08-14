@@ -20,9 +20,9 @@ struct MonitorBoardClock: TimelineSchedule {
     }
 }
 
-struct BoardRootView: View {
-    @ObservedObject var model: BoardInteractionModel
-    @ObservedObject var data: BoardDataModel
+struct RootView: View {
+    @ObservedObject var model: InteractionModel
+    @ObservedObject var data: DataModel
     /// History is @Published inside the data model — observe it so tiles re-render on sample.
     @ObservedObject private var history: MonitorHistoryStore
     @Environment(\.monitorReduceMotion) private var reduceMotion
@@ -32,7 +32,7 @@ struct BoardRootView: View {
     @State private var addButtonFrame: CGRect = .zero
     private let nameOnlyTiles: Bool
 
-    init(model: BoardInteractionModel, data: BoardDataModel, nameOnlyTiles: Bool = false) {
+    init(model: InteractionModel, data: DataModel, nameOnlyTiles: Bool = false) {
         self.model = model
         self.data = data
         self.history = data.historyStore
@@ -193,7 +193,7 @@ struct BoardRootView: View {
     }
 
     private func rawRect(_ placement: MonitorWidgetPlacement, geometry: MonitorBoardGeometry) -> CGRect {
-        let origin = BoardLayoutEngine.pixelOrigin(
+        let origin = LayoutEngine.pixelOrigin(
             normalized: CGPoint(x: placement.x, y: placement.y), boardSize: geometry.boardSize
         )
         let footprint = geometry.pixelSize(for: placement.kind, size: placement.size)
@@ -247,7 +247,7 @@ struct BoardRootView: View {
         draggedRect: CGRect,
         geometry: MonitorBoardGeometry
     ) -> some View {
-        let seg = BoardLayoutEngine.guideSegment(guide, draggedRect: draggedRect, geometry: geometry)
+        let seg = LayoutEngine.guideSegment(guide, draggedRect: draggedRect, geometry: geometry)
         Path { path in
             path.move(to: seg.start)
             path.addLine(to: seg.end)
@@ -330,7 +330,7 @@ struct BoardRootView: View {
 // MARK: - Empty-space tap
 
 private struct EmptyTapModifier: ViewModifier {
-    @ObservedObject var model: BoardInteractionModel
+    @ObservedObject var model: InteractionModel
 
     func body(content: Content) -> some View {
         content

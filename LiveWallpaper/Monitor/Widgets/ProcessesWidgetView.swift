@@ -15,7 +15,7 @@ struct ProcessesWidgetView: View {
         GeometryReader { geo in
             let rowSpan: CGFloat = context.placement.size == .large ? 2 : 1
             let scaleHeight = geo.size.height / (2 * rowSpan)
-            let scale = MonitorDesign.TypeScale(cellHeight: scaleHeight)
+            let scale = Design.TypeScale(cellHeight: scaleHeight)
             let rows = displayedProcesses(
                 frameHeight: geo.size.height, scaleHeight: scaleHeight
             )
@@ -33,16 +33,16 @@ struct ProcessesWidgetView: View {
 
     @ViewBuilder
     private func headerStatus(
-        rows: [MonitorProcessSample], scale: MonitorDesign.TypeScale
+        rows: [MonitorProcessSample], scale: Design.TypeScale
     ) -> some View {
         if !rows.isEmpty {
             HStack(spacing: 3) {
                 Text("top")
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
                 Text(verbatim: "\(rows.count)")
-                    .foregroundStyle(MonitorDesign.inkMuted)
+                    .foregroundStyle(Design.inkMuted)
             }
-            .font(MonitorDesign.subFont(size: scale.label))
+            .font(Design.subFont(size: scale.label))
         }
     }
 
@@ -50,7 +50,7 @@ struct ProcessesWidgetView: View {
 
     @ViewBuilder
     private func content(
-        rows: [MonitorProcessSample], scale: MonitorDesign.TypeScale
+        rows: [MonitorProcessSample], scale: Design.TypeScale
     ) -> some View {
         if rows.isEmpty {
             quietState(scale: scale)
@@ -63,19 +63,19 @@ struct ProcessesWidgetView: View {
     }
 
     /// Honest empty treatment: the top-process sampler only runs when enabled, so an absent/empty list means "not sampling", not "no processes".
-    private func quietState(scale: MonitorDesign.TypeScale) -> some View {
+    private func quietState(scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading) {
             Spacer(minLength: 0)
             Text("no process readings")
-                .font(MonitorDesign.captionFont(size: scale.caption))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.captionFont(size: scale.caption))
+                .foregroundStyle(Design.inkFaint)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     private func processTable(
-        rows: [MonitorProcessSample], scale: MonitorDesign.TypeScale, compact: Bool
+        rows: [MonitorProcessSample], scale: Design.TypeScale, compact: Bool
     ) -> some View {
         let maxCPU = max(rows.map(\.cpuPercent).max() ?? 0, .ulpOfOne)
         let base = scale.caption
@@ -104,7 +104,7 @@ struct ProcessesWidgetView: View {
 
     /// `.ph` — column labels, uppercase/tracked, with a hairline underline.
     private func headerRow(
-        scale: MonitorDesign.TypeScale,
+        scale: Design.TypeScale,
         cpuColWidth: CGFloat, memColWidth: CGFloat, colGap: CGFloat
     ) -> some View {
         HStack(spacing: colGap) {
@@ -118,39 +118,39 @@ struct ProcessesWidgetView: View {
         .padding(.bottom, scale.caption * 0.3)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(MonitorDesign.hairline.opacity(0.5))
-                .frame(height: MonitorDesign.hairlineWidth)
+                .fill(Design.hairline.opacity(0.5))
+                .frame(height: Design.hairlineWidth)
         }
     }
 
     @ViewBuilder
     private func columnHeader(
-        _ text: String, systemImage: String, columnWidth: CGFloat, scale: MonitorDesign.TypeScale
+        _ text: String, systemImage: String, columnWidth: CGFloat, scale: Design.TypeScale
     ) -> some View {
         if Self.headerFitsText(columnWidth: columnWidth, labelSize: scale.label) {
             columnLabel(text, scale: scale)
         } else {
             Image(systemName: systemImage)
                 .font(.system(size: scale.label, weight: .semibold))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
                 .accessibilityLabel(Text(verbatim: text))
         }
     }
 
-    private func columnLabel(_ text: String, scale: MonitorDesign.TypeScale) -> some View {
+    private func columnLabel(_ text: String, scale: Design.TypeScale) -> some View {
         Text(verbatim: text.uppercased())
-            .font(MonitorDesign.labelFont(size: scale.label))
+            .font(Design.labelFont(size: scale.label))
             .tracking(scale.label * 0.10)
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .foregroundStyle(Design.inkFaint)
     }
 
     /// A column label whose text is a localizable word (the catalog key is the
     /// English constant); uppercased for display (a no-op for non-Latin scripts).
-    private func localizedColumnLabel(_ key: String, scale: MonitorDesign.TypeScale) -> some View {
+    private func localizedColumnLabel(_ key: String, scale: Design.TypeScale) -> some View {
         Text(LocalizedStringKey(key))
-            .font(MonitorDesign.labelFont(size: scale.label))
+            .font(Design.labelFont(size: scale.label))
             .tracking(scale.label * 0.10)
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .foregroundStyle(Design.inkFaint)
             .textCase(.uppercase)
             .lineLimit(1)
     }
@@ -158,7 +158,7 @@ struct ProcessesWidgetView: View {
     /// `.pr` — one process: name cell (1fr) · CPU cell (bar + value) · MEM cell.
     private func processRow(
         _ proc: MonitorProcessSample, maxCPU: Double,
-        scale: MonitorDesign.TypeScale,
+        scale: Design.TypeScale,
         cpuBarWidth: CGFloat, cpuValueWidth: CGFloat,
         memColWidth: CGFloat, colGap: CGFloat
     ) -> some View {
@@ -169,27 +169,27 @@ struct ProcessesWidgetView: View {
                 proc.cpuPercent, maxCPU: maxCPU, scale: scale,
                 barWidth: cpuBarWidth, valueWidth: cpuValueWidth
             )
-            Text(verbatim: MonitorFormat.bytes(proc.memBytes))
-                .font(MonitorDesign.captionFont(size: scale.caption * 0.94))
+            Text(verbatim: Format.bytes(proc.memBytes))
+                .font(Design.captionFont(size: scale.caption * 0.94))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
                 .minimumScaleFactor(0.7)
                 .frame(width: memColWidth, alignment: .trailing)
         }
-        .font(MonitorDesign.captionFont(size: scale.caption))
+        .font(Design.captionFont(size: scale.caption))
         .lineLimit(1)
     }
 
     /// `.pn` — leading square glyph + truncating name (names truncate rather
     /// than shrink, so the name column stays optically even down the table).
-    private func nameCell(_ name: String, scale: MonitorDesign.TypeScale) -> some View {
+    private func nameCell(_ name: String, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.caption * 0.5) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(MonitorDesign.inkFaint.opacity(0.7))
+                .fill(Design.inkFaint.opacity(0.7))
                 .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
             Text(verbatim: name)
-                .font(MonitorDesign.captionFont(size: scale.caption))
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .font(Design.captionFont(size: scale.caption))
+                .foregroundStyle(Design.inkPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
@@ -197,18 +197,18 @@ struct ProcessesWidgetView: View {
 
     /// `.pcpu` — the inline bar (fills to its share of the busiest row; the CPU widget's procRows track-plus-overlay idiom at its 2.6em width) + the cpu% readout (amber, tabular, fixed-width slot so digits align).
     private func cpuCell(
-        _ cpuPercent: Double, maxCPU: Double, scale: MonitorDesign.TypeScale,
+        _ cpuPercent: Double, maxCPU: Double, scale: Design.TypeScale,
         barWidth: CGFloat, valueWidth: CGFloat
     ) -> some View {
         let fraction = Self.barFraction(cpuPercent, maxCPU: maxCPU)
         return HStack(spacing: scale.caption * 0.45) {
             Capsule(style: .continuous)
-                .fill(MonitorDesign.track2)
+                .fill(Design.track2)
                 .overlay(alignment: .leading) {
                     Capsule(style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [MonitorDesign.oklch(0.6, 0.05, 78), MonitorDesign.signalAmber],
+                                colors: [Design.oklch(0.6, 0.05, 78), Design.signalAmber],
                                 startPoint: .leading, endPoint: .trailing
                             )
                         )
@@ -217,9 +217,9 @@ struct ProcessesWidgetView: View {
                 .frame(width: barWidth, height: max(scale.caption * 0.42, 4))
 
             Text(verbatim: Self.cpuText(cpuPercent))
-                .font(MonitorDesign.captionFont(size: scale.caption * 0.94))
+                .font(Design.captionFont(size: scale.caption * 0.94))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.signalAmber)
+                .foregroundStyle(Design.signalAmber)
                 .minimumScaleFactor(0.7)
                 .frame(width: valueWidth, alignment: .trailing)
         }
@@ -282,11 +282,11 @@ struct ProcessesWidgetView: View {
     }
 
     nonisolated static func rowCapacity(frameHeight: CGFloat, scaleHeight: CGFloat) -> Int {
-        let scale = MonitorDesign.TypeScale(cellHeight: scaleHeight)
+        let scale = Design.TypeScale(cellHeight: scaleHeight)
         let line: CGFloat = 1.25
-        let shellChrome = MonitorDesign.contentInsetV * 2
+        let shellChrome = Design.contentInsetV * 2
             + scale.label * line + scale.label * 0.5
-        let tableHeader = scale.label * line + scale.caption * 0.3 + MonitorDesign.hairlineWidth
+        let tableHeader = scale.label * line + scale.caption * 0.3 + Design.hairlineWidth
         let rowPitch = scale.caption * line + scale.caption * 0.34
         let available = frameHeight - shellChrome - tableHeader
         guard rowPitch > 0, available > 0 else { return 0 }
@@ -296,7 +296,7 @@ struct ProcessesWidgetView: View {
     /// Whether a CPU/MEM header column is wide enough to set its 3-letter acronym at `labelSize` without truncating — the threshold the icon-fallback contingency switches on.
     nonisolated static func headerFitsText(columnWidth: CGFloat, labelSize: CGFloat) -> Bool {
         let glyphWidth = labelSize * 0.62 * 3
-        let tracking = MonitorDesign.labelTracking(size: labelSize) * 2
+        let tracking = Design.labelTracking(size: labelSize) * 2
         return columnWidth >= glyphWidth + tracking
     }
 }
@@ -340,41 +340,41 @@ private func processesMockContext(
     ProcessesWidgetView(context: processesMockContext(size: .medium))
         .frame(width: 364, height: 170)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Processes M (count 12 → capacity clamps to 7)") {
     ProcessesWidgetView(context: processesMockContext(size: .medium, count: 12))
         .frame(width: 364, height: 170)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Processes M (empty)") {
     ProcessesWidgetView(context: processesMockContext(size: .medium, empty: true))
         .frame(width: 364, height: 170)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Processes L (auto row count → 12-row ceiling)") {
     ProcessesWidgetView(context: processesMockContext(size: .large))
         .frame(width: 364, height: 376)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Processes L (count override = 3)") {
     ProcessesWidgetView(context: processesMockContext(size: .large, count: 3))
         .frame(width: 364, height: 376)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Processes L (empty)") {
     ProcessesWidgetView(context: processesMockContext(size: .large, empty: true))
         .frame(width: 364, height: 376)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 #endif

@@ -21,7 +21,7 @@ private final class WPEResolutionProbeCache {
 
 /// Shared Wallpaper Engine gallery card used by both the Scene tab and the
 /// Installed library grid.
-struct WPEHistoryRow: View {
+struct HistoryRow: View {
     let entry: WPEHistoryEntry
     let isActive: Bool
     var allowsInlineApply: Bool = false

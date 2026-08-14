@@ -52,7 +52,7 @@ struct PaneView: View {
             consumePendingDeepLink()
         }
         .sheet(isPresented: $isShowingOnboarding) {
-            WorkshopOnboardingSheet(
+            OnboardingSheet(
                 onConfigureOnline: {
                     if !services.hasWebAPIKey { isShowingKeyEntry = true }
                 },

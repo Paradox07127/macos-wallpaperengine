@@ -38,7 +38,7 @@ struct WPEInstalledInspectorContent: View {
     @State private var showingApplyPopover = false
     /// WPE metadata read from the item's local `project.json` — no Steam API.
     /// nil until the off-main read completes; reloaded when the entry changes.
-    @State private var localInfo: WPELocalProjectInfo?
+    @State private var localInfo: LocalProjectInfo?
     @State private var localInfoLoadOwner = WorkshopInstalledLocalInfoLoadOwner()
     @State private var descriptionExpanded = false
 

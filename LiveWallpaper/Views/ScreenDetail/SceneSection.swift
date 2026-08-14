@@ -3,7 +3,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 @MainActor
-struct WPESceneSection: View {
+struct SceneSection: View {
     let screen: Screen
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
@@ -119,7 +119,7 @@ struct WPESceneSection: View {
                     spacing: 16
                 ) {
                     ForEach(recentImports.prefix(recentGridCap)) { entry in
-                        WPEHistoryRow(
+                        HistoryRow(
                             entry: entry,
                             isActive: activeWorkshopID == entry.id,
                             onTap: { handleTap(entry: entry) },
@@ -149,9 +149,9 @@ struct WPESceneSection: View {
                     .accessibilityHint(Text("Return to the recent linked projects grid"))
                     Spacer()
                 }
-                WPEFallbackCard(
+                FallbackCard(
                     origin: entry.origin,
-                    reason: WPEFallbackCard.reason(for: entry.origin)
+                    reason: FallbackCard.reason(for: entry.origin)
                 )
             }
             .padding(24)
@@ -173,7 +173,7 @@ struct WPESceneSection: View {
            let origin = configuration.wpeOrigin {
             let session = screen.runtimeSession as? SceneWallpaperSession
             // Chrome-free, and NOT scrolled: like the video preview area the 16:9 hero must stay height-bounded by the viewport, otherwise a wide window grows it unboundedly tall and introduces vertical scroll.
-            WPESceneDetailView(
+            SceneDetailView(
                 origin: origin,
                 descriptor: descriptor,
                 session: session

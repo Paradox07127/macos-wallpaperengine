@@ -50,7 +50,7 @@ struct PowerWidgetView: View {
 
     @ViewBuilder
     private func smallBody(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         VStack(spacing: max(6, cellHeight * 0.06)) {
             Spacer(minLength: 0)
             glyph(width: model.hasBattery ? 100 : 72, height: 32)
@@ -58,9 +58,9 @@ struct PowerWidgetView: View {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 hero(size: model.hasBattery ? scale.hero * 0.86 : scale.hero * 0.7)
                 Text(LocalizedStringKey(model.status))
-                    .font(MonitorDesign.labelFont(size: scale.label))
-                    .tracking(MonitorDesign.labelTracking(size: scale.label))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.labelFont(size: scale.label))
+                    .tracking(Design.labelTracking(size: scale.label))
+                    .foregroundStyle(Design.inkFaint)
                     .textCase(.uppercase)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -74,7 +74,7 @@ struct PowerWidgetView: View {
 
     @ViewBuilder
     private func mediumBody(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         let accessories = model.displayAccessories()
         VStack(alignment: .leading, spacing: max(6, cellHeight * 0.05)) {
             Spacer(minLength: 0)   // mock `.body` justify-content:center
@@ -85,7 +85,7 @@ struct PowerWidgetView: View {
                         hero(size: model.hasBattery ? scale.hero : scale.hero * 0.82)
                         Text(LocalizedStringKey(model.status))
                             .font(.system(size: scale.caption, weight: .semibold, design: .rounded))
-                            .foregroundStyle(MonitorDesign.inkPrimary)
+                            .foregroundStyle(Design.inkPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
@@ -117,20 +117,20 @@ struct PowerWidgetView: View {
 
     /// Compact SoC-temperature chip (thermometer glyph + the user's temperature unit, band-coloured), shown in the M header's trailing corner when a reading is present.
     @ViewBuilder
-    private func temperatureChip(scale: MonitorDesign.TypeScale) -> some View {
+    private func temperatureChip(scale: Design.TypeScale) -> some View {
         if let temp = socTempC {
             HStack(spacing: scale.caption * 0.4) {
                 Image(systemName: "thermometer.medium")
                     .font(.system(size: scale.caption * 0.95))
-                    .foregroundStyle(MonitorDesign.temperatureColor(temp))
+                    .foregroundStyle(Design.temperatureColor(temp))
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
                     Text(verbatim: MonitorTemperature.valueText(temp))
-                        .font(MonitorDesign.subFont(size: scale.caption))
+                        .font(Design.subFont(size: scale.caption))
                         .monospacedDigit()
-                        .foregroundStyle(MonitorDesign.inkPrimary)
+                        .foregroundStyle(Design.inkPrimary)
                     Text(verbatim: MonitorTemperature.symbol)
-                        .font(MonitorDesign.captionFont(size: scale.caption * 0.7))
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .font(Design.captionFont(size: scale.caption * 0.7))
+                        .foregroundStyle(Design.inkFaint)
                 }
                 .lineLimit(1)
             }
@@ -153,18 +153,18 @@ struct PowerWidgetView: View {
         if let pct = model.heroPercent {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(verbatim: "\(pct)")
-                    .font(MonitorDesign.heroFont(size: size))
+                    .font(Design.heroFont(size: size))
                     .monospacedDigit()
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .foregroundStyle(Design.inkPrimary)
                 Text(verbatim: "%")
-                    .font(MonitorDesign.subFont(size: size * 0.4))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.subFont(size: size * 0.4))
+                    .foregroundStyle(Design.inkFaint)
             }
             .lineLimit(1)
         } else {
             Text(verbatim: "AC")
-                .font(MonitorDesign.heroFont(size: size))
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .font(Design.heroFont(size: size))
+                .foregroundStyle(Design.inkPrimary)
                 .lineLimit(1)
         }
     }
@@ -175,10 +175,10 @@ struct PowerWidgetView: View {
             Text(verbatim: time.value)
                 .font(.system(size: size, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .foregroundStyle(Design.inkPrimary)
             Text(LocalizedStringKey(time.suffix))
                 .font(.system(size: size, weight: .regular, design: .rounded))
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
         }
         .lineLimit(1)
         .minimumScaleFactor(0.7)
@@ -188,12 +188,12 @@ struct PowerWidgetView: View {
     private func warnChip(_ chip: MonitorPowerModel.WarnChip, size: CGFloat) -> some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(MonitorDesign.signalAmber)
+                .fill(Design.signalAmber)
                 .frame(width: size * 0.5, height: size * 0.5)
             Text(verbatim: chip.localizedText)
-                .font(MonitorDesign.labelFont(size: size))
-                .tracking(MonitorDesign.labelTracking(size: size) * 0.4)
-                .foregroundStyle(MonitorDesign.oklch(0.9, 0.03, 44))
+                .font(Design.labelFont(size: size))
+                .tracking(Design.labelTracking(size: size) * 0.4)
+                .foregroundStyle(Design.oklch(0.9, 0.03, 44))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
@@ -201,10 +201,10 @@ struct PowerWidgetView: View {
         .padding(.vertical, size * 0.24)
         .background(
             Capsule(style: .continuous)
-                .fill(MonitorDesign.oklch(0.3, 0.05, 44, alpha: 0.28))
+                .fill(Design.oklch(0.3, 0.05, 44, alpha: 0.28))
                 .overlay(
                     Capsule(style: .continuous)
-                        .strokeBorder(MonitorDesign.oklch(0.5, 0.11, 40, alpha: 0.75), lineWidth: 1)
+                        .strokeBorder(Design.oklch(0.5, 0.11, 40, alpha: 0.75), lineWidth: 1)
                 )
         )
     }
@@ -219,8 +219,8 @@ struct PowerWidgetView: View {
         .padding(.top, 5)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(MonitorDesign.hairline.opacity(0.45))
-                .frame(height: MonitorDesign.hairlineWidth)
+                .fill(Design.hairline.opacity(0.45))
+                .frame(height: Design.hairlineWidth)
         }
     }
 
@@ -230,11 +230,11 @@ struct PowerWidgetView: View {
         HStack(spacing: 7) {
             Image(systemName: MonitorPowerModel.accessorySymbol(acc.kind))
                 .font(.system(size: size * 1.05))
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
                 .frame(width: size * 1.3, alignment: .center)
             Text(verbatim: acc.name)
                 .font(.system(size: size, weight: .regular, design: .rounded))
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -255,7 +255,7 @@ struct PowerWidgetView: View {
             let clamped = min(1, max(0, percent / 100))
             ZStack(alignment: .leading) {
                 Capsule(style: .continuous)
-                    .fill(MonitorDesign.track)
+                    .fill(Design.track)
                     .overlay(
                         Capsule(style: .continuous)
                             .strokeBorder(Color.black.opacity(0.25), lineWidth: 1)
@@ -314,10 +314,10 @@ struct MonitorPowerModel {
 
     var timeLine: TimeLine? {
         if charging, let m = minutesToFull, m > 0 {
-            return TimeLine(value: MonitorFormat.countdown(m * 60), suffix: "to full")
+            return TimeLine(value: Format.countdown(m * 60), suffix: "to full")
         }
         if !charging, let m = minutesRemaining, m > 0 {
-            return TimeLine(value: MonitorFormat.countdown(m * 60), suffix: "remaining")
+            return TimeLine(value: Format.countdown(m * 60), suffix: "remaining")
         }
         return nil
     }
@@ -375,14 +375,14 @@ struct MonitorPowerModel {
 
     nonisolated static func accessoryTint(_ percent: Double) -> AccessoryTint {
         if percent < 10 {
-            return AccessoryTint(barGradient: [MonitorDesign.signalAmber, MonitorDesign.signalCoral],
-                                 label: MonitorDesign.oklch(0.9, 0.06, 40))
+            return AccessoryTint(barGradient: [Design.signalAmber, Design.signalCoral],
+                                 label: Design.oklch(0.9, 0.06, 40))
         }
         if percent < 20 {
-            return AccessoryTint(barGradient: [MonitorDesign.oklch(0.62, 0.06, 78), MonitorDesign.signalAmber],
-                                 label: MonitorDesign.oklch(0.86, 0.06, 70))
+            return AccessoryTint(barGradient: [Design.oklch(0.62, 0.06, 78), Design.signalAmber],
+                                 label: Design.oklch(0.86, 0.06, 70))
         }
-        return AccessoryTint(barGradient: [MonitorDesign.signalSage], label: MonitorDesign.inkMuted)
+        return AccessoryTint(barGradient: [Design.signalSage], label: Design.inkMuted)
     }
 }
 
@@ -451,7 +451,7 @@ private func desktopSystem() -> MonitorSystemSnapshot {
             .frame(width: 170, height: 170)
     }
     .padding(32)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("Power · M") {
@@ -464,5 +464,5 @@ private func desktopSystem() -> MonitorSystemSnapshot {
             .frame(width: 364, height: 170)
     }
     .padding(32)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

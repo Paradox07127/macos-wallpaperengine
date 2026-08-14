@@ -3,7 +3,7 @@ import AppKit
 import LiveWallpaperCore
 
 /// Interactive 24h timeline.
-struct ScheduleTimelineEditor: View {
+struct TimelineEditor: View {
     let slots: [ScheduleSlot]
     let currentHour: Int
     let palette: [Color]
@@ -381,7 +381,7 @@ struct TimelineDragSession: Equatable, Sendable {
     }
 }
 
-/// Standalone view so the resize cursor `push/pop` balances against an explicit `onDisappear` (matches `PlaylistRow`'s handle pattern).
+/// Standalone view so the resize cursor `push/pop` balances against an explicit `onDisappear` (matches `Row`'s handle pattern).
 private struct TimelineEdgeHandle<G: Gesture>: View {
     let visualWidth: CGFloat
     let hitWidth: CGFloat

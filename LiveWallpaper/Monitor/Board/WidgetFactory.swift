@@ -65,21 +65,21 @@ struct MonitorWidgetNameTile: View {
     /// Board-authoritative radius so fill stays concentric with the selection border.
     var cornerRadius: CGFloat = MonitorBoardGeometry.appleCornerRadius
 
-    private var scale: MonitorDesign.TypeScale { .init(cellHeight: cellHeight) }
+    private var scale: Design.TypeScale { .init(cellHeight: cellHeight) }
 
     var body: some View {
         VStack(spacing: max(4, cellHeight * 0.05)) {
             Image(systemName: WidgetFactory.icon(kind))
                 .font(.system(size: scale.hero * 0.58, weight: .regular))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Text(verbatim: WidgetFactory.displayName(kind))
-                .font(MonitorDesign.subFont(size: scale.caption + 1))
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .font(Design.subFont(size: scale.caption + 1))
+                .foregroundStyle(Design.inkMuted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(MonitorDesign.contentInsetH)
+        .padding(Design.contentInsetH)
         .monitorPanelChrome(cornerRadius: cornerRadius)
     }
 }

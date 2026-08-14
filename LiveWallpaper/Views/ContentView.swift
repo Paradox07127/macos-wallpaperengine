@@ -646,7 +646,7 @@ struct DetailContent: View {
 
             case .screen(let screenId):
                 if let screen = screenManager.screens.first(where: { $0.id == screenId }) {
-                    ScreenDetailView(screen: screen)
+                    DetailView(screen: screen)
                 } else {
                     EmptyStateView(
                         icon: "display.trianglebadge.exclamationmark",
@@ -655,10 +655,10 @@ struct DetailContent: View {
                 }
 
             case .appleAerials:
-                AppleAerialsLibraryView()
+                AerialsLibraryView()
 
             case .bookmarks:
-                BookmarksLibraryView()
+                LibraryView()
 
             case .workshop:
                 #if !LITE_BUILD

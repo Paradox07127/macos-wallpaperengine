@@ -33,8 +33,8 @@ struct MemoryWidgetView: View {
     private var statusDot: some View {
         switch pressure {
         case .normal: EmptyView()
-        case .warn: BreathingDot(color: MonitorDesign.signalAmber, size: 6)
-        case .critical: BreathingDot(color: MonitorDesign.signalCoral, size: 6)
+        case .warn: BreathingDot(color: Design.signalAmber, size: 6)
+        case .critical: BreathingDot(color: Design.signalCoral, size: 6)
         }
     }
 
@@ -42,7 +42,7 @@ struct MemoryWidgetView: View {
 
     @ViewBuilder
     private func small(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         HStack(alignment: .center, spacing: 10) {
             TankGauge(level: memUsedFraction, pressure: pressure,
                       cornerRadius: max(6, cellHeight * 0.06))
@@ -52,26 +52,26 @@ struct MemoryWidgetView: View {
                 Spacer(minLength: 0)
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
                     Text(verbatim: "\(usedPercentInt)")
-                        .font(MonitorDesign.heroFont(size: scale.hero * 0.86))
-                        .foregroundStyle(MonitorDesign.inkPrimary)
+                        .font(Design.heroFont(size: scale.hero * 0.86))
+                        .foregroundStyle(Design.inkPrimary)
                     Text(verbatim: "%")
-                        .font(MonitorDesign.heroFont(size: scale.hero * 0.86 * 0.4))
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .font(Design.heroFont(size: scale.hero * 0.86 * 0.4))
+                        .foregroundStyle(Design.inkFaint)
                 }
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 Text(verbatim: "USED")
-                    .font(MonitorDesign.labelFont(size: scale.label))
-                    .tracking(MonitorDesign.labelTracking(size: scale.label))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.labelFont(size: scale.label))
+                    .tracking(Design.labelTracking(size: scale.label))
+                    .foregroundStyle(Design.inkFaint)
                 HStack(spacing: 4) {
                     Circle()
                         .fill(pressureDotColor)
                         .frame(width: scale.label * 0.6, height: scale.label * 0.6)
                         .shadow(color: pressureDotColor.opacity(0.7), radius: 2)
                     Text(MemoryWidgetView.pressureDisplayKey(pressure))
-                        .font(MonitorDesign.subFont(size: scale.sub * 0.78))
+                        .font(Design.subFont(size: scale.sub * 0.78))
                         .foregroundStyle(pressureHeroColor)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -79,9 +79,9 @@ struct MemoryWidgetView: View {
                 .padding(.top, 1)
                 if showsSwap {
                     (Text("Swap") + Text(verbatim: " \(swapGiBString)G"))
-                        .font(MonitorDesign.labelFont(size: scale.label))
+                        .font(Design.labelFont(size: scale.label))
                         .tracking(scale.label * 0.06)
-                        .foregroundStyle(MonitorDesign.signalSteel)
+                        .foregroundStyle(Design.signalSteel)
                         .monitorChip(scale)
                 }
                 Spacer(minLength: 0)
@@ -95,7 +95,7 @@ struct MemoryWidgetView: View {
 
     @ViewBuilder
     private func medium(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 6) {
                 heroLine(scale: scale, factor: 0.86)
@@ -121,7 +121,7 @@ struct MemoryWidgetView: View {
 
     @ViewBuilder
     private func large(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 8) {
                 heroLine(scale: scale, factor: 0.9)
@@ -160,16 +160,16 @@ struct MemoryWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func swapCaption(scale: MonitorDesign.TypeScale) -> some View {
+    private func swapCaption(scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 3) {
             Text(verbatim: "┄")
-                .foregroundStyle(MonitorDesign.signalSteel)
+                .foregroundStyle(Design.signalSteel)
             Text("Swap")
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Text(verbatim: "\(swapGiBString)G")
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
         }
-        .font(MonitorDesign.captionFont(size: scale.label * 0.96))
+        .font(Design.captionFont(size: scale.label * 0.96))
         .monospacedDigit()
         .lineLimit(1)
         .monitorChip(scale)
@@ -177,7 +177,7 @@ struct MemoryWidgetView: View {
 
     @ViewBuilder
     private func breakdownBlock(
-        scale: MonitorDesign.TypeScale, headerLabel: String? = nil, legendColumns: Int = 2
+        scale: Design.TypeScale, headerLabel: String? = nil, legendColumns: Int = 2
     ) -> some View {
         if let breakdown = system?.memBreakdown, let total = memTotalBytes, total > 0 {
             let segments = MemoryWidgetView.segments(
@@ -186,9 +186,9 @@ struct MemoryWidgetView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let headerLabel {
                     Text(verbatim: headerLabel)
-                        .font(MonitorDesign.labelFont(size: scale.label))
-                        .tracking(MonitorDesign.labelTracking(size: scale.label))
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .font(Design.labelFont(size: scale.label))
+                        .tracking(Design.labelTracking(size: scale.label))
+                        .foregroundStyle(Design.inkFaint)
                 }
                 MemoryBreakdownBar(segments: segments,
                                    freeFraction: MemoryWidgetView.freeFraction(
@@ -203,17 +203,17 @@ struct MemoryWidgetView: View {
     }
 
     @ViewBuilder
-    private func topByMemoryBlock(scale: MonitorDesign.TypeScale) -> some View {
+    private func topByMemoryBlock(scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading, spacing: scale.caption * 0.32) {
             Text("TOP BY MEMORY", bundle: .main)
-                .font(MonitorDesign.labelFont(size: scale.label))
-                .tracking(MonitorDesign.labelTracking(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: scale.label))
+                .tracking(Design.labelTracking(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
             let procs = topMemoryProcesses
             if procs.isEmpty {
                 Text("no process readings", bundle: .main)
-                    .font(MonitorDesign.captionFont(size: scale.caption))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.captionFont(size: scale.caption))
+                    .foregroundStyle(Design.inkFaint)
             } else {
                 let top = procs.first?.memBytes ?? 0
                 ForEach(Array(procs.enumerated()), id: \.offset) { _, proc in
@@ -224,14 +224,14 @@ struct MemoryWidgetView: View {
     }
 
     @ViewBuilder
-    private func heroLine(scale: MonitorDesign.TypeScale, factor: CGFloat) -> some View {
+    private func heroLine(scale: Design.TypeScale, factor: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 3) {
             Text(verbatim: usedGiBString)
-                .font(MonitorDesign.heroFont(size: scale.hero * factor))
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .font(Design.heroFont(size: scale.hero * factor))
+                .foregroundStyle(Design.inkPrimary)
             Text(verbatim: "/ \(totalGiBString)G")
-                .font(MonitorDesign.subFont(size: scale.hero * factor * 0.4))
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .font(Design.subFont(size: scale.hero * factor * 0.4))
+                .foregroundStyle(Design.inkMuted)
         }
         .monospacedDigit()
     }
@@ -251,15 +251,15 @@ struct MemoryWidgetView: View {
     private var usedPercentInt: Int { Int((memUsedFraction * 100).rounded()) }
 
     private var usedGiBString: String {
-        String(format: "%.1f", MonitorFormat.gib(Double(system?.memUsedBytes ?? 0)))
+        String(format: "%.1f", Format.gib(Double(system?.memUsedBytes ?? 0)))
     }
 
     private var totalGiBString: String {
-        String(format: "%.0f", MonitorFormat.gib(Double(system?.memTotalBytes ?? 0)))
+        String(format: "%.0f", Format.gib(Double(system?.memTotalBytes ?? 0)))
     }
 
     private var swapGiBString: String {
-        String(format: "%.1f", MonitorFormat.gib(Double(system?.swapUsedBytes ?? 0)))
+        String(format: "%.1f", Format.gib(Double(system?.swapUsedBytes ?? 0)))
     }
 
     private var showsSwap: Bool {
@@ -269,17 +269,17 @@ struct MemoryWidgetView: View {
 
     private var pressureHeroColor: Color {
         switch pressure {
-        case .normal: return MonitorDesign.oklch(0.84, 0.09, 158)
-        case .warn: return MonitorDesign.oklch(0.86, 0.11, 66)
-        case .critical: return MonitorDesign.signalCoral
+        case .normal: return Design.oklch(0.84, 0.09, 158)
+        case .warn: return Design.oklch(0.86, 0.11, 66)
+        case .critical: return Design.signalCoral
         }
     }
 
     private var pressureDotColor: Color {
         switch pressure {
-        case .normal: return MonitorDesign.signalSage
-        case .warn: return MonitorDesign.signalAmber
-        case .critical: return MonitorDesign.signalCoral
+        case .normal: return Design.signalSage
+        case .warn: return Design.signalAmber
+        case .critical: return Design.signalCoral
         }
     }
 
@@ -427,7 +427,7 @@ struct MemoryWidgetView: View {
 /// Discrete pressure state chip (never a %). Ported from `.pchip`.
 private struct PressureChip: View {
     var pressure: MonitorPressure
-    var scale: MonitorDesign.TypeScale
+    var scale: Design.TypeScale
 
     private var labelSize: CGFloat { scale.label }
 
@@ -438,11 +438,11 @@ private struct PressureChip: View {
                 .frame(width: labelSize * 0.6, height: labelSize * 0.6)
                 .shadow(color: dotColor.opacity(0.7), radius: 3)
             Text(verbatim: "PRESSURE")
-                .font(MonitorDesign.labelFont(size: labelSize * 0.9))
+                .font(Design.labelFont(size: labelSize * 0.9))
                 .tracking(labelSize * 0.11)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Text(MemoryWidgetView.pressureDisplayKey(pressure))
-                .font(MonitorDesign.labelFont(size: labelSize))
+                .font(Design.labelFont(size: labelSize))
                 .foregroundStyle(valueColor)
         }
         .monitorChip(scale)
@@ -451,17 +451,17 @@ private struct PressureChip: View {
 
     private var dotColor: Color {
         switch pressure {
-        case .normal: return MonitorDesign.signalSage
-        case .warn: return MonitorDesign.signalAmber
-        case .critical: return MonitorDesign.signalCoral
+        case .normal: return Design.signalSage
+        case .warn: return Design.signalAmber
+        case .critical: return Design.signalCoral
         }
     }
 
     private var valueColor: Color {
         switch pressure {
-        case .normal: return MonitorDesign.oklch(0.86, 0.07, 158)
-        case .warn: return MonitorDesign.oklch(0.90, 0.05, 46)
-        case .critical: return MonitorDesign.oklch(0.92, 0.06, 38)
+        case .normal: return Design.oklch(0.86, 0.07, 158)
+        case .warn: return Design.oklch(0.90, 0.05, 46)
+        case .critical: return Design.oklch(0.92, 0.06, 38)
         }
     }
 }
@@ -479,21 +479,21 @@ private enum AMSegmentStyle {
 
     static func colors(_ kind: MemoryWidgetView.Segment.Kind) -> [Color] {
         switch kind {
-        case .app: return [MonitorDesign.oklch(0.62, 0.06, 82), MonitorDesign.oklch(0.74, 0.12, 80)]
-        case .wired: return [MonitorDesign.oklch(0.60, 0.09, 55), MonitorDesign.oklch(0.70, 0.13, 50)]
-        case .compressed: return [MonitorDesign.oklch(0.56, 0.08, 30), MonitorDesign.oklch(0.66, 0.12, 32)]
-        case .cached: return [MonitorDesign.oklch(0.46, 0.03, 150), MonitorDesign.oklch(0.42, 0.028, 150)]
-        case .swap: return [MonitorDesign.oklch(0.46, 0.035, 240), MonitorDesign.oklch(0.60, 0.06, 236)]
+        case .app: return [Design.oklch(0.62, 0.06, 82), Design.oklch(0.74, 0.12, 80)]
+        case .wired: return [Design.oklch(0.60, 0.09, 55), Design.oklch(0.70, 0.13, 50)]
+        case .compressed: return [Design.oklch(0.56, 0.08, 30), Design.oklch(0.66, 0.12, 32)]
+        case .cached: return [Design.oklch(0.46, 0.03, 150), Design.oklch(0.42, 0.028, 150)]
+        case .swap: return [Design.oklch(0.46, 0.035, 240), Design.oklch(0.60, 0.06, 236)]
         }
     }
 
     static func legendColor(_ kind: MemoryWidgetView.Segment.Kind) -> Color {
         switch kind {
-        case .app: return MonitorDesign.oklch(0.70, 0.11, 80)
-        case .wired: return MonitorDesign.oklch(0.66, 0.12, 52)
-        case .compressed: return MonitorDesign.oklch(0.62, 0.11, 31)
-        case .cached: return MonitorDesign.oklch(0.50, 0.03, 150)
-        case .swap: return MonitorDesign.oklch(0.56, 0.055, 238)
+        case .app: return Design.oklch(0.70, 0.11, 80)
+        case .wired: return Design.oklch(0.66, 0.12, 52)
+        case .compressed: return Design.oklch(0.62, 0.11, 31)
+        case .cached: return Design.oklch(0.50, 0.03, 150)
+        case .swap: return Design.oklch(0.56, 0.055, 238)
         }
     }
 }
@@ -517,7 +517,7 @@ private struct MemoryBreakdownBar: View {
                                 )
                             }
                             .overlay(alignment: .trailing) {
-                                Rectangle().fill(MonitorDesign.bg0.opacity(0.55)).frame(width: 1)
+                                Rectangle().fill(Design.bg0.opacity(0.55)).frame(width: 1)
                             }
                     }
                 }
@@ -525,12 +525,12 @@ private struct MemoryBreakdownBar: View {
                     Rectangle().fill(Color.clear)
                         .frame(width: max(0, w * CGFloat(freeFraction)))
                         .overlay(alignment: .leading) {
-                            Rectangle().fill(MonitorDesign.hairline.opacity(0.4)).frame(width: 1)
+                            Rectangle().fill(Design.hairline.opacity(0.4)).frame(width: 1)
                         }
                 }
             }
         }
-        .background(MonitorDesign.track)
+        .background(Design.track)
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -560,23 +560,23 @@ private struct MemoryBreakdownLegend: View {
                                 .strokeBorder(Color.black.opacity(0.25), lineWidth: 1)
                         )
                     Text(seg.kind.displayKey)
-                        .font(MonitorDesign.captionFont(size: labelSize))
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .font(Design.captionFont(size: labelSize))
+                        .foregroundStyle(Design.inkFaint)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .truncationMode(.tail)
                     Spacer(minLength: 2)
                     Text(verbatim: gib(seg.bytes))
-                        .font(MonitorDesign.subFont(size: labelSize))
+                        .font(Design.subFont(size: labelSize))
                         .monospacedDigit()
-                        .foregroundStyle(MonitorDesign.inkPrimary)
+                        .foregroundStyle(Design.inkPrimary)
                 }
             }
         }
     }
 
     private func gib(_ bytes: Double) -> String {
-        String(format: "%.1fG", MonitorFormat.gib(bytes))
+        String(format: "%.1fG", Format.gib(bytes))
     }
 }
 
@@ -585,17 +585,17 @@ private struct MemoryBreakdownLegend: View {
 private struct MemoryTopProcessRow: View {
     var proc: MonitorProcessSample
     var topBytes: UInt64
-    var scale: MonitorDesign.TypeScale
+    var scale: Design.TypeScale
 
     var body: some View {
         HStack(spacing: 8) {
             HStack(spacing: scale.caption * 0.5) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(MonitorDesign.inkFaint.opacity(0.7))
+                    .fill(Design.inkFaint.opacity(0.7))
                     .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
                 Text(verbatim: proc.name)
-                    .font(MonitorDesign.captionFont(size: scale.caption))
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .font(Design.captionFont(size: scale.caption))
+                    .foregroundStyle(Design.inkPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -603,7 +603,7 @@ private struct MemoryTopProcessRow: View {
 
             GeometryReader { g in
                 ZStack(alignment: .leading) {
-                    Capsule(style: .continuous).fill(MonitorDesign.track2)
+                    Capsule(style: .continuous).fill(Design.track2)
                     Capsule(style: .continuous)
                         .fill(AMSegmentStyle.gradient(.app))
                         .frame(width: max(0, g.size.width * CGFloat(
@@ -613,13 +613,13 @@ private struct MemoryTopProcessRow: View {
             .frame(width: scale.caption * 3.0, height: scale.caption * 0.42)
 
             Text(verbatim: MemoryWidgetView.cpuColumnText(proc.cpuPercent))
-                .font(MonitorDesign.subFont(size: scale.caption * 0.94))
+                .font(Design.subFont(size: scale.caption * 0.94))
                 .monospacedDigit()
-                .foregroundStyle(proc.cpuPercent > 0 ? MonitorDesign.inkMuted : MonitorDesign.inkFaint)
+                .foregroundStyle(proc.cpuPercent > 0 ? Design.inkMuted : Design.inkFaint)
                 .frame(width: scale.caption * 2.9, alignment: .trailing)
 
             Text(verbatim: gib(proc.memBytes))
-                .font(MonitorDesign.subFont(size: scale.caption * 0.94))
+                .font(Design.subFont(size: scale.caption * 0.94))
                 .monospacedDigit()
                 .foregroundStyle(AMSegmentStyle.legendColor(.app))
                 .frame(width: scale.caption * 3.3, alignment: .trailing)
@@ -628,7 +628,7 @@ private struct MemoryTopProcessRow: View {
     }
 
     private func gib(_ bytes: UInt64) -> String {
-        String(format: "%.1fG", MonitorFormat.gib(Double(bytes)))
+        String(format: "%.1fG", Format.gib(Double(bytes)))
     }
 }
 
@@ -656,10 +656,10 @@ private struct MemoryStackChart: View {
                         draw(ctx, size: size, a: a, wi: wi, c: c, u: u, n: n)
                     }
                     Circle()
-                        .fill(MonitorDesign.inkMuted)
+                        .fill(Design.inkMuted)
                         .frame(width: 6, height: 6)
                         .position(x: w, y: y(u[n - 1], h: h))
-                        .shadow(color: MonitorDesign.inkMuted.opacity(0.6), radius: 3)
+                        .shadow(color: Design.inkMuted.opacity(0.6), radius: 3)
                 }
             } else {
                 baseline(w: w, h: h)
@@ -708,7 +708,7 @@ private struct MemoryStackChart: View {
                        style: StrokeStyle(lineWidth: 1, lineJoin: .round))
         }
         var totalLine = Path(); totalLine.addLines(usedTop)
-        ctx.stroke(totalLine, with: .color(MonitorDesign.inkMuted.opacity(0.9)),
+        ctx.stroke(totalLine, with: .color(Design.inkMuted.opacity(0.9)),
                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
     }
 
@@ -717,7 +717,7 @@ private struct MemoryStackChart: View {
             p.move(to: CGPoint(x: 0, y: h - 1))
             p.addLine(to: CGPoint(x: w, y: h - 1))
         }
-        .stroke(MonitorDesign.hairline.opacity(0.45), lineWidth: 1)
+        .stroke(Design.hairline.opacity(0.45), lineWidth: 1)
     }
 }
 
@@ -795,7 +795,7 @@ private func memoryPreviewContext(
             .frame(width: 170, height: 170)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("Memory · M") {
@@ -806,7 +806,7 @@ private func memoryPreviewContext(
             .frame(width: 364, height: 170)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("Memory · L") {
@@ -819,6 +819,6 @@ private func memoryPreviewContext(
             .frame(width: 364, height: 376)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 #endif

@@ -76,7 +76,7 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
             x: boardSize.width - footprint.width,
             y: boardSize.height * model.topInsetFraction
         )
-        let expectedNormalized = BoardLayoutEngine.normalized(
+        let expectedNormalized = LayoutEngine.normalized(
             pixelOrigin: expectedPixelOrigin,
             boardSize: boardSize
         )
@@ -276,8 +276,8 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
         #expect(interaction.contains("@Published private(set) var placements"))
         #expect(interaction.contains("enum MonitorBoardPlacementCommand"))
         #expect(interaction.contains("func perform(_ command: MonitorBoardPlacementCommand)"))
-        #expect(interaction.contains("BoardLayoutEngine.land("))
-        #expect(interaction.contains("BoardLayoutEngine.normalized("))
+        #expect(interaction.contains("LayoutEngine.land("))
+        #expect(interaction.contains("LayoutEngine.normalized("))
         #expect(interaction.contains("perform(.move(id: current.widgetID"))
         #expect(interaction.contains("func moveWidget("))
         #expect(interaction.contains("return moveWidget(id: selectedID, direction: direction, distance: distance)"))
@@ -319,8 +319,8 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
     @MainActor
     private func makeModel(
         placements: [MonitorWidgetPlacement]
-    ) -> BoardInteractionModel {
-        let model = BoardInteractionModel(
+    ) -> InteractionModel {
+        let model = InteractionModel(
             configuration: MonitorBoardConfiguration(
                 widgets: placements,
                 refreshHz: 1.5,

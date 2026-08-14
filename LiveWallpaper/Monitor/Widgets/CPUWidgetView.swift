@@ -54,7 +54,7 @@ struct CPUWidgetView: View {
 
     @ViewBuilder
     private func smallBody(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         WidgetContainer(
             label: "CPU",
             systemImage: "cpu",
@@ -90,7 +90,7 @@ struct CPUWidgetView: View {
 
     @ViewBuilder
     private func mediumBody(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         let user = system?.cpuUser ?? 0
         let sys = system?.cpuSystem ?? 0
         let (userPct, sysPct, _) = Self.compositionPercents(user: user, system: sys)
@@ -110,7 +110,7 @@ struct CPUWidgetView: View {
                         ArcGauge(
                             value: cpuFraction,
                             bands: showComposition
-                                ? [ArcBand(user, MonitorDesign.signalAmber), ArcBand(sys, MonitorDesign.signalSteel)]
+                                ? [ArcBand(user, Design.signalAmber), ArcBand(sys, Design.signalSteel)]
                                 : nil
                         ) {
                             heroReadout(fraction: cpuFraction,
@@ -143,7 +143,7 @@ struct CPUWidgetView: View {
 
     @ViewBuilder
     private func largeBody(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         WidgetContainer(
             label: "CPU",
             systemImage: "cpu",
@@ -221,12 +221,12 @@ struct CPUWidgetView: View {
     private func heroReadout(fraction: Double, heroSize: CGFloat, unitSize: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(verbatim: Self.wholeNumber(fraction))
-                .font(MonitorDesign.heroFont(size: heroSize))
+                .font(Design.heroFont(size: heroSize))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .foregroundStyle(Design.inkPrimary)
             Text(verbatim: "%")
-                .font(MonitorDesign.heroFont(size: unitSize))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.heroFont(size: unitSize))
+                .foregroundStyle(Design.inkFaint)
         }
         .lineLimit(1)
         .minimumScaleFactor(0.6)
@@ -234,48 +234,48 @@ struct CPUWidgetView: View {
 
     /// Whisper section header (L's "Cores · N" / "Top by CPU" column titles).
     @ViewBuilder
-    private func sectionLabel(_ text: String, scale: MonitorDesign.TypeScale) -> some View {
+    private func sectionLabel(_ text: String, scale: Design.TypeScale) -> some View {
         Text(verbatim: text)
-            .font(MonitorDesign.labelFont(size: scale.label))
-            .tracking(MonitorDesign.labelTracking(size: scale.label))
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .font(Design.labelFont(size: scale.label))
+            .tracking(Design.labelTracking(size: scale.label))
+            .foregroundStyle(Design.inkFaint)
             .lineLimit(1)
     }
 
     /// B-tier temperature capsule (S) — own cool→warm ramp + a "cool/warm/hot" word.
     @ViewBuilder
-    private func temperatureCapsule(_ celsius: Double, scale: MonitorDesign.TypeScale) -> some View {
+    private func temperatureCapsule(_ celsius: Double, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.5) {
             Circle()
-                .fill(MonitorDesign.temperatureColor(celsius))
+                .fill(Design.temperatureColor(celsius))
                 .frame(width: scale.caption * 0.62, height: scale.caption * 0.62)
-                .shadow(color: MonitorDesign.temperatureColor(celsius).opacity(0.7), radius: 2)
+                .shadow(color: Design.temperatureColor(celsius).opacity(0.7), radius: 2)
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(verbatim: Self.tempValue(celsius))
-                    .font(MonitorDesign.subFont(size: scale.caption))
+                    .font(Design.subFont(size: scale.caption))
                     .monospacedDigit()
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .foregroundStyle(Design.inkPrimary)
                 Text(verbatim: MonitorTemperature.symbol)
-                    .font(MonitorDesign.captionFont(size: scale.caption * 0.68))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.captionFont(size: scale.caption * 0.68))
+                    .foregroundStyle(Design.inkFaint)
             }
             Text(LocalizedStringKey(Self.temperatureWord(celsius)))
-                .font(MonitorDesign.labelFont(size: scale.label * 0.94))
+                .font(Design.labelFont(size: scale.label * 0.94))
                 .tracking(scale.label * 0.12)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
         }
         .padding(.vertical, scale.label * 0.3)
         .padding(.leading, scale.label * 0.55)
         .padding(.trailing, scale.label * 0.7)
         .background(
             Capsule(style: .continuous)
-                .fill(MonitorDesign.bg2.opacity(0.5))
-                .overlay(Capsule(style: .continuous).strokeBorder(MonitorDesign.hairlineHi.opacity(0.55), lineWidth: 1))
+                .fill(Design.bg2.opacity(0.5))
+                .overlay(Capsule(style: .continuous).strokeBorder(Design.hairlineHi.opacity(0.55), lineWidth: 1))
         )
     }
 
     @ViewBuilder
-    private func compositionBar(scale: MonitorDesign.TypeScale, centeredLegend: Bool, legendScale: CGFloat) -> some View {
+    private func compositionBar(scale: Design.TypeScale, centeredLegend: Bool, legendScale: CGFloat) -> some View {
         let user = system?.cpuUser ?? 0
         let sys = system?.cpuSystem ?? 0
         let (userPct, sysPct, idlePct) = Self.compositionPercents(user: user, system: sys)
@@ -283,24 +283,24 @@ struct CPUWidgetView: View {
             GeometryReader { g in
                 HStack(spacing: 0) {
                     Rectangle()
-                        .fill(LinearGradient(colors: [MonitorDesign.oklch(0.6, 0.05, 78), MonitorDesign.signalAmber],
+                        .fill(LinearGradient(colors: [Design.oklch(0.6, 0.05, 78), Design.signalAmber],
                                              startPoint: .leading, endPoint: .trailing))
                         .frame(width: g.size.width * CGFloat(min(max(user, 0), 1)))
                     Rectangle()
-                        .fill(LinearGradient(colors: [MonitorDesign.oklch(0.5, 0.03, 235), MonitorDesign.signalSteel],
+                        .fill(LinearGradient(colors: [Design.oklch(0.5, 0.03, 235), Design.signalSteel],
                                              startPoint: .leading, endPoint: .trailing))
                         .frame(width: g.size.width * CGFloat(min(max(sys, 0), 1)))
                     Spacer(minLength: 0)
                 }
             }
             .frame(height: max(scale.caption * 0.72, 6))
-            .background(MonitorDesign.track)
+            .background(Design.track)
             .clipShape(Capsule(style: .continuous))
 
             HStack(spacing: scale.label * 0.9) {
-                compLegendItem("USER", value: userPct, dot: MonitorDesign.signalAmber, scale: scale, sizeScale: legendScale)
-                compLegendItem("SYS", value: sysPct, dot: MonitorDesign.signalSteel, scale: scale, sizeScale: legendScale)
-                compLegendItem("IDLE", value: idlePct, dot: MonitorDesign.oklch(0.4, 0.01, 74), scale: scale, sizeScale: legendScale)
+                compLegendItem("USER", value: userPct, dot: Design.signalAmber, scale: scale, sizeScale: legendScale)
+                compLegendItem("SYS", value: sysPct, dot: Design.signalSteel, scale: scale, sizeScale: legendScale)
+                compLegendItem("IDLE", value: idlePct, dot: Design.oklch(0.4, 0.01, 74), scale: scale, sizeScale: legendScale)
             }
             .lineLimit(1)
             .minimumScaleFactor(0.7)
@@ -310,24 +310,24 @@ struct CPUWidgetView: View {
 
     @ViewBuilder
     private func compLegendItem(_ label: String, value: Int, dot: Color,
-                                scale: MonitorDesign.TypeScale, sizeScale: CGFloat) -> some View {
+                                scale: Design.TypeScale, sizeScale: CGFloat) -> some View {
         let size = scale.label * sizeScale
         HStack(spacing: size * 0.4) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(dot)
                 .frame(width: size * 0.6, height: size * 0.6)
             Text(verbatim: "\(label) \(value)%")
-                .font(MonitorDesign.labelFont(size: size))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: size))
+                .foregroundStyle(Design.inkFaint)
         }
     }
 
     /// Compact user/sys legend under the M arc (the arc's own two-tone wedges are the primary encoding; this just labels the split with percentages).
     @ViewBuilder
-    private func compositionLegend(userPct: Int, sysPct: Int, scale: MonitorDesign.TypeScale) -> some View {
+    private func compositionLegend(userPct: Int, sysPct: Int, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.8) {
-            legendValue("USER", value: userPct, color: MonitorDesign.signalAmber, scale: scale)
-            legendValue("SYS", value: sysPct, color: MonitorDesign.signalSteel, scale: scale)
+            legendValue("USER", value: userPct, color: Design.signalAmber, scale: scale)
+            legendValue("SYS", value: sysPct, color: Design.signalSteel, scale: scale)
         }
         .lineLimit(1)
         .minimumScaleFactor(0.7)
@@ -335,31 +335,31 @@ struct CPUWidgetView: View {
     }
 
     @ViewBuilder
-    private func legendValue(_ label: String, value: Int, color: Color, scale: MonitorDesign.TypeScale) -> some View {
+    private func legendValue(_ label: String, value: Int, color: Color, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.35) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(color)
                 .frame(width: scale.label * 0.6, height: scale.label * 0.6)
             Text(verbatim: "\(label) \(value)%")
-                .font(MonitorDesign.labelFont(size: scale.label * 0.95))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: scale.label * 0.95))
+                .foregroundStyle(Design.inkFaint)
                 .monospacedDigit()
         }
     }
 
     /// "PEAK n%" tag pinned inside the top-right of the M load curve (was a separate row under the arc).
     @ViewBuilder
-    private func peakInlineTag(scale: MonitorDesign.TypeScale) -> some View {
+    private func peakInlineTag(scale: Design.TypeScale) -> some View {
         let size = scale.label * 0.9
         HStack(alignment: .firstTextBaseline, spacing: size * 0.3) {
             Text(verbatim: "PEAK")
-                .font(MonitorDesign.labelFont(size: size))
+                .font(Design.labelFont(size: size))
                 .tracking(size * 0.1)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Text(verbatim: Self.wholePercent(peakFraction))
-                .font(MonitorDesign.subFont(size: size))
+                .font(Design.subFont(size: size))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
         }
         .monitorChip(scale)
         .padding(size * 0.3)
@@ -367,7 +367,7 @@ struct CPUWidgetView: View {
 
     /// Per-core heat strip (M, compact): clusters side by side.
     @ViewBuilder
-    private func coreHeatStrip(scale: MonitorDesign.TypeScale) -> some View {
+    private func coreHeatStrip(scale: Design.TypeScale) -> some View {
         if let groups = Self.coreGroupLoads(perCore: system?.perCore, cpuInfo: system?.cpuInfo), !groups.isEmpty {
             let bandHeight = max(scale.caption * 1.25, 13)
             HStack(alignment: .top, spacing: scale.label * 0.9) {
@@ -409,7 +409,7 @@ struct CPUWidgetView: View {
 
     /// Per-core heat strip (L, tall): clusters stacked, each a full-width bar row.
     @ViewBuilder
-    private func coreHeatStripTall(groups: [CoreGroupLoads], scale: MonitorDesign.TypeScale) -> some View {
+    private func coreHeatStripTall(groups: [CoreGroupLoads], scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading, spacing: scale.label * 0.5) {
             ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
                 VStack(alignment: .leading, spacing: scale.label * 0.3) {
@@ -425,103 +425,103 @@ struct CPUWidgetView: View {
     }
 
     @ViewBuilder
-    private func clusterLabel(_ group: CoreGroupLoads, scale: MonitorDesign.TypeScale) -> some View {
+    private func clusterLabel(_ group: CoreGroupLoads, scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.label * 0.5) {
             Text(verbatim: group.name.uppercased())
-                .font(MonitorDesign.labelFont(size: scale.label * 0.86))
+                .font(Design.labelFont(size: scale.label * 0.86))
                 .tracking(scale.label * 0.16)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
                 .opacity(0.72)
             Text(verbatim: "·\(group.loads.count)")
-                .font(MonitorDesign.labelFont(size: scale.label * 0.86))
+                .font(Design.labelFont(size: scale.label * 0.86))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
                 .opacity(0.72)
         }
     }
 
     @ViewBuilder
-    private func sensorRow(scale: MonitorDesign.TypeScale) -> some View {
+    private func sensorRow(scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.7) {
             Spacer(minLength: 0)
-            if let temp = cpuTempC { sensorReading(dot: MonitorDesign.temperatureColor(temp),
+            if let temp = cpuTempC { sensorReading(dot: Design.temperatureColor(temp),
                                                     value: Self.tempValue(temp), unit: MonitorTemperature.symbol, scale: scale) }
-            if let rpm = fanRPM { sensorReading(dot: MonitorDesign.signalSteel,
+            if let rpm = fanRPM { sensorReading(dot: Design.signalSteel,
                                                 value: Self.rpmValue(rpm), unit: "RPM", scale: scale) }
         }
     }
 
     @ViewBuilder
-    private func sensorStrip(scale: MonitorDesign.TypeScale) -> some View {
+    private func sensorStrip(scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.9) {
             Text(verbatim: "SMC")
-                .font(MonitorDesign.labelFont(size: scale.label))
-                .tracking(MonitorDesign.labelTracking(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkFaint)
-            if let temp = cpuTempC { sensorReading(dot: MonitorDesign.temperatureColor(temp),
+                .font(Design.labelFont(size: scale.label))
+                .tracking(Design.labelTracking(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
+            if let temp = cpuTempC { sensorReading(dot: Design.temperatureColor(temp),
                                                    value: Self.tempValue(temp), unit: MonitorTemperature.symbol, scale: scale) }
             if cpuTempC != nil && fanRPM != nil {
-                Text(verbatim: "·").font(MonitorDesign.captionFont(size: scale.caption)).foregroundStyle(MonitorDesign.inkFaint).opacity(0.5)
+                Text(verbatim: "·").font(Design.captionFont(size: scale.caption)).foregroundStyle(Design.inkFaint).opacity(0.5)
             }
-            if let rpm = fanRPM { sensorReading(dot: MonitorDesign.signalSteel,
+            if let rpm = fanRPM { sensorReading(dot: Design.signalSteel,
                                                 value: Self.rpmValue(rpm), unit: "RPM", scale: scale) }
             Spacer(minLength: 0)
         }
         .padding(.top, scale.label * 0.4)
         .overlay(alignment: .top) {
-            Rectangle().fill(MonitorDesign.hairline.opacity(0.45)).frame(height: 1)
+            Rectangle().fill(Design.hairline.opacity(0.45)).frame(height: 1)
         }
     }
 
     @ViewBuilder
-    private func sensorReading(dot: Color, value: String, unit: String, scale: MonitorDesign.TypeScale) -> some View {
+    private func sensorReading(dot: Color, value: String, unit: String, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.4) {
             Circle().fill(dot)
                 .frame(width: scale.label * 0.55, height: scale.label * 0.55)
                 .shadow(color: dot.opacity(0.6), radius: 2)
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(verbatim: value)
-                    .font(MonitorDesign.subFont(size: scale.caption))
+                    .font(Design.subFont(size: scale.caption))
                     .monospacedDigit()
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .foregroundStyle(Design.inkPrimary)
                 Text(verbatim: unit)
-                    .font(MonitorDesign.captionFont(size: scale.caption * 0.7))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.captionFont(size: scale.caption * 0.7))
+                    .foregroundStyle(Design.inkFaint)
             }
         }
     }
 
     @ViewBuilder
-    private func thermalPill(scale: MonitorDesign.TypeScale) -> some View {
+    private func thermalPill(scale: Design.TypeScale) -> some View {
         let state = system?.thermalState ?? "nominal"
         HStack(spacing: scale.label * 0.45) {
-            Circle().fill(MonitorDesign.signalAmber)
+            Circle().fill(Design.signalAmber)
                 .frame(width: scale.label * 0.5, height: scale.label * 0.5)
-                .shadow(color: MonitorDesign.signalAmber.opacity(0.6), radius: 2)
+                .shadow(color: Design.signalAmber.opacity(0.6), radius: 2)
             Text(verbatim: "thermal")
-                .font(MonitorDesign.labelFont(size: scale.label * 0.92))
+                .font(Design.labelFont(size: scale.label * 0.92))
                 .tracking(scale.label * 0.1)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Text(verbatim: state.capitalized)
-                .font(MonitorDesign.subFont(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .font(Design.subFont(size: scale.label))
+                .foregroundStyle(Design.inkPrimary)
         }
         .monitorChip(scale)
     }
 
     @ViewBuilder
-    private func procRows(_ procs: [MonitorProcessSample], scale: MonitorDesign.TypeScale) -> some View {
+    private func procRows(_ procs: [MonitorProcessSample], scale: Design.TypeScale) -> some View {
         let maxCPU = procs.map(\.cpuPercent).max() ?? 1
         VStack(spacing: scale.label * 0.35) {
             ForEach(Array(procs.enumerated()), id: \.offset) { _, proc in
                 HStack(spacing: scale.label * 0.5) {
                     HStack(spacing: scale.label * 0.4) {
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(MonitorDesign.inkFaint.opacity(0.7))
+                            .fill(Design.inkFaint.opacity(0.7))
                             .frame(width: scale.label * 0.5, height: scale.label * 0.5)
                         Text(verbatim: proc.name)
-                            .font(MonitorDesign.captionFont(size: scale.caption))
-                            .foregroundStyle(MonitorDesign.inkPrimary)
+                            .font(Design.captionFont(size: scale.caption))
+                            .foregroundStyle(Design.inkPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                             .truncationMode(.tail)
@@ -529,10 +529,10 @@ struct CPUWidgetView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     GeometryReader { g in
-                        Capsule(style: .continuous).fill(MonitorDesign.track2)
+                        Capsule(style: .continuous).fill(Design.track2)
                             .overlay(alignment: .leading) {
                                 Capsule(style: .continuous)
-                                    .fill(LinearGradient(colors: [MonitorDesign.oklch(0.6, 0.05, 78), MonitorDesign.signalAmber],
+                                    .fill(LinearGradient(colors: [Design.oklch(0.6, 0.05, 78), Design.signalAmber],
                                                          startPoint: .leading, endPoint: .trailing))
                                     .frame(width: g.size.width * CGFloat(Self.barFraction(proc.cpuPercent, maxCPU: maxCPU)))
                             }
@@ -540,17 +540,17 @@ struct CPUWidgetView: View {
                     .frame(width: scale.caption * 2, height: max(scale.caption * 0.42, 4))
 
                     Text(verbatim: Self.cpuText(proc.cpuPercent))
-                        .font(MonitorDesign.subFont(size: scale.caption))
+                        .font(Design.subFont(size: scale.caption))
                         .monospacedDigit()
-                        .foregroundStyle(MonitorDesign.signalAmber)
+                        .foregroundStyle(Design.signalAmber)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .frame(width: scale.caption * 2.1, alignment: .trailing)
 
-                    Text(verbatim: MonitorFormat.bytes(proc.memBytes))
-                        .font(MonitorDesign.captionFont(size: scale.caption * 0.94))
+                    Text(verbatim: Format.bytes(proc.memBytes))
+                        .font(Design.captionFont(size: scale.caption * 0.94))
                         .monospacedDigit()
-                        .foregroundStyle(MonitorDesign.inkMuted)
+                        .foregroundStyle(Design.inkMuted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .frame(width: scale.caption * 3.4, alignment: .trailing)
@@ -560,33 +560,33 @@ struct CPUWidgetView: View {
     }
 
     @ViewBuilder
-    private func loadStatus(scale: MonitorDesign.TypeScale, triple: Bool) -> some View {
+    private func loadStatus(scale: Design.TypeScale, triple: Bool) -> some View {
         if let text = Self.loadText(system: system, triple: triple) {
             (Text("load") + Text(verbatim: " \(text)"))
-                .font(MonitorDesign.subFont(size: scale.label))
+                .font(Design.subFont(size: scale.label))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
                 .monitorChip(scale)
         }
     }
 
     /// Identity row — device name (emphasised) + whispered core-group summary.
     @ViewBuilder
-    private func identityRow(_ identity: CPUIdentity, scale: MonitorDesign.TypeScale) -> some View {
+    private func identityRow(_ identity: CPUIdentity, scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.label * 0.5) {
             if let device = identity.deviceName {
                 Text(verbatim: device)
-                    .font(MonitorDesign.subFont(size: scale.sub * 0.92))
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .font(Design.subFont(size: scale.sub * 0.92))
+                    .foregroundStyle(Design.inkPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
             }
             if let summary = identity.coreSummary {
                 Text(verbatim: "· \(summary)")
-                    .font(MonitorDesign.labelFont(size: scale.label))
+                    .font(Design.labelFont(size: scale.label))
                     .tracking(scale.label * 0.06)
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -603,7 +603,7 @@ private struct HeatCell: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 2, style: .continuous)
         let base = shape
-            .fill(MonitorDesign.track2)
+            .fill(Design.track2)
             .overlay(shape.fill(Self.loadColor(load)).opacity(0.32 + min(1, max(0, load)) * 0.62))
             .overlay(shape.strokeBorder(Color.black.opacity(0.3), lineWidth: 1))
             .frame(maxWidth: .infinity)
@@ -617,7 +617,7 @@ private struct HeatCell: View {
     /// Per-core UTILISATION ramp: green (idle) → amber → red (busy), by rotating the OKLCH hue 150°→30° with load.
     static func loadColor(_ value: Double) -> Color {
         let x = min(1, max(0, value))
-        return MonitorDesign.oklch(0.72, 0.15, 150 - 120 * x)
+        return Design.oklch(0.72, 0.15, 150 - 120 * x)
     }
 }
 
@@ -635,9 +635,9 @@ private struct CPUStackChart: View {
                     Canvas { ctx, size in draw(ctx, size: size, u: u, s: s, n: n) }
                     let head = min(max(u[n - 1] + s[n - 1], 0), 1)
                     Circle()
-                        .fill(MonitorDesign.signalAmber)
+                        .fill(Design.signalAmber)
                         .frame(width: 6, height: 6)
-                        .shadow(color: MonitorDesign.signalAmber.opacity(0.6), radius: 3)
+                        .shadow(color: Design.signalAmber.opacity(0.6), radius: 3)
                         .position(x: w - 3, y: h - CGFloat(head) * (h - 3) - 1.5)
                 }
             }
@@ -653,7 +653,7 @@ private struct CPUStackChart: View {
             var p = Path()
             p.move(to: CGPoint(x: 0, y: Y(g)))
             p.addLine(to: CGPoint(x: W, y: Y(g)))
-            ctx.stroke(p, with: .color(MonitorDesign.hairlineHi.opacity(0.28)),
+            ctx.stroke(p, with: .color(Design.hairlineHi.opacity(0.28)),
                        style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
         }
 
@@ -672,17 +672,17 @@ private struct CPUStackChart: View {
             return p
         }
         ctx.fill(area(sTop), with: .linearGradient(
-            Gradient(colors: [MonitorDesign.signalSteel.opacity(0.32), MonitorDesign.signalSteel.opacity(0.02)]),
+            Gradient(colors: [Design.signalSteel.opacity(0.32), Design.signalSteel.opacity(0.02)]),
             startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: H)))
         ctx.fill(area(uTop), with: .linearGradient(
-            Gradient(colors: [MonitorDesign.signalAmber.opacity(0.5), MonitorDesign.signalAmber.opacity(0.03)]),
+            Gradient(colors: [Design.signalAmber.opacity(0.5), Design.signalAmber.opacity(0.03)]),
             startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: H)))
 
         var sLine = Path(); sLine.addLines(sTop)
-        ctx.stroke(sLine, with: .color(MonitorDesign.signalSteel.opacity(0.8)),
+        ctx.stroke(sLine, with: .color(Design.signalSteel.opacity(0.8)),
                    style: StrokeStyle(lineWidth: 1, lineJoin: .round))
         var uLine = Path(); uLine.addLines(uTop)
-        ctx.stroke(uLine, with: .color(MonitorDesign.signalAmber),
+        ctx.stroke(uLine, with: .color(Design.signalAmber),
                    style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
     }
 }
@@ -692,8 +692,8 @@ private struct CPUStateDot: View {
 
     var body: some View {
         let pct = fraction * 100
-        let color: Color = pct > 85 ? MonitorDesign.signalCoral
-            : (pct > 60 ? MonitorDesign.signalAmber : MonitorDesign.signalIdle)
+        let color: Color = pct > 85 ? Design.signalCoral
+            : (pct > 60 ? Design.signalAmber : Design.signalIdle)
         BreathingDot(color: color, size: 6, animated: pct > 60)
     }
 }
@@ -954,7 +954,7 @@ private extension MonitorWidgetContext {
             .frame(width: 170, height: 170)
     }
     .padding(32)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("CPU · M") {
@@ -965,7 +965,7 @@ private extension MonitorWidgetContext {
             .frame(width: 364, height: 170)
     }
     .padding(32)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("CPU · L") {
@@ -976,6 +976,6 @@ private extension MonitorWidgetContext {
             .frame(width: 364, height: 376)
     }
     .padding(32)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 #endif

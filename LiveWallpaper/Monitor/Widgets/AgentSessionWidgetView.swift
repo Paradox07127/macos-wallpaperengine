@@ -124,14 +124,14 @@ struct AgentSessionWidgetView: View {
     private func headerStatus(scale: AgentTypeScale) -> some View {
         HStack(spacing: scale.label * 0.5) {
             Text(verbatim: AgentSessionStrings.agentCount(visibleSessions.count))
-                .font(MonitorDesign.subFont(size: scale.label))
+                .font(Design.subFont(size: scale.label))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
             Circle()
-                .fill(counts.needsInput > 0 ? MonitorDesign.signalCoral : MonitorDesign.signalAmber)
+                .fill(counts.needsInput > 0 ? Design.signalCoral : Design.signalAmber)
                 .frame(width: scale.label * 0.46, height: scale.label * 0.46)
-                .shadow(color: (counts.needsInput > 0 ? MonitorDesign.signalCoral
-                                                      : MonitorDesign.signalAmber).opacity(0.6),
+                .shadow(color: (counts.needsInput > 0 ? Design.signalCoral
+                                                      : Design.signalAmber).opacity(0.6),
                         radius: 3)
         }
     }
@@ -145,31 +145,31 @@ struct AgentSessionWidgetView: View {
         let alert = c.needsInput > 0 || t.anyWarn
         HStack(spacing: scale.label * 0.6) {
             if c.needsInput > 0 {
-                actionSeg(dot: MonitorDesign.signalCoral, count: c.needsInput,
+                actionSeg(dot: Design.signalCoral, count: c.needsInput,
                           keyword: AgentSessionStrings.awaitingYou, emphatic: true, scale: scale)
             }
             if c.running > 0 {
                 if c.needsInput > 0 { actionDot() }
-                actionSeg(dot: MonitorDesign.signalAmber, count: c.running,
+                actionSeg(dot: Design.signalAmber, count: c.running,
                           keyword: AgentSessionStrings.runningKeyword, emphatic: false, scale: scale)
             }
             if t.longest > 0 {
                 actionDot()
-                Text(verbatim: MonitorFormat.mmss(t.longest))
-                    .font(MonitorDesign.subFont(size: scale.body))
+                Text(verbatim: Format.mmss(t.longest))
+                    .font(Design.subFont(size: scale.body))
                     .monospacedDigit()
-                    .foregroundStyle(MonitorDesign.inkMuted)
+                    .foregroundStyle(Design.inkMuted)
             }
             if t.anyWarn {
                 actionDot()
                 HStack(spacing: scale.label * 0.34) {
                     Circle()
-                        .fill(MonitorDesign.signalCoral)
+                        .fill(Design.signalCoral)
                         .frame(width: scale.label * 0.44, height: scale.label * 0.44)
-                        .shadow(color: MonitorDesign.signalCoral.opacity(0.6), radius: 3)
+                        .shadow(color: Design.signalCoral.opacity(0.6), radius: 3)
                     Text(AgentSessionStrings.warnKeyword)
-                        .font(MonitorDesign.labelFont(size: scale.label))
-                        .foregroundStyle(MonitorDesign.signalCoral)
+                        .font(Design.labelFont(size: scale.label))
+                        .foregroundStyle(Design.signalCoral)
                 }
             }
             Spacer(minLength: 0)
@@ -182,25 +182,25 @@ struct AgentSessionWidgetView: View {
                 .fill(actionStripFill(alert: alert))
                 .overlay(
                     RoundedRectangle(cornerRadius: AgentSessionRowStyle.radius, style: .continuous)
-                        .strokeBorder(alert ? MonitorDesign.signalCoral.opacity(0.85)
-                                            : MonitorDesign.panelStroke,
+                        .strokeBorder(alert ? Design.signalCoral.opacity(0.85)
+                                            : Design.panelStroke,
                                       lineWidth: 1)
                 )
         )
-        .shadow(color: alert ? MonitorDesign.signalCoral.opacity(0.35) : .clear, radius: alert ? 8 : 0)
+        .shadow(color: alert ? Design.signalCoral.opacity(0.35) : .clear, radius: alert ? 8 : 0)
         .opacity(alert ? 1 : 0.78)
     }
 
     private func actionStripFill(alert: Bool) -> LinearGradient {
         if alert {
             return LinearGradient(
-                colors: [MonitorDesign.oklch(0.30, 0.05, 34, alpha: 0.92),
-                         MonitorDesign.oklch(0.235, 0.03, 34, alpha: 0.86)],
+                colors: [Design.oklch(0.30, 0.05, 34, alpha: 0.92),
+                         Design.oklch(0.235, 0.03, 34, alpha: 0.86)],
                 startPoint: .top, endPoint: .bottom)
         }
         return LinearGradient(
-            colors: [MonitorDesign.oklch(0.24, 0.013, 74, alpha: 0.9),
-                     MonitorDesign.oklch(0.20, 0.012, 74, alpha: 0.8)],
+            colors: [Design.oklch(0.24, 0.013, 74, alpha: 0.9),
+                     Design.oklch(0.20, 0.012, 74, alpha: 0.8)],
             startPoint: .top, endPoint: .bottom)
     }
 
@@ -213,18 +213,18 @@ struct AgentSessionWidgetView: View {
                 .frame(width: scale.label * 0.48, height: scale.label * 0.48)
                 .shadow(color: dot.opacity(0.6), radius: 3)
             Text(verbatim: "\(count)")
-                .font(MonitorDesign.subFont(size: scale.body))
+                .font(Design.subFont(size: scale.body))
                 .monospacedDigit()
-                .foregroundStyle(emphatic ? MonitorDesign.oklch(0.94, 0.05, 40) : MonitorDesign.inkMuted)
+                .foregroundStyle(emphatic ? Design.oklch(0.94, 0.05, 40) : Design.inkMuted)
             Text(keyword)
-                .font(MonitorDesign.labelFont(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
         }
     }
 
     private func actionDot() -> some View {
         Circle()
-            .fill(MonitorDesign.inkFaint)
+            .fill(Design.inkFaint)
             .frame(width: 3, height: 3)
             .opacity(0.5)
     }
@@ -237,8 +237,8 @@ struct AgentSessionWidgetView: View {
         VStack(alignment: .leading, spacing: scale.gap) {
             actionStrip(scale: scale, now: now)
             HStack(spacing: scale.body * 0.5) {
-                if c.idle > 0 { countChip(MonitorDesign.signalIdle, c.idle, AgentSessionStrings.idleKeyword, scale) }
-                if c.ended > 0 { countChip(MonitorDesign.signalSage, c.ended, AgentSessionStrings.doneKeyword, scale) }
+                if c.idle > 0 { countChip(Design.signalIdle, c.idle, AgentSessionStrings.idleKeyword, scale) }
+                if c.ended > 0 { countChip(Design.signalSage, c.ended, AgentSessionStrings.doneKeyword, scale) }
             }
             Spacer(minLength: 0)
         }
@@ -254,17 +254,17 @@ struct AgentSessionWidgetView: View {
                 .frame(width: scale.label * 0.5, height: scale.label * 0.5)
                 .overlay(Circle().strokeBorder(Color.black.opacity(0.4), lineWidth: 1))
             (Text(verbatim: "\(count) ") + Text(word))
-                .font(MonitorDesign.subFont(size: scale.body))
+                .font(Design.subFont(size: scale.body))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
         }
         .padding(.horizontal, scale.label * 0.55)
         .padding(.vertical, scale.label * 0.28)
         .background(
             Capsule(style: .continuous)
-                .fill(MonitorDesign.bg2.opacity(0.55))
+                .fill(Design.bg2.opacity(0.55))
                 .overlay(Capsule(style: .continuous)
-                    .strokeBorder(MonitorDesign.hairlineHi.opacity(0.5), lineWidth: 1))
+                    .strokeBorder(Design.hairlineHi.opacity(0.5), lineWidth: 1))
         )
     }
 
@@ -279,12 +279,12 @@ struct AgentSessionWidgetView: View {
             Spacer(minLength: 0)
             HStack(spacing: scale.label * 0.55) {
                 Circle()
-                    .fill(unauthorized ? MonitorDesign.signalAmber : MonitorDesign.signalIdle)
+                    .fill(unauthorized ? Design.signalAmber : Design.signalIdle)
                     .frame(width: scale.label * 0.5, height: scale.label * 0.5)
                     .overlay(Circle().strokeBorder(Color.black.opacity(0.4), lineWidth: 1))
                 Text(unauthorized ? AgentSessionStrings.authorizeHint : AgentSessionStrings.noActiveSessions)
-                    .font(MonitorDesign.captionFont(size: scale.body))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.captionFont(size: scale.body))
+                    .foregroundStyle(Design.inkFaint)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -297,8 +297,8 @@ struct AgentSessionWidgetView: View {
     @ViewBuilder
     private func moreWhisper(_ count: Int, scale: AgentTypeScale) -> some View {
         Text(verbatim: AgentSessionStrings.moreCount(count))
-            .font(MonitorDesign.labelFont(size: scale.label))
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .font(Design.labelFont(size: scale.label))
+            .foregroundStyle(Design.inkFaint)
             .opacity(0.8)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
@@ -306,7 +306,7 @@ struct AgentSessionWidgetView: View {
 
 // MARK: - Type scale
 
-/// Deliberately not `MonitorDesign.TypeScale`: that one caps at 12/13 pt, which
+/// Deliberately not `Design.TypeScale`: that one caps at 12/13 pt, which
 /// on a 4K wallpaper renders the session rows unreadable. Floors are what stays
 /// legible at arm's length; ceilings stop the L tile from looking like a poster.
 struct AgentTypeScale {
@@ -346,25 +346,25 @@ private struct AgentSessionCompactRow: View {
                          animated: !reduceMotion && isLive)
             AgentProviderMark(provider: session.provider, size: scale.title * 0.82)
             Text(verbatim: session.projectName)
-                .font(MonitorDesign.subFont(size: scale.title))
-                .foregroundStyle(status == .ended ? MonitorDesign.inkMuted
-                                 : (isBlocked ? MonitorDesign.oklch(0.97, 0.02, 40) : MonitorDesign.inkPrimary))
+                .font(Design.subFont(size: scale.title))
+                .foregroundStyle(status == .ended ? Design.inkMuted
+                                 : (isBlocked ? Design.oklch(0.97, 0.02, 40) : Design.inkPrimary))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
             if let scope = AgentSessionWidgetView.scopeLabel(for: session) {
                 Text(verbatim: scope)
-                    .font(MonitorDesign.captionFont(size: scale.body))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.captionFont(size: scale.body))
+                    .foregroundStyle(Design.inkFaint)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             Spacer(minLength: scale.label * 0.3)
             if isLive, AgentSessionWidgetView.warningLabel(for: session) != nil {
                 Circle()
-                    .fill(MonitorDesign.signalCoral)
+                    .fill(Design.signalCoral)
                     .frame(width: scale.label * 0.46, height: scale.label * 0.46)
-                    .shadow(color: MonitorDesign.signalCoral.opacity(0.6), radius: 3)
+                    .shadow(color: Design.signalCoral.opacity(0.6), radius: 3)
             }
             AgentSessionRowTimer(session: session, now: now, scale: scale)
         }
@@ -401,7 +401,7 @@ private struct AgentSessionFullRow: View {
             secondTier
             if isLead, isLive {
                 TickTrack(events: session.recentEventTimes ?? [], now: now, span: 180,
-                          tint: isBlocked ? MonitorDesign.signalCoral : MonitorDesign.signalAmber)
+                          tint: isBlocked ? Design.signalCoral : Design.signalAmber)
                     .frame(height: scale.label)
             }
         }
@@ -423,9 +423,9 @@ private struct AgentSessionFullRow: View {
                          animated: !reduceMotion && isLive)
             AgentProviderMark(provider: session.provider, size: scale.title * 0.9)
             Text(verbatim: session.projectName)
-                .font(MonitorDesign.subFont(size: scale.title))
-                .foregroundStyle(status == .ended ? MonitorDesign.inkMuted
-                                 : (isBlocked ? MonitorDesign.oklch(0.97, 0.02, 40) : MonitorDesign.inkPrimary))
+                .font(Design.subFont(size: scale.title))
+                .foregroundStyle(status == .ended ? Design.inkMuted
+                                 : (isBlocked ? Design.oklch(0.97, 0.02, 40) : Design.inkPrimary))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
@@ -448,16 +448,16 @@ private struct AgentSessionFullRow: View {
             HStack(spacing: scale.label * 0.45) {
                 if let scope {
                     Text(verbatim: scope)
-                        .font(MonitorDesign.captionFont(size: scale.body))
-                        .foregroundStyle(MonitorDesign.inkMuted)
+                        .font(Design.captionFont(size: scale.body))
+                        .foregroundStyle(Design.inkMuted)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 if let model = session.model, !model.isEmpty {
                     if scope != nil { tierDot }
                     Text(verbatim: model)
-                        .font(MonitorDesign.captionFont(size: scale.body))
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .font(Design.captionFont(size: scale.body))
+                        .foregroundStyle(Design.inkFaint)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -466,9 +466,9 @@ private struct AgentSessionFullRow: View {
                 // transcript's usage block — no price table, nothing inferred.
                 if let tokens = AgentSessionWidgetView.tokenText(for: session) {
                     Text(verbatim: tokens)
-                        .font(MonitorDesign.subFont(size: scale.body))
+                        .font(Design.subFont(size: scale.body))
                         .monospacedDigit()
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .foregroundStyle(Design.inkFaint)
                         .lineLimit(1)
                         .fixedSize()
                 }
@@ -477,21 +477,21 @@ private struct AgentSessionFullRow: View {
         if let detail, !detail.isEmpty {
             Text(verbatim: detail)
                 .font(.system(size: scale.body, weight: .regular, design: .monospaced))
-                .foregroundStyle(isBlocked ? MonitorDesign.oklch(0.95, 0.028, 40) : MonitorDesign.inkMuted)
+                .foregroundStyle(isBlocked ? Design.oklch(0.95, 0.028, 40) : Design.inkMuted)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if isBlocked {
             Text(AgentSessionStrings.needsYou)
-                .font(MonitorDesign.subFont(size: scale.body))
-                .foregroundStyle(MonitorDesign.signalCoral)
+                .font(Design.subFont(size: scale.body))
+                .foregroundStyle(Design.signalCoral)
                 .lineLimit(1)
         }
     }
 
     private var tierDot: some View {
         Circle()
-            .fill(MonitorDesign.inkFaint)
+            .fill(Design.inkFaint)
             .frame(width: 2.5, height: 2.5)
             .opacity(0.5)
     }
@@ -500,16 +500,16 @@ private struct AgentSessionFullRow: View {
 // MARK: - Shared row pieces
 
 private enum AgentSessionRowStyle {
-    static var radius: CGFloat { max(6, MonitorDesign.cornerRadiusMin) }
+    static var radius: CGFloat { max(6, Design.cornerRadiusMin) }
 
     static func fill(isBlocked: Bool) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(isBlocked
-                  ? LinearGradient(colors: [MonitorDesign.oklch(0.315, 0.055, 34, alpha: 0.94),
-                                            MonitorDesign.oklch(0.235, 0.032, 34, alpha: 0.9)],
+                  ? LinearGradient(colors: [Design.oklch(0.315, 0.055, 34, alpha: 0.94),
+                                            Design.oklch(0.235, 0.032, 34, alpha: 0.9)],
                                    startPoint: .top, endPoint: .bottom)
-                  : LinearGradient(colors: [MonitorDesign.oklch(0.255, 0.014, 74, alpha: 0.92),
-                                            MonitorDesign.oklch(0.205, 0.013, 74, alpha: 0.86)],
+                  : LinearGradient(colors: [Design.oklch(0.255, 0.014, 74, alpha: 0.92),
+                                            Design.oklch(0.205, 0.013, 74, alpha: 0.86)],
                                    startPoint: .top, endPoint: .bottom))
     }
 
@@ -523,7 +523,7 @@ private enum AgentSessionRowStyle {
 
     static func border(isBlocked: Bool) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .strokeBorder(isBlocked ? MonitorDesign.signalCoral.opacity(0.85) : MonitorDesign.panelStroke,
+            .strokeBorder(isBlocked ? Design.signalCoral.opacity(0.85) : Design.panelStroke,
                           lineWidth: 1)
     }
 }
@@ -544,7 +544,7 @@ private struct AgentProviderMark: View {
             } else {
                 Image(systemName: fallbackSymbol)
                     .font(.system(size: size * 0.86, weight: .medium))
-                    .foregroundStyle(MonitorDesign.inkMuted)
+                    .foregroundStyle(Design.inkMuted)
             }
         }
         .frame(width: size, height: size)
@@ -574,15 +574,15 @@ private struct AgentSessionRowTimer: View {
     var body: some View {
         if let timer = AgentSessionWidgetView.timerText(for: session, now: now) {
             Text(verbatim: timer.text)
-                .font(MonitorDesign.subFont(size: scale.body))
+                .font(Design.subFont(size: scale.body))
                 .monospacedDigit()
                 .foregroundStyle(Self.color(for: session.status))
                 .lineLimit(1)
                 .layoutPriority(1)
         } else {
             Text(AgentSessionWidgetView.statusWord(session.status))
-                .font(MonitorDesign.labelFont(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
                 .lineLimit(1)
                 .layoutPriority(1)
         }
@@ -590,9 +590,9 @@ private struct AgentSessionRowTimer: View {
 
     static func color(for status: MonitorAgentStatus) -> Color {
         switch status {
-        case .needsInput: return MonitorDesign.oklch(0.9, 0.06, 40)
-        case .running: return MonitorDesign.signalAmber
-        default: return MonitorDesign.inkFaint
+        case .needsInput: return Design.oklch(0.9, 0.06, 40)
+        case .running: return Design.signalAmber
+        default: return Design.inkFaint
         }
     }
 }
@@ -604,26 +604,26 @@ private struct AgentSessionWarningChip: View {
     var body: some View {
         HStack(spacing: scale.label * 0.35) {
             Circle()
-                .fill(warn.isStale ? MonitorDesign.signalAmber : MonitorDesign.signalCoral)
+                .fill(warn.isStale ? Design.signalAmber : Design.signalCoral)
                 .frame(width: scale.label * 0.44, height: scale.label * 0.44)
-                .shadow(color: (warn.isStale ? MonitorDesign.signalAmber : MonitorDesign.signalCoral).opacity(0.6),
+                .shadow(color: (warn.isStale ? Design.signalAmber : Design.signalCoral).opacity(0.6),
                         radius: 3)
             Text(AgentSessionStrings.warningLabel(warn.text))
-                .font(MonitorDesign.labelFont(size: scale.label))
-                .foregroundStyle(warn.isStale ? MonitorDesign.oklch(0.9, 0.07, 80)
-                                              : MonitorDesign.oklch(0.92, 0.06, 44))
+                .font(Design.labelFont(size: scale.label))
+                .foregroundStyle(warn.isStale ? Design.oklch(0.9, 0.07, 80)
+                                              : Design.oklch(0.92, 0.06, 44))
                 .lineLimit(1)
         }
         .padding(.horizontal, scale.label * 0.42)
         .padding(.vertical, scale.label * 0.16)
         .background(
             Capsule(style: .continuous)
-                .fill(warn.isStale ? MonitorDesign.oklch(0.3, 0.05, 78, alpha: 0.35)
-                                   : MonitorDesign.oklch(0.34, 0.07, 38, alpha: 0.4))
+                .fill(warn.isStale ? Design.oklch(0.3, 0.05, 78, alpha: 0.35)
+                                   : Design.oklch(0.34, 0.07, 38, alpha: 0.4))
                 .overlay(
                     Capsule(style: .continuous)
-                        .strokeBorder(warn.isStale ? MonitorDesign.oklch(0.5, 0.1, 78, alpha: 0.7)
-                                                   : MonitorDesign.oklch(0.5, 0.13, 40, alpha: 0.7),
+                        .strokeBorder(warn.isStale ? Design.oklch(0.5, 0.1, 78, alpha: 0.7)
+                                                   : Design.oklch(0.5, 0.13, 40, alpha: 0.7),
                                       lineWidth: 1)
                 )
         )
@@ -674,10 +674,10 @@ extension AgentSessionWidgetView {
 
     nonisolated static func accentColor(_ status: MonitorAgentStatus) -> Color {
         switch status {
-        case .running: return MonitorDesign.signalAmber
-        case .needsInput: return MonitorDesign.signalCoral
-        case .ended: return MonitorDesign.signalSage
-        case .idle, .unknown: return MonitorDesign.signalIdle
+        case .running: return Design.signalAmber
+        case .needsInput: return Design.signalCoral
+        case .ended: return Design.signalSage
+        case .idle, .unknown: return Design.signalIdle
         }
     }
 
@@ -707,7 +707,7 @@ extension AgentSessionWidgetView {
     nonisolated static func tokenText(for session: MonitorAgentSessionState) -> String? {
         let total = session.tokens.input + session.tokens.output
         guard total > 0 else { return nil }
-        return MonitorFormat.tokens(total) + " tok"
+        return Format.tokens(total) + " tok"
     }
 
     // MARK: settings (read side; the popover writes these keys)
@@ -829,7 +829,7 @@ extension AgentSessionWidgetView {
         switch session.status {
         case .running:
             guard let started = session.startedAt else { return nil }
-            return TimerText(source: .running, text: MonitorFormat.mmss(max(0, now - started)))
+            return TimerText(source: .running, text: Format.mmss(max(0, now - started)))
         case .needsInput:
             guard let since = session.waitSince else {
                 return TimerText(source: .waiting, text: waitingText(0))
@@ -843,12 +843,12 @@ extension AgentSessionWidgetView {
     }
 
     private nonisolated static func waitingText(_ seconds: Double) -> String {
-        String(localized: "waiting \(MonitorFormat.mmss(seconds))",
+        String(localized: "waiting \(Format.mmss(seconds))",
                comment: "Agent Session row timer: how long a session has been blocked waiting for the user; arg is mm:ss.")
     }
 
     private nonisolated static func finishedText(_ secondsAgo: Double) -> String {
-        String(localized: "finished \(MonitorFormat.ago(secondsAgo)) ago",
+        String(localized: "finished \(Format.ago(secondsAgo)) ago",
                comment: "Agent Session row: how long ago an ended session finished; arg is a compact age like 2m.")
     }
 
@@ -971,7 +971,7 @@ private extension MonitorWidgetContext {
                 .frame(width: 364, height: 170)
         }
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
     }
 }
 
@@ -980,7 +980,7 @@ private extension MonitorWidgetContext {
         AgentSessionWidgetView(context: .agentSessionSample(size: .large).at(t.date))
             .frame(width: 364, height: 376)
             .padding(32)
-            .background(MonitorDesign.boardWash)
+            .background(Design.boardWash)
     }
 }
 #endif

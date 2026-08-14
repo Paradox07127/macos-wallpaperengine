@@ -4,9 +4,9 @@ import LiveWallpaperCore
 struct DiskWidgetView: View {
     let context: MonitorWidgetContext
 
-    private static let readColor = MonitorDesign.signalSage
-    private static let writeColor = MonitorDesign.oklch(0.62, 0.07, 288)
-    private static let peakSwatch = MonitorDesign.oklch(0.72, 0.09, 60)
+    private static let readColor = Design.signalSage
+    private static let writeColor = Design.oklch(0.62, 0.07, 288)
+    private static let peakSwatch = Design.oklch(0.72, 0.09, 60)
 
     /// L's "Top by I/O" list cap (the sampler already ranks and caps its feed).
     private static let topIORowCap = 5
@@ -29,10 +29,10 @@ struct DiskWidgetView: View {
     // MARK: - Small (1×1)
 
     private func small(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
             Text("ALL DISKS", bundle: .main)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
         } content: {
             VStack(alignment: .leading, spacing: scale.label * 0.55) {
                 dualRate(scale: scale, heroScale: 0.58)
@@ -45,7 +45,7 @@ struct DiskWidgetView: View {
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * 2.4)
                 Self.peakTag(label: String(localized: "R peak", comment: "Disk widget: recent read-rate peak label."),
-                             value: MonitorFormat.rate(history.diskReadPeak),
+                             value: Format.rate(history.diskReadPeak),
                              scale: scale)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -54,7 +54,7 @@ struct DiskWidgetView: View {
 
     /// S's "current pair": R and W rows at ONE size — direction/kind is carried
     /// by the hue-coded letter and stacking order, never by size asymmetry.
-    private func dualRate(scale: MonitorDesign.TypeScale, heroScale: CGFloat) -> some View {
+    private func dualRate(scale: Design.TypeScale, heroScale: CGFloat) -> some View {
         let size = scale.hero * heroScale
         return VStack(alignment: .leading, spacing: scale.label * 0.3) {
             heroRateItem(letter: "R", color: Self.readColor,
@@ -80,10 +80,10 @@ struct DiskWidgetView: View {
     // MARK: - Medium (2×1)
 
     private func medium(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
             Text("ALL DISKS", bundle: .main)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
         } content: {
             VStack(alignment: .leading, spacing: scale.label * 0.6) {
                 currentPairRow(scale: scale)
@@ -97,7 +97,7 @@ struct DiskWidgetView: View {
                 .frame(minHeight: scale.caption * 3)
                 .overlay(alignment: .topTrailing) {
                     Self.peakTag(label: String(localized: "R peak", comment: "Disk widget: recent read-rate peak label."),
-                                 value: MonitorFormat.rate(history.diskReadPeak),
+                                 value: Format.rate(history.diskReadPeak),
                                  scale: scale)
                         .padding(scale.label * 0.3)
                 }
@@ -108,27 +108,27 @@ struct DiskWidgetView: View {
     }
 
     /// "R read  W write"  ↔  "readRate · writeRate".
-    private func currentPairRow(scale: MonitorDesign.TypeScale) -> some View {
+    private func currentPairRow(scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             HStack(spacing: scale.label * 0.35) {
                 legendKey("R", color: Self.readColor, size: scale.label)
-                Text("read").foregroundStyle(MonitorDesign.inkFaint)
+                Text("read").foregroundStyle(Design.inkFaint)
                 legendKey("W", color: Self.writeColor, size: scale.label)
                     .padding(.leading, scale.label * 0.5)
-                Text("write").foregroundStyle(MonitorDesign.inkFaint)
+                Text("write").foregroundStyle(Design.inkFaint)
             }
-            .font(MonitorDesign.labelFont(size: scale.label))
-            .tracking(MonitorDesign.labelTracking(size: scale.label))
+            .font(Design.labelFont(size: scale.label))
+            .tracking(Design.labelTracking(size: scale.label))
             .textCase(.uppercase)
 
             Spacer(minLength: 4)
 
             HStack(spacing: scale.caption * 0.35) {
-                Text(verbatim: MonitorFormat.rate(sys.diskReadBytesPerSec))
-                    .foregroundStyle(MonitorDesign.inkPrimary)
-                Text(verbatim: "·").foregroundStyle(MonitorDesign.inkFaint)
-                Text(verbatim: MonitorFormat.rate(sys.diskWriteBytesPerSec))
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                Text(verbatim: Format.rate(sys.diskReadBytesPerSec))
+                    .foregroundStyle(Design.inkPrimary)
+                Text(verbatim: "·").foregroundStyle(Design.inkFaint)
+                Text(verbatim: Format.rate(sys.diskWriteBytesPerSec))
+                    .foregroundStyle(Design.inkPrimary)
             }
             .font(.system(size: scale.caption, weight: .semibold, design: .rounded))
             .monospacedDigit()
@@ -139,12 +139,12 @@ struct DiskWidgetView: View {
 
     /// "Σ <total> · <age> ago" — the R peak now lives in the chart's own corner
     /// (see `medium`'s overlay), so this row is just the session micro-tag.
-    private func footerRow(scale: MonitorDesign.TypeScale) -> some View {
+    private func footerRow(scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Spacer(minLength: 0)
             Text(verbatim: sessionSummary)
-                .font(MonitorDesign.labelFont(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .monitorChip(scale)
@@ -153,9 +153,9 @@ struct DiskWidgetView: View {
 
     private var sessionSummary: String {
         let total = history.diskReadSessionBytes + history.diskWriteSessionBytes
-        var s = "Σ " + MonitorFormat.bytes(total)
+        var s = "Σ " + Format.bytes(total)
         if let age = freshnessSeconds {
-            s += " · " + MonitorFormat.ago(age) + " "
+            s += " · " + Format.ago(age) + " "
                 + String(localized: "ago", comment: "Relative-age suffix, e.g. '2m ago'.")
         }
         return s
@@ -196,11 +196,11 @@ struct DiskWidgetView: View {
     // MARK: - Large (2×2)
 
     private func large(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         let topIO = topIOProcesses
         return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
             Text("ALL DISKS", bundle: .main)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
         } content: {
             VStack(alignment: .leading, spacing: scale.label * 0.6) {
                 heroPairRow(scale: scale)
@@ -215,12 +215,12 @@ struct DiskWidgetView: View {
                 .frame(minHeight: scale.caption * (topIO.isEmpty ? 5 : 3))
                 .overlay(alignment: .topTrailing) {
                     Self.peakTag(label: String(localized: "R peak", comment: "Disk widget: recent read-rate peak label."),
-                                 value: MonitorFormat.rate(history.diskReadPeak), scale: scale)
+                                 value: Format.rate(history.diskReadPeak), scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     Self.peakTag(label: String(localized: "W peak", comment: "Disk widget: recent write-rate peak label."),
-                                 value: MonitorFormat.rate(history.diskWritePeak), scale: scale)
+                                 value: Format.rate(history.diskWritePeak), scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 sessionSectionLabel(scale: scale)
@@ -242,13 +242,13 @@ struct DiskWidgetView: View {
 
     /// "Top by I/O" — the sampler's per-app disk ranking in Memory's L-list idiom (bullet + truncating name + right-aligned numeric columns).
     private func topIOBlock(
-        _ procs: [MonitorProcessSample], scale: MonitorDesign.TypeScale
+        _ procs: [MonitorProcessSample], scale: Design.TypeScale
     ) -> some View {
         VStack(alignment: .leading, spacing: scale.caption * 0.32) {
             Text(verbatim: "TOP BY I/O")
-                .font(MonitorDesign.labelFont(size: scale.label))
-                .tracking(MonitorDesign.labelTracking(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: scale.label))
+                .tracking(Design.labelTracking(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
             ForEach(Array(procs.enumerated()), id: \.offset) { _, proc in
                 topIORow(proc, scale: scale)
             }
@@ -256,16 +256,16 @@ struct DiskWidgetView: View {
     }
 
     private func topIORow(
-        _ proc: MonitorProcessSample, scale: MonitorDesign.TypeScale
+        _ proc: MonitorProcessSample, scale: Design.TypeScale
     ) -> some View {
         HStack(spacing: scale.caption * 0.8) {
             HStack(spacing: scale.caption * 0.5) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(MonitorDesign.inkFaint.opacity(0.7))
+                    .fill(Design.inkFaint.opacity(0.7))
                     .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
                 Text(verbatim: proc.name)
-                    .font(MonitorDesign.captionFont(size: scale.caption))
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .font(Design.captionFont(size: scale.caption))
+                    .foregroundStyle(Design.inkPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -279,15 +279,15 @@ struct DiskWidgetView: View {
 
     /// One hue-lettered rate column (the widget's R/W letter idiom, matching the mirrored scope's up/down assignment).
     private func ioRateColumn(
-        letter: String, color: Color, rate: Double, scale: MonitorDesign.TypeScale
+        letter: String, color: Color, rate: Double, scale: Design.TypeScale
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.caption * 0.3) {
             Text(verbatim: letter)
                 .font(.system(size: scale.caption * 0.86, weight: .bold, design: .rounded))
                 .foregroundStyle(color)
-            Text(verbatim: MonitorFormat.rate(rate))
-                .font(MonitorDesign.subFont(size: scale.caption * 0.94)).monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+            Text(verbatim: Format.rate(rate))
+                .font(Design.subFont(size: scale.caption * 0.94)).monospacedDigit()
+                .foregroundStyle(Design.inkMuted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(width: scale.caption * 5.3, alignment: .trailing)
@@ -296,7 +296,7 @@ struct DiskWidgetView: View {
 
     /// L's "now" read: both current rates at hero weight on one baseline, letters
     /// hue-coded — the same atom S stacks vertically, laid flat where L has width.
-    private func heroPairRow(scale: MonitorDesign.TypeScale) -> some View {
+    private func heroPairRow(scale: Design.TypeScale) -> some View {
         let size = scale.hero * 0.58
         return HStack(alignment: .firstTextBaseline, spacing: size) {
             heroRateItem(letter: "R", color: Self.readColor,
@@ -309,24 +309,24 @@ struct DiskWidgetView: View {
         .minimumScaleFactor(0.7)
     }
 
-    private func historySectionLabel(scale: MonitorDesign.TypeScale) -> some View {
+    private func historySectionLabel(scale: Design.TypeScale) -> some View {
         Text("History", comment: "Disk widget: L card's history-chart section label.")
-            .font(MonitorDesign.labelFont(size: scale.label))
-            .tracking(MonitorDesign.labelTracking(size: scale.label))
+            .font(Design.labelFont(size: scale.label))
+            .tracking(Design.labelTracking(size: scale.label))
             .textCase(.uppercase)
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .foregroundStyle(Design.inkFaint)
     }
 
-    private func sessionSectionLabel(scale: MonitorDesign.TypeScale) -> some View {
+    private func sessionSectionLabel(scale: Design.TypeScale) -> some View {
         Text("Session", comment: "Disk widget: L card's R/W session-split section label.")
-            .font(MonitorDesign.labelFont(size: scale.label))
-            .tracking(MonitorDesign.labelTracking(size: scale.label))
+            .font(Design.labelFont(size: scale.label))
+            .tracking(Design.labelTracking(size: scale.label))
             .textCase(.uppercase)
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .foregroundStyle(Design.inkFaint)
     }
 
     /// Split-bar byte legend + sample freshness merged onto one line, so L's fixed 331-pt content budget goes to the scope instead of stacked micro-rows.
-    private func sessionFooterRow(scale: MonitorDesign.TypeScale) -> some View {
+    private func sessionFooterRow(scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if !splitLegendCompact {
                 HStack(spacing: scale.label * 1.4) {
@@ -339,10 +339,10 @@ struct DiskWidgetView: View {
             }
             Spacer(minLength: 6)
             if let age = freshnessSeconds {
-                Text(verbatim: MonitorFormat.ago(age) + " "
+                Text(verbatim: Format.ago(age) + " "
                      + String(localized: "ago", comment: "Relative-age suffix, e.g. '2m ago'."))
-                    .font(MonitorDesign.labelFont(size: scale.label))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .font(Design.labelFont(size: scale.label))
+                    .foregroundStyle(Design.inkFaint)
             }
         }
         .lineLimit(1)
@@ -350,15 +350,15 @@ struct DiskWidgetView: View {
     }
 
     private func splitLegendItem(
-        letter: String, color: Color, bytes: Double, scale: MonitorDesign.TypeScale
+        letter: String, color: Color, bytes: Double, scale: Design.TypeScale
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.label * 0.3) {
             Text(verbatim: letter)
                 .font(.system(size: scale.label, weight: .bold, design: .rounded))
                 .foregroundStyle(color)
-            Text(verbatim: MonitorFormat.bytes(bytes))
-                .font(MonitorDesign.subFont(size: scale.label)).monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+            Text(verbatim: Format.bytes(bytes))
+                .font(Design.subFont(size: scale.label)).monospacedDigit()
+                .foregroundStyle(Design.inkMuted)
         }
     }
 
@@ -379,23 +379,23 @@ struct DiskWidgetView: View {
     // MARK: - Static helpers (testable, chrome-free)
 
     static func rateHero(_ bytesPerSec: Double, size: CGFloat) -> some View {
-        let text = MonitorFormat.rate(bytesPerSec)
+        let text = Format.rate(bytesPerSec)
         let parts = text.split(separator: " ", maxSplits: 1)
         let value = String(parts.first ?? "")
         let unit = parts.count > 1 ? String(parts[1]) : ""
         return HStack(alignment: .firstTextBaseline, spacing: size * 0.04) {
             Text(verbatim: value)
-                .font(MonitorDesign.heroFont(size: size)).monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .font(Design.heroFont(size: size)).monospacedDigit()
+                .foregroundStyle(Design.inkPrimary)
             if !unit.isEmpty {
                 Text(verbatim: unit)
                     .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
             }
         }
     }
 
-    static func peakTag(label: String, value: String, scale: MonitorDesign.TypeScale) -> some View {
+    static func peakTag(label: String, value: String, scale: Design.TypeScale) -> some View {
         let size = scale.label
         return HStack(alignment: .firstTextBaseline, spacing: size * 0.35) {
             RoundedRectangle(cornerRadius: 1)
@@ -403,13 +403,13 @@ struct DiskWidgetView: View {
                 .frame(width: size * 0.5, height: size * 0.5)
                 .alignmentGuide(.firstTextBaseline) { $0[.bottom] - size * 0.08 }
             Text(verbatim: label)
-                .font(MonitorDesign.labelFont(size: size))
-                .tracking(MonitorDesign.labelTracking(size: size))
+                .font(Design.labelFont(size: size))
+                .tracking(Design.labelTracking(size: size))
                 .textCase(.uppercase)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Text(verbatim: value)
                 .font(.system(size: size, weight: .semibold, design: .rounded)).monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
         }
         .lineLimit(1)
         .monitorChip(scale)
@@ -465,7 +465,7 @@ private struct DiskSplitBar: View {
                     readColor.opacity(0.85)
                         .frame(width: max(1, w * CGFloat(readFraction)))
                         .overlay(alignment: .trailing) {
-                            Rectangle().fill(MonitorDesign.bg0.opacity(0.55)).frame(width: 1)
+                            Rectangle().fill(Design.bg0.opacity(0.55)).frame(width: 1)
                         }
                 }
                 if writeFraction > 0.004 {
@@ -474,7 +474,7 @@ private struct DiskSplitBar: View {
                 }
             }
         }
-        .background(MonitorDesign.track)
+        .background(Design.track)
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -540,20 +540,20 @@ private func diskMockContext(size: MonitorWidgetSize) -> MonitorWidgetContext {
     DiskWidgetView(context: diskMockContext(size: .small))
         .frame(width: 170, height: 170)
         .padding(28)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Disk · M (364×170)") {
     DiskWidgetView(context: diskMockContext(size: .medium))
         .frame(width: 364, height: 170)
         .padding(28)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Disk · L (364×376)") {
     DiskWidgetView(context: diskMockContext(size: .large))
         .frame(width: 364, height: 376)
         .padding(28)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 #endif

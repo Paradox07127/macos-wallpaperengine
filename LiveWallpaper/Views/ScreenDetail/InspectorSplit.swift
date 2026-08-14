@@ -2,7 +2,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Main column + trailing full-height inspector; widths resolve against live container width.
-struct ResizableInspectorSplit<Main: View, Inspector: View>: View {
+struct InspectorSplit<Main: View, Inspector: View>: View {
     /// Keep the (heavy) inspector subtree built even when collapsed.
     let isMounted: Bool
     let isVisible: Bool

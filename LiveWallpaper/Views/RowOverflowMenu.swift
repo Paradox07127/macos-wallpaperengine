@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared hover ellipsis for 50pt list rows (`PlaylistRow`, `ScheduleSlotRow`).
+/// Shared hover ellipsis for 50pt list rows (`Row`, `SlotRow`).
 struct RowOverflowMenu<Content: View>: View {
     let isHovering: Bool
     @ViewBuilder let content: () -> Content

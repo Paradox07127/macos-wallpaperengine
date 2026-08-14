@@ -4,7 +4,7 @@ struct TickTrack: View {
     var events: [Double]
     var now: Double
     var span: Double = 180
-    var tint: Color = MonitorDesign.signalAmber
+    var tint: Color = Design.signalAmber
     var cornerRadius: CGFloat = 4
 
     var body: some View {
@@ -13,12 +13,12 @@ struct TickTrack: View {
             ZStack {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(
-                        LinearGradient(colors: [MonitorDesign.bg0.opacity(0.55),
-                                                MonitorDesign.bg0.opacity(0.3)],
+                        LinearGradient(colors: [Design.bg0.opacity(0.55),
+                                                Design.bg0.opacity(0.3)],
                                        startPoint: .top, endPoint: .bottom)
                     )
                 Rectangle()
-                    .fill(MonitorDesign.hairline.opacity(0.5))
+                    .fill(Design.hairline.opacity(0.5))
                     .frame(height: 1)
 
                 ForEach(Array(Self.ticks(events: events, now: now, span: span).enumerated()),
@@ -60,9 +60,9 @@ struct TickTrack: View {
         TickTrack(events: [9_990, 9_960, 9_930, 9_880, 9_840].map(Double.init), now: now)
             .frame(width: 260, height: 20)
         TickTrack(events: (0..<12).map { now - Double($0) * 14 }, now: now,
-                  tint: MonitorDesign.signalSage)
+                  tint: Design.signalSage)
             .frame(width: 260, height: 20)
     }
     .padding(24)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

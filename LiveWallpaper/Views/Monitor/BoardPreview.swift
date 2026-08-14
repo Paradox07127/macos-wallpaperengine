@@ -75,8 +75,8 @@ struct BoardPreview: NSViewRepresentable {
         Coordinator()
     }
 
-    func makeNSView(context: Context) -> BoardHostView {
-        let host = BoardHostView(
+    func makeNSView(context: Context) -> HostView {
+        let host = HostView(
             frame: NSRect(x: 0, y: 0, width: 480, height: 168),
             configuration: configuration,
             nameOnlyTiles: true,
@@ -93,7 +93,7 @@ struct BoardPreview: NSViewRepresentable {
         return host
     }
 
-    func updateNSView(_ host: BoardHostView, context: Context) {
+    func updateNSView(_ host: HostView, context: Context) {
         host.onConfigurationEdited = onConfigurationEdited
         let needsApply = context.coordinator.lastAppliedConfiguration != configuration
         if needsApply { context.coordinator.lastAppliedConfiguration = configuration }
@@ -109,17 +109,17 @@ struct BoardPreview: NSViewRepresentable {
         }
     }
 
-    static func dismantleNSView(_ host: BoardHostView, coordinator: Coordinator) {
+    static func dismantleNSView(_ host: HostView, coordinator: Coordinator) {
         coordinator.detach()
     }
 
     /// Manages the preview host's edit lifecycle only — no runtime lease, no pump (the preview shows name-only tiles).
     @MainActor
     final class Coordinator {
-        private weak var host: BoardHostView?
+        private weak var host: HostView?
         var lastAppliedConfiguration: MonitorBoardConfiguration?
 
-        func attach(_ host: BoardHostView) {
+        func attach(_ host: HostView) {
             self.host = host
             self.lastAppliedConfiguration = nil
         }

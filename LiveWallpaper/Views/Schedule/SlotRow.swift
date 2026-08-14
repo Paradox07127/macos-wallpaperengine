@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Schedule row mirroring `PlaylistRow`'s 50pt cadence.
-struct ScheduleSlotRow: View {
+/// Schedule row mirroring `Row`'s 50pt cadence.
+struct SlotRow: View {
     @Binding var slot: ScheduleSlot
     let accent: Color
     let isActive: Bool
@@ -131,7 +131,7 @@ struct ScheduleSlotRow: View {
             .accessibilityLabel(Text("Time range"))
             .accessibilityValue(Text(verbatim: ScheduleTimeFormatter.rangeLabel(startHour: slot.startHour, endHour: slot.endHour)))
             .popover(isPresented: $timePopoverShown, arrowEdge: .bottom) {
-                ScheduleTimeEditorPopover(
+                TimeEditorPopover(
                     slotID: slot.id,
                     initialStart: slot.startHour,
                     initialEnd: slot.endHour,

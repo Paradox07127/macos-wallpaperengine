@@ -72,7 +72,7 @@ final class OverlayController: NSObject {
 
     private final class Host {
         let window: OverlayWindow
-        let board: BoardHostView
+        let board: HostView
         /// Drives the union sampling options across hosts.
         var config: MonitorBoardConfiguration
         var level: MonitorOverlayLevel
@@ -81,7 +81,7 @@ final class OverlayController: NSObject {
 
         init(
             window: OverlayWindow,
-            board: BoardHostView,
+            board: HostView,
             config: MonitorBoardConfiguration,
             level: MonitorOverlayLevel
         ) {
@@ -102,7 +102,7 @@ final class OverlayController: NSObject {
 
     private var pumpTask: Task<Void, Never>?
     private var lastGeneration: UInt64 = 0
-    private let runtime: MonitorRuntime
+    private let runtime: Runtime
     private let runtimeLeaseSlot: MonitorRuntimeLeaseSlot
 
     private struct AppliedRuntimeState {
@@ -125,7 +125,7 @@ final class OverlayController: NSObject {
         self.init(runtime: .shared)
     }
 
-    init(runtime: MonitorRuntime) {
+    init(runtime: Runtime) {
         self.runtime = runtime
         self.runtimeLeaseSlot = runtime.makeLeaseSlot()
         super.init()
@@ -143,7 +143,7 @@ final class OverlayController: NSObject {
             return
         }
 
-        let topInsetFraction = BoardHostView.menuBarTopInsetFraction(forFrame: screenFrame)
+        let topInsetFraction = HostView.menuBarTopInsetFraction(forFrame: screenFrame)
 
         if let host = hosts[screenID] {
             host.config = overlay.board
@@ -159,7 +159,7 @@ final class OverlayController: NSObject {
         SourceRegistration.registerDefaultFactories()
 
         let window = OverlayWindow(screenFrame: screenFrame, level: overlay.level)
-        let board = BoardHostView(
+        let board = HostView(
             frame: NSRect(origin: .zero, size: screenFrame.size),
             configuration: overlay.board,
             topInsetFraction: topInsetFraction
@@ -303,7 +303,7 @@ final class OverlayController: NSObject {
         }
     }
 
-    /// Sole mutator of this controller's MonitorRuntime lease.
+    /// Sole mutator of this controller's Runtime lease.
     private func runRuntimeReconciliationLoop() async {
         while true {
             let revision = runtimeReconciliationRevision

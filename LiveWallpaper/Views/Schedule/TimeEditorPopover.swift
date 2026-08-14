@@ -2,7 +2,7 @@ import SwiftUI
 import LiveWallpaperCore
 
 /// Popover anchored to a slot row's time-range label.
-struct ScheduleTimeEditorPopover: View {
+struct TimeEditorPopover: View {
     let slotID: UUID
     let initialStart: Int
     let initialEnd: Int

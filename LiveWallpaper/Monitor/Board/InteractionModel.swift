@@ -34,9 +34,9 @@ enum MonitorBoardPlacementDirection {
     case down
 }
 
-/// Board placements, edit mode, selection, and in-flight drag for `BoardRootView`.
+/// Board placements, edit mode, selection, and in-flight drag for `RootView`.
 @MainActor
-final class BoardInteractionModel: ObservableObject {
+final class InteractionModel: ObservableObject {
     @Published private(set) var placements: [MonitorWidgetPlacement]
     @Published var isEditing: Bool = false
     @Published var selectedID: UUID?
@@ -99,7 +99,7 @@ final class BoardInteractionModel: ObservableObject {
     }
 
     func pixelOrigin(for placement: MonitorWidgetPlacement) -> CGPoint {
-        BoardLayoutEngine.pixelOrigin(
+        LayoutEngine.pixelOrigin(
             normalized: CGPoint(x: placement.x, y: placement.y), boardSize: boardSize
         )
     }
@@ -171,7 +171,7 @@ final class BoardInteractionModel: ObservableObject {
             current.guideX = nil
             current.guideY = nil
         } else {
-            let result = BoardLayoutEngine.snap(
+            let result = LayoutEngine.snap(
                 freeOrigin: free,
                 footprint: current.footprint,
                 geometry: geometry,
@@ -206,7 +206,7 @@ final class BoardInteractionModel: ObservableObject {
             }
             let placement = placements[index]
             let footprintSize = footprint(for: placement)
-            guard let landed = BoardLayoutEngine.land(
+            guard let landed = LayoutEngine.land(
                 freeOrigin: proposedOrigin,
                 snappedOrigin: nil,
                 footprint: footprintSize,
@@ -216,7 +216,7 @@ final class BoardInteractionModel: ObservableObject {
             ) else {
                 return false
             }
-            let normalized = BoardLayoutEngine.normalized(
+            let normalized = LayoutEngine.normalized(
                 pixelOrigin: landed,
                 boardSize: boardSize
             )
@@ -292,12 +292,12 @@ final class BoardInteractionModel: ObservableObject {
         guard isEditing else { return false }
         let size = Self.defaultSize(for: kind)
         let footprintSize = geometry.pixelSize(for: kind, size: size)
-        guard let origin = BoardLayoutEngine.firstFit(
+        guard let origin = LayoutEngine.firstFit(
             footprint: footprintSize, geometry: geometry, items: items(excluding: nil)
         ) else {
             return false
         }
-        let normalized = BoardLayoutEngine.normalized(pixelOrigin: origin, boardSize: boardSize)
+        let normalized = LayoutEngine.normalized(pixelOrigin: origin, boardSize: boardSize)
         let placement = MonitorWidgetPlacement(kind: kind, size: size, x: normalized.x, y: normalized.y)
         placements.append(placement)
         select(placement.id)
@@ -338,13 +338,13 @@ final class BoardInteractionModel: ObservableObject {
         guard placements[index].size != size else { return true }
         let anchor = pixelOrigin(for: placements[index])
         let newFootprint = geometry.pixelSize(for: placements[index].kind, size: size)
-        guard let origin = BoardLayoutEngine.refitForSizeChange(
+        guard let origin = LayoutEngine.refitForSizeChange(
             anchor: anchor, newFootprint: newFootprint, geometry: geometry,
             items: items(excluding: id), ignoring: id
         ) else {
             return false
         }
-        let normalized = BoardLayoutEngine.normalized(pixelOrigin: origin, boardSize: boardSize)
+        let normalized = LayoutEngine.normalized(pixelOrigin: origin, boardSize: boardSize)
         placements[index].size = size
         placements[index].x = normalized.x
         placements[index].y = normalized.y
@@ -361,31 +361,31 @@ final class BoardInteractionModel: ObservableObject {
 
         for index in placements.indices {
             let footprintSize = geo.pixelSize(for: placements[index].kind, size: placements[index].size)
-            let px = BoardLayoutEngine.pixelOrigin(
+            let px = LayoutEngine.pixelOrigin(
                 normalized: CGPoint(x: placements[index].x, y: placements[index].y), boardSize: newSize
             )
             let clamped = geo.clampOrigin(px, footprint: footprintSize)
-            let normalized = BoardLayoutEngine.normalized(pixelOrigin: clamped, boardSize: newSize)
+            let normalized = LayoutEngine.normalized(pixelOrigin: clamped, boardSize: newSize)
             placements[index].x = normalized.x
             placements[index].y = normalized.y
         }
 
         for index in placements.indices {
             let footprintSize = geo.pixelSize(for: placements[index].kind, size: placements[index].size)
-            let px = BoardLayoutEngine.pixelOrigin(
+            let px = LayoutEngine.pixelOrigin(
                 normalized: CGPoint(x: placements[index].x, y: placements[index].y), boardSize: newSize
             )
             let rect = CGRect(origin: px, size: footprintSize)
-            if !BoardLayoutEngine.isLegal(
+            if !LayoutEngine.isLegal(
                 rect: rect, geometry: geo, items: items(excluding: placements[index].id),
                 ignoring: placements[index].id
             ) {
-                if let resolved = BoardLayoutEngine.resolve(
+                if let resolved = LayoutEngine.resolve(
                     origin: px, footprint: footprintSize, geometry: geo,
                     items: items(excluding: placements[index].id), ignoring: placements[index].id,
                     maxDisplacement: .greatestFiniteMagnitude
                 ) {
-                    let normalized = BoardLayoutEngine.normalized(pixelOrigin: resolved, boardSize: newSize)
+                    let normalized = LayoutEngine.normalized(pixelOrigin: resolved, boardSize: newSize)
                     placements[index].x = normalized.x
                     placements[index].y = normalized.y
                 }

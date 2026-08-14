@@ -14,7 +14,7 @@ enum OnboardingCompletionDestination: Equatable {
     case steamWorkshop
 }
 
-struct OnboardingFlow: View {
+struct Flow: View {
     @AppStorage("Onboarding.Completed") private var hasCompletedOnboarding: Bool = false
     @State private var index = 0
     @State private var completionDestination: OnboardingCompletionDestination = .display(nil)
@@ -69,7 +69,7 @@ struct OnboardingFlow: View {
         Group {
             switch currentStep {
             case .welcome:
-                OnboardingStepWelcome(nextStep: nextStep, skip: skip)
+                StepWelcome(nextStep: nextStep, skip: skip)
             case .workshopSetup:
                 #if !LITE_BUILD
                 OnboardingWorkshopSetupView(continueAction: nextStep)
@@ -77,7 +77,7 @@ struct OnboardingFlow: View {
                 EmptyView()
                 #endif
             case .pick:
-                OnboardingPickerView(
+                PickerView(
                     galleryActions: policy.galleryActions,
                     didConfigure: didConfigure,
                     skip: skip,
@@ -85,7 +85,7 @@ struct OnboardingFlow: View {
                     chooseSteamWorkshop: chooseSteamWorkshop
                 )
             case .done:
-                OnboardingStepDone(destination: completionDestination, finish: finish)
+                StepDone(destination: completionDestination, finish: finish)
             }
         }
         .transition(stepTransition)

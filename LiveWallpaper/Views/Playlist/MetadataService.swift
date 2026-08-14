@@ -3,24 +3,24 @@ import Foundation
 import LiveWallpaperCore
 
 /// Resolves bookmark → URL → AVURLAsset metadata (resolution + duration + folder).
-actor PlaylistMetadataService {
-    static let shared = PlaylistMetadataService()
+actor MetadataService {
+    static let shared = MetadataService()
 
-    private var cache: [String: PlaylistRowMetadata] = [:]
-    private var inFlight: [String: Task<PlaylistRowMetadata, Never>] = [:]
+    private var cache: [String: RowMetadata] = [:]
+    private var inFlight: [String: Task<RowMetadata, Never>] = [:]
     private let cacheLimit = 256
 
     private init() {}
 
     /// Cancellation is cooperative: a caller's parent-task cancellation drops
     /// their wait but does not invalidate the shared in-flight computation.
-    func metadata(for bookmark: Data) async -> PlaylistRowMetadata {
+    func metadata(for bookmark: Data) async -> RowMetadata {
         let key = cacheKey(for: bookmark)
         if let cached = cache[key] { return cached }
         if let pending = inFlight[key] { return await pending.value }
 
-        let task = Task<PlaylistRowMetadata, Never> {
-            await PlaylistMetadataService.loadMetadata(for: bookmark)
+        let task = Task<RowMetadata, Never> {
+            await MetadataService.loadMetadata(for: bookmark)
         }
         inFlight[key] = task
         let result = await task.value
@@ -35,7 +35,7 @@ actor PlaylistMetadataService {
         cache.removeValue(forKey: cacheKey(for: bookmark))
     }
 
-    private func storeInCache(_ value: PlaylistRowMetadata, for key: String) {
+    private func storeInCache(_ value: RowMetadata, for key: String) {
         if cache.count >= cacheLimit {
             if let victim = cache.keys.randomElement() {
                 cache.removeValue(forKey: victim)
@@ -50,7 +50,7 @@ actor PlaylistMetadataService {
 
     // MARK: - Loader
 
-    private static func loadMetadata(for bookmark: Data) async -> PlaylistRowMetadata {
+    private static func loadMetadata(for bookmark: Data) async -> RowMetadata {
         let resolverResult = SecurityScopedBookmarkResolver.shared.resolve(
             bookmark,
             target: .transient
@@ -77,7 +77,7 @@ actor PlaylistMetadataService {
             return raw.isFinite && raw > 0 ? raw : nil
         }
 
-        return PlaylistRowMetadata(
+        return RowMetadata(
             resolution: resolution,
             duration: seconds,
             folder: folder

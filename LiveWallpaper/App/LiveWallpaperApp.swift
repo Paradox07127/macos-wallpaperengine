@@ -505,7 +505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = NSWindowController(window: window)
         onboardingWindowController = controller
 
-        let flow = OnboardingFlow(
+        let flow = Flow(
             onClose: { [weak self] in
                 self?.onboardingWindowController?.close()
             },

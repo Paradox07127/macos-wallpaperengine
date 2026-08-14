@@ -10,7 +10,7 @@ struct PanelChrome: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [MonitorDesign.panelFillTop, MonitorDesign.panelFillBottom],
+                            colors: [Design.panelFillTop, Design.panelFillBottom],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -20,7 +20,7 @@ struct PanelChrome: ViewModifier {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .strokeBorder(
                                 LinearGradient(
-                                    colors: [MonitorDesign.panelTopHighlight, .clear],
+                                    colors: [Design.panelTopHighlight, .clear],
                                     startPoint: .top,
                                     endPoint: .center
                                 ),
@@ -32,7 +32,7 @@ struct PanelChrome: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(MonitorDesign.panelStroke, lineWidth: MonitorDesign.hairlineWidth)
+                    .strokeBorder(Design.panelStroke, lineWidth: Design.hairlineWidth)
             )
     }
 }
@@ -107,17 +107,17 @@ struct MonitorGrain: View {
 #Preview("Panel chrome") {
     VStack(spacing: 24) {
         Text(verbatim: "SMALL")
-            .font(MonitorDesign.labelFont(size: 11))
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .font(Design.labelFont(size: 11))
+            .foregroundStyle(Design.inkFaint)
             .frame(width: 150, height: 150)
             .monitorPanelChrome()
 
         Text("Wide Panel", bundle: .main)
-            .font(MonitorDesign.labelFont(size: 11))
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .font(Design.labelFont(size: 11))
+            .foregroundStyle(Design.inkFaint)
             .frame(width: 320, height: 150)
             .monitorPanelChrome()
     }
     .padding(40)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

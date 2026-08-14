@@ -2,7 +2,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-struct WorkshopOnboardingSheet: View {
+struct OnboardingSheet: View {
     @AppStorage("loomscreen.workshop.onboarding.shown.v1", store: .appScoped()) private var hasShown: Bool = false
     @Environment(\.dismiss) private var dismiss
     /// Primary path: configure the API key required by the online catalog.

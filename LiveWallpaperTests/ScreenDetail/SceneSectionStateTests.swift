@@ -5,7 +5,7 @@ import SwiftUI
 import Testing
 @testable import LiveWallpaper
 
-@Suite("WPESceneSection state machine")
+@Suite("SceneSection state machine")
 struct WPESceneSectionStateTests {
 
     @Test("idle and loading states compare independently of associated values")
@@ -40,9 +40,9 @@ struct WPESceneSectionStateTests {
             layer: "fg",
             error: .truncatedBlock(block: "TEXB", offset: 42)
         )
-        #expect(WPESceneDetailView.fallbackReason(for: unsupportedFormat) == .texUnsupportedFormat(code: 8))
-        #expect(WPESceneDetailView.fallbackReason(for: unsupportedContainer) == .texContainerUnsupported(magic: "TEXV9999"))
-        if case .texDecodeFailed = WPESceneDetailView.fallbackReason(for: truncated) {
+        #expect(SceneDetailView.fallbackReason(for: unsupportedFormat) == .texUnsupportedFormat(code: 8))
+        #expect(SceneDetailView.fallbackReason(for: unsupportedContainer) == .texContainerUnsupported(magic: "TEXV9999"))
+        if case .texDecodeFailed = SceneDetailView.fallbackReason(for: truncated) {
         } else {
             Issue.record("Truncated tex should map to .texDecodeFailed")
         }
@@ -81,11 +81,11 @@ struct WPESceneSectionStateTests {
     @MainActor
     @Test("FallbackReason rendering distinguishes parse vs resource failure copy")
     func fallbackReasonCopy() {
-        let parse = WPEFallbackCard(
+        let parse = FallbackCard(
             origin: makeOrigin(),
             reason: .sceneParseFailed("missing camera")
         )
-        let missing = WPEFallbackCard(
+        let missing = FallbackCard(
             origin: makeOrigin(),
             reason: .sceneResourceMissing
         )

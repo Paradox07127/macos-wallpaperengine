@@ -3,7 +3,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Apple Music-style playlist row.
-struct PlaylistRow: View {
+struct Row: View {
     let entry: PlaylistEntry
     let index: Int
     let isBeingDragged: Bool
@@ -16,7 +16,7 @@ struct PlaylistRow: View {
     let onDragChanged: (_ translationY: CGFloat, _ locationY: CGFloat) -> Void
     let onDragEnded: () -> Void
 
-    @State private var metadata: PlaylistRowMetadata = .empty
+    @State private var metadata: RowMetadata = .empty
     @State private var isHovering = false
     @State private var isHandleHovering = false
 
@@ -100,7 +100,7 @@ struct PlaylistRow: View {
         .accessibilityAction(named: Text("Play Now")) { onPlayNow() }
         .accessibilityAction(named: Text("Remove")) { onRemove() }
         .task(id: entry.bookmark) {
-            let loaded = await PlaylistMetadataService.shared.metadata(for: entry.bookmark)
+            let loaded = await MetadataService.shared.metadata(for: entry.bookmark)
             guard !Task.isCancelled else { return }
             metadata = loaded
         }

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Pro-only inspector card that mirrors Wallpaper Engine's right-hand property panel for an imported web project.
 struct WPEProjectCustomSettingsCard: View {
-    private typealias ValueLogic = WPEProjectPropertyValueLogic
+    private typealias ValueLogic = PropertyValueLogic
 
     var screen: Screen
     var schema: WallpaperEngineProjectPropertySchema

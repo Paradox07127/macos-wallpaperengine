@@ -130,10 +130,10 @@ final class BoardLayoutEngineTests: XCTestCase {
 
     func testNormalizedPixelRoundTrip() {
         let normalized = CGPoint(x: 0.375, y: 0.62)
-        let px = BoardLayoutEngine.pixelOrigin(normalized: normalized, boardSize: boardSize)
+        let px = LayoutEngine.pixelOrigin(normalized: normalized, boardSize: boardSize)
         XCTAssertEqual(px.x, 600, accuracy: 0.001)
         XCTAssertEqual(px.y, 620, accuracy: 0.001)
-        let back = BoardLayoutEngine.normalized(pixelOrigin: px, boardSize: boardSize)
+        let back = LayoutEngine.normalized(pixelOrigin: px, boardSize: boardSize)
         XCTAssertEqual(back.x, normalized.x, accuracy: 1e-9)
         XCTAssertEqual(back.y, normalized.y, accuracy: 1e-9)
     }
@@ -141,15 +141,15 @@ final class BoardLayoutEngineTests: XCTestCase {
     func testCellExactNormalizedOriginRoundTrips() {
         let g = makeGeometry()
         let cellX = 3 * g.cellWidth
-        let normalized = BoardLayoutEngine.normalized(
+        let normalized = LayoutEngine.normalized(
             pixelOrigin: CGPoint(x: cellX, y: 0), boardSize: boardSize
         )
-        let px = BoardLayoutEngine.pixelOrigin(normalized: normalized, boardSize: boardSize)
+        let px = LayoutEngine.pixelOrigin(normalized: normalized, boardSize: boardSize)
         XCTAssertEqual(px.x, cellX, accuracy: 0.001)
     }
 
     func testNormalizedOnZeroBoardIsOrigin() {
-        let back = BoardLayoutEngine.normalized(pixelOrigin: CGPoint(x: 42, y: 42), boardSize: .zero)
+        let back = LayoutEngine.normalized(pixelOrigin: CGPoint(x: 42, y: 42), boardSize: .zero)
         XCTAssertEqual(back, .zero)
     }
 
@@ -165,7 +165,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         XCTAssertEqual(clampedLow.x, 0, accuracy: 0.01)
         XCTAssertEqual(clampedLow.y, 0, accuracy: 0.01)
 
-        XCTAssertTrue(BoardLayoutEngine.isLegal(
+        XCTAssertTrue(LayoutEngine.isLegal(
             rect: CGRect(origin: clamped, size: footprint),
             geometry: g, items: [], ignoring: nil
         ))
@@ -201,16 +201,16 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = insetGeometry()
         let footprint = g.pixelSize(for: .memory, size: .small)
         let intruding = CGRect(origin: CGPoint(x: 200, y: 20), size: footprint)
-        XCTAssertFalse(BoardLayoutEngine.isLegal(rect: intruding, geometry: g, items: [], ignoring: nil))
+        XCTAssertFalse(LayoutEngine.isLegal(rect: intruding, geometry: g, items: [], ignoring: nil))
         let onLine = CGRect(origin: CGPoint(x: 200, y: 50), size: footprint)
-        XCTAssertTrue(BoardLayoutEngine.isLegal(rect: onLine, geometry: g, items: [], ignoring: nil))
+        XCTAssertTrue(LayoutEngine.isLegal(rect: onLine, geometry: g, items: [], ignoring: nil))
     }
 
     func testTopInsetMovesTopSnapCandidateToInsetLine() {
         let g = insetGeometry()
         let footprint = g.pixelSize(for: .memory, size: .small)
         let free = CGPoint(x: 400, y: 54)
-        let result = BoardLayoutEngine.snap(
+        let result = LayoutEngine.snap(
             freeOrigin: free, footprint: footprint, geometry: g, items: [], ignoring: nil
         )
         XCTAssertTrue(result.snappedY)
@@ -221,28 +221,28 @@ final class BoardLayoutEngineTests: XCTestCase {
     func testConflictWhenRectsInterpenetrate() {
         let a = CGRect(x: 100, y: 100, width: 200, height: 200)
         let b = CGRect(x: 250, y: 250, width: 200, height: 200)
-        XCTAssertTrue(BoardLayoutEngine.conflicts(a, b))
+        XCTAssertTrue(LayoutEngine.conflicts(a, b))
     }
 
     func testEdgeSharingTilesDoNotConflict() {
         let a = CGRect(x: 100, y: 100, width: 200, height: 200)
         let b = CGRect(x: 300, y: 100, width: 200, height: 200)
-        XCTAssertFalse(BoardLayoutEngine.conflicts(a, b))
+        XCTAssertFalse(LayoutEngine.conflicts(a, b))
         let below = CGRect(x: 100, y: 300, width: 200, height: 200)
-        XCTAssertFalse(BoardLayoutEngine.conflicts(a, below))
+        XCTAssertFalse(LayoutEngine.conflicts(a, below))
     }
 
     func testSlightOverlapBeyondEpsilonConflicts() {
         let a = CGRect(x: 100, y: 100, width: 200, height: 200)
         let b = CGRect(x: 298, y: 298, width: 200, height: 200)
-        XCTAssertTrue(BoardLayoutEngine.conflicts(a, b))
+        XCTAssertTrue(LayoutEngine.conflicts(a, b))
     }
 
     func testIsLegalRejectsOffBoard() {
         let g = makeGeometry()
         let footprint = g.pixelSize(for: .memory, size: .small)
         let rect = CGRect(origin: CGPoint(x: -5, y: 300), size: footprint)
-        XCTAssertFalse(BoardLayoutEngine.isLegal(rect: rect, geometry: g, items: [], ignoring: nil))
+        XCTAssertFalse(LayoutEngine.isLegal(rect: rect, geometry: g, items: [], ignoring: nil))
     }
 
     func testIsLegalIgnoresSelf() {
@@ -252,15 +252,15 @@ final class BoardLayoutEngineTests: XCTestCase {
         let origin = g.clampOrigin(CGPoint(x: 300, y: 300), footprint: footprint)
         let rect = CGRect(origin: origin, size: footprint)
         let items = [item(id, rect)]
-        XCTAssertTrue(BoardLayoutEngine.isLegal(rect: rect, geometry: g, items: items, ignoring: id))
-        XCTAssertFalse(BoardLayoutEngine.isLegal(rect: rect, geometry: g, items: items, ignoring: nil))
+        XCTAssertTrue(LayoutEngine.isLegal(rect: rect, geometry: g, items: items, ignoring: id))
+        XCTAssertFalse(LayoutEngine.isLegal(rect: rect, geometry: g, items: items, ignoring: nil))
     }
 
     func testSnapPicksNearestBoardEdgeWithinThreshold() {
         let g = makeGeometry()
         let footprint = g.pixelSize(for: .memory, size: .small)
         let free = CGPoint(x: 6, y: 400)
-        let result = BoardLayoutEngine.snap(
+        let result = LayoutEngine.snap(
             freeOrigin: free, footprint: footprint, geometry: g, items: [], ignoring: nil
         )
         XCTAssertTrue(result.snappedX)
@@ -273,8 +273,8 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = makeGeometry()
         let footprint = g.pixelSize(for: .memory, size: .small)
         let centerX = (boardSize.width - footprint.width) / 2
-        let free = CGPoint(x: centerX - (BoardLayoutEngine.snapThreshold + 30), y: 400)
-        let result = BoardLayoutEngine.snap(
+        let free = CGPoint(x: centerX - (LayoutEngine.snapThreshold + 30), y: 400)
+        let result = LayoutEngine.snap(
             freeOrigin: free, footprint: footprint, geometry: g, items: [], ignoring: nil
         )
         XCTAssertFalse(result.snappedX)
@@ -288,7 +288,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let sibling = CGRect(x: 500, y: 300, width: 200, height: 200)
         let items = [item(siblingID, sibling)]
         let free = CGPoint(x: sibling.minX + 1, y: 520)
-        let result = BoardLayoutEngine.snap(
+        let result = LayoutEngine.snap(
             freeOrigin: free, footprint: footprint, geometry: g, items: items, ignoring: nil
         )
         XCTAssertTrue(result.snappedX)
@@ -304,7 +304,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let items = [item(siblingID, sibling)]
         let adjacentX = sibling.maxX
         let free = CGPoint(x: adjacentX + 3, y: sibling.minY + 40)
-        let result = BoardLayoutEngine.snap(
+        let result = LayoutEngine.snap(
             freeOrigin: free, footprint: footprint, geometry: g, items: items, ignoring: nil
         )
         XCTAssertTrue(result.snappedX)
@@ -319,12 +319,12 @@ final class BoardLayoutEngineTests: XCTestCase {
         let sibling = CGRect(x: 500, y: 300, width: 200, height: 200)
         let items = [item(siblingID, sibling)]
         let free = CGPoint(x: sibling.minX + 1, y: 520)
-        let result = BoardLayoutEngine.snap(
+        let result = LayoutEngine.snap(
             freeOrigin: free, footprint: footprint, geometry: g, items: items, ignoring: nil
         )
         let guide = try XCTUnwrap(result.guideX)
         let draggedRect = CGRect(origin: result.origin, size: footprint)
-        let seg = BoardLayoutEngine.guideSegment(guide, draggedRect: draggedRect, geometry: g)
+        let seg = LayoutEngine.guideSegment(guide, draggedRect: draggedRect, geometry: g)
         XCTAssertEqual(seg.start.x, sibling.minX, accuracy: 0.001)
         XCTAssertEqual(seg.end.x, sibling.minX, accuracy: 0.001)
         XCTAssertLessThanOrEqual(seg.start.y, min(draggedRect.minY, sibling.minY))
@@ -334,7 +334,7 @@ final class BoardLayoutEngineTests: XCTestCase {
     func testBoardEdgeGuideSpansFullBoard() {
         let g = makeGeometry()
         let guide = MonitorSnapGuide(axis: .horizontal, position: 0, partner: nil)
-        let seg = BoardLayoutEngine.guideSegment(
+        let seg = LayoutEngine.guideSegment(
             guide, draggedRect: CGRect(x: 200, y: 0, width: 100, height: 100), geometry: g
         )
         XCTAssertEqual(seg.start.x, 0, accuracy: 0.001)
@@ -345,7 +345,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = makeGeometry()
         let footprint = g.pixelSize(for: .memory, size: .small)
         let free = CGPoint(x: 640, y: 480)
-        let landed = try XCTUnwrap(BoardLayoutEngine.land(
+        let landed = try XCTUnwrap(LayoutEngine.land(
             freeOrigin: free, snappedOrigin: nil, footprint: footprint,
             geometry: g, items: [], ignoring: nil
         ))
@@ -357,7 +357,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = makeGeometry()
         let footprint = g.pixelSize(for: .cpu, size: .medium)
         let requested = g.clampOrigin(CGPoint(x: 400, y: 400), footprint: footprint)
-        let resolved = try XCTUnwrap(BoardLayoutEngine.resolve(
+        let resolved = try XCTUnwrap(LayoutEngine.resolve(
             origin: requested, footprint: footprint, geometry: g,
             items: [], ignoring: nil, maxDisplacement: 1e9
         ))
@@ -372,14 +372,14 @@ final class BoardLayoutEngineTests: XCTestCase {
         let occupant = CGRect(origin: g.clampOrigin(CGPoint(x: 400, y: 400), footprint: footprint), size: footprint)
         let items = [item(occupantID, occupant)]
 
-        let resolved = BoardLayoutEngine.resolve(
+        let resolved = LayoutEngine.resolve(
             origin: occupant.origin, footprint: footprint, geometry: g,
             items: items, ignoring: nil, maxDisplacement: 1e9
         )
         let resolvedPoint = try XCTUnwrap(resolved)
         let rect = CGRect(origin: resolvedPoint, size: footprint)
-        XCTAssertTrue(BoardLayoutEngine.isLegal(rect: rect, geometry: g, items: items, ignoring: nil))
-        XCTAssertFalse(BoardLayoutEngine.conflicts(rect, occupant))
+        XCTAssertTrue(LayoutEngine.isLegal(rect: rect, geometry: g, items: items, ignoring: nil))
+        XCTAssertFalse(LayoutEngine.conflicts(rect, occupant))
         let dx = abs(resolvedPoint.x - occupant.origin.x)
         let dy = abs(resolvedPoint.y - occupant.origin.y)
         XCTAssertTrue(
@@ -394,7 +394,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let occupantID = UUID()
         let occupant = CGRect(origin: g.clampOrigin(CGPoint(x: 400, y: 400), footprint: footprint), size: footprint)
         let items = [item(occupantID, occupant)]
-        let resolved = BoardLayoutEngine.resolve(
+        let resolved = LayoutEngine.resolve(
             origin: occupant.origin, footprint: footprint, geometry: g,
             items: items, ignoring: nil, maxDisplacement: 1
         )
@@ -408,7 +408,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = MonitorBoardGeometry(boardSize: exactBoard)
         let items = fillBoard(g, kind: .memory, size: .small)
         let fp = g.pixelSize(for: .memory, size: .small)
-        let resolved = BoardLayoutEngine.resolve(
+        let resolved = LayoutEngine.resolve(
             origin: CGPoint(x: exactBoard.width / 2, y: exactBoard.height / 2), footprint: fp,
             geometry: g, items: items, ignoring: nil, maxDisplacement: .greatestFiniteMagnitude
         )
@@ -419,7 +419,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = makeGeometry()
         let footprint = g.pixelSize(for: .memory, size: .small)
         let snapped = g.clampOrigin(CGPoint(x: 300, y: 300), footprint: footprint)
-        let landed = try XCTUnwrap(BoardLayoutEngine.land(
+        let landed = try XCTUnwrap(LayoutEngine.land(
             freeOrigin: CGPoint(x: 305, y: 305), snappedOrigin: snapped,
             footprint: footprint, geometry: g, items: [], ignoring: nil
         ))
@@ -435,7 +435,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let items = fillBoard(g, kind: .memory, size: .small)
         let fp = g.pixelSize(for: .memory, size: .small)
         let target = CGPoint(x: exactBoard.width / 2 - fp.width / 2, y: exactBoard.height / 2 - fp.height / 2)
-        let landed = BoardLayoutEngine.land(
+        let landed = LayoutEngine.land(
             freeOrigin: target, snappedOrigin: target,
             footprint: fp, geometry: g, items: items, ignoring: nil
         )
@@ -446,7 +446,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = makeGeometry()
         let anchor = g.clampOrigin(CGPoint(x: 300, y: 300), footprint: g.pixelSize(for: .cpu, size: .small))
         let newFootprint = g.pixelSize(for: .cpu, size: .medium)
-        let refit = try XCTUnwrap(BoardLayoutEngine.refitForSizeChange(
+        let refit = try XCTUnwrap(LayoutEngine.refitForSizeChange(
             anchor: anchor, newFootprint: newFootprint, geometry: g, items: [], ignoring: nil
         ))
         XCTAssertEqual(refit.x, anchor.x, accuracy: 0.001)
@@ -458,13 +458,13 @@ final class BoardLayoutEngineTests: XCTestCase {
         let mediumFootprint = g.pixelSize(for: .cpu, size: .medium)
         let smallFootprint = g.pixelSize(for: .cpu, size: .small)
         let anchor = g.clampOrigin(CGPoint(x: boardSize.width, y: 300), footprint: smallFootprint)
-        let refit = try XCTUnwrap(BoardLayoutEngine.refitForSizeChange(
+        let refit = try XCTUnwrap(LayoutEngine.refitForSizeChange(
             anchor: anchor, newFootprint: mediumFootprint, geometry: g, items: [], ignoring: nil
         ))
         XCTAssertLessThan(refit.x, anchor.x)
         let rect = CGRect(origin: refit, size: mediumFootprint)
-        XCTAssertLessThanOrEqual(rect.maxX, boardSize.width + BoardLayoutEngine.epsilon)
-        XCTAssertTrue(BoardLayoutEngine.isLegal(rect: rect, geometry: g, items: [], ignoring: nil))
+        XCTAssertLessThanOrEqual(rect.maxX, boardSize.width + LayoutEngine.epsilon)
+        XCTAssertTrue(LayoutEngine.isLegal(rect: rect, geometry: g, items: [], ignoring: nil))
     }
 
     func testSizeToggleRejectsWhenNoRoomForLargerFootprint() {
@@ -486,7 +486,7 @@ final class BoardLayoutEngineTests: XCTestCase {
             y += small.height
         }
         let anchor = items.first!.rect.origin
-        let refit = BoardLayoutEngine.refitForSizeChange(
+        let refit = LayoutEngine.refitForSizeChange(
             anchor: anchor, newFootprint: medium, geometry: g,
             items: items, ignoring: items.first!.id
         )
@@ -496,9 +496,9 @@ final class BoardLayoutEngineTests: XCTestCase {
     func testFirstFitPlacesInLowerCentreOnEmptyBoard() throws {
         let g = makeGeometry()
         let footprint = g.pixelSize(for: .cpu, size: .medium)
-        let fit = try XCTUnwrap(BoardLayoutEngine.firstFit(footprint: footprint, geometry: g, items: []))
+        let fit = try XCTUnwrap(LayoutEngine.firstFit(footprint: footprint, geometry: g, items: []))
         let rect = CGRect(origin: fit, size: footprint)
-        XCTAssertTrue(BoardLayoutEngine.isLegal(rect: rect, geometry: g, items: [], ignoring: nil))
+        XCTAssertTrue(LayoutEngine.isLegal(rect: rect, geometry: g, items: [], ignoring: nil))
         let centerX = (boardSize.width - footprint.width) / 2
         XCTAssertEqual(rect.minX, centerX, accuracy: g.cellWidth)
         XCTAssertGreaterThan(rect.midY, boardSize.height * 0.5)
@@ -510,9 +510,9 @@ final class BoardLayoutEngineTests: XCTestCase {
         let target = CGPoint(x: (boardSize.width - footprint.width) / 2, y: boardSize.height * 0.64)
         let occupied = g.clampOrigin(target, footprint: footprint)
         let items = [item(UUID(), CGRect(origin: occupied, size: footprint))]
-        let fit = try XCTUnwrap(BoardLayoutEngine.firstFit(footprint: footprint, geometry: g, items: items))
+        let fit = try XCTUnwrap(LayoutEngine.firstFit(footprint: footprint, geometry: g, items: items))
         let rect = CGRect(origin: fit, size: footprint)
-        XCTAssertTrue(BoardLayoutEngine.isLegal(rect: rect, geometry: g, items: items, ignoring: nil))
+        XCTAssertTrue(LayoutEngine.isLegal(rect: rect, geometry: g, items: items, ignoring: nil))
     }
 
     func testFirstFitReturnsNilWhenBoardFull() {
@@ -522,7 +522,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = MonitorBoardGeometry(boardSize: exactBoard)
         let items = fillBoard(g, kind: .memory, size: .small)
         let fp = g.pixelSize(for: .memory, size: .small)
-        XCTAssertNil(BoardLayoutEngine.firstFit(footprint: fp, geometry: g, items: items))
+        XCTAssertNil(LayoutEngine.firstFit(footprint: fp, geometry: g, items: items))
     }
 
     func testDefaultSystemPlacementsLegalizeWithoutOverlap() throws {
@@ -531,11 +531,11 @@ final class BoardLayoutEngineTests: XCTestCase {
         var items: [MonitorBoardItem] = []
         for placement in placements {
             let footprint = g.pixelSize(for: placement.kind, size: placement.size)
-            let origin = BoardLayoutEngine.pixelOrigin(
+            let origin = LayoutEngine.pixelOrigin(
                 normalized: CGPoint(x: placement.x, y: placement.y), boardSize: boardSize
             )
             let resolved = try XCTUnwrap(
-                BoardLayoutEngine.resolve(
+                LayoutEngine.resolve(
                     origin: origin, footprint: footprint, geometry: g,
                     items: items, ignoring: nil, maxDisplacement: .greatestFiniteMagnitude
                 ),
@@ -546,7 +546,7 @@ final class BoardLayoutEngineTests: XCTestCase {
         for i in 0..<items.count {
             for j in (i + 1)..<items.count {
                 XCTAssertFalse(
-                    BoardLayoutEngine.conflicts(items[i].rect, items[j].rect),
+                    LayoutEngine.conflicts(items[i].rect, items[j].rect),
                     "legalized default placements \(i) and \(j) overlap"
                 )
             }

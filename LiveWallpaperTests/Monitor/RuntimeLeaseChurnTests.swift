@@ -4,7 +4,7 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-@Suite("MON-01 MonitorRuntime sequenced lease churn", .serialized)
+@Suite("MON-01 Runtime sequenced lease churn", .serialized)
 struct RuntimeLeaseChurnCharacterizationTests {
     @Test("10,000 generations leave no retired bookkeeping", .timeLimit(.minutes(1)))
     func tenThousandGenerationsHaveFixedBookkeeping() async {
@@ -124,7 +124,7 @@ struct RuntimeLeaseChurnCharacterizationTests {
     func blockedRebuildHasBoundedMailbox() async {
         let probe = MonitorRuntimeStopProbe()
         let source = BlockingMonitorRuntimeStopSource(probe: probe)
-        let runtime = MonitorRuntime(
+        let runtime = Runtime(
             grants: MonitorGrantAccess(
                 resolveRoots: { (claude: nil, codex: nil) },
                 release: {}
@@ -227,7 +227,7 @@ struct RuntimeLeaseChurnCharacterizationTests {
     func inFlightReleaseKeepsSettleBarrier() async {
         let stopProbe = MonitorRuntimeStopProbe()
         let source = BlockingMonitorRuntimeStopSource(probe: stopProbe)
-        let runtime = MonitorRuntime(
+        let runtime = Runtime(
             grants: MonitorGrantAccess(
                 resolveRoots: { (claude: nil, codex: nil) },
                 release: {}
@@ -296,8 +296,8 @@ struct RuntimeLeaseChurnCharacterizationTests {
         await runtime.shutdown()
     }
 
-    private func makeRuntime() -> MonitorRuntime {
-        MonitorRuntime(
+    private func makeRuntime() -> Runtime {
+        Runtime(
             grants: MonitorGrantAccess(
                 resolveRoots: { (claude: nil, codex: nil) },
                 release: {}
@@ -307,7 +307,7 @@ struct RuntimeLeaseChurnCharacterizationTests {
     }
 
     private static func expectRuntime(
-        _ runtime: MonitorRuntime,
+        _ runtime: Runtime,
         current: [MonitorRuntimeLeaseHandle?],
         options: [MonitorRuntimeOptions?],
         paused: [Bool],
@@ -317,7 +317,7 @@ struct RuntimeLeaseChurnCharacterizationTests {
         let expectedPausedCount = current.indices.filter {
             current[$0] != nil && paused[$0]
         }.count
-        let expectedOptions = MonitorRuntime.merged(current.indices.compactMap { index in
+        let expectedOptions = Runtime.merged(current.indices.compactMap { index in
             guard current[index] != nil, !paused[index] else { return nil }
             return options[index]
         })
@@ -348,7 +348,7 @@ struct RuntimeLeaseChurnCharacterizationTests {
     }
 
     private static func waitUntilRebuildRevision(
-        _ runtime: MonitorRuntime,
+        _ runtime: Runtime,
         reaches target: UInt64
     ) async -> Bool {
         // Wait on a clock, not on a yield count: the caller deliberately blocks the rebuild

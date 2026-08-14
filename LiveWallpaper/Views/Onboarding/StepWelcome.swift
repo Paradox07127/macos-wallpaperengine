@@ -1,7 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-struct OnboardingStepWelcome: View {
+struct StepWelcome: View {
     let nextStep: () -> Void
     let skip: () -> Void
     @Environment(\.featureCatalog) private var featureCatalog

@@ -3,7 +3,7 @@ import AppKit
 import LiveWallpaperCore
 
 /// Playback controls kept positionally stable across wallpaper types.
-struct CommonPlaybackInspector: View {
+struct PlaybackInspector: View {
     var screen: Screen
     var wallpaperType: WallpaperType
 

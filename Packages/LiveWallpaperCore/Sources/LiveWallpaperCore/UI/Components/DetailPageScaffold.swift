@@ -53,23 +53,23 @@ public struct DetailHeaderBar<Title: View, Metadata: View, Actions: View>: View 
     }
 
     public var body: some View {
-        HStack(alignment: .center, spacing: DesignTokens.DetailHeader.contentSpacing) {
+        HStack(alignment: .center, spacing: DesignTokens.Header.contentSpacing) {
             ZStack {
                 Circle()
                     .fill(tint.opacity(0.15))
                     .frame(
-                        width: DesignTokens.DetailHeader.iconSize,
-                        height: DesignTokens.DetailHeader.iconSize
+                        width: DesignTokens.Header.iconSize,
+                        height: DesignTokens.Header.iconSize
                     )
                 Image(systemName: systemImage)
-                    .font(.system(size: DesignTokens.DetailHeader.iconSymbolSize))
+                    .font(.system(size: DesignTokens.Header.iconSymbolSize))
                     .foregroundStyle(tint)
                     .symbolRenderingMode(.hierarchical)
             }
 
-            VStack(alignment: .leading, spacing: DesignTokens.DetailHeader.textSpacing) {
+            VStack(alignment: .leading, spacing: DesignTokens.Header.textSpacing) {
                 title
-                    .font(.system(size: DesignTokens.DetailHeader.titleSize, weight: .semibold))
+                    .font(.system(size: DesignTokens.Header.titleSize, weight: .semibold))
                     .lineLimit(1)
 
                 metadata
@@ -83,8 +83,8 @@ public struct DetailHeaderBar<Title: View, Metadata: View, Actions: View>: View 
 
             actions
         }
-        .padding(.horizontal, DesignTokens.DetailHeader.horizontalPadding)
-        .padding(.vertical, DesignTokens.DetailHeader.verticalPadding)
+        .padding(.horizontal, DesignTokens.Header.horizontalPadding)
+        .padding(.vertical, DesignTokens.Header.verticalPadding)
     }
 }
 

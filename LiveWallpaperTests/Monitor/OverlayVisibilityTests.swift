@@ -151,7 +151,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         )
         let hostCreation = try sourceSlice(
             controller,
-            from: "let board = BoardHostView(",
+            from: "let board = HostView(",
             to: "func teardown(screenID:"
         )
         let visibilityUpdate = try sourceSlice(
@@ -257,7 +257,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
             )
         )
 
-        #expect(!controller.contains("Task { await MonitorRuntime.shared"))
+        #expect(!controller.contains("Task { await Runtime.shared"))
     }
 
     @Test("ScreenManager bridges absence and 85-percent union occlusion")

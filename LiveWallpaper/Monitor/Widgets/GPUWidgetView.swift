@@ -23,9 +23,9 @@ struct GPUWidgetView: View {
     }
 
     nonisolated static func stateDotColor(_ pct: Double) -> Color {
-        if pct > 0.85 { return MonitorDesign.signalCoral }
-        if pct > 0.60 { return MonitorDesign.signalAmber }
-        return MonitorDesign.signalIdle.opacity(0.6)
+        if pct > 0.85 { return Design.signalCoral }
+        if pct > 0.60 { return Design.signalAmber }
+        return Design.signalIdle.opacity(0.6)
     }
 
     /// Compute ≈ Device − Renderer, clamped ≥ 0, as a whole percent. nil when
@@ -43,7 +43,7 @@ struct GPUWidgetView: View {
 
     nonisolated static func freshnessText(sampledAt: Double?, now: Date) -> String {
         guard let age = freshnessSeconds(sampledAt: sampledAt, now: now) else { return "-" }
-        return MonitorFormat.ago(age)
+        return Format.ago(age)
     }
 
     /// Uses twice the sampling period with a 15-second floor to prevent freshness flapping.
@@ -83,7 +83,7 @@ private struct GPUWidgetBody: View {
 
     private var system: MonitorSystemSnapshot? { context.snapshot.system }
     private var gpuUsage: Double? { system?.gpuUsage }
-    private var scale: MonitorDesign.TypeScale { .init(cellHeight: cellHeight) }
+    private var scale: Design.TypeScale { .init(cellHeight: cellHeight) }
 
     var body: some View {
         WidgetContainer(
@@ -109,7 +109,7 @@ private struct GPUWidgetBody: View {
             if gpuUsage == nil {
                 Text(verbatim: "-")
                     .tracking(0.5)
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
             } else {
                 stateDot
             }
@@ -117,7 +117,7 @@ private struct GPUWidgetBody: View {
             if gpuUsage == nil {
                 Text(verbatim: "-")
                     .tracking(0.5)
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
             } else {
                 HStack(spacing: 6) {
                     freshnessChip
@@ -138,18 +138,18 @@ private struct GPUWidgetBody: View {
     private var freshnessChip: some View {
         let stale = GPUWidgetView.isStale(sampledAt: system?.gpuSampledAt, now: context.now,
                                                  samplePeriod: gpuSamplePeriodSeconds)
-        let color = stale ? MonitorDesign.staleWarm : MonitorDesign.inkFaint
+        let color = stale ? Design.staleWarm : Design.inkFaint
         return HStack(spacing: 4) {
             Circle()
-                .strokeBorder(stale ? MonitorDesign.staleWarm : MonitorDesign.signalSteel,
+                .strokeBorder(stale ? Design.staleWarm : Design.signalSteel,
                               lineWidth: 1.5)
                 .frame(width: 6, height: 6)
                 .opacity(stale ? 0.85 : 0.7)
             (Text("sampled") + Text(verbatim: " ")
              + Text(verbatim: GPUWidgetView.freshnessText(sampledAt: system?.gpuSampledAt, now: context.now))
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
              + Text(verbatim: " ") + Text("ago"))
-                .font(MonitorDesign.labelFont(size: scale.label * 0.96))
+                .font(Design.labelFont(size: scale.label * 0.96))
         }
         .foregroundStyle(color)
         .lineLimit(1)
@@ -192,20 +192,20 @@ private struct GPUWidgetBody: View {
             ArcGauge(value: nil, lineWidth: 9) {
                 VStack(spacing: 1) {
                     Text(verbatim: "-")
-                        .font(MonitorDesign.heroFont(size: scale.hero * 1.02))
-                        .foregroundStyle(MonitorDesign.naval)
+                        .font(Design.heroFont(size: scale.hero * 1.02))
+                        .foregroundStyle(Design.naval)
                     Text(verbatim: "GPU")
-                        .font(MonitorDesign.labelFont(size: scale.label * 0.94))
+                        .font(Design.labelFont(size: scale.label * 0.94))
                         .tracking(scale.label * 0.14)
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .foregroundStyle(Design.inkFaint)
                 }
             }
             .frame(maxWidth: 138)
             .frame(maxHeight: .infinity)
 
             Text("no sample — utilisation source unavailable")
-                .font(MonitorDesign.captionFont(size: scale.caption))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.captionFont(size: scale.caption))
+                .foregroundStyle(Design.inkFaint)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
         }
@@ -264,14 +264,14 @@ private struct GPUWidgetBody: View {
                     if showLoadBreakdown {
                         VStack(alignment: .leading, spacing: scale.label * 0.55) {
                             subMetricRow(name: "Device", value: gpuUsage,
-                                         color: MonitorDesign.inkPrimary, dashed: false)
+                                         color: Design.inkPrimary, dashed: false)
                             if let r = system?.gpuRendererUtil {
                                 subMetricRow(name: "Renderer", value: r,
-                                             color: MonitorDesign.signalSteel, dashed: false)
+                                             color: Design.signalSteel, dashed: false)
                             }
                             if let t = system?.gpuTilerUtil {
                                 subMetricRow(name: "Tiler", value: t,
-                                             color: MonitorDesign.tilerViolet, dashed: true)
+                                             color: Design.tilerViolet, dashed: true)
                             }
                             computeChip
                                 .padding(.top, scale.label * 0.3)
@@ -304,17 +304,17 @@ private struct GPUWidgetBody: View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             if let name = system?.gpuDeviceName, !name.isEmpty {
                 Text(verbatim: name)
-                    .font(MonitorDesign.subFont(size: scale.sub * 0.92))
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .font(Design.subFont(size: scale.sub * 0.92))
+                    .foregroundStyle(Design.inkPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             if let cores = system?.gpuCoreCount {
                 Text(verbatim: String(localized: "· \(cores)-core GPU",
                                       comment: "GPU widget identity: GPU core count; %lld is the number of cores."))
-                    .font(MonitorDesign.labelFont(size: scale.label))
+                    .font(Design.labelFont(size: scale.label))
                     .tracking(scale.label * 0.06)
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
                     .lineLimit(1)
             }
             if let mem = memUsedBytes {
@@ -327,13 +327,13 @@ private struct GPUWidgetBody: View {
     private func memChip(_ bytes: UInt64) -> some View {
         HStack(spacing: 5) {
             Text(verbatim: "MEM")
-                .font(MonitorDesign.labelFont(size: scale.label))
+                .font(Design.labelFont(size: scale.label))
                 .tracking(scale.label * 0.1)
-                .foregroundStyle(MonitorDesign.inkFaint)
-            Text(verbatim: MonitorFormat.bytes(bytes))
-                .font(MonitorDesign.labelFont(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
+            Text(verbatim: Format.bytes(bytes))
+                .font(Design.labelFont(size: scale.label))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
         }
         .lineLimit(1)
     }
@@ -358,37 +358,37 @@ private struct GPUWidgetBody: View {
                                                              renderer: system?.gpuRendererUtil) {
             HStack(spacing: 5) {
                 Text("compute")
-                    .font(MonitorDesign.labelFont(size: scale.label * 0.9))
+                    .font(Design.labelFont(size: scale.label * 0.9))
                     .tracking(scale.label * 0.1)
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
                 Text(verbatim: "≈\(compute)%")
-                    .font(MonitorDesign.labelFont(size: scale.label))
+                    .font(Design.labelFont(size: scale.label))
                     .monospacedDigit()
-                    .foregroundStyle(MonitorDesign.computeViolet)
+                    .foregroundStyle(Design.computeViolet)
             }
             .lineLimit(1)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(MonitorDesign.computeChipStroke,
+                    .strokeBorder(Design.computeChipStroke,
                                   style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
             )
-            .background(Capsule(style: .continuous).fill(MonitorDesign.computeChipFill))
+            .background(Capsule(style: .continuous).fill(Design.computeChipFill))
         }
     }
 
     private var legendRow: some View {
         HStack(spacing: scale.label * 1.1) {
             legendItem(name: "Device", value: gpuUsage,
-                       color: MonitorDesign.inkPrimary, dashed: false)
+                       color: Design.inkPrimary, dashed: false)
             if system?.gpuRendererUtil != nil {
                 legendItem(name: "Renderer", value: system?.gpuRendererUtil,
-                           color: MonitorDesign.signalSteel, dashed: false)
+                           color: Design.signalSteel, dashed: false)
             }
             if system?.gpuTilerUtil != nil {
                 legendItem(name: "Tiler", value: system?.gpuTilerUtil,
-                           color: MonitorDesign.tilerViolet, dashed: true)
+                           color: Design.tilerViolet, dashed: true)
             }
             Spacer(minLength: 4)
             computeChip
@@ -402,13 +402,13 @@ private struct GPUWidgetBody: View {
             SwatchLine(color: color, dashed: dashed)
                 .frame(width: 12, height: 3)
             Text(verbatim: name.uppercased())
-                .font(MonitorDesign.labelFont(size: scale.label))
+                .font(Design.labelFont(size: scale.label))
                 .tracking(scale.label * 0.1)
-                .foregroundStyle(MonitorDesign.inkFaint)
-            Text(verbatim: MonitorFormat.percent(value ?? 0))
-                .font(MonitorDesign.labelFont(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
+            Text(verbatim: Format.percent(value ?? 0))
+                .font(Design.labelFont(size: scale.label))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .foregroundStyle(Design.inkPrimary)
         }
     }
 
@@ -419,14 +419,14 @@ private struct GPUWidgetBody: View {
             SwatchLine(color: color, dashed: dashed)
                 .frame(width: 14, height: 3)
             Text(verbatim: name.uppercased())
-                .font(MonitorDesign.labelFont(size: scale.label))
+                .font(Design.labelFont(size: scale.label))
                 .tracking(scale.label * 0.1)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Spacer(minLength: 4)
-            Text(verbatim: MonitorFormat.percent(value ?? 0))
-                .font(MonitorDesign.subFont(size: scale.caption))
+            Text(verbatim: Format.percent(value ?? 0))
+                .font(Design.subFont(size: scale.caption))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .foregroundStyle(Design.inkPrimary)
         }
         .lineLimit(1)
         .minimumScaleFactor(0.7)
@@ -434,8 +434,8 @@ private struct GPUWidgetBody: View {
 
     private var computeGapNote: some View {
         Text("Device − Renderer gap ≈ compute (Metal / GPU ML) load")
-            .font(MonitorDesign.captionFont(size: scale.caption))
-            .foregroundStyle(MonitorDesign.inkFaint)
+            .font(Design.captionFont(size: scale.caption))
+            .foregroundStyle(Design.inkFaint)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
     }
@@ -447,26 +447,26 @@ private struct GPUWidgetBody: View {
         return AnyView(
             HStack(spacing: 10) {
                 Text(verbatim: "GPU")
-                    .font(MonitorDesign.labelFont(size: scale.label))
+                    .font(Design.labelFont(size: scale.label))
                     .tracking(scale.label * 0.12)
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
                 if let t {
-                    sensorReading(dotColor: MonitorDesign.temperatureColor(t),
+                    sensorReading(dotColor: Design.temperatureColor(t),
                                   glow: true,
                                   value: MonitorTemperature.valueText(t), unit: MonitorTemperature.symbol)
                 }
                 Spacer(minLength: 0)
                 Text(verbatim: "SMC")
-                    .font(MonitorDesign.labelFont(size: scale.label))
+                    .font(Design.labelFont(size: scale.label))
                     .tracking(scale.label * 0.1)
-                    .foregroundStyle(MonitorDesign.inkFaint.opacity(0.7))
+                    .foregroundStyle(Design.inkFaint.opacity(0.7))
             }
             .lineLimit(1)
             .padding(.top, 3)
             .overlay(alignment: .top) {
                 Rectangle()
-                    .fill(MonitorDesign.hairline.opacity(0.5))
-                    .frame(height: MonitorDesign.hairlineWidth)
+                    .fill(Design.hairline.opacity(0.5))
+                    .frame(height: Design.hairlineWidth)
             }
         )
     }
@@ -479,11 +479,11 @@ private struct GPUWidgetBody: View {
                 .shadow(color: glow ? dotColor.opacity(0.7) : .clear, radius: glow ? 3 : 0)
             (Text(verbatim: value)
              + Text(verbatim: unit)
-                .font(MonitorDesign.labelFont(size: scale.label * 0.7))
-                .foregroundStyle(MonitorDesign.inkFaint))
-                .font(MonitorDesign.subFont(size: scale.caption))
+                .font(Design.labelFont(size: scale.label * 0.7))
+                .foregroundStyle(Design.inkFaint))
+                .font(Design.subFont(size: scale.caption))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .foregroundStyle(Design.inkPrimary)
         }
     }
 
@@ -493,12 +493,12 @@ private struct GPUWidgetBody: View {
         let pct = Int(((gpuUsage ?? 0) * 100).rounded())
         return HStack(alignment: .firstTextBaseline, spacing: 1) {
             Text(verbatim: "\(pct)")
-                .font(MonitorDesign.heroFont(size: scale.hero * factor))
+                .font(Design.heroFont(size: scale.hero * factor))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .foregroundStyle(Design.inkPrimary)
             Text(verbatim: "%")
-                .font(MonitorDesign.labelFont(size: scale.hero * factor * 0.5))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: scale.hero * factor * 0.5))
+                .foregroundStyle(Design.inkFaint)
         }
         .lineLimit(1)
         .minimumScaleFactor(0.6)
@@ -507,17 +507,17 @@ private struct GPUWidgetBody: View {
     private func peakTag(size: CGFloat) -> some View {
         HStack(spacing: 4) {
             RoundedRectangle(cornerRadius: 1)
-                .fill(MonitorDesign.peakMarker)
+                .fill(Design.peakMarker)
                 .frame(width: 5, height: 5)
                 .opacity(0.85)
             Text("peak")
-                .font(MonitorDesign.labelFont(size: size))
+                .font(Design.labelFont(size: size))
                 .tracking(size * 0.12)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Text(verbatim: "\(peakPercent)%")
-                .font(MonitorDesign.labelFont(size: size))
+                .font(Design.labelFont(size: size))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
         }
         .monitorChip(scale)
     }
@@ -525,20 +525,20 @@ private struct GPUWidgetBody: View {
     private func temperatureCapsule(_ t: Double) -> some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(MonitorDesign.temperatureColor(t))
+                .fill(Design.temperatureColor(t))
                 .frame(width: 7, height: 7)
-                .shadow(color: MonitorDesign.temperatureColor(t).opacity(0.6), radius: 3)
+                .shadow(color: Design.temperatureColor(t).opacity(0.6), radius: 3)
             (Text(verbatim: MonitorTemperature.valueText(t))
              + Text(verbatim: MonitorTemperature.symbol)
-                .font(MonitorDesign.labelFont(size: scale.caption * 0.68))
-                .foregroundStyle(MonitorDesign.inkFaint))
-                .font(MonitorDesign.subFont(size: scale.caption))
+                .font(Design.labelFont(size: scale.caption * 0.68))
+                .foregroundStyle(Design.inkFaint))
+                .font(Design.subFont(size: scale.caption))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkPrimary)
+                .foregroundStyle(Design.inkPrimary)
             Text(LocalizedStringKey(GPUWidgetView.tempLabel(t)))
-                .font(MonitorDesign.labelFont(size: scale.label * 0.94))
+                .font(Design.labelFont(size: scale.label * 0.94))
                 .tracking(scale.label * 0.12)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
                 .textCase(.uppercase)
         }
         .monitorChip(scale)
@@ -628,40 +628,40 @@ private struct GPUBreakdownChart: View {
                             p.move(to: CGPoint(x: 0, y: y))
                             p.addLine(to: CGPoint(x: w, y: y))
                         }
-                        .stroke(MonitorDesign.hairlineHi.opacity(0.26), lineWidth: 1)
+                        .stroke(Design.hairlineHi.opacity(0.26), lineWidth: 1)
                     }
 
                     areaPath(device, w: w, h: h)
                         .fill(LinearGradient(
-                            colors: [MonitorDesign.inkPrimary.opacity(0.16),
-                                     MonitorDesign.inkPrimary.opacity(0.01)],
+                            colors: [Design.inkPrimary.opacity(0.16),
+                                     Design.inkPrimary.opacity(0.01)],
                             startPoint: .top, endPoint: .bottom))
 
                     if let renderer, renderer.count == device.count {
                         gapBand(device: device, renderer: renderer, w: w, h: h)
                             .fill(LinearGradient(
-                                colors: [MonitorDesign.computeViolet.opacity(0.24),
-                                         MonitorDesign.computeViolet.opacity(0.05)],
+                                colors: [Design.computeViolet.opacity(0.24),
+                                         Design.computeViolet.opacity(0.05)],
                                 startPoint: .top, endPoint: .bottom))
                     }
 
                     if let tiler, tiler.count == device.count {
                         linePath(tiler, w: w, h: h)
-                            .stroke(MonitorDesign.tilerViolet.opacity(0.85),
+                            .stroke(Design.tilerViolet.opacity(0.85),
                                     style: StrokeStyle(lineWidth: 1.3, lineJoin: .round, dash: [4, 3]))
                     }
                     if let renderer, renderer.count == device.count {
                         linePath(renderer, w: w, h: h)
-                            .stroke(MonitorDesign.signalSteel,
+                            .stroke(Design.signalSteel,
                                     style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
                     }
                     linePath(device, w: w, h: h)
-                        .stroke(MonitorDesign.inkPrimary,
+                        .stroke(Design.inkPrimary,
                                 style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
 
                     if let last = device.last {
                         Circle()
-                            .fill(MonitorDesign.inkPrimary)
+                            .fill(Design.inkPrimary)
                             .frame(width: 5, height: 5)
                             .position(x: w, y: yFor(last, h: h))
                     }
@@ -724,7 +724,7 @@ private struct SwatchLine: View {
 }
 
 // MARK: - GPU-specific palette
-private extension MonitorDesign {
+private extension Design {
     static let naval = oklch(0.5, 0.012, 76)
     /// Tiler line / breakdown violet — `oklch(0.66 0.09 300)`.
     static let tilerViolet = oklch(0.66, 0.09, 300)
@@ -804,7 +804,7 @@ private func gpuPreviewContext(
             .frame(width: 170, height: 170)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("GPU · M") {
@@ -832,7 +832,7 @@ private func gpuPreviewContext(
             .frame(width: 364, height: 170)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 
 #Preview("GPU · L") {
@@ -849,6 +849,6 @@ private func gpuPreviewContext(
             .frame(width: 364, height: 376)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }
 #endif

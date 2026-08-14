@@ -11,7 +11,7 @@ struct RuntimeTests {
 
     @Test("A queued release is sequenced after its acquire")
     func releaseIsSequencedAfterAcquire() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let slot = runtime.makeLeaseSlot()
         let lease = slot.acquire(options: quietOptions)
 
@@ -23,7 +23,7 @@ struct RuntimeTests {
 
     @Test("Balanced acquire then release ends with no live leases")
     func balancedLifecycle() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietOptions)
 
         await lease.waitUntilSettled()
@@ -35,7 +35,7 @@ struct RuntimeTests {
 
     @Test("updateOptions on a released lease can't resurrect it")
     func updateOptionsNeverResurrects() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietOptions)
 
         await lease.waitUntilSettled()
@@ -48,7 +48,7 @@ struct RuntimeTests {
 
     @Test("updateOptions mutates a live lease without changing its count")
     func updateOptionsRefreshesLiveLease() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietOptions)
 
         await lease.waitUntilSettled()
@@ -62,7 +62,7 @@ struct RuntimeTests {
 
     @Test("An older generation cannot update, pause, or release the current lease")
     func staleGenerationCannotMutateCurrentLease() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let slot = runtime.makeLeaseSlot()
         let older = slot.acquire(options: quietOptions)
         await older.waitUntilSettled()
@@ -94,18 +94,18 @@ struct RuntimeTests {
         agentsOnly.agents = true
         agentsOnly.claudeRoot = URL(fileURLWithPath: "/tmp/claude")
 
-        let merged = MonitorRuntime.merged([systemOnly, agentsOnly])
+        let merged = Runtime.merged([systemOnly, agentsOnly])
 
         #expect(merged?.system == true)
         #expect(merged?.agents == true)
         #expect(merged?.topProcesses == true)
         #expect(merged?.claudeRoot == URL(fileURLWithPath: "/tmp/claude"))
-        #expect(MonitorRuntime.merged([]) == nil)
+        #expect(Runtime.merged([]) == nil)
     }
 
     @Test("Final release clears the broker so stale snapshots can't replay")
     func finalReleaseClearsBroker() async {
-        let runtime = MonitorRuntime()
+        let runtime = Runtime()
         let lease = runtime.makeLeaseSlot().acquire(options: quietOptions)
 
         await lease.waitUntilSettled()
@@ -118,7 +118,7 @@ struct RuntimeTests {
 
     @Test("A second display's differing lease widens, not replaces, the pipeline")
     func secondLeaseWidens() async {
-        let runtime = MonitorRuntime(
+        let runtime = Runtime(
             grants: MonitorGrantAccess(
                 resolveRoots: { (claude: nil, codex: nil) },
                 release: {}
@@ -148,7 +148,7 @@ struct RuntimeTests {
             resolveRoots: { (claude: nil, codex: nil) },
             release: {}
         )
-        let runtime = MonitorRuntime(
+        let runtime = Runtime(
             grants: grants,
             sourceFactories: [{ _ in [source] }]
         )

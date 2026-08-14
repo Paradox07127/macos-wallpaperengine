@@ -4,7 +4,7 @@ import LiveWallpaperCore
 
 /// WPE fields surfaced in the Installed inspector, read from the item's bundled
 /// `project.json`. Purely local — never spends a Steam Web API request.
-struct WPELocalProjectInfo: Sendable, Equatable {
+struct LocalProjectInfo: Sendable, Equatable {
     var cleanedDescription: String?
     var tags: [String]
     var contentRating: String?
@@ -24,10 +24,10 @@ private struct WPEProjectDisplayManifest: Decodable {
 }
 
 /// Resolve the item's security-scoped folder and decode its `project.json` off the main actor.
-func loadWPELocalProjectInfo(for entry: WPEHistoryEntry) async -> WPELocalProjectInfo? {
+func loadWPELocalProjectInfo(for entry: WPEHistoryEntry) async -> LocalProjectInfo? {
     let bookmark = entry.origin.sourceFolderBookmark
     let knownSize = entry.sizeBytes
-    let outcome = await Task.detached(priority: .userInitiated) { () -> (info: WPELocalProjectInfo?, freshSize: Int64?) in
+    let outcome = await Task.detached(priority: .userInitiated) { () -> (info: LocalProjectInfo?, freshSize: Int64?) in
         guard let folder = try? SecurityScopedBookmarkResolver.shared
             .resolve(bookmark, target: .transient).get().url
         else { return (nil, nil) }
@@ -42,12 +42,12 @@ func loadWPELocalProjectInfo(for entry: WPEHistoryEntry) async -> WPELocalProjec
               let manifest = try? JSONDecoder().decode(WPEProjectDisplayManifest.self, from: data)
         else {
             let info = size > 0
-                ? WPELocalProjectInfo(cleanedDescription: nil, tags: [], contentRating: nil, sizeBytes: size)
+                ? LocalProjectInfo(cleanedDescription: nil, tags: [], contentRating: nil, sizeBytes: size)
                 : nil
             return (info, freshSize)
         }
 
-        let info = WPELocalProjectInfo(
+        let info = LocalProjectInfo(
             cleanedDescription: manifest.description.flatMap(strippedWPEMarkup),
             tags: manifest.tags ?? [],
             contentRating: manifest.contentrating?.trimmingCharacters(in: .whitespacesAndNewlines),

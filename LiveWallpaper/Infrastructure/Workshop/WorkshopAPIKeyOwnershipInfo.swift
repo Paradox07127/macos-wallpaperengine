@@ -5,7 +5,7 @@ import Foundation
 /// that explains the Steam Web API key belongs to the user's own Steam
 /// account (not Loomscreen), and the eligibility gate Valve enforces. Shared
 /// across `SteamWebAPIKeyEntrySheet`, `WorkshopSettingsView`, and
-/// `WorkshopOnboardingSheet` so translations stay aligned.
+/// `OnboardingSheet` so translations stay aligned.
 enum WorkshopAPIKeyOwnershipInfo {
     static let prerequisitesLine = String(
         localized: "Prerequisites: a Steam account with Mobile Steam Guard and at least $5 of Steam Store spend (non-limited).",

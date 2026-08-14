@@ -26,16 +26,16 @@ struct BatteryGlyph: View {
     private var isLow: Bool { level < lowThreshold && !charging }
 
     private var fillColors: [Color] {
-        if charging { return [MonitorDesign.oklch(0.6, 0.06, 78), MonitorDesign.signalAmber] }
-        if charged { return [MonitorDesign.oklch(0.7, 0.08, 158), MonitorDesign.signalSage] }
-        if isLow { return [MonitorDesign.signalAmber, MonitorDesign.signalCoral] }
-        return [MonitorDesign.oklch(0.66, 0.08, 158), MonitorDesign.signalSage]
+        if charging { return [Design.oklch(0.6, 0.06, 78), Design.signalAmber] }
+        if charged { return [Design.oklch(0.7, 0.08, 158), Design.signalSage] }
+        if isLow { return [Design.signalAmber, Design.signalCoral] }
+        return [Design.oklch(0.66, 0.08, 158), Design.signalSage]
     }
 
     private var glowColor: Color {
-        if charging { return MonitorDesign.signalAmber }
-        if isLow { return MonitorDesign.signalCoral }
-        return MonitorDesign.signalSage
+        if charging { return Design.signalAmber }
+        if isLow { return Design.signalCoral }
+        return Design.signalSage
     }
 
     var body: some View {
@@ -49,13 +49,13 @@ struct BatteryGlyph: View {
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(
-                            LinearGradient(colors: [MonitorDesign.bg0.opacity(0.6),
-                                                    MonitorDesign.bg1.opacity(0.35)],
+                            LinearGradient(colors: [Design.bg0.opacity(0.6),
+                                                    Design.bg1.opacity(0.35)],
                                            startPoint: .top, endPoint: .bottom)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .strokeBorder(MonitorDesign.hairlineHi, lineWidth: 2)
+                                .strokeBorder(Design.hairlineHi, lineWidth: 2)
                         )
 
                     LinearGradient(colors: fillColors, startPoint: .leading, endPoint: .trailing)
@@ -67,19 +67,19 @@ struct BatteryGlyph: View {
                     if charging {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: h * 0.42, weight: .heavy))
-                            .foregroundStyle(MonitorDesign.oklch(0.18, 0.02, 78))
+                            .foregroundStyle(Design.oklch(0.18, 0.02, 78))
                             .frame(maxWidth: .infinity)
                     } else if charged {
                         Image(systemName: "powerplug.fill")
                             .font(.system(size: h * 0.34, weight: .heavy))
-                            .foregroundStyle(MonitorDesign.oklch(0.2, 0.02, 158))
+                            .foregroundStyle(Design.oklch(0.2, 0.02, 158))
                             .frame(maxWidth: .infinity)
                     }
                 }
                 .frame(width: bodyWidth)
 
                 RoundedRectangle(cornerRadius: 1, style: .continuous)
-                    .fill(MonitorDesign.hairlineHi)
+                    .fill(Design.hairlineHi)
                     .frame(width: capWidth, height: h * 0.38)
             }
             .frame(width: w, height: h)
@@ -96,18 +96,18 @@ struct PowerPlugBadge: View {
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(
-                LinearGradient(colors: [MonitorDesign.bg0.opacity(0.6), MonitorDesign.bg1.opacity(0.35)],
+                LinearGradient(colors: [Design.bg0.opacity(0.6), Design.bg1.opacity(0.35)],
                                startPoint: .top, endPoint: .bottom)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(MonitorDesign.hairlineHi, lineWidth: 1.5)
+                    .strokeBorder(Design.hairlineHi, lineWidth: 1.5)
             )
             .overlay(
                 Image(systemName: "powerplug")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(MonitorDesign.signalSteel)
-                    .shadow(color: MonitorDesign.signalSteel.opacity(0.35), radius: 6)
+                    .foregroundStyle(Design.signalSteel)
+                    .shadow(color: Design.signalSteel.opacity(0.35), radius: 6)
             )
     }
 }
@@ -121,5 +121,5 @@ struct PowerPlugBadge: View {
         PowerPlugBadge().frame(width: 84, height: 44)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

@@ -5,9 +5,9 @@ enum MonitorPressure {
 
     var fillColors: [Color] {
         switch self {
-        case .normal:  return [MonitorDesign.oklch(0.60, 0.08, 158), MonitorDesign.signalSage]
-        case .warn:    return [MonitorDesign.signalAmber, MonitorDesign.oklch(0.74, 0.15, 44)]
-        case .critical: return [MonitorDesign.oklch(0.70, 0.13, 40), MonitorDesign.signalCoral]
+        case .normal:  return [Design.oklch(0.60, 0.08, 158), Design.signalSage]
+        case .warn:    return [Design.signalAmber, Design.oklch(0.74, 0.15, 44)]
+        case .critical: return [Design.oklch(0.70, 0.13, 40), Design.signalCoral]
         }
     }
 }
@@ -36,13 +36,13 @@ struct TankGauge: View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [MonitorDesign.bg0.opacity(0.6), MonitorDesign.bg1.opacity(0.35)],
+                            colors: [Design.bg0.opacity(0.6), Design.bg1.opacity(0.35)],
                             startPoint: .top, endPoint: .bottom
                         )
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .strokeBorder(MonitorDesign.hairline.opacity(0.6), lineWidth: 1)
+                            .strokeBorder(Design.hairline.opacity(0.6), lineWidth: 1)
                     )
 
                 ForEach([0.25, 0.5, 0.75], id: \.self) { q in
@@ -75,5 +75,5 @@ struct TankGauge: View {
         TankGauge(level: 0.93, pressure: .critical).frame(width: 44, height: 130)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

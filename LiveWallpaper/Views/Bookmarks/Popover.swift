@@ -2,7 +2,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Inspector-header popover for quick-saving the current wallpaper.
-struct BookmarksPopover: View {
+struct Popover: View {
     let screen: Screen
     /// Inspector tab's content (not necessarily the committed active wallpaper).
     let candidateContent: WallpaperContent?

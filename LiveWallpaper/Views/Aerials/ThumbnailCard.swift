@@ -53,7 +53,7 @@ private final class AerialThumbnailCache {
 
 /// Aerials are managed by macOS, so there is no rename / delete affordance and
 /// tapping the tile is a no-op.
-struct AerialThumbnailCard: View {
+struct ThumbnailCard: View {
     let asset: AerialAsset
     let screens: [Screen]
     let onApply: (Screen) -> Void

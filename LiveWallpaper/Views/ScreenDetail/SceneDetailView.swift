@@ -43,7 +43,7 @@ struct ScenePreviewLifecycleState: Equatable {
 
 /// Scene detail card for Wallpaper Engine projects.
 @MainActor
-struct WPESceneDetailView: View {
+struct SceneDetailView: View {
     private let screenAspectRatio: CGFloat = 16 / 9
     private let infoBarReservedHeight: CGFloat = 44
     private let errorBannerReservedHeight: CGFloat = 76

@@ -41,7 +41,7 @@ enum OverlayKind: Hashable, CaseIterable {
     }
 }
 
-struct ScreenDetailView: View {
+struct DetailView: View {
     var screen: Screen
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
@@ -279,7 +279,7 @@ struct ScreenDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ResizableInspectorSplit(
+        InspectorSplit(
             isMounted: inspectorApplicable,
             isVisible: showsInspector,
             animationTrigger: AnyHashable(inspectorUserVisible),
@@ -399,7 +399,7 @@ struct ScreenDetailView: View {
     }
 
     private var screenHeader: some View {
-        DetailHeader(
+        Header(
             screen: screen,
             draft: $draft,
             screenManager: screenManager,

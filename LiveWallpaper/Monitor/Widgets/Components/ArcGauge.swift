@@ -68,7 +68,7 @@ struct ArcGauge<Center: View>: View {
 
         let fraction = value.map { min(1, max(0, $0)) }
         let lit = fraction.map { Int(($0 * Double(segmentCount)).rounded()) } ?? 0
-        let litColor = color ?? MonitorDesign.loadBandColor(fraction ?? 0)
+        let litColor = color ?? Design.loadBandColor(fraction ?? 0)
         let per = sweep / Double(segmentCount)
         let isEmpty = (value == nil)
 
@@ -85,8 +85,8 @@ struct ArcGauge<Center: View>: View {
             )
             let on = i < lit
             let strokeColor: Color = isEmpty
-                ? MonitorDesign.hairlineHi.opacity(0.7)
-                : (on ? segmentColor(i, fallback: litColor) : MonitorDesign.track)
+                ? Design.hairlineHi.opacity(0.7)
+                : (on ? segmentColor(i, fallback: litColor) : Design.track)
             let style = StrokeStyle(
                 lineWidth: stroke,
                 lineCap: .round,
@@ -103,7 +103,7 @@ struct ArcGauge<Center: View>: View {
             var tick = Path()
             tick.move(to: CGPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
             tick.addLine(to: CGPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
-            ctx.stroke(tick, with: .color(MonitorDesign.inkPrimary.opacity(0.9)),
+            ctx.stroke(tick, with: .color(Design.inkPrimary.opacity(0.9)),
                        style: StrokeStyle(lineWidth: stroke * 0.28, lineCap: .round))
         }
     }
@@ -128,21 +128,21 @@ struct ArcGauge<Center: View>: View {
             ArcGauge(value: v, peak: min(1, v + 0.12)) {
                 VStack(spacing: 0) {
                     Text("\(Int(v * 100))")
-                        .font(MonitorDesign.heroFont(size: 30))
+                        .font(Design.heroFont(size: 30))
                         .monospacedDigit()
-                        .foregroundStyle(MonitorDesign.inkPrimary)
-                    Text("%").font(MonitorDesign.labelFont(size: 10))
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .foregroundStyle(Design.inkPrimary)
+                    Text("%").font(Design.labelFont(size: 10))
+                        .foregroundStyle(Design.inkFaint)
                 }
             }
             .frame(width: 110, height: 110)
         }
         ArcGauge(value: nil) {
-            Text("—").font(MonitorDesign.heroFont(size: 28))
-                .foregroundStyle(MonitorDesign.inkFaint)
+            Text("—").font(Design.heroFont(size: 28))
+                .foregroundStyle(Design.inkFaint)
         }
         .frame(width: 110, height: 110)
     }
     .padding(32)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

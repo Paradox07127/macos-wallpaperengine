@@ -301,7 +301,7 @@ struct PlaylistSection: View {
 
     @ViewBuilder
     private func rowView(for entry: PlaylistEntry, index: Int) -> some View {
-        PlaylistRow(
+        Row(
             entry: entry,
             index: index,
             isBeingDragged: draggingID == entry.id,
@@ -483,7 +483,7 @@ struct PlaylistSection: View {
             cacheKey: AsyncRowThumbnail.cacheKey(for: bookmark)
         )
         Task.detached(priority: .utility) {
-            await PlaylistMetadataService.shared.invalidate(bookmark)
+            await MetadataService.shared.invalidate(bookmark)
         }
     }
 

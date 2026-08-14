@@ -112,7 +112,7 @@ struct SteamCMDManagedInstallSheet: View {
 /// The self-serve alternative to the managed install, for users who want a
 /// system-wide SteamCMD other tools can find. We only show the command —
 /// running Homebrew from inside an app is not something to automate.
-struct HomebrewSteamCMDSheet: View {
+struct SteamCMDSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var didCopy = false
 

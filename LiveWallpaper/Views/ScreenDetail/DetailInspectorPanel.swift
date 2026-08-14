@@ -29,7 +29,7 @@ struct DetailInspectorPanel: View {
                         wallpaperModeCard
                     }
 
-                    CommonPlaybackInspector(
+                    PlaybackInspector(
                         screen: screen,
                         wallpaperType: draft.selectedWallpaperType,
                         muted: $draft.videoMuted,
@@ -47,7 +47,7 @@ struct DetailInspectorPanel: View {
                     )
 
                     if draft.selectedWallpaperType == .html {
-                        ContentSecurityInspector(
+                        SecurityInspector(
                             screen: screen,
                             source: draft.htmlSource,
                             htmlConfig: $draft.htmlConfig

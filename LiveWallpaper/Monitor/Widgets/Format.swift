@@ -17,7 +17,7 @@ enum MonitorTemperature {
     }
 }
 
-enum MonitorFormat {
+enum Format {
     static func rate(_ bytesPerSec: Double) -> String {
         let bps = bytesPerSec.isFinite ? max(bytesPerSec, 0) : 0
         if bps < 1 { return "0 B/s" }

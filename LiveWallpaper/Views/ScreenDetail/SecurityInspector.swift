@@ -2,12 +2,12 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-// Split out of CommonPlaybackInspector.swift: an independent type cluster with no
+// Split out of PlaybackInspector.swift: an independent type cluster with no
 // references to or from the rest of that file.
 
 
 /// HTML privacy + origin-trust controls for the WKWebView.
-struct ContentSecurityInspector: View {
+struct SecurityInspector: View {
     var screen: Screen
     var source: HTMLSource?
     @Binding var htmlConfig: HTMLConfig

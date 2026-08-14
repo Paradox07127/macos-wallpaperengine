@@ -4,10 +4,10 @@ import SwiftUI
 
 /// AppKit host that embeds the SwiftUI monitor board and connects it to the runtime.
 @MainActor
-final class BoardHostView: NSView {
+final class HostView: NSView {
 
-    private let dataModel: BoardDataModel
-    private let interactionModel: BoardInteractionModel
+    private let dataModel: DataModel
+    private let interactionModel: InteractionModel
     private let hostingView: NSHostingView<MonitorBoardRootContainer>
 
     private var allowMouseInteraction: Bool
@@ -40,8 +40,8 @@ final class BoardHostView: NSView {
         self.allowMouseInteraction = configuration.mouseInteractionEnabled
         self.nameOnlyTiles = nameOnlyTiles
         self.reduceMotion = reduceMotion
-        self.dataModel = BoardDataModel()
-        self.interactionModel = BoardInteractionModel(configuration: configuration)
+        self.dataModel = DataModel()
+        self.interactionModel = InteractionModel(configuration: configuration)
         let container = MonitorBoardRootContainer(
             model: interactionModel,
             data: dataModel,
@@ -194,14 +194,14 @@ final class BoardHostView: NSView {
 
 /// Wraps the board with the reduce-motion + suspend environment.
 struct MonitorBoardRootContainer: View {
-    @ObservedObject var model: BoardInteractionModel
-    @ObservedObject var data: BoardDataModel
+    @ObservedObject var model: InteractionModel
+    @ObservedObject var data: DataModel
     let reduceMotion: Bool
     var suspended: Bool = false
     var nameOnlyTiles: Bool = false
 
     var body: some View {
-        BoardRootView(model: model, data: data, nameOnlyTiles: nameOnlyTiles)
+        RootView(model: model, data: data, nameOnlyTiles: nameOnlyTiles)
             .environment(\.monitorReduceMotion, reduceMotion)
             .environment(\.monitorSuspended, suspended)
     }
@@ -209,7 +209,7 @@ struct MonitorBoardRootContainer: View {
 
 // MARK: - Menu-bar top inset
 
-extension BoardHostView {
+extension HostView {
     /// The display's menu-bar forbidden zone as a fraction of its height.
     static func menuBarTopInsetFraction(forFrame frame: NSRect) -> CGFloat {
         guard let screen = NSScreen.screens.first(where: { framesMatch($0.frame, frame) }) else { return 0 }
