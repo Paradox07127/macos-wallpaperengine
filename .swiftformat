@@ -1,6 +1,6 @@
 # SwiftFormat — starter config (P0). Conservative first adoption.
-# The 6 god-files slated for structural refactor (review doc §6.1, P-B) are EXCLUDED
-# so cosmetic reformatting does not collide with the upcoming splits.
+# The god-files slated for structural refactor are EXCLUDED so cosmetic
+# reformatting does not collide with the upcoming splits.
 # AF-10: every Swift path in --exclude is owned and time-bounded by
 # scripts/quality-baselines/exclusions.json. scripts/check_quality_exclusions.py
 # enforces exact SwiftLint/SwiftFormat/manifest parity and component LoC caps.

@@ -19,6 +19,22 @@
 3. 如果你的改动必须偏离某个测试套强制的运行时不变量（本地化覆盖、粒子与渲染行为、
    entitlement），请在 PR 描述里说清楚，而不是悄悄把测试放松。
 
+## 格式化
+
+SwiftFormat 和 SwiftLint 都**没有接进 CI** —— `.swiftformat` 与 `.swiftlint.yml`
+描述的是本项目的风格约定，不会卡你的 PR。
+
+**不要对整个仓库跑 SwiftFormat。** 这份代码库不是 formatter-clean 的，跑一遍全量会
+重写几千行、毁掉 `git blame`，并与正在进行的重构撞车。只格式化你动过的文件：
+
+```bash
+scripts/format-changed.sh          # 相对 HEAD 的改动 + 已暂存 + 未跟踪的文件
+scripts/format-changed.sh main     # 相对另一个基准的改动
+```
+
+`.swiftformat` 的 `--exclude` 里列出的巨石文件会被自动跳过；那份清单由
+`scripts/check_quality_exclusions.py` 与 `.swiftlint.yml` 保持同步。
+
 ## 每个 PR 都会被要求的事
 
 - **两个版本都要能构建。** 凡是碰到 `#if !LITE_BUILD` 的改动，`LiveWallpaper` 和
