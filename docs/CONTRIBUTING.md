@@ -22,6 +22,24 @@ details live in [building.md](en/building.md).
    (localization coverage, particle and render behavior, entitlements), say so
    in the PR description rather than relaxing the test quietly.
 
+## Formatting
+
+Neither SwiftFormat nor SwiftLint is enforced in CI — `.swiftformat` and
+`.swiftlint.yml` describe the house style, they don't gate your PR.
+
+**Do not run SwiftFormat over the whole repository.** This codebase is not
+formatter-clean, so a full pass rewrites thousands of lines, destroys `git blame`,
+and collides with in-flight refactors. Format only what you touched:
+
+```bash
+scripts/format-changed.sh          # files changed vs HEAD, staged, and untracked
+scripts/format-changed.sh main     # files changed vs another base
+```
+
+The god-files listed in `.swiftformat`'s `--exclude` are skipped automatically;
+that list is kept in sync with `.swiftlint.yml` by
+`scripts/check_quality_exclusions.py`.
+
 ## Things that will be asked of every PR
 
 - **Both editions build.** Anything touching `#if !LITE_BUILD` has to compile

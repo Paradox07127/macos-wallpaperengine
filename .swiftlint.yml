@@ -1,7 +1,6 @@
 # SwiftLint — starter config (P0). Conservative + low-noise on first adoption.
-# Length/complexity/naming rules are intentionally disabled here because those
-# concerns are handled by the whole-app review (docs/app-review-framework.md, D2/D5),
-# and enabling them now would drown the signal in known god-file violations.
+# Length/complexity/naming rules are intentionally disabled here: enabling them
+# now would drown the signal in known god-file violations.
 # Whitespace rules are left to SwiftFormat to avoid double-reporting.
 
 included:

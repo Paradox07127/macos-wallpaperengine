@@ -140,6 +140,9 @@ scripts/*
 !scripts/check_entitlements_self_test.sh
 !scripts/entitlement_fingerprint.py
 !scripts/check_quality_exclusions.py
+# Ships with .swiftformat: whole-repo formatting produces thousands of lines of
+# churn here, so contributors need the changed-files-only helper.
+!scripts/format-changed.sh
 !scripts/check_module_import_boundaries.py
 !scripts/wpe-corpus-manifest.py
 !scripts/wpe-corpus-manifest.schema.json
