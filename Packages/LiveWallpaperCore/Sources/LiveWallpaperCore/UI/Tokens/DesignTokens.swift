@@ -206,7 +206,7 @@ public enum DesignTokens {
         public static let sectionHeaderTopPadding: CGFloat = -7
     }
 
-    public enum Header {
+    public enum DetailHeader {
         public static let horizontalPadding: CGFloat = Spacing.xl
         public static let verticalPadding: CGFloat = 14
         public static let contentSpacing: CGFloat = 14

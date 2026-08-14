@@ -64,7 +64,7 @@ struct AerialsLibraryView: View {
             systemImage: "sparkles.tv",
             title: { Text("Apple Aerials") },
             metadata: {
-                HStack(spacing: DesignTokens.Header.metadataSpacing) {
+                HStack(spacing: DesignTokens.DetailHeader.metadataSpacing) {
                     Text("\(library.assets.count) downloaded videos")
                     if library.isScanning {
                         ProgressView().controlSize(.small)
