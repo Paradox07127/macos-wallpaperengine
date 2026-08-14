@@ -1961,6 +1961,28 @@ export function init(value) {
         #expect(second == SIMD3<Double>(1.25, 1.25, 100))
     }
 
+    /// `installSandbox` seeds `engine.screenResolution` with a hardcoded 1920x1080, and each
+    /// engine's `installCanvasSize` is what overwrites it with the real canvas. The parse-time
+    /// evaluator overwrote only `canvasSize`, so a statically-baked origin script reading
+    /// `screenResolution` silently got 1920 on every non-1080p scene.
+    @Test("Parse-time transform evaluator reports the real canvas as screenResolution")
+    func transformEvaluatorScreenResolutionMatchesCanvas() throws {
+        let evaluator = WPETransformScriptEvaluator(canvasWidth: 3840, canvasHeight: 2160)
+        let resolved = try #require(evaluator.resolveVec3(
+            script: """
+            export function update(v) {
+                v.x = engine.screenResolution.x;
+                v.y = engine.canvasSize.x;
+                return v;
+            }
+            """,
+            properties: [:],
+            seed: SIMD3<Double>(0, 0, 0)
+        ))
+        #expect(resolved.y == 3840)
+        #expect(resolved.x == 3840)
+    }
+
     @Test("Dynamic transform script expands a scalar return to a uniform vector")
     func dynamicTransformScriptExpandsScalarReturn() throws {
         let script = """

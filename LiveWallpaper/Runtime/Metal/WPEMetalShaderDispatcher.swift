@@ -16,13 +16,14 @@ import Metal
 /// - Image family: `genericimage2` binds slot 0 = image; `genericimage4` binds
 ///   slot 0 = image and slot 1 = mask (an absent mask rebinds the slot-0
 ///   texture and clears the has-mask uniform).
-/// - Particle family: `genericparticle` binds slot 0 = sprite texture.
+/// - Particle family: `genericparticle` stays a kind (snapshot + CanonicalTrace)
+///   but encode goes through the custom/transpiled fallback.
 /// - Effect family: slot 0 = effect input (`textureBindings[0] ?? textures[0]
 ///   ?? source`); the masked effects (`effect_opacity`, `effect_waterwaves`)
 ///   add slot 1 = opacity mask, falling back to the source texture with
 ///   has-mask cleared. Per-effect fragment names, slot bindings, and uniform
 ///   builders live in the B2 data table (`WPEMetalEffectDispatchTable.swift`);
-///   the switch keeps only the compose/image/particle families and the
+///   the switch keeps only the compose/image families and the
 ///   custom/transpiled fallback as code paths.
 /// - Custom/transpiled fallback: slots 0..<`WPEShaderTranspiler.customTextureSlotCount`,
 ///   each resolved `textureBindings[slot] ?? binds[slot] ?? textures[slot]`;
@@ -60,9 +61,7 @@ struct WPEMetalShaderDispatcher {
             return
         }
 
-        guard let kind = WPEBuiltinShaderKind(
-            rawValue: WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.pass.shader)
-        ) else {
+        guard let kind = WPEBuiltinShaderKind(normalizing: pass.pass.shader) else {
             try dispatchCustomShader(
                 pass: pass,
                 layer: layer,
@@ -90,12 +89,14 @@ struct WPEMetalShaderDispatcher {
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .solidColor:
-            try dispatchSolidColor(
+            try dispatchSolid(
+                fragmentName: "wpe_solidcolor_fragment",
                 pass: pass, layer: layer, destination: destination,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .solidLayer:
-            try dispatchSolidLayer(
+            try dispatchSolid(
+                fragmentName: "wpe_solidlayer_fragment",
                 pass: pass, layer: layer, destination: destination,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
@@ -125,8 +126,8 @@ struct WPEMetalShaderDispatcher {
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .genericParticle:
-            try dispatchGenericParticle(
-                pass: pass, destination: destination, textures: textures,
+            try dispatchCustomShader(
+                pass: pass, layer: layer, destination: destination, textures: textures,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         }
@@ -135,48 +136,40 @@ struct WPEMetalShaderDispatcher {
         recordBuiltinTracePass(kind: kind, pass: pass, layer: layer, destination: destination, textures: textures, frameState: frameState)
         #endif
     }
-    // MARK: - Compose family
-    private func dispatchSolidColor(
+
+    /// Object-quad vertex uniforms at buffer 1 — the shared tail of every
+    /// dispatch that selects `wpe_object_quad_vertex`.
+    func bindObjectQuadVertexUniforms(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
         frameState: WPEMetalFrameState,
-        encoder: MTLRenderCommandEncoder,
-        depthPixelFormat: MTLPixelFormat
-    ) throws {
-        let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.renderPipeline(
-            vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
-            fragmentName: "wpe_solidcolor_fragment",
-            blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
-            colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
-        ))
-        var uniforms = WPESolidUniforms(color: WPEMetalShaderInputs.colorVector(for: pass))
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESolidUniforms>.stride, index: 0)
-        if usesObjectQuad {
-            var quadUniforms = executor.objectQuadUniforms(
-                for: layer,
-                sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
-                    layer: layer,
-                    destination: destination,
-                    frameState: frameState
-                ),
-                cameraParallax: frameState.cameraParallax,
-                sourceTexture: destination.texture,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-            )
-            encoder.setVertexBytes(
-                &quadUniforms,
-                length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                index: 1
-            )
-        }
+        cameraParallax: WPECameraParallaxFrame,
+        sourceTexture: MTLTexture,
+        encoder: MTLRenderCommandEncoder
+    ) {
+        var quadUniforms = executor.objectQuadUniforms(
+            for: layer,
+            sceneSize: executor.objectQuadSceneSize(
+                for: pass,
+                layer: layer,
+                destination: destination,
+                frameState: frameState
+            ),
+            cameraParallax: cameraParallax,
+            sourceTexture: sourceTexture,
+            cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
+        )
+        encoder.setVertexBytes(
+            &quadUniforms,
+            length: MemoryLayout<WPEObjectQuadUniforms>.stride,
+            index: 1
+        )
     }
 
-    private func dispatchSolidLayer(
+    // MARK: - Compose family
+    private func dispatchSolid(
+        fragmentName: String,
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
@@ -187,7 +180,7 @@ struct WPEMetalShaderDispatcher {
         let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
         encoder.setRenderPipelineState(try executor.renderPipeline(
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
-            fragmentName: "wpe_solidlayer_fragment",
+            fragmentName: fragmentName,
             blendMode: pass.pass.blending,
             alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
             colorPixelFormat: destination.texture.pixelFormat,
@@ -196,22 +189,10 @@ struct WPEMetalShaderDispatcher {
         var uniforms = WPESolidUniforms(color: WPEMetalShaderInputs.colorVector(for: pass))
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESolidUniforms>.stride, index: 0)
         if usesObjectQuad {
-            var quadUniforms = executor.objectQuadUniforms(
-                for: layer,
-                sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
-                    layer: layer,
-                    destination: destination,
-                    frameState: frameState
-                ),
+            bindObjectQuadVertexUniforms(
+                pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
-                sourceTexture: destination.texture,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-            )
-            encoder.setVertexBytes(
-                &quadUniforms,
-                length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                index: 1
+                sourceTexture: destination.texture, encoder: encoder
             )
         }
     }
@@ -268,22 +249,10 @@ struct WPEMetalShaderDispatcher {
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEBlendCompositeUniforms>.stride, index: 0)
 
         if usesObjectQuad {
-            var quadUniforms = executor.objectQuadUniforms(
-                for: layer,
-                sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
-                    layer: layer,
-                    destination: destination,
-                    frameState: frameState
-                ),
+            bindObjectQuadVertexUniforms(
+                pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
-                sourceTexture: layerTexture,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-            )
-            encoder.setVertexBytes(
-                &quadUniforms,
-                length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                index: 1
+                sourceTexture: layerTexture, encoder: encoder
             )
         }
     }
@@ -319,22 +288,10 @@ struct WPEMetalShaderDispatcher {
         encoder.setFragmentTexture(texture, index: 0)
         // wpe_copy_fragment samples 1:1 and takes no fragment uniform buffer.
         if usesObjectQuad {
-            var quadUniforms = executor.objectQuadUniforms(
-                for: layer,
-                sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
-                    layer: layer,
-                    destination: destination,
-                    frameState: frameState
-                ),
+            bindObjectQuadVertexUniforms(
+                pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
-                sourceTexture: texture,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-            )
-            encoder.setVertexBytes(
-                &quadUniforms,
-                length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                index: 1
+                sourceTexture: texture, encoder: encoder
             )
         }
     }
@@ -440,22 +397,10 @@ struct WPEMetalShaderDispatcher {
             var uniforms = WPESolidUniforms(color: WPEMetalShaderInputs.colorVector(for: pass))
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESolidUniforms>.stride, index: 0)
             if usesObjectQuad {
-                var quadUniforms = executor.objectQuadUniforms(
-                    for: layer,
-                    sceneSize: executor.objectQuadSceneSize(
-                        for: pass,
-                        layer: layer,
-                        destination: destination,
-                        frameState: frameState
-                    ),
+                bindObjectQuadVertexUniforms(
+                    pass: pass, layer: layer, destination: destination, frameState: frameState,
                     cameraParallax: frameState.cameraParallax,
-                    sourceTexture: firstTexture,
-                    cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-                )
-                encoder.setVertexBytes(
-                    &quadUniforms,
-                    length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                    index: 1
+                    sourceTexture: firstTexture, encoder: encoder
                 )
             }
         }
@@ -497,22 +442,10 @@ struct WPEMetalShaderDispatcher {
         )
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         if usesObjectQuad {
-            var quadUniforms = executor.objectQuadUniforms(
-                for: layer,
-                sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
-                    layer: layer,
-                    destination: destination,
-                    frameState: frameState
-                ),
+            bindObjectQuadVertexUniforms(
+                pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
-                sourceTexture: texture,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-            )
-            encoder.setVertexBytes(
-                &quadUniforms,
-                length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                index: 1
+                sourceTexture: texture, encoder: encoder
             )
         }
     }
@@ -592,53 +525,12 @@ struct WPEMetalShaderDispatcher {
         )
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         if usesObjectQuad {
-            var quadUniforms = executor.objectQuadUniforms(
-                for: layer,
-                sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
-                    layer: layer,
-                    destination: destination,
-                    frameState: frameState
-                ),
+            bindObjectQuadVertexUniforms(
+                pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
-                sourceTexture: primary,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-            )
-            encoder.setVertexBytes(
-                &quadUniforms,
-                length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                index: 1
+                sourceTexture: primary, encoder: encoder
             )
         }
-    }
-
-    // MARK: - Particle family
-
-    private func dispatchGenericParticle(
-        pass: WPEPreparedRenderPass,
-        destination: (id: WPEMetalTargetID, texture: MTLTexture),
-        textures: [String: MTLTexture],
-        frameState: WPEMetalFrameState,
-        encoder: MTLRenderCommandEncoder,
-        depthPixelFormat: MTLPixelFormat
-    ) throws {
-        encoder.setRenderPipelineState(try executor.renderPipeline(
-            fragmentName: "wpe_genericparticle_fragment",
-            blendMode: pass.pass.blending,
-            alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
-            colorPixelFormat: destination.texture.pixelFormat,
-            depthPixelFormat: depthPixelFormat
-        ))
-        let reference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
-        let texture = try WPEMetalShaderInputs.resolve(
-            reference: reference,
-            textures: textures,
-            frameState: frameState,
-            currentTargetID: destination.id
-        )
-        encoder.setFragmentTexture(texture, index: 0)
-        var uniforms = executor.genericParticleUniforms(for: pass)
-        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericParticleUniforms>.stride, index: 0)
     }
 
     // MARK: - Custom / transpiled fallback
@@ -652,7 +544,7 @@ struct WPEMetalShaderDispatcher {
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
     ) throws {
-        if Self.isGodraysCombineShader(pass.pass.shader) {
+        if WPEBuiltinShaderName.isGodraysCombine(pass.pass.shader) {
             try dispatchGodraysCombine(
                 pass: pass,
                 layer: layer,
@@ -805,8 +697,7 @@ struct WPEMetalShaderDispatcher {
             packedUniformSlots = executor.packTranslatedUniforms(
                 for: pass,
                 layout: result.uniformLayout,
-                texturesBySlot: resolvedTexturesBySlot,
-                destinationTexture: (usesObjectQuad || usesShapeQuad) ? (primary ?? destination.texture) : destination.texture
+                texturesBySlot: resolvedTexturesBySlot
             )
         }
         #if !LITE_BUILD && DEBUG
@@ -866,22 +757,10 @@ struct WPEMetalShaderDispatcher {
                 index: 1
             )
         } else if usesObjectQuad {
-            var quadUniforms = executor.objectQuadUniforms(
-                for: layer,
-                sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
-                    layer: layer,
-                    destination: destination,
-                    frameState: frameState
-                ),
+            bindObjectQuadVertexUniforms(
+                pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
-                sourceTexture: primary ?? destination.texture,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-            )
-            encoder.setVertexBytes(
-                &quadUniforms,
-                length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                index: 1
+                sourceTexture: primary ?? destination.texture, encoder: encoder
             )
             if usesSkewVertex {
                 var skewParams = executor.vertexSkewParams(for: pass)
@@ -1008,22 +887,10 @@ struct WPEMetalShaderDispatcher {
         )
 
         if usesObjectQuad {
-            var quadUniforms = executor.objectQuadUniforms(
-                for: layer,
-                sceneSize: executor.objectQuadSceneSize(
-                    for: pass,
-                    layer: layer,
-                    destination: destination,
-                    frameState: frameState
-                ),
+            bindObjectQuadVertexUniforms(
+                pass: pass, layer: layer, destination: destination, frameState: frameState,
                 cameraParallax: frameState.cameraParallax,
-                sourceTexture: albedoTexture,
-                cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-            )
-            encoder.setVertexBytes(
-                &quadUniforms,
-                length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-                index: 1
+                sourceTexture: albedoTexture, encoder: encoder
             )
         }
     }
@@ -1039,7 +906,7 @@ struct WPEMetalShaderDispatcher {
     }
 
     private static func isWaterWavesPass(_ pass: WPEPreparedRenderPass) -> Bool {
-        WPEMetalShaderInputs.normalizedBuiltinShaderName(pass.pass.shader) == "effect_waterwaves"
+        WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .effectWaterWaves
     }
 
     private static func isWaveLikePass(_ pass: WPEPreparedRenderPass) -> Bool {
@@ -1080,11 +947,7 @@ struct WPEMetalShaderDispatcher {
     }
 
     private func clearAlphaValue(for pass: WPEPreparedRenderPass) -> Float {
-        comboValue(named: "CLEARALPHA", in: pass) == 1 ? 1 : 0
-    }
-
-    private func comboValue(named name: String, in pass: WPEPreparedRenderPass) -> Int {
-        comboValueIfPresent(named: name, in: pass) ?? 0
+        comboValueIfPresent(named: "CLEARALPHA", in: pass) == 1 ? 1 : 0
     }
 
     private func comboValueIfPresent(named name: String, in pass: WPEPreparedRenderPass) -> Int? {
@@ -1099,12 +962,6 @@ struct WPEMetalShaderDispatcher {
             return value
         }
         return nil
-    }
-
-    private static func isGodraysCombineShader(_ shaderName: String) -> Bool {
-        let normalized = shaderName.lowercased()
-        return normalized == "effects/godrays_combine"
-            || normalized.hasSuffix("/effects/godrays_combine")
     }
 
 }

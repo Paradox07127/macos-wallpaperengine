@@ -57,8 +57,8 @@ extension WPEMetalSceneRenderer {
 
     /// Reuses the next frame the renderer was already going to present as the
     /// inspector poster. This deliberately avoids forcing a fresh synchronous
-    /// `renderCurrentFrame()` on the main actor. Dynamic scenes resolve on their
-    /// next natural frame; static scenes re-present the retained output texture.
+    /// `renderCurrentFrame()` on the display render actor. Dynamic scenes resolve on
+    /// their next natural frame; static scenes re-present the retained output texture.
     func captureLivePosterFromNextFrame(on actor: isolated WPEDisplayRenderActor) async -> NSImage? {
         guard didLoad, hasPresentedFrame, renderPipeline != nil, currentProfile == .quality else {
             Logger.info(

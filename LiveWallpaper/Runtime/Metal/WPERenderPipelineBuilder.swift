@@ -571,6 +571,44 @@ private struct WPEShaderSourceLoader: Sendable {
         }
     }
 
+    /// Prelude + the `gl_FragColor` → `out_FragColor` rewrite, shared by every
+    /// hand-authored builtin program below.
+    private func makeBuiltinProgram(
+        shaderName: String,
+        combos: [String: Int],
+        vertex: String,
+        fragment: String
+    ) -> WPEShaderProgram {
+        WPEShaderProgram(
+            name: shaderName,
+            vertexSource: shaderPrelude(comboValues: combos, stage: .vertex) + vertex,
+            fragmentSource: shaderPrelude(comboValues: combos, stage: .fragment) + fragment.replacingOccurrences(
+                of: "gl_FragColor",
+                with: "out_FragColor"
+            ),
+            isBuiltin: true
+        )
+    }
+
+    private static let texturedQuadVertexSource = """
+    attribute vec3 a_Position;
+    attribute vec2 a_TexCoord;
+    varying vec2 v_TexCoord;
+
+    void main() {
+        gl_Position = vec4(a_Position, 1.0);
+        v_TexCoord = a_TexCoord;
+    }
+    """
+
+    private static let positionOnlyVertexSource = """
+    attribute vec3 a_Position;
+
+    void main() {
+        gl_Position = vec4(a_Position, 1.0);
+    }
+    """
+
     /// WPE's `genericimage*` family with the SPRITESHEET combo on: the
     /// vertex shader derives UVs from `g_Texture0Translation` (current
     /// frame) plus `g_Texture0TranslationNext` (next frame), both sharing
@@ -616,105 +654,58 @@ private struct WPEShaderSourceLoader: Sendable {
             gl_FragColor = mix(a, b, g_SpriteFrameBlend);
         }
         """
-        return WPEShaderProgram(
-            name: shaderName,
-            vertexSource: shaderPrelude(comboValues: combos, stage: .vertex) + vertex,
-            fragmentSource: shaderPrelude(comboValues: combos, stage: .fragment) + fragment.replacingOccurrences(
-                of: "gl_FragColor",
-                with: "out_FragColor"
-            ),
-            isBuiltin: true
-        )
+        return makeBuiltinProgram(shaderName: shaderName, combos: combos, vertex: vertex, fragment: fragment)
     }
 
     private func solidLayerProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
-        let vertex = """
-        attribute vec3 a_Position;
+        makeBuiltinProgram(
+            shaderName: shaderName,
+            combos: combos,
+            vertex: Self.positionOnlyVertexSource,
+            fragment: """
+            uniform vec4 g_Color;
 
-        void main() {
-            gl_Position = vec4(a_Position, 1.0);
-        }
-        """
-        let fragment = """
-        uniform vec4 g_Color;
-
-        void main() {
-            gl_FragColor = vec4(g_Color.rgb * g_Color.a, g_Color.a);
-        }
-        """
-        return WPEShaderProgram(
-            name: shaderName,
-            vertexSource: shaderPrelude(comboValues: combos, stage: .vertex) + vertex,
-            fragmentSource: shaderPrelude(comboValues: combos, stage: .fragment) + fragment.replacingOccurrences(
-                of: "gl_FragColor",
-                with: "out_FragColor"
-            ),
-            isBuiltin: true
+            void main() {
+                gl_FragColor = vec4(g_Color.rgb * g_Color.a, g_Color.a);
+            }
+            """
         )
     }
 
     private func composeProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
-        let vertex = """
-        attribute vec3 a_Position;
-        attribute vec2 a_TexCoord;
-        varying vec2 v_TexCoord;
+        makeBuiltinProgram(
+            shaderName: shaderName,
+            combos: combos,
+            vertex: Self.texturedQuadVertexSource,
+            fragment: """
+            uniform sampler2D g_Texture0;
+            uniform sampler2D g_Texture1;
+            uniform vec4 g_Color;
+            varying vec2 v_TexCoord;
 
-        void main() {
-            gl_Position = vec4(a_Position, 1.0);
-            v_TexCoord = a_TexCoord;
-        }
-        """
-        let fragment = """
-        uniform sampler2D g_Texture0;
-        uniform sampler2D g_Texture1;
-        uniform vec4 g_Color;
-        varying vec2 v_TexCoord;
-
-        void main() {
-            vec4 a = texSample2D(g_Texture0, v_TexCoord);
-            vec4 b = texSample2D(g_Texture1, v_TexCoord);
-            vec4 composed = mix(a, b, b.a);
-            gl_FragColor = vec4(composed.rgb * g_Color.rgb, composed.a * g_Color.a);
-        }
-        """
-        return WPEShaderProgram(
-            name: shaderName,
-            vertexSource: shaderPrelude(comboValues: combos, stage: .vertex) + vertex,
-            fragmentSource: shaderPrelude(comboValues: combos, stage: .fragment) + fragment.replacingOccurrences(
-                of: "gl_FragColor",
-                with: "out_FragColor"
-            ),
-            isBuiltin: true
+            void main() {
+                vec4 a = texSample2D(g_Texture0, v_TexCoord);
+                vec4 b = texSample2D(g_Texture1, v_TexCoord);
+                vec4 composed = mix(a, b, b.a);
+                gl_FragColor = vec4(composed.rgb * g_Color.rgb, composed.a * g_Color.a);
+            }
+            """
         )
     }
 
     private func copyProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
-        let vertex = """
-        attribute vec3 a_Position;
-        attribute vec2 a_TexCoord;
-        varying vec2 v_TexCoord;
+        makeBuiltinProgram(
+            shaderName: shaderName,
+            combos: combos,
+            vertex: Self.texturedQuadVertexSource,
+            fragment: """
+            uniform sampler2D g_Texture0;
+            varying vec2 v_TexCoord;
 
-        void main() {
-            gl_Position = vec4(a_Position, 1.0);
-            v_TexCoord = a_TexCoord;
-        }
-        """
-        let fragment = """
-        uniform sampler2D g_Texture0;
-        varying vec2 v_TexCoord;
-
-        void main() {
-            gl_FragColor = texSample2D(g_Texture0, v_TexCoord);
-        }
-        """
-        return WPEShaderProgram(
-            name: shaderName,
-            vertexSource: shaderPrelude(comboValues: combos, stage: .vertex) + vertex,
-            fragmentSource: shaderPrelude(comboValues: combos, stage: .fragment) + fragment.replacingOccurrences(
-                of: "gl_FragColor",
-                with: "out_FragColor"
-            ),
-            isBuiltin: true
+            void main() {
+                gl_FragColor = texSample2D(g_Texture0, v_TexCoord);
+            }
+            """
         )
     }
 
@@ -723,60 +714,35 @@ private struct WPEShaderSourceLoader: Sendable {
     /// (`g_Texture0` = layer composite, `g_Texture4` = scene snapshot — the same
     /// slot WPE's `genericimage4.frag` uses under `#if BLENDMODE`).
     private func blendCompositeProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
-        let vertex = """
-        attribute vec3 a_Position;
-        attribute vec2 a_TexCoord;
-        varying vec2 v_TexCoord;
+        makeBuiltinProgram(
+            shaderName: shaderName,
+            combos: combos,
+            vertex: Self.texturedQuadVertexSource,
+            fragment: """
+            uniform sampler2D g_Texture0;
+            uniform sampler2D g_Texture4;
+            uniform float g_BlendMode;
+            varying vec2 v_TexCoord;
 
-        void main() {
-            gl_Position = vec4(a_Position, 1.0);
-            v_TexCoord = a_TexCoord;
-        }
-        """
-        let fragment = """
-        uniform sampler2D g_Texture0;
-        uniform sampler2D g_Texture4;
-        uniform float g_BlendMode;
-        varying vec2 v_TexCoord;
-
-        void main() {
-            gl_FragColor = texSample2D(g_Texture0, v_TexCoord);
-        }
-        """
-        return WPEShaderProgram(
-            name: shaderName,
-            vertexSource: shaderPrelude(comboValues: combos, stage: .vertex) + vertex,
-            fragmentSource: shaderPrelude(comboValues: combos, stage: .fragment) + fragment.replacingOccurrences(
-                of: "gl_FragColor",
-                with: "out_FragColor"
-            ),
-            isBuiltin: true
+            void main() {
+                gl_FragColor = texSample2D(g_Texture0, v_TexCoord);
+            }
+            """
         )
     }
 
     private func solidColorProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
-        let vertex = """
-        attribute vec3 a_Position;
+        makeBuiltinProgram(
+            shaderName: shaderName,
+            combos: combos,
+            vertex: Self.positionOnlyVertexSource,
+            fragment: """
+            uniform vec4 g_Color;
 
-        void main() {
-            gl_Position = vec4(a_Position, 1.0);
-        }
-        """
-        let fragment = """
-        uniform vec4 g_Color;
-
-        void main() {
-            gl_FragColor = g_Color;
-        }
-        """
-        return WPEShaderProgram(
-            name: shaderName,
-            vertexSource: shaderPrelude(comboValues: combos, stage: .vertex) + vertex,
-            fragmentSource: shaderPrelude(comboValues: combos, stage: .fragment) + fragment.replacingOccurrences(
-                of: "gl_FragColor",
-                with: "out_FragColor"
-            ),
-            isBuiltin: true
+            void main() {
+                gl_FragColor = g_Color;
+            }
+            """
         )
     }
 

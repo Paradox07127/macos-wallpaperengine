@@ -76,6 +76,9 @@
             let cancel: @Sendable () -> Void
         }
 
+        /// `nonisolated(unsafe)`: only mutated from MainActor code, but deinit
+        /// (released on an arbitrary queue) must remove the monitors too, which
+        /// Swift 6 can't prove safe.
         private nonisolated(unsafe) let monitorHooks: DragMonitorHooks
         private nonisolated(unsafe) var localDragEndMonitor: Any?
         private nonisolated(unsafe) var globalDragEndMonitor: Any?

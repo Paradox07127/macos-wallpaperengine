@@ -2,61 +2,16 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// Pure-Swift WPE-flavor GLSL → Metal Shading Language transpiler.
-///
-/// Scope: the canonical single-pass WPE effect shader. Inputs come from
-/// `WPEShaderPreprocessor` (combos baked into `#define`s, includes
-/// inlined, `texSample2D` mapped to `texture()`). The transpiler lifts
-/// `uniform` / `varying` declarations into structured Metal inputs and
-/// rewrites the body with type/intrinsic substitutions. Output signature
-/// is fixed so the dispatcher binds without runtime reflection:
-///
-///   fragment float4 wpe_translated_fragment(
-///       WPEStageIn in [[stage_in]],
-///       constant WPEUniforms& u [[buffer(0)]],
-///       texture2d<float> tex0 [[texture(0)]],
-///       ...                                  // one per slot, tex0 … tex7
-///       texture2d<float> tex7 [[texture(7)]] // see `customTextureSlotCount`
-///   ) { ... }
-///
-/// Out of scope (returns `.translationFailed`):
-///   - vertex shaders that aren't the standard fullscreen quad
-///   - geometry/tessellation
-///   - bit-level integer ops, atomics
-///   - `discard` / `gl_FragData[*]` MRT
-///   - sampler arrays, texture arrays, cube maps, 3D textures
-///
-/// Unsupported shaders surface as `metalRendererUnsupported` (the scene's
-/// load error).
+/// WPE-flavor GLSL → MSL for the canonical single-pass effect shader.
+/// Unsupported shaders surface as `metalRendererUnsupported`.
 struct WPEShaderTranspiler {
 
-    /// Each uniform occupies one or more float4 slots. Packing rule
-    /// (Swift mirrors this when filling the buffer):
-    ///
-    ///   float            → (x, 0, 0, 0)
-    ///   vec2             → (x, y, 0, 0)
-    ///   vec3             → (x, y, z, 0)
-    ///   vec4             → (x, y, z, w)
-    ///   mat2/3/4         → consecutive vec4s starting at the slot
-    ///   float[N] etc.    → N slots, one element per slot, scalar in `.x`
-    ///
-    /// Hard cap on a custom shader's flattened uniform slots. ≤256 slots (4 KB) ride the inline
-    /// `setFragmentBytes` fast path; above that the binding falls back to a transient
-    /// `setFragmentBuffer` (see `WPEMetalRenderExecutor.bindTranslatedUniformSlots`). Audio
-    /// visualizers are what push past 256: `Simple_Audio_Bars` sits at 245, a stereo
-    /// `audio_responsive_oscilloscope` needs 258. 1024 × 16 = 16 KB stays well inside the
-    /// constant-buffer budget. The emitted `WPEUniforms.vals[]` is sized per shader, not to this cap.
+    /// ≤256 slots (4 KB) ride `setFragmentBytes`; above that `setFragmentBuffer`.
+    /// Stereo `audio_responsive_oscilloscope` needs 258. Cap is 1024 (16 KB).
     static let uniformSlotMaximum = 1024
 
-    /// Number of texture slots the custom-shader path declares/binds.
-    /// WPE shaders use g_Texture0–g_Texture7 (corpus max slot = 7, e.g.
-    /// `effects/blend`). The generated MSL declares tex0…tex(N-1) and the
-    /// dispatcher binds the same range; shaders using only low slots leave the
-    /// rest bound to fallback textures (unchanged behavior). Single source of
-    /// truth — the transpiler guards/signature and the dispatcher all use it.
     static let customTextureSlotCount = 8
 
-    /// Translate a preprocessed WPE fragment shader to MSL.
     static func translateFragment(
         shaderName: String,
         preprocessedSource: String,
@@ -122,18 +77,12 @@ struct WPEShaderTranspiler {
                 "shader '\(shaderName)' uses \(sortedSamplers.count) samplers; transpiler supports up to \(Self.customTextureSlotCount)"
             )
         }
-        // WPE allows sampler slots g_Texture0–g_Texture7; the generated MSL
-        // declares tex0…tex(customTextureSlotCount-1) and the dispatcher binds
-        // the same range. A sampler at a higher slot would alias to an
-        // undeclared `texN` (MSL compile failure), so reject it explicitly.
         if let maxSlot = sortedSamplers.compactMap({ Self.textureSlot(for: $0.name) }).max(),
            maxSlot >= Self.customTextureSlotCount {
             throw WPEShaderCompilerError.translationFailed(
                 "shader '\(shaderName)' binds texture slot \(maxSlot); transpiler supports slots 0–\(Self.customTextureSlotCount - 1)"
             )
         }
-        _ = !varyings.isEmpty || activeSource.contains("v_TexCoord") || activeSource.contains("gl_FragCoord")
-
         // Sampler wrap (clamp vs repeat) and filter are NOT decided here anymore: every
         // `g_TextureN.sample` is rewritten to the per-slot runtime sampler `wpeSamplerN`
         // (`rewriteSamplersToPerSlot`), whose address/filter the executor binds from the

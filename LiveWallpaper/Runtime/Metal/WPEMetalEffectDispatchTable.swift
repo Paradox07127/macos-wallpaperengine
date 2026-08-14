@@ -4,13 +4,9 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 
-/// Data-driven dispatch for supported builtin `effect_*` shaders.
-///
-/// Everything identical across the family — pipeline lookup, blend/pixel-format
-/// passthrough, and object-quad vertex-uniform plumbing — lives once in
-/// `WPEMetalShaderDispatcher.dispatchEffect`. Everything that genuinely differs
-/// per effect — fragment function, whether the object-quad path applies, and how
-/// to resolve textures + build the uniform bytes — is one table entry here.
+/// Data-driven dispatch for supported builtin `effect_*` shaders; the shared
+/// half (pipeline lookup, blend/format passthrough, object-quad plumbing) lives
+/// once in `WPEMetalShaderDispatcher.dispatchEffect` below.
 ///
 /// The uniform layout stays code, not data: each `bind` closure constructs the
 /// concrete hand-authored Swift struct (`WPEPulseUniforms`, …) whose field order
@@ -115,6 +111,42 @@ struct WPEEffectDispatchDescriptor: Sendable {
     /// invariant); pinned by `WPEMetalShaderDispatcherTests`.
     static func opacityMaskReference(for pass: WPEPreparedRenderPass) -> WPETextureReference? {
         pass.textureBindings[1] ?? pass.pass.textures[1] ?? pass.pass.binds[1]
+    }
+
+    /// Slot 0 = effect input, slot 1 = opacity mask. Shared by effect_opacity
+    /// and effect_waterwaves, whose bind prologues are identical.
+    static func bindSourceAndOpacityMask(
+        pass: WPEPreparedRenderPass,
+        textures: [String: MTLTexture],
+        frameState: WPEMetalFrameState,
+        destination: (id: WPEMetalTargetID, texture: MTLTexture),
+        encoder: MTLRenderCommandEncoder
+    ) throws -> (source: MTLTexture, mask: MTLTexture, hasMask: Float) {
+        let sourceReference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
+        let sourceTexture = try WPEMetalShaderInputs.resolve(
+            reference: sourceReference,
+            textures: textures,
+            frameState: frameState,
+            currentTargetID: destination.id
+        )
+        let maskReference = opacityMaskReference(for: pass)
+        let maskTexture: MTLTexture
+        let hasMask: Float
+        if let maskReference {
+            maskTexture = try WPEMetalShaderInputs.resolve(
+                reference: maskReference,
+                textures: textures,
+                frameState: frameState,
+                currentTargetID: destination.id
+            )
+            hasMask = 1
+        } else {
+            maskTexture = sourceTexture
+            hasMask = 0
+        }
+        encoder.setFragmentTexture(sourceTexture, index: 0)
+        encoder.setFragmentTexture(maskTexture, index: 1)
+        return (sourceTexture, maskTexture, hasMask)
     }
 
     /// effect_color_grading's legacy uniform lookup reads ONLY the runtime
@@ -311,30 +343,13 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 // entirely — see the descriptor field doc. Do not "fix" here.
                 appliesCameraParallax: false,
                 bind: { executor, pass, textures, frameState, destination, encoder in
-                    let sourceReference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
-                    let sourceTexture = try WPEMetalShaderInputs.resolve(
-                        reference: sourceReference,
+                    let (sourceTexture, maskTexture, hasMask) = try bindSourceAndOpacityMask(
+                        pass: pass,
                         textures: textures,
                         frameState: frameState,
-                        currentTargetID: destination.id
+                        destination: destination,
+                        encoder: encoder
                     )
-                    let maskReference = opacityMaskReference(for: pass)
-                    let maskTexture: MTLTexture
-                    let hasMask: Float
-                    if let maskReference {
-                        maskTexture = try WPEMetalShaderInputs.resolve(
-                            reference: maskReference,
-                            textures: textures,
-                            frameState: frameState,
-                            currentTargetID: destination.id
-                        )
-                        hasMask = 1
-                    } else {
-                        maskTexture = sourceTexture
-                        hasMask = 0
-                    }
-                    encoder.setFragmentTexture(sourceTexture, index: 0)
-                    encoder.setFragmentTexture(maskTexture, index: 1)
 
                     // WPE's waterwaves.vert sets v_Direction = rotate((0,1), g_Direction[rad]).
                     let waveAngle = WPEMetalShaderInputs.floatScalar(named: ["g_Direction", "direction"], in: pass, default: 0)
@@ -376,30 +391,13 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 fragmentName: "wpe_effect_opacity_fragment",
                 supportsObjectQuad: true,
                 bind: { _, pass, textures, frameState, destination, encoder in
-                    let sourceReference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
-                    let sourceTexture = try WPEMetalShaderInputs.resolve(
-                        reference: sourceReference,
+                    let (sourceTexture, maskTexture, hasMask) = try bindSourceAndOpacityMask(
+                        pass: pass,
                         textures: textures,
                         frameState: frameState,
-                        currentTargetID: destination.id
+                        destination: destination,
+                        encoder: encoder
                     )
-                    let maskReference = opacityMaskReference(for: pass)
-                    let maskTexture: MTLTexture
-                    let hasMask: Float
-                    if let maskReference {
-                        maskTexture = try WPEMetalShaderInputs.resolve(
-                            reference: maskReference,
-                            textures: textures,
-                            frameState: frameState,
-                            currentTargetID: destination.id
-                        )
-                        hasMask = 1
-                    } else {
-                        maskTexture = sourceTexture
-                        hasMask = 0
-                    }
-                    encoder.setFragmentTexture(sourceTexture, index: 0)
-                    encoder.setFragmentTexture(maskTexture, index: 1)
                     var uniforms = WPEOpacityUniforms(
                         opacity: WPEMetalShaderInputs.floatScalar(
                             named: ["u_Opacity", "opacity", "amount", "alpha", "g_UserAlpha"],
@@ -531,22 +529,10 @@ extension WPEMetalShaderDispatcher {
         ))
         let primary = try descriptor.bind(executor, pass, textures, frameState, destination, encoder)
         guard usesObjectQuad else { return }
-        var quadUniforms = executor.objectQuadUniforms(
-            for: layer,
-            sceneSize: executor.objectQuadSceneSize(
-                for: pass,
-                layer: layer,
-                destination: destination,
-                frameState: frameState
-            ),
+        bindObjectQuadVertexUniforms(
+            pass: pass, layer: layer, destination: destination, frameState: frameState,
             cameraParallax: cameraParallax,
-            sourceTexture: primary,
-            cameraUniforms: executor.objectQuadCameraUniforms(for: pass, layer: layer, frameState: frameState)
-        )
-        encoder.setVertexBytes(
-            &quadUniforms,
-            length: MemoryLayout<WPEObjectQuadUniforms>.stride,
-            index: 1
+            sourceTexture: primary, encoder: encoder
         )
     }
 }

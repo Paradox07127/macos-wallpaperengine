@@ -57,7 +57,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				VideoPlayback/WPEMetalBuiltins.metal,
-				Views/GeneralSettingsStatusPill.swift,
 			);
 			target = 0CA00000000000000000B001 /* LiveWallpaperLite */;
 		};
@@ -76,13 +75,6 @@
 			);
 			target = 0C322BEE2D6950480033C48B /* LiveWallpaper */;
 		};
-		F5DF2D22302D56E800D5A3BC /* Exceptions for "LiveWallpaper" folder in "LiveWallpaper" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Views/GeneralSettingsStatusPill.swift,
-			);
-			target = 0C322BEE2D6950480033C48B /* LiveWallpaper */;
-		};
 		F5DF2D4B302E876F00D5A3BC /* Exceptions for "SceneRunner" folder in "SceneRunner" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -96,7 +88,6 @@
 		0C322BF12D6950480033C48B /* LiveWallpaper */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				F5DF2D22302D56E800D5A3BC /* Exceptions for "LiveWallpaper" folder in "LiveWallpaper" target */,
 				0CA00000000000000000B030 /* Exceptions for "LiveWallpaper" folder in "LiveWallpaperLite" target */,
 			);
 			path = LiveWallpaper;

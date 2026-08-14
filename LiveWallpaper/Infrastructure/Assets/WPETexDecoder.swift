@@ -154,19 +154,22 @@ struct WPETexDecoder: Sendable {
             )
         }
 
-        let validDurations = frames.map(\.duration).filter { $0 > 0 }
-        let averageDuration = validDurations.isEmpty
-            ? defaultDuration
-            : validDurations.reduce(0, +) / Double(validDurations.count)
-        let frameRate = averageDuration > 0
-            ? 1.0 / averageDuration
-            : WPETexAnimationTrack.defaultFrameRate
+        let frameRate = computeFrameRate(fromDurations: frames.map(\.duration), defaultDuration: defaultDuration)
 
         return WPETexAnimationTrack(
             frames: frames,
             frameRate: frameRate,
             loop: true
         )
+    }
+
+    /// Average positive frame duration → frame rate, falling back to the track default.
+    private func computeFrameRate(fromDurations durations: [TimeInterval], defaultDuration: TimeInterval) -> Double {
+        let validDurations = durations.filter { $0 > 0 }
+        let averageDuration = validDurations.isEmpty
+            ? defaultDuration
+            : validDurations.reduce(0, +) / Double(validDurations.count)
+        return averageDuration > 0 ? 1.0 / averageDuration : WPETexAnimationTrack.defaultFrameRate
     }
 
     private func makeVideoPayload(from parsed: ParsedTex) -> WPETexVideoPayload? {
@@ -243,13 +246,7 @@ struct WPETexDecoder: Sendable {
             }
         }
 
-        let validDurations = frames.map(\.duration).filter { $0 > 0 }
-        let averageDuration = validDurations.isEmpty
-            ? defaultDuration
-            : validDurations.reduce(0, +) / Double(validDurations.count)
-        let frameRate = averageDuration > 0
-            ? 1.0 / averageDuration
-            : WPETexAnimationTrack.defaultFrameRate
+        let frameRate = computeFrameRate(fromDurations: frames.map(\.duration), defaultDuration: defaultDuration)
 
         return WPETexStreamingPayload(
             info: info,
@@ -691,22 +688,28 @@ struct WPETexDecoder: Sendable {
         return try bridgeSingleEncodedImagePayload(parsed)
     }
 
-    private func bridgeSingleEncodedImagePayload(_ parsed: ParsedTex) throws -> WPETexTexturePayload {
-        let rgba = try rasterizeFirstEncodedFrame(parsed)
-        let bridgedInfo = WPETexInfo(
-            containerVersion: parsed.info.containerVersion,
-            infoVersion: parsed.info.infoVersion,
-            width: rgba.width,
-            height: rgba.height,
+    /// Bridged-payload `WPETexInfo`: same source metadata, overridden to the
+    /// rasterized RGBA8888 dimensions and format.
+    private func rgba8888Info(from source: WPETexInfo, width: Int, height: Int) -> WPETexInfo {
+        WPETexInfo(
+            containerVersion: source.containerVersion,
+            infoVersion: source.infoVersion,
+            width: width,
+            height: height,
             textureFormatCode: WPETexFormat.rgba8888.rawValue,
             format: .rgba8888,
             mipmapCount: 1,
-            flags: parsed.info.flags,
-            imageWidth: parsed.info.imageWidth,
-            imageHeight: parsed.info.imageHeight,
-            unknownInt0: parsed.info.unknownInt0,
-            flag0x40Extension: parsed.info.flag0x40Extension
+            flags: source.flags,
+            imageWidth: source.imageWidth,
+            imageHeight: source.imageHeight,
+            unknownInt0: source.unknownInt0,
+            flag0x40Extension: source.flag0x40Extension
         )
+    }
+
+    private func bridgeSingleEncodedImagePayload(_ parsed: ParsedTex) throws -> WPETexTexturePayload {
+        let rgba = try rasterizeFirstEncodedFrame(parsed)
+        let bridgedInfo = rgba8888Info(from: parsed.info, width: rgba.width, height: rgba.height)
         let bridgedMipmap = WPETexTextureMipmap(
             index: 0,
             width: rgba.width,
@@ -784,13 +787,7 @@ struct WPETexDecoder: Sendable {
             )
         }
 
-        let validDurations = frames.map(\.duration).filter { $0 > 0 }
-        let averageDuration = validDurations.isEmpty
-            ? defaultDuration
-            : validDurations.reduce(0, +) / Double(validDurations.count)
-        let frameRate = averageDuration > 0
-            ? 1.0 / averageDuration
-            : WPETexAnimationTrack.defaultFrameRate
+        let frameRate = computeFrameRate(fromDurations: frames.map(\.duration), defaultDuration: defaultDuration)
         let track = WPETexAnimationTrack(
             frames: frames,
             frameRate: frameRate,
@@ -799,19 +796,10 @@ struct WPETexDecoder: Sendable {
 
         // Bridge dims = largest atlas (callers that ignore the track).
         let infoSource = frames.first?.mipmaps.first
-        let bridgedInfo = WPETexInfo(
-            containerVersion: parsed.info.containerVersion,
-            infoVersion: parsed.info.infoVersion,
+        let bridgedInfo = rgba8888Info(
+            from: parsed.info,
             width: infoSource?.width ?? parsed.info.width,
-            height: infoSource?.height ?? parsed.info.height,
-            textureFormatCode: WPETexFormat.rgba8888.rawValue,
-            format: .rgba8888,
-            mipmapCount: 1,
-            flags: parsed.info.flags,
-            imageWidth: parsed.info.imageWidth,
-            imageHeight: parsed.info.imageHeight,
-            unknownInt0: parsed.info.unknownInt0,
-            flag0x40Extension: parsed.info.flag0x40Extension
+            height: infoSource?.height ?? parsed.info.height
         )
         return WPETexTexturePayload(
             info: bridgedInfo,

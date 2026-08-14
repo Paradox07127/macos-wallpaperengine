@@ -684,8 +684,8 @@ extension WPEMetalSceneRenderer {
             didLogFrameFailure = false
         } catch is WPEMetalFrameInFlightBudgetExhausted {
             // GPU still busy on a prior frame — skip this vsync rather than
-            // block the @MainActor (keeps other displays at full rate). The
-            // previously presented frame stays on screen; not a failure.
+            // block this display's render actor (keeps other displays at full
+            // rate). The previously presented frame stays on screen; not a failure.
             return
         } catch {
             // Per-frame path: log only the first failure of a streak (resets on

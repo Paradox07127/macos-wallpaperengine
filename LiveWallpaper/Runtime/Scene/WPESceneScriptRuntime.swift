@@ -897,11 +897,11 @@ final class WPESceneScriptInstance {
             self.context = context
             let timerScheduler = WPESceneScriptTimerScheduler()
             self.timerScheduler = timerScheduler
-                audioBridge = WPESceneScriptInstance.installSandbox(
-                    in: context,
-                    userProperties: shared?.userProperties ?? [:],
-                    timerScheduler: timerScheduler
-                )
+            audioBridge = WPESceneScriptInstance.installSandbox(
+                in: context,
+                userProperties: shared?.userProperties ?? [:],
+                timerScheduler: timerScheduler
+            )
             WPESceneScriptBaseclasses.install(in: context)
             _ = updateEngineRuntime(0)
             if let shared { wpeInstallSharedState(shared, in: context) }
@@ -1064,27 +1064,27 @@ final class WPESceneScriptInstance {
         engine.setObject(getTimeOfDay, forKeyedSubscript: "getTimeOfDay" as NSString)
         // engine.timeOfDay property form (legacy getTimeOfDay exists); refreshed each tick.
         engine.setObject(getTimeOfDay(), forKeyedSubscript: "timeOfDay" as NSString)
-            // Project-level user properties, as WPE exposes them. The object must
-            // exist even when empty — `engine.userProperties.foo` on `undefined`
-            // throws out of update(). Leaving it permanently empty is not harmless
-            // either: 3151551777's day/night driver reads
-            // `engine.userProperties.timeofday`, and an absent key sent it down the
-            // `else { value = 0 }` branch every frame, i.e. permanent daytime.
-            //
-            // This is a DIFFERENT API from the `applyUserProperties(props)` event
-            // (see `applyScriptUserProperties`) — a scene may use either or both.
-            let userPropertyObject = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            for (key, value) in userProperties {
-                switch value {
-                case let .bool(flag):
-                    userPropertyObject.setObject(flag, forKeyedSubscript: key as NSString)
-                case let .number(number):
-                    userPropertyObject.setObject(number, forKeyedSubscript: key as NSString)
-                case let .string(text):
-                    userPropertyObject.setObject(text, forKeyedSubscript: key as NSString)
-                }
+        // Project-level user properties, as WPE exposes them. The object must
+        // exist even when empty — `engine.userProperties.foo` on `undefined`
+        // throws out of update(). Leaving it permanently empty is not harmless
+        // either: 3151551777's day/night driver reads
+        // `engine.userProperties.timeofday`, and an absent key sent it down the
+        // `else { value = 0 }` branch every frame, i.e. permanent daytime.
+        //
+        // This is a DIFFERENT API from the `applyUserProperties(props)` event
+        // (see `applyScriptUserProperties`) — a scene may use either or both.
+        let userPropertyObject = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
+        for (key, value) in userProperties {
+            switch value {
+            case let .bool(flag):
+                userPropertyObject.setObject(flag, forKeyedSubscript: key as NSString)
+            case let .number(number):
+                userPropertyObject.setObject(number, forKeyedSubscript: key as NSString)
+            case let .string(text):
+                userPropertyObject.setObject(text, forKeyedSubscript: key as NSString)
             }
-            engine.setObject(userPropertyObject, forKeyedSubscript: "userProperties" as NSString)
+        }
+        engine.setObject(userPropertyObject, forKeyedSubscript: "userProperties" as NSString)
         if let timerScheduler {
             timerScheduler.install(in: context, engine: engine)
         } else {
@@ -1970,11 +1970,11 @@ final class WPELayerScriptInstance {
             self.context = context
             let timerScheduler = WPESceneScriptTimerScheduler()
             self.timerScheduler = timerScheduler
-                audioBridge = WPESceneScriptInstance.installSandbox(
-                    in: context,
-                    userProperties: shared?.userProperties ?? [:],
-                    timerScheduler: timerScheduler
-                )
+            audioBridge = WPESceneScriptInstance.installSandbox(
+                in: context,
+                userProperties: shared?.userProperties ?? [:],
+                timerScheduler: timerScheduler
+            )
             WPESceneScriptBaseclasses.install(in: context)
             installCanvasSize(in: context)
             installInput(in: context)
@@ -2890,15 +2890,15 @@ struct WPESceneScriptLayerInfo: Sendable {
 
 final class WPESharedScriptState: @unchecked Sendable {
     let sceneScriptLoadToken: WPESceneScriptInstanceLimitToken?
-        /// Resolved project user properties, for `engine.userProperties.<key>`.
-        /// Carried here because this is the one object every script engine in a
-        /// scene already receives. Immutable after construction, hence no locking.
-        let userProperties: [String: WPESceneScriptPropertyValue]
-        /// Scene layer table in document order, for `thisLayer.size`,
-        /// `thisScene.getLayerIndex(l)` and `thisScene.enumerateLayers()`. Same
-        /// reasoning as `userProperties`: every engine already gets this object,
-        /// and it is immutable after construction.
-        let layers: [WPESceneScriptLayerInfo]
+    /// Resolved project user properties, for `engine.userProperties.<key>`.
+    /// Carried here because this is the one object every script engine in a
+    /// scene already receives. Immutable after construction, hence no locking.
+    let userProperties: [String: WPESceneScriptPropertyValue]
+    /// Scene layer table in document order, for `thisLayer.size`,
+    /// `thisScene.getLayerIndex(l)` and `thisScene.enumerateLayers()`. Same
+    /// reasoning as `userProperties`: every engine already gets this object,
+    /// and it is immutable after construction.
+    let layers: [WPESceneScriptLayerInfo]
     private let lock = NSLock()
     private var storage: [String: Any] = [:]
     private var liveLayerTransformsByID: [String: LiveLayerTransform] = [:]
@@ -2909,14 +2909,14 @@ final class WPESharedScriptState: @unchecked Sendable {
         var angles: SIMD3<Double>?
     }
 
-        init(
-            sceneScriptLoadToken: WPESceneScriptInstanceLimitToken? = nil,
-            userProperties: [String: WPESceneScriptPropertyValue] = [:],
-            layers: [WPESceneScriptLayerInfo] = []
-        ) {
+    init(
+        sceneScriptLoadToken: WPESceneScriptInstanceLimitToken? = nil,
+        userProperties: [String: WPESceneScriptPropertyValue] = [:],
+        layers: [WPESceneScriptLayerInfo] = []
+    ) {
         self.sceneScriptLoadToken = sceneScriptLoadToken
-            self.userProperties = userProperties
-            self.layers = layers
+        self.userProperties = userProperties
+        self.layers = layers
     }
 
     func get(_ key: String) -> Any? {
@@ -3260,6 +3260,10 @@ final class WPETransformScriptEvaluator: @unchecked Sendable {
     }
 
     /// In-process static origins.
+    ///
+    /// Must stay an override: `resolveVec3` above delegates *to* this, while the protocol's
+    /// default `resolveBatch` (`WPESceneDocumentParser.swift`) delegates the other way, to
+    /// `resolveVec3`. Deleting this as "redundant" closes that loop into infinite recursion.
     func resolveBatch(
         _ requests: [WPESceneTransformScriptRequest]
     ) -> [SIMD3<Double>?] {
@@ -3427,6 +3431,10 @@ final class WPETransformScriptEvaluator: @unchecked Sendable {
         size.setObject(canvasSize.x, forKeyedSubscript: "x" as NSString)
         size.setObject(canvasSize.y, forKeyedSubscript: "y" as NSString)
         engine.setObject(size, forKeyedSubscript: "canvasSize" as NSString)
+        // Both, or the sandbox's hardcoded 1920x1080 `screenResolution` survives and
+        // contradicts `canvasSize` in the same context. (WPE treats the two as separate
+        // inputs — screen vs canvas — but every engine here equates them; see U-13.)
+        engine.setObject(size, forKeyedSubscript: "screenResolution" as NSString)
     }
 }
 
@@ -3803,11 +3811,11 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             self.context = context
             let timerScheduler = WPESceneScriptTimerScheduler()
             self.timerScheduler = timerScheduler
-                audioBridge = WPESceneScriptInstance.installSandbox(
-                    in: context,
-                    userProperties: shared?.userProperties ?? [:],
-                    timerScheduler: timerScheduler
-                )
+            audioBridge = WPESceneScriptInstance.installSandbox(
+                in: context,
+                userProperties: shared?.userProperties ?? [:],
+                timerScheduler: timerScheduler
+            )
             WPESceneScriptBaseclasses.install(in: context)
             installCanvasSize(in: context)
             installInput(in: context)
@@ -3848,8 +3856,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         /// property (an effect's shader constant), a Vec2/Vec3 otherwise.
         private func jsValue(for value: SIMD3<Double>, in context: JSContext) -> JSValue? {
             switch valueShape {
-                case .boolean:
-                    return JSValue(bool: value.x > 0.5, in: context)
+            case .boolean:
+                return JSValue(bool: value.x > 0.5, in: context)
             case .scalar:
                 return JSValue(double: value.x, in: context)
             case .vector2, .vector3:
@@ -3895,12 +3903,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                   !result.isUndefined, !result.isNull else {
                 return nil
             }
-                // A visibility gate's `update()` returns the BOOLEAN it was handed
-                // (`value = shared.shownight`). JSC reports a boolean as neither
-                // number nor object, so without this it reads as "no value".
-                if result.isBoolean {
-                    return SIMD3<Double>(repeating: result.toBool() ? 1 : 0)
-                }
+            // A visibility gate's `update()` returns the BOOLEAN it was handed
+            // (`value = shared.shownight`). JSC reports a boolean as neither
+            // number nor object, so without this it reads as "no value".
+            if result.isBoolean {
+                return SIMD3<Double>(repeating: result.toBool() ? 1 : 0)
+            }
             if result.isNumber {
                 let scalar = result.toDouble()
                 return scalar.isFinite ? SIMD3<Double>(scalar, scalar, scalar) : nil

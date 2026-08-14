@@ -88,7 +88,6 @@ struct WPEShaderCompileResult: @unchecked Sendable {
     let fragmentFunctionName: String
     /// Generated MSL source, kept for disk caching and snapshot tests.
     let mslSource: String
-    let diagnostics: [String]
     /// Per-uniform float4 slot assignment matching the layout the transpiler
     /// emitted. The dispatcher walks this to pack the runtime uniform buffer.
     let uniformLayout: [WPEUniformSlot]

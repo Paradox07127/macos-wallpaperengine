@@ -92,7 +92,6 @@ struct WPESwiftShaderCompiler: Sendable {
             vertexFunctionName: Self.fixedVertexFunctionName,
             fragmentFunctionName: "wpe_translated_fragment",
             mslSource: translation.mslSource,
-            diagnostics: [],
             uniformLayout: translation.uniformLayout,
             samplerNames: translation.samplers
         )
@@ -106,9 +105,9 @@ struct WPESwiftShaderCompiler: Sendable {
         // inactive `#if` (auto_sway's g_Speed/g_Inertia/g_SigmentCount under
         // AA_VERSION == 1) would otherwise count as existing, get skipped here,
         // and then vanish with its branch — leaving the active code without it.
-        let activeFragment = WPEShaderTranspiler.sourceWithInactiveBranchesStripped(fragmentSource)
+        let activeFragment = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: fragmentSource)
         let existing = Set(uniformDeclarations(in: activeFragment).map(\.name))
-        let activeVertex = WPEShaderTranspiler.sourceWithInactiveBranchesStripped(vertexSource)
+        let activeVertex = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: vertexSource)
         var seen = Set<String>()
         // Inject the ORIGINAL declaration lines: the trailing `// {"material":…}`
         // annotation is what binds the scene's constantshadervalues (and carries

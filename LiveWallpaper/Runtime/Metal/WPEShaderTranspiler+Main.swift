@@ -77,7 +77,6 @@ extension WPEShaderTranspiler {
         preserveTexCoordZW: Bool = false,
         premultipliedInputSlots: Set<Int> = [],
         premultiplyOutput: Bool = false,
-        repeatSamplers: Set<String> = [],
         uniforms: [WPEUniformDecl] = [],
         functionDeclarations: String = ""
     ) -> String {
@@ -90,7 +89,6 @@ extension WPEShaderTranspiler {
             varyingTypesByName: varyingTypesByName,
             preserveTexCoordZW: preserveTexCoordZW,
             premultipliedInputSlots: premultipliedInputSlots,
-            repeatSamplers: repeatSamplers,
             uniforms: uniforms,
             functionDeclarations: functionDeclarations
         )

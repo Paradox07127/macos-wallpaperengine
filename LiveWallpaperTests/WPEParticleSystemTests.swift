@@ -3412,4 +3412,30 @@ struct WPEParticleSystemTests {
         #expect(def.applying(instanceOverride: nil).oscillateSize == def.oscillateSize)
         #expect(def.offsettingOrigin(by: SIMD3<Double>(1, 2, 3)).oscillateSize == def.oscillateSize)
     }
+
+    /// Third drop through the same hand-written field list (after `shapePoints` and
+    /// `colorAnimation`): `offsettingOrigin` omitted `overrideAlphaAnimation`. It stayed
+    /// invisible only because the one production call site runs `applying` last — swap the
+    /// two and the 3448877775-style alpha ramp silently flattens.
+    @Test("overrideAlphaAnimation survives offsettingOrigin")
+    func overrideAlphaAnimationSurvivesOriginOffset() throws {
+        let json = """
+        {"maxcount": 20, "emitter":[{"name":"boxrandom","rate":2}]}
+        """
+        let def = try #require(WPEParticleDefinitionParser.parse(data: Data(json.utf8)))
+        let ramp = WPESceneAnimatedValue(
+            animation: WPESceneNumericAnimation(
+                tracks: [[.init(frame: 0, value: 0), .init(frame: 30, value: 1)]],
+                fps: 30, length: 30, mode: "loop", wrapLoop: true
+            ),
+            scalarFallback: 1,
+            vectorFallback: nil
+        )
+        let withRamp = def.applying(instanceOverride: WPESceneParticleInstanceOverride(alphaAnimation: ramp))
+        #expect(withRamp.overrideAlphaAnimation != nil)
+        #expect(
+            withRamp.offsettingOrigin(by: SIMD3<Double>(1, 2, 3)).overrideAlphaAnimation
+                == withRamp.overrideAlphaAnimation
+        )
+    }
 }

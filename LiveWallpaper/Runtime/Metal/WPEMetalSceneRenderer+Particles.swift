@@ -6,24 +6,15 @@ import MetalKit
 extension WPEMetalSceneRenderer {
     // MARK: - Material parsing
 
-    /// Material descriptor extracted from `passes[0]`. Only the fields the
-    /// particle path needs — full material parsing lives in the generic
-    /// pipeline builder.
     private struct ParticleMaterialDescriptor {
         let blendMode: WPEParticleBlendMode
         let firstTexturePath: String?
-        /// `constantshadervalues.ui_editor_properties_overbright` — HDR colour
-        /// multiplier on the shader output (1 = unchanged). Drives additive
-        /// glow intensity.
+        /// `ui_editor_properties_overbright` HDR colour multiplier (1 = unchanged).
         let overbright: Float
-        /// `genericparticle` `REFRACT` combo — screen-space refraction (lens
-        /// water droplets / heat haze): the particle multiplies its colour by the
-        /// scene framebuffer sampled at a normal-map-offset UV, so it shows the
-        /// distorted background instead of a flat sprite. Needs `normalTexturePath`.
+        /// `genericparticle` `REFRACT` combo. Needs `normalTexturePath`.
         let isRefract: Bool
-        /// Second pass texture (`g_Texture1`), the refraction normal map.
         let normalTexturePath: String?
-        /// `g_RefractAmount` (screen-UV offset scale). WPE default 0.05.
+        /// `g_RefractAmount`. WPE default 0.05.
         let refractAmount: Float
     }
 
@@ -59,10 +50,7 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Parses `ui_editor_properties_overbright` from a pass's
-    /// `constantshadervalues`. A JSON boolean bridges to an `NSNumber` whose
-    /// `Float` value is 0/1, so guard it out (a stray `false` would otherwise
-    /// black the particle out); clamp to ≥ 0. Absent/malformed → 1.0 (no change).
+    /// JSON booleans bridge to `NSNumber` 0/1; a stray `false` would black the particle out. Absent/malformed → 1.0.
     nonisolated static func overbright(fromConstants constants: [String: Any]?) -> Float {
         let raw = constants?["ui_editor_properties_overbright"]
         if raw is Bool { return 1.0 }
@@ -70,10 +58,7 @@ extension WPEMetalSceneRenderer {
         return max(0, Float(truncating: number))
     }
 
-    /// Effective particle colour multiplier: material overbright × the host
-    /// object's generic `brightness` (WPE modulates any renderable object with
-    /// it; particles fold it into the same overbright uniform, shader unchanged).
-    /// Clamped ≥ 0 — a negative authored brightness must not invert colours.
+    /// Material overbright × host `brightness`, clamped ≥ 0 so a negative authored brightness cannot invert colours.
     nonisolated static func particleOverbright(
         material: Float?,
         objectBrightness: Double
@@ -83,22 +68,12 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Sprite sheets
 
-    /// Best-effort `.tex-json` sidecar lookup. The atlas slicing
-    /// metadata WPE ships next to each `.tex` (cols/rows derived from
-    /// the sequence frame size, plus the pixel format) lives in
-    /// `<path>.tex-json` — we try the same set of probe paths the main
-    /// texture resolver tried (with `.tex` stripped, `materials/`
-    /// prefix optional), then read + parse the JSON.
-    ///
-    /// Returns `nil` when the sidecar is absent or malformed; the
-    /// caller then treats the texture as a single-frame static sprite.
+    /// `<path>.tex-json` sidecar. Nil/malformed → the caller treats the texture as a single-frame sprite.
     private func parseParticleSpriteSheet(
         texturePath: String,
         atlasPixelSize: (width: Int, height: Int)
     ) -> WPEParticleSpriteSheet? {
         let probes = textureCandidates(for: texturePath).map { candidate -> String in
-            // Each candidate already covers ".tex", ".png", etc. — turn
-            // them into ".tex-json" siblings.
             let stripped = (candidate as NSString).deletingPathExtension
             return "\(stripped).tex-json"
         }
@@ -114,11 +89,7 @@ extension WPEMetalSceneRenderer {
         return nil
     }
 
-    /// Largest exact square-cell grid over the LOGICAL image (cell = gcd of the
-    /// logical sides), emitted as explicit frame rects normalized over the padded
-    /// atlas. Square/equal-sided images yield one cell (`nil` — stays a static
-    /// sprite), so this only ever slices genuinely rectangular sheets. Bounds
-    /// (cell ≥ 16px, ≤ 512 frames) reject degenerate grids from odd image sizes.
+    /// Largest exact square-cell grid over the LOGICAL image (cell = gcd of the sides). Square images stay a static sprite (`nil`). Cell ≥ 16px, ≤ 512 frames.
     static func squareCellGridSpriteSheet(
         logicalWidth: Int,
         logicalHeight: Int,
@@ -171,13 +142,7 @@ extension WPEMetalSceneRenderer {
             objectAngleZ: Float(object.angles.z)
         )
     }
-    /// Spawn one `WPEParticleSystem` per parsed particle object.
-    ///
-    /// A particle system is only registered if its sprite texture loads
-    /// successfully. Missing textures would otherwise leave Metal's
-    /// fragment-texture(0) slot stale across systems and produce the
-    /// "black background + red grid" overlay seen in workshop 3725117707
-    /// before the fix.
+    /// Missing sprite texture would leave fragment-texture(0) stale and paint the 3725117707 black+red-grid overlay.
     func loadParticleSystems(
         from document: WPESceneDocument,
         on actor: isolated WPEDisplayRenderActor
@@ -212,28 +177,13 @@ extension WPEMetalSceneRenderer {
         prewarmParticleSystems()
     }
 
-    /// WPE `starttime` is used by workshop authors as an initial simulation
-    /// offset: star fields with `starttime: 200` should load already full, not
-    /// wait 200 wall-clock seconds. The manual developer flag only adds the same
-    /// steady-state prewarm to emitters whose authored starttime is 0.
-    ///
-    /// Systems linked by `followParent` prewarm in LOCKSTEP, stepping the same
-    /// injection rule the frame loop uses. Prewarming them independently — which
-    /// is what registration-time prewarm did — drives `advance` directly and so
-    /// bypasses parent→child injection: an `eventfollow` child then finds no
-    /// injected parent position, `spawn` refuses to place a particle at a stale
-    /// origin, and the child prewarms to EMPTY — its passes are then dropped
-    /// wholesale by the `liveInstanceCount > 0` filter. Measured on 3226487183,
-    /// whose 136 `matrix_trail` systems held 0 particles: the scene went 595 →
-    /// 1615 against WPE's 1584, and the 9-scene oracle corpus went 76.1% → 94.3%
-    /// coverage (absolute error 24.1% → 9.3%).
+    /// `starttime` is a simulation offset (star fields with 200 load already full). The developer flag only prewarms authored-0 emitters.
+    /// `followParent` chains must prewarm in lockstep with the frame-loop injection rule; independent prewarm empties `eventfollow` children (3226487183: 136 `matrix_trail` systems at 0 particles).
     private func prewarmParticleSystems() {
         guard !particleSystems.isEmpty else { return }
         let oracleReplaySeconds = WPEOracleMode.isEnabled
             ? WPEOracleMode.loadFrameOverride()?.baseTime
             : nil
-        // `starttime` pre-simulates on BOTH paths now — a star field authored with
-        // `starttime: 200` loads already full, as it does in WPE.
         let presimulateDelay = true
         let seconds = particleSystems.map {
             Self.particlePrewarmSeconds(
@@ -242,8 +192,7 @@ extension WPEMetalSceneRenderer {
                 oracleReplaySeconds: oracleReplaySeconds
             )
         }
-        // Registration is DFS, so a parent always precedes its children and its
-        // chain index is already assigned when a child looks it up.
+        // DFS registration: a parent precedes its children, so the chain index is already assigned.
         var chains: [[Int]] = []
         var chainIndexBySystem: [ObjectIdentifier: Int] = [:]
         for (index, system) in particleSystems.enumerated() {
@@ -262,8 +211,7 @@ extension WPEMetalSceneRenderer {
             let eligible = chain.compactMap { index in
                 seconds[index].map { (system: particleSystems[index], seconds: $0) }
             }
-            // A chain with one live member takes the plain path, so every scene
-            // without an eventfollow pair keeps its exact prior spawn sequence.
+            // One live member keeps the prior spawn sequence (scenes without an eventfollow pair).
             if eligible.count > 1 {
                 Self.prewarmFollowChain(eligible, presimulateDelay: presimulateDelay)
             } else if let only = eligible.first {
@@ -273,19 +221,14 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Step a whole `followParent` chain on one shared clock, parents first, so a
-    /// child spawns against the position its parent reached on the SAME substep.
-    /// Each member's window ENDS at the capture instant — a longer `starttime`
-    /// means it started earlier — so the windows align by their end, not their start.
+    /// Shared clock, parents first, so a child spawns at the position its parent reached on the same substep. Windows align by their end (longer `starttime` started earlier).
     nonisolated static func prewarmFollowChain(
         _ chain: [(system: WPEParticleSystem, seconds: Double)],
         presimulateDelay: Bool,
         step: Double = 1.0 / 60
     ) {
         guard step > 0, let longest = chain.map(\.seconds).max(), longest > 0 else { return }
-        // One convergence window for the whole chain: a short-lived child must not
-        // start simulating before the long-lived parent whose particles it rides,
-        // or it spends its head period with nothing to follow.
+        // One chain-wide window: a short-lived child must not start before the parent it rides.
         let convergence = chain.map(\.system.definition.lifetimeMax)
             .filter(\.isFinite)
             .max()
@@ -309,12 +252,7 @@ extension WPEMetalSceneRenderer {
         for member in members { member.system.endPrewarm() }
     }
 
-    /// A particle whose parent chain runs through a `composelayer` group inherits
-    /// that group's tint + opacity-mask effects: WPE renders the system into the
-    /// group's isolated buffer, then the group recolours and spatially confines it
-    /// (3462491575's matrix rain → cyan-tinted, masked to an upper-centre blob).
-    /// The particle pipeline draws straight to scene, so bake those two effects
-    /// onto the system instead. Returns the loaded mask texture + tint, or nil.
+    /// A `composelayer` ancestor's tint + opacity mask must be baked on (particles draw to scene). 3462491575 matrix rain is cyan-tinted and masked.
     private func resolveParticleGroupEffect(
         for object: WPESceneParticleObject,
         objectParentByID: [String: String],
@@ -354,12 +292,7 @@ extension WPEMetalSceneRenderer {
         return (maskTexture, tint)
     }
 
-    /// Recursively expand a nested particle `children` tree into drawable
-    /// systems. Unlike a global `visited` set, dedup is per-ancestry-chain so
-    /// same-path siblings with different `origin` offsets (the matrix-rain
-    /// columns) each instantiate; only a path repeating within its own chain
-    /// is skipped to break cycles. A spawner with `renderer: []` is expanded
-    /// but not registered as drawable.
+    /// Dedup per ancestry chain so same-path siblings with different `origin` (matrix-rain columns) each instantiate. `renderer: []` expands but does not register.
     private func expandParticleTree(
         path: String,
         parentPath: String?,
@@ -373,8 +306,7 @@ extension WPEMetalSceneRenderer {
         childReference: WPEParticleChildReference? = nil,
         on actor: isolated WPEDisplayRenderActor
     ) async {
-        // Reload/cleanup cancels the owning load task cooperatively; bail
-        // before doing any work (or recursing) on behalf of a dead load.
+        // Reload/cleanup cancels the load task; bail before work or recursion for a dead load.
         guard !Task.isCancelled else { return }
         guard ancestry.count < 16 else {
             debugStage("particle", "skip \(object.name) — particle child depth limit reached at: \(path)")
@@ -405,8 +337,7 @@ extension WPEMetalSceneRenderer {
                 groupEffect: groupEffect,
                 on: actor
             )
-            // Event-driven children re-roll their chance on every parent event;
-            // the system owns that roll because only it sees the events.
+            // Event-driven children re-roll per parent event; only the system sees those events.
             if let registered, let childReference, childReference.rollsProbabilityPerEvent {
                 registered.spawnProbability = childReference.probability
             }
@@ -414,24 +345,12 @@ extension WPEMetalSceneRenderer {
             registered = nil
             debugStage("particle", "expand-only \(object.name) — renderer disabled: \(particlePath)")
         }
-        // A renderer:[] spawner (didn't register) forwards its OWN parent so its
-        // children can still event-follow up the chain. A rendering parent that
-        // FAILED to register forwards nil — its event-follow children must stay
-        // gated rather than silently following the grandparent.
+        // `renderer:[]` forwards its own parent. A failed rendering parent forwards nil so children stay gated, not silently following the grandparent.
         let childParentSystem = definition.rendersSprite ? registered : parentSystem
         let childAncestry = ancestry + [particlePath]
         for child in parsedDefinition.childReferences {
-            // `probability` is rolled when the child's spawn condition is met. For
-            // event-driven children that condition fires per parent particle, so
-            // the roll belongs in `WPEParticleSystem` (see `spawnProbability`);
-            // gating here instead would decide once per SESSION — the whole effect
-            // present or absent for the entire run, which is what Valve's own
-            // eventfollow-at-0.2 thunderbolt preset would turn into.
-            //
-            // A `static` child's condition is "the system starts", so here IS its
-            // once-only roll. Only an interior probability actually rolls: 0 and 1
-            // are decided outright, which keeps every real corpus tree (37 static
-            // entries, all 1.0) deterministic and safe for oracle replay.
+            // Event-driven probability belongs in `WPEParticleSystem` (per parent event). Rolling here would freeze the effect for the whole session.
+            // A `static` child's condition is "the system starts", so this is its once-only roll. 0 and 1 are decided outright (corpus is all 1.0).
             if !child.rollsProbabilityPerEvent {
                 if child.probability <= 0 { continue }
                 if child.probability < 1, Double.random(in: 0..<1) >= child.probability { continue }
@@ -468,8 +387,7 @@ extension WPEMetalSceneRenderer {
     }
 
     @discardableResult
-    /// The subtree's anchor node — same selection as the layer path, so an
-    /// emitter and its sibling image layers resolve identical depth + anchor.
+    /// Same anchor as the layer path, so an emitter and sibling image layers share depth + origin.
     func parallaxRootObjectID(of id: String) -> String {
         WPERenderGraphBuilder.parallaxAnchorNodeID(
             of: id,
@@ -505,9 +423,7 @@ extension WPEMetalSceneRenderer {
             debugStage("particle", "skip \(object.name) — texture load failed: \(texturePath)")
             return nil
         }
-        // A reload may have reset `particleSystems` while this load was
-        // suspended above — registering now would append a dead load's
-        // subtree into the NEW load's scene (duplicated particle systems).
+        // Reload may have reset `particleSystems` during the await; registering now would append a dead load's subtree.
         guard !Task.isCancelled else { return nil }
         let texture: MTLTexture?
         let animatedTextureSource: WPETexAnimatedTextureSource?
@@ -527,11 +443,7 @@ extension WPEMetalSceneRenderer {
             texturePath: texturePath,
             atlasPixelSize: (width: resolved.width, height: resolved.height)
         )
-        // No `.tex-json` sidecar (or a single-frame one) but the `.tex` carries
-        // a TEXS animation track: slice the atlas by the decoded per-frame
-        // sub-rects. This is the Matrix-glyph case — frames live in the TEXS
-        // chunk, not a sidecar, so the uniform-grid path would draw the whole
-        // atlas as one quad.
+        // No sidecar (or single-frame) but TEXS has per-frame sub-rects. The uniform-grid path would draw the whole Matrix-glyph atlas as one quad.
         if spriteSheet == nil || (spriteSheet?.frameCount ?? 1) <= 1,
            let animatedTextureSource {
             let frameRects = animatedTextureSource.spriteSheetFrameRectsNormalized()
@@ -546,13 +458,7 @@ extension WPEMetalSceneRenderer {
                 )
             }
         }
-        // A repacked scene can strip the TEXS frame table from a sequence atlas
-        // (3462491575's matrix glyph sheet: single-frame 512×512 .tex, logical
-        // 450×400, no sidecar). WPE still slices the LOGICAL image into its
-        // largest exact square-cell grid (gcd 50 → 9×8 = 72 frames, matching the
-        // authored "spritesheet 72"), so derive the same grid — but only for
-        // particles that explicitly opted into sequence animation; a defaulted
-        // `animationmode` must not slice single-image sprites.
+        // Repacked sequence atlas can lose TEXS (3462491575: 450×400 logical, gcd 50 → 72 frames). Only when `animationmode` opted into sequence; a default must not slice single-image sprites.
         if spriteSheet == nil, definition.declaresSequenceAnimation {
             let resolution = WPEMetalTextureMetadataRegistry.shared.resolution(for: resolved)
             spriteSheet = Self.squareCellGridSpriteSheet(
@@ -563,18 +469,13 @@ extension WPEMetalSceneRenderer {
                 isAlphaMask: resolved.pixelFormat == .r8Unorm
             )
         }
-        // Defensive: an R8 particle texture whose `.tex-json` sidecar is
-        // missing/invalid would otherwise fall through to the non-mask path
-        // and sample `.r8Unorm` alpha as 1 → an opaque quad (the RG88
-        // "red square" failure mode, in single channel). R8 is always a
-        // single-channel alpha mask, so flag it as such.
+        // R8 without a valid sidecar would sample alpha as 1 → opaque quad. R8 is always an alpha mask.
         if spriteSheet == nil, resolved.pixelFormat == .r8Unorm {
             spriteSheet = WPEParticleSpriteSheet(
                 cols: 1, rows: 1, frameCount: 1, baseFrameRate: 0, isAlphaMask: true
             )
         }
-        // Under the render oracle, seed spawn jitter deterministically so the scene
-        // renders byte-identically run-to-run. `nil` in production ⇒ system CSPRNG.
+        // Oracle: deterministic spawn jitter. `nil` in production ⇒ CSPRNG.
         let oracleSeed: UInt64? = WPEOracleMode.isEnabled
             ? WPEParticleSystem.deterministicSeed(
                 workshopID: descriptor.workshopID, objectID: object.id, sortIndex: sortIndex)
@@ -591,10 +492,7 @@ extension WPEMetalSceneRenderer {
         system.traceObjectID = object.id
         system.traceParticlePath = object.particleRelativePath
         #endif
-        // Rigid-subtree rule (see `propagatingParallaxDepthThroughParents`):
-        // the topmost ancestor's depth and origin drive the whole assembly.
-        // 3448877775's meteor emitter authors NO depth of its own — its group
-        // chain carries the -0.92 that keeps it locked to the stars and moon.
+        // Rigid-subtree: topmost ancestor's depth/origin drive the assembly. 3448877775 meteor authors no depth; the group chain carries -0.92.
         let parallaxRoot = parallaxRootObjectID(of: object.id)
         system.parallaxDepth = parallaxAuthoredDepthByObjectID[parallaxRoot] ?? object.parallaxDepth
         let rootOrigin = parallaxAuthoredOriginByObjectID[parallaxRoot]
@@ -603,9 +501,7 @@ extension WPEMetalSceneRenderer {
             rootOrigin.x - Double(sceneRenderSize.width) * 0.5,
             rootOrigin.y - Double(sceneRenderSize.height) * 0.5
         )
-        // Ancestor chain, so a keyframed transform-host `origin` can move this
-        // emitter (particles are not render layers and miss the graph's own
-        // parent→child composition).
+        // Particles are not render layers, so they miss graph parent→child composition; walk hosts so a keyframed origin can move this emitter.
         system.hostAncestorIDs = {
             var chain: [String] = []
             var next = object.parentObjectID
@@ -627,17 +523,7 @@ extension WPEMetalSceneRenderer {
             system.groupOpacityMask = groupEffect.mask
             system.groupTint = groupEffect.tint
         }
-        // REFRACT (lens water droplets / heat haze): needs the normal map too.
-        // If it fails to load, fall back to the flat-sprite path rather than a
-        // refraction that samples nothing.
-        //
-        // Take frame 0 of a dynamic source exactly like the albedo above does:
-        // sprite-sheet normals (`particle/water/rain_drops_sheet_normal`) carry a
-        // TEXS frame table, so they arrive as `.dynamicSource`, and frame 0 IS the
-        // whole atlas (every TEXS frame shares imageID 0 and differs only by
-        // sub-rect — the vertex stage already slices the sheet UVs). Demanding
-        // `.staticTexture` here dropped refraction for precisely those systems and
-        // painted their pure-white albedo instead — scene 3713073223's screen rain.
+        // REFRACT needs the normal map; load fail → flat sprite. Frame 0 of a dynamic source is the whole atlas (TEXS sub-rects). Demanding `.staticTexture` dropped refraction on 3713073223 rain.
         if material?.isRefract == true, let normalPath = material?.normalTexturePath {
             // a normal map is DATA — sRGB gamma corrupts its vectors
             let normalPayload = try? await makeTextureResource(
@@ -661,20 +547,14 @@ extension WPEMetalSceneRenderer {
         particleSystems.append(system)
         particleTextures[ObjectIdentifier(system)] = resolved
         if WPESceneDebugArtifacts.shared.isEnabled {
-            // Dump the parsed motion-driving params so an emitter-placement /
-            // fall-speed divergence vs WPE can be traced to either our PARSING
-            // (these values wrong) or our SIMULATION (values right, motion wrong).
+            // Motion-driving params: split parse errors from simulation errors.
             let idx = particleSystems.count - 1
             let d = definition
             var s = "particle[\(idx)] name=\(object.name)\n"
-            // def index (build order) never matches particle-state-N's traceIndex
-            // (sorted+filtered) — this line is the pairing key across both dumps.
+            // def index ≠ particle-state-N traceIndex (sorted+filtered). This line pairs the two dumps.
             s += "object=\(object.id) particle=\(object.particleRelativePath)\n"
             s += "material=\(d.materialRelativePath ?? "-") blend=\(blendMode.rawValue) animationMode=\(d.animationMode)\n"
-            // A REFRACT material whose normal map fails to load silently degrades to
-            // the flat-sprite path, which paints the (white) albedo instead of the
-            // refracted background — record the whole chain so the dump distinguishes
-            // "combo not parsed" from "normal not loaded".
+            // Record the REFRACT chain so the dump distinguishes "combo not parsed" from "normal not loaded".
             s += "refract: combo=\(material?.isRefract == true) normal=\(material?.normalTexturePath ?? "-")"
             s += " bound=\(particleNormalTextures[ObjectIdentifier(system)] != nil) amount=\(system.refractAmount)\n"
             s += "maxCount=\(d.maxCount) rate=\(d.rate) startDelay=\(d.startDelay)\n"

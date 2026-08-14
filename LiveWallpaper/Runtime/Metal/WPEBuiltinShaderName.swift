@@ -117,6 +117,12 @@ enum WPEBuiltinShaderName {
         isGenericImageCanonicalName(canonicalName(shaderName))
     }
 
+    static func isGodraysCombine(_ shaderName: String) -> Bool {
+        let normalized = shaderName.lowercased()
+        return normalized == "effects/godrays_combine"
+            || normalized.hasSuffix("/effects/godrays_combine")
+    }
+
     private static func canonicalName(_ shaderName: String) -> String {
         let lower = shaderName.lowercased()
         let withoutJSON = lower.hasSuffix(".json") ? String(lower.dropLast(5)) : lower
@@ -153,11 +159,10 @@ enum WPEBuiltinShaderName {
 /// string equality (typed identity + decomposition, strictly
 /// behavior-preserving). Raw values are fixed-point outputs of
 /// `WPEBuiltinShaderName.normalized`; case order mirrors the legacy switch.
-/// Names matched by pattern rather than exact equality stay string checks on
-/// the custom/transpiled fallback path: `godrays_combine` (equality-or-suffix
-/// match in `dispatchCustomShader`), the wave/flutter substring check
-/// (diagnostics only), and the raw `commands/copy` spelling probed inside the
-/// copy case body. `WPEMetalShaderDispatcherTests` pins the exact raw-value
+/// Names matched by pattern rather than exact equality stay string checks:
+/// `isGodraysCombine` (dispatch + source-aliasing), the wave/flutter substring
+/// check (diagnostics only), and the raw `commands/copy` spelling probed
+/// inside the copy case body. `WPEMetalShaderDispatcherTests` pins the exact raw-value
 /// set. Lives here (Infrastructure, beside its normalizer fixed-point source)
 /// so the graph/pipeline builders' judgment sites don't add Infra→Runtime
 /// coupling.

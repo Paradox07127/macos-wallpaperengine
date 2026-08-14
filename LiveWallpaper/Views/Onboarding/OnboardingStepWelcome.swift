@@ -27,7 +27,7 @@ struct OnboardingStepWelcome: View {
             Spacer().frame(height: DesignTokens.Spacing.xl)
 
             VStack(spacing: DesignTokens.Spacing.sm) {
-                // Both SKUs ship under their own name (Pro "LiveWallpaper",
+                // Both SKUs ship under their own name (Pro "Loomscreen Pro",
                 // Lite "Loomscreen"), so the brand comes from the running
                 // bundle rather than a literal.
                 Text("Welcome to \(BundleIdentity.productDisplayName)")

@@ -18,12 +18,8 @@ struct WPERenderGraphBuilder: Sendable {
         WPEMetalRenderExecutor.puppetDefaultsFlagOptional("WPEPuppetAttachmentBindAnchor") ?? true
     }
 
-    /// Injects the WPE genericimage4 clip-composite bindings (clip-mask asset on slot 1 +
-    /// intermediate clip RT on slot 8) so the executor can occlude an eye puppet's pupil on
-    /// blink close. Default ON; when OFF the graph is byte-identical (no extra texture/FBO).
-    /// Forwards the executor's frozen read-once flag so builder and executor CANNOT
-    /// disagree — a divergent pair would half-apply the feature (mask injected but never
-    /// composited, or a composite plan against a graph that never bound it). Restart to apply.
+    /// Forwards the executor's frozen `puppetClipCompositeEnabled` so builder and
+    /// executor cannot disagree (mask injected but never composited, or vice versa).
     private static let puppetClipCompositeEnabled = WPEMetalRenderExecutor.puppetClipCompositeEnabled
 
     init(
@@ -64,28 +60,11 @@ struct WPERenderGraphBuilder: Sendable {
             originalIndexByID[object.id] = document.objectPaintOrder[object.id] ?? index
         }
 
-        // Objects whose visibility a user property can toggle at runtime are
-        // kept in the graph (with a scene-target pass) even when currently
-        // hidden, so both simple booleans and condition-form selectors apply
-        // live without rebuilding the whole scene. The executor skips the scene
-        // draw while `WPERenderLayer.visible` is false.
         let liveVisibilityIDs = Self.userToggleableVisibilityIDs(in: document)
             .union(Self.layerScriptControlledVisibilityIDs(in: document))
         let dynamicCreatedLayerTemplateIDs = Self.createLayerImageTemplateIDs(in: document)
-        // A `composelayer` whose only children are particle systems is an isolated
-        // effect wrapper for those particles (WPE renders them into its buffer,
-        // then applies its tint/opacity). The particle pipeline draws straight to
-        // scene and bakes those effects onto the system (WPEMetalSceneRenderer),
-        // so the wrapper layer must NOT also run — otherwise it captures the whole
-        // frame and tints the background in the mask region (3462491575's rain).
-        // A `composelayer` with NO renderable descendant (no image, no particle) is an empty
-        // group container — a script click-hotspot / interaction zone. Its passthrough material
-        // binds `_rt_FullFrameBuffer` (the whole-scene texture), so drawing it paints the entire
-        // scene into its small quad = a picture-in-picture. WPE emits zero draws for these.
-        // Also drops effect-less `fullscreenlayer`/`projectlayer` passthroughs whose
-        // only pass is an identity `_rt_FullFrameBuffer`→scene copy — a WPE no-op that,
-        // if drawn, re-injects the whole frame over itself and accrues a nested
-        // picture-in-picture (scene 3470764447). See `noOpFullFramePassthroughIDs`.
+        // Drop particle-only compose wrappers (3462491575), empty compose
+        // hotspots, and identity fullscreen/project passthroughs (3470764447).
         let noOpFullFrameDrops = Self.noOpFullFramePassthroughIDs(in: document)
         let composeWrappersToDrop = Self.particleOnlyComposeWrapperIDs(
             in: document
@@ -95,9 +74,6 @@ struct WPERenderGraphBuilder: Sendable {
             .filter { !composeWrappersToDrop.contains($0.id) }
             .filter { !Self.hasHiddenAncestor($0, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs) }
             .filter {
-                // Composite normally, OR keep a layer whose only reason for being hidden is a
-                // live-toggleable ancestor: it stays in the graph (drawn hidden)
-                // so toggling that ancestor back on re-shows it without a pipeline rebuild.
                 Self.compositesToScene($0, liveVisibilityIDs: liveVisibilityIDs)
                     || Self.hasLiveToggleableHiddenAncestor($0, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs)
             }
@@ -171,15 +147,9 @@ struct WPERenderGraphBuilder: Sendable {
 
         let layersByID = Dictionary(layers.map { ($0.objectID, $0) }, uniquingKeysWith: { first, _ in first })
         var nearestGroupByLayer: [String: String] = [:]
-        // Group layers participate too: nearestComposelayerGroup walks from the
-        // parent up, so a nested inner group resolves to its outer ancestor (never
-        // itself), letting the inner composite land inside the outer buffer.
         for layer in layers {
-            // A composelayer model with no in-graph descendant hosts runtime-only
-            // content (e.g. a cursor-particle wrapper): its composite is empty and
-            // the executor materializes a group's buffer only when the OWNING layer
-            // encodes, so rerouting it as a plain child writes into an ancestor
-            // buffer that doesn't exist yet and fails the whole scene (3554161528).
+            // No in-graph descendant: empty composite, and rerouting as a child
+            // writes an ancestor buffer that does not exist yet (3554161528).
             if candidateGroups.contains(layer.objectID), !groupIDs.contains(layer.objectID) {
                 continue
             }
@@ -207,15 +177,9 @@ struct WPERenderGraphBuilder: Sendable {
                 if !localFBOs.contains(where: { $0.name == groupTarget }) {
                     localFBOs.append(fbo)
                 }
-                // The group's base pass must sample the group's OWN buffer. The
-                // composelayer material authors that as `_rt_FullFrameBuffer`
-                // (alias rewrite below), but `materialRespectingCopyBackground`
-                // downgrades it to `.previous` first when `copybackground` is
-                // false — and `.previous` on a scene-targeting pass resolves to
-                // the LIVE scene, painting the whole frame into the group's quad
-                // as a picture-in-picture (3470764447's layer 249). Map both
-                // spellings to the group buffer; later passes keep `.previous`
-                // untouched (mid-chain it means the previous composite).
+                // `materialRespectingCopyBackground` may have already rewritten
+                // `_rt_FullFrameBuffer` to `.previous`; map both to the group
+                // buffer or a scene-targeting pass paints PiP (3470764447 layer 249).
                 let composited = layer
                     .replacingLocalFBOs(localFBOs)
                     .replacingPasses(layer.passes.enumerated().map { index, pass in
@@ -226,9 +190,6 @@ struct WPERenderGraphBuilder: Sendable {
                     })
                     .withGroupCompositeSource(groupTarget)
 
-                // A nested inner group still composites its own buffer to `.scene`
-                // above; route that final output into the ancestor group's buffer
-                // so the outer group's effects/masking see the inner content.
                 guard let ancestorID = nearestGroupByLayer[layer.objectID],
                       let ancestor = layersByID[ancestorID] else {
                     return composited
@@ -254,9 +215,6 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    /// Redirects a layer's scene-targeting passes into `group`'s buffer and pins
-    /// its draw geometry to the group-local frame — the shared reroute for both
-    /// plain children and nested inner groups.
     private func reroutingSceneOutput(
         of layer: WPERenderLayer,
         into group: WPERenderLayer,
@@ -386,11 +344,8 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    /// Propagates each root layer's parallax depth through its transform subtree so
-    /// parented artwork moves as one unit while independently rooted layers remain separate.
-    /// Authored depths for EVERY object, groups included, for the rigid-subtree
-    /// walk. Absent-key objects parse to zero, which is authoritative: Windows
-    /// ignores even an authored child value when an ancestor exists.
+    /// Authored depths for every object, groups included. Absent-key is zero,
+    /// and Windows ignores an authored child value when an ancestor exists.
     static func authoredParallaxDepthByObjectID(
         _ document: WPESceneDocument
     ) -> [String: SIMD2<Double>] {
@@ -402,20 +357,11 @@ struct WPERenderGraphBuilder: Sendable {
         return depths
     }
 
-    /// The node whose parallax depth and origin drive `id`'s rigid subtree: the
-    /// ROOT-MOST node on the ancestor path (self included) with a NON-ZERO
-    /// depth, or `id` itself when the whole path is flat.
-    ///
-    /// Quantitatively pinned on Windows twice: 3719111841's parent/child MVPs
-    /// shift by the same vector, and 3448877775's two cursor captures move
-    /// every text in the clock assembly by an identical (5.31, 7.97) px —
-    /// exactly the top GROUP's -0.408 (5.31/11.97 = 0.408/0.92 against the
-    /// -0.92 background) — while the leaves author -0.7 / 0 / 1.0, all
-    /// provably ignored. "Non-zero" rather than "topmost" because a topmost
-    /// ancestor that AUTHORED no depth parses to zero, and the captures only
-    /// prove that an authored ancestor value wins: zeroing 93 corpus objects
-    /// under key-less roots (3151551777 birds, 3351072238's FPS triangles…)
-    /// would be an evidence-free regression.
+    /// Windows pin: 3719111841 parent/child MVPs share one vector; 3448877775
+    /// clock texts all shift (5.31, 7.97) px = top GROUP -0.408 (5.31/11.97 =
+    /// 0.408/0.92 vs -0.92 bg) while leaves author -0.7 / 0 / 1.0, ignored.
+    /// Non-zero, not topmost: a key-less root parses to zero, and zeroing 93
+    /// corpus objects under those roots (3151551777, 3351072238) is a regression.
     static func parallaxAnchorNodeID(
         of id: String,
         parentByID: [String: String],
@@ -461,8 +407,6 @@ struct WPERenderGraphBuilder: Sendable {
         }
     }
 
-    /// Adds the static MDAT anchor offset that parse-time parent-origin composition omits.
-    /// Animated attachment following later applies only the delta from this bind pose.
     private func applyAttachmentAnchorOffsets(to layers: [WPERenderLayer]) -> [WPERenderLayer] {
         guard layers.contains(where: { $0.attachment != nil && $0.parentObjectID != nil }) else {
             return layers
@@ -492,10 +436,6 @@ struct WPERenderGraphBuilder: Sendable {
         }
     }
 
-    /// Scene-space offset that moves an attached child from "relative to parent origin" to "relative
-    /// to the parent's anchor bone" — using the bone's skinned mesh-frame position (its skin-weighted
-    /// vertex centroid), mapped to scene by the parent's mesh-center, scale, and rotation. Returns nil
-    /// (no offset) when the anchor or bone cannot be resolved.
     private static func staticAttachmentOffset(
         attachmentName: String,
         parentGeometry: WPERenderLayerGeometry,
@@ -536,8 +476,6 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    /// Weighted centroid of the mesh vertices skinned to `boneIndex` — a robust mesh-frame proxy for
-    /// the bone's position. Returns nil when the bone influences no vertices.
     private static func skinnedJoint(of boneIndex: Int, in meshes: [WPEPuppetMesh]) -> SIMD2<Double>? {
         var sumX = 0.0
         var sumY = 0.0
@@ -562,12 +500,6 @@ struct WPERenderGraphBuilder: Sendable {
         return SIMD2<Double>(sumX / sumW, sumY / sumW)
     }
 
-    /// The attachment's anchor point in the parent MDLV mesh frame: the translation of
-    /// `assembledBindWorld[boneIndex] · attachment.matrix`. The assembled bind-world uses the frame-0
-    /// pose for character-sheet puppets (raw MDLS = exploded sheet there) and the raw MDLS for
-    /// pre-assembled puppets — see `WPEPuppetAnimationEvaluator.assembledBindWorldByBone`. This is the
-    /// WPE attachment pivot (not the skin-region centroid). Returns nil if the bone or its bind
-    /// transform is missing/non-finite.
     private static func bindAnchorPoint(
         for attachment: WPEPuppetAttachment,
         model: WPEPuppetModel
@@ -582,11 +514,8 @@ struct WPERenderGraphBuilder: Sendable {
     }
 
     static func compositesToScene(_ object: WPESceneImageObject, liveVisibilityIDs: Set<String>) -> Bool {
-        // A fully-transparent base layer with no alpha animation contributes
-        // nothing on its own — EXCEPT when it carries a visible effect, which
-        // draws its own content with its own alpha (e.g. 3719111841's audio
-        // spectrum line: an alpha-0 solidlayer whose `audioline` effect renders
-        // the visible curve). Dropping such layers hid the entire effect.
+        // Alpha-0 base with no alpha animation is a no-op UNLESS a visible
+        // effect draws its own content (3719111841 alpha-0 `audioline`).
         let hasVisibleEffect = object.effects.contains { $0.visible }
         if !object.copyBackground,
            isComposelayerModelPath(object.imageRelativePath),
@@ -609,8 +538,6 @@ struct WPERenderGraphBuilder: Sendable {
             || normalizedFile.contains("/effects/scroll/effect.json")
     }
 
-    /// Returns whether an explicitly hidden, non-toggleable ancestor suppresses this object.
-    /// Alpha-only transparency does not suppress descendants.
     static func hasHiddenAncestor(
         _ object: WPESceneImageObject,
         objectByID: [String: WPESceneImageObject],
@@ -619,20 +546,12 @@ struct WPERenderGraphBuilder: Sendable {
         var seen: Set<String> = []
         var current = object.parentObjectID
         while let id = current, seen.insert(id).inserted, let parent = objectByID[id] {
-            // A user-toggleable hidden parent stays in the graph so a live
-            // visibility toggle can re-show it — its authored-visible children must stay too,
-            // or toggling the parent back on would reveal an empty subtree. Only an ancestor
-            // that is hidden AND not live-toggleable suppresses its subtree.
             if !parent.visible && !liveVisibilityIDs.contains(parent.id) { return true }
             current = parent.parentObjectID
         }
         return false
     }
 
-    /// True when some ancestor is hidden via a live visibility toggle
-    /// (`!visible` but in `liveVisibilityIDs`). The subtree stays in the graph — drawn hidden —
-    /// so toggling the ancestor back on at runtime re-shows it without a rebuild.
-    /// `hasHiddenAncestor` already excludes subtrees under a permanently-hidden ancestor.
     static func hasLiveToggleableHiddenAncestor(
         _ object: WPESceneImageObject,
         objectByID: [String: WPESceneImageObject],
@@ -647,9 +566,6 @@ struct WPERenderGraphBuilder: Sendable {
         return false
     }
 
-    /// Synthetic/image layer IDs that have an incremental (`visible`) property
-    /// binding. Text IDs name the synthetic image layers appended before graph
-    /// construction, so they belong in the same keep-set.
     private static func userToggleableVisibilityIDs(in document: WPESceneDocument) -> Set<String> {
         var ids = Set<String>()
         for bindings in document.propertyBindings.values {
@@ -666,15 +582,8 @@ struct WPERenderGraphBuilder: Sendable {
         return ids
     }
 
-    /// Image-object IDs a layer SceneScript can reveal via `thisScene.getLayer(name)`,
-    /// kept in the graph even when authored-hidden behind a condition-form binding —
-    /// else the script switches to a layer that isn't there → black background.
-    ///
-    /// The getLayer argument is usually a variable bound from an array literal
-    /// (`["morning","day",...].map(v => getLayer(v))`), so a `getLayer("…")` scan
-    /// misses it; match any string literal in the script against a layer name
-    /// instead. Names the script never mentions still prune, so this doesn't
-    /// reintroduce the all-variants-render regression (3226487183).
+    /// `getLayer` args are usually variables, so match any script string literal
+    /// against a layer name; names never mentioned still prune (3226487183).
     private static func layerScriptControlledVisibilityIDs(in document: WPESceneDocument) -> Set<String> {
         // Script hosts are non-renderable script containers that still drive other
         // layers via getLayer(); mirror createLayerImageTemplateIDs and consult them.
@@ -684,13 +593,8 @@ struct WPERenderGraphBuilder: Sendable {
         let combined = scripts.joined(separator: "\n")
         var ids = Set<String>()
         for object in document.imageObjects {
-            // An object whose OWN visible script can reveal it must stay in the
-            // graph even when authored hidden: 2955378002 seeds 143 calendar
-            // sprites `visible:false` and lets each script light up today's
-            // cell. The executor keeps skipping the draw until it flips, and
-            // the cost is bounded because these layers author a `size` — their
-            // layer composites measure 94 MB total (189 MB with ping-pong),
-            // not the scene-sized fallback.
+            // Own visible-script objects stay even when authored hidden:
+            // 2955378002 seeds 143 calendar sprites `visible:false`.
             if object.visibleScript != nil {
                 ids.insert(object.id)
                 continue
@@ -704,10 +608,6 @@ struct WPERenderGraphBuilder: Sendable {
         return ids
     }
 
-    /// Hidden image objects used as `thisScene.createLayer({ image: "..." })`
-    /// templates must still build their material/texture passes. They remain
-    /// invisible; the renderer clones their prepared single-pass template for
-    /// each script-created layer at frame time.
     private static func createLayerImageTemplateIDs(in document: WPESceneDocument) -> Set<String> {
         let scripts = document.imageObjects.compactMap(\.visibleScript)
             + document.scriptHostObjects.map(\.visibleScript)
@@ -743,12 +643,8 @@ struct WPERenderGraphBuilder: Sendable {
         return paths
     }
 
-        /// A hidden effect whose `visible` field is a SceneScript is kept in the graph
-        /// behind a runtime gate instead of being dropped: the script that opens the
-        /// gate frequently lives on the effect's own pass constants, so dropping the
-        /// effect also drops its producer (scene 3151551777's day/night cycle — the
-        /// `Night (Cycle)` pass computes the `shared.shownight` its own visibility
-        /// reads). An effect authored VISIBLE keeps today's always-drawn behaviour.
+        /// Hidden-but-scripted effects stay gated: dropping them also drops the
+        /// producer that opens the gate (3151551777 `Night (Cycle)` / `shared.shownight`).
         static func scriptVisibilityGate(for effect: WPESceneImageEffect) -> WPEPassVisibilityGate? {
             guard !effect.visible, let script = effect.visibleScript else { return nil }
             return WPEPassVisibilityGate(script: script, initialVisible: effect.visible)
@@ -759,15 +655,10 @@ struct WPERenderGraphBuilder: Sendable {
         }
 
     private static func referencedLayerIDs(in object: WPESceneImageObject) -> Set<String> {
-        // `dependencies` exist so a consumer can sample another layer's
-        // composite — through an effect, or (utility compose layers) through
-        // its own material. When the object authored effects and EVERY one of
-        // them stays out of the graph, the edge is a ghost: nothing samples
-        // the producer, yet the edge still reorders it BEFORE this object
-        // against the authored paint order (3151551777's triangle-date depends
-        // on the weekday text for an invisible blend — the edge made the
-        // triangle draw after the weekday and cover it). Objects with no
-        // effects keep their edges: their material is the consumer.
+        // Ghost edge: every authored effect is out of the graph, so nothing
+        // samples the producer, yet the edge still reorders paint (3151551777
+        // triangle-date covered the weekday it "depended" on). No-effect
+        // objects keep their edges — the material is the consumer.
         let ghostDependencies = !object.effects.isEmpty
             && !object.effects.contains(where: Self.buildsIntoGraph)
         var ids = ghostDependencies ? [] : Set(object.dependencies)
@@ -783,17 +674,8 @@ struct WPERenderGraphBuilder: Sendable {
         return ids
     }
 
-    /// Orders the layers to build so every composite producer is emitted
-    /// before any consumer that references its `_rt_imageLayerComposite_*`
-    /// target. WPE scenes often author a consumer object ahead of the
-    /// producer it samples; the executor walks layers in array order and the
-    /// first frame has no previous named-texture bootstrap, so a producer
-    /// that runs later would surface as a fatal `missingTexture(.fbo)`.
-    ///
-    /// Stable topological sort (Kahn) keyed on the original scene index as a
-    /// tie-breaker, so unrelated layers keep their authored order. A
-    /// dependency cycle is non-fatal: the cyclic remainder is appended in
-    /// scene order and a diagnostic is emitted rather than dropping layers.
+    /// Consumers often author ahead of the producer they sample; first frame
+    /// has no named-texture bootstrap, so a late producer is `missingTexture(.fbo)`.
     private static func topologicallyOrderedLayerIDs(
         _ layerIDs: Set<String>,
         objectByID: [String: WPESceneImageObject],
@@ -870,12 +752,6 @@ struct WPERenderGraphBuilder: Sendable {
         WPEUtilityModelKind.classify(path) == .composeLayer
     }
 
-    /// IDs of `composelayer` objects whose descendants include a particle system
-    /// but NO renderable image layer. Such a compose layer exists solely to wrap
-    /// its particle child in an isolated buffer + effects; the particle pipeline
-    /// bakes those effects on directly, so the wrapper layer is dropped from the
-    /// graph. A compose layer with any image descendant is a real group and is
-    /// left untouched.
     private static func particleOnlyComposeWrapperIDs(
         in document: WPESceneDocument
     ) -> Set<String> {
@@ -904,8 +780,6 @@ struct WPERenderGraphBuilder: Sendable {
             wrappersWithParticle.formUnion(composeAncestors(of: particle.id))
         }
         guard !wrappersWithParticle.isEmpty else { return [] }
-        // Disqualify any wrapper that also has a renderable image descendant —
-        // that makes it a genuine mixed group, not a particle-only wrapper.
         var wrappersWithImageChild: Set<String> = []
         for image in document.imageObjects where !composeLayerIDs.contains(image.id) {
             wrappersWithImageChild.formUnion(composeAncestors(of: image.id))
@@ -913,11 +787,6 @@ struct WPERenderGraphBuilder: Sendable {
         return wrappersWithParticle.subtracting(wrappersWithImageChild)
     }
 
-    /// IDs of `composelayer` objects with NO renderable descendant anywhere below them (no image
-    /// other than nested composelayers, no particle). These are empty interaction containers whose
-    /// passthrough material would otherwise paint `_rt_FullFrameBuffer` (the whole scene) into their
-    /// quad — a picture-in-picture. A wrapper with any renderable descendant (directly or through a
-    /// nested composelayer) is a real group and is kept, so nesting stays correct.
     private static func emptyComposeWrapperIDs(
         in document: WPESceneDocument,
         objectByID: [String: WPESceneImageObject]
@@ -964,18 +833,9 @@ struct WPERenderGraphBuilder: Sendable {
         }
     }
 
-    /// IDs of `fullscreenlayer` / `projectlayer` utility layers with NO visible
-    /// effect. Their material is a single identity full-frame `copy` of
-    /// `_rt_FullFrameBuffer` back to `scene` — in WPE a passthrough that draws the
-    /// whole scene onto itself is invisible, so WPE emits zero draws for it. This
-    /// renderer materializes `_rt_FullFrameBuffer` as a persistent pool slot that
-    /// is re-snapshotted each frame, so actually drawing the copy re-injects the
-    /// whole composited frame (poster and all) over itself and accumulates a
-    /// nested picture-in-picture frame over frame (scene 3470764447). Dropping the
-    /// no-op layer matches WPE and removes the feedback. A fullscreenlayer WITH a
-    /// visible effect (e.g. DoF, scene 3479521040) is a real post-process and is
-    /// NOT dropped. Mirrors `emptyComposeWrapperIDs`, which handles the
-    /// `composelayer` variant of the same picture-in-picture hazard.
+    /// Identity `_rt_FullFrameBuffer`→scene copy re-injects the persistent pool
+    /// snapshot as nested PiP (3470764447). A fullscreenlayer with a visible
+    /// effect (DoF, 3479521040) is a real post-process and stays.
     private static func noOpFullFramePassthroughIDs(
         in document: WPESceneDocument
     ) -> Set<String> {
@@ -1145,8 +1005,6 @@ struct WPERenderGraphBuilder: Sendable {
             localFBOs: context.localFBOs,
             passes: context.finalizedPasses(
                 finalUntargetedPassToScene: finalUntargetedPassToScene,
-                // A destination-reading blend needs the layer isolated in its own
-                // composite before it can be blended against the scene snapshot.
                 preserveFinalCompositeForScene: preserveFinalCompositeForScene
                     || model.requiresFinalSceneComposite
                     || object.usesProgrammableBlend
@@ -1156,13 +1014,9 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    /// `copybackground: false` composelayers must NOT seed their chain with the
-    /// scene snapshot, so the material's `_rt_FullFrameBuffer` binding is
-    /// downgraded to `.previous` (fresh composite = transparent). CAUTION: for a
-    /// composelayer that becomes a layer GROUP, `applyComposelayerGroups` must map
-    /// this `.previous` on the base pass to the group's own buffer — otherwise the
-    /// scene-targeting composite binds the LIVE scene and paints a
-    /// picture-in-picture (3470764447's layer 249). Keep both sides in sync.
+    /// `copybackground: false` composelayers seed `.previous` instead of the
+    /// scene snapshot. `applyComposelayerGroups` must map that base-pass
+    /// `.previous` to the group buffer or it paints PiP (3470764447 layer 249).
     private static func materialRespectingCopyBackground(
         _ material: WPEMaterialAsset,
         object: WPESceneImageObject
@@ -1359,8 +1213,6 @@ struct WPERenderGraphBuilder: Sendable {
         return SIMD2<Double>(vector.x, vector.y)
     }
 
-    /// Clip-mask names from the puppet's MDLV clip groups (wires the genericimage4 clip-composite
-    /// path). Empty for puppets without a valid clip section.
     private func loadPuppetClipMaskNames(path: String) -> [String] {
         guard let data = try? resolver.data(relativePath: path),
               let model = try? WPEMdlParser.parse(data: data) else {
@@ -1380,9 +1232,6 @@ struct WPERenderGraphBuilder: Sendable {
             .map { [$0] } ?? []
     }
 
-    /// For a genericimage4 puppet pass with MDLV clip groups, injects renderer-internal mask bindings
-    /// and the intermediate clip render target (slot 8) so the executor runs the clip composite.
-    /// No-op when the flag is off, the puppet has no clip mask, or the shader is not genericimage4.
     private func materialPassWithPuppetClipCompositeIfNeeded(
         _ pass: WPEMaterialPass,
         phase: WPERenderPassPhase,
@@ -1413,8 +1262,6 @@ struct WPERenderGraphBuilder: Sendable {
         }
         textures[8] = .fbo(clipTargetName)
         #if DEBUG
-        // Gated behind the scene-debug switch (off by default) so clip-composite
-        // injection doesn't log on every load of a genericimage4 puppet scene.
         if UserDefaults.standard.bool(forKey: "WPESceneDebugArtifactsEnabled") {
             Logger.info(
                 "[WPE clip] builder injected clip-composite bindings for \(context.model.puppetPath ?? "?") "
@@ -1456,15 +1303,8 @@ struct WPERenderGraphBuilder: Sendable {
             path: path,
             passes: [
                 WPEMaterialPass(
-                    // Premultiplied render targets: use the `solidlayer` builtin
-                    // (outputs rgb*alpha) rather than `solidcolor` (straight), so
-                    // a transparent solid layer (alpha 0) composites to NOTHING
-                    // under the premultiplied blend the graph routes this pass to
-                    // — not an opaque white fill. The `_depthtest` variant only
-                    // differs in depth-test state and must take this path too:
-                    // routing it to the bundled `solidcolor` material blew out
-                    // 3719111841's audio-line base to opaque white, hiding the
-                    // whole background behind the (otherwise correct) line.
+                    // `solidlayer` is premultiplied (rgb*alpha); `solidcolor` is
+                    // straight and blew 3719111841's audio-line base to opaque white.
                     shader: WPEBuiltinShaderKind.solidLayer.rawValue,
                     textures: [:],
                     constants: [
@@ -1480,10 +1320,6 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    /// Renderer-owned text material. The executor recognizes this pass and
-    /// encodes the glyph mesh into its graph-selected destination. Direct text's
-    /// untargeted last pass is fused into `.scene`; Offscreen text is preserved
-    /// in the exact-size layer composite for effects/dependencies.
     private static func builtinTextTargetMaterial(path: String) -> WPEMaterialAsset? {
         guard WPETextLayerSynthesis.isTargetPath(path) else { return nil }
         return WPEMaterialAsset(
@@ -1746,11 +1582,8 @@ private struct LayerBuildContext {
     var passes: [WPERenderPass] = []
     var passTargetsWereExplicit: [Bool] = []
 
-    /// The layer's final draw onto the scene. Normally a plain copy under the
-    /// object's fixed-function blend; for a destination-reading mode it becomes
-    /// WPE's own construction — sample the layer composite plus the scene
-    /// snapshot (`_rt_FullFrameBuffer` at slot 4, matching `g_Texture4`) and run
-    /// ApplyBlending. RenderDoc-confirmed against 3448877775 pass 41.
+    /// Destination-reading blend samples the layer plus `_rt_FullFrameBuffer`
+    /// at slot 4 (`g_Texture4`). RenderDoc-confirmed on 3448877775 pass 41.
     func sceneCompositePass(
         index: Int,
         source: WPETextureReference,
@@ -1762,10 +1595,8 @@ private struct LayerBuildContext {
             : WPERenderPassPhase.sceneCopyCommandFile
         var textures: [Int: WPETextureReference] = [0: source]
         if programmable {
-            // Slot 4 mirrors WPE's `g_Texture4`. The executor's
-            // `snapshotFullFrameBufferIfAliasingScene` sees this alias in the
-            // pass's texture set and hands the fragment a COPY, so sampling the
-            // scene while drawing into it is not a feedback loop.
+            // Slot 4 = `g_Texture4`; the executor snapshots a COPY so this is
+            // not a feedback loop.
             textures[4] = .fbo(WPESceneAliasName.fullFrameBuffer)
         }
         return WPERenderPass(
@@ -1835,12 +1666,9 @@ private struct LayerBuildContext {
             )
         }
 
-        // Every ordinary effect pass finishes in layer space. WPE then draws the
-        // resulting composite to the scene as a separate pass; promoting the last
-        // effect itself to `.scene` changes its viewport/texel size to the full
-        // backbuffer. `shape:quad` DIRECTDRAW effects are the exception: their
-        // authored points define scene geometry and the existing direct path must
-        // not be rendered into a rectangle and warped a second time.
+        // Ordinary effects finish in layer space; promoting the last one to
+        // `.scene` changes viewport/texel size. `shape:quad` DIRECTDRAW is
+        // already scene geometry — do not warp it a second time.
         let hasLayerResolutionEffect = object.shapePoints == nil && passes.contains { pass in
             switch pass.phase {
             case .effect:
@@ -1880,8 +1708,6 @@ private struct WPEModelDescriptor {
     let rendersAsSceneModel: Bool
     let autosize: Bool
     let cropOffset: SIMD2<Double>?
-    /// Clip-mask texture names from the puppet's MDLV clip groups, in authored order. Empty unless
-    /// the puppet is a clip-composite candidate and the feature flag is enabled.
     let puppetClipMaskNames: [String]
     var requiresFinalSceneComposite: Bool { puppetPath != nil && !rendersAsSceneModel }
 
@@ -2139,10 +1965,6 @@ private extension WPERenderPass {
         )
     }
 
-    /// Rewrites `.previous` source/texture references to `replacement`. Only for a
-    /// compose GROUP's base pass, where `.previous` (the `copybackground: false`
-    /// downgrade of `_rt_FullFrameBuffer`) must mean the group's own buffer — on a
-    /// scene-targeting pass it would resolve to the live scene mid-frame.
     func replacingPreviousReferences(with replacement: WPETextureReference) -> WPERenderPass {
         let newSource = source == .previous ? replacement : source
         let newTextures = textures.mapValues { $0 == .previous ? replacement : $0 }
@@ -2188,9 +2010,6 @@ private extension WPERenderTarget {
 }
 
 private extension String {
-    /// Map an authored WPE blend mode onto the premultiplied render-target
-    /// variant used by the layer-FBO / effect-chain / composite passes.
-    /// Idempotent: already-premultiplied modes are returned unchanged.
     var premultipliedRenderTargetBlendMode: String {
         switch normalizedBlendModeKey {
         case "premultiplied",
@@ -2215,8 +2034,6 @@ private extension String {
         }
     }
 
-    /// Blend mode for an intermediate FBO pass that simply writes its source
-    /// into a freshly-cleared target (plain premultiplied over).
     var premultipliedIntermediateBlendMode: String {
         switch normalizedBlendModeKey {
         case "disabled", "premultiplieddisabled":

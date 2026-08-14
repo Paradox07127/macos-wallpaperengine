@@ -6,22 +6,20 @@ import simd
 
 /// Layout MUST match `WPEParticleInstance` in `WPEMetalBuiltins.metal` exactly.
 struct WPEParticleInstance {
-    var positionAndSize: SIMD4<Float>   // x, y in centered scene pixels ; z = signed sprite X scale; w = size
-    var color: SIMD4<Float>             // rgb 0…1, a = current alpha (base × fade envelope)
-    var rotationAndLife: SIMD4<Float>   // x = rotationZ radians ; y = lifetimeFraction [0,1] ; z = spriteFrameIndex; w = signed sprite Y scale
-    /// xy = render-space velocity (scene px/s). Only the TRAILRENDERER path
-    /// reads it — WPE gates the matching `a_TexCoordVec4C1` on THICKFORMAT.
+    var positionAndSize: SIMD4<Float>
+    var color: SIMD4<Float>
+    var rotationAndLife: SIMD4<Float>
+    /// TRAILRENDERER only; WPE gates the matching `a_TexCoordVec4C1` on THICKFORMAT.
     var velocity: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
 }
 
-/// One ribbon-strip vertex for the rope renderer. Layout MUST match
-/// `WPEParticleRopeVertex` in `WPEMetalBuiltins.metal`.
+/// Layout MUST match `WPEParticleRopeVertex` in `WPEMetalBuiltins.metal`.
 struct WPEParticleRopeVertex {
-    var positionUV: SIMD4<Float>        // xy = centered scene pixels (Y-up) ; zw = uv (u across, v along the rope)
-    var color: SIMD4<Float>             // rgb 0…1, a = current alpha
+    var positionUV: SIMD4<Float>
+    var color: SIMD4<Float>
 }
 
-/// Value-typed RNG for spawn jitter (no existential/heap). Production `.system`; oracle injects `.seeded`.
+/// Value-typed RNG. Production `.system`; oracle injects `.seeded`.
 enum WPEParticleRNG: RandomNumberGenerator {
     case system(SystemRandomNumberGenerator)
     case seeded(SplitMix64)
@@ -40,8 +38,7 @@ enum WPEParticleRNG: RandomNumberGenerator {
     }
 }
 
-/// Deterministic, allocation-free 64-bit generator (Vigna's SplitMix64). Used only
-/// under the render oracle to make particle spawn jitter reproducible run-to-run.
+/// SplitMix64 for the render oracle only — spawn jitter must be reproducible run-to-run.
 struct SplitMix64: RandomNumberGenerator {
     private var state: UInt64
     init(seed: UInt64) { self.state = seed }
@@ -54,14 +51,12 @@ struct SplitMix64: RandomNumberGenerator {
     }
 }
 
-/// One-shot world-space placement applied when loading a particle system.
-/// WPE author space is consistently Y-up; origin, velocity, gravity, and rotation must not be flipped.
+/// WPE author space is Y-up; origin, velocity, gravity, and rotation must not be flipped.
 struct WPEParticleSceneTransform {
     var renderOrigin: SIMD3<Float>
     var objectScale: SIMD3<Float>
     var objectAngleZ: Float
-    /// Scene render height (px); used to cap pathologically large additive
-    /// sprites so a hugely-scaled emitter can't saturate the whole frame.
+    /// Caps oversized additive sprites so a scaled emitter cannot saturate the frame.
     var sceneHeight: Float
 
     init(sceneSize: SIMD2<Float>, objectOrigin: SIMD3<Float>, objectScale: SIMD3<Float>, objectAngleZ: Float) {
@@ -82,7 +77,6 @@ struct WPEParticleSceneTransform {
         objectAngleZ: 0
     )
 
-    /// Apply `T(renderOrigin)·Rz(+angleZ)·S(scale)` to a Y-up local point.
     func applyModelMatrix(toLocalPoint p: SIMD3<Float>) -> SIMD3<Float> {
         let scaled = SIMD3<Float>(p.x * objectScale.x, p.y * objectScale.y, p.z * objectScale.z)
         let cosA = cos(objectAngleZ)
@@ -94,7 +88,7 @@ struct WPEParticleSceneTransform {
         )
     }
 
-    /// Rotate+scale free vectors (no translation, no Y-flip). Oracle 3526278753: velocity Y must stay negative = falling.
+    /// No Y-flip. Oracle 3526278753: velocity Y must stay negative = falling.
     func applyModelDirection(_ v: SIMD3<Float>) -> SIMD3<Float> {
         let scaled = SIMD3<Float>(v.x * objectScale.x, v.y * objectScale.y, v.z * objectScale.z)
         let cosA = cos(objectAngleZ)
@@ -107,7 +101,6 @@ struct WPEParticleSceneTransform {
     }
 
     func worldSizeMultiplier() -> Float {
-        // Object scale enlarges billboards (WPE T·R·S); additive size cap is at spawn.
         let s = (abs(objectScale.x) + abs(objectScale.y)) * 0.5
         return max(0, s)
     }
@@ -122,7 +115,6 @@ struct WPEParticleSceneTransform {
     func visualRotationZ(localRotationZ: Float) -> Float {
         let signs = visualScaleSigns()
         let localRotation = signs.x * signs.y < 0 ? -localRotationZ : localRotationZ
-        // `+angleZ` to match the flipped position/velocity chain and the image quad.
         return objectAngleZ + localRotation
     }
 
@@ -132,7 +124,6 @@ struct WPEParticleSceneTransform {
     }
 }
 
-/// CPU emitter + GPU instance buffer per particle object. `prewarm` spreads spawn before first present.
 final class WPEParticleSystem {
     let definition: WPEParticleDefinition
     let capacity: Int
@@ -141,146 +132,87 @@ final class WPEParticleSystem {
     private let instanceBuffers: [MTLBuffer]
     private var activeFrameSlot = 0
     var instanceBuffer: MTLBuffer { instanceBuffers[activeFrameSlot] }
-    /// True for a `renderer: [{name:"rope"}]` ribbon/trail. When set, `tick`
     let isRope: Bool
-    /// True for `ropetrail`: every particle drags its OWN position-history ribbon
-    /// (as opposed to `isRope`, one ribbon threaded through the whole pool).
+    /// `ropetrail`: each particle owns a history ribbon. `isRope`: one ribbon through the pool.
     let usesTrailRibbon: Bool
-    /// Either ribbon flavour draws through the rope vertex buffer + shader.
     var usesRibbonGeometry: Bool { isRope || usesTrailRibbon }
-    /// Ribbon points per particle for `usesTrailRibbon` = `subdivision` segments + 1.
-    /// 0 when the system draws sprites.
     private let trailPointCount: Int
-    /// Per-tick path samples the ribbon is resampled from — a ring per particle,
-    /// `capacity * trailSampleCapacity` entries. Parallel to `particles` rather
-    /// than a member of it: `Particle` is already 20 fields and Swift has no
-    /// inline fixed-size array.
     private var trailSamples: [SIMD2<Float>] = []
-    /// Ring index of each particle's newest sample.
     private var trailSampleHead: [Int] = []
-    /// How many of each particle's ring slots hold real samples (a just-spawned
-    /// particle has 1, so its ribbon starts collapsed and grows into its length).
     private var trailSampleFill: [Int] = []
-    /// Scratch for one particle's resampled ribbon points; reused every particle.
     private var trailRibbonScratch: [SIMD2<Float>] = []
-    /// Ring depth. The ribbon spans `size × clamp(speed·length, 1, maxlength)`,
-    /// which for the corpus tops out near 290 px; 48 per-tick samples still cover
-    /// that at 120 Hz. Running short only shortens the trail, never corrupts it.
+    /// Corpus trails top out ~290 px; 48 samples still cover that at 120 Hz.
     private static let trailSampleCapacity = 48
-    /// Triangle-strip ribbon vertices, allocated only for ribbon systems.
-    /// `nil` for ordinary sprite systems.
     private let ropeVertexBuffers: [MTLBuffer]
-    /// Vertices the ribbon buffer can hold — the bound of every write into it.
     private let ropeVertexCapacity: Int
     var ropeVertexBuffer: MTLBuffer? {
         ropeVertexBuffers.indices.contains(activeFrameSlot)
             ? ropeVertexBuffers[activeFrameSlot]
             : nil
     }
-    /// Live ribbon vertex count written by the last `tick`; 0 ⇒ nothing to draw
-    /// (fewer than 2 knots). The executor draws `[0, ropeVertexCount)` as a strip.
     private(set) var ropeVertexCount: Int = 0
-    /// Atlas slicing metadata for the sprite texture. `nil` ⇒ single-
     let spriteSheet: WPEParticleSpriteSheet?
-    /// Per-axis camera-parallax depth (WPE Vec2) of the owning particle object;
     var parallaxDepth: SIMD2<Double> = SIMD2<Double>(0, 0)
-    /// Emitter origin measured from the scene centre (+y up) — the reference's
-    /// static `nodePos - camPos` parallax term.
     var parallaxCenter: SIMD2<Double> = SIMD2<Double>(0, 0)
 
     #if !LITE_BUILD && DEBUG
-    /// Scene identity for trace/dump attribution. `particle-def-N` (build order)
-    /// and `particle-state-N` (traceIndex over sorted+filtered systems) never
-    /// share an index, so dumps pair by THIS, not by filename number.
+    /// Dumps pair by this id, not `particle-def-N` / `particle-state-N` filename numbers.
     var traceObjectID: String?
     var traceParticlePath: String?
     #endif
 
-    /// Set while `prewarm(presimulateDelay: true)` runs: `startDelay` is a
-    /// pre-simulation offset, not a wait, so the emission gate must not hold
-    /// spawning back during it. Without this the whole presimulation is a no-op —
-    /// 3448877775's snowperspective (starttime 15) came out at 124 = rate x T,
-    /// exactly the "treat it as a delay" prediction, against WPE's 344.
+    /// `startDelay` is pre-simulation, not a wait. Treating it as a delay made
+    /// 3448877775 snowperspective (starttime 15) emit 124 instead of WPE's 344.
     private var presimulatingStartDelay = false
-    /// Persists after `endPrewarm`: once `starttime` has been consumed as authored
-    /// history, a finite emitter duration remains anchored at virtual time zero
-    /// instead of starting a second time at the first live frame.
+    /// After prewarm, a finite duration stays anchored at virtual time zero.
     private var startDelayWasPresimulated = false
-    /// Ancestor transform-host origin shift; folded into projection.padding.xy like camera parallax.
     var hostOriginOffset: SIMD2<Float> = SIMD2<Float>(0, 0)
-    /// This emitter's ancestor object ids (nearest first), used to look up their
-    /// live origins each frame.
     var hostAncestorIDs: [String] = []
-    /// Owning particle object's WPE scene paint index — where this system
-    /// composites relative to image layers (background behind, character front).
     var sortIndex: Int = 0
-    /// Material `ui_editor_properties_overbright` colour multiplier (>1 brighter,
-    /// <1 dimmer). Bound into the fragment uniform; defaults to 1 (no change).
     var overbright: Float = 1.0
-    /// `genericparticle` REFRACT: draw via the screen-space refraction pipeline
     var isRefract: Bool = false
-    /// `g_RefractAmount` — screen-UV refraction offset scale (WPE default 0.05).
     var refractAmount: Float = 0.05
-    /// Nested child: sprite size uses child scale (not owner layer); spawn positions still use model matrix.
+    /// Nested child: sprite size uses child scale; spawn positions still use the model matrix.
     var isNestedChildSystem: Bool = false
-    /// Parent composelayer opacity mask; fragment multiplies sprite alpha at screen position.
     var groupOpacityMask: MTLTexture?
-    /// Colour multiplier baked from the parent composelayer's tint effect
-    /// (1,1,1 = no tint). Applied in the particle fragment.
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
-    /// Live cursor in centered Y-up frame (nil if Follow Cursor off); drives pointer-locked control points.
     var pointerCentered: SIMD2<Float>?
 
-    /// eventfollow: parent live particle position injected as control point id 1 each frame.
     weak var followParent: WPEParticleSystem?
     var followControlPointID: Int = 1
     var requiresFollowParent: Bool = false
     var injectedControlPoints: [Int: SIMD3<Float>] = [:]
-    /// WPE child `probability`, for event-driven children only: the chance this
-    /// system bursts on any ONE parent event. Rolled per event, not per scene —
-    /// see `WPEParticleChildReference.probability`. 1 for every other system.
+    /// Event-driven children only: roll `probability` per parent event, not per scene.
     var spawnProbability: Double = 1
-    /// Render-space birth positions of everything spawned during the last
-    /// `advance`. An `eventfollow` child bursts once per entry, which is what
-    /// makes every meteor get its own glow instead of only the first one.
-    /// Cleared at the top of each `advance` so consumers see exactly one tick.
+    /// Birth positions this `advance`; an `eventfollow` child bursts once per entry.
     private(set) var spawnEventsThisTick: [SIMD3<Float>] = []
 
     private let attractors: [WPEParticleControlPointAttractor]
     private let emitterTracksPointer: Bool
-    /// Raw control-point offsets keyed by id; pointer-locked ids resolve against
-    /// the live cursor, others against the static scene-object transform.
     private let controlPointRawOffsets: [Int: SIMD3<Float>]
     private let pointerLockedControlPointIDs: Set<Int>
 
     private var aliveCount: Int = 0
-    /// Diagnostic: how many particles a control-point attractor pushed/pulled
     private(set) var lastAttractorAffectedCount = 0
     private var particles: [Particle]
     private var spawnAccumulator: Double = 0
-    /// One-shot guard for the emitter's `instantaneous` burst, which fires the
-    /// first time `elapsed` reaches `startDelay` (explosions/fireworks/seed).
     private var hasEmittedBurst = false
     private var lastTickTime: Double?
     private var firstTickTime: Double?
     private var rng: WPEParticleRNG
-    /// Shared turbulentvelocityrandom sample point per system (WPE initializer closure semantics).
+    /// Shared `turbulentvelocityrandom` sample (WPE initializer-closure semantics).
     private var turbulentSamplePoint = SIMD3<Double>.zero
-    /// Cached gravity in render space (Y-up). Mirrors the velocity rule:
+    /// Cached gravity in render space (Y-up).
     private let gravity: SIMD3<Float>
-    /// oscillateposition sway mask in render space (rotates/scales with object).
     private let oscillatePositionMask: SIMD3<Float>
 
-    /// Pre-uploaded TEXS UV rect buffer (vb index 4); avoids 4 KB setVertexBytes limit.
+    /// Pre-uploaded TEXS UV rects; avoids the 4 KB `setVertexBytes` limit.
     let frameRectsBuffer: MTLBuffer?
 
-    /// Hard ceiling so a single emitter can't blow the GPU memory budget.
-    /// 8K particles × 48 bytes = 384 KB per system.
     static let absoluteCap = 8192
-    /// Perspective near-depth boost: depthScale(z) = 1 + boost * clamp(z/maxDepth).
     static let perspectiveNearBoost: Float = 1.5
 
-    /// Stable per-system oracle seed (FNV-1a — not salted Hasher). Only when oracle mode enabled.
+    /// FNV-1a, not salted Hasher. Only when oracle mode is enabled.
     static func deterministicSeed(workshopID: String, objectID: String, sortIndex: Int) -> UInt64 {
         var hash: UInt64 = 0xCBF2_9CE4_8422_2325  // FNV-1a 64-bit offset basis
         let prime: UInt64 = 0x0000_0100_0000_01B3  // FNV-1a 64-bit prime
@@ -307,21 +239,15 @@ final class WPEParticleSystem {
         var alphaBase: Float
         var lifetime: Float
         var age: Float       // Float.greatestFiniteMagnitude when slot is free
-        /// Per-particle turbulence inputs sampled once at spawn; the
-        /// operator pumps a deterministic noise field every frame.
         var turbulenceSpeed: Float
         var turbulencePhase: Float
-        /// Sprite-sheet frame this particle locks onto when the system is
         var staticFrame: Float
-        /// Per-particle `oscillateposition` inputs sampled once at spawn
         var oscPosFrequency: Float
         var oscPosScale: Float
         var oscPosPhase: Float
-        /// Per-particle `oscillatealpha` draw (WPE randomizes both per particle,
-        /// which is what keeps a star field twinkling out of phase).
+        /// Per-particle `oscillatealpha` so a star field twinkles out of phase.
         var oscAlphaFrequency: Float
         var oscAlphaPhase: Float
-        /// Per-particle `oscillatesize` draw — same story, on the sprite quad.
         var oscSizeFrequency: Float
         var oscSizePhase: Float
     }
@@ -379,8 +305,7 @@ final class WPEParticleSystem {
         self.usesTrailRibbon = usesTrailRibbon
         let trailPoints: Int
         if usesTrailRibbon, let trail = definition.trailRenderer {
-            // `subdivision` is the SEGMENT count, so points = segments + 1. Clamped:
-            // 1 segment can't form a ribbon, and 8 keeps the per-frame shift cheap.
+            // `subdivision` is segments, so points = segments + 1. Clamp 2…8.
             let segments = max(1, Int(trail.subdivision.rounded()))
             trailPoints = min(max(segments + 1, 2), 8)
         } else {
@@ -388,12 +313,9 @@ final class WPEParticleSystem {
         }
         self.trailPointCount = trailPoints
         if definition.isRope || usesTrailRibbon {
-            // rope: 2 edge vertices per knot. ropetrail: 2 per history point plus a
-            // 2-vertex degenerate bridge joining each particle's ribbon to the next.
+            // rope: 2 verts/knot. ropetrail: 2/history point + a 2-vert degenerate bridge.
             let vertexCapacity = definition.isRope ? cap * 2 : cap * (trailPoints * 2 + 2)
             self.ropeVertexCapacity = vertexCapacity
-            // A partial allocation degrades the whole ribbon to "no draw" rather
-            // than exposing an unsafe slot.
             var ropeBuffers: [MTLBuffer] = []
             ropeBuffers.reserveCapacity(WPEMetalRenderExecutor.maxFramesInFlight)
             for slot in 0..<WPEMetalRenderExecutor.maxFramesInFlight {
@@ -418,14 +340,13 @@ final class WPEParticleSystem {
             self.trailSampleFill = .init(repeating: 0, count: cap)
             self.trailRibbonScratch = .init(repeating: .zero, count: trailPoints)
         }
-        // Production (seed == nil) keeps the system CSPRNG, byte-for-byte the
+        // Production (seed == nil) keeps SystemRandomNumberGenerator.
         if let seed {
             self.rng = .seeded(SplitMix64(seed: seed))
         } else {
             self.rng = .system(SystemRandomNumberGenerator())
         }
-        // Y-up author space: gravity is used as authored (no flip), then
-        // honored through the scene object's scale/rotation like velocity.
+        // Y-up: gravity as authored (no flip), then scale/rotation like velocity.
         let localGravity = SIMD3<Float>(
             Float(definition.gravity.x),
             Float(definition.gravity.y),
@@ -433,7 +354,7 @@ final class WPEParticleSystem {
         )
         self.gravity = sceneTransform.applyModelDirection(localGravity)
         if let osc = definition.oscillatePosition {
-            // WPE mask gates axes (threshold), does not scale them (snowperspective 1 0.5 0).
+            // Mask gates axes, does not scale them (snowperspective 1 0.5 0).
             let gate = SIMD3<Float>(
                 osc.mask.x < 0.01 ? 0 : 1,
                 osc.mask.y < 0.01 ? 0 : 1,
@@ -444,8 +365,6 @@ final class WPEParticleSystem {
             self.oscillatePositionMask = .zero
         }
         if let rects = spriteSheet?.frameRects, !rects.isEmpty {
-            // Upload once; a failed allocation degrades to uniform-grid slicing
-            // rather than failing the whole system.
             let buffer = rects.withUnsafeBytes { bytes in
                 device.makeBuffer(bytes: bytes.baseAddress!, length: bytes.count, options: [.storageModeShared])
             }
@@ -464,8 +383,7 @@ final class WPEParticleSystem {
         }
         self.controlPointRawOffsets = offsets
         self.pointerLockedControlPointIDs = pointerIDs
-        // Drawn only for systems that actually have the initializer, so every
-        // other system's spawn draw sequence stays byte-identical for the oracle.
+        // Only systems with the initializer draw this, so other spawn sequences stay oracle-identical.
         if definition.turbulentVelocityInit != nil {
             turbulentSamplePoint = SIMD3<Double>(
                 Double.random(in: 0..<10, using: &rng),
@@ -475,7 +393,6 @@ final class WPEParticleSystem {
         }
     }
 
-    /// Control point in centered frame; injected event-follow wins; pointer-locked follows cursor.
     func controlPointPosition(_ id: Int) -> SIMD3<Float>? {
         if let injected = injectedControlPoints[id] { return injected }
         if requiresFollowParent && id == followControlPointID { return nil }
@@ -487,7 +404,6 @@ final class WPEParticleSystem {
         return sceneTransform.applyModelMatrix(toLocalPoint: rawOffset)
     }
 
-    /// Cursor-reactivity diagnostic snapshot; nil if system has no cursor interaction.
     #if DEBUG
     func cursorDebugSummary() -> String? {
         guard !attractors.isEmpty || !pointerLockedControlPointIDs.isEmpty else { return nil }
@@ -502,8 +418,7 @@ final class WPEParticleSystem {
     #endif
 
     private func uniform(_ low: Double, _ high: Double) -> Double {
-        // WPE range endpoints are unordered; sorting avoids pinning reversed ranges
-        // to one endpoint.
+        // Endpoints are unordered; sorting avoids pinning a reversed range to one end.
         let lo = Swift.min(low, high)
         let hi = Swift.max(low, high)
         guard hi > lo else { return lo }
@@ -519,7 +434,7 @@ final class WPEParticleSystem {
         )
     }
 
-    /// Box–Muller transform over the existing spawn `rng` — matches `std::
+    /// Box–Muller over the spawn `rng`.
     private func gaussian(mean: Double, stddev: Double) -> Double {
         let u1 = Swift.max(Double.leastNormalMagnitude, Double.random(in: 0..<1, using: &rng))
         let u2 = Double.random(in: 0..<1, using: &rng)
@@ -527,7 +442,7 @@ final class WPEParticleSystem {
         return mean + stddev * mag * cos(2 * Double.pi * u2)
     }
 
-    /// colorrandom: single t lerps all channels (WPE Color()) — not per-channel draws.
+    /// colorrandom: one t lerps all channels, not per-channel draws.
     private func lerpVector(_ low: SIMD3<Double>, _ high: SIMD3<Double>) -> SIMD3<Float> {
         let t = uniform(0, 1)
         return SIMD3<Float>(
@@ -537,13 +452,12 @@ final class WPEParticleSystem {
         )
     }
 
-    /// Volume-uniform sphere radius: lerp(pow(rand, 1/3), min, max) (WPE ParticleSphereEmitter).
+    /// Volume-uniform sphere: lerp(pow(rand, 1/3), min, max).
     static func sphereRadius(min: Double, max: Double, uniform01: Double) -> Double {
         let t = pow(Swift.max(0, Swift.min(1, uniform01)), 1.0 / 3.0)
         return min + t * (max - min)
     }
 
-    /// GenSphereSurfaceNormal: N(0, directions.axis) per positive axis, then normalize.
     static func sphereSurfaceDirection(
         directions: SIMD3<Double>,
         gaussian: (_ mean: Double, _ stddev: Double) -> Double
@@ -552,12 +466,10 @@ final class WPEParticleSystem {
         let v = directions.y > 0 ? gaussian(0, directions.y) : 0
         let w = directions.z > 0 ? gaussian(0, directions.z) : 0
         let norm = (u * u + v * v + w * w).squareRoot()
-        // All axes disabled (or, astronomically unlikely, all three Gaussian
         guard norm > 0 else { return SIMD3<Double>(0, 0, 0) }
         return SIMD3<Double>(u, v, w) / norm
     }
 
-    /// ApplySign: nonzero axis forces abs(value)*sign; zero axis passes sample through.
     static func applyEmitterSign(_ p: SIMD3<Double>, sign: SIMD3<Double>) -> SIMD3<Double> {
         SIMD3<Double>(
             sign.x != 0 ? Swift.abs(p.x) * sign.x : p.x,
@@ -572,14 +484,8 @@ final class WPEParticleSystem {
         return dispersal / length * speed
     }
 
-    /// Prewarm simulator without GPU write so first present already has a spread population.
-    /// `presimulateDelay: true` drops the dead zone: WPE documents `starttime` as
-    /// "pre-simulate the particle system … as if it has already been running for
-    /// the configured time", not as a wait. Measured against RenderDoc —
-    /// 3448877775's snowperspective (starttime 15) holds 344 particles at frame
-    /// time 4.851s, where a dead zone predicts 121; 3521337568's starttime-200
-    /// system holds 1251 at 13.4s. Both the oracle and the live path pass true —
-    /// see `particlePrewarmSeconds`, which feeds each its own window.
+    /// `starttime` is pre-sim, not a wait: 3448877775 snowperspective (starttime 15)
+    /// holds 344 at 4.851s; a dead zone predicts 121.
     func prewarm(simulatedSeconds: Double, step: Double = 1.0 / 60,
                  presimulateDelay: Bool = false) {
         guard step > 0,
@@ -595,19 +501,8 @@ final class WPEParticleSystem {
         endPrewarm()
     }
 
-    /// Virtual time of the last `prewarmStep`; non-nil only between
-    /// `beginPrewarm` and `endPrewarm`.
     private var prewarmVirtualNow: Double?
 
-    /// Set up tick bookkeeping and return the virtual-time span this system will
-    /// step, or nil when there is nothing to simulate. Split out of `prewarm` so
-    /// an `eventfollow` chain can be driven in lockstep — see
-    /// `prewarmParticleSystems`.
-    ///
-    /// `convergenceSeconds` overrides how far back the simulation actually has to
-    /// run (a follow chain passes the chain-wide value so a child never starts
-    /// before the parent it rides). The returned span starts at the first instant
-    /// that can still affect the end state — see `prewarmConvergenceStart`.
     func beginPrewarm(
         simulatedSeconds: Double,
         presimulateDelay: Bool,
@@ -630,41 +525,29 @@ final class WPEParticleSystem {
             simulatedSeconds: simulatedSeconds,
             convergenceSeconds: convergenceSeconds
         )
-        // The clock anchor stays at the TRUE start even when the head is skipped,
-        // so `systemElapsed` (which drives `overrideAlphaAnimation` and the
-        // startDelay gate) still reads the full window.
+        // Clock stays at the true start so `systemElapsed` still covers the full window.
         firstTickTime = 0
         lastTickTime = simulationStart
         prewarmVirtualNow = simulationStart
         if simulationStart > activeStart {
-            // The one-shot `instantaneous` burst fires at `activeStart`; skipping
-            // the head means its particles are already past `lifetimeMax` and
-            // dead, so it must NOT re-fire at the truncated start.
+            // Instantaneous burst already died in the skipped head — do not re-fire.
             hasEmittedBurst = true
         }
         return simulationStart...simulatedSeconds
     }
 
-    /// First instant that can still affect the end of the prewarm window.
-    /// Everything alive at `simulatedSeconds` was born within the last
-    /// `lifetimeMax` seconds, so simulating earlier is a treadmill: measured
-    /// (optimized build) 455 ms → 59.7 ms on a heavy `starttime: 200` emitter,
-    /// population unchanged at ~3500. A system whose authored lifetime exceeds
-    /// the window skips nothing — the 15 s control case stayed at 35 ms.
+    /// Skip birth-dead treadmill: starttime 200 went 455 ms → 59.7 ms, pop unchanged.
     private func prewarmConvergenceStart(
         activeStart: Double,
         simulatedSeconds: Double,
         convergenceSeconds: Double?
     ) -> Double {
-        // The system's OWN lifetime is always a lower bound — a chain-wide value
-        // may only extend the window, never truncate a longer-lived member.
-        // Floor of 1s: a degenerate lifetimeMax of 0 must still leave real steps.
+        // Own lifetime is a lower bound; floor 1s so lifetimeMax 0 still has steps.
         let converged = max(convergenceSeconds ?? 0, definition.lifetimeMax, 1.0)
         guard converged.isFinite else { return activeStart }
         return max(activeStart, simulatedSeconds - converged)
     }
 
-    /// One prewarm substep at `virtualNow` (this system's own clock).
     func prewarmStep(to virtualNow: Double) {
         guard prewarmVirtualNow != nil else { return }
         prewarmVirtualNow = virtualNow
@@ -675,18 +558,13 @@ final class WPEParticleSystem {
         guard let virtualNow = prewarmVirtualNow else { return }
         prewarmVirtualNow = nil
         presimulatingStartDelay = false
-        // Re-anchor tick bookkeeping after prewarm so live frames don't freeze until wall time catches up.
+        // Re-anchor so live frames don't freeze until wall time catches up.
         firstTickTime = -virtualNow
         lastTickTime = 0
-        // Drop the prewarm-era spawn events so the first real frame doesn't
-        // replay births the follow children already consumed during prewarm —
-        // dozens of flashes at positions the parent particles have long since
-        // left. Their effects are short-lived (3–4s in 3413921910) and the
-        // parent keeps spawning, so nothing is lost for long.
+        // Drop prewarm births so the first live frame doesn't replay them (3413921910).
         spawnEventsThisTick.removeAll()
     }
 
-    /// Shared draw attrs for sprite/rope: alpha envelope, size, tint, sway position.
     private func drawAttributes(
         of particle: Particle
     ) -> (position: SIMD3<Float>, rgb: SIMD3<Float>, alpha: Float, size: Float, lifetimeFraction: Float) {
@@ -708,7 +586,6 @@ final class WPEParticleSystem {
             ))
         }
         alpha = min(max(alpha, 0), 1)
-        // `sizechange`: lifetime-fraction multiplier on the sprite quad.
         var spriteSize = particle.size
         if let sizeChange = definition.sizeChange {
             spriteSize *= Float(sizeChange.factor(lifetimeFraction: Double(lifetimeFraction)))
@@ -720,26 +597,22 @@ final class WPEParticleSystem {
                 phase: Double(particle.oscSizePhase)
             ))
         }
-        // Re-apply the additive cap on the FINAL size: `sizechange` can grow
-        // the sprite past the spawn-time cap and re-hit the saturation path.
+        // Re-cap after `sizechange`, which can grow past the spawn-time additive limit.
         if blendMode == .additive {
             spriteSize = min(spriteSize, sceneTransform.sceneHeight)
         }
-        // colorchange RGB multiplier only when a colour initializer was authored.
         var rgb = particle.color
         if definition.hasColorInitializer, let colorChange = definition.colorChange {
             let c = colorChange.color(lifetimeFraction: Double(lifetimeFraction))
             rgb *= SIMD3<Float>(Float(c.x), Float(c.y), Float(c.z))
         }
-        // `oscillateposition`: transient sine sway (never integrated into
-        // the stored position, so the particle sways without drifting).
+        // Transient sine sway — never integrated into stored position.
         var drawPosition = particle.position
         if particle.oscPosScale != 0, particle.oscPosFrequency != 0 {
-            // frequency is angular rate (rad/s); phase in radians — do not multiply an extra 2π.
+            // frequency is rad/s, phase is radians — do not multiply an extra 2π.
             let sway = sin(particle.age * particle.oscPosFrequency + particle.oscPosPhase)
             drawPosition += oscillatePositionMask * (sway * particle.oscPosScale)
         }
-        // Perspective (`flags & 4`): project draw position + size through a depth
         if definition.isPerspective {
             let scale = perspectiveDepthScale(depth: particle.position.z)
             let vp = sceneTransform.renderOrigin
@@ -753,7 +626,6 @@ final class WPEParticleSystem {
         return (drawPosition, rgb, alpha, spriteSize, lifetimeFraction)
     }
 
-    /// depthScale in [1, 1+boost]; drives sprite size and draw-position projection.
     private func perspectiveDepthScale(depth z: Float) -> Float {
         let maxDepth = perspectiveDepthExtent()
         let t = min(max(z / maxDepth, 0), 1)
@@ -801,7 +673,6 @@ final class WPEParticleSystem {
             return
         }
         let pointer = instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: capacity)
-        // sequence = lifetime-relative cycles; random/once pick a fixed frame at spawn.
         let frameCount: Float = Float(max(1, spriteSheet?.frameCount ?? 1))
         let animatesSequence = definition.animationMode == .sequence && frameCount > 1
         let cyclesPerLifetime = max(0.0001, Float(definition.sequenceMultiplier))
@@ -821,7 +692,6 @@ final class WPEParticleSystem {
                 let raw = lifetimeFraction * cyclesPerLifetime * frameCount
                 frameIndex = raw.truncatingRemainder(dividingBy: frameCount)
             } else {
-                // `.randomFrame` (or single-frame sprite): the spawn-time
                 frameIndex = particle.staticFrame
             }
             pointer[written] = WPEParticleInstance(
@@ -837,7 +707,6 @@ final class WPEParticleSystem {
         aliveCount = written
     }
 
-    /// Rope ribbon: age-order knots, ±half-size along segment normal; coincident knots → zero area.
     private func buildRopeGeometry() {
         guard let buffer = ropeVertexBuffer else {
             aliveCount = 0
@@ -866,8 +735,7 @@ final class WPEParticleSystem {
 
         let verts = buffer.contents().bindMemory(to: WPEParticleRopeVertex.self, capacity: capacity * 2)
         let count = knots.count
-        // Carry the last valid normal across degenerate (coincident) segments so
-        // a momentary overlap doesn't collapse the ribbon to a spike.
+        // Carry the last valid normal across coincident knots so the ribbon does not spike.
         var lastNormal = SIMD2<Float>(0, 1)
         var written = 0
         for i in 0..<count {
@@ -883,7 +751,7 @@ final class WPEParticleSystem {
             }
             let knot = knots[i]
             let offset = normal * knot.halfSize
-            let along = Float(i) / Float(count - 1)   // v runs 0→1 head→tail
+            let along = Float(i) / Float(count - 1)
             verts[written] = WPEParticleRopeVertex(
                 positionUV: SIMD4<Float>(knot.position.x + offset.x, knot.position.y + offset.y, 0, along),
                 color: knot.color
@@ -897,8 +765,6 @@ final class WPEParticleSystem {
         ropeVertexCount = written
     }
 
-    /// `ropetrail`: one ribbon per particle through its own position history,
-    /// all packed into a single triangle strip joined by degenerate bridges.
     private func buildTrailGeometry() {
         guard let buffer = ropeVertexBuffer, trailPointCount >= 2 else {
             aliveCount = 0
@@ -920,19 +786,13 @@ final class WPEParticleSystem {
             let color = SIMD4<Float>(attrs.rgb.x, attrs.rgb.y, attrs.rgb.z, attrs.alpha)
             let halfSize = max(0, attrs.size * 0.5)
             resampleTrailRibbon(index, size: attrs.size, velocity: particle.velocity)
-            // The strip is continuous, so every ribbon after the first is joined to
-            // the previous one by two repeated vertices (zero-area triangles).
             let bridges = written > 0
             let ribbonStart = written + (bridges ? 2 : 0)
             var cursor = ribbonStart
-            // Same tangent/normal construction as `buildRopeGeometry`, including
-            // carrying the last valid normal across coincident points.
             var lastNormal = SIMD2<Float>(0, 1)
             for point in 0..<pointCount {
                 let prev = trailRibbonScratch[max(0, point - 1)]
                 let next = trailRibbonScratch[min(pointCount - 1, point + 1)]
-                // Points run newest→oldest, so the tangent points backwards along
-                // travel; the normal is perpendicular either way.
                 let tangent = next - prev
                 let length = (tangent.x * tangent.x + tangent.y * tangent.y).squareRoot()
                 var normal = lastNormal
@@ -943,7 +803,7 @@ final class WPEParticleSystem {
                 }
                 let position = trailRibbonScratch[point]
                 let offset = normal * halfSize
-                let along = Float(point) / Float(pointCount - 1)   // v runs 0→1 head→tail
+                let along = Float(point) / Float(pointCount - 1)
                 verts[cursor] = WPEParticleRopeVertex(
                     positionUV: SIMD4<Float>(position.x + offset.x, position.y + offset.y, 0, along),
                     color: color
@@ -964,12 +824,7 @@ final class WPEParticleSystem {
         ropeVertexCount = written
     }
 
-    /// Record this particle's current position as the newest ring sample.
-    ///
-    /// Stores the integrated position, not `drawAttributes`' — so an `oscillateposition`
-    /// ribbon would trail straight while its sprite sways. None of the 10 corpus
-    /// `ropetrail` definitions carries that operator (all are movement+alphafade,
-    /// one adds controlpointattract), so nothing exercises the gap today.
+    /// Integrated position, not draw-space: an `oscillateposition` ribbon would trail straight.
     private func pushTrailPoint(_ index: Int) {
         let ring = Self.trailSampleCapacity
         let head = (trailSampleHead[index] + 1) % ring
@@ -980,16 +835,13 @@ final class WPEParticleSystem {
         trailSampleFill[index] = min(trailSampleFill[index] + 1, ring)
     }
 
-    /// Collapse a slot's path onto the spawn point. Without this the ribbon draws
-    /// from the world origin on the first frame, and a reused slot inherits the
-    /// previous particle's path.
+    /// Reset onto the spawn point so a reused slot does not inherit the previous path.
     private func resetTrailHistory(_ index: Int, to position: SIMD3<Float>) {
         trailSampleHead[index] = 0
         trailSampleFill[index] = 1
         trailSamples[index * Self.trailSampleCapacity] = SIMD2<Float>(position.x, position.y)
     }
 
-    /// `back` samples before the newest one, clamped to what the ring holds.
     private func trailSample(_ index: Int, back: Int) -> SIMD2<Float> {
         let ring = Self.trailSampleCapacity
         let step = min(back, max(0, trailSampleFill[index] - 1))
@@ -997,19 +849,8 @@ final class WPEParticleSystem {
         return trailSamples[index * ring + slot]
     }
 
-    /// Walk the particle's recorded path backwards and drop `trailPointCount`
-    /// points at even arc-length intervals spanning the authored trail length.
-    ///
-    /// WPE's own reference scenes for BOTH trail renderers
-    /// (`assets/scenes/particleelementpreviews/{ropetrail,spritetrail}`) author
-    /// only `length`, never `subdivision` or `maxlength`, and the corpus spreads
-    /// `length` over 0.2…3 — so `length` is what sets how far back the ribbon
-    /// reaches, exactly as it does for `spritetrail` (`ComputeParticleTrailTangents`:
-    /// `clamp(speed·length, minlen, maxlength)` multiplying the sprite size).
-    /// `subdivision` only says how many segments that span is cut into.
-    ///
-    /// Sampling per tick and resampling by DISTANCE keeps the ribbon's world
-    /// length frame-rate independent; only the smoothness varies with frame rate.
+    /// Resample by distance so trail world-length is frame-rate independent.
+    /// `length` sets how far back; `subdivision` is only the segment count.
     private func resampleTrailRibbon(_ index: Int, size: Float, velocity: SIMD3<Float>) {
         let pointCount = trailPointCount
         let head = trailSample(index, back: 0)
@@ -1019,10 +860,7 @@ final class WPEParticleSystem {
         let trail = definition.trailRenderer
         let lengthCoefficient = Float(trail?.length ?? 0.05)
         let maxStretch = Float(trail?.maxLength ?? 10)
-        // The 1 floor is OURS, not WPE's: `spritetrail` passes minlen 0 and lets a
-        // stalled particle collapse its quad, but a collapsed RIBBON disappears
-        // entirely (scene 3426865175 parks meteors on a control point). One sprite
-        // size is the shortest ribbon that still reads as the sprite it's made of.
+        // Floor 1 is ours: a collapsed ribbon vanishes (3426865175 parks meteors on a CP).
         let stretch = max(1, min(speed * lengthCoefficient, maxStretch))
         let spacing = max(size, 0) * stretch / Float(pointCount - 1)
         guard spacing > 1e-4 else {
@@ -1040,7 +878,6 @@ final class WPEParticleSystem {
             let step = previous - current
             let stepLength = (step.x * step.x + step.y * step.y).squareRoot()
             if stepLength > 1e-6 {
-                // Emit every ribbon point that falls inside this path segment.
                 while point < pointCount, target <= travelled + stepLength {
                     let t = (target - travelled) / stepLength
                     trailRibbonScratch[point] = current + step * t
@@ -1052,9 +889,7 @@ final class WPEParticleSystem {
             current = previous
             back += 1
         }
-        // Ran out of recorded path (a young particle, or a trail longer than the
-        // ring): pin the rest to the oldest sample so the ribbon grows in from the
-        // spawn point instead of reaching back to somewhere it has never been.
+        // Pin leftover points to the oldest sample so a young trail does not invent history.
         while point < pointCount {
             trailRibbonScratch[point] = current
             point += 1
@@ -1063,10 +898,9 @@ final class WPEParticleSystem {
 
     var liveInstanceCount: Int { aliveCount }
 
-    /// True when control point 0 follows the cursor (particles spawn at the
     var tracksPointer: Bool { emitterTracksPointer }
 
-    /// Kill all live particles + emission backlog (Follow Cursor off must clear pointer spawns now).
+    /// Follow Cursor off must clear pointer-locked spawns immediately.
     func clearLiveParticles() {
         for index in 0..<capacity {
             particles[index].age = .greatestFiniteMagnitude
@@ -1075,7 +909,6 @@ final class WPEParticleSystem {
         spawnAccumulator = 0
     }
 
-    /// Representative live particle in render-frame coordinates, used as the
     var primaryLiveParticlePosition: SIMD3<Float>? {
         var bestPosition: SIMD3<Float>?
         var bestAge = Float.greatestFiniteMagnitude
@@ -1086,7 +919,6 @@ final class WPEParticleSystem {
         return bestPosition
     }
 
-    /// Integrate every alive particle and spawn new ones. Split from
     private var systemElapsed: Double = 0
 
     private func advance(now: Double) {
@@ -1101,11 +933,10 @@ final class WPEParticleSystem {
         }
         let elapsed = now - (firstTickTime ?? now)
         systemElapsed = elapsed
-        // WPE's drag is `-2·strength·v` (algorism.h `DragForce`: `-2.0 * speed *
+        // Drag is `-2·strength·v` (algorism.h `DragForce`).
         let dragScalar: Float = max(0, 1 - 2 * Float(definition.drag) * dt)
         let angularDragScalar: Float = max(0, 1 - 2 * Float(definition.angularDrag) * dt)
         let angularForce = sceneTransform.visualAngularZ(localAngularZ: Float(definition.angularForceZ))
-        // `turbulence` OPERATOR: a per-frame curl-noise wind, applied in render
         let turbulenceOp = definition.turbulence
         let turbulenceScale = turbulenceOp.map { $0.scale * 2 } ?? 0
         let turbulenceTimescale = turbulenceOp.map(\.timescale) ?? 0
@@ -1121,10 +952,8 @@ final class WPEParticleSystem {
                 particles[index].age = .greatestFiniteMagnitude
                 continue
             }
-            // Linear motion with gravity + drag.
             particles[index].velocity += gravity * dt
             if dragScalar < 1 { particles[index].velocity *= dragScalar }
-            // Control-point attract/repel (cursor follow/avoid). Force points
             if !attractors.isEmpty {
                 let pos = particles[index].position
                 var affectedThisParticle = false
@@ -1145,8 +974,6 @@ final class WPEParticleSystem {
             }
             if turbulenceOp != nil, particles[index].turbulenceSpeed > 0 {
                 let pos = particles[index].position
-                // Scroll the field along X by phase + timescale·t, then sample the
-                // curl direction and accelerate along it (masked per axis).
                 let sample = SIMD3<Double>(
                     Double(pos.x) + Double(particles[index].turbulencePhase) + turbulenceTimescale * elapsed,
                     Double(pos.y),
@@ -1159,7 +986,6 @@ final class WPEParticleSystem {
                 particles[index].velocity.z += Float(dir.z * speed * turbulenceMask.z) * dt
             }
             particles[index].position += particles[index].velocity * dt
-            // Angular motion with force + drag.
             particles[index].angularVelocityZ += angularForce * dt
             if angularDragScalar < 1 { particles[index].angularVelocityZ *= angularDragScalar }
             particles[index].rotationZ += particles[index].angularVelocityZ * dt
@@ -1167,10 +993,7 @@ final class WPEParticleSystem {
         }
         lastAttractorAffectedCount = attractorAffectedThisTick
 
-        // `duration` bounds births only. Existing particles continue integrating
-        // and expire through their own lifetime after the emitter has stopped.
-        // During authored pre-simulation, starttime is elapsed history rather
-        // than a delay, so the duration window begins at virtual time zero.
+        // `duration` bounds births only. After pre-sim, starttime is history so the window starts at 0.
         let emissionStart = presimulatingStartDelay || startDelayWasPresimulated
             ? 0
             : max(0, definition.startDelay)
@@ -1185,13 +1008,11 @@ final class WPEParticleSystem {
                     if isWithinDuration { emitFollowBursts() }
                 } else if !hasEmittedBurst,
                           isWithinDuration || (lastTickTime ?? emissionStart) <= emissionStart {
-                    // One-time `instantaneous` burst (explosions, fireworks, initial
                     var blocked = false
                     for _ in 0..<definition.instantaneousCount {
                         guard let slot = nextFreeSlot() else { break }
                         if !spawn(into: slot) {
-                            // Pointer-locked emitter with no live cursor: retry the
-                            // whole burst next tick rather than burning it on a no-op.
+                            // No live cursor: retry the burst next tick instead of burning it.
                             blocked = true
                             break
                         }
@@ -1199,7 +1020,6 @@ final class WPEParticleSystem {
                     if !blocked { hasEmittedBurst = true }
                 }
             }
-            // Continuous `rate` emission (particles per second).
             if isWithinDuration, definition.rate > 0 {
                 spawnAccumulator += Double(dt) * definition.rate
                 while spawnAccumulator >= 1 {
@@ -1207,14 +1027,12 @@ final class WPEParticleSystem {
                     guard let slot = nextFreeSlot() else { break }
                     spawn(into: slot)
                 }
-                // While the pool is saturated (rate × lifetime > maxCount) the
                 spawnAccumulator = min(spawnAccumulator, 1)
             }
         }
     }
 
     #if !LITE_BUILD && DEBUG
-    /// Dev-only: per-alive-particle state for oracle comparison against WPE's
     func particleStateDumpText() -> String {
         var lines: [String] = [
             "object=\(traceObjectID ?? "?") particle=\(traceParticlePath ?? "?")",
@@ -1242,12 +1060,6 @@ final class WPEParticleSystem {
         return lines.joined(separator: "\n")
     }
 
-    /// Dev-only: what the GPU actually consumes this frame, as trace records —
-    /// the Mac mirror of the Windows trace's decoded `POINTLIST` vertex buffers
-    /// (`parse_capture.py decode_draw_vertices`, same 256 cap). Sprite systems
-    /// read the compacted instance buffer (draw position, fade-applied alpha);
-    /// ribbon systems read the rope strip's knot vertices instead, because the
-    /// instance buffer is not what they draw.
     func particleTraceVertices(limit: Int = 256) -> (records: [[String: Any]], truncated: Bool) {
         var records: [[String: Any]] = []
         if usesRibbonGeometry {
@@ -1292,7 +1104,7 @@ final class WPEParticleSystem {
     }
     #endif
 
-    /// alphafade.fadeintime / fadeouttime are **lifetime fractions** in
+    /// `fadeintime` / `fadeouttime` are lifetime fractions, not seconds.
     private func fadeEnvelope(age: Float, lifetime: Float) -> Float {
         guard lifetime > 0 else { return 1 }
         let fraction = max(0, min(1, age / lifetime))
@@ -1309,14 +1121,9 @@ final class WPEParticleSystem {
         return value
     }
 
-    /// `eventfollow` + `instantaneous`: fire one burst at each position the parent
-    /// spawned a particle at this tick. The two children of scene 3413921910's
-    /// meteor emitter carry no velocity and zero gravity, so the burst is a
-    /// birth-point flash, not something that rides the parent.
+    /// 3413921910 meteor children are a birth-point flash (no velocity/gravity).
     private func emitFollowBursts() {
         guard let parent = followParent, !parent.spawnEventsThisTick.isEmpty else { return }
-        // `spawn` reads the follow position from the injected control point, so
-        // point it at each event in turn and restore the frame's value afterwards.
         let injected = injectedControlPoints[followControlPointID]
         defer {
             if let injected {
@@ -1326,9 +1133,7 @@ final class WPEParticleSystem {
             }
         }
         for event in parent.spawnEventsThisTick {
-            // One roll per event: WPE's `probability` is "the chance the child is
-            // spawned when the event condition is met", so a 0.5 child accompanies
-            // half the parent's particles rather than half of all sessions.
+            // One roll per event: 0.5 accompanies half the parent's particles, not half of sessions.
             if spawnProbability < 1, Double.random(in: 0..<1, using: &rng) >= spawnProbability {
                 continue
             }
@@ -1349,14 +1154,12 @@ final class WPEParticleSystem {
         return nil
     }
 
-    /// Spawns into `slot`, returning whether a particle was actually written.
     @discardableResult
     private func spawn(into slot: Int) -> Bool {
-        // Y-up author space: emitter origin and per-particle velocity are
+        // Y-up: emitter origin and velocity stay as authored.
         let dispersal: SIMD3<Float>
         switch definition.emitterShape {
         case .box:
-            // `boxrandom`: uniform per axis within ±half-extent around the origin —
             let ext = definition.dispersalMax
             dispersal = SIMD3<Float>(
                 Float(uniform(-ext.x, ext.x)),
@@ -1394,23 +1197,17 @@ final class WPEParticleSystem {
         }
         let position: SIMD3<Float>
         if requiresFollowParent {
-            // Event-follow child: ride the parent's live particle. Skip spawning
-            // when the parent has no live particle this frame (no stale origin).
             guard let followPosition = injectedControlPoints[followControlPointID] else { return false }
-            // The parent particle is already in render space and already carries
             position = followPosition + sceneTransform.applyModelDirection(dispersal)
         } else if emitterTracksPointer {
-            // Pointer-locked emitter (control point 0 tracks the cursor): spawn
             guard let p = pointerCentered else { return false }
             position = SIMD3<Float>(p.x, p.y, 0) + sceneTransform.applyModelDirection(localPoint)
         } else {
             position = sceneTransform.applyModelMatrix(toLocalPoint: localPoint)
         }
         let velocity = sceneTransform.applyModelDirection(localVelocity)
-        // REFRACT "lens water" droplets: the object scale (e.g. 3.52×) is there to
         let sizeScale = (isRefract || isNestedChildSystem) ? 1.0 : sceneTransform.worldSizeMultiplier()
-        // `sizerandom` exponent: WPE samples min + (max-min)·rand^exp (exp>1
-        // biases toward min). `uniform` is exp==1; only pay `pow` when it differs.
+        // `sizerandom`: min + (max-min)·rand^exp (exp>1 biases toward min).
         let sizeSample: Double
         if abs(definition.sizeExponent - 1) < 0.0001 {
             sizeSample = uniform(definition.sizeMin, definition.sizeMax)
@@ -1421,7 +1218,6 @@ final class WPEParticleSystem {
             sizeSample = definition.sizeMin
         }
         var size = Float(sizeSample) * sizeScale
-        // Blend-aware cap: a hugely-scaled ADDITIVE emitter (e.g. 3426865175's
         if blendMode == .additive {
             size = min(size, sceneTransform.sceneHeight)
         }
@@ -1430,7 +1226,6 @@ final class WPEParticleSystem {
         let alpha = Float(uniform(definition.alphaMin, definition.alphaMax))
         let rotationVec = uniformVector(definition.rotationMin, definition.rotationMax)
         let angularVec = uniformVector(definition.angularVelocityMin, definition.angularVelocityMax)
-        // Per-particle wind speed/phase for the `turbulence` OPERATOR only. Drawn
         let turbulenceSpeed: Float
         let turbulencePhase: Float
         if let turb = definition.turbulence {
@@ -1446,7 +1241,7 @@ final class WPEParticleSystem {
         if let osc = definition.oscillatePosition {
             oscPosFrequency = Float(uniform(osc.frequencyMin, osc.frequencyMax))
             oscPosScale = Float(uniform(osc.scaleMin, osc.scaleMax))
-            // WPE samples the phase over [phasemin, phasemax + 2π] so a preset
+            // Phase is sampled over [phasemin, phasemax + 2π].
             oscPosPhase = Float(uniform(osc.phaseMin, osc.phaseMax + 2 * .pi))
         } else {
             oscPosFrequency = 0
@@ -1471,7 +1266,6 @@ final class WPEParticleSystem {
             oscSizeFrequency = 0
             oscSizePhase = 0
         }
-        // `.randomFrame`: lock onto one atlas cell for life so each shard
         let staticFrame: Float
         if definition.animationMode == .randomFrame, let sheet = spriteSheet, sheet.frameCount > 1 {
             staticFrame = Float(Int.random(in: 0..<sheet.frameCount, using: &rng))
@@ -1508,18 +1302,15 @@ final class WPEParticleSystem {
         return true
     }
 
-    /// `turbulentvelocityrandom` spawn velocity in emitter-local space. A curl-noise
     private func seedTurbulentVelocity(_ tvi: WPEParticleTurbulentVelocityInit) -> SIMD3<Float> {
         let speed = uniform(tvi.speedMin, tvi.speedMax)
-        // The emit interval is how much field time this particle owns (WPE hands
         var duration = definition.rate > 0 ? 1 / definition.rate : .infinity
         if duration > 10 {
             turbulentSamplePoint.x += speed
             duration = 0
         }
         let forward = simd_normalize(tvi.forward)
-        // `timescale` = how fast the field evolves, so it divides the step. Guard
-        // the division: an authored 0 would send the sample point to infinity.
+        // Guard 0: timescale divides the step and would send the sample to infinity.
         let timescale = tvi.timescale.isFinite && tvi.timescale > 0 ? tvi.timescale : 1
         let step = 0.005 / timescale
         var dir: SIMD3<Double>
@@ -1528,7 +1319,6 @@ final class WPEParticleSystem {
             turbulentSamplePoint += dir * step
             duration -= 0.01
         } while duration > 0.01
-        // Cone limit: `scale` is the cone width as a hemisphere fraction (2 =
         let coneFrac = tvi.scale / 2
         let c = min(max(simd_dot(dir, forward), -1), 1)
         let a = acos(c) / .pi

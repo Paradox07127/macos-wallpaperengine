@@ -149,16 +149,18 @@ struct WorkshopPaneView: View {
         }
     }
 
-    /// Switch to Browse Online scoped to the tapped tag, building the Browse
-    /// view-model on demand (the Installed tab may never have opened Browse).
+    /// Builds the Browse view-model on demand (the Installed tab may never have
+    /// opened Browse) and remembers it for reuse.
+    private func resolveBrowseViewModel() -> WorkshopBrowseViewModel {
+        if let existing = browseViewModel { return existing }
+        let created = WorkshopBrowseViewModel(services: services)
+        browseViewModel = created
+        return created
+    }
+
+    /// Switch to Browse Online scoped to the tapped tag.
     private func browseByTag(_ tag: String) {
-        let viewModel: WorkshopBrowseViewModel
-        if let existing = browseViewModel {
-            viewModel = existing
-        } else {
-            viewModel = WorkshopBrowseViewModel(services: services)
-            browseViewModel = viewModel
-        }
+        let viewModel = resolveBrowseViewModel()
         selectedTab = .browseOnline
         Task { await viewModel.browseTag(tag) }
     }
@@ -166,13 +168,7 @@ struct WorkshopPaneView: View {
     /// Consumes a one-shot deep link: switch to Browse Online and search for the target.
     private func consumePendingDeepLink() {
         guard let query = WorkshopDeepLink.takePendingSearch() else { return }
-        let viewModel: WorkshopBrowseViewModel
-        if let existing = browseViewModel {
-            viewModel = existing
-        } else {
-            viewModel = WorkshopBrowseViewModel(services: services)
-            browseViewModel = viewModel
-        }
+        let viewModel = resolveBrowseViewModel()
         selectedTab = .browseOnline
         Task {
             viewModel.searchInput = query

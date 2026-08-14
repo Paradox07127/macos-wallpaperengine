@@ -111,7 +111,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !runtimeOptions.isTesting {
             lifecycle.schedule { [weak self] in
                 guard let self, self.lifecycle.allowsWork else { return }
-                guard self.lifecycle.allowsWork else { return }
                 self.completeApplicationStartup(startupPlan)
             }
             return

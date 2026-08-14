@@ -30,7 +30,6 @@ extension WPEShaderTranspiler {
         varyingTypesByName: [String: String] = [:],
         preserveTexCoordZW: Bool = false,
         premultipliedInputSlots: Set<Int> = [],
-        repeatSamplers: Set<String> = [],
         uniforms: [WPEUniformDecl] = [],
         // `main`'s body is substituted separately from the helper block it calls into, so the
         // helper sources come along to keep the function-signature table complete.
@@ -62,8 +61,8 @@ extension WPEShaderTranspiler {
         }
         s = rewriteReservedIdentifiers(s)
         s = canonicalizeTextureSampleAliases(s)
-        s = rewriteTextureLodCalls(s, premultipliedInputSlots: premultipliedInputSlots, repeatSamplers: repeatSamplers)
-        s = rewriteTextureCalls(s, premultipliedInputSlots: premultipliedInputSlots, repeatSamplers: repeatSamplers)
+        s = rewriteTextureLodCalls(s, premultipliedInputSlots: premultipliedInputSlots)
+        s = rewriteTextureCalls(s, premultipliedInputSlots: premultipliedInputSlots)
         s = rewriteTexCoordTextureSampleUVFallback(s)
         s = rewriteTextureSampleNarrowing(s)
         s = rewriteVector4TextureSampleLocalsInSampleCoordinates(s)
@@ -1238,8 +1237,7 @@ extension WPEShaderTranspiler {
     /// `texture(` pass never sees `textureLod`.
     private static func rewriteTextureLodCalls(
         _ source: String,
-        premultipliedInputSlots: Set<Int> = [],
-        repeatSamplers: Set<String> = []
+        premultipliedInputSlots: Set<Int> = []
     ) -> String {
         var result = ""
         result.reserveCapacity(source.count)
@@ -1281,16 +1279,13 @@ extension WPEShaderTranspiler {
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                         let uv = rewriteTextureLodCalls(
                             String(source[source.index(after: firstComma)..<lodComma]),
-                            premultipliedInputSlots: premultipliedInputSlots,
-                            repeatSamplers: repeatSamplers
+                            premultipliedInputSlots: premultipliedInputSlots
                         ).trimmingCharacters(in: .whitespacesAndNewlines)
                         let lod = rewriteTextureLodCalls(
                             String(source[source.index(after: lodComma)..<cursor]),
-                            premultipliedInputSlots: premultipliedInputSlots,
-                            repeatSamplers: repeatSamplers
+                            premultipliedInputSlots: premultipliedInputSlots
                         ).trimmingCharacters(in: .whitespacesAndNewlines)
-                        let samplerState = repeatSamplers.contains(sampler) ? "repeatSampler" : "linearSampler"
-                        var sample = "\(sampler).sample(\(samplerState), \(uv), level(\(lod)))"
+                        var sample = "\(sampler).sample(linearSampler, \(uv), level(\(lod)))"
                         if shouldUnpremultiplySample(sampler: sampler, premultipliedInputSlots: premultipliedInputSlots) {
                             sample = "wpe_unpremultiply_sample(\(sample))"
                         }
@@ -1309,8 +1304,7 @@ extension WPEShaderTranspiler {
     /// Rewrite `texture(<sampler>, <uv>)` calls (already canonicalised by the preprocessor) into Metal `<sampler>.sample(linearSampler, uv)` form.
     private static func rewriteTextureCalls(
         _ source: String,
-        premultipliedInputSlots: Set<Int> = [],
-        repeatSamplers: Set<String> = []
+        premultipliedInputSlots: Set<Int> = []
     ) -> String {
         var result = ""
         result.reserveCapacity(source.count)
@@ -1348,11 +1342,9 @@ extension WPEShaderTranspiler {
                         // sampler arg is always a bare identifier and cannot nest.
                         let uv = rewriteTextureCalls(
                             String(source[source.index(after: comma)..<cursor]),
-                            premultipliedInputSlots: premultipliedInputSlots,
-                            repeatSamplers: repeatSamplers
+                            premultipliedInputSlots: premultipliedInputSlots
                         ).trimmingCharacters(in: .whitespacesAndNewlines)
-                        let samplerState = repeatSamplers.contains(sampler) ? "repeatSampler" : "linearSampler"
-                        var sample = "\(sampler).sample(\(samplerState), \(uv))"
+                        var sample = "\(sampler).sample(linearSampler, \(uv))"
                         if shouldUnpremultiplySample(sampler: sampler, premultipliedInputSlots: premultipliedInputSlots) {
                             sample = "wpe_unpremultiply_sample(\(sample))"
                         }

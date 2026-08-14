@@ -28,8 +28,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     /// per-load-cached flags elsewhere in the renderer, this one takes effect
     /// without restarting.
     static let mipChainDefaultsKey = "WPEMetalMipChainEnabled"
-    static var isMipChainEnabled: Bool { readMipChainEnabled() }
-    static func readMipChainEnabled() -> Bool {
+    static var isMipChainEnabled: Bool {
         UserDefaults.standard.bool(forKey: mipChainDefaultsKey)
     }
 

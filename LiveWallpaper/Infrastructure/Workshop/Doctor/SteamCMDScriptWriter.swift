@@ -2,9 +2,9 @@
 import Darwin
 import Foundation
 
-/// working directory. `+args` mode silently allows interactive prompts on
-/// cache miss, so every download path uniformly drives SteamCMD through a
-/// script that opens with `@ShutdownOnFailedCommand 1` + `@NoPromptForPassword 1`.
+/// Username validation gate for every SteamCMD/XPC entry point. Script-writing
+/// used to live here; it moved into the connector along with every other Steam
+/// write (see `SteamWriteOwnershipTests`), leaving only this check behind.
 enum SteamCMDScriptWriter {
     /// `^[A-Za-z0-9_]{1,32}$` — Steam's documented login-name charset.
     static func validateUsername(_ username: String) -> Bool {

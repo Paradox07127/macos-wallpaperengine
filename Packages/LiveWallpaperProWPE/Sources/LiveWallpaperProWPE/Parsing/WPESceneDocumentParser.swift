@@ -861,9 +861,9 @@ public enum WPESceneDocumentParser {
 
     /// WPE binds a transform component to a user property as
     /// `{"user": "newpropertyN", "value": "0.5 0.5 0.5"}`; the resolved value is
-    /// in `value`. Unwrap it in the APP target (not just the package's vector3,
-    /// which a stale incremental build may not recompile) so a property-bound
-    /// scale/origin resolves instead of defaulting.
+    /// in `value`. `WPEValueParser.vector3` unwraps that itself, but the scalar
+    /// path does not — `parseScale`'s uniform-scalar fallback goes through
+    /// `parseDouble`, so without this a property-bound uniform scale defaults to 1.
     private static func resolveBoundTransformValue(_ raw: Any?) -> Any? {
         if let dict = raw as? [String: Any], let value = dict["value"] {
             return value
@@ -2247,8 +2247,8 @@ public enum WPESceneDocumentParser {
             guard let dict = entry as? [String: Any] else { return nil }
             return WPESceneEffectPassOverride(
                 id: parseInt(dict["id"]),
-                combos: parseComboMap(dict["combos"]),
-                constants: parseShaderConstants(dict["constantshadervalues"]),
+                combos: WPEValueParser.comboMap(dict["combos"]),
+                constants: WPEValueParser.shaderConstants(dict["constantshadervalues"]),
                 textures: parseTextureSlots(dict["textures"]),
                 userTextures: parseUserTextureBindings(dict["usertextures"]),
                 constantScripts: parseConstantScripts(dict["constantshadervalues"])
@@ -2265,7 +2265,7 @@ public enum WPESceneDocumentParser {
         let userTextures = parseUserTextureBindings(dict["usertextures"])
         return WPESceneMaterialInstance(
             id: parseInt(dict["id"]),
-            combos: parseComboMap(dict["combos"]),
+            combos: WPEValueParser.comboMap(dict["combos"]),
             textures: parseTextureSlots(dict["textures"]),
             userTextures: userTextures
         )
@@ -2344,14 +2344,6 @@ public enum WPESceneDocumentParser {
             ))
         }
         return layers
-    }
-
-    private static func parseComboMap(_ raw: Any?) -> [String: Int] {
-        WPEValueParser.comboMap(raw)
-    }
-
-    private static func parseShaderConstants(_ raw: Any?) -> [String: WPESceneShaderConstantValue] {
-        WPEValueParser.shaderConstants(raw)
     }
 
     private static func parseTextureSlots(_ raw: Any?) -> [Int: String] {

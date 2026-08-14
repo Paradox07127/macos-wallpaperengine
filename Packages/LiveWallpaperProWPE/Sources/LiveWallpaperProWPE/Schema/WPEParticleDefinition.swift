@@ -533,15 +533,15 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     /// empty `renderer: []` array only emits/expands its children and must NOT
     /// register a drawable system (it has no material/sprite of its own).
     public let rendersSprite: Bool
+    /// Keyframed `instanceoverride.alpha`, applied per frame by the system
+    /// (NOT baked into `alphaMin/alphaMax` — see `applying(instanceOverride:)`).
+    public let overrideAlphaAnimation: WPESceneAnimatedValue?
     /// `renderer: [{name:"rope"}]` — a ribbon/trail that connects its particles
     /// in emission order into one textured strip (meteor tails, cursor trails)
     /// instead of N independent billboards. Drawn as a per-frame triangle strip,
     /// NOT instanced quads: stacking the quads (all knots spawn at one point with
     /// no spread, relying on the rope to spread them along the control-point path)
     /// piled into an additive white blob (scene 3351072238).
-    /// Keyframed `instanceoverride.alpha`, applied per frame by the system
-    /// (NOT baked into `alphaMin/alphaMax` — see `applyingInstanceOverride`).
-    public let overrideAlphaAnimation: WPESceneAnimatedValue?
     public let isRope: Bool
     /// `spritetrail` (kind `.sprite`) orients + stretches the quad along velocity.
     /// `ropetrail` (kind `.rope`) ribbons through each particle's OWN position
@@ -946,6 +946,7 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             materialRelativePath: materialRelativePath,
             childReferences: childReferences,
             rendersSprite: rendersSprite,
+            overrideAlphaAnimation: overrideAlphaAnimation,
             isRope: isRope,
             trailRenderer: trailRenderer,
             maxCount: maxCount,
@@ -1163,7 +1164,7 @@ public enum WPEParticleDefinitionParser {
 
         if let first = firstEmitter {
             // WPE's emitter `rate` defaults to 5.0 when the key is absent
-            // (verified against ground truth; provenance in docs/wpe-parity). Ours
+            // (verified against ground truth; provenance in .notes/wpe-parity). Ours
             // was 0, i.e. silence: 19 emitters across 16 installed scenes omit the
             // key and emitted nothing at all (dust motes, snow, fog, shooting
             // stars, leaves). NOT the per-instance-override `rate` default of 1.0 —

@@ -531,9 +531,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Ticks all text scripts because hidden text objects may populate shared state
-    /// consumed by visible text objects.
-
     /// Hand this frame's `ISoundLayer` calls to the audio runtime. Scripts enqueue
     /// onto `shared` from their own queues; applying them here keeps AVAudioEngine
     /// touched from one place.
@@ -544,6 +541,8 @@ extension WPEMetalSceneRenderer {
         }
     }
 
+    /// Ticks ALL text scripts, including hidden objects — a hidden one may populate
+    /// the shared state a visible object consumes.
     private func tickTextContentScripts(runtimeSeconds: Double) -> [String: String] {
         var liveTextByID: [String: String] = [:]
         liveTextByID.reserveCapacity(textScriptInstances.count)

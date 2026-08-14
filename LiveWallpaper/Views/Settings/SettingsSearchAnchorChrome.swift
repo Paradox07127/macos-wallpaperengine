@@ -32,23 +32,18 @@ extension View {
 }
 
 struct SettingsSearchSectionHeader: View {
-    private enum Title {
-        case localized(String)
-        case verbatim(String)
-    }
-
-    private let title: Title
+    private let titleKey: String
     private let anchor: SettingsSearchAnchor
 
     @Environment(\.highlightedSettingsSearchAnchor) private var highlightedAnchor
 
     init(_ titleKey: String, anchor: SettingsSearchAnchor) {
-        self.title = .localized(titleKey)
+        self.titleKey = titleKey
         self.anchor = anchor
     }
 
     var body: some View {
-        header
+        Text(LocalizedStringKey(titleKey))
             .id(anchor)
             .background {
                 if isHighlighted {
@@ -71,16 +66,6 @@ struct SettingsSearchSectionHeader: View {
 
     private var isHighlighted: Bool {
         highlightedAnchor == anchor
-    }
-
-    @ViewBuilder
-    private var header: some View {
-        switch title {
-        case .localized(let titleKey):
-            Text(LocalizedStringKey(titleKey))
-        case .verbatim(let title):
-            Text(verbatim: title)
-        }
     }
 }
 

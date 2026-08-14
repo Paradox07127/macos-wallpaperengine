@@ -98,7 +98,7 @@ final class WPEMetalPipelineCache {
         attachment.writeMask = policy.writeMask
     }
 
-    private static func applyBlendMode(
+    static func applyBlendMode(
         _ mode: String,
         to attachment: MTLRenderPipelineColorAttachmentDescriptor
     ) {

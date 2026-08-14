@@ -3,9 +3,9 @@
     import LiveWallpaperCore
 
     extension WPEMetalSceneRenderer {
-        /// Reload an evicted static texture off the main thread, then republish on the
-        /// main actor under a `loadGeneration` guard so a reload from a prior scene is
-        /// ignored. Triggers a redraw so the placeholder is replaced once resident.
+        /// Reload an evicted static texture off-actor, then republish on the display
+        /// render actor under a `loadGeneration` guard so a reload from a prior scene
+        /// is ignored. Triggers a redraw so the placeholder is replaced once resident.
         /// Failed attempts back off per path (`WPEStaticTextureReloadThrottle`).
         func scheduleStaticTextureReload(for path: String) {
             guard didLoad,

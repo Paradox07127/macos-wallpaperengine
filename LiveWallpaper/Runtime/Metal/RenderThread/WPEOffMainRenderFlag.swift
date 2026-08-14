@@ -11,7 +11,8 @@ import Foundation
 ///
 /// The "Multithreaded rendering" setting writes this default-on key; `false`
 /// selects main-thread rendering:
-///   defaults write com.livewallpaper loomscreen.wallpapers.offMainRender.v1 -bool false
+///   defaults write com.loomscreen.pro loomscreen.wallpapers.offMainRender.v1 -bool false
+/// (Lite's domain is `com.loomscreen`; `com.livewallpaper` is the Logger subsystem, not a defaults domain.)
 enum WPEOffMainRenderFlag {
     static let defaultsKey = "loomscreen.wallpapers.offMainRender.v1"
 

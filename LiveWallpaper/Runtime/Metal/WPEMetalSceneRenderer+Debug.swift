@@ -403,15 +403,11 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Debug staging & frame sync
 
-    /// One-shot debug breadcrumb shared by every load-path stage. Emits to
-    /// the `wpeRender` os.Logger category AND mirrors into the per-scene
-    /// `scene.log` so the file artifact stays self-contained without the
-    /// reader having to cross-reference Console.app.
-    /// Per-load stage breadcrumb. Gated on the scene-debug switch (Developer
-    /// Tools → "Scene debug artifacts"), which is off by default — so a normal
-    /// run emits none of these and, because `detail` is `@autoclosure`, never
-    /// even builds the (per-stage, per-pass) interpolated strings. Flip the
-    /// switch on to get the full console + scene.log stage trace back.
+    /// Per-load stage breadcrumb: emits to the `wpeRender` os.Logger category AND
+    /// mirrors into the per-scene `scene.log` so the file artifact stays readable
+    /// without cross-referencing Console.app. Gated on `WPESceneDebugArtifactsEnabled`
+    /// (off by default), and `detail` is `@autoclosure` so a normal run never even
+    /// builds the per-stage interpolated strings.
     func debugStage(_ stage: String, _ detail: @autoclosure () -> String) {
         guard WPESceneDebugArtifacts.shared.isEnabled else { return }
         let detail = detail()

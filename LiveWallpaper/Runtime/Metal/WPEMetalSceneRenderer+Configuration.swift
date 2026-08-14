@@ -4,9 +4,6 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import MetalKit
 
-// Static, defaults-backed configuration for the renderer (frame-rate targets,
-// texture-cache budget, prewarm/intro/async-tick switches). Split out of the
-// base type so the hotspot file stays lean; all members are `static`.
 extension WPEMetalSceneRenderer {
     /// Default frame rate target when no user override has been applied.
     /// 30 FPS matches Wallpaper Engine's stock default (the official

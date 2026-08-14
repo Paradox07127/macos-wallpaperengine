@@ -1579,8 +1579,7 @@ struct WPEMetalRenderExecutorTests {
                     slotCount: 1
                 )
             ],
-            texturesBySlot: [1: mask],
-            destinationTexture: destination
+            texturesBySlot: [1: mask]
         )
 
         #expect(slots[0] == SIMD4<Float>(8, 4, 8, 4))

@@ -19,7 +19,6 @@ struct SteamWriteOwnershipTests {
 
     private static let appSources = [
         "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift",
-        "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorOperations.swift",
         "LiveWallpaper/Infrastructure/Workshop/WPEEngineAssetsInstaller.swift",
         "LiveWallpaper/Views/Workshop/WorkshopInstalledLibraryModel.swift"
     ]
@@ -29,7 +28,7 @@ struct SteamWriteOwnershipTests {
         let doctor = try Self.source(Self.appSources[0])
         #expect(doctor.contains("SteamConnectorClient.downloadWorkshopItem"))
 
-        let model = try Self.source(Self.appSources[3])
+        let model = try Self.source(Self.appSources[2])
         #expect(model.contains("deleteSharedRepositoryItem"))
 
         let view = try Self.source("LiveWallpaper/Views/Workshop/WorkshopInstalledView.swift")
@@ -38,7 +37,7 @@ struct SteamWriteOwnershipTests {
 
     @Test("Wallpaper Engine install and update go through the connector")
     func engineAssetsAreDelegated() throws {
-        let installer = try Self.source(Self.appSources[2])
+        let installer = try Self.source(Self.appSources[1])
         #expect(installer.contains("SteamConnectorClient.installWallpaperEngineAssets"))
         #expect(installer.contains("SteamConnectorClient.latestWallpaperEngineBuildID"))
     }
