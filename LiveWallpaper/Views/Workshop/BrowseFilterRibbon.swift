@@ -384,21 +384,21 @@ private struct WorkshopChipFlow: Layout {
         }
     }
 
-    private struct Row {
+    private struct ChipRow {
         var indices: [Int] = []
         var width: CGFloat = 0
         var height: CGFloat = 0
     }
 
-    private func computeRows(maxWidth: CGFloat, subviews: Subviews) -> [Row] {
-        var rows: [Row] = []
-        var current = Row()
+    private func computeRows(maxWidth: CGFloat, subviews: Subviews) -> [ChipRow] {
+        var rows: [ChipRow] = []
+        var current = ChipRow()
         for index in subviews.indices {
             let size = subviews[index].sizeThatFits(.unspecified)
             let projected = current.indices.isEmpty ? size.width : current.width + spacing + size.width
             if projected > maxWidth, !current.indices.isEmpty {
                 rows.append(current)
-                current = Row(indices: [index], width: size.width, height: size.height)
+                current = ChipRow(indices: [index], width: size.width, height: size.height)
             } else {
                 if !current.indices.isEmpty { current.width += spacing }
                 current.indices.append(index)

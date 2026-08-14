@@ -225,7 +225,7 @@ struct PasteSheet: View {
     }
 
     /// Rows that have an id and are not already downloading or installed.
-    private var downloadableRows: [WorkshopPasteQueueModel.Row] {
+    private var downloadableRows: [WorkshopPasteQueueModel.QueueRow] {
         guard doctor.isDownloadReady else { return [] }
         return model.rows.filter { row in
             guard let id = row.publishedFileID else { return false }
@@ -237,13 +237,13 @@ struct PasteSheet: View {
 
     /// `nil` hides the button: no id to download, or SteamCMD hasn't been set up
     /// and signed in, in which case the Workshop setup sheet is the way through.
-    private func downloadAction(for row: WorkshopPasteQueueModel.Row) -> (() -> Void)? {
+    private func downloadAction(for row: WorkshopPasteQueueModel.QueueRow) -> (() -> Void)? {
         guard let itemID = row.publishedFileID, doctor.isDownloadReady else { return nil }
         let title = row.metadata?.title ?? String(itemID)
         return { downloads.download(itemID: itemID, title: title, using: doctor) }
     }
 
-    private func openInSteam(_ row: WorkshopPasteQueueModel.Row) {
+    private func openInSteam(_ row: WorkshopPasteQueueModel.QueueRow) {
         guard let url = row.steamURL else { return }
         NSWorkspace.shared.open(url)
     }

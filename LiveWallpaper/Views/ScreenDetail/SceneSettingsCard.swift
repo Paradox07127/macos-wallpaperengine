@@ -223,7 +223,7 @@ struct WPESceneCustomSettingsCard: View {
     // MARK: - Property list
 
     private func settingsList(
-        rows: [WPEProjectSettingsPresentation.Row],
+        rows: [WPEProjectSettingsPresentation.SettingsRow],
         values: [String: WallpaperEngineProjectPropertyValue]
     ) -> some View {
         let showsSectionAffiliation = rows.contains { row in
@@ -247,7 +247,7 @@ struct WPESceneCustomSettingsCard: View {
 
     @ViewBuilder
     private func settingRowView(
-        for row: WPEProjectSettingsPresentation.Row,
+        for row: WPEProjectSettingsPresentation.SettingsRow,
         values: [String: WallpaperEngineProjectPropertyValue],
         showsDivider: Bool,
         showsSectionAffiliation: Bool
@@ -632,7 +632,7 @@ struct WPESceneCustomSettingsCard: View {
         private(set) var layeredValues: [String: WallpaperEngineProjectPropertyValue] = [:]
         var expandedSections: Set<String> = []
         var presentation: WPEProjectSettingsPresentation?
-        var rows: [WPEProjectSettingsPresentation.Row] = []
+        var rows: [WPEProjectSettingsPresentation.SettingsRow] = []
         @ObservationIgnored var identity: SceneIdentity?
         @ObservationIgnored private var schema: WallpaperEngineProjectPropertySchema?
         @ObservationIgnored private var descriptor: SceneDescriptor?
