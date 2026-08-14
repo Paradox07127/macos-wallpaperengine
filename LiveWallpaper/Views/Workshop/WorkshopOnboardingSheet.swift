@@ -5,8 +5,10 @@ import SwiftUI
 struct WorkshopOnboardingSheet: View {
     @AppStorage("loomscreen.workshop.onboarding.shown.v1", store: .appScoped()) private var hasShown: Bool = false
     @Environment(\.dismiss) private var dismiss
-    /// Called on finish so the caller can open the paste sheet immediately.
-    var onGetStarted: () -> Void
+    /// Primary path: configure the API key required by the online catalog.
+    var onConfigureOnline: () -> Void
+    /// Key-free fallback: install a known item from its Workshop URL or id.
+    var onDownloadByLink: () -> Void
 
     var body: some View {
         VStack(spacing: 18) {
@@ -34,14 +36,23 @@ struct WorkshopOnboardingSheet: View {
                 Button {
                     hasShown = true
                     dismiss()
-                    onGetStarted()
+                    onConfigureOnline()
                 } label: {
-                    Text("Get Started")
+                    Text("Set Web API key")
                         .frame(maxWidth: 220)
                         .padding(.vertical, 4)
                 }
                 .adaptiveGlassButton(.prominent)
                 .keyboardShortcut(.defaultAction)
+
+                Button {
+                    hasShown = true
+                    dismiss()
+                    onDownloadByLink()
+                } label: {
+                    Text("Add from Workshop URL or ID")
+                }
+                .buttonStyle(.borderless)
 
                 Button("Maybe later") { dismiss() }
                     .buttonStyle(.borderless)
@@ -50,7 +61,7 @@ struct WorkshopOnboardingSheet: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 26)
-        .frame(width: 480)
+        .frame(width: SteamSheetWidth.form)
         .background(DesignTokens.Colors.pageBackground)
         // Marked on *any* dismissal, Escape included. The sheet now greets the
         // first visit to Browse Online, so a declined sheet that didn't persist

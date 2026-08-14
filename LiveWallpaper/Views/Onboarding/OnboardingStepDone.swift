@@ -2,11 +2,12 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct OnboardingStepDone: View {
-    let screenID: CGDirectDisplayID?
-    let finish: (CGDirectDisplayID?) -> Void
+    let destination: OnboardingCompletionDestination
+    let finish: () -> Void
     @Environment(ScreenManager.self) private var screenManager
 
     private var configuredScreen: Screen? {
+        guard case .display(let screenID) = destination else { return nil }
         guard let screenID else { return nil }
         return screenManager.screens.first { $0.id == screenID }
     }
@@ -32,10 +33,12 @@ struct OnboardingStepDone: View {
                     .font(DesignTokens.Typography.hero)
                     .accessibilityAddTraits(.isHeader)
 
-                Text("Your wallpaper is ready.")
-                    .font(DesignTokens.Typography.body)
-                    .foregroundStyle(DesignTokens.Colors.textSecondary)
-                    .multilineTextAlignment(.center)
+                if let completionMessage {
+                    Text(completionMessage)
+                        .font(DesignTokens.Typography.body)
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
             }
 
             if let configuredScreen {
@@ -58,8 +61,8 @@ struct OnboardingStepDone: View {
 
             Spacer()
 
-            Button(action: { finish(configuredScreen?.id ?? screenID) }) {
-                Text("Open display settings")
+            Button(action: finish) {
+                Text(completionButtonTitle)
                     .frame(minWidth: 140)
             }
             .buttonStyle(GlassCapsuleButtonStyle(preset: .large))
@@ -78,5 +81,27 @@ struct OnboardingStepDone: View {
     private enum Metrics {
         static let successSymbolSize: CGFloat = 92
         static let checkmarkSize: CGFloat = 38
+    }
+
+    /// Aerials/Workshop get no message: the button already names the
+    /// destination, and a sentence restating it is words without information.
+    private var completionMessage: LocalizedStringKey? {
+        switch destination {
+        case .display:
+            return "Your wallpaper is ready."
+        case .appleAerials, .steamWorkshop:
+            return nil
+        }
+    }
+
+    private var completionButtonTitle: LocalizedStringKey {
+        switch destination {
+        case .display:
+            return "Open display settings"
+        case .appleAerials:
+            return "Open Apple Aerials"
+        case .steamWorkshop:
+            return "Open Steam Workshop"
+        }
     }
 }

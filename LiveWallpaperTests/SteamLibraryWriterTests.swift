@@ -356,9 +356,19 @@ struct SteamCMDChildEnvironmentTests {
             contentsOf: RepositoryRoot.url("SteamConnector/SteamConnector.swift"),
             encoding: .utf8
         )
-        #expect(source.contains("process.environment = SteamCMDChildEnvironment.make()"))
-        // One spawn point, so one place to get this wrong.
-        #expect(source.components(separatedBy: "Process()").count - 1 == 1)
+        // Count invariant, not `contains`: every Process the connector creates
+        // must apply the whitelist, and a second spawn point sharing the first
+        // one's assignment is exactly what `contains` cannot see. Two today:
+        // the shared pipe runner and the interactive login's PTY session.
+        let spawns = source.components(separatedBy: "Process()").count - 1
+        let whitelisted = source.components(
+            separatedBy: "process.environment = SteamCMDChildEnvironment.make()"
+        ).count - 1
+        #expect(spawns >= 1)
+        #expect(
+            whitelisted == spawns,
+            "every Process() in the connector must apply SteamCMDChildEnvironment"
+        )
     }
 }
 

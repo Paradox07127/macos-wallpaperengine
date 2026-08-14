@@ -428,6 +428,86 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
     }
 
+    func bindManualSteamCMDBinary(path: String, with reply: @escaping @Sendable (Data) -> Void) {
+        @Sendable func send(_ result: SteamCMDManualBindResult) {
+            reply((try? JSONEncoder().encode(result)) ?? Data())
+        }
+        // The app is sandboxed and this process is not, so a relative path would
+        // be resolved against a working directory the caller cannot see.
+        guard path.hasPrefix("/") else {
+            return send(SteamCMDManualBindResult(
+                outcome: .refused, canonicalPath: nil,
+                failureReason: "A SteamCMD path must be absolute."
+            ))
+        }
+        let enqueuedAt = Date()
+        // codesign spawns; same serial queue as every other binary read.
+        Self.steamCMDQueue.async {
+            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+                return send(SteamCMDManualBindResult(
+                    outcome: .refused, canonicalPath: nil,
+                    failureReason: "bind expired while queued behind another SteamCMD operation"
+                ))
+            }
+            let resolution = SteamCMDBinaryResolver.resolveCanonicalBinary(
+                at: URL(fileURLWithPath: path)
+            )
+            guard case .success(let binary) = resolution else {
+                return send(SteamCMDManualBindResult(
+                    outcome: .notFound, canonicalPath: nil,
+                    failureReason: "That file isn't SteamCMD, and no SteamCMD binary was found next to it."
+                ))
+            }
+            let canonical = binary.path(percentEncoded: false)
+            // Exactly the gates `resolvedExecutablePath` applies on every run.
+            // Refusing here is not what makes the pick safe — re-gating at run
+            // time is — but binding something we would never execute would
+            // report success for a setup that cannot download anything.
+            guard !SteamCMDExecutionFence.refusesExecution(of: canonical) else {
+                return send(SteamCMDManualBindResult(
+                    outcome: .untrusted, canonicalPath: canonical,
+                    failureReason: "Loomscreen won't run a SteamCMD from inside its own container."
+                ))
+            }
+            let verify: (String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool) = {
+                let run = Self.spawn(executable: $0, arguments: $1, timeout: $2)
+                return (run.output, run.exitCode, run.timedOut)
+            }
+            guard case .success = SteamCMDManagedInstaller.verifySignature(
+                binaryPath: canonical, spawn: verify
+            ) else {
+                return send(SteamCMDManualBindResult(
+                    outcome: .untrusted, canonicalPath: canonical,
+                    failureReason: "That binary isn't signed by Valve."
+                ))
+            }
+            guard case .success = SteamCMDManagedInstaller.rejectIfQuarantined(binaryPath: canonical) else {
+                return send(SteamCMDManualBindResult(
+                    outcome: .untrusted, canonicalPath: canonical,
+                    failureReason: "That binary is quarantined. Open it once in Finder, or remove the quarantine flag."
+                ))
+            }
+            do {
+                try SteamCMDManualBinding.store(canonical)
+            } catch {
+                return send(SteamCMDManualBindResult(
+                    outcome: .refused, canonicalPath: canonical,
+                    failureReason: "Couldn't record the choice: \(error.localizedDescription)"
+                ))
+            }
+            send(SteamCMDManualBindResult(
+                outcome: .bound, canonicalPath: canonical, failureReason: nil
+            ))
+        }
+    }
+
+    func clearManualSteamCMDBinary(with reply: @escaping @Sendable (Data) -> Void) {
+        SteamCMDManualBinding.clear()
+        reply((try? JSONEncoder().encode(SteamCMDManualBindResult(
+            outcome: .bound, canonicalPath: nil, failureReason: nil
+        ))) ?? Data())
+    }
+
     func locateSteamCMDBinary(with reply: @escaping @Sendable (Data) -> Void) {
         func send(_ location: SteamCMDBinaryLocation) {
             reply((try? JSONEncoder().encode(location)) ?? Data())
@@ -458,10 +538,60 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         send(SteamCMDBinaryLocation(canonicalPath: nil, failureReason: firstFailure))
     }
 
-    func installManagedSteamCMD(
-        tarballPath: String,
-        with reply: @escaping @Sendable (Data) -> Void
-    ) {
+    /// Blocking fetch for the SteamCMD queue, which is serial by design — an
+    /// install already occupies it for the length of a `+quit` run, so a
+    /// download waiting synchronously changes nothing about its concurrency.
+    /// `URLSession.download` streams to disk; the size gate runs on the file
+    /// before a byte of it is read back.
+    private static func download(
+        from url: URL,
+        to destination: URL,
+        expectedBytes: Int,
+        timeout: TimeInterval = 600
+    ) -> Bool {
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var succeeded = false
+        let task = URLSession.shared.downloadTask(with: url) { temporary, response, _ in
+            defer { semaphore.signal() }
+            guard let temporary,
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let size = (try? FileManager.default.attributesOfItem(
+                      atPath: temporary.path(percentEncoded: false)
+                  )[.size] as? NSNumber)?.intValue,
+                  size == expectedBytes else { return }
+            do {
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: temporary, to: destination)
+                succeeded = true
+            } catch {}
+        }
+        task.resume()
+        guard semaphore.wait(timeout: .now() + timeout) == .success else {
+            task.cancel()
+            return false
+        }
+        return succeeded
+    }
+
+    private static func fetchString(from url: URL, maximumBytes: Int) -> String? {
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: String?
+        let task = URLSession.shared.dataTask(with: url) { data, response, _ in
+            defer { semaphore.signal() }
+            guard let data,
+                  data.count <= maximumBytes,
+                  (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+            result = String(data: data, encoding: .utf8)
+        }
+        task.resume()
+        guard semaphore.wait(timeout: .now() + 60) == .success else {
+            task.cancel()
+            return nil
+        }
+        return result
+    }
+
+    func installManagedSteamCMD(with reply: @escaping @Sendable (Data) -> Void) {
         @Sendable func send(_ result: SteamCMDManagedInstallResult) {
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }
@@ -491,26 +621,72 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             case .failure(let failure): return send(failure)
             }
 
-            // Staging directory is this process's, not the app's: hashing the
-            // app's copy and then unpacking the app's copy are two opens, and
-            // the app can swap the bytes in between.
+            // Everything lands in this process's own tmp before any of it is
+            // trusted; the app never touches these bytes at any point.
             let staging = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent(
                     "loomscreen-steamcmd-staging-\(UUID().uuidString)", isDirectory: true
                 )
             defer { try? FileManager.default.removeItem(at: staging) }
+            do {
+                try FileManager.default.createDirectory(
+                    at: staging, withIntermediateDirectories: true
+                )
+            } catch {
+                return send(.failed(.unavailable, "Could not create a staging directory"))
+            }
 
-            let staged: URL
-            switch SteamCMDManagedInstaller.stageAndVerifyTarball(
-                at: tarballPath, stagingRoot: staging
-            ) {
-            case .success(let value): staged = value
-            case .failure(let failure): return send(failure)
+            // Valve's manifest names the current packages and their digests.
+            // Fetched fresh per install — it moves with every SteamCMD release,
+            // so there is nothing stable to pin; the code-signature gate below
+            // remains the authority on what may execute.
+            guard let manifestText = Self.fetchString(
+                from: SteamCMDManifest.url, maximumBytes: 1_048_576
+            ) else {
+                return send(.failed(.unavailable, "Could not fetch Valve's SteamCMD manifest"))
+            }
+            guard let packages = SteamCMDManifest.parse(manifestText) else {
+                return send(.failed(
+                    .unavailable,
+                    "Valve's SteamCMD manifest did not describe the expected packages"
+                ))
+            }
+
+            var archives: [URL] = []
+            for package in packages {
+                let destination = staging.appendingPathComponent(
+                    package.name + ".zip", isDirectory: false
+                )
+                guard let packageURL = URL(
+                    string: package.file,
+                    relativeTo: SteamCMDManifest.url.deletingLastPathComponent()
+                )?.absoluteURL else {
+                    return send(.failed(.unavailable, "Malformed package name in manifest"))
+                }
+                guard Self.download(
+                    from: packageURL, to: destination, expectedBytes: package.byteCount
+                ) else {
+                    return send(.failed(
+                        .unavailable,
+                        "Could not download \(package.name) from Valve's server"
+                    ))
+                }
+                // The digest gate: what was written must be what the manifest
+                // published, hashed from our own copy in our own tmp.
+                guard let digest = SteamCMDBinaryDigest.sha256(
+                    ofFileAt: destination.path(percentEncoded: false)
+                ), digest == package.sha256 else {
+                    return send(.failed(
+                        .tarballRejected,
+                        "\(package.name) did not match the manifest's checksum"
+                    ))
+                }
+                archives.append(destination)
             }
 
             let installed: SteamCMDManagedInstaller.ExtractedInstall
             switch SteamCMDManagedInstaller.extract(
-                stagedTarball: staged, installRoot: root, spawn: spawn
+                archives: archives, installRoot: root, spawn: spawn
             ) {
             case .success(let value): installed = value
             case .failure(let failure): return send(failure)
@@ -553,12 +729,42 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 return reject(failure)
             }
 
-            // The archive is a bootstrapper; the real binaries arrive on first
-            // run. Doing that here surfaces a broken install now rather than
-            // when the user first tries to download a wallpaper.
-            let bootstrap = Self.runSteamCMD(
-                steamCMDPath: binaryPath, arguments: ["+quit"], timeout: 600
+            // First real run. The manifest already delivered current binaries,
+            // but steamcmd still arranges its own `package/` bookkeeping here —
+            // and doing it now surfaces a broken install immediately rather
+            // than when the user first tries to download a wallpaper.
+            var bootstrapPath = binaryPath
+            var bootstrap = Self.runSteamCMD(
+                steamCMDPath: bootstrapPath, arguments: ["+quit"], timeout: 600
             )
+            if SteamCMDSelfUpdateRetryPolicy.shouldRetry(
+                output: bootstrap.output,
+                exitCode: bootstrap.exitCode,
+                timedOut: bootstrap.timedOut,
+                attempt: 0
+            ) {
+                // The first run replaced the executable. Never launch the new
+                // bytes merely because the old copy was trusted.
+                let refreshed: URL
+                switch SteamCMDManagedInstaller.locateBinary(in: payload) {
+                case .success(let value): refreshed = value
+                case .failure(let failure): return reject(failure)
+                }
+                bootstrapPath = refreshed.path(percentEncoded: false)
+                if case .failure(let failure) = SteamCMDManagedInstaller.verifySignature(
+                    binaryPath: bootstrapPath, spawn: spawn
+                ) {
+                    return reject(failure)
+                }
+                if case .failure(let failure) = SteamCMDManagedInstaller.rejectIfQuarantined(
+                    binaryPath: bootstrapPath
+                ) {
+                    return reject(failure)
+                }
+                bootstrap = Self.runSteamCMD(
+                    steamCMDPath: bootstrapPath, arguments: ["+quit"], timeout: 600
+                )
+            }
             guard !bootstrap.timedOut else {
                 return reject(.failed(.selfUpdateFailed, "First SteamCMD run timed out"))
             }
@@ -603,6 +809,180 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 failureReason: nil
             ))
         }
+    }
+
+    func signInSteamAccount(_ request: Data, with reply: @escaping @Sendable (Data) -> Void) {
+        @Sendable func send(_ result: SteamCMDLoginResult) {
+            reply((try? JSONEncoder().encode(result)) ?? Data())
+        }
+        guard let payload = try? JSONDecoder().decode(SteamCMDLoginRequest.self, from: request),
+              SteamAccountsFile.isValidAccountName(payload.accountName) else {
+            send(.failed(.unavailable))
+            return
+        }
+        // Same serial queue as every other steamcmd run: an interactive login
+        // and a download share one Steam profile and must not interleave.
+        let enqueuedAt = Date()
+        Self.steamCMDQueue.async {
+            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+                send(.failed(.unavailable))
+                return
+            }
+            guard let binaryPath = Self.resolvedExecutablePath() else {
+                send(.failed(.unavailable))
+                return
+            }
+            send(Self.runLoginSession(binaryPath: binaryPath, request: payload))
+        }
+    }
+
+    /// The one interactive steamcmd session in this process. A PTY rather than
+    /// a pipe because steamcmd's password prompt requires a terminal; it also
+    /// lets steamcmd disable echo itself, exactly as it does in Terminal.
+    ///
+    /// Secrets hygiene: the password and guard code are written to the PTY in
+    /// answer to steamcmd's own prompts and nowhere else — not argv (visible to
+    /// every process), not the transcript we classify (prompts echo nothing),
+    /// not the reply, not a log. The final verdict does not even trust the
+    /// transcript alone: a login only counts as success if the account then
+    /// appears in the shared profile's `config.vdf`, the same ground truth
+    /// `discoverAccounts` reads.
+    private static func runLoginSession(
+        binaryPath: String,
+        request: SteamCMDLoginRequest
+    ) -> SteamCMDLoginResult {
+        guard !SteamCMDExecutionFence.refusesExecution(of: binaryPath) else {
+            return .failed(.unavailable)
+        }
+        func knownAccounts() -> [SteamAccountSummary] {
+            let realHome = SteamConnectorEnvironmentProbe.posixHomeDirectory()
+            let config = SteamConnectorEnvironmentProbe.steamConfigURL(realHome: realHome)
+            let text = (try? String(contentsOf: config, encoding: .utf8)) ?? ""
+            return SteamAccountsFile.parseAccounts(fromConfigVDF: text)
+        }
+        func summary(in accounts: [SteamAccountSummary]) -> SteamAccountSummary? {
+            accounts.first { $0.accountName.lowercased() == request.accountName.lowercased() }
+        }
+        // Snapshot, not a plain "is it there afterwards": for an account that
+        // was already cached, presence proves nothing about THIS attempt — a
+        // wrong password would read as success.
+        let accountKnownBefore = summary(in: knownAccounts()) != nil
+
+        var master: Int32 = -1
+        var slave: Int32 = -1
+        guard openpty(&master, &slave, nil, nil, nil) == 0 else {
+            return .failed(.unavailable)
+        }
+        defer { close(master) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.arguments = SteamCMDLoginProbe.arguments(accountName: request.accountName)
+        process.environment = SteamCMDChildEnvironment.make()
+        let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
+        process.standardInput = slaveHandle
+        process.standardOutput = slaveHandle
+        process.standardError = slaveHandle
+        do {
+            try process.run()
+        } catch {
+            close(slave)
+            return .failed(.unavailable)
+        }
+        close(slave)
+
+        func write(secret: String) {
+            var data = Data((secret + "\n").utf8)
+            data.withUnsafeBytes { raw in
+                var offset = 0
+                while offset < raw.count {
+                    let written = Darwin.write(
+                        master, raw.baseAddress!.advanced(by: offset), raw.count - offset
+                    )
+                    guard written > 0 else { break }
+                    offset += written
+                }
+            }
+            data.resetBytes(in: 0..<data.count)
+        }
+
+        var transcript = ""
+        var sentPassword = false
+        var sentGuardCode = false
+        let deadline = Date().addingTimeInterval(
+            SteamCMDLoginProbe.clampedTimeout(request.timeout)
+        )
+        var outcome: SteamCMDLoginResult.Outcome = .timedOut
+
+        readLoop: while Date() < deadline {
+            var pollDescriptor = pollfd(fd: master, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&pollDescriptor, 1, 500)
+            if ready > 0 {
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                let count = read(master, &buffer, buffer.count)
+                // EOF/EIO: the child closed its side — it exited.
+                guard count > 0 else { break }
+                transcript += String(decoding: buffer[0..<count], as: UTF8.self)
+            }
+            guard let event = SteamCMDLoginOutputClassifier.event(inTranscript: transcript) else {
+                if !process.isRunning { break }
+                continue
+            }
+            switch event {
+            case .passwordPrompt:
+                if !sentPassword {
+                    sentPassword = true
+                    write(secret: request.password)
+                }
+                if !process.isRunning { break readLoop }
+            case .guardCodeEmailPrompt, .guardCodeTotpPrompt:
+                if let code = request.guardCode, !sentGuardCode {
+                    sentGuardCode = true
+                    write(secret: code)
+                } else if !sentGuardCode {
+                    // No code on hand: stop the session and tell the app which
+                    // kind to ask for. The password will ride the retry.
+                    outcome = event == .guardCodeEmailPrompt
+                        ? .guardCodeEmailRequired : .guardCodeTotpRequired
+                    break readLoop
+                }
+                if !process.isRunning { break readLoop }
+            case .waitingForMobileConfirmation:
+                // Not an outcome — the user is reaching for their phone.
+                if !process.isRunning { break readLoop }
+            case .invalidPassword:
+                outcome = .invalidPassword
+                break readLoop
+            case .invalidGuardCode:
+                outcome = .invalidGuardCode
+                break readLoop
+            case .rateLimited:
+                outcome = .rateLimited
+                break readLoop
+            case .loggedIn:
+                outcome = .success
+                break readLoop
+            }
+        }
+        if process.isRunning {
+            process.terminate()
+            // Grace, then the same hard stop every other runner uses.
+            let graceDeadline = Date().addingTimeInterval(3)
+            while process.isRunning, Date() < graceDeadline {
+                usleep(100_000)
+            }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
+
+        // Two independent success signals: the transcript's banner, and the
+        // account newly appearing in the shared profile's `config.vdf` (the
+        // ground truth `discoverAccounts` reads — catches a success whose
+        // banner line we failed to match). "Newly": see the snapshot above.
+        let accountAfter = summary(in: knownAccounts())
+        if outcome == .success || (!accountKnownBefore && accountAfter != nil) {
+            return SteamCMDLoginResult(outcome: .success, steamID64: accountAfter?.steamID64)
+        }
+        return .failed(outcome)
     }
 
     func removeManagedSteamCMD(with reply: @escaping @Sendable (Data) -> Void) {

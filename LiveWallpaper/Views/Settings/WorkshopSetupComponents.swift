@@ -125,15 +125,10 @@ private struct WorkshopPrivacySheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Image(systemName: "hand.raised")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.accentColor)
-                Text("Privacy & data", bundle: .main)
-                    .font(DesignTokens.Typography.sectionTitle)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer()
-            }
+            SteamSheetHeader(
+                icon: "hand.raised",
+                title: "Privacy & data"
+            )
             .padding(.horizontal, DesignTokens.Spacing.xl)
             .padding(.top, DesignTokens.Spacing.xl)
             .padding(.bottom, DesignTokens.Spacing.lg)
@@ -168,7 +163,7 @@ private struct WorkshopPrivacySheet: View {
                 primaryAction: { dismiss() }
             )
         }
-        .frame(width: 460, height: 420)
+        .frame(width: SteamSheetWidth.form, height: 420)
     }
 
     private func point(title: LocalizedStringKey, body: LocalizedStringKey) -> some View {

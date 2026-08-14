@@ -30,7 +30,7 @@ struct SteamWebAPIKeyEntrySheet: View {
             innerContent
             footer
         }
-        .frame(minWidth: 460, idealWidth: 460, maxWidth: 560)
+        .frame(width: SteamSheetWidth.form)
         .onAppear {
             Task {
                 if let stored = try? await services.keychain.loadWebAPIKey() {
@@ -70,13 +70,11 @@ struct SteamWebAPIKeyEntrySheet: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
-            Text("Set your Steam Web API key")
-                .font(.headline)
-            InfoTooltipButton(text: "Loomscreen uses your own Steam account's Web API key to read Workshop metadata — free, but it needs Mobile Steam Guard and a non-limited Steam account. Calls go directly to Valve over HTTPS; the key is stored only on this Mac (no iCloud sync) and is never proxied through Loomscreen.")
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        SteamSheetHeader(
+            icon: "key",
+            title: "Set your Steam Web API key",
+            info: "Loomscreen uses your own Steam account's Web API key to read Workshop metadata — free, but it needs Mobile Steam Guard and a non-limited Steam account. Calls go directly to Valve over HTTPS; the key is stored only on this Mac (no iCloud sync) and is never proxied through Loomscreen."
+        )
     }
 
     /// Anti-phishing notice with the two external actions it talks about:

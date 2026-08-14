@@ -29,7 +29,7 @@ private func storeRecord(
 struct SteamCMDManagedInstallRecordTests {
     private let record = SteamCMDManagedInstallCoordinator.ManagedInstallRecord(
         canonicalPath: "/Users/probe/Library/Application Support/Loomscreen/SteamCMD/MacOS/steamcmd",
-        bootstrapSHA256: SteamCMDBootstrapPackage.sha256
+        bootstrapSHA256: String(repeating: "ab", count: 32)
     )
 
     /// Never reached: the tests below must not perform a real removal.
@@ -118,79 +118,8 @@ struct SteamCMDManagedInstallRecordTests {
     }
 }
 
-/// The bytes the digest gate is meant to accept. Built to the pinned length so
-/// a size check alone cannot be what makes these tests pass.
-private func bootstrapSizedData(seed: UInt8) -> Data {
-    Data(repeating: seed, count: SteamCMDBootstrapPackage.byteCount)
-}
-
 private func sha256Hex(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-}
-
-@Suite("SteamCMD bootstrap download gate")
-struct SteamCMDBootstrapDownloaderTests {
-    private func downloader(returning data: Data, status: Int = 200) -> SteamCMDBootstrapDownloader {
-        SteamCMDBootstrapDownloader(fetch: { url in
-            (data, HTTPURLResponse(
-                url: url, statusCode: status, httpVersion: nil, headerFields: nil
-            )!)
-        })
-    }
-
-    private func scratchDestination() -> URL {
-        URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("steamcmd-probe-\(UUID().uuidString)", isDirectory: true)
-            .appendingPathComponent("steamcmd_osx.tar.gz")
-    }
-
-    @Test("A short response is rejected before anything is stored")
-    func rejectsShortResponse() async {
-        let destination = scratchDestination()
-        await #expect(throws: SteamCMDBootstrapDownloader.DownloadError.self) {
-            _ = try await downloader(returning: Data("nope".utf8)).download(to: destination)
-        }
-        #expect(!FileManager.default.fileExists(atPath: destination.path))
-    }
-
-    @Test("Right length, wrong bytes is still rejected")
-    func rejectsCorrectLengthWrongDigest() async {
-        let destination = scratchDestination()
-        let payload = bootstrapSizedData(seed: 0x41)
-        // Guard the guard: if this ever equalled the pinned digest the test
-        // below would be proving nothing.
-        #expect(sha256Hex(payload) != SteamCMDBootstrapPackage.sha256)
-
-        await #expect(throws: SteamCMDBootstrapDownloader.DownloadError.digestMismatch) {
-            _ = try await downloader(returning: payload).download(to: destination)
-        }
-        #expect(!FileManager.default.fileExists(atPath: destination.path))
-    }
-
-    @Test("A single flipped byte fails the digest gate")
-    func rejectsSingleFlippedByte() {
-        var payload = bootstrapSizedData(seed: 0x00)
-        payload[0] = 0x01
-        #expect(SteamCMDBootstrapDownloader.verify(payload) == .digestMismatch)
-    }
-
-    @Test("An HTTP error is reported as such, not as a corrupt archive")
-    func reportsHTTPStatusDistinctly() async {
-        await #expect(throws: SteamCMDBootstrapDownloader.DownloadError.httpStatus(503)) {
-            _ = try await downloader(returning: Data(), status: 503)
-                .download(to: scratchDestination())
-        }
-    }
-
-    @Test("Consent terms quote the installed size, not just the bootstrap archive")
-    func termsDoNotUnderstateTheDownload() {
-        let terms = SteamCMDBootstrapDownloader.DownloadTerms.current
-        #expect(terms.archiveBytes == SteamCMDBootstrapPackage.byteCount)
-        // The archive is a bootstrapper; quoting 2.4 MB as the cost would be a
-        // lie by a factor of ~35.
-        #expect(terms.installedBytesApproximate > terms.archiveBytes * 10)
-        #expect(terms.sourceHost.hasSuffix("akamaihd.net"))
-    }
 }
 
 @Suite("SteamCMD managed install containment")
@@ -296,147 +225,36 @@ struct SteamCMDManagedInstallContainmentTests {
     }
 }
 
-@Suite("SteamCMD managed install archive gate")
-struct SteamCMDManagedInstallTarballTests {
-    /// Real bytes of Valve's pinned bootstrap archive, if this machine has a
-    /// Homebrew SteamCMD cask whose download cache still holds it. Used only for
-    /// the positive control; absent on CI, where that one test is skipped rather
-    /// than faked.
-    private static func pinnedArchive() -> Data? {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
-        for base in caches + [URL(fileURLWithPath: "/Users/\(NSUserName())/Library/Caches")] {
-            let downloads = base.appendingPathComponent("Homebrew/downloads", isDirectory: true)
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: downloads, includingPropertiesForKeys: nil
-            ) else { continue }
-            for entry in entries where entry.lastPathComponent.contains("steamcmd_osx") {
-                guard let data = try? Data(contentsOf: entry),
-                      SteamCMDBootstrapDownloader.verify(data) == nil else { continue }
-                return data
-            }
-        }
-        return nil
+@Suite("SteamCMD first-run self-update retry")
+struct SteamCMDSelfUpdateRetryPolicyTests {
+    @Test("A fresh bootstrap update gets one retry")
+    func retriesFreshBootstrapUpdate() {
+        #expect(SteamCMDSelfUpdateRetryPolicy.shouldRetry(
+            output: "Checking for available updates...\nDownloading update...",
+            exitCode: 7,
+            timedOut: false,
+            attempt: 0
+        ))
     }
 
-    private func staged(_ data: Data) -> (tarball: String, staging: URL) {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("tarball-\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let file = root.appendingPathComponent("in.tar.gz")
-        try? data.write(to: file)
-        return (file.path, root.appendingPathComponent("staging", isDirectory: true))
+    @Test("A normal failure is not hidden behind retries")
+    func refusesUnrelatedFailure() {
+        #expect(!SteamCMDSelfUpdateRetryPolicy.shouldRetry(
+            output: "Failed to connect to content servers",
+            exitCode: 7,
+            timedOut: false,
+            attempt: 0
+        ))
     }
 
-    @Test("Control: a matching archive passes and is copied into connector staging")
-    func acceptsMatchingArchive() throws {
-        // Deterministic fixture rather than Valve's real 2.4 MB archive: the
-        // previous control silently returned wherever no Homebrew copy existed,
-        // so an implementation that rejected every archive stayed green there.
-        let payload = Data("loomscreen-deterministic-archive-fixture".utf8)
-        let expectation = SteamCMDManagedInstaller.ArchiveExpectation(
-            sha256: sha256Hex(payload), byteCount: payload.count
-        )
-        let (path, staging) = staged(payload)
-        defer { try? FileManager.default.removeItem(at: staging.deletingLastPathComponent()) }
-
-        guard case .success(let copy) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: path, stagingRoot: staging, expected: expectation
-        ) else {
-            Issue.record("An archive matching its expectation must be accepted")
-            return
-        }
-        #expect(copy.path.hasPrefix(staging.path))
-        #expect(try Data(contentsOf: copy) == payload)
-    }
-
-    @Test("The shipping expectation is still Valve's pinned archive")
-    func pinnedExpectationIsUnchanged() {
-        // The injectable expectation exists for the control above; it must not
-        // become a way for the real path to accept something else.
-        #expect(SteamCMDManagedInstaller.ArchiveExpectation.pinned.sha256
-            == SteamCMDBootstrapPackage.sha256)
-        #expect(SteamCMDManagedInstaller.ArchiveExpectation.pinned.byteCount
-            == SteamCMDBootstrapPackage.byteCount)
-    }
-
-    @Test("The connector re-hashes rather than trusting the app's verdict")
-    func rejectsTamperedArchive() {
-        let (path, staging) = staged(bootstrapSizedData(seed: 0x42))
-        defer { try? FileManager.default.removeItem(at: staging.deletingLastPathComponent()) }
-
-        guard case .failure(let result) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: path, stagingRoot: staging
-        ) else {
-            Issue.record("A correctly sized but wrong-digest archive must be refused")
-            return
-        }
-        #expect(result.outcome == .tarballRejected)
-    }
-
-    @Test("A wrong-length archive is refused with a size-specific reason")
-    func rejectsWrongLength() {
-        let (path, staging) = staged(Data("too short".utf8))
-        defer { try? FileManager.default.removeItem(at: staging.deletingLastPathComponent()) }
-
-        guard case .failure(let result) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: path, stagingRoot: staging
-        ) else {
-            Issue.record("A short archive must be refused")
-            return
-        }
-        #expect(result.outcome == .tarballRejected)
-        #expect(result.failureReason?.contains("bytes") == true)
-    }
-
-    @Test("An oversized archive is refused mid-stream, not buffered whole")
-    func rejectsOversizedArchive() {
-        let (path, staging) = staged(
-            Data(repeating: 0, count: SteamCMDBootstrapPackage.byteCount + 4096)
-        )
-        defer { try? FileManager.default.removeItem(at: staging.deletingLastPathComponent()) }
-
-        guard case .failure(let result) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: path, stagingRoot: staging
-        ) else {
-            Issue.record("An oversized archive must be refused")
-            return
-        }
-        #expect(result.outcome == .tarballRejected)
-        #expect(result.failureReason?.contains("larger") == true)
-    }
-
-    @Test("A symlinked archive path is refused instead of followed")
-    func rejectsSymlinkedArchivePath() throws {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("symarchive-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let real = root.appendingPathComponent("real.tar.gz")
-        try bootstrapSizedData(seed: 0x11).write(to: real)
-        let link = root.appendingPathComponent("link.tar.gz")
-        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
-
-        guard case .failure(let result) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: link.path, stagingRoot: root.appendingPathComponent("staging", isDirectory: true)
-        ) else {
-            Issue.record("A symlinked archive path must be refused (O_NOFOLLOW)")
-            return
-        }
-        #expect(result.outcome == .tarballRejected)
-    }
-
-    @Test("A missing archive is refused, not treated as empty")
-    func rejectsMissingArchive() {
-        guard case .failure(let result) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: "/nonexistent/steamcmd_osx.tar.gz",
-            stagingRoot: URL(fileURLWithPath: NSTemporaryDirectory())
-                .appendingPathComponent("missing-\(UUID().uuidString)", isDirectory: true)
-        ) else {
-            Issue.record("A missing archive must be refused")
-            return
-        }
-        #expect(result.outcome == .tarballRejected)
+    @Test("The retry is bounded even if update output repeats")
+    func boundsRetry() {
+        #expect(!SteamCMDSelfUpdateRetryPolicy.shouldRetry(
+            output: "Verifying installation...",
+            exitCode: 7,
+            timedOut: false,
+            attempt: 1
+        ))
     }
 }
 
@@ -628,7 +446,7 @@ struct SteamCMDManagedInstallUnpackTests {
         let installRoot = root.appendingPathComponent("install", isDirectory: true)
 
         guard case .success(let installed) = SteamCMDManagedInstaller.extract(
-            stagedTarball: tarball, installRoot: installRoot, spawn: spawn
+            archives: [tarball], installRoot: installRoot, spawn: spawn
         ) else {
             Issue.record("A clean archive must unpack")
             return
@@ -641,6 +459,48 @@ struct SteamCMDManagedInstallUnpackTests {
         #expect(installed.retired == nil)
     }
 
+    /// Valve's manifest zips carry no unix permissions — everything extracts
+    /// 0644 (measured 2026-08-13), and steamcmd.sh checks `-x` without ever
+    /// chmodding. A zip fixture, not tar: tar archives preserve mode bits, so
+    /// they cannot reproduce the failure.
+    @Test("Executables extracted from a permissionless zip become spawnable")
+    func zipWithoutExecBitsYieldsRunnableBinaries() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("zipmode-\(UUID().uuidString)", isDirectory: true)
+        let source = root.appendingPathComponent("src", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for name in ["steamcmd", "steamcmd.sh"] {
+            let file = source.appendingPathComponent(name)
+            try Data("#!/bin/sh\n".utf8).write(to: file)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o644))], ofItemAtPath: file.path
+            )
+        }
+        let zip = root.appendingPathComponent("a.zip")
+        let make = Process()
+        make.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        make.arguments = ["-a", "-cf", zip.path, "-C", source.path, "steamcmd", "steamcmd.sh"]
+        try make.run()
+        make.waitUntilExit()
+
+        let installRoot = root.appendingPathComponent("install", isDirectory: true)
+        guard case .success(let installed) = SteamCMDManagedInstaller.extract(
+            archives: [zip], installRoot: installRoot, spawn: spawn
+        ) else {
+            Issue.record("A clean zip must unpack")
+            return
+        }
+        for name in ["steamcmd", "steamcmd.sh"] {
+            #expect(
+                FileManager.default.isExecutableFile(
+                    atPath: installed.payload.appendingPathComponent(name).path
+                ),
+                "\(name) must be spawnable after extraction"
+            )
+        }
+    }
+
     @Test("A reinstall keeps the previous tree until the caller commits")
     func retiredTreeSurvivesUntilCommit() throws {
         let (root, tarball) = try archive(containing: [("steamcmd.sh", "#!/bin/sh\n")])
@@ -651,7 +511,7 @@ struct SteamCMDManagedInstallUnpackTests {
         try Data("old".utf8).write(to: payload.appendingPathComponent("marker.txt"))
 
         guard case .success(let installed) = SteamCMDManagedInstaller.extract(
-            stagedTarball: tarball, installRoot: installRoot, spawn: spawn
+            archives: [tarball], installRoot: installRoot, spawn: spawn
         ) else {
             Issue.record("A clean archive must unpack over a previous install")
             return
@@ -680,7 +540,7 @@ struct SteamCMDManagedInstallUnpackTests {
         try Data("old".utf8).write(to: payload.appendingPathComponent("marker.txt"))
 
         guard case .success(let installed) = SteamCMDManagedInstaller.extract(
-            stagedTarball: tarball, installRoot: installRoot, spawn: spawn
+            archives: [tarball], installRoot: installRoot, spawn: spawn
         ) else {
             Issue.record("A clean archive must unpack over a previous install")
             return
@@ -704,7 +564,7 @@ struct SteamCMDManagedInstallUnpackTests {
         let installRoot = root.appendingPathComponent("install", isDirectory: true)
 
         guard case .success(let installed) = SteamCMDManagedInstaller.extract(
-            stagedTarball: tarball, installRoot: installRoot, spawn: spawn
+            archives: [tarball], installRoot: installRoot, spawn: spawn
         ) else {
             Issue.record("A clean archive must unpack")
             return
@@ -714,6 +574,10 @@ struct SteamCMDManagedInstallUnpackTests {
         // Nothing to restore, so the failed payload must not be left as the
         // thing `locateBinary` would find next time.
         #expect(!FileManager.default.fileExists(atPath: installed.payload.path))
+        #expect(
+            !FileManager.default.fileExists(atPath: installRoot.path),
+            "A failed first install must not leave an unexplained empty SteamCMD folder"
+        )
     }
 
     @Test("A payload path pre-planted as a symlink is not written through")
@@ -732,7 +596,7 @@ struct SteamCMDManagedInstallUnpackTests {
         )
 
         _ = SteamCMDManagedInstaller.extract(
-            stagedTarball: tarball, installRoot: installRoot, spawn: spawn
+            archives: [tarball], installRoot: installRoot, spawn: spawn
         )
         #expect(!FileManager.default.fileExists(
             atPath: victim.appendingPathComponent("steamcmd.sh").path
@@ -749,7 +613,7 @@ struct SteamCMDManagedInstallUnpackTests {
         try Data("stale".utf8).write(to: payload.appendingPathComponent("leftover.txt"))
 
         _ = SteamCMDManagedInstaller.extract(
-            stagedTarball: tarball, installRoot: installRoot, spawn: spawn
+            archives: [tarball], installRoot: installRoot, spawn: spawn
         )
         // A file the archive never mentions surviving would mean we unpacked
         // over the old tree instead of replacing it.
@@ -772,11 +636,9 @@ struct SteamCMDManagedInstallFallbackTests {
 
     private func coordinator(
         defaults: UserDefaults,
-        download: @escaping (URL) async throws -> Void = { _ in },
-        install: @escaping (String) async -> SteamCMDManagedInstallResult?
+        install: @escaping () async -> SteamCMDManagedInstallResult?
     ) -> SteamCMDManagedInstallCoordinator {
         SteamCMDManagedInstallCoordinator(
-            downloadArchive: download,
             defaults: defaults,
             remove: { Issue.record("fallback tests must not remove anything"); return nil },
             performInstall: install
@@ -793,7 +655,7 @@ struct SteamCMDManagedInstallFallbackTests {
         // Without this the suite would pass against a coordinator that always
         // fails, which is the opposite of what the other cases are asserting.
         let defaults = scratchDefaults()
-        let coordinator = coordinator(defaults: defaults) { _ in
+        let coordinator = coordinator(defaults: defaults) {
             SteamCMDManagedInstallResult(
                 outcome: .installed, canonicalPath: "/probe/steamcmd",
                 sha256: "abc", failureReason: nil
@@ -801,30 +663,15 @@ struct SteamCMDManagedInstallFallbackTests {
         }
         _ = await coordinator.install()
         #expect(coordinator.managedInstall?.canonicalPath == "/probe/steamcmd")
-    }
-
-    @Test("A download that never arrives records nothing")
-    func downloadFailureLeavesNoRecord() async {
-        let defaults = scratchDefaults()
-        let coordinator = coordinator(
-            defaults: defaults,
-            download: { _ in throw SteamCMDBootstrapDownloader.DownloadError.digestMismatch },
-            install: { _ in
-                Issue.record("the connector must not be asked to install an archive we never got")
-                return nil
-            }
-        )
-
-        let status = await coordinator.install()
-        #expect(failed(status) != nil)
-        #expect(coordinator.managedInstall == nil)
-        #expect(SteamCMDManagedInstallCoordinator.recordedInstall(defaults: defaults) == nil)
+        // The record's digest is the installed binary's, handed back by the
+        // connector — there is no app-side download left to hash.
+        #expect(coordinator.managedInstall?.bootstrapSHA256 == "abc")
     }
 
     @Test("An unreachable connector records nothing and says so")
     func unreachableConnectorLeavesNoRecord() async {
         let defaults = scratchDefaults()
-        let coordinator = coordinator(defaults: defaults) { _ in nil }
+        let coordinator = coordinator(defaults: defaults) { nil }
 
         let reason = failed(await coordinator.install())
         #expect(reason != nil)
@@ -844,7 +691,7 @@ struct SteamCMDManagedInstallFallbackTests {
     ])
     func refusedOutcomesLeaveNoRecord(_ outcome: SteamCMDManagedInstallResult.Outcome) async {
         let defaults = scratchDefaults()
-        let coordinator = coordinator(defaults: defaults) { _ in
+        let coordinator = coordinator(defaults: defaults) {
             SteamCMDManagedInstallResult(
                 outcome: outcome, canonicalPath: "/probe/steamcmd",
                 sha256: nil, failureReason: nil
@@ -864,7 +711,7 @@ struct SteamCMDManagedInstallFallbackTests {
     func retryAfterFailureIsAllowed() async {
         let defaults = scratchDefaults()
         var attempts = 0
-        let coordinator = coordinator(defaults: defaults) { _ in
+        let coordinator = coordinator(defaults: defaults) {
             attempts += 1
             return attempts == 1
                 ? SteamCMDManagedInstallResult.failed(.extractionFailed, "first attempt")
@@ -894,7 +741,7 @@ struct SteamCMDManagedInstallInterleavingTests {
 
     private let record = SteamCMDManagedInstallCoordinator.ManagedInstallRecord(
         canonicalPath: "/probe/old/steamcmd",
-        bootstrapSHA256: SteamCMDBootstrapPackage.sha256
+        bootstrapSHA256: String(repeating: "ab", count: 32)
     )
 
     @Test("An install is refused while a removal is still in flight")
@@ -906,13 +753,12 @@ struct SteamCMDManagedInstallInterleavingTests {
         let gate = AsyncGate()
         var installAttempts = 0
         let coordinator = SteamCMDManagedInstallCoordinator(
-            downloadArchive: { _ in },
             defaults: defaults,
             remove: {
                 await gate.wait()
                 return SteamCMDManagedRemovalResult(outcome: .removed, failureReason: nil)
             },
-            performInstall: { _ in
+            performInstall: {
                 installAttempts += 1
                 return SteamCMDManagedInstallResult(
                     outcome: .installed, canonicalPath: "/probe/new/steamcmd",
@@ -949,7 +795,6 @@ struct SteamCMDManagedInstallInterleavingTests {
         let second = AsyncGate()
         var call = 0
         let coordinator = SteamCMDManagedInstallCoordinator(
-            downloadArchive: { _ in },
             defaults: defaults,
             remove: {
                 call += 1
@@ -959,7 +804,7 @@ struct SteamCMDManagedInstallInterleavingTests {
                     outcome: mine == 1 ? .removed : .refused, failureReason: nil
                 )
             },
-            performInstall: { _ in
+            performInstall: {
                 Issue.record("no install may run during a removal")
                 return nil
             }
@@ -1001,5 +846,161 @@ private actor AsyncGate {
         let pending = continuations
         continuations = []
         pending.forEach { $0.resume() }
+    }
+}
+
+/// The manifest is Valve's own steamcmd update channel; installing from it is
+/// what removed the Rosetta requirement. The fixture is the real manifest shape
+/// captured 2026-08-13, values shortened but structure verbatim.
+@Suite("SteamCMD manifest parsing")
+struct SteamCMDManifestTests {
+    private static func fixture(
+        binsFile: String = "steamcmd_bins_osx.zip.fea7987a78b17131a8303508b1627668dab372b0"
+    ) -> String {
+        """
+        "osx"
+        {
+        \t"version"\t\t"1785799152"
+        \t"ostype"\t\t"macos1015"
+        \t"steamcmd_public_all"
+        \t{
+        \t\t"file"\t\t"steamcmd_public_all.zip.9acb456879ee932518117972e2b09b938f19063b"
+        \t\t"size"\t\t"60352"
+        \t\t"sha2"\t\t"6fad0bff904dac6cce1c56d9bdf60915e8041e9e3d12b3ca3baeca31d1e00acc"
+        \t}
+        \t"steamcmd_bins_osx"
+        \t{
+        \t\t"file"\t\t"\(binsFile)"
+        \t\t"size"\t\t"19923594"
+        \t\t"sha2"\t\t"d53da9a68e578a775ae18553c82152b925ae9c932cc37442552cc0eeebd78e0e"
+        \t\t"zipvz"\t\t"steamcmd_bins_osx.zip.vz.90b482c24f1fafb2292d0e0da3d700fd30c342b1_12839892"
+        \t\t"sha2vz"\t\t"2b9dd13b59e35721b1244583e395bcd24996e5a9b8d1c9606d85fddcdf8c3c82"
+        \t}
+        \t"steamcmd_breakpad_osx"
+        \t{
+        \t\t"file"\t\t"steamcmd_breakpad_osx.zip.eda848a2329cdc8b369885c20dc3e8fdee83088e"
+        \t\t"size"\t\t"576242"
+        \t\t"sha2"\t\t"e8b83bb0ecf683a77c3c5c78320b9d894251ad7339ee002a446f238dfc950675"
+        \t}
+        \t"steamcmd_osx"
+        \t{
+        \t\t"file"\t\t"steamcmd_osx.zip.1ddda071ccfbd4628f40ff1306122b01d354b060"
+        \t\t"size"\t\t"4009303"
+        \t\t"sha2"\t\t"7aa24b9739ad12ecba7d91bcd0f982e0cc7514e767cb2b3ab77124c2726277e4"
+        \t}
+        }
+        """
+    }
+
+    @Test("Control: the captured real manifest parses into all four packages")
+    func realShapeParses() throws {
+        let packages = try #require(SteamCMDManifest.parse(Self.fixture()))
+        #expect(packages.map(\.name) == SteamCMDManifest.requiredPackages)
+        let main = try #require(packages.first { $0.name == "steamcmd_osx" })
+        #expect(main.file == "steamcmd_osx.zip.1ddda071ccfbd4628f40ff1306122b01d354b060")
+        #expect(main.sha256 == "7aa24b9739ad12ecba7d91bcd0f982e0cc7514e767cb2b3ab77124c2726277e4")
+        #expect(main.byteCount == 4_009_303)
+        // The plain zip is chosen, never the .vz variant we cannot decompress.
+        #expect(packages.allSatisfy { !$0.file.contains(".vz.") })
+    }
+
+    @Test("A manifest missing any required package fails whole")
+    func missingPackageFailsWhole() {
+        let truncated = Self.fixture()
+            .replacingOccurrences(of: "\"steamcmd_osx\"", with: "\"steamcmd_other\"")
+        #expect(SteamCMDManifest.parse(truncated) == nil)
+    }
+
+    @Test("A traversal-shaped package filename is refused")
+    func traversalFileNameRefused() {
+        #expect(SteamCMDManifest.parse(Self.fixture(binsFile: "../../etc/evil.zip")) == nil)
+        #expect(SteamCMDManifest.parse(Self.fixture(binsFile: "a/b.zip")) == nil)
+        // Control: the shape rule itself accepts the real names.
+        #expect(SteamCMDManifest.isSafePackageFileName(
+            "steamcmd_osx.zip.1ddda071ccfbd4628f40ff1306122b01d354b060"
+        ))
+    }
+
+    @Test("A malformed digest or size fails the parse")
+    func malformedFieldsRefused() {
+        #expect(SteamCMDManifest.parse(Self.fixture()
+            .replacingOccurrences(
+                of: "7aa24b9739ad12ecba7d91bcd0f982e0cc7514e767cb2b3ab77124c2726277e4",
+                with: "short"
+            )) == nil)
+        #expect(SteamCMDManifest.parse(Self.fixture()
+            .replacingOccurrences(of: "\"4009303\"", with: "\"zero\"")) == nil)
+    }
+}
+
+/// The in-app sign-in's two safety properties: the password can never enter
+/// argv (the type system has no parameter for it), and the transcript
+/// classifier steers the PTY exchange from real steamcmd output shapes.
+@Suite("SteamCMD interactive login")
+struct SteamCMDLoginTests {
+    @Test("The login argv carries the account and +quit, and nothing secret")
+    func argvHasNoSecretSlot() {
+        let arguments = SteamCMDLoginProbe.arguments(accountName: "probe_user")
+        #expect(arguments == ["+login", "probe_user", "+quit"])
+    }
+
+    @Test("The timeout survives the mobile-confirmation wait but stays bounded")
+    func timeoutClamp() {
+        #expect(SteamCMDLoginProbe.clampedTimeout(0) >= 60)
+        #expect(SteamCMDLoginProbe.clampedTimeout(.nan) == SteamCMDLoginProbe.defaultTimeout)
+        #expect(SteamCMDLoginProbe.clampedTimeout(10_000) <= 600)
+        #expect(SteamCMDLoginProbe.clampedTimeout(300) == 300)
+    }
+
+    private typealias Classifier = SteamCMDLoginOutputClassifier
+
+    @Test("Real steamcmd transcript shapes classify to the right event")
+    func transcriptShapes() {
+        #expect(Classifier.event(inTranscript:
+            "Steam Console Client (c) Valve Corporation\nLogging in user 'x' to Steam Public...\npassword:"
+        ) == .passwordPrompt)
+        #expect(Classifier.event(inTranscript:
+            "password:\nThis account is protected by Steam Guard.\nSteam Guard code:"
+        ) == .guardCodeEmailPrompt)
+        #expect(Classifier.event(inTranscript: "password:\nTwo-factor code:") == .guardCodeTotpPrompt)
+        #expect(Classifier.event(inTranscript:
+            "password:\nPlease confirm the login in the Steam Mobile app on your phone."
+        ) == .waitingForMobileConfirmation)
+        #expect(Classifier.event(inTranscript: "password:\nFAILED (Invalid Password)") == .invalidPassword)
+        #expect(Classifier.event(inTranscript: "Steam Guard code:\nFAILED (Invalid Login Auth Code)") == .invalidGuardCode)
+        #expect(Classifier.event(inTranscript: "FAILED (Rate Limit Exceeded)") == .rateLimited)
+        #expect(Classifier.event(inTranscript:
+            "Logging in using cached credentials...\nWaiting for user info...OK"
+        ) == .loggedIn)
+    }
+
+    @Test("Terminal outcomes outrank the prompts that preceded them")
+    func terminalOutranksPrompt() {
+        // The transcript keeps the old "password:" prompt forever; once a
+        // verdict lands, re-answering the prompt would loop.
+        #expect(Classifier.event(inTranscript:
+            "password:\nInvalid Password\npassword:"
+        ) == .invalidPassword)
+        #expect(Classifier.event(inTranscript:
+            "password:\nPlease confirm the login in the Steam Mobile app\nLogged in OK"
+        ) == .loggedIn)
+    }
+
+    @Test("Control: an unclassified transcript yields no event")
+    func silenceYieldsNothing() {
+        #expect(Classifier.event(inTranscript: "Redirecting stderr to logs...") == nil)
+    }
+
+    /// Source-level, connector target is not linked here: the login session may
+    /// only build its argv through the parameterless-secret builder, and every
+    /// secret write goes to the PTY.
+    @Test("The connector's login body has no other argv source")
+    func loginBodyUsesTheBuilder() throws {
+        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
+        let start = try #require(source.range(of: "private static func runLoginSession"))
+        let body = String(source[start.lowerBound...].prefix(5_000))
+        #expect(body.contains("SteamCMDLoginProbe.arguments(accountName:"))
+        #expect(!body.contains("request.password]"))
+        #expect(body.contains("SteamCMDExecutionFence.refusesExecution"))
     }
 }

@@ -8,6 +8,10 @@ import UniformTypeIdentifiers
 struct WorkshopInstalledView: View {
     /// Tag tap → Browse Online scoped to that tag.
     var onBrowseTag: ((String) -> Void)?
+    var onBrowseOnline: (() -> Void)?
+    var onInstallSteamCMD: (() -> Void)?
+    var onOpenWorkshopSettings: (() -> Void)?
+    var isInstallingSteamCMD = false
     /// nil = no header / toolbar (embeddable like Browse).
     var paneHeader: (() -> AnyView)?
 
@@ -257,8 +261,32 @@ struct WorkshopInstalledView: View {
         IllustratedEmptyState(
             symbol: "square.stack.3d.up.slash",
             title: "No wallpapers installed yet.",
-            message: "Download from Browse Online, paste a Workshop URL, or add an existing library folder with the toolbar's + button."
-        )
+            // The buttons below carry the two main paths; the message only
+            // teaches the alternates they don't cover.
+            message: "You can also paste a Workshop URL or add a library folder with +.",
+            primary: emptyStatePrimaryAction,
+            secondary: onOpenWorkshopSettings.map { openSettings in
+                EmptyStateButtonAction("Configure", action: openSettings)
+            }
+        ) {
+            if isInstallingSteamCMD {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    ProgressView().controlSize(.small)
+                    Text("Setting up SteamCMD…")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
+                }
+            }
+        }
+    }
+
+    private var emptyStatePrimaryAction: EmptyStateButtonAction? {
+        if doctor.hasBoundBinary, doctor.isGreen(.binaryIdentity), let onBrowseOnline {
+            return EmptyStateButtonAction("Browse Online", action: onBrowseOnline)
+        }
+        return onInstallSteamCMD.map { install in
+            EmptyStateButtonAction("Install SteamCMD…", action: install)
+        }
     }
 
     // MARK: - Type filter chips (multi-select)
