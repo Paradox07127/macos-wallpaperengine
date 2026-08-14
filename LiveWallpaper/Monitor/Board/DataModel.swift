@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 @MainActor
-final class BoardDataModel: ObservableObject {
+final class DataModel: ObservableObject {
     @Published private(set) var snapshot: MonitorSnapshot
     /// Fed on every `push`; `reset()` on pump restart so series don't bleed across sessions.
     let historyStore: MonitorHistoryStore

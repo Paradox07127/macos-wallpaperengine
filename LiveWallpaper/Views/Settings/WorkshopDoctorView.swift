@@ -47,7 +47,7 @@ struct WorkshopDoctorView: View {
     var body: some View {
         shell
         .overlay(alignment: .bottom) {
-            DiagnosticExportToast(isPresented: $showingToast)
+            ExportToast(isPresented: $showingToast)
                 .padding(.bottom, DesignTokens.Spacing.xl)
                 .allowsHitTesting(false)
         }
@@ -64,7 +64,7 @@ struct WorkshopDoctorView: View {
             }
         }
         .sheet(isPresented: $showingBrewInstructions) {
-            HomebrewSteamCMDSheet()
+            SteamCMDSheet()
         }
         .task {
             await service.autoConfigureIfNeeded()

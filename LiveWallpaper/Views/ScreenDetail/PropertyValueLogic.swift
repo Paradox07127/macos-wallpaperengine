@@ -4,7 +4,7 @@ import Foundation
 import LiveWallpaperCore
 
 /// Shared value logic for the web (`WPEProjectCustomSettingsCard`) and scene (`WPESceneCustomSettingsCard`) settings inspectors: slider normalization, number formatting, color codecs, and default comparison.
-enum WPEProjectPropertyValueLogic {
+enum PropertyValueLogic {
     typealias Property = WallpaperEngineProjectPropertySchema.Property
 
     static func value(

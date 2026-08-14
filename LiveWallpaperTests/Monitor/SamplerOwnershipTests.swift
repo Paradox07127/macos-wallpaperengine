@@ -60,7 +60,7 @@
             #expect(!observers.contains("systemMemoryWarning"))
             #expect(!observers.contains("systemMemoryNormal"))
 
-            #expect(MonitorRuntime.merged([]) == nil)
+            #expect(Runtime.merged([]) == nil)
         }
 
         @Test("watcher is app-lifetime across sleep wake and rejects late termination callbacks")
@@ -209,13 +209,13 @@
             var agentsOnly = MonitorRuntimeOptions(system: false)
             agentsOnly.agents = true
 
-            let merged = MonitorRuntime.merged([wallpaper, overlay, agentsOnly])
+            let merged = Runtime.merged([wallpaper, overlay, agentsOnly])
             #expect(merged?.system == true)
             #expect(merged?.agents == true)
             #expect(merged?.activeWidgetKinds == [.cpu, .gpu, .memory, .network])
             #expect(merged?.gpuSampleSeconds == 2)
 
-            let gates = MonitorRuntime.systemOptions(for: merged?.activeWidgetKinds ?? [])
+            let gates = Runtime.systemOptions(for: merged?.activeWidgetKinds ?? [])
             #expect(gates.gpu)
             #expect(gates.topProcesses)
             #expect(gates.sensors)

@@ -10,11 +10,11 @@ enum SourceRegistration {
         sharedCursorStore.flush()
     }
 
-    /// Idempotent; MainActor before first `MonitorRuntime.acquire`.
+    /// Idempotent; MainActor before first `Runtime.acquire`.
     @MainActor static func registerDefaultFactories() {
         guard !registered else { return }
         registered = true
-        MonitorRuntime.extraSourceFactories.append { options in
+        Runtime.extraSourceFactories.append { options in
             guard options.agents else { return [] }
             let cursorStore = sharedCursorStore
             var sources: [any MonitorDataSource] = []

@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum MonitorDesign {
+enum Design {
     // MARK: - Colour space
 
     static func oklch(_ l: Double, _ c: Double, _ h: Double, alpha: Double = 1) -> Color {
@@ -136,15 +136,15 @@ enum MonitorDesign {
 // MARK: - Annotation chip (shared board-wide aesthetic)
 
 extension View {
-    func monitorChip(_ scale: MonitorDesign.TypeScale) -> some View {
+    func monitorChip(_ scale: Design.TypeScale) -> some View {
         self
             .padding(.horizontal, scale.label * 0.5)
             .padding(.vertical, scale.label * 0.24)
             .background(
                 Capsule(style: .continuous)
-                    .fill(MonitorDesign.bg2.opacity(0.55))
+                    .fill(Design.bg2.opacity(0.55))
                     .overlay(Capsule(style: .continuous)
-                        .strokeBorder(MonitorDesign.hairlineHi.opacity(0.5), lineWidth: 1))
+                        .strokeBorder(Design.hairlineHi.opacity(0.5), lineWidth: 1))
             )
     }
 }

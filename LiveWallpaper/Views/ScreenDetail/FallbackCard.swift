@@ -19,7 +19,7 @@ enum FallbackReason: Equatable, Sendable {
 }
 
 /// Card when a WPE import cannot become a live wallpaper.
-struct WPEFallbackCard: View {
+struct FallbackCard: View {
     let origin: WPEOrigin
     let reason: FallbackReason
 

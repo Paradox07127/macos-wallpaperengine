@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-struct AppleAerialsLibraryView: View {
+struct AerialsLibraryView: View {
     private let library = AppleAerialsLibrary.shared
     @Environment(ScreenManager.self) private var screenManager
     @State private var searchText: String = ""
@@ -64,7 +64,7 @@ struct AppleAerialsLibraryView: View {
             systemImage: "sparkles.tv",
             title: { Text("Apple Aerials") },
             metadata: {
-                HStack(spacing: DesignTokens.DetailHeader.metadataSpacing) {
+                HStack(spacing: DesignTokens.Header.metadataSpacing) {
                     Text("\(library.assets.count) downloaded videos")
                     if library.isScanning {
                         ProgressView().controlSize(.small)
@@ -197,7 +197,7 @@ struct AppleAerialsLibraryView: View {
 
                     LazyVGrid(columns: DesignTokens.LibraryGrid.columns, spacing: DesignTokens.LibraryGrid.spacing) {
                         ForEach(filteredAssets) { asset in
-                            AerialThumbnailCard(
+                            ThumbnailCard(
                                 asset: asset,
                                 screens: screenManager.screens,
                                 onApply: { screen in apply(asset, to: screen) },

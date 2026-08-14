@@ -27,7 +27,7 @@ struct ScheduleSection: View {
             if scheduleSlots.isEmpty {
                 emptyState
             } else {
-                ScheduleTimelineEditor(
+                TimelineEditor(
                     slots: scheduleSlots,
                     currentHour: currentHour,
                     palette: Self.timelinePalette,
@@ -100,7 +100,7 @@ struct ScheduleSection: View {
     private var slotList: some View {
         VStack(spacing: 6) {
             ForEach(Array($scheduleSlots.enumerated()), id: \.element.id) { index, $slot in
-                ScheduleSlotRow(
+                SlotRow(
                     slot: $slot,
                     accent: Self.timelinePalette[index % Self.timelinePalette.count],
                     isActive: slot.containsHour(currentHour),
@@ -128,7 +128,7 @@ struct ScheduleSection: View {
     private var actionBar: some View {
         HStack(spacing: 8) {
             Menu {
-                ForEach(SchedulePreset.allCases) { preset in
+                ForEach(Preset.allCases) { preset in
                     Button {
                         addSlot(from: preset)
                     } label: {
@@ -306,7 +306,7 @@ struct ScheduleSection: View {
 
     // MARK: - Add slot paths
 
-    private func addSlot(from preset: SchedulePreset) {
+    private func addSlot(from preset: Preset) {
         let candidate = preset.makeSlot()
         let conflicts = SchedulePolicy.conflicts(slot: candidate, against: scheduleSlots)
         guard conflicts.isEmpty else {
@@ -336,7 +336,7 @@ struct ScheduleSection: View {
         }
         let normalizedStart = free.start % 24
         let normalizedEnd = free.end % 24
-        let preset = SchedulePreset.suggestion(forStartHour: normalizedStart)
+        let preset = Preset.suggestion(forStartHour: normalizedStart)
         let candidate = ScheduleSlot(startHour: normalizedStart, endHour: normalizedEnd, label: preset.labelKey)
         guard normalizedStart != normalizedEnd,
               SchedulePolicy.conflicts(slot: candidate, against: scheduleSlots).isEmpty else {
@@ -350,7 +350,7 @@ struct ScheduleSection: View {
 
     private func insertSlot(atHour hour: Int) {
         let probeEnd = (hour + 2) % 24
-        let probe = ScheduleSlot(startHour: hour, endHour: probeEnd, label: SchedulePreset.suggestion(forStartHour: hour).labelKey)
+        let probe = ScheduleSlot(startHour: hour, endHour: probeEnd, label: Preset.suggestion(forStartHour: hour).labelKey)
         if SchedulePolicy.conflicts(slot: probe, against: scheduleSlots).isEmpty {
             scheduleSlots.append(probe)
             screenManager.updateScheduleSlots(scheduleSlots, for: screen)

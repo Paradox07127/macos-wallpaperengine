@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct BreathingDot: View {
-    var color: Color = MonitorDesign.signalSage
+    var color: Color = Design.signalSage
     var size: CGFloat = 7
     var animated: Bool = true
 
@@ -9,7 +9,7 @@ struct BreathingDot: View {
     @Environment(\.monitorReduceMotion) private var reduceMotion
     @Environment(\.monitorSuspended) private var suspended
 
-    init(color: Color = MonitorDesign.signalSage, size: CGFloat = 7, animated: Bool = true) {
+    init(color: Color = Design.signalSage, size: CGFloat = 7, animated: Bool = true) {
         self.color = color
         self.size = size
         self.animated = animated
@@ -43,11 +43,11 @@ struct BreathingDot: View {
 
 #Preview("Breathing dot") {
     HStack(spacing: 20) {
-        BreathingDot(color: MonitorDesign.signalAmber)
-        BreathingDot(color: MonitorDesign.signalCoral)
-        BreathingDot(color: MonitorDesign.signalSage)
-        BreathingDot(color: MonitorDesign.signalIdle, animated: false)
+        BreathingDot(color: Design.signalAmber)
+        BreathingDot(color: Design.signalCoral)
+        BreathingDot(color: Design.signalSage)
+        BreathingDot(color: Design.signalIdle, animated: false)
     }
     .padding(28)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

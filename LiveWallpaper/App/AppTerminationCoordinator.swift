@@ -7,7 +7,7 @@ enum AppTerminationCoordinator {
 
     static func shutdownForApplication() async {
         await run(
-            stopMonitorProducers: { await MonitorRuntime.shared.shutdown() },
+            stopMonitorProducers: { await Runtime.shared.shutdown() },
             flushMonitorCursors: {
                 await runBlockingOffMainActor {
                     SourceRegistration.flushCursorStoreForTermination()

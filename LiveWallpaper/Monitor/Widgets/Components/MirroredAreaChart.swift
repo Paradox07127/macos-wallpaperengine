@@ -3,8 +3,8 @@ import SwiftUI
 struct MirroredAreaChart: View {
     var up: [Double]
     var down: [Double]
-    var upColor: Color = MonitorDesign.signalSteel
-    var downColor: Color = MonitorDesign.signalSage
+    var upColor: Color = Design.signalSteel
+    var downColor: Color = Design.signalSage
     var lineWidth: CGFloat = 1.5
 
     var body: some View {
@@ -30,7 +30,7 @@ struct MirroredAreaChart: View {
                         p.move(to: CGPoint(x: 0, y: mid))
                         p.addLine(to: CGPoint(x: w, y: mid))
                     }
-                    .stroke(MonitorDesign.hairlineHi.opacity(0.5),
+                    .stroke(Design.hairlineHi.opacity(0.5),
                             style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 }
             }
@@ -93,5 +93,5 @@ struct MirroredAreaChart: View {
     )
     .frame(width: 260, height: 64)
     .padding(24)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

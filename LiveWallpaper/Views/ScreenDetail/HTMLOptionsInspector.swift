@@ -7,7 +7,7 @@ import LiveWallpaperCore
 
 
 /// Toggle-style behavior settings, kept visually separate from the continuous
-/// geometry controls in `HTMLTransformInspector`. Lives under `ContentSecurityInspector`.
+/// geometry controls in `HTMLTransformInspector`. Lives under `SecurityInspector`.
 struct HTMLOptionsInspector: View {
     var screen: Screen
     @Binding var config: HTMLConfig

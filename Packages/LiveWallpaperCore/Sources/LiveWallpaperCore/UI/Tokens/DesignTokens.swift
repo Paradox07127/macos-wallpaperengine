@@ -73,7 +73,7 @@ public enum DesignTokens {
         /// deliberately darker, where the lighter amber washed out.
         public static let boardEditBorder = Color(red: 0.62, green: 0.50, blue: 0.28)
 
-        /// Scene-diagnostic log line coloring (`WPESceneDetailView`) — fixed
+        /// Scene-diagnostic log line coloring (`SceneDetailView`) — fixed
         /// values tuned against the panel's own black background, systematically
         /// lighter than `Status.*` so they stay legible there.
         public enum Log {
@@ -206,7 +206,7 @@ public enum DesignTokens {
         public static let sectionHeaderTopPadding: CGFloat = -7
     }
 
-    public enum DetailHeader {
+    public enum Header {
         public static let horizontalPadding: CGFloat = Spacing.xl
         public static let verticalPadding: CGFloat = 14
         public static let contentSpacing: CGFloat = 14

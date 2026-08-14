@@ -220,7 +220,7 @@ struct BoardSettingsView: View {
             authorize: {
                 SourceAuthorization.shared.requestAccess(for: .claude, from: hostWindow()) {
                     refreshAuthorizationState()
-                    Task { await MonitorRuntime.shared.refreshSources() }
+                    Task { await Runtime.shared.refreshSources() }
                 }
             },
             revoke: { revoke(.claude) }
@@ -236,7 +236,7 @@ struct BoardSettingsView: View {
             authorize: {
                 SourceAuthorization.shared.requestAccess(for: .codex, from: hostWindow()) {
                     refreshAuthorizationState()
-                    Task { await MonitorRuntime.shared.refreshSources() }
+                    Task { await Runtime.shared.refreshSources() }
                 }
             },
             revoke: { revoke(.codex) }
@@ -291,7 +291,7 @@ struct BoardSettingsView: View {
     private func revoke(_ provider: SourceAuthorization.Provider) {
         SourceAuthorization.shared.revokeAccess(provider)
         refreshAuthorizationState()
-        Task { await MonitorRuntime.shared.refreshSources() }
+        Task { await Runtime.shared.refreshSources() }
     }
 
     // MARK: - Draft mutations (persist through ScreenManager)

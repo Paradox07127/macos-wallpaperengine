@@ -9,25 +9,25 @@ struct DesignTests {
 
     @Test("Linear components stay inside the unit gamut")
     func linearInGamut() {
-        let (r, g, b) = MonitorDesign.linearSRGB(l: 0.62, c: 0.045, h: 250)
+        let (r, g, b) = Design.linearSRGB(l: 0.62, c: 0.045, h: 250)
         for v in [r, g, b] { #expect(v >= 0 && v <= 1) }
     }
 
     @Test("Load band colour matches the band identity at each side")
     func loadBandColorMatchesTokens() {
-        #expect(colorEq(MonitorDesign.loadBandColor(0.2), MonitorDesign.loadSteel))
-        #expect(colorEq(MonitorDesign.loadBandColor(0.6), MonitorDesign.signalAmber))
-        #expect(colorEq(MonitorDesign.loadBandColor(0.95), MonitorDesign.signalCoral))
+        #expect(colorEq(Design.loadBandColor(0.2), Design.loadSteel))
+        #expect(colorEq(Design.loadBandColor(0.6), Design.signalAmber))
+        #expect(colorEq(Design.loadBandColor(0.95), Design.signalCoral))
     }
 
     @Test("Type scale honours the mock's clamps")
     func typeScale() {
-        let small = MonitorDesign.TypeScale(cellHeight: 60)
+        let small = Design.TypeScale(cellHeight: 60)
         approx(small.hero, 24, 1e-9, "hero floor")
-        let mid = MonitorDesign.TypeScale(cellHeight: 100)
+        let mid = Design.TypeScale(cellHeight: 100)
         approx(mid.hero, 36, 1e-9, "hero mid")
         approx(mid.sub, 36 * 0.52, 1e-9, "sub")
-        let big = MonitorDesign.TypeScale(cellHeight: 200)
+        let big = Design.TypeScale(cellHeight: 200)
         approx(big.hero, 46, 1e-9, "hero cap")
         approx(big.label, 12, 1e-9, "label cap")
     }

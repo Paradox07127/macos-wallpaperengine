@@ -1,7 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-struct OnboardingStepDone: View {
+struct StepDone: View {
     let destination: OnboardingCompletionDestination
     let finish: () -> Void
     @Environment(ScreenManager.self) private var screenManager

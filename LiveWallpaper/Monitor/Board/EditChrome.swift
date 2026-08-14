@@ -5,7 +5,7 @@ import LiveWallpaperCore
 // MARK: - Widget drag gesture
 
 struct WidgetDragModifier: ViewModifier {
-    @ObservedObject var model: BoardInteractionModel
+    @ObservedObject var model: InteractionModel
     let placement: MonitorWidgetPlacement
     let geometry: MonitorBoardGeometry
     let restRawRect: CGRect
@@ -51,7 +51,7 @@ enum MonitorBoardCoordinateSpace {
 
 /// S/M/L size toggle + settings + remove, floating on the selected tile.
 struct MonitorWidgetControlBar: View {
-    @ObservedObject var model: BoardInteractionModel
+    @ObservedObject var model: InteractionModel
     let placement: MonitorWidgetPlacement
     @State private var denied = false
 
@@ -141,7 +141,7 @@ struct MonitorWidgetControlBar: View {
 
 /// Top-centre Add Widget + Done pill (Done is the exit path for menu-entered edit mode).
 struct MonitorBoardEditToolbar: View {
-    @ObservedObject var model: BoardInteractionModel
+    @ObservedObject var model: InteractionModel
 
     var body: some View {
         HStack(spacing: 6) {
@@ -200,7 +200,7 @@ struct MonitorBoardEditToolbar: View {
 
 /// Available widget kinds (gated kinds hidden when the agent-session feature is off).
 struct MonitorCatalogView: View {
-    @ObservedObject var model: BoardInteractionModel
+    @ObservedObject var model: InteractionModel
     let maxScrollHeight: CGFloat
     @State private var contentSize: CGSize?
 
@@ -297,7 +297,7 @@ struct MonitorPanelSizeReader: ViewModifier {
 // MARK: - Settings card
 
 struct MonitorWidgetSettingsCard: View {
-    @ObservedObject var model: BoardInteractionModel
+    @ObservedObject var model: InteractionModel
     let placement: MonitorWidgetPlacement
     let maxHeight: CGFloat
 
@@ -332,7 +332,7 @@ struct MonitorWidgetSettingsCard: View {
 
 /// Accessibility move/remove actions — edit mode only.
 struct MonitorPlacementAccessibilityActions: ViewModifier {
-    @ObservedObject var model: BoardInteractionModel
+    @ObservedObject var model: InteractionModel
     let placementID: UUID
 
     @ViewBuilder

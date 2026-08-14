@@ -7,7 +7,7 @@ import SwiftUI
 /// Everything lives in one row plus an optional naming line, because this sits
 /// in an inspector whose minimum width is `DesignTokens.Inspector.minWidth`
 /// (268pt, ~235pt usable) and CJK copy runs 1.5-2× English.
-struct WPEScenePresetBar: View {
+struct ScenePresetBar: View {
     /// Already filtered to the descriptor's base wallpaper by the caller.
     let presets: [ScenePreset]
     let activePreset: ScenePreset?

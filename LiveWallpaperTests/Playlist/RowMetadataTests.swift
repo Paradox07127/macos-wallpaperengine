@@ -2,11 +2,11 @@ import Testing
 import CoreGraphics
 @testable import LiveWallpaper
 
-@Suite("PlaylistRowMetadata subtitle formatting")
+@Suite("RowMetadata subtitle formatting")
 struct PlaylistRowMetadataTests {
     @Test("Subtitle composes resolution, duration, and folder with dot separators")
     func fullSubtitle() {
-        let meta = PlaylistRowMetadata(
+        let meta = RowMetadata(
             resolution: CGSize(width: 1920, height: 1080),
             duration: 30,
             folder: "Wallpapers"
@@ -16,7 +16,7 @@ struct PlaylistRowMetadataTests {
 
     @Test("Missing resolution drops only the resolution segment")
     func missingResolution() {
-        let meta = PlaylistRowMetadata(
+        let meta = RowMetadata(
             resolution: nil,
             duration: 30,
             folder: "Wallpapers"
@@ -26,7 +26,7 @@ struct PlaylistRowMetadataTests {
 
     @Test("Missing duration drops only the duration segment")
     func missingDuration() {
-        let meta = PlaylistRowMetadata(
+        let meta = RowMetadata(
             resolution: CGSize(width: 1920, height: 1080),
             duration: nil,
             folder: "Wallpapers"
@@ -36,7 +36,7 @@ struct PlaylistRowMetadataTests {
 
     @Test("Empty metadata produces empty subtitle")
     func emptySubtitle() {
-        let meta = PlaylistRowMetadata.empty
+        let meta = RowMetadata.empty
         #expect(meta.subtitle == "")
     }
 
@@ -51,14 +51,14 @@ struct PlaylistRowMetadataTests {
             (CGSize(width: 7680, height: 4320), "8K"),
         ]
         for (size, expected) in cases {
-            let meta = PlaylistRowMetadata(resolution: size, duration: nil, folder: nil)
+            let meta = RowMetadata(resolution: size, duration: nil, folder: nil)
             #expect(meta.subtitle == expected, "size=\(size) expected=\(expected)")
         }
     }
 
     @Test("Unusual resolutions fall back to raw WxH")
     func unusualResolution() {
-        let meta = PlaylistRowMetadata(
+        let meta = RowMetadata(
             resolution: CGSize(width: 800, height: 100),
             duration: nil,
             folder: nil
@@ -68,7 +68,7 @@ struct PlaylistRowMetadataTests {
 
     @Test("Duration formats minutes/seconds without hours when under one hour")
     func durationUnderHour() {
-        let meta = PlaylistRowMetadata(
+        let meta = RowMetadata(
             resolution: nil,
             duration: 65,
             folder: nil
@@ -78,7 +78,7 @@ struct PlaylistRowMetadataTests {
 
     @Test("Duration includes hours when at least one hour")
     func durationWithHours() {
-        let meta = PlaylistRowMetadata(
+        let meta = RowMetadata(
             resolution: nil,
             duration: 3661,
             folder: nil
@@ -88,7 +88,7 @@ struct PlaylistRowMetadataTests {
 
     @Test("Non-positive duration is treated as missing")
     func nonPositiveDuration() {
-        let meta = PlaylistRowMetadata(
+        let meta = RowMetadata(
             resolution: CGSize(width: 1920, height: 1080),
             duration: 0,
             folder: "Wallpapers"

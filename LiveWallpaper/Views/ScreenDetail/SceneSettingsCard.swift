@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Edits project properties stored directly on a WPE scene descriptor.
 struct WPESceneCustomSettingsCard: View {
-    private typealias ValueLogic = WPEProjectPropertyValueLogic
+    private typealias ValueLogic = PropertyValueLogic
 
     var screen: Screen
     var schema: WallpaperEngineProjectPropertySchema
@@ -31,7 +31,7 @@ struct WPESceneCustomSettingsCard: View {
                 }
             ) {
                 VStack(alignment: .leading, spacing: 10) {
-                    WPEScenePresetBar(
+                    ScenePresetBar(
                         presets: availablePresets,
                         activePreset: activePreset,
                         onSelect: { applyPreset($0) },

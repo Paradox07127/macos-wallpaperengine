@@ -59,11 +59,11 @@ final class MonitorRuntimeLeaseSlot: Sendable {
     private static let generationCounter = OSAllocatedUnfairLock(initialState: UInt64(0))
     private static let completedTask = Task<Void, Never> {}
 
-    private let runtime: MonitorRuntime
+    private let runtime: Runtime
     fileprivate let leaseID = UUID()
     private let state = OSAllocatedUnfairLock(initialState: State())
 
-    fileprivate init(runtime: MonitorRuntime) {
+    fileprivate init(runtime: Runtime) {
         self.runtime = runtime
     }
 
@@ -250,8 +250,8 @@ private struct MonitorRuntimeLeaseEvent: Sendable {
 }
 
 /// App-wide pipeline owner: N Monitor displays share one hub + one source set.
-actor MonitorRuntime {
-    static let shared = MonitorRuntime()
+actor Runtime {
+    static let shared = Runtime()
 
     private let grants: MonitorGrantAccess
     /// Test seam without mutating process-global MainActor registry.

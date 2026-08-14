@@ -4,7 +4,7 @@ import LiveWallpaperCore
 import Metal
 
 /// Reads back the renderer's offscreen `MTLTexture` into an `NSImage` for
-/// `WPESceneDetailView` (without it the detail view falls into
+/// `SceneDetailView` (without it the detail view falls into
 /// `.previewUnavailable`). Runs on a dedicated utility-QoS queue so a 4K
 /// mip-chain readback never blocks the main thread on multi-display setups;
 /// `@unchecked Sendable` because every owned closure is pure or hops onto the

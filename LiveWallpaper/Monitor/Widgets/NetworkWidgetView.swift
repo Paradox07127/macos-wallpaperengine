@@ -4,8 +4,8 @@ import LiveWallpaperCore
 struct NetworkWidgetView: View {
     let context: MonitorWidgetContext
 
-    private static let rxColor = MonitorDesign.signalAmber
-    private static let txColor = MonitorDesign.signalSteel
+    private static let rxColor = Design.signalAmber
+    private static let txColor = Design.signalSteel
 
     private static let smallChartWindowSamples = 30
     private static let mediumChartWindowSamples = 60
@@ -49,12 +49,12 @@ struct NetworkWidgetView: View {
 
     @ViewBuilder
     private func headerStatus(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         HStack(spacing: 5) {
             if let name = headerInterfaceLabel {
                 Text(verbatim: name)
-                    .font(MonitorDesign.subFont(size: scale.label))
-                    .foregroundStyle(MonitorDesign.inkMuted)
+                    .font(Design.subFont(size: scale.label))
+                    .foregroundStyle(Design.inkMuted)
             }
             connectivityDot
         }
@@ -64,25 +64,25 @@ struct NetworkWidgetView: View {
     private var headerInterfaceLabel: String? {
         switch context.placement.size {
         case .small:
-            let typeLabel = MonitorFormat.interfaceTypeLabel(activeInterfaceType)
+            let typeLabel = Format.interfaceTypeLabel(activeInterfaceType)
             if !typeLabel.isEmpty { return typeLabel }
             return activeInterface?.name
         case .medium, .large:
             guard let iface = activeInterface else {
-                let typeLabel = MonitorFormat.interfaceTypeLabel(activeInterfaceType)
+                let typeLabel = Format.interfaceTypeLabel(activeInterfaceType)
                 return typeLabel.isEmpty ? nil : typeLabel
             }
-            let typeLabel = MonitorFormat.interfaceTypeLabel(activeInterfaceType)
+            let typeLabel = Format.interfaceTypeLabel(activeInterfaceType)
             return typeLabel.isEmpty ? iface.name : "\(iface.name) · \(typeLabel)"
         }
     }
 
     private var connectivityDot: some View {
         Circle()
-            .fill(isOnline ? MonitorDesign.signalSage : MonitorDesign.signalCoral)
+            .fill(isOnline ? Design.signalSage : Design.signalCoral)
             .frame(width: 6, height: 6)
             .overlay(Circle().strokeBorder(Color.black.opacity(0.4), lineWidth: 1))
-            .shadow(color: (isOnline ? MonitorDesign.signalSage : MonitorDesign.signalCoral)
+            .shadow(color: (isOnline ? Design.signalSage : Design.signalCoral)
                 .opacity(0.6), radius: 3)
     }
 
@@ -90,7 +90,7 @@ struct NetworkWidgetView: View {
 
     @ViewBuilder
     private func smallBody(cellHeight: CGFloat) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         VStack(alignment: .leading, spacing: scale.label * 0.5) {
             dualRate(scale: scale)
             mirroredScope(scale: scale, windowSamples: Self.smallChartWindowSamples)
@@ -113,16 +113,16 @@ struct NetworkWidgetView: View {
     /// Preserves a 30-point chart floor while allowing it to absorb font-metric changes.
     @ViewBuilder
     private func scopeBody(cellHeight: CGFloat, isLarge: Bool) -> some View {
-        let scale = MonitorDesign.TypeScale(cellHeight: cellHeight)
+        let scale = Design.TypeScale(cellHeight: cellHeight)
         let rowSpacing = scale.label * (isLarge ? 0.8 : 0.6)
         VStack(alignment: .leading, spacing: rowSpacing) {
             HStack(alignment: .firstTextBaseline) {
                 currentPairLabel(scale: scale)
                 Spacer(minLength: 6)
-                Text(verbatim: "\(MonitorFormat.rate(rxRate)) · \(MonitorFormat.rate(txRate))")
-                    .font(MonitorDesign.subFont(size: scale.caption))
+                Text(verbatim: "\(Format.rate(rxRate)) · \(Format.rate(txRate))")
+                    .font(Design.subFont(size: scale.caption))
                     .monospacedDigit()
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .foregroundStyle(Design.inkPrimary)
             }
             .lineLimit(1)
             .minimumScaleFactor(0.7)
@@ -149,7 +149,7 @@ struct NetworkWidgetView: View {
     }
 
     @ViewBuilder
-    private func mirroredScope(scale: MonitorDesign.TypeScale, windowSamples: Int) -> some View {
+    private func mirroredScope(scale: Design.TypeScale, windowSamples: Int) -> some View {
         MirroredAreaChart(
             up: Self.tail(history.netRx, count: windowSamples),
             down: Self.tail(history.netTx, count: windowSamples),
@@ -160,44 +160,44 @@ struct NetworkWidgetView: View {
         .frame(maxHeight: .infinity)
     }
 
-    private func currentPairLabel(scale: MonitorDesign.TypeScale) -> some View {
+    private func currentPairLabel(scale: Design.TypeScale) -> some View {
         HStack(spacing: 0) {
             Text(verbatim: "↓").foregroundStyle(Self.rxColor)
-            Text(verbatim: " RX  ").foregroundStyle(MonitorDesign.inkFaint)
+            Text(verbatim: " RX  ").foregroundStyle(Design.inkFaint)
             Text(verbatim: "↑").foregroundStyle(Self.txColor)
-            Text(verbatim: " TX").foregroundStyle(MonitorDesign.inkFaint)
+            Text(verbatim: " TX").foregroundStyle(Design.inkFaint)
         }
-        .font(MonitorDesign.labelFont(size: scale.label))
-        .tracking(MonitorDesign.labelTracking(size: scale.label))
+        .font(Design.labelFont(size: scale.label))
+        .tracking(Design.labelTracking(size: scale.label))
     }
 
-    private func peakTag(scale: MonitorDesign.TypeScale) -> some View {
+    private func peakTag(scale: Design.TypeScale) -> some View {
         HStack(spacing: 4) {
             RoundedRectangle(cornerRadius: 1, style: .continuous)
-                .fill(MonitorDesign.oklch(0.72, 0.09, 60).opacity(0.85))
+                .fill(Design.oklch(0.72, 0.09, 60).opacity(0.85))
                 .frame(width: 5, height: 5)
             Text(verbatim: "↓ PEAK")
-                .tracking(MonitorDesign.labelTracking(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkFaint)
-            Text(verbatim: MonitorFormat.rate(history.netRxPeak))
+                .tracking(Design.labelTracking(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
+            Text(verbatim: Format.rate(history.netRxPeak))
                 .monospacedDigit()
-                .foregroundStyle(MonitorDesign.inkMuted)
+                .foregroundStyle(Design.inkMuted)
         }
-        .font(MonitorDesign.labelFont(size: scale.label))
+        .font(Design.labelFont(size: scale.label))
         .monitorChip(scale)
         .padding(scale.label * 0.3)
     }
 
     /// Session-total Σ, chip-wrapped like every other small board annotation.
-    private func sessionTotalTag(scale: MonitorDesign.TypeScale) -> some View {
-        Text(verbatim: "Σ \(MonitorFormat.bytes(sessionTotalBytes))")
-            .font(MonitorDesign.captionFont(size: scale.label))
-            .foregroundStyle(MonitorDesign.inkFaint)
+    private func sessionTotalTag(scale: Design.TypeScale) -> some View {
+        Text(verbatim: "Σ \(Format.bytes(sessionTotalBytes))")
+            .font(Design.captionFont(size: scale.label))
+            .foregroundStyle(Design.inkFaint)
             .monitorChip(scale)
     }
 
     @ViewBuilder
-    private func interfaceDetail(scale: MonitorDesign.TypeScale) -> some View {
+    private func interfaceDetail(scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading, spacing: scale.caption * 0.34) {
             if let ip = privateIPv4 {
                 interfaceRow(key: "IPv4", value: ip, scale: scale)
@@ -209,26 +209,26 @@ struct NetworkWidgetView: View {
         .padding(.top, scale.caption * 0.35)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(MonitorDesign.hairline.opacity(0.4))
-                .frame(height: MonitorDesign.hairlineWidth)
+                .fill(Design.hairline.opacity(0.4))
+                .frame(height: Design.hairlineWidth)
         }
     }
 
     @ViewBuilder
     private func interfaceRow(
-        key: String, value: String, scale: MonitorDesign.TypeScale, chips: [String] = []
+        key: String, value: String, scale: Design.TypeScale, chips: [String] = []
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(verbatim: key.uppercased())
-                .font(MonitorDesign.labelFont(size: scale.caption * 0.86))
+                .font(Design.labelFont(size: scale.caption * 0.86))
                 .tracking(scale.caption * 0.10)
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .foregroundStyle(Design.inkFaint)
             Spacer(minLength: 6)
             HStack(spacing: 5) {
                 Text(verbatim: value)
-                    .font(MonitorDesign.subFont(size: scale.caption))
+                    .font(Design.subFont(size: scale.caption))
                     .monospacedDigit()
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .foregroundStyle(Design.inkPrimary)
                     .truncationMode(.tail)
                 ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
                     warnChip(chip, scale: scale)
@@ -241,56 +241,56 @@ struct NetworkWidgetView: View {
 
     /// Semantic (warn-coral) chip — keeps its own color, but the capsule shape
     /// and padding now match the board-wide `monitorChip` proportions.
-    private func warnChip(_ text: String, scale: MonitorDesign.TypeScale) -> some View {
+    private func warnChip(_ text: String, scale: Design.TypeScale) -> some View {
         Text(verbatim: text.uppercased())
-            .font(MonitorDesign.labelFont(size: scale.label * 0.92))
+            .font(Design.labelFont(size: scale.label * 0.92))
             .tracking(scale.label * 0.10)
-            .foregroundStyle(MonitorDesign.oklch(0.9, 0.03, 44))
+            .foregroundStyle(Design.oklch(0.9, 0.03, 44))
             .padding(.horizontal, scale.label * 0.5)
             .padding(.vertical, scale.label * 0.24)
             .background(
-                Capsule(style: .continuous).fill(MonitorDesign.oklch(0.3, 0.05, 44, alpha: 0.28))
+                Capsule(style: .continuous).fill(Design.oklch(0.3, 0.05, 44, alpha: 0.28))
             )
             .overlay(
-                Capsule(style: .continuous).strokeBorder(MonitorDesign.oklch(0.5, 0.11, 40, alpha: 0.75), lineWidth: 1)
+                Capsule(style: .continuous).strokeBorder(Design.oklch(0.5, 0.11, 40, alpha: 0.75), lineWidth: 1)
             )
     }
 
-    private func healthCorner(errorCount: Int, scale: MonitorDesign.TypeScale) -> some View {
+    private func healthCorner(errorCount: Int, scale: Design.TypeScale) -> some View {
         let clean = errorCount == 0
         return HStack(spacing: 5) {
             Circle()
-                .fill(clean ? MonitorDesign.signalSage : MonitorDesign.signalCoral)
+                .fill(clean ? Design.signalSage : Design.signalCoral)
                 .frame(width: 5, height: 5)
                 .overlay(Circle().strokeBorder(Color.black.opacity(0.4), lineWidth: 1))
-                .shadow(color: (clean ? MonitorDesign.signalSage : MonitorDesign.signalCoral)
+                .shadow(color: (clean ? Design.signalSage : Design.signalCoral)
                     .opacity(0.6), radius: 2)
             if clean {
                 Text("no errors · no drops")
             } else {
-                (Text(verbatim: "\(errorCount)").font(MonitorDesign.subFont(size: scale.label))
-                    .foregroundStyle(MonitorDesign.inkMuted)
+                (Text(verbatim: "\(errorCount)").font(Design.subFont(size: scale.label))
+                    .foregroundStyle(Design.inkMuted)
                  + Text(verbatim: " ") + Text("errors/drops"))
             }
         }
-        .font(MonitorDesign.labelFont(size: scale.label * 0.98))
+        .font(Design.labelFont(size: scale.label * 0.98))
         .tracking(scale.label * 0.04)
-        .foregroundStyle(clean ? MonitorDesign.inkFaint : MonitorDesign.oklch(0.86, 0.06, 40))
+        .foregroundStyle(clean ? Design.inkFaint : Design.oklch(0.86, 0.06, 40))
         .monitorChip(scale)
     }
 
     // MARK: - Shared rate readout
 
-    private func dualRate(scale: MonitorDesign.TypeScale) -> some View {
+    private func dualRate(scale: Design.TypeScale) -> some View {
         let size = scale.sub * 1.12
         return VStack(alignment: .leading, spacing: scale.label * 0.35) {
             rateRow(label: "↓", labelColor: Self.rxColor,
-                    text: MonitorFormat.rate(rxRate),
-                    font: MonitorDesign.subFont(size: size),
+                    text: Format.rate(rxRate),
+                    font: Design.subFont(size: size),
                     unitSize: size * 0.62)
             rateRow(label: "↑", labelColor: Self.txColor,
-                    text: MonitorFormat.rate(txRate),
-                    font: MonitorDesign.subFont(size: size),
+                    text: Format.rate(txRate),
+                    font: Design.subFont(size: size),
                     unitSize: size * 0.62)
         }
     }
@@ -307,11 +307,11 @@ struct NetworkWidgetView: View {
                 Text(verbatim: parts.value)
                     .font(font)
                     .monospacedDigit()
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .foregroundStyle(Design.inkPrimary)
                 if !parts.unit.isEmpty {
                     Text(verbatim: parts.unit)
-                        .font(MonitorDesign.microFont(size: unitSize))
-                        .foregroundStyle(MonitorDesign.inkFaint)
+                        .font(Design.microFont(size: unitSize))
+                        .foregroundStyle(Design.inkFaint)
                 }
             }
         }
@@ -451,20 +451,20 @@ private func networkPreviewContext(size: MonitorWidgetSize) -> MonitorWidgetCont
     NetworkWidgetView(context: networkPreviewContext(size: .small))
         .frame(width: 170, height: 170)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Network M") {
     NetworkWidgetView(context: networkPreviewContext(size: .medium))
         .frame(width: 364, height: 170)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 
 #Preview("Network L") {
     NetworkWidgetView(context: networkPreviewContext(size: .large))
         .frame(width: 364, height: 376)
         .padding(32)
-        .background(MonitorDesign.boardWash)
+        .background(Design.boardWash)
 }
 #endif

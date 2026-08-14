@@ -8,25 +8,25 @@ struct RuntimeV2PlumbingTests {
 
     @Test("Each widget kind flips exactly its sampler gate")
     func kindMapsToItsGate() {
-        #expect(MonitorRuntime.systemOptions(for: [.gpu]) == options(gpu: true, sensors: true))
-        #expect(MonitorRuntime.systemOptions(for: [.cpu]) == options(topProcesses: true, sensors: true))
-        #expect(MonitorRuntime.systemOptions(for: [.processes]) == options(topProcesses: true))
-        #expect(MonitorRuntime.systemOptions(for: [.memory]) == options(topProcesses: true))
-        #expect(MonitorRuntime.systemOptions(for: [.disk]) == options(processIO: true))
-        #expect(MonitorRuntime.systemOptions(for: [.aiEngine]) == options(ane: true))
-        #expect(MonitorRuntime.systemOptions(for: [.power]) == options(accessories: true, sensors: true))
+        #expect(Runtime.systemOptions(for: [.gpu]) == options(gpu: true, sensors: true))
+        #expect(Runtime.systemOptions(for: [.cpu]) == options(topProcesses: true, sensors: true))
+        #expect(Runtime.systemOptions(for: [.processes]) == options(topProcesses: true))
+        #expect(Runtime.systemOptions(for: [.memory]) == options(topProcesses: true))
+        #expect(Runtime.systemOptions(for: [.disk]) == options(processIO: true))
+        #expect(Runtime.systemOptions(for: [.aiEngine]) == options(ane: true))
+        #expect(Runtime.systemOptions(for: [.power]) == options(accessories: true, sensors: true))
     }
 
     @Test("A kind with no expensive sampler leaves every gate off")
     func inertKindKeepsAllGatesOff() {
-        #expect(MonitorRuntime.systemOptions(for: [.network]) == SystemMetricsSource.Options(
+        #expect(Runtime.systemOptions(for: [.network]) == SystemMetricsSource.Options(
             gpu: false, topProcesses: false, ane: false, accessories: false
         ))
     }
 
     @Test("Empty kind set gates every expensive sampler off")
     func emptyKindsGateAllOff() {
-        let opts = MonitorRuntime.systemOptions(for: [])
+        let opts = Runtime.systemOptions(for: [])
         #expect(opts.gpu == false)
         #expect(opts.topProcesses == false)
         #expect(opts.ane == false)
@@ -36,7 +36,7 @@ struct RuntimeV2PlumbingTests {
 
     @Test("Multiple placed kinds union into their combined gates")
     func multipleKindsUnionGates() {
-        let opts = MonitorRuntime.systemOptions(for: [.gpu, .power, .cpu])
+        let opts = Runtime.systemOptions(for: [.gpu, .power, .cpu])
         #expect(opts.gpu == true)
         #expect(opts.accessories == true)
         #expect(opts.topProcesses == true)
@@ -46,7 +46,7 @@ struct RuntimeV2PlumbingTests {
 
     @Test("Every kind placed turns every gate on")
     func allKindsAllGates() {
-        let opts = MonitorRuntime.systemOptions(for: Set(MonitorWidgetKind.allCases))
+        let opts = Runtime.systemOptions(for: Set(MonitorWidgetKind.allCases))
         #expect(opts == SystemMetricsSource.Options(
             gpu: true, topProcesses: true, ane: true, accessories: true, sensors: true,
             processIO: true
@@ -55,8 +55,8 @@ struct RuntimeV2PlumbingTests {
 
     @Test("The Disk widget demands the per-app I/O walk; others leave it off")
     func diskKindFlipsProcessIO() {
-        #expect(MonitorRuntime.systemOptions(for: [.disk]).processIO == true)
-        #expect(MonitorRuntime.systemOptions(for: [.cpu, .processes]).processIO == false)
+        #expect(Runtime.systemOptions(for: [.disk]).processIO == true)
+        #expect(Runtime.systemOptions(for: [.cpu, .processes]).processIO == false)
     }
 
     @Test("activeWidgetKinds unions across leases")
@@ -66,9 +66,9 @@ struct RuntimeV2PlumbingTests {
         var b = MonitorRuntimeOptions(system: true)
         b.activeWidgetKinds = [.power, .cpu]
 
-        let merged = MonitorRuntime.merged([a, b])
+        let merged = Runtime.merged([a, b])
         #expect(merged?.activeWidgetKinds == [.gpu, .cpu, .power])
-        #expect(MonitorRuntime.systemOptions(for: merged?.activeWidgetKinds ?? []) == SystemMetricsSource.Options(
+        #expect(Runtime.systemOptions(for: merged?.activeWidgetKinds ?? []) == SystemMetricsSource.Options(
             gpu: true, topProcesses: true, ane: false, accessories: true, sensors: true
         ))
     }
@@ -77,7 +77,7 @@ struct RuntimeV2PlumbingTests {
     func singleLeaseKindsPreserved() {
         var lease = MonitorRuntimeOptions(system: true)
         lease.activeWidgetKinds = [.aiEngine]
-        #expect(MonitorRuntime.merged([lease])?.activeWidgetKinds == [.aiEngine])
+        #expect(Runtime.merged([lease])?.activeWidgetKinds == [.aiEngine])
     }
 
     @Test("A lease that omits kinds doesn't erase another lease's set")
@@ -86,15 +86,15 @@ struct RuntimeV2PlumbingTests {
         withKinds.activeWidgetKinds = [.gpu]
         let plain = MonitorRuntimeOptions(system: true)
 
-        #expect(MonitorRuntime.merged([withKinds, plain])?.activeWidgetKinds == [.gpu])
-        #expect(MonitorRuntime.merged([plain, withKinds])?.activeWidgetKinds == [.gpu])
+        #expect(Runtime.merged([withKinds, plain])?.activeWidgetKinds == [.gpu])
+        #expect(Runtime.merged([plain, withKinds])?.activeWidgetKinds == [.gpu])
     }
 
     @Test("v1 leases (no activeWidgetKinds) leave the union set nil")
     func v1LeasesLeaveUnionNil() {
         let systemOnly = MonitorRuntimeOptions(system: true, topProcesses: true)
         let quiet = MonitorRuntimeOptions(system: false)
-        #expect(MonitorRuntime.merged([systemOnly, quiet])?.activeWidgetKinds == nil)
+        #expect(Runtime.merged([systemOnly, quiet])?.activeWidgetKinds == nil)
     }
 
     private func options(

@@ -29,7 +29,7 @@ struct InstalledView: View {
 
     var body: some View {
         @Bindable var model = model
-        ResizableInspectorSplit(
+        InspectorSplit(
                 isMounted: true,
                 isVisible: isInspectorVisible,
                 animationTrigger: AnyHashable(isInspectorVisible),
@@ -205,7 +205,7 @@ struct InstalledView: View {
                 LazyVGrid(columns: DesignTokens.LibraryGrid.columns, spacing: DesignTokens.LibraryGrid.spacing) {
                     ForEach(model.visibleEntries, id: \.id) { entry in
                         let bookmarked = bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID)
-                        WPEHistoryRow(
+                        HistoryRow(
                             entry: entry,
                             isActive: isActive(entry),
                             allowsInlineApply: true,

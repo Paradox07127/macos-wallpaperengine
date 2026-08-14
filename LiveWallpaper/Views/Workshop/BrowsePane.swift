@@ -40,7 +40,7 @@ struct BrowsePane: View {
     private var gridColumns: [GridItem] { DesignTokens.LibraryGrid.columns }
 
     var body: some View {
-        ResizableInspectorSplit(
+        InspectorSplit(
             isMounted: true,
             isVisible: isInspectorVisible,
             animationTrigger: AnyHashable(isInspectorVisible),

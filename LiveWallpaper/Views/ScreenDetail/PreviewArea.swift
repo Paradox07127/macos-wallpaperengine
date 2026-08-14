@@ -40,7 +40,7 @@ struct PreviewArea: View {
             } else if draft.selectedWallpaperType == .scene,
                       featureCatalog.isEnabled(.scene) {
                 #if !LITE_BUILD
-                WPESceneSection(screen: screen)
+                SceneSection(screen: screen)
                 #else
                 EmptyView()
                 #endif

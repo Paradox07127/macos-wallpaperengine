@@ -3,7 +3,7 @@ import SwiftUI
 import LiveWallpaperCore
 
 /// Time-of-day presets for the Add Slot menu.
-enum SchedulePreset: String, Identifiable, CaseIterable {
+enum Preset: String, Identifiable, CaseIterable {
     case morning
     case midday
     case afternoon
@@ -68,7 +68,7 @@ enum SchedulePreset: String, Identifiable, CaseIterable {
         ScheduleSlot(startHour: hours.start, endHour: hours.end, label: labelKey)
     }
 
-    static func suggestion(forStartHour hour: Int) -> SchedulePreset {
+    static func suggestion(forStartHour hour: Int) -> Preset {
         switch hour {
         case 5..<11:  return .morning
         case 11..<14: return .midday

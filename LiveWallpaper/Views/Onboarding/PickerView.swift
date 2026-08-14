@@ -46,7 +46,7 @@ enum OnboardingDisplayTargetPolicy {
 }
 
 /// Onboarding source step.
-struct OnboardingPickerView: View {
+struct PickerView: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

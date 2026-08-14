@@ -1,7 +1,7 @@
 import SwiftUI
 import LiveWallpaperCore
 
-struct BookmarksLibraryView: View {
+struct LibraryView: View {
     @Environment(ScreenManager.self) private var screenManager
     @State private var store = BookmarkStore.shared
     @State private var renamingID: UUID?
@@ -226,7 +226,7 @@ private struct BookmarkTile: View {
     /// Poster as an `overlay` rather than a ZStack sibling: `scaledToFill` reports
     /// the *scaled* size, so as a sibling it grew the tile to the thumbnail's own
     /// aspect ratio and bled into the neighbouring grid column. See the same note
-    /// in `AerialThumbnailCard`.
+    /// in `ThumbnailCard`.
     private var thumbnailTile: some View {
         tileBackground
             .overlay { tileContent }

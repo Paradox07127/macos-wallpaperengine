@@ -25,7 +25,7 @@ struct WidgetContainer<Content: View, Status: View>: View {
         self.content = content
     }
 
-    private var scale: MonitorDesign.TypeScale { .init(cellHeight: cellHeight) }
+    private var scale: Design.TypeScale { .init(cellHeight: cellHeight) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: scale.label * 0.5) {
@@ -33,8 +33,8 @@ struct WidgetContainer<Content: View, Status: View>: View {
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(.horizontal, MonitorDesign.contentInsetH)
-        .padding(.vertical, MonitorDesign.contentInsetV)
+        .padding(.horizontal, Design.contentInsetH)
+        .padding(.vertical, Design.contentInsetV)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .monitorPanelChrome(cornerRadius: cornerRadius)
     }
@@ -45,16 +45,16 @@ struct WidgetContainer<Content: View, Status: View>: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: titleSize, weight: .semibold))
-                    .foregroundStyle(MonitorDesign.inkFaint)
+                    .foregroundStyle(Design.inkFaint)
             }
             Text(verbatim: label.uppercased())
-                .font(MonitorDesign.labelFont(size: titleSize))
-                .tracking(MonitorDesign.labelTracking(size: titleSize))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: titleSize))
+                .tracking(Design.labelTracking(size: titleSize))
+                .foregroundStyle(Design.inkFaint)
             Spacer(minLength: 4)
             status()
-                .font(MonitorDesign.labelFont(size: scale.label))
-                .foregroundStyle(MonitorDesign.inkFaint)
+                .font(Design.labelFont(size: scale.label))
+                .foregroundStyle(Design.inkFaint)
         }
     }
 }
@@ -63,20 +63,20 @@ struct WidgetContainer<Content: View, Status: View>: View {
     HStack(spacing: 24) {
         WidgetContainer(label: "CPU", systemImage: "cpu", cellHeight: 150) {
             HStack(spacing: 5) {
-                BreathingDot(color: MonitorDesign.signalAmber, size: 6)
-                Text(verbatim: "42%").foregroundStyle(MonitorDesign.inkMuted)
+                BreathingDot(color: Design.signalAmber, size: 6)
+                Text(verbatim: "42%").foregroundStyle(Design.inkMuted)
             }
         } content: {
             ArcGauge(value: 0.42, peak: 0.61) {
                 Text(verbatim: "42")
-                    .font(MonitorDesign.heroFont(size: 28)).monospacedDigit()
-                    .foregroundStyle(MonitorDesign.inkPrimary)
+                    .font(Design.heroFont(size: 28)).monospacedDigit()
+                    .foregroundStyle(Design.inkPrimary)
             }
         }
         .frame(width: 150, height: 150)
 
         WidgetContainer(label: "NETWORK", systemImage: "wifi", cellHeight: 150) {
-            Text(verbatim: "6.2 MB/s").foregroundStyle(MonitorDesign.inkMuted)
+            Text(verbatim: "6.2 MB/s").foregroundStyle(Design.inkMuted)
         } content: {
             MirroredAreaChart(
                 up: [3, 4, 5.5, 6.8, 5.2, 4.1, 6.3, 8.1, 7.2, 5.4],
@@ -86,5 +86,5 @@ struct WidgetContainer<Content: View, Status: View>: View {
         .frame(width: 320, height: 150)
     }
     .padding(32)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

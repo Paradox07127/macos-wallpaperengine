@@ -6,7 +6,7 @@ struct Sparkline: View {
     /// When true (and the domain is 0…1-like), colour the stroke by load band at
     /// each sample; otherwise use `lineColor`.
     var bandColored: Bool = false
-    var lineColor: Color = MonitorDesign.signalAmber
+    var lineColor: Color = Design.signalAmber
     var showArea: Bool = true
     var guides: [Double] = []
     var lineWidth: CGFloat = 1.6
@@ -26,7 +26,7 @@ struct Sparkline: View {
                             p.move(to: CGPoint(x: 0, y: y))
                             p.addLine(to: CGPoint(x: w, y: y))
                         }
-                        .stroke(MonitorDesign.hairlineHi.opacity(0.3),
+                        .stroke(Design.hairlineHi.opacity(0.3),
                                 style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     }
 
@@ -104,11 +104,11 @@ struct Sparkline: View {
     private var lastFraction: Double { values.last ?? 0 }
 
     private func areaColor() -> Color {
-        bandColored ? MonitorDesign.loadBandColor(lastFraction) : lineColor
+        bandColored ? Design.loadBandColor(lastFraction) : lineColor
     }
 
     private func nowColor() -> Color {
-        bandColored ? MonitorDesign.loadBandColor(lastFraction) : lineColor
+        bandColored ? Design.loadBandColor(lastFraction) : lineColor
     }
 
     /// Band-coloured mode uses a horizontal gradient keyed to each sample's band;
@@ -116,7 +116,7 @@ struct Sparkline: View {
     private func strokeStyleColor(_ pts: [CGPoint]) -> some ShapeStyle {
         if bandColored, pts.count >= 2 {
             let stops = values.enumerated().map { i, v -> Gradient.Stop in
-                Gradient.Stop(color: MonitorDesign.loadBandColor(v),
+                Gradient.Stop(color: Design.loadBandColor(v),
                               location: CGFloat(i) / CGFloat(values.count - 1))
             }
             return AnyShapeStyle(LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing))
@@ -129,7 +129,7 @@ struct Sparkline: View {
             p.move(to: CGPoint(x: 0, y: h - 1))
             p.addLine(to: CGPoint(x: w, y: h - 1))
         }
-        .stroke(MonitorDesign.hairline.opacity(0.45), lineWidth: 1)
+        .stroke(Design.hairline.opacity(0.45), lineWidth: 1)
     }
 }
 
@@ -140,14 +140,14 @@ struct Sparkline: View {
             .frame(width: 260, height: 60)
 
         Sparkline(values: [12, 18, 14, 22, 31, 26, 20, 24].map(Double.init),
-                  lineColor: MonitorDesign.signalSteel)
+                  lineColor: Design.signalSteel)
             .frame(width: 260, height: 60)
 
         Sparkline(values: [], domain: 0...1)
             .frame(width: 260, height: 40)
-            .overlay(Text("empty").font(MonitorDesign.captionFont(size: 11))
-                .foregroundStyle(MonitorDesign.inkFaint))
+            .overlay(Text("empty").font(Design.captionFont(size: 11))
+                .foregroundStyle(Design.inkFaint))
     }
     .padding(24)
-    .background(MonitorDesign.boardWash)
+    .background(Design.boardWash)
 }

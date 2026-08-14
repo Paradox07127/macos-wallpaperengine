@@ -140,7 +140,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             self.task = nil
             task.cancel()
             // Await the in-flight tick so a running poll can't publish into the
-            // shared broker after MonitorRuntime.stopPipeline() has cleared it.
+            // shared broker after Runtime.stopPipeline() has cleared it.
             await task.value
         }
 

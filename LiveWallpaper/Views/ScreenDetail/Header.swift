@@ -1,7 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-struct DetailHeader: View {
+struct Header: View {
     let screen: Screen
     @Binding var draft: DraftState
     let screenManager: ScreenManager
@@ -21,7 +21,7 @@ struct DetailHeader: View {
                     .help(Text(verbatim: screen.name))
             },
             metadata: {
-                HStack(spacing: DesignTokens.DetailHeader.metadataSpacing) {
+                HStack(spacing: DesignTokens.Header.metadataSpacing) {
                     // A renamed display still has to say which panel it is.
                     if screen.customName != nil {
                         InfoBadge(icon: "display", text: screen.systemName)
@@ -67,7 +67,7 @@ struct DetailHeader: View {
                             : "Bookmark this wallpaper"))
                         .accessibilityLabel(Text(isCurrentBookmarked ? "Bookmarked" : "Bookmark"))
                         .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
-                            BookmarksPopover(screen: screen, candidateContent: inspectorContent)
+                            Popover(screen: screen, candidateContent: inspectorContent)
                                 .environment(screenManager)
                         }
                     }

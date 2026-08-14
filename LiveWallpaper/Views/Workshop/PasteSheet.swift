@@ -49,7 +49,7 @@ struct PasteSheet: View {
         )
         .background(DesignTokens.Colors.pageBackground)
         .overlay(alignment: .bottom) {
-            DiagnosticExportToast(isPresented: $toastVisible)
+            ExportToast(isPresented: $toastVisible)
                 .padding(.bottom, 22)
                 .allowsHitTesting(false)
         }

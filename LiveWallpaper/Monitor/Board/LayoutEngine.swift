@@ -65,8 +65,8 @@ struct MonitorBoardGeometry: Equatable {
         let maxX = boardSize.width - footprint.width
         let maxY = boardSize.height - footprint.height
         return CGPoint(
-            x: BoardLayoutEngine.clamp(origin.x, 0, max(maxX, 0)),
-            y: BoardLayoutEngine.clamp(origin.y, topInset, max(maxY, topInset))
+            x: LayoutEngine.clamp(origin.x, 0, max(maxX, 0)),
+            y: LayoutEngine.clamp(origin.y, topInset, max(maxY, topInset))
         )
     }
 }
@@ -97,7 +97,7 @@ struct MonitorBoardItem: Equatable {
 }
 
 /// Pure layout algorithms (static; no stored state).
-enum BoardLayoutEngine {
+enum LayoutEngine {
 
     static let snapThreshold: CGFloat = 14
     static let snapNeighborhood: CGFloat = 140

@@ -108,12 +108,12 @@ struct PowerWidgetTests {
 
     @Test("Accessory tint: crit <10 (run→need ramp), low <20 (→run ramp), sage otherwise")
     func accessoryTintThresholds() {
-        #expect(MonitorPowerModel.accessoryTint(7).barGradient == [MonitorDesign.signalAmber, MonitorDesign.signalCoral])
-        #expect(MonitorPowerModel.accessoryTint(9.9).barGradient == [MonitorDesign.signalAmber, MonitorDesign.signalCoral])
-        #expect(MonitorPowerModel.accessoryTint(14).barGradient == [MonitorDesign.oklch(0.62, 0.06, 78), MonitorDesign.signalAmber])
-        #expect(MonitorPowerModel.accessoryTint(19.9).barGradient == [MonitorDesign.oklch(0.62, 0.06, 78), MonitorDesign.signalAmber])
-        #expect(MonitorPowerModel.accessoryTint(20).barGradient == [MonitorDesign.signalSage])
-        #expect(MonitorPowerModel.accessoryTint(96).barGradient == [MonitorDesign.signalSage])
+        #expect(MonitorPowerModel.accessoryTint(7).barGradient == [Design.signalAmber, Design.signalCoral])
+        #expect(MonitorPowerModel.accessoryTint(9.9).barGradient == [Design.signalAmber, Design.signalCoral])
+        #expect(MonitorPowerModel.accessoryTint(14).barGradient == [Design.oklch(0.62, 0.06, 78), Design.signalAmber])
+        #expect(MonitorPowerModel.accessoryTint(19.9).barGradient == [Design.oklch(0.62, 0.06, 78), Design.signalAmber])
+        #expect(MonitorPowerModel.accessoryTint(20).barGradient == [Design.signalSage])
+        #expect(MonitorPowerModel.accessoryTint(96).barGradient == [Design.signalSage])
     }
 
     @Test("Over the cap, the LOWEST-percent accessories are kept, original order preserved")

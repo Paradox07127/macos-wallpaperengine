@@ -2,7 +2,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-struct DiagnosticExportToast: View {
+struct ExportToast: View {
     @Binding var isPresented: Bool
     var lingerSeconds: TimeInterval = 3.5
     /// Overridable so the auto-dismiss timer doesn't drive UI in a test runner.

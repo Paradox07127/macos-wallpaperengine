@@ -3,12 +3,12 @@ import CoreGraphics
 
 /// Async-loaded media metadata for a playlist row. All fields are populated by
 /// the same async load, so the row's subtitle is empty until it completes.
-struct PlaylistRowMetadata: Equatable, Sendable {
+struct RowMetadata: Equatable, Sendable {
     var resolution: CGSize?
     var duration: TimeInterval?
     var folder: String?
 
-    static let empty = PlaylistRowMetadata(resolution: nil, duration: nil, folder: nil)
+    static let empty = RowMetadata(resolution: nil, duration: nil, folder: nil)
 
     /// Apple Music-style, e.g. `1080p · 0:30 · Wallpapers`. Missing or
     /// empty-formatted fields are omitted so separators stay tight.
