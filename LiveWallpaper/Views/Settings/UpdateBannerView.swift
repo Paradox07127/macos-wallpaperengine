@@ -1,10 +1,10 @@
-#if LITE_BUILD
 import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Renders only in the Loomscreen Lite build. Update delivery remains a manual
-/// download from GitHub Releases; this view does not install updates.
+/// Update delivery remains a manual download from GitHub Releases; this view
+/// does not install updates. Both SKUs are published in the same release, so
+/// the banner links to the release page rather than a specific asset.
 struct UpdateBannerView: View {
     @State private var checker = UpdateChecker.shared
     @State private var showingAvailableAlert = false
@@ -171,4 +171,3 @@ struct UpdateBannerView: View {
         showingAvailableAlert = true
     }
 }
-#endif

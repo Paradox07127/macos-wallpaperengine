@@ -1,13 +1,15 @@
 # Releasing Loomscreen
 
+**English** · [简体中文](../zh-Hans/releasing.md)
+
 This is the maintainer checklist for a manual `0.x` release. Public builds are
 ad-hoc signed and distributed from GitHub Releases as DMGs.
 
 ## Current updater boundary
 
 Release delivery uses GitHub Releases and remains manual: users download the
-new DMG and replace the installed app. The Lite app keeps its launch-time and
-About-panel GitHub update checks; neither SKU auto-installs updates.
+new DMG and replace the installed app. Both SKUs run the launch-time and
+About-panel GitHub update checks; neither auto-installs updates.
 
 ## Version checklist
 
@@ -110,8 +112,9 @@ future notarization credentials remain environment/machine inputs; they are not
 stored in this repository.
 
 The public Lite asset must be named `Loomscreen-X.Y.Z.dmg`. The Pro asset must
-be named `Loomscreen-Pro-X.Y.Z.dmg`. Upload the Lite DMG first so older update
-checkers that pick the first matching DMG still resolve the Lite build.
+be named `Loomscreen-Pro-X.Y.Z.dmg`. Asset order does not affect the in-app
+check — it reads the release tag, never the asset list — but keep the Lite DMG
+first so the release page leads with the public download.
 
 ## GitHub release
 

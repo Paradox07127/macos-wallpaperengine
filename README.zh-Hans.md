@@ -12,10 +12,10 @@
 ![Release](https://img.shields.io/github/v/release/Paradox07127/macos-wallpaperengine?include_prereleases&sort=semver)
 
 [⬇ 下载](https://github.com/Paradox07127/macos-wallpaperengine/releases/latest) ·
-[🚀 快速上手](docs/quick-start.md) ·
-[✨ 功能](docs/features.md) ·
-[⚖ Lite vs Pro](docs/lite-vs-pro.md) ·
-[🛠 构建](docs/building.md) ·
+[🚀 快速上手](docs/zh-Hans/quick-start.md) ·
+[✨ 功能](docs/zh-Hans/features.md) ·
+[⚖ Lite vs Pro](docs/zh-Hans/lite-vs-pro.md) ·
+[🛠 构建](docs/zh-Hans/building.md) ·
 [🇬🇧 English](README.md)
 
 </div>
@@ -28,7 +28,7 @@
 
 | 类型 | 版本 | 能力 |
 |---|---|---|
-| **Wallpaper Engine 场景** | Pro | 原生 Metal 渲染 `scene.pkg` 项目 —— 粒子、着色器特效、木偶变形动画、音频反应图层、光标特效。支持导入本地项目文件夹或通过 Steam Workshop 下载。 |
+| **Wallpaper Engine 场景** | Pro | 原生 Metal 渲染 `scene.pkg` 项目 —— 粒子、着色器特效、木偶变形动画、音频反应图层、光标特效。支持导入本地项目文件夹，或通过 Steam Workshop 下载场景以及社区发布的预设。 |
 | **视频** | Lite + Pro | `mp4` / `m4v` / `mov` / `avi`，平滑循环，HDR 感知色彩管线，可逐屏播放或跨所有屏幕铺展。 |
 | **网页** | Lite + Pro | 沙盒化 `WKWebView`，支持 JavaScript 开关、跟踪器拦截、自定义 CSS、定时自动刷新。 |
 | **Apple Aerials** | Lite + Pro | 浏览并应用 Mac 上已有的 Apple TV 航拍视频。 |
@@ -43,9 +43,9 @@
 ## 不只是播放器
 
 - **每屏独立控制** —— 每台显示器运行各自的壁纸；可一键复制到所有屏幕，或让一个视频跨屏铺展。
-- **播放列表与排程** —— 随机播放、轮换间隔、按时段自动切换，书签库一键换壁纸。
+- **播放列表与计划** —— 随机播放、轮换间隔、按时段自动切换，书签库一键换壁纸。
 - **菜单栏优先** —— 全局开关、每屏播放/暂停与上下切换，实时 CPU / GPU / 内存 / 热压力状态条。
-- **任何壁纸都能叠加 Overlay** —— 九种粒子特效（雪、雨、樱花、萤火虫……）、跟随真实天气的反应模式、系统监控面板（CPU/GPU/网络等组件，含 AI agent 会话追踪）。
+- **任何壁纸都能叠加** —— 九种粒子特效（雪、雨、樱花、萤火虫……）、跟随真实天气的反应模式、系统监控面板（CPU/GPU/网络等组件，含 AI agent 会话追踪）。
 - **笔记本友好** —— 全屏应用、窗口遮挡、电池供电、低电量模式下自动暂停，并支持按 App 自定义规则。
 - **全局快捷键** —— 七个可绑定动作，从全部播放/暂停到重载。
 - **配置可迁移** —— 整套设置导出/导入为 `.lwconfig` 文件。
@@ -55,14 +55,15 @@
 
 | | **Lite** | **Pro** |
 |---|:---:|:---:|
-| 视频 / 网页 / Apple Aerials、播放列表、排程、Overlay、快捷键 | ✅ | ✅ |
+| 视频 / 网页 / Apple Aerials、播放列表、计划、叠加层、快捷键 | ✅ | ✅ |
 | Wallpaper Engine 场景渲染与导入 | — | ✅ |
-| Steam Workshop 在线浏览与下载 | — | ✅ |
+| Steam 创意工坊在线浏览与下载 | — | ✅ |
+| 场景预设（创意工坊预设 + 自己保存的参数） | — | ✅ |
 | 音频反应场景（系统音频捕获） | — | ✅ |
 | 自适应帧率与逐屏独立渲染线程 | — | ✅ |
-| 应用内更新检查 | ✅ | — |
+| 更新检查（仅提示，从不自动安装） | ✅ | ✅ |
 
-Lite 是更轻的运行时，不是阉割版 UI —— 视频、网页、Aerials 的保真度与 Pro 完全一致。完整对照：[docs/lite-vs-pro.md](docs/lite-vs-pro.md)。
+Lite 是更轻的运行时，不是阉割版 UI —— 视频、网页、Aerials 的保真度与 Pro 完全一致。完整对照：[docs/zh-Hans/lite-vs-pro.md](docs/zh-Hans/lite-vs-pro.md)。
 
 ## 安装
 
@@ -74,7 +75,7 @@ Lite 是更轻的运行时，不是阉割版 UI —— 视频、网页、Aerials
    ```
 4. 启动 —— Loomscreen 常驻菜单栏，首次启动的引导会帮你设好第一张壁纸。
 
-安装细节、权限弹窗与更新方式：[docs/install.md](docs/install.md) · 首次配置全流程：[docs/quick-start.md](docs/quick-start.md)
+安装细节、权限弹窗与更新方式：[docs/zh-Hans/install.md](docs/zh-Hans/install.md) · 首次配置全流程：[docs/zh-Hans/quick-start.md](docs/zh-Hans/quick-start.md)
 
 ## 运行要求
 
@@ -89,10 +90,10 @@ cd macos-wallpaperengine
 open LiveWallpaper.xcodeproj
 ```
 
-Scheme：`LiveWallpaperLite`（Lite）· `LiveWallpaper`（Pro）。环境要求与测试门禁：[docs/building.md](docs/building.md)。
+Scheme：`LiveWallpaperLite`（Lite）· `LiveWallpaper`（Pro）。环境要求与测试门禁：[docs/zh-Hans/building.md](docs/zh-Hans/building.md)。
 
 ## 贡献与许可
 
-欢迎 Issue 和 PR —— 提 PR 前先跑 [docs/building.md](docs/building.md) 里的检查；安全问题请走 GitHub Security Advisories。报 Bug 建议直接用应用内 **Settings → About → Report a Bug…**，它会自动附带诊断信息。
+欢迎 Issue 和 PR —— 每个 PR 需要过哪些门禁见 [docs/zh-Hans/CONTRIBUTING.md](docs/zh-Hans/CONTRIBUTING.md)。安全问题请走 [docs/zh-Hans/SECURITY.md](docs/zh-Hans/SECURITY.md)，不要提到公开的 issue 列表里。报 Bug 建议直接用应用内 **设置 → 关于 → 报告问题…**，它会自动附带诊断信息。
 
 MIT（[LICENSE](LICENSE)）—— 覆盖整个仓库，含 Pro-only 模块。

@@ -12,10 +12,10 @@
 ![Release](https://img.shields.io/github/v/release/Paradox07127/macos-wallpaperengine?include_prereleases&sort=semver)
 
 [⬇ Download](https://github.com/Paradox07127/macos-wallpaperengine/releases/latest) ·
-[🚀 Quick Start](docs/quick-start.md) ·
-[✨ Features](docs/features.md) ·
-[⚖ Lite vs Pro](docs/lite-vs-pro.md) ·
-[🛠 Build](docs/building.md) ·
+[🚀 Quick Start](docs/en/quick-start.md) ·
+[✨ Features](docs/en/features.md) ·
+[⚖ Lite vs Pro](docs/en/lite-vs-pro.md) ·
+[🛠 Build](docs/en/building.md) ·
 [🌐 中文](README.zh-Hans.md)
 
 </div>
@@ -28,7 +28,7 @@
 
 | Type | Edition | What you get |
 |---|---|---|
-| **Wallpaper Engine scenes** | Pro | Native Metal renderer for `scene.pkg` projects — particles, shader effects, puppet-warp animation, audio-reactive layers, cursor effects. Import local project folders or download via Steam Workshop. |
+| **Wallpaper Engine scenes** | Pro | Native Metal renderer for `scene.pkg` projects — particles, shader effects, puppet-warp animation, audio-reactive layers, cursor effects. Import local project folders or download via Steam Workshop, including the presets its community publishes. |
 | **Video** | Lite + Pro | `mp4` / `m4v` / `mov` / `avi`, smooth looping, HDR-aware color pipeline, per-display or spanned across all displays. |
 | **Web pages** | Lite + Pro | Sandboxed `WKWebView` with JavaScript toggle, tracker blocking, custom CSS, and auto-refresh. |
 | **Apple Aerials** | Lite + Pro | Browse and apply the Apple TV aerial videos already on your Mac. |
@@ -58,11 +58,12 @@
 | Video / Web / Apple Aerials, playlists, schedules, overlays, shortcuts | ✅ | ✅ |
 | Wallpaper Engine scene rendering & import | — | ✅ |
 | Steam Workshop browse & download | — | ✅ |
+| Scene presets (Workshop presets + your own saved values) | — | ✅ |
 | Audio-reactive scenes (system audio capture) | — | ✅ |
 | Adaptive frame rate & per-display render threads | — | ✅ |
-| In-app update check | ✅ | — |
+| Update check (notification only — never auto-installs) | ✅ | ✅ |
 
-Lite is a lighter runtime, not a crippled UI — video, web, and Aerials fidelity is identical to Pro. Full matrix: [docs/lite-vs-pro.md](docs/lite-vs-pro.md).
+Lite is a lighter runtime, not a crippled UI — video, web, and Aerials fidelity is identical to Pro. Full matrix: [docs/en/lite-vs-pro.md](docs/en/lite-vs-pro.md).
 
 ## Install
 
@@ -74,7 +75,7 @@ Lite is a lighter runtime, not a crippled UI — video, web, and Aerials fidelit
    ```
 4. Launch it — Loomscreen lives in your menu bar, and a short onboarding sets up your first wallpaper.
 
-Details, permission prompts, and updates: [docs/install.md](docs/install.md) · First-run walkthrough: [docs/quick-start.md](docs/quick-start.md)
+Details, permission prompts, and updates: [docs/en/install.md](docs/en/install.md) · First-run walkthrough: [docs/en/quick-start.md](docs/en/quick-start.md)
 
 ## Requirements
 
@@ -89,10 +90,10 @@ cd macos-wallpaperengine
 open LiveWallpaper.xcodeproj
 ```
 
-Schemes: `LiveWallpaperLite` (Lite) · `LiveWallpaper` (Pro). Requirements and test gates: [docs/building.md](docs/building.md).
+Schemes: `LiveWallpaperLite` (Lite) · `LiveWallpaper` (Pro). Requirements and test gates: [docs/en/building.md](docs/en/building.md).
 
 ## Contributing & license
 
-Issues and PRs welcome — run the checks in [docs/building.md](docs/building.md) before opening a PR, and report security issues via GitHub Security Advisories. For bug reports, use **Settings → About → Report a Bug…** in the app; it pre-fills diagnostics.
+Issues and PRs welcome — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for what every PR is asked to clear. Security issues go through [docs/SECURITY.md](docs/SECURITY.md), not the public tracker. For bug reports, use **Settings → About → Report a Bug…** in the app; it pre-fills diagnostics.
 
 MIT ([LICENSE](LICENSE)) — the whole repository, including Pro-only modules.

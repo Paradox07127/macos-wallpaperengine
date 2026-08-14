@@ -1,5 +1,7 @@
 # Install & update
 
+**English** · [简体中文](../zh-Hans/install.md)
+
 ## Install (DMG)
 
 1. Download the latest `Loomscreen-x.y.z.dmg` from
@@ -50,10 +52,11 @@ is separate and only appears when you open the Workshop page
 
 ## Updates
 
-**Lite** checks the GitHub Releases API once per launch, throttled to 12 hours —
-no background polling. When a newer version exists you'll see a banner in
+Both editions check the GitHub Releases API once per launch, throttled to 12
+hours — no background polling. When a newer version exists you'll see a banner in
 **Settings → About**, where you can also **Check Now** or **Skip this version**.
-**Pro** currently has no in-app updater.
+Lite and Pro ship in the same release, so the banner opens that release page and
+you pick the DMG you're running.
 
 Updating is a manual download-and-replace: drag the new **Loomscreen.app** into
 `/Applications` and repeat the `xattr` step once. No build auto-installs updates.

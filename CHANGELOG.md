@@ -13,6 +13,26 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.5.1-beta] — 2026-08-14
+
+`0.4.x` and `0.5.0` shipped without their own entries here. This one covers
+what changed in the Lite build between `0.3.0` and `0.5.1-beta` rather than
+reconstructing per-version notes after the fact. Most of the work in that window
+landed in the Pro-only Wallpaper Engine and Steam Workshop stacks, which this
+file does not cover.
+
+### Changed
+
+- The release DMG now opens as a laid-out window — background image, positioned
+  app icon, and `/Applications` alias — instead of a bare volume listing.
+- Documentation moved to `docs/en/` with a Simplified Chinese counterpart under
+  `docs/zh-Hans/`, and gained contributing and security pages.
+
+### Removed
+
+- Dead string-catalog entries and a large amount of unreferenced code, with no
+  intended change in behavior.
+
 ## [0.3.0] — 2026-07-25
 
 ### Changed

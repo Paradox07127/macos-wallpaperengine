@@ -199,14 +199,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
-        #if LITE_BUILD
-        // Loomscreen Lite ships ad-hoc signed via GitHub Releases, so we hand-roll a single-shot launch-time update check (no background timer, throttled to 12 h in UpdateChecker itself).
+        // Both SKUs ship ad-hoc signed from the same GitHub release, so we hand-roll a single-shot launch-time update check (no background timer, throttled to 12 h in UpdateChecker itself).
         if !startupPlan.showOnboarding && !runtimeOptions.isTesting {
             lifecycle.schedule(after: .seconds(5)) {
                 await UpdateChecker.shared.checkNow(force: false)
             }
         }
-        #endif
     }
 
     deinit {
