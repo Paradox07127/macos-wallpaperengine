@@ -216,7 +216,7 @@ struct GeneralSettingsView: View {
         switch page {
         case .general:
             settingsForm {
-                behaviorSection
+                generalSection
             }
         case .performancePower:
             settingsForm {

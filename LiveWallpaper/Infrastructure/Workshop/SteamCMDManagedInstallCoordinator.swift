@@ -2,20 +2,18 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Drives the two halves of a managed SteamCMD install and records where it
-/// landed. Downloading happens in this process, unpacking in the connector —
-/// see `SteamCMDBootstrapDownloader` for why that split is forced rather than
-/// chosen.
+/// Drives a managed SteamCMD install and records where it landed. The whole
+/// install — manifest fetch, downloads, verification, unpack, first run —
+/// happens in the connector; this side only asks for it and stores the result.
 ///
 /// A managed install is additive. Nothing here replaces the existing
-/// package-manager detection or the user's own "Select…" pick; if any step
-/// fails the app falls back to the manual instructions unchanged.
+/// package-manager detection; if any step fails the app falls back to the
+/// manual instructions unchanged.
 @MainActor
 @Observable
 final class SteamCMDManagedInstallCoordinator {
     enum Status: Equatable {
         case idle
-        case downloading
         case installing
         /// Waiting on the connector to delete the payload. A distinct state
         /// because `forget()` suspends for as long as the deletion takes, and
@@ -35,56 +33,36 @@ final class SteamCMDManagedInstallCoordinator {
     /// or `forget()` atomic across them.
     private var generation: UInt64 = 0
 
-    /// "Get the verified archive to this path" — the capability, not the type.
-    /// Taking the concrete downloader instead left its digest gate in the way of
-    /// any test of the stages after it, which is the half that decides whether a
-    /// failed install stays recoverable.
-    @ObservationIgnored private let downloadArchive: (URL) async throws -> Void
     @ObservationIgnored private let defaults: UserDefaults
-    /// Injected for the same reason the downloader's `fetch` is: the real ones
-    /// install to and delete from the machine running them, which is not
-    /// something a test may do to whoever is running it.
+    /// Injected because the real ones install to and delete from the machine
+    /// running them, which is not something a test may do to whoever runs it.
     @ObservationIgnored private let remove: () async -> SteamCMDManagedRemovalResult?
-    @ObservationIgnored private let performInstall: (String) async -> SteamCMDManagedInstallResult?
+    @ObservationIgnored private let performInstall: () async -> SteamCMDManagedInstallResult?
 
     /// Path + the bootstrap digest that produced it, so a later run can tell a
     /// managed install apart from a directory the user happened to create.
     static let managedInstallDefaultsKey = "steamcmd.managedInstall.v1"
 
     init(
-        downloadArchive: @escaping (URL) async throws -> Void = { destination in
-            _ = try await SteamCMDBootstrapDownloader().download(to: destination)
-        },
         defaults: UserDefaults = .standard,
         remove: @escaping () async -> SteamCMDManagedRemovalResult? = {
             await SteamConnectorClient.removeManagedSteamCMD()
         },
-        performInstall: @escaping (String) async -> SteamCMDManagedInstallResult? = { path in
-            await SteamConnectorClient.installManagedSteamCMD(tarballPath: path)
+        performInstall: @escaping () async -> SteamCMDManagedInstallResult? = {
+            await SteamConnectorClient.installManagedSteamCMD()
         }
     ) {
-        self.downloadArchive = downloadArchive
         self.defaults = defaults
         self.remove = remove
         self.performInstall = performInstall
         self.managedInstall = Self.recordedInstall(defaults: defaults)
     }
 
-    /// Where the downloaded archive lands: inside the container, because that is
-    /// the only place this process may write. Only the connector reads it.
-    /// Per-attempt filename. A shared path let a superseded install delete the
-    /// archive a newer one had just downloaded and was waiting on.
-    static func archiveStagingURL(
-        attempt: UInt64,
-        fileManager: FileManager = .default
-    ) -> URL? {
-        fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("SteamCMDBootstrap", isDirectory: true)
-            .appendingPathComponent("steamcmd_osx-\(attempt).tar.gz")
-    }
-
     struct ManagedInstallRecord: Codable, Equatable, Sendable {
         let canonicalPath: String
+        /// Digest of the installed Mach-O. The key name predates the manifest
+        /// flow (it once held the bootstrap tarball's digest); kept so records
+        /// written by earlier builds keep decoding.
         let bootstrapSHA256: String
     }
 
@@ -106,11 +84,11 @@ final class SteamCMDManagedInstallCoordinator {
 
     @discardableResult
     func install() async -> Status {
-        // Two concurrent installs share one archive path and one payload
-        // directory: the second one's extract wipes the directory the first is
-        // still running `+quit` inside.
+        // Two concurrent installs share one payload directory: the second
+        // one's extract wipes the directory the first is still running
+        // `+quit` inside.
         switch status {
-        case .downloading, .installing:
+        case .installing:
             return status
         case .removing:
             // Starting now would race a deletion already in flight: the two use
@@ -122,24 +100,8 @@ final class SteamCMDManagedInstallCoordinator {
             break
         }
         let attempt = generation
-        guard let archive = Self.archiveStagingURL(attempt: attempt) else {
-            return finish(.failed("No Application Support directory available"))
-        }
-
-        status = .downloading
-        do {
-            try await downloadArchive(archive)
-        } catch {
-            guard attempt == generation, !Task.isCancelled else { return status }
-            return finish(.failed(Self.message(for: error)))
-        }
-        guard attempt == generation else { return status }
-
         status = .installing
-        let result = await performInstall(archive.path(percentEncoded: false))
-        // The archive is only an input to the connector; keeping it around would
-        // be 2.4 MB of container for nothing.
-        try? FileManager.default.removeItem(at: archive)
+        let result = await performInstall()
         guard attempt == generation else { return status }
 
         guard let result else {
@@ -154,20 +116,9 @@ final class SteamCMDManagedInstallCoordinator {
 
         record(ManagedInstallRecord(
             canonicalPath: path,
-            bootstrapSHA256: SteamCMDBootstrapPackage.sha256
+            bootstrapSHA256: result.sha256 ?? ""
         ))
         return finish(.installed(path: path))
-    }
-
-    /// Abandons an install in flight. Bumping the generation is what makes the
-    /// suspended `install()` decline to commit; the caller cancels its own Task
-    /// to stop the download itself. Only meaningful while downloading — once
-    /// the connector has the archive it is unpacking in a process this one
-    /// cannot interrupt.
-    func cancelInstall() {
-        guard status == .downloading else { return }
-        generation &+= 1
-        status = .idle
     }
 
     /// Removes the install through the connector — the payload sits outside this
@@ -201,37 +152,6 @@ final class SteamCMDManagedInstallCoordinator {
     /// `Status.failed` is rendered verbatim in Settings, so everything that
     /// reaches it has to be localized. The underlying values are wire enums and
     /// English diagnostic strings — fine in a log, not on screen.
-    private static func message(for error: Error) -> String {
-        guard let download = error as? SteamCMDBootstrapDownloader.DownloadError else {
-            return String(
-                localized: "The SteamCMD download failed.",
-                comment: "Managed SteamCMD install failure: unclassified download error."
-            )
-        }
-        switch download {
-        case .transport:
-            return String(
-                localized: "Couldn't reach Valve's download server.",
-                comment: "Managed SteamCMD install failure: network transport error."
-            )
-        case .httpStatus(let code):
-            return String(
-                localized: "Valve's download server returned HTTP \(code).",
-                comment: "Managed SteamCMD install failure; %lld is an HTTP status code."
-            )
-        case .sizeMismatch, .digestMismatch:
-            return String(
-                localized: "The downloaded SteamCMD archive didn't match its published checksum, so it was discarded.",
-                comment: "Managed SteamCMD install failure: the archive failed the integrity gate."
-            )
-        case .couldNotStore:
-            return String(
-                localized: "Couldn't save the downloaded archive.",
-                comment: "Managed SteamCMD install failure: writing to disk failed."
-            )
-        }
-    }
-
     private static func message(for outcome: SteamCMDManagedInstallResult.Outcome) -> String {
         switch outcome {
         case .installed:
@@ -262,7 +182,7 @@ final class SteamCMDManagedInstallCoordinator {
         case .selfUpdateFailed:
             return String(
                 localized: "SteamCMD was installed but its first run didn't finish.",
-                comment: "Managed SteamCMD install failure: the +quit self-update did not complete."
+                comment: "Managed SteamCMD install failure: the first +quit run did not complete."
             )
         case .unavailable:
             return String(

@@ -70,6 +70,21 @@ protocol SteamConnectorProtocol {
     /// `SteamCMDBinaryInspection`.
     func inspectSteamCMDBinary(path: String, with reply: @escaping @Sendable (Data) -> Void)
 
+    /// Remembers a SteamCMD location the user pointed at, after clearing the
+    /// same trust gates every other candidate clears.
+    ///
+    /// This is the one entry point on this surface through which the app names
+    /// something that later gets executed, and it exists because auto-detection
+    /// cannot cover an install in a location we have never heard of. Read
+    /// `SteamCMDManualBinding` before changing it: what makes this bounded is
+    /// that the path is re-gated on every run, not that it was checked here.
+    /// Replies with a JSON `SteamCMDManualBindResult`.
+    func bindManualSteamCMDBinary(path: String, with reply: @escaping @Sendable (Data) -> Void)
+
+    /// Forgets the manual binding, returning resolution to auto-detection.
+    /// Replies with a JSON `SteamCMDManualBindResult`.
+    func clearManualSteamCMDBinary(with reply: @escaping @Sendable (Data) -> Void)
+
     /// Runs one Doctor probe. Takes a JSON `SteamCMDProbeRequest` rather than
     /// loose arguments so the array never crosses as an NSSecureCoding
     /// collection. Replies with a JSON `SteamCMDProbeRun`.
@@ -97,27 +112,37 @@ protocol SteamConnectorProtocol {
     /// Unpacks a SteamCMD bootstrap tarball the app downloaded and verified into
     /// a managed install the connector is willing to execute.
     ///
-    /// The split is forced, not stylistic. Everything a sandboxed process
-    /// creates is stamped `com.apple.quarantine`, and a quarantined bare CLI
-    /// Mach-O cannot be spawned at all — `Process.run()` fails EPERM, and a
-    /// Developer ID signature does not exempt it (measured 2026-08-13). So the
-    /// app owns the network fetch and the digest check, where a hostile response
-    /// stays inside the sandbox, and extraction happens here, where the files
-    /// come out clean. Replies with a JSON `SteamCMDManagedInstallResult`.
-    /// No install-root parameter by design. `NSHomeDirectory()` is the sandbox
-    /// container inside the app and the real home here, so any path the app
-    /// derives can never equal the one this process expects — the gate would
-    /// reject every legitimate install. The location is ours to know.
-    func installManagedSteamCMD(
-        tarballPath: String,
-        with reply: @escaping @Sendable (Data) -> Void
-    )
+    /// Installs SteamCMD from Valve's own update manifest (`SteamCMDManifest`).
+    ///
+    /// Takes nothing: the manifest URL, every download, the install root and
+    /// every verification live on this side of the boundary, so there is no
+    /// input a compromised app could shape. Downloading here rather than in the
+    /// app also sidesteps quarantine entirely — files a sandboxed process
+    /// writes are stamped `com.apple.quarantine`, and a quarantined bare CLI
+    /// Mach-O cannot be spawned at all (`Process.run()` fails EPERM; a
+    /// Developer ID signature does not exempt it, measured 2026-08-13).
+    /// Replies with a JSON `SteamCMDManagedInstallResult`.
+    func installManagedSteamCMD(with reply: @escaping @Sendable (Data) -> Void)
 
     /// Deletes the managed SteamCMD install. Takes no path: the connector owns
     /// the one location this may touch, and the install lives outside the app
     /// container precisely so the app cannot reach it — including to delete it.
     /// Replies with a JSON `SteamCMDManagedRemovalResult`.
     func removeManagedSteamCMD(with reply: @escaping @Sendable (Data) -> Void)
+
+    /// Interactive `steamcmd +login` on a PTY, so the user can sign in without
+    /// ever opening Terminal. Takes a JSON `SteamCMDLoginRequest`; replies with
+    /// a JSON `SteamCMDLoginResult`.
+    ///
+    /// The password crosses this boundary once, goes to steamcmd's own prompt
+    /// over the PTY, and is persisted by nothing on either side — what remains
+    /// afterwards is steamcmd's own cached session in the shared Steam profile,
+    /// identical to a login typed in Terminal. It never enters argv (argv is
+    /// visible to every process via `ps`), never a log, and never the reply.
+    /// The call stays in flight through Steam Guard's mobile confirmation, so
+    /// the app can show "waiting for approval" until the user acts on their
+    /// phone.
+    func signInSteamAccount(_ request: Data, with reply: @escaping @Sendable (Data) -> Void)
 }
 
 struct SteamCMDManagedRemovalResult: Codable, Equatable, Sendable {
@@ -133,19 +158,7 @@ struct SteamCMDManagedRemovalResult: Codable, Equatable, Sendable {
 
 /// Valve's published SteamCMD bootstrap archive.
 ///
-/// Pinning the digest is worth doing despite the archive being fetched over
-/// TLS: it is the only check that runs before anything is unpacked. The
-/// authority on what may then be *executed* is the code signature, checked
-/// after extraction.
 enum SteamCMDBootstrapPackage {
-    static let downloadURL = URL(
-        string: "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz"
-    )!
-    /// Measured 2026-08-13. The archive's `Last-Modified` is 2020-04-02 and it
-    /// is a bootstrapper — the real binaries arrive through SteamCMD's own
-    /// self-update — so this does not move when SteamCMD versions do.
-    static let sha256 = "8ecc17c8988e5acadcc78e631c48490f76150f2dfaa6cf8d7b4b67b097bd753b"
-    static let byteCount = 2_523_751
     /// Valve Corporation's Developer ID team. The extracted Mach-O must carry
     /// this or the managed install is refused.
     static let expectedTeamIdentifier = "MXGJJ98X76"
@@ -157,18 +170,107 @@ enum SteamCMDBootstrapPackage {
     static let payloadSubdirectory = "MacOS"
 }
 
+/// Valve's own steamcmd update channel — the same manifest SteamCMD's
+/// self-update reads. Installing from it directly is what removed the Rosetta
+/// requirement: the historical `steamcmd_osx.tar.gz` bootstrapper is a frozen
+/// 2020 Intel-only build, while the manifest's packages carry the current
+/// universal binary (verified 2026-08-13: lipo x86_64+arm64, Valve team ID).
+///
+/// The manifest cannot be digest-pinned — it moves with every release — so the
+/// trust chain is: TLS to Valve, per-package sha256 from the manifest, and the
+/// same code-signature gate as always before anything is executed. The
+/// signature check is the authority on what runs; the manifest hashes only
+/// establish that what was unpacked is what Valve published.
+enum SteamCMDManifest {
+    static let url = URL(string: "https://media.steampowered.com/client/steam_cmd_osx")!
+
+    /// What the consent sheet quotes. The real total is the sum of the manifest
+    /// sizes and moves with releases; measured ~25 MB on 2026-08-13.
+    static let approximateDownloadBytes = 25 * 1024 * 1024
+    /// Rough on-disk size once SteamCMD has finished arranging itself.
+    static let approximateInstalledBytes = 90 * 1024 * 1024
+
+    /// Every package the manifest must supply. Mirrors what the bootstrapper
+    /// downloads on first run; `steamcmd_osx` carries the executable itself.
+    static let requiredPackages = [
+        "steamcmd_public_all",
+        "steamcmd_bins_osx",
+        "steamcmd_breakpad_osx",
+        "steamcmd_osx",
+    ]
+
+    struct Package: Equatable, Sendable {
+        let name: String
+        /// Plain-zip variant. The manifest also offers `.vz` (Valve LZMA)
+        /// alongside; the plain zip needs no custom decompressor.
+        let file: String
+        let sha256: String
+        let byteCount: Int
+    }
+
+    /// The filename becomes both a URL path component and a local path, so it
+    /// gets the same shape rule as workshop ids: one flat component, nothing
+    /// that can traverse.
+    static func isSafePackageFileName(_ name: String) -> Bool {
+        !name.isEmpty
+            && name.count <= 200
+            && !name.contains("..")
+            && name.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil
+    }
+
+    /// Parses Valve's VDF-style manifest. All required packages must resolve or
+    /// the whole parse fails — a partial install is not a smaller install, it
+    /// is a broken one.
+    static func parse(_ text: String) -> [Package]? {
+        var packages: [Package] = []
+        for name in requiredPackages {
+            guard let nameRange = text.range(of: "\"\(name)\"") else { return nil }
+            guard let open = text.range(of: "{", range: nameRange.upperBound..<text.endIndex),
+                  let close = text.range(of: "}", range: open.upperBound..<text.endIndex) else {
+                return nil
+            }
+            let block = text[open.upperBound..<close.lowerBound]
+            guard let file = firstQuoted(after: "file", in: block),
+                  isSafePackageFileName(file),
+                  let sha256 = firstQuoted(after: "sha2", in: block),
+                  sha256.count == 64,
+                  let sizeText = firstQuoted(after: "size", in: block),
+                  let byteCount = Int(sizeText),
+                  byteCount > 0
+            else { return nil }
+            packages.append(Package(
+                name: name, file: file, sha256: sha256.lowercased(), byteCount: byteCount
+            ))
+        }
+        return packages
+    }
+
+    private static func firstQuoted(after key: String, in block: Substring) -> String? {
+        guard let match = block.range(
+            of: "\"\(key)\"\\s*\"([^\"]+)\"",
+            options: .regularExpression
+        ) else { return nil }
+        let quoted = block[match]
+        // The capture is the second quoted run inside the match.
+        let parts = quoted.split(separator: "\"")
+        return parts.count >= 3 ? String(parts.last!) : nil
+    }
+}
+
 /// `Error` so install steps can short-circuit through `Result`; the value is
 /// still the wire payload, not a thrown-away diagnostic.
 struct SteamCMDManagedInstallResult: Codable, Equatable, Sendable, Error {
     enum Outcome: String, Codable, Sendable {
         case installed
-        /// The connector's own re-hash disagreed with the pinned digest.
+        /// A downloaded package disagreed with the manifest's digest. The case
+        /// name predates the manifest flow (it once meant the bootstrap
+        /// tarball); kept for wire stability.
         case tarballRejected
         case extractionFailed
         case binaryNotFound
         /// Extracted, but not signed by Valve — never executed.
         case signatureRejected
-        /// Unpacked and signed, but the first `+quit` self-update did not finish.
+        /// Unpacked and signed, but the first `+quit` run did not finish.
         case selfUpdateFailed
         case unavailable
     }
@@ -182,6 +284,27 @@ struct SteamCMDManagedInstallResult: Codable, Equatable, Sendable, Error {
         SteamCMDManagedInstallResult(
             outcome: outcome, canonicalPath: nil, sha256: nil, failureReason: reason
         )
+    }
+}
+
+/// A fresh SteamCMD bootstrap can replace itself and exit before it ever prints
+/// its normal banner. That is an intermediate state, not a failed install. The
+/// replacement must still pass the signature/quarantine gates before one retry.
+enum SteamCMDSelfUpdateRetryPolicy {
+    static let markers = [
+        "Checking for available updates",
+        "Downloading update",
+        "Verifying installation"
+    ]
+
+    static func shouldRetry(
+        output: String,
+        exitCode: Int32,
+        timedOut: Bool,
+        attempt: Int
+    ) -> Bool {
+        guard attempt == 0, !timedOut, exitCode != 0 else { return false }
+        return markers.contains { output.localizedCaseInsensitiveContains($0) }
     }
 }
 
@@ -374,6 +497,116 @@ struct SteamAccountSummary: Codable, Equatable, Sendable, Identifiable {
     let steamID64: String
 
     var id: String { accountName }
+}
+
+/// One in-app sign-in attempt. The password rides here because XPC is
+/// local-machine Mach IPC — the alternative (argv) is world-readable.
+struct SteamCMDLoginRequest: Codable, Sendable {
+    let accountName: String
+    let password: String
+    /// Steam Guard code from a previous attempt's `guard*Required` outcome.
+    let guardCode: String?
+    let timeout: TimeInterval
+
+    init(
+        accountName: String,
+        password: String,
+        guardCode: String? = nil,
+        timeout: TimeInterval = SteamCMDLoginProbe.defaultTimeout
+    ) {
+        self.accountName = accountName
+        self.password = password
+        self.guardCode = guardCode
+        self.timeout = timeout
+    }
+}
+
+struct SteamCMDLoginResult: Codable, Equatable, Sendable {
+    enum Outcome: String, Codable, Sendable {
+        case success
+        case invalidPassword
+        /// Steam Guard wants the code Steam just emailed; ask and retry.
+        case guardCodeEmailRequired
+        /// Steam Guard wants the authenticator app's rotating code.
+        case guardCodeTotpRequired
+        case invalidGuardCode
+        case rateLimited
+        /// The mobile-confirmation wait (or anything else) outlived the budget.
+        case timedOut
+        /// steamcmd refused for a reason we do not classify further.
+        case failed
+        case unavailable
+    }
+    let outcome: Outcome
+    let steamID64: String?
+
+    static func failed(_ outcome: Outcome) -> SteamCMDLoginResult {
+        SteamCMDLoginResult(outcome: outcome, steamID64: nil)
+    }
+}
+
+/// The argv and prompt grammar of an interactive login.
+///
+/// `arguments` deliberately has no password parameter — the type system is the
+/// guard against the argv leak, not reviewer vigilance. Secrets travel over the
+/// PTY answering steamcmd's own prompts.
+enum SteamCMDLoginProbe {
+    static let defaultTimeout: TimeInterval = 300
+
+    static func arguments(accountName: String) -> [String] {
+        ["+login", accountName, "+quit"]
+    }
+
+    static func clampedTimeout(_ requested: TimeInterval) -> TimeInterval {
+        guard requested.isFinite else { return defaultTimeout }
+        // The floor is the mobile-confirmation case: the user has to find
+        // their phone. The cap keeps an abandoned prompt from parking the
+        // shared SteamCMD queue for an hour.
+        return min(max(requested, 60), 600)
+    }
+}
+
+/// Reads steamcmd's interactive login output. Matching is contains-based over
+/// the lowercased transcript: these strings come from real steamcmd sessions,
+/// and steamcmd has varied casing and prefixes across releases. Anything
+/// unmatched falls through to the timeout/exit handling — never to a spawn of
+/// something else.
+enum SteamCMDLoginOutputClassifier {
+    enum Event: Equatable {
+        case passwordPrompt
+        case guardCodeEmailPrompt
+        case guardCodeTotpPrompt
+        /// Modern Steam Guard: steamcmd polls until the user approves on their
+        /// phone. Not a failure — keep waiting.
+        case waitingForMobileConfirmation
+        case invalidPassword
+        case invalidGuardCode
+        case rateLimited
+        case loggedIn
+    }
+
+    /// First terminal event in the transcript, or the most actionable prompt.
+    /// Order matters: failure markers outrank prompts (a failed attempt often
+    /// re-prompts), and success outranks everything.
+    static func event(inTranscript transcript: String) -> Event? {
+        let text = transcript.lowercased()
+        if text.contains("logged in ok") || text.contains("waiting for user info") {
+            return .loggedIn
+        }
+        if text.contains("rate limit") { return .rateLimited }
+        if text.contains("invalid login auth code") || text.contains("two-factor code mismatch") {
+            return .invalidGuardCode
+        }
+        if text.contains("invalid password") { return .invalidPassword }
+        if text.contains("confirm the login in the steam mobile app")
+            || text.contains("waiting for confirmation") {
+            return .waitingForMobileConfirmation
+        }
+        if text.contains("two-factor code:") { return .guardCodeTotpPrompt }
+        if text.contains("steam guard code:") { return .guardCodeEmailPrompt }
+        if text.contains("password:") { return .passwordPrompt }
+        return nil
+    }
 }
 
 /// Reads the `Accounts` block out of Steam's `config.vdf`.
@@ -641,14 +874,89 @@ enum SteamCMDDiagnosisProbe {
     }
 }
 
-/// Where the binary under test came from. No "user picked" case: a path the
-/// app names is never executed, so one cannot exist.
+/// Where the binary under test came from.
 enum SteamCMDBinarySource: String, Codable, Sendable {
+    /// A location the user pointed at themselves. See `SteamCMDManualBinding`
+    /// for what accepting one does and does not promise.
+    case manual
     case managedInstall
     case homebrew
     case usrLocal
     case macPorts
     case notFound
+}
+
+/// A SteamCMD location the user pointed at, remembered on this side of the XPC
+/// boundary.
+///
+/// **This deliberately reopens a hole that was closed on 2026-08-13**, at the
+/// user's explicit direction (2026-08-14), because closing it left no recourse
+/// for an install we cannot find on our own: `autoDetectCandidates` covers the
+/// package managers, and nothing else.
+///
+/// What is given up: the app names a path once, and a path is not an inode. A
+/// file swapped between our checks and `posix_spawn` is executed unchecked, and
+/// macOS has no `fexecve` to bind the two.
+///
+/// What is kept, so the window is a window and not a door:
+///
+/// - The record lives here, under the connector's own root in the real home. A
+///   sandboxed app cannot write it; it can only ask, once, via XPC.
+/// - Nothing is trusted at bind time and remembered. The stored path re-enters
+///   `resolvedExecutablePath` on **every** run and re-clears the same gates as
+///   any other candidate — Valve's signature, no quarantine, and the execution
+///   fence. A path that stops passing simply stops being chosen.
+/// - It is a candidate, not an override: it goes first, and a failure falls
+///   through to the managed install and the package managers.
+enum SteamCMDManualBinding {
+    static func recordURL(home: URL = URL(fileURLWithPath: NSHomeDirectory())) -> URL {
+        home
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
+            .appendingPathComponent("Loomscreen", isDirectory: true)
+            .appendingPathComponent("manual-steamcmd-path", isDirectory: false)
+            .standardizedFileURL
+    }
+
+    static func load(home: URL = URL(fileURLWithPath: NSHomeDirectory())) -> URL? {
+        guard let raw = try? String(contentsOf: recordURL(home: home), encoding: .utf8) else {
+            return nil
+        }
+        let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Relative paths would resolve against this process's working directory,
+        // which the app does not know and we do not control.
+        guard path.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
+    static func store(_ path: String, home: URL = URL(fileURLWithPath: NSHomeDirectory())) throws {
+        let record = recordURL(home: home)
+        try FileManager.default.createDirectory(
+            at: record.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try Data(path.utf8).write(to: record, options: .atomic)
+    }
+
+    static func clear(home: URL = URL(fileURLWithPath: NSHomeDirectory())) {
+        try? FileManager.default.removeItem(at: recordURL(home: home))
+    }
+}
+
+/// What the connector made of a path the user pointed at.
+struct SteamCMDManualBindResult: Codable, Sendable {
+    enum Outcome: String, Codable, Sendable {
+        case bound
+        /// Resolved to a Mach-O, but one we refuse to run.
+        case untrusted
+        case notFound
+        case refused
+    }
+
+    let outcome: Outcome
+    /// The Mach-O the picked path resolved to, when it resolved to one.
+    let canonicalPath: String?
+    let failureReason: String?
+
+    var isBound: Bool { outcome == .bound }
 }
 
 struct SteamCMDDiagnosisCandidate: Equatable, Sendable {
@@ -668,14 +976,31 @@ enum SteamCMDDiagnosisPlan {
     /// `managedInstall` is a parameter rather than a call to
     /// `SteamCMDManagedInstaller.managedBinary()` so tests pin the ordering
     /// without a real install on disk.
-    static func candidates(managedInstall: URL?) -> [SteamCMDDiagnosisCandidate] {
+    /// `discovered` defaults to a real filesystem walk; tests pass a fixed list
+    /// so the ordering they pin does not depend on what the test machine has
+    /// installed under `/opt/homebrew`.
+    ///
+    /// `manual` goes first — the user pointing at a file is a stronger statement
+    /// than anything we inferred — but it is only a position in this list. Every
+    /// entry clears the same gates in `firstTrusted`, so a manual pick that stops
+    /// passing them falls through to the rest rather than breaking downloads.
+    static func candidates(
+        managedInstall: URL?,
+        manual: URL? = SteamCMDManualBinding.load(),
+        discovered: [URL] = SteamCMDBinaryResolver.autoDetectCandidates()
+    ) -> [SteamCMDDiagnosisCandidate] {
         var plan: [SteamCMDDiagnosisCandidate] = []
+        if let manual {
+            plan.append(SteamCMDDiagnosisCandidate(
+                path: manual.path(percentEncoded: false), source: .manual
+            ))
+        }
         if let managed = managedInstall {
             plan.append(SteamCMDDiagnosisCandidate(
                 path: managed.path(percentEncoded: false), source: .managedInstall
             ))
         }
-        for url in SteamCMDBinaryResolver.autoDetectCandidates() {
+        for url in discovered {
             let path = url.path(percentEncoded: false)
             plan.append(SteamCMDDiagnosisCandidate(
                 path: path, source: packageManagerSource(forCandidatePath: path)
@@ -705,12 +1030,18 @@ enum SteamCMDDiagnosisPlan {
         return nil
     }
 
+    /// Matched on path components, not on absolute prefixes: the Caskroom and
+    /// command-wrapper candidates carry a version directory in the middle, and
+    /// a custom `HOMEBREW_PREFIX` moves the whole tree.
     static func packageManagerSource(forCandidatePath path: String) -> SteamCMDBinarySource {
+        if path.contains("/Caskroom/") || path.contains("/.homebrew-command-wrappers/") {
+            return .homebrew
+        }
         switch path {
-        case "/opt/homebrew/bin/steamcmd": .homebrew
-        case "/usr/local/bin/steamcmd": .usrLocal
-        case "/opt/local/bin/steamcmd": .macPorts
-        default: .notFound
+        case "/opt/homebrew/bin/steamcmd": return .homebrew
+        case "/usr/local/bin/steamcmd": return .usrLocal
+        case "/opt/local/bin/steamcmd": return .macPorts
+        default: return .notFound
         }
     }
 }
@@ -1270,34 +1601,102 @@ enum SteamCMDBinaryResolver {
         return resolveWrapper(pickedURL)
     }
 
-    /// The three canonical package-manager symlinks, and nothing else.
+    /// Where the package managers put SteamCMD, in the order we try them.
     ///
-    /// This is what `which steamcmd` would return — except `which` reads `$PATH`,
-    /// and an XPC service is started by launchd without ever sourcing the user's
-    /// shell profile, so `/opt/homebrew/bin` is not on its `PATH` and `which`
-    /// finds nothing for the case that matters most. Three `stat`s at fixed
-    /// absolute paths get the same answer without spawning a login shell to
-    /// execute the user's rc files.
+    /// `which steamcmd` is not an option: an XPC service is started by launchd
+    /// without ever sourcing the user's shell profile, so `/opt/homebrew/bin` is
+    /// not on its `PATH` and `which` finds nothing for the case that matters
+    /// most. These are `stat`s at derived paths instead.
     ///
-    /// Deliberately not searched: `~/steamcmd`, `~/Steam`, the Homebrew Caskroom
-    /// version directories. The home guesses read the sandbox container until
-    /// 2026-08-02 and so never matched anything; the Caskroom listing only helped
-    /// when the `bin` symlink was missing.
+    /// Three layers, because Homebrew has had three answers to "where does a
+    /// cask's CLI live" and a machine can be in any of them:
+    ///
+    /// 1. `<prefix>/bin/steamcmd` — the `binary` stanza's symlink. Was the only
+    ///    thing searched until 2026-08-14.
+    /// 2. `<prefix>/.homebrew-command-wrappers/steamcmd` — the Command Wrapper
+    ///    stanza, which upstream's cask moved to. It writes no `bin` symlink at
+    ///    all, so layer 1 alone reports "not installed" for a current
+    ///    `brew install --cask steamcmd`.
+    /// 3. `<prefix>/Caskroom/steamcmd/<version>/MacOS/steamcmd` — the real
+    ///    Mach-O. Reached directly because both links above are absent on a
+    ///    machine where the cask was ever `brew unlink`ed (the symlink is
+    ///    renamed to `steamcmd.off`, which we deliberately do not honour: `.off`
+    ///    means the user disabled that entry point).
+    ///
+    /// Measured 2026-08-14 on a Mac with `steamcmd` installed by Homebrew: all
+    /// three of the old fixed paths were missing and the binary was only
+    /// reachable through layer 3.
+    ///
+    /// Not searched: `~/steamcmd`, `~/Steam`. Those read the sandbox container
+    /// until 2026-08-02 and so never matched anything.
     ///
     /// Nor the managed install: that root is derived by
     /// `SteamCMDManagedInstaller.managedBinary()` and spliced in by
-    /// `SteamCMDDiagnosisPlan` (explicit pick, then managed install, then this
-    /// list). What this function owns is only "which package-manager paths do
-    /// we look at".
-    static func autoDetectCandidates() -> [URL] {
-        [
-            URL(fileURLWithPath: "/opt/homebrew/bin/steamcmd"),
-            URL(fileURLWithPath: "/usr/local/bin/steamcmd"),
-            URL(fileURLWithPath: "/opt/local/bin/steamcmd")
-        ]
+    /// `SteamCMDDiagnosisPlan`.
+    static func autoDetectCandidates(
+        roots: SearchRoots = SearchRoots(),
+        fileManager: FileManager = .default
+    ) -> [URL] {
+        var candidates: [URL] = []
+
+        for prefix in roots.homebrewPrefixes {
+            candidates.append(URL(fileURLWithPath: prefix + "/bin/steamcmd"))
+        }
+        candidates.append(URL(fileURLWithPath: roots.macPortsPrefix + "/bin/steamcmd"))
+        for prefix in roots.homebrewPrefixes {
+            candidates.append(URL(fileURLWithPath: prefix + "/.homebrew-command-wrappers/steamcmd"))
+        }
+        for prefix in roots.homebrewPrefixes {
+            candidates.append(contentsOf: caskroomBinaries(homebrewPrefix: prefix, fileManager: fileManager))
+        }
+        return candidates
     }
 
-    private static func resolveWrapper(_ wrapperURL: URL) -> Result<URL, SteamCMDBinaryError> {
+    /// The prefixes searched. Injectable so the Caskroom walk can be exercised
+    /// against a fixture instead of whatever the test machine happens to have
+    /// installed.
+    struct SearchRoots: Sendable {
+        var homebrewPrefixes: [String]
+        var macPortsPrefix: String
+
+        init(
+            homebrewPrefixes: [String] = ["/opt/homebrew", "/usr/local"],
+            macPortsPrefix: String = "/opt/local"
+        ) {
+            self.homebrewPrefixes = homebrewPrefixes
+            self.macPortsPrefix = macPortsPrefix
+        }
+    }
+
+    /// Every installed cask version's Mach-O, newest first.
+    ///
+    /// All of them rather than just the newest: Homebrew leaves older version
+    /// directories behind after an upgrade, and if the newest one fails a trust
+    /// gate the walk in `SteamCMDDiagnosisPlan.firstTrusted` should get to try
+    /// the one that passes.
+    private static func caskroomBinaries(homebrewPrefix: String, fileManager: FileManager) -> [URL] {
+        let cask = URL(fileURLWithPath: homebrewPrefix + "/Caskroom/steamcmd", isDirectory: true)
+        guard let versions = try? fileManager.contentsOfDirectory(
+            at: cask,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            // Skips `.metadata`, which is a sibling of the version directories.
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        return versions
+            .sorted { modificationDate(of: $0) > modificationDate(of: $1) }
+            .map { $0.appendingPathComponent("MacOS/steamcmd", isDirectory: false) }
+    }
+
+    private static func modificationDate(of url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+            ?? .distantPast
+    }
+
+    /// `depth` bounds the wrapper chain. Homebrew's cask is genuinely two deep
+    /// (`steamcmd.wrapper.sh` execs `MacOS/steamcmd.sh`, which execs the Mach-O),
+    /// and a wrapper that execs itself would otherwise spin here.
+    private static func resolveWrapper(_ wrapperURL: URL, depth: Int = 0) -> Result<URL, SteamCMDBinaryError> {
         let wrapperDir = wrapperURL.deletingLastPathComponent()
 
         // 1) An explicit `STEAMEXE=<path>` line (Valve's tarball `steamcmd.sh`).
@@ -1320,7 +1719,38 @@ enum SteamCMDBinaryResolver {
             }
         }
 
+        // 3) Follow a bare `exec '<path>' "$@"`. Homebrew's Command Wrapper
+        //    stanza and its cask wrapper are both this shape, and neither sits
+        //    anywhere near the Mach-O, so neither (1) nor (2) can reach it.
+        if depth < 2, let target = execTarget(in: wrapperURL, relativeTo: wrapperDir) {
+            if isMachO(target) {
+                return validateBinary(target).map { target }
+            }
+            if fileExists(target) {
+                return resolveWrapper(target, depth: depth + 1)
+            }
+        }
+
         return .failure(.wrapperParseFailed(reason: "Couldn't find the SteamCMD Mach-O binary near \(wrapperURL.lastPathComponent)."))
+    }
+
+    /// The path from the first `exec <path>` line, quoted or not.
+    private static func execTarget(in wrapperURL: URL, relativeTo wrapperDir: URL) -> URL? {
+        guard let data = try? Data(contentsOf: wrapperURL, options: .mappedIfSafe),
+              let script = String(data: data.prefix(64 * 1024), encoding: .utf8) else { return nil }
+
+        for rawLine in script.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard line.hasPrefix("exec ") else { continue }
+            let argument = String(line.dropFirst("exec ".count)).trimmingCharacters(in: .whitespaces)
+            guard let value = firstShellWord(argument) else { continue }
+            // `exec "$0"` is the restart line at the bottom of Valve's script.
+            guard !value.isEmpty, !value.contains("$") else { continue }
+            return resolveShellPath(value, relativeTo: wrapperDir)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+        }
+        return nil
     }
 
     private static func steamExecutableValue(in wrapperURL: URL) throws -> String {
@@ -1344,6 +1774,18 @@ enum SteamCMDBinaryResolver {
             return stripped
         }
         throw SteamCMDBinaryError.wrapperParseFailed(reason: "STEAMEXE assignment not found")
+    }
+
+    /// The first argument of a command line, unquoted. Everything after it —
+    /// `"$@"` in practice — is dropped.
+    private static func firstShellWord(_ argument: String) -> String? {
+        guard let first = argument.first else { return nil }
+        if first == "'" || first == "\"" {
+            let body = argument.dropFirst()
+            guard let end = body.firstIndex(of: first) else { return nil }
+            return String(body[body.startIndex..<end])
+        }
+        return String(argument.prefix(while: { !$0.isWhitespace }))
     }
 
     private static func stripShellQuoting(_ value: String) -> String {
@@ -1530,117 +1972,15 @@ enum SteamCMDManagedInstaller {
         return binary
     }
 
-    /// Copies the archive somewhere only this process can reach, then hashes the
-    /// copy. Hashing the app's file and unpacking the app's file are two
-    /// separate opens; between them the app can swap the contents, so the digest
-    /// would describe bytes that never get unpacked. Everything downstream reads
-    /// the private copy.
-    ///
-    /// Opened `O_NOFOLLOW` so the supplied path cannot be a symlink aimed at a
-    /// file outside the container, and `O_NONBLOCK` so it cannot be a FIFO that
-    /// parks this call — a read-only `open` on a FIFO blocks until a writer
-    /// arrives, which is before any check below could run. `O_NONBLOCK` has no
-    /// effect on the regular file this is supposed to be handed.
-    /// `expected` is injectable so the accept path can be exercised with a small
-    /// deterministic fixture. Without it the only archive that passes is Valve's
-    /// 2.4 MB one, so the positive control could only run where a copy happened
-    /// to be lying around — and an implementation that rejected everything went
-    /// green wherever it was not.
-    struct ArchiveExpectation: Sendable {
-        let sha256: String
-        let byteCount: Int
-        static let pinned = ArchiveExpectation(
-            sha256: SteamCMDBootstrapPackage.sha256,
-            byteCount: SteamCMDBootstrapPackage.byteCount
-        )
-    }
-
-    static func stageAndVerifyTarball(
-        at path: String,
-        stagingRoot: URL,
-        expected: ArchiveExpectation = .pinned
-    ) -> Result<URL, SteamCMDManagedInstallResult> {
-        let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
-        guard descriptor >= 0 else {
-            return .failure(.failed(
-                .tarballRejected,
-                "Could not open the downloaded archive (errno \(errno))"
-            ))
-        }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-
-        // Everything downstream runs on the shared SteamCMD serial queue, so a
-        // path that reads slowly or never — FIFO, device, directory — wedges
-        // every later Steam operation in the process, not just this install.
-        var info = stat()
-        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
-            return .failure(.failed(
-                .tarballRejected,
-                "The downloaded archive is not a regular file"
-            ))
-        }
-
-        do {
-            try FileManager.default.createDirectory(
-                at: stagingRoot, withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(.failed(.extractionFailed, "Could not create the staging directory"))
-        }
-        let staged = stagingRoot.appendingPathComponent("steamcmd_bootstrap.tar.gz")
-        try? FileManager.default.removeItem(at: staged)
-        guard FileManager.default.createFile(
-            atPath: staged.path(percentEncoded: false), contents: nil
-        ), let writer = FileHandle(forWritingAtPath: staged.path(percentEncoded: false)) else {
-            return .failure(.failed(.extractionFailed, "Could not create the staging file"))
-        }
-        defer { try? writer.close() }
-
-        var hasher = SHA256()
-        var byteCount = 0
-        while true {
-            let chunk: Data?
-            do {
-                chunk = try handle.read(upToCount: 1 << 20)
-            } catch {
-                return .failure(.failed(
-                    .tarballRejected, "Could not read the archive: \(error.localizedDescription)"
-                ))
-            }
-            guard let chunk, !chunk.isEmpty else { break }
-            // Refuse mid-stream rather than buffering an unbounded file.
-            guard byteCount + chunk.count <= expected.byteCount else {
-                return .failure(.failed(
-                    .tarballRejected,
-                    "Archive is larger than the expected \(expected.byteCount) bytes"
-                ))
-            }
-            hasher.update(data: chunk)
-            byteCount += chunk.count
-            do {
-                try writer.write(contentsOf: chunk)
-            } catch {
-                return .failure(.failed(.extractionFailed, "Could not stage the archive"))
-            }
-        }
-
-        guard byteCount == expected.byteCount else {
-            return .failure(.failed(
-                .tarballRejected,
-                "Archive is \(byteCount) bytes, expected \(expected.byteCount)"
-            ))
-        }
-        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
-        guard digest == expected.sha256 else {
-            return .failure(.failed(.tarballRejected, "Archive digest does not match the pinned value"))
-        }
-        return .success(staged)
-    }
-
     /// Replaces any previous payload so a half-finished install cannot be
     /// mistaken for a good one, then unpacks into `MacOS/`.
+    ///
+    /// Takes a list because the manifest ships one zip per package; they all
+    /// unpack into the same staging tree, exactly as SteamCMD's own updater
+    /// arranges them. bsdtar detects the container format, so tarball and zip
+    /// callers share this path.
     static func extract(
-        stagedTarball: URL,
+        archives: [URL],
         installRoot: URL,
         spawn: (String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool)
     ) -> Result<ExtractedInstall, SteamCMDManagedInstallResult> {
@@ -1669,26 +2009,42 @@ enum SteamCMDManagedInstaller {
             ))
         }
 
-        let run = spawn(
-            "/usr/bin/tar",
-            [
-                "-xzf", stagedTarball.path(percentEncoded: false),
-                "-C", staging.path(percentEncoded: false)
-            ],
-            120
-        )
         func discardStaging() { try? FileManager.default.removeItem(at: staging) }
-        guard !run.timedOut else {
-            discardStaging()
-            return .failure(.failed(.extractionFailed, "Unpacking timed out"))
+        for archive in archives {
+            let run = spawn(
+                "/usr/bin/tar",
+                [
+                    "-xf", archive.path(percentEncoded: false),
+                    "-C", staging.path(percentEncoded: false)
+                ],
+                300
+            )
+            guard !run.timedOut else {
+                discardStaging()
+                return .failure(.failed(.extractionFailed, "Unpacking timed out"))
+            }
+            guard run.exitCode == 0 else {
+                discardStaging()
+                return .failure(.failed(
+                    .extractionFailed,
+                    "tar exited \(run.exitCode): \(run.output.prefix(200))"
+                ))
+            }
         }
-        guard run.exitCode == 0 else {
-            discardStaging()
-            return .failure(.failed(
-                .extractionFailed,
-                "tar exited \(run.exitCode): \(run.output.prefix(200))"
-            ))
+        // Valve's manifest zips carry no unix permissions (measured 2026-08-13:
+        // everything lands 0644), and `steamcmd.sh` checks `-x` without ever
+        // chmodding — the bootstrapper used to set these bits. Without this the
+        // freshly installed steamcmd cannot be spawned at all.
+        for name in ["steamcmd", "steamcmd.sh"] {
+            let executable = staging.appendingPathComponent(name, isDirectory: false)
+            if FileManager.default.fileExists(atPath: executable.path(percentEncoded: false)) {
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: NSNumber(value: Int16(0o755))],
+                    ofItemAtPath: executable.path(percentEncoded: false)
+                )
+            }
         }
+
         // bsdtar refuses `..` members and strips leading `/`, but it happily
         // creates a symlink pointing outside the destination. On its own that is
         // inert; combined with a later write through it, it is an escape. The
@@ -1772,6 +2128,13 @@ enum SteamCMDManagedInstaller {
     static func rollBack(_ install: ExtractedInstall) -> RollbackOutcome {
         guard let retired = install.retired else {
             try? FileManager.default.removeItem(at: install.payload)
+            let installRoot = install.payload.deletingLastPathComponent()
+            if let remaining = try? FileManager.default.contentsOfDirectory(
+                at: installRoot,
+                includingPropertiesForKeys: nil
+            ), remaining.isEmpty {
+                try? FileManager.default.removeItem(at: installRoot)
+            }
             return .noPreviousInstall
         }
         let retiredPath = retired.path(percentEncoded: false)

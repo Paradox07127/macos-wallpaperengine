@@ -12,14 +12,41 @@ struct WorkshopPasteSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
-            pasteArea
-            downloadReadinessBanner
-            Divider()
+            // Input on top, list below, actions in a bar at the bottom: the
+            // shape Safari's downloads and the App Store's updates use. Not a
+            // Form — a queue of rows with their own progress is a list, and
+            // grouped Form insets make it read as a settings page.
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                SteamSheetHeader(
+                    icon: "tray.and.arrow.down.fill",
+                    title: "Add from Steam Workshop",
+                    iconTint: .accentColor,
+                    subtitle: "Paste Workshop URLs or item IDs. No Web API key needed — that's only for searching."
+                )
+                pasteArea
+                downloadReadinessBanner
+            }
+            .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
+            .padding(.top, DesignTokens.Settings.formVerticalMargin)
+            .padding(.bottom, DesignTokens.Spacing.md)
+
+            queueHeader
             queueArea
+
+            SheetFooterBar(
+                primaryTitle: "Done",
+                primaryAction: { dismiss() },
+                primaryHelp: "Close the Workshop paste queue"
+            )
         }
-        .frame(minWidth: 440, idealWidth: 500, maxWidth: 720, minHeight: 340, idealHeight: 420, maxHeight: 760)
+        .frame(
+            minWidth: SteamSheetWidth.dense,
+            idealWidth: SteamSheetWidth.dense,
+            maxWidth: 720,
+            minHeight: 380,
+            idealHeight: 460,
+            maxHeight: 760
+        )
         .background(DesignTokens.Colors.pageBackground)
         .overlay(alignment: .bottom) {
             DiagnosticExportToast(isPresented: $toastVisible)
@@ -30,64 +57,48 @@ struct WorkshopPasteSheet: View {
         .onDisappear { model.removeAll() }
     }
 
-    // MARK: - Header
+    // MARK: - Queue header
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.18))
-                    .frame(width: 28, height: 28)
-                Image(systemName: "tray.and.arrow.down.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Add from Steam Workshop")
-                    .font(DesignTokens.Typography.sectionTitle)
-                Text("Paste Workshop URLs or item IDs. No Web API key needed — that's only for searching.")
-                    .font(.caption)
+    /// Batch actions sit with the list they act on, not in the title bar — the
+    /// same rule the Doctor's diagnostics section follows, and what the App
+    /// Store does with "Update All". Three circular icon buttons and a Done
+    /// crowded the title before this.
+    @ViewBuilder
+    private var queueHeader: some View {
+        if !model.rows.isEmpty {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Text("\(model.rows.count) queued", bundle: .main)
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
 
-            if !downloadableRows.isEmpty {
-                Button {
-                    for row in downloadableRows { downloadAction(for: row)?() }
-                } label: {
-                    Label("Download all", systemImage: "arrow.down.circle.fill")
+                Spacer(minLength: DesignTokens.Spacing.sm)
+
+                if !downloadableRows.isEmpty {
+                    Button {
+                        for row in downloadableRows { downloadAction(for: row)?() }
+                    } label: {
+                        Label("Download all", systemImage: "arrow.down.circle.fill")
+                            .font(DesignTokens.Typography.caption)
+                    }
+                    .adaptiveGlassButton(.prominent, size: .small)
+                    .help(Text("Download every queued item with SteamCMD"))
                 }
-                .adaptiveGlassButton(.prominent, size: .small)
-                .help(Text("Download every queued item with SteamCMD"))
-            }
 
-            Button {
-                model.openAllInSteam()
-            } label: {
-                Image(systemName: "arrow.up.forward.app.fill")
+                Menu {
+                    Button("Open all in Steam") { model.openAllInSteam() }
+                    Divider()
+                    Button("Clear queue", role: .destructive) { model.removeAll() }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(Text("Queue actions"))
             }
-            .adaptiveGlassButton(.regular, shape: .circle, size: .small)
-            .disabled(model.rows.isEmpty)
-            .help(Text("Open all in Steam"))
-            .accessibilityLabel(Text("Open all in Steam"))
-
-            Button(role: .destructive) {
-                model.removeAll()
-            } label: {
-                Image(systemName: "trash")
-            }
-            .adaptiveGlassButton(.regular, shape: .circle, size: .small)
-            .tint(DesignTokens.Colors.Status.danger)
-            .disabled(model.rows.isEmpty)
-            .help(Text("Clear queue"))
-            .accessibilityLabel(Text("Clear queue"))
-
-            Button("Done") { dismiss() }
-                .adaptiveGlassButton(.regular, size: .small)
-                .keyboardShortcut(.defaultAction)
+            .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
+            .padding(.bottom, DesignTokens.Spacing.xs)
         }
-        .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
-        .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
     }
 
     // MARK: - Paste area
@@ -141,8 +152,6 @@ struct WorkshopPasteSheet: View {
                 .disabled(model.rawInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
-        .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
     }
 
     // MARK: - Queue area
@@ -212,8 +221,6 @@ struct WorkshopPasteSheet: View {
                 DesignTokens.Colors.Status.warning.opacity(0.10),
                 in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
             )
-            .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
-            .padding(.bottom, DesignTokens.Settings.formVerticalMargin)
         }
     }
 

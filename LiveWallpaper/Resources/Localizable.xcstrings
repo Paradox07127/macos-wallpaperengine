@@ -346,35 +346,6 @@
         }
       }
     },
-    "%@ from Valve's server at %@" : {
-      "comment" : "Managed SteamCMD install consent sheet; first %@ is a file size, second is a hostname.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ from Valve's server at %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@（Valve のサーバー %@ から）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，来自 Valve 服务器 %@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，來自 Valve 伺服器 %@"
-          }
-        }
-      }
-    },
     "%@ hasn't published any wallpapers here." : {
       "comment" : "Empty creator-scoped Workshop browse. Placeholder is the creator's name.",
       "localizations" : {
@@ -1300,6 +1271,35 @@
         }
       }
     },
+    "%lld need attention" : {
+      "comment" : "Collapsed diagnostics header summary; %lld is how many probes are failing.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld need attention"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件の対応が必要"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项需要处理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 項需要處理"
+          }
+        }
+      }
+    },
     "%lld of 3 ready" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1354,6 +1354,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "百分之 %lld"
+          }
+        }
+      }
+    },
+    "%lld queued" : {
+      "comment" : "Count of items waiting in the Workshop paste queue.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld queued"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项待处理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 項待處理"
           }
         }
       }
@@ -2041,31 +2071,60 @@
         }
       }
     },
-    "About %@ — SteamCMD downloads the rest itself the first time it runs." : {
+    "About %@" : {
       "comment" : "Managed SteamCMD install consent sheet; %@ is the approximate installed size.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "About %@ — SteamCMD downloads the rest itself the first time it runs."
+            "value" : "About %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "約 %@。残りは SteamCMD が初回起動時に自分でダウンロードします。"
+            "value" : "約 %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "约 %@ —— 其余部分由 SteamCMD 首次运行时自行下载。"
+            "value" : "约 %@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "約 %@ —— 其餘部分由 SteamCMD 首次執行時自行下載。"
+            "value" : "約 %@"
+          }
+        }
+      }
+    },
+    "About %@ from Valve's server at %@" : {
+      "comment" : "Managed SteamCMD install consent sheet; first %@ is an approximate download size, second is a hostname.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About %@ from Valve's server at %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "約 %@（Valve のサーバー %@ から）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "约 %@，来自 Valve 服务器 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "約 %@，來自 Valve 伺服器 %@"
           }
         }
       }
@@ -4707,6 +4766,35 @@
         }
       }
     },
+    "Back" : {
+      "comment" : "Onboarding back button accessibility label.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "戻る"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
+          }
+        }
+      }
+    },
     "Back to App" : {
       "localizations" : {
         "en" : {
@@ -4956,34 +5044,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "電池電量 %@"
-          }
-        }
-      }
-    },
-    "Behavior" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Behavior"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動作"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "行为"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "行為"
           }
         }
       }
@@ -5442,6 +5502,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "瀏覽標籤為 %@ 的項目"
+          }
+        }
+      }
+    },
+    "Browse Online" : {
+      "comment" : "Installed-tab empty state primary button; switches to the Workshop browse tab.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browse Online"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークショップを見る"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览创意工坊"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "瀏覽創意工坊"
           }
         }
       }
@@ -6722,7 +6811,7 @@
       }
     },
     "Checking…" : {
-      "comment" : "Inline status while waiting for audio permission state.\nInline status while waiting for macOS Login Items state.\nWeather permission status while refreshing.",
+      "comment" : "Inline status while waiting for audio permission state.\nInline status while waiting for macOS Login Items state.\nWeather permission status while refreshing.\nWorkshop Doctor probe is running.",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -7062,6 +7151,35 @@
         }
       }
     },
+    "Choose Steam's folder to get started." : {
+      "comment" : "Steam connection header subtitle when the library is not authorized.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Steam's folder to get started."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まず Steam のフォルダを選んでください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先选择 Steam 的文件夹即可开始。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先選擇 Steam 的資料夾即可開始。"
+          }
+        }
+      }
+    },
     "Choose Steam's main folder containing config/config.vdf." : {
       "comment" : "Open-panel message when authorizing the official Steam Library.",
       "localizations" : {
@@ -7081,6 +7199,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請選擇包含 config/config.vdf 的 Steam 主資料夾。"
+          }
+        }
+      }
+    },
+    "Choose SteamCMD…" : {
+      "comment" : "Menu item to point Loomscreen at an existing SteamCMD install.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose SteamCMD…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD を選択…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 SteamCMD…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇 SteamCMD…"
           }
         }
       }
@@ -7132,6 +7280,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇要讀取 agent 活動的資料夾（唯讀，供監控桌布使用）。"
+          }
+        }
+      }
+    },
+    "Choose the steamcmd binary, or the steamcmd.sh that launches it." : {
+      "comment" : "Open-panel message when pointing Loomscreen at an existing SteamCMD.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the steamcmd binary, or the steamcmd.sh that launches it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "steamcmd 本体、またはそれを起動する steamcmd.sh を選択してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择 steamcmd 可执行文件，或用于启动它的 steamcmd.sh。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請選擇 steamcmd 執行檔，或用於啟動它的 steamcmd.sh。"
           }
         }
       }
@@ -8136,6 +8314,181 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉新手引導並開啟 %@"
+          }
+        }
+      }
+    },
+    "Close the Steam connection sheet" : {
+      "comment" : "Done button help text on the Steam connection sheet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close the Steam connection sheet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 接続シートを閉じます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭 Steam 连接面板"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉 Steam 連線面板"
+          }
+        }
+      }
+    },
+    "Close the Workshop paste queue" : {
+      "comment" : "Tooltip for the Done button on the Workshop paste sheet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close the Workshop paste queue"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workshop の貼り付けキューを閉じる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭创意工坊粘贴队列"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉創意工坊貼上佇列"
+          }
+        }
+      }
+    },
+    "Close these instructions" : {
+      "comment" : "Homebrew sheet Done button help.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close these instructions"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この説明を閉じます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭这份说明"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉這份說明"
+          }
+        }
+      }
+    },
+    "Close without signing in" : {
+      "comment" : "Sign-in cancel button help text.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close without signing in"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サインインせずに閉じます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不登录，直接关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不登入，直接關閉"
+          }
+        }
+      }
+    },
+    "Code from your authenticator app" : {
+      "comment" : "Steam Guard mobile authenticator code field placeholder.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code from your authenticator app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認証アプリのコード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证器 App 中的验证码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驗證器 App 中的驗證碼"
+          }
+        }
+      }
+    },
+    "Code from your email" : {
+      "comment" : "Steam Guard email code field placeholder.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code from your email"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メールで届いたコード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮箱收到的验证码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電子郵件收到的驗證碼"
           }
         }
       }
@@ -9778,35 +10131,6 @@
         }
       }
     },
-    "Couldn't reach Valve's download server." : {
-      "comment" : "Managed SteamCMD install failure: network transport error.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't reach Valve's download server."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Valve のダウンロードサーバーに接続できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法连接 Valve 的下载服务器。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法連線 Valve 的下載伺服器。"
-          }
-        }
-      }
-    },
     "Couldn't read scene.json" : {
       "comment" : "Wallpaper Engine fallback warning title.",
       "localizations" : {
@@ -9971,35 +10295,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法刪除 Loomscreen 安裝的 SteamCMD。"
-          }
-        }
-      }
-    },
-    "Couldn't save the downloaded archive." : {
-      "comment" : "Managed SteamCMD install failure: writing to disk failed.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't save the downloaded archive."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードしたアーカイブを保存できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法保存下载到的压缩包。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法儲存下載到的壓縮檔。"
           }
         }
       }
@@ -12334,36 +12629,6 @@
         }
       }
     },
-    "Download from Browse Online, paste a Workshop URL, or add an existing library folder with the toolbar's + button." : {
-      "comment" : "Workshop Installed empty state.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Download from Browse Online, paste a Workshop URL, or add an existing library folder with the toolbar's + button."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「ワークショップ」タブからダウンロードするか、ワークショップの URL を貼り付けるか、ツールバーの + ボタンで既存のライブラリフォルダを追加してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在“创意工坊”标签页中下载、粘贴创意工坊链接，或用工具栏的 + 按钮添加已有的素材库文件夹。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在「創意工坊」標籤頁中下載、貼上創意工坊連結，或用工具列的 + 按鈕新增既有的素材庫資料夾。"
-          }
-        }
-      }
-    },
     "Download from Steam" : {
       "comment" : "Button: download the Wallpaper Engine assets via SteamCMD.",
       "localizations" : {
@@ -12742,35 +13007,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已下載 Wallpaper Engine,但裁剪至 assets 資料夾時失敗。"
-          }
-        }
-      }
-    },
-    "Downloading SteamCMD…" : {
-      "comment" : "SteamCMD step detail while the bootstrap archive downloads.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloading SteamCMD…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD をダウンロード中…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在下载 SteamCMD…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在下載 SteamCMD…"
           }
         }
       }
@@ -15763,6 +15999,35 @@
         }
       }
     },
+    "Every download must match Valve's published checksum, and the program must carry Valve's signature, before it is ever run." : {
+      "comment" : "Managed SteamCMD install consent sheet checks line.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every download must match Valve's published checksum, and the program must carry Valve's signature, before it is ever run."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのダウンロードは Valve の公開チェックサムと一致し、プログラムが Valve の署名を持っていることを確認してから実行されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个下载都必须与 Valve 公布的校验和一致，且程序必须带有 Valve 的签名，才会被运行。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每個下載都必須與 Valve 公佈的檢查碼一致，且程式必須帶有 Valve 的簽章，才會被執行。"
+          }
+        }
+      }
+    },
     "Every item on this page is already in your library." : {
       "localizations" : {
         "ja" : {
@@ -16933,6 +17198,36 @@
         }
       }
     },
+    "Forget the SteamCMD I chose" : {
+      "comment" : "Menu item to drop a manually chosen SteamCMD and return to auto-detection.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget the SteamCMD I chose"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択した SteamCMD を解除"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "忘记我选择的 SteamCMD"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "忘記我選擇的 SteamCMD"
+          }
+        }
+      }
+    },
     "Format %lld — not yet decoded." : {
       "comment" : "Texture error detail. The placeholder is a texture format code.",
       "localizations" : {
@@ -17839,28 +18134,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隱藏的標籤資訊仍可在各桌布的詳細面板中查看。"
-          }
-        }
-      }
-    },
-    "Hide command" : {
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コマンドを隠す"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隐藏命令"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隱藏指令"
           }
         }
       }
@@ -19297,6 +19570,64 @@
         }
       }
     },
+    "Install with Homebrew" : {
+      "comment" : "Homebrew instructions sheet title.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install with Homebrew"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Homebrew でインストール"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 Homebrew 安装"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 Homebrew 安裝"
+          }
+        }
+      }
+    },
+    "Install with Homebrew…" : {
+      "comment" : "SteamCMD source menu item that shows Homebrew instructions.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install with Homebrew…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Homebrew でインストール…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 Homebrew 安装…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 Homebrew 安裝…"
+          }
+        }
+      }
+    },
     "Installed" : {
       "comment" : "Workshop pane tab for the locally installed library.",
       "localizations" : {
@@ -19375,6 +19706,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已安裝 Wallpaper Engine，但 Loomscreen 無法保持對它的存取權限。"
+          }
+        }
+      }
+    },
+    "Installs system-wide, where other tools can find it too. Run this in Terminal:" : {
+      "comment" : "Homebrew instructions sheet body.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installs system-wide, where other tools can find it too. Run this in Terminal:"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム全体にインストールされ、他のツールからも利用できます。ターミナルで次を実行してください："
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装到系统全局位置，其他工具也能找到。在“终端”运行："
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝到系統全域位置，其他工具也能找到。在「終端機」執行："
           }
         }
       }
@@ -20183,6 +20543,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "讓相容場景回應 Mac 上播放的音訊。預設關閉；需要錄音權限。"
+          }
+        }
+      }
+    },
+    "Lets SteamCMD download Workshop items as your account." : {
+      "comment" : "In-app Steam sign-in sheet subtitle.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lets SteamCMD download Workshop items as your account."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD があなたのアカウントとしてワークショップ項目をダウンロードできるようになります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让 SteamCMD 以你的账户下载创意工坊内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓 SteamCMD 以你的帳戶下載創意工坊內容。"
           }
         }
       }
@@ -21608,6 +21997,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 可以自動取得並設定 Valve 官方的命令列下載器，你不必自己安裝。"
+          }
+        }
+      }
+    },
+    "Loomscreen couldn't use that file as SteamCMD." : {
+      "comment" : "Workshop setup error when a manually chosen SteamCMD is refused.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen couldn't use that file as SteamCMD."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのファイルは SteamCMD として使用できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 无法将该文件用作 SteamCMD。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 無法將該檔案用作 SteamCMD。"
           }
         }
       }
@@ -25058,31 +25477,32 @@
         }
       }
     },
-    "No SteamCMD found in the usual places. Use Install SteamCMD… to let Loomscreen set up its own copy." : {
-      "comment" : "Workshop setup error when auto-detection finds no SteamCMD and manual selection is not offered.",
+    "No SteamCMD found in the usual places. Use Install SteamCMD… for Loomscreen's own copy, or Choose SteamCMD… to point at one yourself." : {
+      "comment" : "Workshop setup error when auto-detection finds no SteamCMD.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No SteamCMD found in the usual places. Use Install SteamCMD… to let Loomscreen set up its own copy."
+            "value" : "No SteamCMD found in the usual places. Use Install SteamCMD… for Loomscreen's own copy, or Choose SteamCMD… to point at one yourself."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通常の場所に SteamCMD が見つかりませんでした。「SteamCMD をインストール…」から Loomscreen 専用のコピーを用意してください。"
+            "value" : "通常の場所に SteamCMD が見つかりませんでした。「SteamCMD をインストール…」で Loomscreen 専用のコピーを用意するか、「SteamCMD を選択…」で自分で指定してください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "常见位置都没找到 SteamCMD。请用“安装 SteamCMD…”让 Loomscreen 自己装一份。"
+            "value" : "在常见位置未找到 SteamCMD。可用「安装 SteamCMD…」让 Loomscreen 安装自己的副本，或用「选择 SteamCMD…」自行指定。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "常見位置都沒找到 SteamCMD。請用「安裝 SteamCMD…」讓 Loomscreen 自己裝一份。"
+            "value" : "在常見位置找不到 SteamCMD。可用「安裝 SteamCMD…」讓 Loomscreen 安裝自己的副本，或用「選擇 SteamCMD…」自行指定。"
           }
         }
       }
@@ -25669,6 +26089,7 @@
       }
     },
     "Not run" : {
+      "comment" : "Workshop Doctor probe has not been run.",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -26053,7 +26474,7 @@
       }
     },
     "OK" : {
-      "comment" : "Dismiss button on the add-wallpaper failure alert.\nDismiss button on the monitor layout error alert.\nDismiss button on the monitor wallpaper wrong-folder alert.\nMenu bar THERM status: thermal pressure nominal. Keep short — ideally ≤4 Latin characters or equivalent width.",
+      "comment" : "Dismiss button on the add-wallpaper failure alert.\nDismiss button on the monitor layout error alert.\nDismiss button on the monitor wallpaper wrong-folder alert.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -26478,6 +26899,35 @@
         }
       }
     },
+    "Open Apple Aerials" : {
+      "comment" : "Onboarding done-page button when the user chose Apple Aerials.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Apple Aerials"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Aerials を開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Apple Aerials"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟 Apple Aerials"
+          }
+        }
+      }
+    },
     "Open application preferences" : {
       "localizations" : {
         "en" : {
@@ -26841,6 +27291,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟 Steam 頁面"
+          }
+        }
+      }
+    },
+    "Open Steam Workshop" : {
+      "comment" : "Onboarding done-page button when the user chose Steam Workshop.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Steam Workshop"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam ワークショップを開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Steam 创意工坊"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟 Steam 創意工坊"
           }
         }
       }
@@ -27319,6 +27798,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在瀏覽器中開啟此桌布的 Steam 創意工坊頁面"
+          }
+        }
+      }
+    },
+    "Optional. You can finish this later in Settings." : {
+      "comment" : "Onboarding Workshop setup page subtitle.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. You can finish this later in Settings."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任意です。あとで設定からでも完了できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选步骤，之后也可在设置中完成。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可選步驟，之後也可在設定中完成。"
           }
         }
       }
@@ -28014,24 +28522,31 @@
         }
       }
     },
-    "Passed" : {
+    "Password" : {
+      "comment" : "In-app Steam sign-in field placeholder.",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password"
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "合格"
+            "value" : "パスワード"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通过"
+            "value" : "密码"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通過"
+            "value" : "密碼"
           }
         }
       }
@@ -28090,6 +28605,7 @@
       }
     },
     "Paste a Workshop URL to preview it, or set up online browsing and downloading." : {
+      "comment" : "Workshop onboarding sheet description.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -28100,19 +28616,19 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ワークショップの URL を貼ってプレビュー、またはオンライン閲覧・ダウンロードを設定。"
+            "value" : "ワークショップの URL を貼り付けてプレビューするか、オンラインでの閲覧とダウンロードを設定してください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "粘贴工坊链接即可预览，或配置在线浏览与下载。"
+            "value" : "粘贴创意工坊链接即可预览，或设置在线浏览与下载。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "貼上工坊連結即可預覽，或設定線上瀏覽與下載。"
+            "value" : "貼上創意工坊連結即可預覽，或設定線上瀏覽與下載。"
           }
         }
       }
@@ -30384,6 +30900,36 @@
         }
       }
     },
+    "Queue actions" : {
+      "comment" : "Accessibility label for the paste queue's overflow menu.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queue actions"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キューの操作"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "队列操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "佇列操作"
+          }
+        }
+      }
+    },
     "Quit" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -31056,7 +31602,7 @@
       }
     },
     "Ready" : {
-      "comment" : "Workshop paste row status badge.",
+      "comment" : "Workshop paste row status badge.\nWorkshop setup status when a Steam Web API key exists.",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -34118,24 +34664,31 @@
         }
       }
     },
-    "Run all probes" : {
+    "Run all checks" : {
+      "comment" : "Diagnostics section button that runs every probe.",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run all checks"
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "すべてのプローブを実行"
+            "value" : "すべて検査"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "运行所有探测"
+            "value" : "运行全部检查"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "執行所有探測"
+            "value" : "執行全部檢查"
           }
         }
       }
@@ -34194,28 +34747,6 @@
         }
       }
     },
-    "Running" : {
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "実行中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在运行"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "執行中"
-          }
-        }
-      }
-    },
     "Running…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34241,28 +34772,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行中…"
-          }
-        }
-      }
-    },
-    "Runs read-only checks against the selected SteamCMD binary and your authorized Steam folder. Diagnostics never request Steam credentials." : {
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選択した SteamCMD バイナリと許可済みの Steam フォルダに対して読み取り専用の検査を実行します。診断が Steam の認証情報を要求することはありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "对所选的 SteamCMD 程序和已授权的 Steam 文件夹执行只读检查。诊断从不索取 Steam 凭据。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "對所選的 SteamCMD 程式和已授權的 Steam 資料夾執行唯讀檢查。診斷從不索取 Steam 憑證。"
           }
         }
       }
@@ -34783,7 +35292,7 @@
       }
     },
     "Scene" : {
-      "comment" : "Wallpaper type name: Wallpaper Engine scene.\nWorkshop content-type filter: scene wallpapers.",
+      "comment" : "Workshop content-type filter: scene wallpapers.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -35950,6 +36459,35 @@
         }
       }
     },
+    "Set Up Steam Workshop" : {
+      "comment" : "Onboarding Workshop setup page title.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set Up Steam Workshop"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam ワークショップを設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置 Steam 创意工坊"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 Steam 創意工坊"
+          }
+        }
+      }
+    },
     "Set up SteamCMD first" : {
       "comment" : "Tooltip on a disabled preset download button when SteamCMD is not configured.",
       "localizations" : {
@@ -35997,6 +36535,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在設定 → 創意工坊 中設定 SteamCMD 以啟用更新。"
+          }
+        }
+      }
+    },
+    "Set up SteamCMD to download from the Workshop." : {
+      "comment" : "Steam connection header subtitle when SteamCMD is not ready.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set up SteamCMD to download from the Workshop."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークショップからダウンロードするには SteamCMD を設定してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置 SteamCMD 后即可从创意工坊下载。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 SteamCMD 後即可從創意工坊下載。"
           }
         }
       }
@@ -36489,28 +37056,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Finder 中顯示素材"
-          }
-        }
-      }
-    },
-    "Show command" : {
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コマンドを表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示命令"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示指令"
           }
         }
       }
@@ -37360,6 +37905,35 @@
         }
       }
     },
+    "Sign In" : {
+      "comment" : "In-app Steam sign-in primary button.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign In"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サインイン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入"
+          }
+        }
+      }
+    },
     "Sign in once in Terminal so Steam caches the session, then check again." : {
       "comment" : "Steam sign-in diagnostic when the shared profile has never signed in.",
       "extractionState" : "manual",
@@ -37386,6 +37960,93 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "先在終端機登入一次讓 Steam 快取工作階段，然後重新檢查。"
+          }
+        }
+      }
+    },
+    "Sign in so downloads run as your account." : {
+      "comment" : "Steam connection header subtitle when no account is signed in.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in so downloads run as your account."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードをあなたのアカウントで行うためにサインインしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后下载将以你的账户进行。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入後下載將以你的帳戶進行。"
+          }
+        }
+      }
+    },
+    "Sign in to another account…" : {
+      "comment" : "Steam account menu item that opens the sign-in sheet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to another account…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のアカウントにサインイン…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录其他账户…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入其他帳戶…"
+          }
+        }
+      }
+    },
+    "Sign in to Steam" : {
+      "comment" : "In-app Steam sign-in sheet title.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to Steam"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam にサインイン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录 Steam"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入 Steam"
           }
         }
       }
@@ -37420,6 +38081,35 @@
         }
       }
     },
+    "Sign in to Steam through SteamCMD" : {
+      "comment" : "Sign-in primary button help text.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to Steam through SteamCMD"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 経由で Steam にサインインします"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过 SteamCMD 登录 Steam"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "透過 SteamCMD 登入 Steam"
+          }
+        }
+      }
+    },
     "Sign in to SteamCMD in the Doctor (Settings → Workshop) first." : {
       "comment" : "Workshop download blocked: no cached SteamCMD login.",
       "localizations" : {
@@ -37439,6 +38129,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請先在「設定 → 創意工坊 → Steam 連線」中登入 SteamCMD。"
+          }
+        }
+      }
+    },
+    "Sign In…" : {
+      "comment" : "Steam account row button that opens the sign-in sheet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign In…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サインイン…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入…"
+          }
+        }
+      }
+    },
+    "Sign-in didn't complete. Check the connection and try again." : {
+      "comment" : "In-app Steam sign-in failure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-in didn't complete. Check the connection and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サインインが完了しませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录未完成。请检查连接后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入未完成。請檢查連線後重試。"
           }
         }
       }
@@ -37469,6 +38217,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已以 %@ 登入 Steam。"
+          }
+        }
+      }
+    },
+    "Signing in — approve on your phone if Steam asks." : {
+      "comment" : "Sign-in in-flight status; covers Steam Guard mobile confirmation.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signing in — approve on your phone if Steam asks."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サインイン中 — Steam から求められたら携帯電話で承認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在登录——如 Steam 在手机上请求确认，请通过。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在登入——如 Steam 在手機上請求確認，請核准。"
           }
         }
       }
@@ -38573,6 +39350,35 @@
         }
       }
     },
+    "Steam account name" : {
+      "comment" : "In-app Steam sign-in field placeholder.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam account name"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam アカウント名"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 账户名"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 帳戶名"
+          }
+        }
+      }
+    },
     "Steam connection" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38685,6 +39491,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 無法載入此項目詳細資料。你仍可在 Steam 中開啟它。"
+          }
+        }
+      }
+    },
+    "Steam didn't confirm the sign-in in time. If Steam Guard asked on your phone, approve it and try again." : {
+      "comment" : "In-app Steam sign-in failure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam didn't confirm the sign-in in time. If Steam Guard asked on your phone, approve it and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam が時間内にサインインを確認しませんでした。携帯電話に Steam Guard の確認が来ていたら、承認してからもう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 未在限时内确认登录。如手机上有 Steam Guard 确认请求，请先通过再重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 未在限時內確認登入。如手機上有 Steam Guard 確認請求，請先核准再重試。"
           }
         }
       }
@@ -38820,6 +39655,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 目前正在限流。請稍後再試。"
+          }
+        }
+      }
+    },
+    "Steam is rate-limiting sign-ins from this Mac. Wait a few minutes and try again." : {
+      "comment" : "In-app Steam sign-in failure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam is rate-limiting sign-ins from this Mac. Wait a few minutes and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam がこの Mac からのサインインを制限しています。数分待ってからもう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 正在限制这台 Mac 的登录频率。请等几分钟再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 正在限制這台 Mac 的登入頻率。請等幾分鐘再試。"
           }
         }
       }
@@ -39200,6 +40064,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 收藏庫路徑不是資料夾：%@"
+          }
+        }
+      }
+    },
+    "Steam rejected that account name or password." : {
+      "comment" : "In-app Steam sign-in failure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam rejected that account name or password."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam がアカウント名またはパスワードを拒否しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒绝了该账户名或密码。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒絕了該帳戶名或密碼。"
           }
         }
       }
@@ -40302,7 +41195,7 @@
       }
     },
     "SteamCMD was installed but its first run didn't finish." : {
-      "comment" : "Managed SteamCMD install failure: the +quit self-update did not complete.",
+      "comment" : "Managed SteamCMD install failure: the first +quit run did not complete.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -41601,6 +42494,35 @@
         }
       }
     },
+    "That Steam Guard code wasn't accepted." : {
+      "comment" : "In-app Steam sign-in failure.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That Steam Guard code wasn't accepted."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その Steam Guard コードは受け付けられませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该 Steam Guard 验证码未被接受。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該 Steam Guard 驗證碼未被接受。"
+          }
+        }
+      }
+    },
     "That's not the expected folder" : {
       "comment" : "Monitor wallpaper AI-log access: title shown when the user grants a folder other than the provider's own root.",
       "extractionState" : "manual",
@@ -41656,35 +42578,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將移除 %@ 時段。此時段外的桌布仍保留各自時間表。"
-          }
-        }
-      }
-    },
-    "The archive must match a pinned checksum, and the program inside it must carry Valve's signature, before it is ever run." : {
-      "comment" : "Managed SteamCMD install consent sheet; what is verified before anything executes.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The archive must match a pinned checksum, and the program inside it must carry Valve's signature, before it is ever run."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アーカイブは固定されたチェックサムと一致し、その中のプログラムには Valve の署名が必要です。どちらも実行前に確認します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "压缩包必须匹配固定校验和，其中的程序必须带有 Valve 的签名——两项都在运行之前完成检查。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壓縮檔必須符合固定總和檢查碼，其中的程式必須帶有 Valve 的簽章——兩項都在執行之前完成檢查。"
           }
         }
       }
@@ -41794,7 +42687,7 @@
       }
     },
     "The downloaded SteamCMD archive didn't match its published checksum, so it was discarded." : {
-      "comment" : "Managed SteamCMD install failure: the archive failed the integrity gate.\nManaged SteamCMD install failure: the connector's own re-hash disagreed.",
+      "comment" : "Managed SteamCMD install failure: the connector's own re-hash disagreed.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -42131,35 +43024,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法解開 SteamCMD 壓縮檔。"
-          }
-        }
-      }
-    },
-    "The SteamCMD download failed." : {
-      "comment" : "Managed SteamCMD install failure: unclassified download error.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The SteamCMD download failed."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD のダウンロードに失敗しました。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 下载失败。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD 下載失敗。"
           }
         }
       }
@@ -45316,6 +46180,36 @@
         }
       }
     },
+    "Use SteamCMD" : {
+      "comment" : "Open-panel confirm button when pointing Loomscreen at an existing SteamCMD.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use SteamCMD"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この SteamCMD を使う"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用此 SteamCMD"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用此 SteamCMD"
+          }
+        }
+      }
+    },
     "Use System Name" : {
       "comment" : "Context-menu item that clears a display's custom name.",
       "localizations" : {
@@ -45485,60 +46379,31 @@
         }
       }
     },
-    "Valve's command-line downloader. Loomscreen can install it for you, or find an existing Homebrew or tarball install; otherwise pick the executable or its steamcmd.sh wrapper." : {
+    "Valve's command-line downloader. Loomscreen can install it for you or locate an existing verified Homebrew or tarball install." : {
       "comment" : "Info tooltip for the SteamCMD step in Workshop setup.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Valve's command-line downloader. Loomscreen can install it for you, or find an existing Homebrew or tarball install; otherwise pick the executable or its steamcmd.sh wrapper."
+            "value" : "Valve's command-line downloader. Loomscreen can install it for you or locate an existing verified Homebrew or tarball install."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Valve のコマンドラインダウンローダーです。Loomscreen がインストールすることも、既存の Homebrew や tarball インストールを検出することもできます。それ以外の場合は実行ファイルか steamcmd.sh ラッパーを選んでください。"
+            "value" : "Valve のコマンドラインダウンローダーです。Loomscreen がインストールするか、検証済みの既存 Homebrew／tarball インストールを検出できます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Valve 的命令行下载器。可以让 Loomscreen 替你安装，或自动查找已有的 Homebrew／tarball 安装；都不适用时请手动选择可执行文件或它的 steamcmd.sh 包装脚本。"
+            "value" : "Valve 的命令行下载器。Loomscreen 可以替你安装，或查找已有且通过验证的 Homebrew／tarball 安装。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Valve 的命令列下載器。可以讓 Loomscreen 替你安裝，或自動尋找既有的 Homebrew／tarball 安裝；都不適用時請手動選擇可執行檔或它的 steamcmd.sh 包裝指令碼。"
-          }
-        }
-      }
-    },
-    "Valve's download server returned HTTP %lld." : {
-      "comment" : "Managed SteamCMD install failure; %lld is an HTTP status code.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Valve's download server returned HTTP %lld."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Valve のダウンロードサーバーが HTTP %lld を返しました。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Valve 的下载服务器返回了 HTTP %lld。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Valve 的下載伺服器回傳了 HTTP %lld。"
+            "value" : "Valve 的命令列下載器。Loomscreen 可以替你安裝，或尋找既有且通過驗證的 Homebrew／tarball 安裝。"
           }
         }
       }
@@ -45661,7 +46526,7 @@
       }
     },
     "Video" : {
-      "comment" : "Wallpaper type name: video.\nWorkshop content-type filter: video wallpapers.",
+      "comment" : "Workshop content-type filter: video wallpapers.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -47350,7 +48215,7 @@
       }
     },
     "Web" : {
-      "comment" : "Wallpaper type name: web page.\nWorkshop content-type filter: web wallpapers.",
+      "comment" : "Workshop content-type filter: web wallpapers.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -47692,6 +48557,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "位於最前方時"
+          }
+        }
+      }
+    },
+    "When it finishes, use Locate automatically and Loomscreen will pick it up." : {
+      "comment" : "Homebrew instructions sheet footer note.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When it finishes, use Locate automatically and Loomscreen will pick it up."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了したら「自動的に検出」を使えば Loomscreen が認識します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "装好后点“自动定位”，Loomscreen 会自动识别。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "裝好後點「自動定位」，Loomscreen 會自動識別。"
           }
         }
       }
@@ -48888,6 +49782,35 @@
         }
       }
     },
+    "You can also paste a Workshop URL or add a library folder with +." : {
+      "comment" : "Installed-tab empty state message; the buttons above it carry the main paths.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can also paste a Workshop URL or add a library folder with +."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークショップの URL を貼り付けるか、+ でライブラリフォルダを追加することもできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也可以粘贴创意工坊链接，或用 + 添加库文件夹。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也可以貼上創意工坊連結，或用 + 加入庫資料夾。"
+          }
+        }
+      }
+    },
     "You're All Set" : {
       "localizations" : {
         "en" : {
@@ -48947,6 +49870,7 @@
       }
     },
     "Your own free key — required to browse the Workshop online" : {
+      "comment" : "Workshop settings subtitle for Steam Web API key.",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -48964,6 +49888,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你自己的免費金鑰 — 線上瀏覽 創意工坊 必需"
+          }
+        }
+      }
+    },
+    "Your password goes only to Valve's SteamCMD on this Mac and is never stored." : {
+      "comment" : "Sign-in privacy note.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your password goes only to Valve's SteamCMD on this Mac and is never stored."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パスワードはこの Mac 上の Valve 製 SteamCMD にのみ渡され、保存されることはありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密码只会交给这台 Mac 上 Valve 的 SteamCMD，绝不存储。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密碼只會交給這台 Mac 上 Valve 的 SteamCMD，絕不儲存。"
           }
         }
       }

@@ -4,7 +4,7 @@ import SwiftUI
 
 extension GeneralSettingsView {
     @ViewBuilder
-    var behaviorSection: some View {
+    var generalSection: some View {
         Section {
             SettingRow(icon: "globe", iconColor: .teal, title: "Language", subtitle: "Choose the display language used by LiveWallpaper") {
                 languagePicker
@@ -73,7 +73,7 @@ extension GeneralSettingsView {
                     .accessibilityHint(Text("Toggles whether the app appears in the Dock and the Cmd-Tab switcher"))
             }
         } header: {
-            Text("Behavior")
+            Text("General")
         }
     }
 

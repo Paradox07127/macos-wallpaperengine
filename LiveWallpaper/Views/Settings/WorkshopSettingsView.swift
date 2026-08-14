@@ -3,6 +3,11 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
+/// Pages this settings pane can push to.
+enum WorkshopSettingsRoute: Hashable {
+    case steamConnection
+}
+
 struct WorkshopSettingsView: View {
     @Environment(SteamCMDDoctorService.self) private var doctorService
     @Environment(WorkshopServices.self) private var workshopServices
@@ -16,7 +21,7 @@ struct WorkshopSettingsView: View {
     @State private var preflightingDoctor = false
     /// Set when an action was refused for a reason the Doctor sheet cannot fix.
     @State private var blockedActionMessage: String?
-    @State private var showingDoctor = false
+    @State private var route: [WorkshopSettingsRoute] = []
     @State private var showingRemoveConfirm = false
     @State private var showingKeyEntry = false
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
@@ -26,6 +31,19 @@ struct WorkshopSettingsView: View {
     }
 
     var body: some View {
+        NavigationStack(path: $route) {
+            form
+                .navigationDestination(for: WorkshopSettingsRoute.self) { route in
+                    switch route {
+                    case .steamConnection:
+                        WorkshopDoctorView(chrome: .pane)
+                            .environment(doctorService)
+                    }
+                }
+        }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 SettingRow(
@@ -67,10 +85,16 @@ struct WorkshopSettingsView: View {
                     subtitle: steamConnectionSubtitle,
                     info: "Loomscreen reads installed Workshop items directly from the official Steam library after one folder authorization. Authenticated SteamCMD downloads are a separate capability and require Loomscreen's background Steam connector."
                 ) {
-                    Button("Configure") { showingDoctor = true }
-                        .adaptiveGlassButton(.regular, size: .small)
-                        .fixedSize()
-                        .help(Text("Configure Steam library access and SteamCMD"))
+                    // Pushed, not presented. Steam connection is a place with
+                    // its own state to come back to, not one task to finish and
+                    // dismiss — and a sheet opened from a settings page whose
+                    // own rows open further sheets was three levels deep.
+                    NavigationLink(value: WorkshopSettingsRoute.steamConnection) {
+                        Text("Configure", bundle: .main)
+                    }
+                    .buttonStyle(.link)
+                    .fixedSize()
+                    .help(Text("Configure Steam library access and SteamCMD"))
                 }
 
                 SettingRow(
@@ -154,10 +178,6 @@ struct WorkshopSettingsView: View {
             WorkshopDownloadToastHost()
                 .padding(DesignTokens.Spacing.lg)
         }
-        .sheet(isPresented: $showingDoctor) {
-            WorkshopDoctorView()
-                .environment(doctorService)
-        }
         .sheet(isPresented: $showingKeyEntry) {
             SteamWebAPIKeyEntrySheet(services: workshopServices) {
                 Task { await workshopServices.refreshAPIKeyStatus() }
@@ -214,12 +234,13 @@ struct WorkshopSettingsView: View {
         }
     }
 
-    /// Run `action` when Doctor preflight is green; open Doctor only if it can fix the blocker.
+    /// Run `action` when Doctor preflight is green; navigate to Steam connection
+    /// only if it can fix the blocker.
     private func preflightThen(_ action: @escaping () -> Void) {
         // Config + cached login required; advisory ownership must not block recovery.
         blockedActionMessage = nil
         if doctorService.isDownloadReady { action(); return }
-        // Unfixable blockers stay as inline copy — don't open an all-green Doctor sheet.
+        // Unfixable blockers stay as inline copy — don't navigate to an all-green page.
         guard doctorService.downloadBlocker?.isFixableInDoctor ?? true else {
             blockedActionMessage = doctorService.downloadBlockerMessage
             return
@@ -231,7 +252,7 @@ struct WorkshopSettingsView: View {
             if doctorService.isDownloadReady {
                 action()
             } else if doctorService.downloadBlocker?.isFixableInDoctor ?? true {
-                showingDoctor = true
+                route = [.steamConnection]
             } else {
                 blockedActionMessage = doctorService.downloadBlockerMessage
             }

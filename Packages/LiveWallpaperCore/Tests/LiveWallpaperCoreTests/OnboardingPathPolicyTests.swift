@@ -9,6 +9,7 @@ struct OnboardingPathPolicyTests {
         let policy = OnboardingPathPolicy(capabilities: .unconfigured)
 
         #expect(policy.sku == .unconfigured)
+        #expect(!policy.showsWorkshopSetup)
         #expect(policy.galleryActions.isEmpty)
     }
 
@@ -17,14 +18,16 @@ struct OnboardingPathPolicyTests {
         let policy = OnboardingPathPolicy(capabilities: .pro)
 
         #expect(policy.sku == .pro)
+        #expect(!policy.showsWorkshopSetup)
         #expect(policy.galleryActions == [.importFile, .appleAerials])
     }
 
-    @Test("Direct Pro defers Workshop setup and keeps the low-friction Aerials choice")
+    @Test("Direct Pro makes Workshop setup and acquisition first-class")
     func directProPolicy() {
         let policy = OnboardingPathPolicy(capabilities: .pro.withWorkshopOnline())
 
-        #expect(policy.galleryActions == [.importFile, .appleAerials])
+        #expect(policy.showsWorkshopSetup)
+        #expect(policy.galleryActions == [.steamWorkshop, .importFile, .appleAerials])
     }
 
     @Test("Lite: Import file + Apple Aerials, never Workshop")
@@ -32,6 +35,7 @@ struct OnboardingPathPolicyTests {
         let policy = OnboardingPathPolicy(capabilities: .lite)
 
         #expect(policy.sku == .lite)
+        #expect(!policy.showsWorkshopSetup)
         #expect(policy.galleryActions == [.importFile, .appleAerials])
     }
 }

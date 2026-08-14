@@ -14,7 +14,10 @@ struct WorkshopPaneView: View {
     @State private var isShowingPasteSheet = false
     @State private var isShowingOnboarding = false
     @State private var isShowingKeyEntry = false
+    @State private var isShowingInstallConsent = false
     @State private var installedCount = 0
+    @State private var managedInstaller = SteamCMDManagedInstallCoordinator()
+    @State private var steamCMDSetupError: String?
 
     var body: some View {
         DetailPageScaffold(showsHeader: false, header: { EmptyView() }) {
@@ -49,7 +52,12 @@ struct WorkshopPaneView: View {
             consumePendingDeepLink()
         }
         .sheet(isPresented: $isShowingOnboarding) {
-            WorkshopOnboardingSheet { isShowingPasteSheet = true }
+            WorkshopOnboardingSheet(
+                onConfigureOnline: {
+                    if !services.hasWebAPIKey { isShowingKeyEntry = true }
+                },
+                onDownloadByLink: { isShowingPasteSheet = true }
+            )
         }
         .sheet(isPresented: $isShowingPasteSheet) {
             WorkshopPasteSheet()
@@ -58,6 +66,24 @@ struct WorkshopPaneView: View {
             SteamWebAPIKeyEntrySheet(services: services) {
                 Task { await services.refreshAPIKeyStatus() }
             }
+        }
+        .sheet(isPresented: $isShowingInstallConsent) {
+            SteamCMDManagedInstallSheet(onConfirm: runManagedInstall)
+        }
+        .alert(
+            "Action needed",
+            isPresented: Binding(
+                get: { steamCMDSetupError != nil },
+                set: { if !$0 { steamCMDSetupError = nil } }
+            )
+        ) {
+            Button("OK") { steamCMDSetupError = nil }
+            Button("Configure") {
+                steamCMDSetupError = nil
+                openWorkshopSettings()
+            }
+        } message: {
+            Text(verbatim: steamCMDSetupError ?? "")
         }
     }
 
@@ -84,6 +110,10 @@ struct WorkshopPaneView: View {
         case .installed:
             WorkshopInstalledView(
                 onBrowseTag: browseByTag,
+                onBrowseOnline: { selectedTab = .browseOnline },
+                onInstallSteamCMD: { isShowingInstallConsent = true },
+                onOpenWorkshopSettings: openWorkshopSettings,
+                isInstallingSteamCMD: isInstallingSteamCMD,
                 paneHeader: makePaneHeader
             )
         case .browseOnline:
@@ -165,6 +195,43 @@ struct WorkshopPaneView: View {
         } else {
             isShowingOnboarding = true
         }
+    }
+
+    private var isInstallingSteamCMD: Bool {
+        switch managedInstaller.status {
+        case .installing: return true
+        case .idle, .removing, .installed, .failed: return false
+        }
+    }
+
+    private func runManagedInstall() {
+        steamCMDSetupError = nil
+        Task {
+            switch await managedInstaller.install() {
+            case .installed:
+                if !(await doctor.autoDetectBinary()) {
+                    steamCMDSetupError = String(
+                        localized: "SteamCMD was installed but could not be started.",
+                        comment: "Workshop setup error after a managed SteamCMD install that will not launch."
+                    )
+                }
+            case .failed(let reason):
+                steamCMDSetupError = reason
+            case .idle, .installing, .removing:
+                break
+            }
+        }
+    }
+
+    private func openWorkshopSettings() {
+        NotificationCenter.default.post(
+            name: .openSettingsSection,
+            object: nil,
+            userInfo: [
+                "destination": SettingsNavigation.workshopSetup.rawValue,
+                "anchor": SettingsSearchAnchor.workshopSetup.rawValue
+            ]
+        )
     }
 }
 

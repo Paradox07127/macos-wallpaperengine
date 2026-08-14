@@ -220,16 +220,28 @@ struct SteamCMDDiagnosisPlanTests {
         fileURLWithPath: "/Users/probe/Library/Application Support/Loomscreen/SteamCMD/MacOS/steamcmd"
     )
 
+    /// Passed explicitly so the ordering pinned here does not depend on what the
+    /// machine running the tests happens to have under `/opt/homebrew`.
+    private static let discovered = [
+        URL(fileURLWithPath: "/opt/homebrew/bin/steamcmd"),
+        URL(fileURLWithPath: "/usr/local/bin/steamcmd"),
+        URL(fileURLWithPath: "/opt/local/bin/steamcmd")
+    ]
+
     @Test("The managed install is tried before the package managers, in that order")
     func planOrder() {
-        let plan = SteamCMDDiagnosisPlan.candidates(managedInstall: Self.managedBinary)
+        let plan = SteamCMDDiagnosisPlan.candidates(
+            managedInstall: Self.managedBinary, discovered: Self.discovered
+        )
         #expect(plan.map(\.source) == [.managedInstall, .homebrew, .usrLocal, .macPorts])
         #expect(plan.first?.path == Self.managedBinary.path(percentEncoded: false))
     }
 
     @Test("Control: with no managed install the three package-manager paths are still tried")
     func planWithoutManagedInstall() {
-        let plan = SteamCMDDiagnosisPlan.candidates(managedInstall: nil)
+        let plan = SteamCMDDiagnosisPlan.candidates(
+            managedInstall: nil, discovered: Self.discovered
+        )
         #expect(plan.map(\.source) == [.homebrew, .usrLocal, .macPorts])
         #expect(plan.map(\.path) == [
             "/opt/homebrew/bin/steamcmd",
@@ -265,15 +277,31 @@ struct SteamCMDDiagnosisPlanTests {
         #expect(body.contains("func locateSteamCMDBinary(with reply:"))
     }
 
-    /// The gap this used to mark is closed: the executing entry points no
-    /// longer take a path either. Pinned as an absence so it cannot come back.
-    @Test("No entry point on the whole surface takes a binary path")
-    func operationalMethodsTakeNoPath() throws {
+    /// Exactly two methods may take a path, and this is the list.
+    ///
+    /// It was zero from 2026-08-13 until 2026-08-14, when manual binding was
+    /// reinstated by explicit decision — auto-detection cannot reach an install
+    /// in a location nobody told us about, and the closed version left the user
+    /// no recourse at all. What keeps that bounded is `SteamCMDManualBinding`
+    /// re-gating the path on every run, not this list. What this list is for is
+    /// the *third* path parameter: one appearing here is how the surface goes
+    /// back to letting the app name what gets spawned, and it must be a
+    /// deliberate edit to this test rather than a quiet addition.
+    @Test("Only inspection and manual binding take a path")
+    func pathTakingMethodsAreTheKnownTwo() throws {
         let body = try Self.connectorProtocolSource()
+        let pathTakers = body
+            .components(separatedBy: "func ")
+            .dropFirst()
+            .filter { $0.contains("path: String") }
+            .map { String($0.prefix(while: { $0 != "(" })) }
+        #expect(pathTakers.sorted() == ["bindManualSteamCMDBinary", "inspectSteamCMDBinary"])
+
+        // The operational methods still take none: these were how a compromised
+        // app used to choose what this unsandboxed process spawns.
         #expect(!body.contains("steamCMDPath"))
-        // Control: the surface is really being read, and the one path-shaped
-        // parameter that remains is a read-only inspection, never a spawn.
-        #expect(body.contains("func inspectSteamCMDBinary(path: String"))
+        #expect(!body.contains("tarballPath"))
+        #expect(!body.contains("pickedPath"))
     }
 
     private static func connectorProtocolSource() throws -> String {
@@ -291,6 +319,284 @@ struct SteamCMDDiagnosisPlanTests {
             forCandidatePath: "/usr/local/bin/steamcmd") == .usrLocal)
         #expect(SteamCMDDiagnosisPlan.packageManagerSource(
             forCandidatePath: "/somewhere/else/steamcmd") == .notFound)
+    }
+
+    /// The Caskroom and command-wrapper candidates carry a version directory,
+    /// so a switch over whole paths labels every one of them `.notFound` — which
+    /// is what the report shows the user as the origin of their binary.
+    @Test("Caskroom and command-wrapper candidates are still labelled Homebrew")
+    func homebrewLabelSurvivesTheVersionDirectory() {
+        #expect(SteamCMDDiagnosisPlan.packageManagerSource(
+            forCandidatePath: "/opt/homebrew/Caskroom/steamcmd/1779919584/MacOS/steamcmd"
+        ) == .homebrew)
+        #expect(SteamCMDDiagnosisPlan.packageManagerSource(
+            forCandidatePath: "/opt/homebrew/.homebrew-command-wrappers/steamcmd"
+        ) == .homebrew)
+        // Control: `/usr/local` alone is still MacPorts-adjacent, not Homebrew.
+        #expect(SteamCMDDiagnosisPlan.packageManagerSource(
+            forCandidatePath: "/usr/local/bin/steamcmd") == .usrLocal)
+    }
+}
+
+/// A manual pick is a candidate, not an override. These pin the part that
+/// bounds the hole it reopens: it goes first, and it clears the same gates.
+@Suite("SteamCMD manual binding")
+struct SteamCMDManualBindingTests {
+    private static let manual = URL(fileURLWithPath: "/Volumes/Tools/steamcmd/steamcmd")
+    private static let managed = URL(fileURLWithPath: "/Users/p/Library/Application Support/Loomscreen/SteamCMD/MacOS/steamcmd")
+    private static let discovered = [URL(fileURLWithPath: "/opt/homebrew/bin/steamcmd")]
+
+    @Test("A manual pick is tried before everything auto-detection found")
+    func manualGoesFirst() {
+        let plan = SteamCMDDiagnosisPlan.candidates(
+            managedInstall: Self.managed, manual: Self.manual, discovered: Self.discovered
+        )
+        #expect(plan.map(\.source) == [.manual, .managedInstall, .homebrew])
+        #expect(plan.first?.path == Self.manual.path(percentEncoded: false))
+    }
+
+    @Test("Control: with no manual pick the order is unchanged")
+    func withoutManualPick() {
+        let plan = SteamCMDDiagnosisPlan.candidates(
+            managedInstall: Self.managed, manual: nil, discovered: Self.discovered
+        )
+        #expect(plan.map(\.source) == [.managedInstall, .homebrew])
+    }
+
+    /// The whole point of it being a candidate: if the picked file stops passing
+    /// the trust gates, downloads must keep working off the managed install
+    /// rather than failing on a path the user chose months ago.
+    @Test("A manual pick that fails its gates falls through to the next candidate")
+    func untrustedManualPickFallsThrough() {
+        let plan = SteamCMDDiagnosisPlan.candidates(
+            managedInstall: Self.managed, manual: Self.manual, discovered: Self.discovered
+        ).map(\.path)
+
+        let picked = SteamCMDDiagnosisPlan.firstTrusted(
+            in: plan,
+            resolve: { $0 },
+            isTrusted: { $0 != Self.manual.path(percentEncoded: false) }
+        )
+        #expect(picked == Self.managed.path(percentEncoded: false))
+    }
+
+    @Test("A relative path is never stored")
+    func relativePathsAreRefused() throws {
+        let home = try Fixture.home()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        try SteamCMDManualBinding.store("../../etc/steamcmd", home: home)
+        #expect(SteamCMDManualBinding.load(home: home) == nil)
+        // Control: an absolute path through the same store does come back.
+        try SteamCMDManualBinding.store("/opt/tools/steamcmd", home: home)
+        #expect(SteamCMDManualBinding.load(home: home)?.path == "/opt/tools/steamcmd")
+    }
+
+    @Test("Clearing the binding returns resolution to auto-detection")
+    func clearingRestoresAutoDetection() throws {
+        let home = try Fixture.home()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        try SteamCMDManualBinding.store("/opt/tools/steamcmd", home: home)
+        SteamCMDManualBinding.clear(home: home)
+        #expect(SteamCMDManualBinding.load(home: home) == nil)
+    }
+
+    /// The record must live where a sandboxed app cannot write it — the app may
+    /// only ask for a binding over XPC, never plant one.
+    @Test("The record lives under the connector's own root in the real home")
+    func recordLivesOutsideTheContainer() {
+        let path = SteamCMDManualBinding.recordURL(
+            home: URL(fileURLWithPath: "/Users/p")
+        ).path
+        #expect(path == "/Users/p/Library/Application Support/Loomscreen/manual-steamcmd-path")
+    }
+
+    private enum Fixture {
+        static func home() throws -> URL {
+            let url = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("steamcmd-manual-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+    }
+}
+
+/// Homebrew has had three answers to "where does a cask's CLI live", and until
+/// 2026-08-14 only the oldest was searched.
+///
+/// Measured that day on a Mac with `brew install --cask steamcmd` present: all
+/// three fixed paths were missing (`/opt/homebrew/bin/steamcmd` had been renamed
+/// `steamcmd.off`) and the only reachable binary was under the Caskroom.
+@Suite("SteamCMD Homebrew discovery")
+struct SteamCMDHomebrewDiscoveryTests {
+
+    @Test("A cask that only exists in the Caskroom is found")
+    func caskroomOnlyInstallIsFound() throws {
+        let prefix = try Fixture.homebrewPrefix(versions: ["1779919584"])
+        defer { Fixture.remove(prefix) }
+
+        let paths = SteamCMDBinaryResolver.autoDetectCandidates(
+            roots: .init(homebrewPrefixes: [prefix.path], macPortsPrefix: "/nonexistent")
+        ).map(\.path)
+
+        #expect(paths.contains(
+            prefix.appendingPathComponent("Caskroom/steamcmd/1779919584/MacOS/steamcmd").path
+        ))
+    }
+
+    /// `.metadata` sits beside the version directories and is not one.
+    @Test("The Caskroom's .metadata sibling is not offered as a binary")
+    func metadataIsSkipped() throws {
+        let prefix = try Fixture.homebrewPrefix(versions: ["1779919584"], withMetadata: true)
+        defer { Fixture.remove(prefix) }
+
+        let paths = SteamCMDBinaryResolver.autoDetectCandidates(
+            roots: .init(homebrewPrefixes: [prefix.path], macPortsPrefix: "/nonexistent")
+        ).map(\.path)
+
+        #expect(!paths.contains { $0.contains(".metadata") })
+        // Control: the real version directory beside it did come through.
+        #expect(paths.contains { $0.contains("/1779919584/") })
+    }
+
+    @Test("Newer Caskroom versions are tried before the ones an upgrade left behind")
+    func newestVersionFirst() throws {
+        let prefix = try Fixture.homebrewPrefix(versions: ["1000000000", "2000000000"])
+        defer { Fixture.remove(prefix) }
+        // Explicit mtimes: directory-listing order is not sorted by anything.
+        try Fixture.touch(prefix, version: "1000000000", daysAgo: 30)
+        try Fixture.touch(prefix, version: "2000000000", daysAgo: 1)
+
+        let caskroom = SteamCMDBinaryResolver.autoDetectCandidates(
+            roots: .init(homebrewPrefixes: [prefix.path], macPortsPrefix: "/nonexistent")
+        ).map(\.path).filter { $0.contains("/Caskroom/") }
+
+        #expect(caskroom.count == 2)
+        #expect(caskroom.first?.contains("/2000000000/") == true)
+        #expect(caskroom.last?.contains("/1000000000/") == true)
+    }
+
+    @Test("The bin symlink is still tried before the Caskroom behind it")
+    func binSymlinkOutranksCaskroom() throws {
+        let prefix = try Fixture.homebrewPrefix(versions: ["1779919584"])
+        defer { Fixture.remove(prefix) }
+
+        let paths = SteamCMDBinaryResolver.autoDetectCandidates(
+            roots: .init(homebrewPrefixes: [prefix.path], macPortsPrefix: "/nonexistent")
+        ).map(\.path)
+
+        let bin = try #require(paths.firstIndex(of: prefix.appendingPathComponent("bin/steamcmd").path))
+        let cask = try #require(paths.firstIndex { $0.contains("/Caskroom/") })
+        #expect(bin < cask)
+    }
+
+    @Test("The Command Wrapper location is searched")
+    func commandWrapperIsSearched() {
+        let paths = SteamCMDBinaryResolver.autoDetectCandidates().map(\.path)
+        #expect(paths.contains("/opt/homebrew/.homebrew-command-wrappers/steamcmd"))
+    }
+
+    /// Control: no Homebrew at all must not throw, and must still offer the
+    /// fixed paths.
+    @Test("A prefix with nothing installed yields the fixed paths and no more")
+    func absentHomebrewIsNotAnError() {
+        let paths = SteamCMDBinaryResolver.autoDetectCandidates(
+            roots: .init(homebrewPrefixes: ["/nonexistent-prefix"], macPortsPrefix: "/nonexistent")
+        ).map(\.path)
+
+        #expect(paths == [
+            "/nonexistent-prefix/bin/steamcmd",
+            "/nonexistent/bin/steamcmd",
+            "/nonexistent-prefix/.homebrew-command-wrappers/steamcmd"
+        ])
+    }
+
+    /// Homebrew's wrapper does not sit anywhere near the Mach-O, so neither the
+    /// `STEAMEXE=` parse nor the sibling search can reach it.
+    @Test("A wrapper that only execs another path is followed to the Mach-O")
+    func execChainIsFollowed() throws {
+        let prefix = try Fixture.homebrewPrefix(versions: ["1779919584"])
+        defer { Fixture.remove(prefix) }
+        let version = prefix.appendingPathComponent("Caskroom/steamcmd/1779919584")
+
+        // Two hops, the way the cask really is: wrapper → MacOS/steamcmd.sh → Mach-O.
+        let inner = version.appendingPathComponent("MacOS/steamcmd.sh")
+        try Fixture.script(
+            "#!/bin/sh\nexec '\(version.appendingPathComponent("MacOS/steamcmd").path)' \"$@\"\n",
+            at: inner
+        )
+        let outer = version.appendingPathComponent("steamcmd.wrapper.sh")
+        try Fixture.script("#!/bin/sh\nexec '\(inner.path)' \"$@\"\n", at: outer)
+
+        let resolved = SteamCMDBinaryResolver.resolveCanonicalBinary(at: outer)
+        #expect(try resolved.get().path
+            == version.appendingPathComponent("MacOS/steamcmd").path)
+    }
+
+    /// `exec "$0" "$@"` is the restart line at the bottom of Valve's own script;
+    /// following it would resolve the wrapper to itself.
+    @Test("Control: a self-exec restart line is not followed")
+    func selfExecIsNotFollowed() throws {
+        let root = try Fixture.directory()
+        defer { Fixture.remove(root) }
+        let script = root.appendingPathComponent("steamcmd")
+        try Fixture.script("#!/bin/sh\nexec \"$0\" \"$@\"\n", at: script)
+
+        #expect(throws: SteamCMDBinaryError.self) {
+            try SteamCMDBinaryResolver.resolveCanonicalBinary(at: script).get()
+        }
+    }
+
+    private enum Fixture {
+        /// 64-bit little-endian Mach-O magic — enough for `isMachO`.
+        static let machOMagic = Data([0xcf, 0xfa, 0xed, 0xfe])
+
+        static func directory() throws -> URL {
+            let url = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("steamcmd-discovery-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+
+        static func homebrewPrefix(versions: [String], withMetadata: Bool = false) throws -> URL {
+            let prefix = try directory()
+            let cask = prefix.appendingPathComponent("Caskroom/steamcmd", isDirectory: true)
+            for version in versions {
+                let macOS = cask.appendingPathComponent("\(version)/MacOS", isDirectory: true)
+                try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
+                let binary = macOS.appendingPathComponent("steamcmd")
+                try machOMagic.write(to: binary)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+            }
+            if withMetadata {
+                try FileManager.default.createDirectory(
+                    at: cask.appendingPathComponent(".metadata", isDirectory: true),
+                    withIntermediateDirectories: true
+                )
+            }
+            return prefix
+        }
+
+        static func touch(_ prefix: URL, version: String, daysAgo: Int) throws {
+            let url = prefix.appendingPathComponent("Caskroom/steamcmd/\(version)")
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date(timeIntervalSinceNow: -Double(daysAgo) * 86_400)],
+                ofItemAtPath: url.path
+            )
+        }
+
+        static func script(_ body: String, at url: URL) throws {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try Data(body.utf8).write(to: url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+
+        static func remove(_ url: URL) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 }
 
@@ -422,72 +728,10 @@ struct SteamCMDDiagnosisExecutionTests {
     }
 }
 
-@Suite("SteamCMD archive staging refuses what it cannot read")
-struct SteamCMDStagingInputTypeTests {
-    private func scratch() -> URL {
-        URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("staging-input-\(UUID().uuidString)", isDirectory: true)
-    }
-
-    @Test("A FIFO is refused instead of parking the shared SteamCMD queue", .timeLimit(.minutes(1)))
-    func refusesFIFO() throws {
-        let root = scratch()
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let fifo = root.appendingPathComponent("in.tar.gz").path(percentEncoded: false)
-        #expect(mkfifo(fifo, 0o600) == 0)
-
-        // With a blocking open this call never returns and the time limit fires;
-        // that is the failure mode being pinned, not a slow test.
-        guard case .failure(let result) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: fifo, stagingRoot: root.appendingPathComponent("staging", isDirectory: true)
-        ) else {
-            Issue.record("A FIFO must be refused")
-            return
-        }
-        #expect(result.outcome == .tarballRejected)
-        #expect(result.failureReason?.contains("regular file") == true)
-    }
-
-    @Test("A directory is refused for the same reason")
-    func refusesDirectory() throws {
-        let root = scratch()
-        let directory = root.appendingPathComponent("in.tar.gz", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        guard case .failure(let result) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: directory.path(percentEncoded: false),
-            stagingRoot: root.appendingPathComponent("staging", isDirectory: true)
-        ) else {
-            Issue.record("A directory must be refused")
-            return
-        }
-        #expect(result.outcome == .tarballRejected)
-    }
-
-    @Test("Control: a regular file gets past the type gate and is judged on its bytes")
-    func regularFileReachesTheDigestGate() throws {
-        let root = scratch()
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let file = root.appendingPathComponent("in.tar.gz")
-        try Data(repeating: 0x5A, count: 4_096).write(to: file)
-
-        guard case .failure(let result) = SteamCMDManagedInstaller.stageAndVerifyTarball(
-            at: file.path(percentEncoded: false),
-            stagingRoot: root.appendingPathComponent("staging", isDirectory: true)
-        ) else {
-            Issue.record("A 4 KB file is not the pinned archive and must be refused")
-            return
-        }
-        // Refused for its size, not its type: without this the type gate could
-        // be rejecting every input and the two tests above would prove nothing.
-        #expect(result.failureReason?.contains("regular file") == false)
-        #expect(result.failureReason?.contains("bytes") == true)
-    }
-}
-
+// The "archive staging refuses what it cannot read" suite retired with
+// `stageAndVerifyTarball`: the managed install no longer accepts any file from
+// the app, so there is no app-supplied FIFO/directory/oversize input left to
+// refuse. Downloads land in the connector's own tmp, written by the connector.
 
 @Suite("Diagnosis refuses to launch untrusted binaries")
 struct SteamCMDDiagnosisTrustGateTests {

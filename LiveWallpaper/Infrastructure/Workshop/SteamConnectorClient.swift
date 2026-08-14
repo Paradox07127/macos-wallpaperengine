@@ -31,6 +31,26 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDBinaryInspection.self, from: $0) }
     }
 
+    /// Points the connector at a SteamCMD the user chose themselves, for the
+    /// installs auto-detection cannot reach. The connector re-gates the path on
+    /// every run; see `SteamCMDManualBinding` for what that does and does not
+    /// buy.
+    static func bindManualSteamCMDBinary(path: String) async -> SteamCMDManualBindResult? {
+        let data = await call { connector, reply in
+            connector.bindManualSteamCMDBinary(path: path, with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(SteamCMDManualBindResult.self, from: $0) }
+    }
+
+    /// Returns resolution to auto-detection.
+    @discardableResult
+    static func clearManualSteamCMDBinary() async -> SteamCMDManualBindResult? {
+        let data = await call { connector, reply in
+            connector.clearManualSteamCMDBinary(with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(SteamCMDManualBindResult.self, from: $0) }
+    }
+
     /// The Mach-O the connector would execute, resolved from its own candidate
     /// list. Takes no path: the app does not get to name what runs.
     static func locateSteamCMDBinary() async -> SteamCMDBinaryLocation? {
@@ -40,17 +60,33 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDBinaryLocation.self, from: $0) }
     }
 
-    /// Hands a verified bootstrap archive to the connector to unpack into a
-    /// managed install. The app cannot unpack it itself: the sandbox stamps
-    /// `com.apple.quarantine` on everything this process writes, and a
-    /// quarantined bare CLI Mach-O cannot be spawned at all.
-    static func installManagedSteamCMD(
-        tarballPath: String
-    ) async -> SteamCMDManagedInstallResult? {
+    /// Installs SteamCMD from Valve's update manifest. The whole flow —
+    /// download, verification, unpack, first run — lives in the connector; the
+    /// app sends nothing and receives only the verdict.
+    static func installManagedSteamCMD() async -> SteamCMDManagedInstallResult? {
         let data = await call { connector, reply in
-            connector.installManagedSteamCMD(tarballPath: tarballPath, with: reply)
+            connector.installManagedSteamCMD(with: reply)
         }
         return data.flatMap { try? JSONDecoder().decode(SteamCMDManagedInstallResult.self, from: $0) }
+    }
+
+    /// Interactive `steamcmd +login` in the connector, on a PTY. The password
+    /// crosses to the connector once and goes only to steamcmd's own prompt;
+    /// nothing on the app side persists it. Stays in flight through Steam
+    /// Guard's mobile confirmation. nil means the connector was unreachable.
+    static func signInSteamAccount(
+        accountName: String,
+        password: String,
+        guardCode: String? = nil
+    ) async -> SteamCMDLoginResult? {
+        let request = SteamCMDLoginRequest(
+            accountName: accountName, password: password, guardCode: guardCode
+        )
+        guard let payload = try? JSONEncoder().encode(request) else { return nil }
+        let data = await call { connector, reply in
+            connector.signInSteamAccount(payload, with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(SteamCMDLoginResult.self, from: $0) }
     }
 
     /// Deletes the managed install. The app cannot do this itself — the payload

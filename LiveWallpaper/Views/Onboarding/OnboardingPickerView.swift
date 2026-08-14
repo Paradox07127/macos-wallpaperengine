@@ -54,7 +54,8 @@ struct OnboardingPickerView: View {
     let galleryActions: [OnboardingSourceAction]
     let didConfigure: (CGDirectDisplayID?) -> Void
     let skip: () -> Void
-    let openAppleAerials: () -> Void
+    let chooseAppleAerials: () -> Void
+    let chooseSteamWorkshop: () -> Void
 
     @State private var inlineError: LocalizedStringResource?
     @State private var isDropTargeted = false
@@ -160,6 +161,14 @@ struct OnboardingPickerView: View {
     @ViewBuilder
     private func galleryRow(for action: OnboardingSourceAction) -> some View {
         switch action {
+        case .steamWorkshop:
+            ActionRowCard(
+                icon: "cube.transparent",
+                tint: DesignTokens.Colors.accent,
+                title: "Steam Workshop",
+                subtitle: "Browse Wallpaper Engine from Steam",
+                action: chooseSteamWorkshop
+            )
         case .importFile:
             ActionRowCard(
                 icon: "square.and.arrow.down",
@@ -176,7 +185,7 @@ struct OnboardingPickerView: View {
                 tint: .teal,
                 title: "Apple Aerials",
                 subtitle: "Apple TV's aerial screensavers",
-                action: openAppleAerials
+                action: chooseAppleAerials
             )
         }
     }

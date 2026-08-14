@@ -4,6 +4,23 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct WorkshopDoctorView: View {
+    /// Which shell this content is wearing.
+    ///
+    /// The same three setup rows are reached two ways, and the difference is
+    /// entirely chrome: onboarding presents them modally because it is a step
+    /// the user is in the middle of, while Settings pushes them because they are
+    /// a place the user navigated to and can leave by going back. Sharing the
+    /// body rather than forking it is what keeps the two from drifting.
+    enum Chrome {
+        /// Own title bar, own Done button, own window size.
+        case sheet
+        /// Pushed into the Settings detail column; the navigation stack supplies
+        /// the title and the way back.
+        case pane
+    }
+
+    var chrome: Chrome = .sheet
+
     @Environment(SteamCMDDoctorService.self) private var service
     @Environment(\.dismiss) private var dismiss
     @State private var showingToast = false
@@ -18,28 +35,17 @@ struct WorkshopDoctorView: View {
     /// is still nil, and reads "Not selected" moments after a successful install.
     @State private var isVerifyingInstall = false
     @State private var installTask: Task<Void, Never>?
+    @State private var showingSignIn = false
+    @State private var showingBrewInstructions = false
+    /// Mirrors the connector's manual binding for one purpose: deciding whether
+    /// to offer "Forget". The record itself lives in the connector's own root,
+    /// which this sandboxed process cannot read — so this is a display hint, not
+    /// a source of truth about what will actually be executed.
+    @AppStorage("loomscreen.workshop.doctor.hasManualBinding.v1", store: .appScoped())
+    private var hasManualBinding = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            navigationBar
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
-                    statusStrip
-                    stepList
-                    Divider()
-                    advancedDiagnosticsSection
-                    HStack {
-                        WorkshopPrivacyLink()
-                        Spacer()
-                    }
-                }
-                .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
-                .padding(.vertical, DesignTokens.Spacing.lg)
-            }
-            .background(DesignTokens.Colors.pageBackground)
-        }
-        .frame(minWidth: 640, idealWidth: 720, minHeight: 540, idealHeight: 640)
+        shell
         .overlay(alignment: .bottom) {
             DiagnosticExportToast(isPresented: $showingToast)
                 .padding(.bottom, DesignTokens.Spacing.xl)
@@ -48,10 +54,76 @@ struct WorkshopDoctorView: View {
         .sheet(isPresented: $showingInstallConsent) {
             SteamCMDManagedInstallSheet(onConfirm: runManagedInstall)
         }
+        .sheet(isPresented: $showingSignIn) {
+            SteamSignInSheet { accountName in
+                service.username = accountName
+                Task {
+                    await loadAccounts()
+                    await service.runProbe(.cachedLogin)
+                }
+            }
+        }
+        .sheet(isPresented: $showingBrewInstructions) {
+            HomebrewSteamCMDSheet()
+        }
         .task {
             await service.autoConfigureIfNeeded()
             await loadAccounts()
         }
+    }
+
+    // MARK: - Shells
+
+    @ViewBuilder
+    private var shell: some View {
+        switch chrome {
+        case .sheet:
+            VStack(spacing: 0) {
+                navigationBar
+                Divider()
+                content
+                SheetFooterBar(
+                    primaryTitle: "Done",
+                    primaryAction: { dismiss() },
+                    primaryHelp: "Close the Steam connection sheet"
+                )
+            }
+            .frame(
+                minWidth: SteamSheetWidth.dense,
+                idealWidth: SteamSheetWidth.dense,
+                minHeight: 520,
+                idealHeight: 580
+            )
+        case .pane:
+            // No size of its own: the detail column decides how wide settings
+            // are, the same way every other settings page is sized.
+            content
+                .navigationTitle(Text("Steam connection", bundle: .main))
+        }
+    }
+
+    /// The grouped Form is what every other settings surface in the app uses;
+    /// this was the one hand-rolled VStack, which is why it never quite looked
+    /// like the rest of the app.
+    private var content: some View {
+        Form {
+            Section {
+                statusStrip
+            }
+
+            Section {
+                stepList
+            } header: {
+                Text("Setup", bundle: .main)
+            }
+
+            diagnosticsSection
+
+            Section {
+                WorkshopPrivacyLink()
+            }
+        }
+        .settingsFormChrome()
     }
 
     // MARK: - Sections
@@ -60,76 +132,85 @@ struct WorkshopDoctorView: View {
         HStack {
             Text("Steam connection")
                 .font(DesignTokens.Typography.sectionTitle)
-            Spacer()
-            Button("Done") { dismiss() }
-                .adaptiveGlassButton(.regular)
-                .keyboardShortcut(.cancelAction)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
         .padding(.vertical, DesignTokens.Spacing.sm)
         .background(.bar)
     }
 
+    /// One sentence, not a "2 of 3" tally: the rows below already show which
+    /// step is outstanding, and a fraction only asks the user to do the diff
+    /// themselves. HIG has no counter idiom for a three-item checklist.
     private var statusStrip: some View {
-        HStack(spacing: DesignTokens.Spacing.md) {
-            Image(systemName: connectionHeaderIcon)
-                .font(.system(size: 22))
-                .foregroundStyle(connectionHeaderTint)
-            Text(connectionHeaderTitle)
-                .font(DesignTokens.Typography.sectionTitle)
-            Spacer()
-            Text("\(completedSetupStepCount) of 3 ready", bundle: .main)
+        SteamSheetHeader(
+            icon: connectionHeaderIcon,
+            title: connectionHeaderTitle,
+            iconTint: connectionHeaderTint,
+            subtitle: connectionHeaderSubtitle
+        )
+    }
+
+    /// No hand-rolled `Divider()`s: the grouped Form draws its own separators,
+    /// and drawing a second set on top is how this sheet used to look denser
+    /// than every other settings surface.
+    @ViewBuilder
+    private var stepList: some View {
+        WorkshopSetupRow(
+            icon: "folder",
+            title: "Steam library",
+            detail: service.workdirDisplayPath ?? String(localized: "Not authorized", comment: "Steam library step detail when no folder has been picked."),
+            state: isLibraryReady ? .ready : .notStarted,
+            info: "Pick Steam's own folder — the one containing config/config.vdf — once. Loomscreen keeps a security-scoped bookmark to it and never creates a second Workshop repository."
+        ) {
+            libraryControl
+        }
+
+        WorkshopSetupRow(
+            icon: "terminal",
+            title: "SteamCMD",
+            detail: binaryDetail,
+            state: binaryState,
+            info: "Valve's command-line downloader. Loomscreen can install it for you or locate an existing verified Homebrew or tarball install."
+        ) {
+            binaryControl
+        }
+
+        WorkshopSetupRow(
+            icon: "person.crop.circle",
+            title: "Steam account",
+            detail: accountDetail,
+            state: accountState,
+            info: "Downloads sign in as your own Steam account through SteamCMD. Loomscreen lists the accounts Steam has already signed in on this Mac; it never stores your password."
+        ) {
+            accountPicker
+        }
+
+        if let setupError {
+            Label(setupError, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(DesignTokens.Colors.Status.danger)
                 .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(Text("Setup error: \(setupError)"))
         }
     }
 
-    private var stepList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            WorkshopSetupRow(
-                icon: "folder",
-                title: "Steam library",
-                detail: service.workdirDisplayPath ?? String(localized: "Not authorized", comment: "Steam library step detail when no folder has been picked."),
-                state: isLibraryReady ? .ready : .notStarted,
-                info: "Pick Steam's own folder — the one containing config/config.vdf — once. Loomscreen keeps a security-scoped bookmark to it and never creates a second Workshop repository."
-            ) {
-                Button(isLibraryReady ? "Change…" : "Choose…") { pickSteamLibrary() }
-                    .adaptiveGlassButton(.regular, size: .small)
+    /// Same slot contract as the other two rows: not set up → one prominent
+    /// verb; set up → a Menu holding the less common follow-ups.
+    @ViewBuilder
+    private var libraryControl: some View {
+        if isLibraryReady {
+            Menu {
+                Button("Change…") { pickSteamLibrary() }
+            } label: {
+                Text("Change", bundle: .main)
             }
-
-            Divider()
-
-            WorkshopSetupRow(
-                icon: "terminal",
-                title: "SteamCMD",
-                detail: binaryDetail,
-                state: binaryState,
-                info: "Valve's command-line downloader. Loomscreen can install it for you, or find an existing Homebrew or tarball install; otherwise pick the executable or its steamcmd.sh wrapper."
-            ) {
-                binaryControl
-            }
-
-            Divider()
-
-            WorkshopSetupRow(
-                icon: "person.crop.circle",
-                title: "Steam account",
-                detail: accountDetail,
-                state: accountState,
-                info: "Downloads sign in as your own Steam account through SteamCMD. Loomscreen lists the accounts Steam has already signed in on this Mac; it never stores your password."
-            ) {
-                accountPicker
-            }
-
-            if let setupError {
-                Label(setupError, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(DesignTokens.Colors.Status.danger)
-                    .font(DesignTokens.Typography.caption)
-                    .padding(.top, DesignTokens.Spacing.xs)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel(Text("Setup error: \(setupError)"))
-            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        } else {
+            Button("Choose…") { pickSteamLibrary() }
+                .adaptiveGlassButton(.prominent, size: .small)
         }
     }
 
@@ -140,13 +221,7 @@ struct WorkshopDoctorView: View {
     @ViewBuilder
     private var binaryControl: some View {
         if isBinaryBusy {
-            HStack(spacing: DesignTokens.Spacing.xs) {
-                ProgressView().controlSize(.small)
-                if isCancellableInstall {
-                    Button("Cancel") { cancelManagedInstall() }
-                        .adaptiveGlassButton(.regular, size: .small)
-                }
-            }
+            ProgressView().controlSize(.small)
         } else if isBinaryReady {
             Menu {
                 binarySourceItems
@@ -197,6 +272,11 @@ struct WorkshopDoctorView: View {
             Button("Install SteamCMD…") { showingInstallConsent = true }
         }
         Button("Locate automatically") { autoDetectBinary() }
+        Button("Choose SteamCMD…") { pickBinaryManually() }
+        Button("Install with Homebrew…") { showingBrewInstructions = true }
+        if hasManualBinding {
+            Button("Forget the SteamCMD I chose") { forgetManualBinary() }
+        }
         if hasManagedInstall {
             Divider()
             Button("Remove the copy Loomscreen installed", role: .destructive) {
@@ -205,20 +285,14 @@ struct WorkshopDoctorView: View {
         }
     }
 
-    /// Only the download is genuinely interruptible. Once the archive is with
-    /// the connector it is unpacking, verifying and running `+quit` in a
-    /// process we cannot interrupt, and a Cancel button there would either lie
-    /// or leave a half-written payload behind.
-    private var isCancellableInstall: Bool {
-        managedInstaller.status == .downloading
-    }
-
     /// Accounts from Steam `config.vdf` via the connector (sandbox cannot read that file).
     @ViewBuilder
     private var accountPicker: some View {
         if discoveredAccounts.isEmpty {
-            Button("Rescan") { Task { await loadAccounts() } }
-                .adaptiveGlassButton(.regular, size: .small)
+            // One verb, not two side by side. Rescan is the rarer of the pair
+            // and moves into the menu once there is a menu to hold it.
+            Button("Sign In…") { showingSignIn = true }
+                .adaptiveGlassButton(.prominent, size: .small)
         } else {
             Menu {
                 ForEach(discoveredAccounts) { account in
@@ -232,6 +306,9 @@ struct WorkshopDoctorView: View {
                         }
                     }
                 }
+                Divider()
+                Button("Sign in to another account…") { showingSignIn = true }
+                Button("Rescan") { Task { await loadAccounts() } }
             } label: {
                 Text(service.username == nil ? "Choose" : "Switch", bundle: .main)
             }
@@ -299,10 +376,6 @@ struct WorkshopDoctorView: View {
         }
     }
 
-    /// Nothing to fall back to when detection finds nothing: pointing us at a
-    /// file by hand is no longer an option, because a path the app names is one
-    /// it can also rewrite between our checks and the connector's spawn. The
-    /// remaining answer is to let Loomscreen install its own copy.
     private func autoDetectBinary() {
         setupError = nil
         isDetectingBinary = true
@@ -311,10 +384,67 @@ struct WorkshopDoctorView: View {
             isDetectingBinary = false
             if !found {
                 setupError = String(
-                    localized: "No SteamCMD found in the usual places. Use Install SteamCMD… to let Loomscreen set up its own copy.",
-                    comment: "Workshop setup error when auto-detection finds no SteamCMD and manual selection is not offered."
+                    localized: "No SteamCMD found in the usual places. Use Install SteamCMD… for Loomscreen's own copy, or Choose SteamCMD… to point at one yourself.",
+                    comment: "Workshop setup error when auto-detection finds no SteamCMD."
                 )
             }
+        }
+    }
+
+    /// The recourse when SteamCMD is installed somewhere auto-detection has
+    /// never heard of.
+    ///
+    /// The path only travels as far as the connector, which resolves it, gates
+    /// it, and records it on its own side; the app never gets to say what runs
+    /// on any subsequent download. See `SteamCMDManualBinding`.
+    private func pickBinaryManually() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.treatsFilePackagesAsDirectories = true
+        // Homebrew's cask lives under a dot-directory on newer versions.
+        panel.showsHiddenFiles = true
+        panel.directoryURL = URL(fileURLWithPath: "/opt/homebrew/Caskroom", isDirectory: true)
+        panel.message = String(localized: "Choose the steamcmd binary, or the steamcmd.sh that launches it.", comment: "Open-panel message when pointing Loomscreen at an existing SteamCMD.")
+        panel.prompt = String(localized: "Use SteamCMD", comment: "Open-panel confirm button when pointing Loomscreen at an existing SteamCMD.")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        setupError = nil
+        isDetectingBinary = true
+        Task {
+            let result = await SteamConnectorClient.bindManualSteamCMDBinary(
+                path: url.path(percentEncoded: false)
+            )
+            defer { isDetectingBinary = false }
+            guard let result, result.isBound, let canonical = result.canonicalPath else {
+                setupError = result?.failureReason ?? String(
+                    localized: "Loomscreen couldn't use that file as SteamCMD.",
+                    comment: "Workshop setup error when a manually chosen SteamCMD is refused."
+                )
+                return
+            }
+            // Bind through the service so the identity probe re-runs against the
+            // new binary rather than leaving the previous one's verdict on screen.
+            do {
+                try await service.bindResolvedBinary(canonical)
+                hasManualBinding = true
+            } catch {
+                setupError = error.localizedDescription
+            }
+        }
+    }
+
+    private func forgetManualBinary() {
+        setupError = nil
+        isDetectingBinary = true
+        Task {
+            await SteamConnectorClient.clearManualSteamCMDBinary()
+            hasManualBinding = false
+            let found = await service.autoDetectBinary()
+            isDetectingBinary = false
+            if !found { service.unbindBinary() }
         }
     }
 
@@ -322,13 +452,6 @@ struct WorkshopDoctorView: View {
     /// returned path: binding is what makes the rest of the Doctor consider
     /// SteamCMD set up, and auto-detect asks the connector to launch the binary
     /// instead of inferring from the install having reported success.
-    private func cancelManagedInstall() {
-        installTask?.cancel()
-        installTask = nil
-        managedInstaller.cancelInstall()
-        setupError = nil
-    }
-
     private func runManagedInstall() {
         setupError = nil
         installTask = Task {
@@ -345,7 +468,7 @@ struct WorkshopDoctorView: View {
                 }
             case .failed(let reason):
                 setupError = reason
-            case .idle, .downloading, .installing, .removing:
+            case .idle, .installing, .removing:
                 // Either a second install was already running and owns the
                 // outcome, or this one was cancelled — neither is an error.
                 break
@@ -380,57 +503,88 @@ struct WorkshopDoctorView: View {
         }
     }
 
-    private var advancedDiagnosticsSection: some View {
-        DisclosureGroup(isExpanded: $showsAdvancedDiagnostics) {
-            VStack(spacing: 0) {
-                Divider().padding(.vertical, DesignTokens.Spacing.sm)
-                ForEach(Array(DoctorProbeKind.allCases.enumerated()), id: \.element.id) { index, kind in
-                    let report = service.probes[kind] ?? DoctorProbeReport(id: kind, status: .notRun, lastRun: .distantPast)
-                    ProbeRow(
-                        report: report,
-                        service: service,
-                        onCopied: { showingToast = true }
-                    )
-                    if index < DoctorProbeKind.allCases.count - 1 {
-                        Divider().padding(.vertical, DesignTokens.Spacing.xs)
-                    }
-                }
-                Divider().padding(.vertical, DesignTokens.Spacing.sm)
-                footerBar
-            }
-        } label: {
-            HStack(spacing: DesignTokens.Spacing.xs) {
-                Text("Diagnostics", bundle: .main)
-                    .font(DesignTokens.Typography.bodyEmphasized)
-                InfoTooltipButton(
-                    text: "Runs read-only checks against the selected SteamCMD binary and your authorized Steam folder. Diagnostics never request Steam credentials."
+    /// Collapsed by default and summarised in its own header, so the sheet
+    /// costs one line when everything is fine. The batch actions live in the
+    /// header rather than a footer strip — they act on this section, and Apple
+    /// puts section-scoped commands next to the section title.
+    @ViewBuilder
+    private var diagnosticsSection: some View {
+        Section(isExpanded: $showsAdvancedDiagnostics) {
+            ForEach(DoctorProbeKind.allCases) { kind in
+                WorkshopProbeRow(
+                    report: service.probes[kind]
+                        ?? DoctorProbeReport(id: kind, status: .notRun, lastRun: .distantPast),
+                    service: service,
+                    onCopied: { showingToast = true }
                 )
             }
+
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Button(action: { Task { await service.runAll() } }) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        if service.state == .probing {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text("Run all checks")
+                    }
+                }
+                .adaptiveGlassButton(.regular, size: .small)
+                .disabled(service.state == .probing)
+
+                Button(action: exportDiagnostics) {
+                    Text("Export…", bundle: .main)
+                }
+                .buttonStyle(.link)
+                .help(Text("Copy all probe reports as redacted JSON to clipboard"))
+
+                Spacer(minLength: 0)
+            }
+        } header: {
+            // The disclosure control is ours, not the system's: a collapsible
+            // `Section` is documented from macOS 14, but whether a *grouped
+            // Form* draws its own chevron and makes the header clickable is
+            // not something this code can verify. An explicit button works
+            // either way.
+            Button {
+                withAnimation { showsAdvancedDiagnostics.toggle() }
+            } label: {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(showsAdvancedDiagnostics ? 90 : 0))
+                        .accessibilityHidden(true)
+                    Text("Diagnostics", bundle: .main)
+                    Spacer(minLength: DesignTokens.Spacing.sm)
+                    if !showsAdvancedDiagnostics, let summary = diagnosticsSummary {
+                        Text(summary)
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(DesignTokens.Colors.Status.warning)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(
+                showsAdvancedDiagnostics ? Text("Hide details") : Text("Show details")
+            )
         }
     }
 
-    private var footerBar: some View {
-        HStack {
-            Button(action: exportDiagnostics) {
-                Label("Export diagnostics", systemImage: "doc.on.doc")
+    /// What the collapsed header says. Silent when everything passes: a row of
+    /// "all good" on a section nobody opened is noise.
+    private var diagnosticsSummary: String? {
+        let failing = DoctorProbeKind.allCases.filter { kind in
+            switch service.probes[kind]?.status {
+            case .yellow, .red: return true
+            default: return false
             }
-            .adaptiveGlassButton(.regular, size: .small)
-            .help(Text("Copy all probe reports as redacted JSON to clipboard"))
-
-            Spacer()
-
-            Button(action: { Task { await service.runAll() } }) {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    if service.state == .probing {
-                        ProgressView().controlSize(.small)
-                    }
-                    Text("Run all probes")
-                }
-            }
-            .adaptiveGlassButton(.prominent, size: .regular)
-            .disabled(service.state == .probing)
-            .help(Text("Run every diagnostic check against the bound SteamCMD install."))
         }
+        guard !failing.isEmpty else { return nil }
+        return String(
+            localized: "\(failing.count) need attention",
+            comment: "Collapsed diagnostics header summary; %lld is how many probes are failing."
+        )
     }
 
     // MARK: - Connection status
@@ -445,12 +599,8 @@ struct WorkshopDoctorView: View {
         service.hasBoundBinary && service.isGreen(.binaryIdentity)
     }
 
-    /// Both the download and the connector-side unpack can take a while, so the
-    /// row reports which one is running rather than only spinning.
     private var binaryDetail: String {
         switch managedInstaller.status {
-        case .downloading:
-            return String(localized: "Downloading SteamCMD…", comment: "SteamCMD step detail while the bootstrap archive downloads.")
         case .installing:
             return String(localized: "Setting up SteamCMD…", comment: "SteamCMD step detail while the connector unpacks and verifies the install.")
         case .removing:
@@ -473,7 +623,7 @@ struct WorkshopDoctorView: View {
         // Removing counts as busy: the menu that starts an install is disabled
         // off this, and the coordinator now refuses one mid-removal anyway —
         // offering a command that will be declined is worse than greying it out.
-        case .downloading, .installing, .removing: return true
+        case .installing, .removing: return true
         case .idle, .installed, .failed: return false
         }
     }
@@ -488,12 +638,17 @@ struct WorkshopDoctorView: View {
         }
     }
 
-    private var completedSetupStepCount: Int {
-        (isLibraryReady ? 1 : 0) + (isBinaryReady ? 1 : 0) + (accountState == .ready ? 1 : 0)
-    }
-
     private var connectionHeaderTitle: LocalizedStringKey {
         isLibraryReady ? "Official Steam library connected" : "Connect your Steam library"
+    }
+
+    /// The sentence that replaced the "N of 3" tally — it names the next
+    /// action rather than a fraction the user has to interpret.
+    private var connectionHeaderSubtitle: LocalizedStringKey? {
+        if !isLibraryReady { return "Choose Steam's folder to get started." }
+        if !isBinaryReady { return "Set up SteamCMD to download from the Workshop." }
+        if accountState != .ready { return "Sign in so downloads run as your account." }
+        return nil
     }
 
     private var connectionHeaderIcon: String {
@@ -570,182 +725,6 @@ struct WorkshopDoctorView: View {
         case .red: return "red"
         }
     }
-}
-
-// MARK: - Card
-
-// MARK: - Picker rows
-
-// MARK: - Probe row
-
-private struct ProbeRow: View {
-    let report: DoctorProbeReport
-    let service: SteamCMDDoctorService
-    let onCopied: () -> Void
-
-    @State private var commandRevealed = false
-
-    var body: some View {
-        HStack(alignment: .top, spacing: DesignTokens.Spacing.md) {
-            statusIcon
-                .frame(width: 20, height: 20)
-                .padding(.top, 2)
-
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.sm) {
-                    Text(report.id.displayName)
-                        .font(DesignTokens.Typography.bodyEmphasized)
-                    Spacer()
-                    if let value = inlineValue {
-                        Text(value)
-                            .font(DesignTokens.Typography.code)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-
-                if let description = descriptionText {
-                    Text(description)
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let cmd = revealedCommand {
-                    TerminalCommandPanel(command: cmd, redactedPreview: false, onCopied: onCopied)
-                        .padding(.top, DesignTokens.Spacing.xs)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-
-                if hasActionRow {
-                    HStack(spacing: DesignTokens.Spacing.xs) {
-                        actionButtons
-                        Spacer()
-                        rerunButton
-                    }
-                    .padding(.top, DesignTokens.Spacing.xs)
-                }
-            }
-        }
-        .padding(.vertical, DesignTokens.Spacing.xs)
-        .animation(.easeInOut(duration: 0.18), value: report.status)
-        .animation(.easeInOut(duration: 0.18), value: commandRevealed)
-    }
-
-    @ViewBuilder private var statusIcon: some View {
-        switch report.status {
-        case .green:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(DesignTokens.Colors.Status.active)
-                .accessibilityLabel(Text("Passed"))
-        case .yellow:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(DesignTokens.Colors.Status.warning)
-                .accessibilityLabel(Text("Warning"))
-        case .red:
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(DesignTokens.Colors.Status.danger)
-                .accessibilityLabel(Text("Failed"))
-        case .running:
-            ProgressView().controlSize(.small).accessibilityLabel(Text("Running"))
-        case .notRun:
-            Image(systemName: "circle.dotted")
-                .font(.system(size: 17))
-                .foregroundStyle(.tertiary)
-                .accessibilityLabel(Text("Not run"))
-        }
-    }
-
-    private var inlineValue: String? {
-        if report.id == .cachedLogin, case .green = report.status, let user = service.username {
-            return user
-        }
-        switch report.status {
-        case .green(let detail): return detail
-        default: return nil
-        }
-    }
-
-    private var descriptionText: String? {
-        switch report.status {
-        case .notRun:
-            return String(localized: "Not run yet.", comment: "Workshop Doctor probe has not been run.")
-        case .running:
-            return String(localized: "Running…", comment: "Workshop Doctor probe is running.")
-        case .green: return nil
-        case .yellow(let msg, _): return msg
-        case .red(let msg, _): return msg
-        }
-    }
-
-    private var commandFromStatus: String? {
-        switch report.status {
-        case .yellow(_, let cmd): return cmd
-        case .red(_, let cmd): return cmd
-        default: return nil
-        }
-    }
-
-    private var revealedCommand: String? {
-        commandRevealed ? commandFromStatus : nil
-    }
-
-    private var hasActionRow: Bool {
-        guard report.status != .notRun, report.status != .running else { return false }
-        if report.id == .cachedLogin { return false }
-        switch report.status {
-        case .green: return false
-        default: return true
-        }
-    }
-
-    @ViewBuilder private var actionButtons: some View {
-        switch (report.id, report.status) {
-        case (.binaryIdentity, .red):
-            // Re-detect rather than re-select: the fix for a bad identity is a
-            // binary from a source we trust, not another path typed at us.
-            Button("Locate automatically") {
-                Task { await service.autoDetectBinary() }
-            }
-            .adaptiveGlassButton(.prominent, size: .small)
-
-        case (.gatekeeperQuarantine, .yellow), (.gatekeeperQuarantine, .red):
-            showCommandButton()
-
-        case (.codeSignature, .yellow):
-            if commandFromStatus != nil {
-                showCommandButton(label: "Show codesign command")
-            }
-
-        default:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder private func showCommandButton(label: String = "Show command") -> some View {
-        if commandFromStatus != nil {
-            Button(commandRevealed ? "Hide command" : label) {
-                commandRevealed.toggle()
-            }
-            .adaptiveGlassButton(.regular, size: .small)
-        }
-    }
-
-    private var rerunButton: some View {
-        Button(action: { Task { await service.runProbe(report.id) } }) {
-            Label("Re-run", systemImage: "arrow.clockwise")
-                .font(DesignTokens.Typography.caption)
-                .labelStyle(.iconOnly)
-        }
-        .buttonStyle(.borderless)
-        .help(Text("Re-run this probe"))
-    }
-
 }
 
 // MARK: - Helpers

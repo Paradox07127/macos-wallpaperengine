@@ -523,6 +523,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self, self.lifecycle.allowsWork else { return }
                     NotificationCenter.default.post(name: .openAppleAerials, object: nil)
                 }
+            },
+            onShowSteamWorkshop: { [weak self] in
+                guard let self, self.lifecycle.allowsWork else { return }
+                self.showSettings()
+                self.lifecycle.schedule { [weak self] in
+                    guard let self, self.lifecycle.allowsWork else { return }
+                    NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
+                }
             }
         )
 
