@@ -7,9 +7,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production post-fix: four evaluators retain serial queues and bounded engines share global admission")
     func productionEvaluatorsUseGlobalAdmission() throws {
-        let runtime = try RR10ProductionSource.read(
-            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift"
-        )
+        // The scene-script subsystem lives in two files since the layer-script
+        // engine was split out; these counts are contracts on the subsystem, not
+        // on one file, so both halves are read together.
+        let runtime = try RR10ProductionSource.combined([
+            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
+            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
+        ])
 
         // The parse-time evaluator still owns a private queue; the three
         // per-object engines take theirs from the batch dispatcher. That is what
@@ -112,9 +116,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
     // start time to an engine that never ran. Regression from ed51b687.
     @Test("Production post-fix: refused async attempts release the dispatch slot through its owner")
     func productionAsyncRejectionReleasesThroughOwner() throws {
-        let runtime = try RR10ProductionSource.read(
-            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift"
-        )
+        // The scene-script subsystem lives in two files since the layer-script
+        // engine was split out; these counts are contracts on the subsystem, not
+        // on one file, so both halves are read together.
+        let runtime = try RR10ProductionSource.combined([
+            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
+            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
+        ])
 
         #expect(RR10ProductionSource.occurrences(
             of: "                safety.complete()\n                return false",
@@ -137,9 +145,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production post-fix: non-frame operations cannot fabricate traversal challenges")
     func productionNonFrameAdmissionStrategyIsExplicit() throws {
-        let runtime = try RR10ProductionSource.read(
-            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift"
-        )
+        // The scene-script subsystem lives in two files since the layer-script
+        // engine was split out; these counts are contracts on the subsystem, not
+        // on one file, so both halves are read together.
+        let runtime = try RR10ProductionSource.combined([
+            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
+            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
+        ])
 
         #expect(runtime.contains("admission: .failFast"))
         #expect(runtime.contains("guard let permit = governor.tryAcquireUnreserved(for: participant)"))
@@ -152,9 +164,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production B2b: frame watchdog quarantines async overrun without per-tick timers")
     func productionAsyncOverrunUsesSharedOwner() throws {
-        let runtime = try RR10ProductionSource.read(
-            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift"
-        )
+        // The scene-script subsystem lives in two files since the layer-script
+        // engine was split out; these counts are contracts on the subsystem, not
+        // on one file, so both halves are read together.
+        let runtime = try RR10ProductionSource.combined([
+            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
+            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
+        ])
         let resources = try RR10ProductionSource.read(
             "LiveWallpaper/Runtime/Scene/WPESceneScriptResourceBudget.swift"
         )
@@ -497,9 +513,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production post-fix: late async completions use the scene publish gate")
     func productionLateCompletionGateIsWiredAcrossRuntimeFamilies() throws {
-        let runtime = try RR10ProductionSource.read(
-            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift"
-        )
+        // The scene-script subsystem lives in two files since the layer-script
+        // engine was split out; these counts are contracts on the subsystem, not
+        // on one file, so both halves are read together.
+        let runtime = try RR10ProductionSource.combined([
+            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
+            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
+        ])
 
         // `self.` in the cursor-event closure, bare in the three batch workers.
         #expect(RR10ProductionSource.occurrences(

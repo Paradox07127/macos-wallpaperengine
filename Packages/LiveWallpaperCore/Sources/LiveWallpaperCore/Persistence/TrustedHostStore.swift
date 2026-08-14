@@ -8,7 +8,7 @@ public protocol TrustedHostPersisting {
 }
 
 /// Allowlist of remote HTML origins that may run JavaScript. Persistence is injected;
-/// the app wires `SettingsManager` in `TrustedHostStore+Shared.swift`.
+/// the app wires `SettingsManager` in `SettingsManagerStoreBindings.swift`.
 @MainActor
 @Observable
 public final class TrustedHostStore {
