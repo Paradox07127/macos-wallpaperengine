@@ -59,8 +59,11 @@ struct ScenePresetLibraryRegistrationTests {
     @Test("The descriptor hook runs after the library write and before observers")
     func thenPersistRunsBetweenWriteAndNotification() async throws {
         let sut = try manager()
-        var libraryVisibleInsideHook: ScenePreset?
-        var notifiedBeforeHook = false
+        // Written on the main actor and read from the notification observer,
+        // which this suite's `@MainActor` isolation posts on the same actor —
+        // the ordering under test is exactly what makes the two never overlap.
+        nonisolated(unsafe) var libraryVisibleInsideHook: ScenePreset?
+        nonisolated(unsafe) var notifiedBeforeHook = false
         let observer = NotificationCenter.default.addObserver(
             forName: .scenePresetLibraryDidChange, object: nil, queue: nil
         ) { _ in

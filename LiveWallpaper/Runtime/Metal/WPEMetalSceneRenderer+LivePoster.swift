@@ -69,7 +69,7 @@ extension WPEMetalSceneRenderer {
         }
         let id = UUID()
         return await withTaskCancellationHandler(operation: {
-            await withCheckedContinuation(isolation: actor) { continuation in
+            await withCheckedContinuation { continuation in
                 pendingLivePosterCaptures[id] = continuation
                 requestLivePosterCaptureFrame()
             }
