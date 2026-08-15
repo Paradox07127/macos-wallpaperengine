@@ -111,6 +111,16 @@ extension ScreenManager {
                 self?.handleScreenUnlocked()
             }
             .store(in: &cleanupTasks)
+
+        // Global play/pause (`togglePlayback()` in ScreenManager+Wallpaper.swift)
+        // flips every session's intent without a policy refresh, leaving the
+        // assertion stale until some unrelated refresh; the session-state
+        // commit's isAnyPlaying edge is the signal that reaches this file.
+        playbackStateSubject
+            .sink { [weak self] _ in
+                self?.refreshAppNapAssertion()
+            }
+            .store(in: &cleanupTasks)
     }
 
     private func handleScreenLocked() {
@@ -334,7 +344,8 @@ extension ScreenManager {
         commitWallpaperSessionState()
     }
 
-    /// Hold an activity assertion whenever ≥1 wallpaper session is actively rendering, so macOS doesn't App-Nap our background render loop down to ~1fps when the user focuses another window.
+    /// Hold an activity assertion while ≥1 wallpaper session may be doing real work — producing frames, playing audio, or loading — so macOS doesn't App-Nap our background render loop down to ~1fps when the user focuses another window.
+    /// The release states are the provable idle ones only: no session, policy-suspended, or user-paused (each drives the session's effective profile to `.suspended`, which pauses the display link and the audio engine). A *playing static scene* still holds the assertion: the true frames signal (`WPEMetalSceneRenderer.needsContinuousFrames` → the render actor's `linkPaused`) is render-actor-isolated with no synchronous main-thread mirror, and ambiguity errs on holding.
     func refreshAppNapAssertion() {
         let isRendering = screens.contains {
             $0.runtimeSession != nil
