@@ -279,18 +279,25 @@ final class OverlayController: NSObject {
     private func makeOptions(visibleHostIDs: Set<CGDirectDisplayID>) -> MonitorRuntimeOptions {
         var kinds: Set<MonitorWidgetKind> = []
         var gpuSeconds: Double?
+        var sampleSeconds: Double?
+        var demand = MonitorSampleDemand()
         for (screenID, host) in hosts where visibleHostIDs.contains(screenID) {
             kinds.formUnion(host.config.widgets.map(\.kind))
             if let s = MonitorWidgetDraft.gpuSampleSeconds(in: host.config.widgets) {
                 gpuSeconds = min(gpuSeconds ?? s, s)
             }
+            let interval = host.config.refreshIntervalSeconds
+            sampleSeconds = min(sampleSeconds ?? interval, interval)
+            demand = demand.union(MonitorSampleDemand.of(host.config.widgets))
         }
         return MonitorRuntimeOptions(
             system: MonitorRuntimeOptions.requiresSystemMetrics(for: kinds),
             agents: kinds.contains(.fleet),
             topProcesses: kinds.contains(.processes),
             activeWidgetKinds: kinds,
-            gpuSampleSeconds: gpuSeconds
+            gpuSampleSeconds: gpuSeconds,
+            sampleIntervalSeconds: sampleSeconds,
+            sampleDemand: demand
         )
     }
 
@@ -389,12 +396,26 @@ final class OverlayController: NSObject {
         }
     }
 
+    /// Delivery cadence, matching how `makeOptions` merges sampling: the
+    /// fastest visible board wins, because one pump feeds all of them.
+    private var pumpIntervalSeconds: Double {
+        hosts.values
+            .filter(\.isDeliveringSnapshots)
+            .map(\.config.refreshIntervalSeconds)
+            .min() ?? 1
+    }
+
     private func startPump() {
         guard pumpTask == nil else { return }
         pumpTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
+                // Re-read every turn rather than capturing once: the board's
+                // refresh slider moves without the visibility change that is the
+                // only thing which restarts this task. A fixed 1s here is what
+                // made the sub-second steps sample power and deliver nothing.
+                let interval = self?.pumpIntervalSeconds ?? 1
                 do {
-                    try await Task.sleep(for: .seconds(1))
+                    try await Task.sleep(for: .seconds(interval))
                 } catch {
                     return
                 }

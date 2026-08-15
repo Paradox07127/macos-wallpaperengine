@@ -49,11 +49,24 @@ struct DetailEditorTests {
         #expect(ReduceMotionChoice.off.override == false)
     }
 
-    @Test("Refresh-rate label clamps the value into 0.2…2 Hz")
-    func refreshRateLabelClamps() {
-        #expect(BoardSettingsView.refreshHzLabel(1.0) == "1.0 Hz")
-        #expect(BoardSettingsView.refreshHzLabel(5.0) == "2.0 Hz")
-        #expect(BoardSettingsView.refreshHzLabel(0.05) == "0.2 Hz")
+    @Test("Refresh-interval label snaps into the grid and drops the decimal on whole seconds")
+    func refreshIntervalLabelSnaps() {
+        #expect(BoardSettingsView.refreshIntervalLabel(1.0) == "1")
+        #expect(BoardSettingsView.refreshIntervalLabel(1.24) == "1.2")
+        #expect(BoardSettingsView.refreshIntervalLabel(0.01) == "0.5")   // below the floor
+        #expect(BoardSettingsView.refreshIntervalLabel(99) == "5")       // above the ceiling
+    }
+
+    @Test("Slider index and interval are inverse across the whole non-uniform grid")
+    func refreshIntervalIndexRoundTrip() {
+        let steps = MonitorBoardConfiguration.refreshIntervalSteps
+        for (index, seconds) in steps.enumerated() {
+            #expect(BoardSettingsView.refreshIntervalIndex(seconds) == index)
+            #expect(BoardSettingsView.refreshInterval(atIndex: index) == seconds)
+        }
+        // Out-of-range indices clamp instead of trapping.
+        #expect(BoardSettingsView.refreshInterval(atIndex: -1) == steps.first)
+        #expect(BoardSettingsView.refreshInterval(atIndex: 999) == steps.last)
     }
 
     @Test("Every widget kind has an inspector-list icon")

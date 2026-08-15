@@ -12,11 +12,52 @@ struct MonitorBoardConfigurationTests {
         let config = MonitorBoardConfiguration.default
 
         #expect(config.schemaVersion == 4)
-        #expect(config.gridColumns == 10)
         #expect(config.refreshHz == 1.0)
         #expect(config.mouseInteractionEnabled == false)
         #expect(config.reduceMotionOverride == nil)
         #expect(config.widgets.map(\.kind) == [.cpu, .memory, .gpu])
+    }
+
+    // MARK: - Refresh interval grid
+
+    @Test("Refresh interval grid is non-uniform and spans exactly the Hz clamp")
+    func refreshIntervalGridShape() {
+        let steps = MonitorBoardConfiguration.refreshIntervalSteps
+
+        #expect(steps.first == 0.5)
+        #expect(steps.last == 5)
+        #expect(steps.count == 19)
+        #expect(steps == steps.sorted())
+        // 0.1 s resolution below 2 s, whole seconds above.
+        #expect(steps.filter { $0 < 2 }.count == 15)
+        #expect(steps.filter { $0 >= 2 } == [2, 3, 4, 5])
+        // The grid bounds must not exceed what the persisted Hz field can hold.
+        for step in steps {
+            #expect(MonitorBoardConfiguration.clampedRefreshHz(1.0 / step) == 1.0 / step)
+        }
+    }
+
+    @Test("Every grid step survives the seconds↔Hz round-trip")
+    func refreshIntervalRoundTrip() {
+        var config = MonitorBoardConfiguration()
+        for step in MonitorBoardConfiguration.refreshIntervalSteps {
+            config.refreshIntervalSeconds = step
+            #expect(config.refreshIntervalSeconds == step, "step \(step) did not round-trip")
+        }
+    }
+
+    @Test("Out-of-range and non-finite intervals snap into the grid")
+    func refreshIntervalSnapping() {
+        #expect(MonitorBoardConfiguration.snappedRefreshInterval(0.01) == 0.5)
+        #expect(MonitorBoardConfiguration.snappedRefreshInterval(99) == 5)
+        #expect(MonitorBoardConfiguration.snappedRefreshInterval(1.23) == 1.2)
+        #expect(MonitorBoardConfiguration.snappedRefreshInterval(2.6) == 3)
+        #expect(MonitorBoardConfiguration.snappedRefreshInterval(.nan) == 1.0)
+    }
+
+    @Test("The default board reads as a 1 s interval")
+    func defaultRefreshInterval() {
+        #expect(MonitorBoardConfiguration.default.refreshIntervalSeconds == 1.0)
     }
 
     @Test("Default system placements match the documented kind/size order")
@@ -32,7 +73,6 @@ struct MonitorBoardConfigurationTests {
     func roundTripAllOptionCases() throws {
         var config = MonitorBoardConfiguration()
         config.schemaVersion = MonitorBoardConfiguration.currentSchemaVersion // avoid the v2→v3 migration path
-        config.gridColumns = 16
         config.refreshHz = 0.75
         config.mouseInteractionEnabled = true
         config.reduceMotionOverride = true
@@ -88,7 +128,6 @@ struct MonitorBoardConfigurationTests {
         let json = """
         {
           "schemaVersion": 2,
-          "gridColumns": 12,
           "widgets": [
             { "id": "00000000-0000-0000-0000-000000000001", "kind": "cpu", "size": "m", "x": 0.1, "y": 0.1, "options": {} },
             { "id": "00000000-0000-0000-0000-000000000002", "kind": "notAKind", "size": "m", "x": 0.2, "y": 0.2, "options": {} },
@@ -193,7 +232,6 @@ struct MonitorBoardConfigurationTests {
         // default boards are never Equatable-equal even though every other
         // field matches.
         #expect(decoded.schemaVersion == MonitorBoardConfiguration.default.schemaVersion)
-        #expect(decoded.gridColumns == MonitorBoardConfiguration.default.gridColumns)
         #expect(decoded.refreshHz == MonitorBoardConfiguration.default.refreshHz)
         #expect(decoded.mouseInteractionEnabled == MonitorBoardConfiguration.default.mouseInteractionEnabled)
         #expect(decoded.reduceMotionOverride == MonitorBoardConfiguration.default.reduceMotionOverride)
@@ -252,51 +290,41 @@ struct MonitorBoardConfigurationTests {
         #expect(infPlacement.y == 0)
     }
 
-    @Test("gridColumns has a minimum of 1")
-    func gridColumnsMinimumOne() {
-        #expect(MonitorBoardConfiguration(gridColumns: 0).gridColumns == 1)
-        #expect(MonitorBoardConfiguration(gridColumns: -5).gridColumns == 1)
-        #expect(MonitorBoardConfiguration(gridColumns: 24).gridColumns == 24)
-    }
+    // MARK: - Schema migration (→ v4)
 
-    @Test("gridColumns decoded from JSON also clamps to a minimum of 1")
-    func gridColumnsMinimumOneOnDecode() throws {
-        let json = """
-        { "gridColumns": 0 }
-        """.data(using: .utf8)!
-        let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: json)
-        #expect(decoded.gridColumns == 1)
-    }
-
-    // MARK: - Schema migration (→ v4: normalize grid columns to 10)
-
-    @Test("A v2 board persisted at 12 columns migrates to 10 columns and schema v4")
-    func v2BoardMigratesGridColumnsToTen() throws {
+    @Test("A v2 board advances to schema v4 on decode")
+    func v2BoardMigratesToV4() throws {
         let json = """
         { "schemaVersion": 2, "gridColumns": 12 }
         """.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: json)
-        #expect(decoded.gridColumns == 10)
         #expect(decoded.schemaVersion == 4)
     }
 
-    @Test("A v3 board persisted at 8 columns migrates to 10 columns and schema v4")
-    func v3BoardMigratesGridColumnsToTen() throws {
+    @Test("A v3 board advances to schema v4 on decode")
+    func v3BoardMigratesToV4() throws {
         let json = """
         { "schemaVersion": 3, "gridColumns": 8 }
         """.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: json)
-        #expect(decoded.gridColumns == 10)
         #expect(decoded.schemaVersion == 4)
     }
 
-    @Test("A board with no schemaVersion is treated as current and keeps an explicit gridColumns")
-    func missingSchemaVersionSkipsMigration() throws {
+    @Test("A retired gridColumns key in stored JSON is ignored, not a decode failure")
+    func retiredGridColumnsKeyIsIgnored() throws {
         let json = """
-        { "gridColumns": 16 }
+        { "schemaVersion": 4, "gridColumns": 16 }
         """.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: json)
-        #expect(decoded.gridColumns == 16)
+        #expect(decoded.schemaVersion == 4)
+    }
+
+    @Test("A board with no schemaVersion is treated as current")
+    func missingSchemaVersionSkipsMigration() throws {
+        let json = """
+        { "refreshHz": 1.5 }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: json)
         #expect(decoded.schemaVersion == MonitorBoardConfiguration.currentSchemaVersion)
     }
 
@@ -305,8 +333,7 @@ struct MonitorBoardConfigurationTests {
     /// Mirrors `MonitorBoardConfiguration.packedPlacements`' own math so tests
     /// assert against an independently derived reference rather than
     /// hardcoded floats that would silently drift from the production
-    /// formula. `columns` here is always the packer's fixed 10-column basis,
-    /// not `gridColumns` (which is a separate, unrelated field).
+    /// formula. `columns` here is the packer's own reference-board basis.
     private struct ReferenceAABB {
         let x: Double
         let y: Double
@@ -429,7 +456,7 @@ struct MonitorBoardConfigurationTests {
 
     @Test("A wrong-typed field makes the board decode fail closed to nil")
     func wrongTypedFieldReturnsNil() throws {
-        let result = try decodeConfig(#"{ "gridColumns": [1,2,3] }"#)  // gridColumns wrong type → throws
+        let result = try decodeConfig(#"{ "refreshHz": [1,2,3] }"#)  // refreshHz wrong type → throws
         #expect(result == nil)
         #expect(result?.widgets.map(\.kind) != [.cpu, .memory, .gpu])
     }

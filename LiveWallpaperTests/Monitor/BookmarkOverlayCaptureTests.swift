@@ -71,7 +71,6 @@ struct BookmarkMonitorOverlayCaptureTests {
         let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
 
         #expect(!json.contains("widgets"), "board layout must not ride along in a bookmark")
-        #expect(!json.contains("gridColumns"))
         #expect(!json.contains("refreshHz"))
     }
 }

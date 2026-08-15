@@ -17,7 +17,7 @@ struct BoardConfigDecodeTests {
     @Test("A board payload decodes its widgets, sizes and board-level fields")
     func boardPayloadDecodes() throws {
         let board = try decodeBoard("""
-        {"schemaVersion":2,"gridColumns":12,"refreshHz":0.75,"mouseInteractionEnabled":true,"widgets":[{"kind":"gpu","size":"m","x":0.0,"y":0.0},{"kind":"disk","size":"s","x":0.5,"y":0.5}]}
+        {"schemaVersion":2,"refreshHz":0.75,"mouseInteractionEnabled":true,"widgets":[{"kind":"gpu","size":"m","x":0.0,"y":0.0},{"kind":"disk","size":"s","x":0.5,"y":0.5}]}
         """)
         #expect(board.widgets.map(\.kind) == [.gpu, .disk])
         #expect(board.widgets.map(\.size) == [.medium, .small])
@@ -67,7 +67,6 @@ struct BoardConfigDecodeTests {
     func unknownKeysIgnoredAndNotPersisted() throws {
         let board = try decodeBoard(#"{"systemEnabled":true,"agentsEnabled":false,"showTopProcesses":true}"#)
         #expect(board.widgets.map(\.kind) == MonitorBoardConfiguration.default.widgets.map(\.kind))
-        #expect(board.gridColumns == 10)
         #expect(board.refreshHz == 1.0)
         #expect(board.mouseInteractionEnabled == false)
 
@@ -82,7 +81,6 @@ struct BoardConfigDecodeTests {
     @Test("A board config round-trips unchanged through MonitorOverlayConfiguration")
     func boardRoundTrip() throws {
         var board = MonitorBoardConfiguration()
-        board.gridColumns = 12
         board.refreshHz = 1.0
         board.mouseInteractionEnabled = true
         board.widgets = [
