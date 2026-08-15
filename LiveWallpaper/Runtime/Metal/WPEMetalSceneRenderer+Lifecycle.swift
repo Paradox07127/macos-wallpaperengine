@@ -407,6 +407,7 @@ extension WPEMetalSceneRenderer {
             surfaceControl.setNeedsRedraw()
         }
         refreshLiveness()
+        pushPointerEventMonitoring()
     }
 
     /// Updates how the scene is fitted to the screen. For a static (non-continuous)
@@ -423,6 +424,7 @@ extension WPEMetalSceneRenderer {
     func setClickCaptureEnabled(_ enabled: Bool) {
         surfaceControl.setClickCaptureEnabled(enabled)
         refreshLiveness()
+        pushPointerEventMonitoring(clickCaptureEnabled: enabled)
     }
 
     /// Re-evaluates the paused/continuous state after a mouse-interaction toggle
@@ -542,6 +544,52 @@ extension WPEMetalSceneRenderer {
             || mailbox.read().clickCaptureEnabled
     }
 
+    /// Whether anything in the loaded scene could consume the mailbox pointer.
+    /// Deliberately conservative: effects/workshop shaders can sample
+    /// `g_PointerPosition*`, any script instance can read the pointer or register
+    /// cursor handlers at runtime, and particle systems can follow it through
+    /// pointer-locked control points/attractors even when `tracksPointer` is
+    /// false — all of those keep the monitors on. Only the provably pointer-free
+    /// scene gates them off.
+    private var scenePointerConsumersPossible: Bool {
+        (cameraParallaxSettings.enabled
+            && cameraParallaxSettings.amount != 0
+            && cameraParallaxSettings.mouseInfluence != 0)
+            || hasAnimatedShaderPasses
+            || !particleSystems.isEmpty
+            || !dynamicOriginScriptInstances.isEmpty
+            || !dynamicScaleScriptInstances.isEmpty
+            || !dynamicAnglesScriptInstances.isEmpty
+            || !dynamicColorScriptInstances.isEmpty
+            || !layerScriptInstances.isEmpty
+            || !layerAlphaScriptInstances.isEmpty
+            || !textScriptInstances.isEmpty
+            || !textVisibleScriptInstances.isEmpty
+            || !textAlphaScriptInstances.isEmpty
+            || !effectConstantScriptInstances.isEmpty
+            || !effectVisibilityScriptInstances.isEmpty
+    }
+
+    /// Pushes the NSEvent-monitor gate to the surface: every mouse move wakes the
+    /// main thread while monitors are installed, so they run only when the
+    /// renderer is unsuspended AND the pointer can be consumed. The config half
+    /// mirrors `sampleFrameContext`'s discard rule — with Follow Cursor and click
+    /// capture both off the sample is forced `.inactive`, so the mailbox feed is
+    /// provably unread. `clickCaptureEnabled` is passed explicitly on the toggle
+    /// path because the mailbox copy is written on the main thread and may not
+    /// have landed when this runs on the render actor.
+    private func pushPointerEventMonitoring(clickCaptureEnabled: Bool? = nil) {
+        if let clickCaptureEnabled { lastPushedClickCaptureEnabled = clickCaptureEnabled }
+        let clickCapture = clickCaptureEnabled
+            ?? lastPushedClickCaptureEnabled
+            ?? mailbox.read().clickCaptureEnabled
+        let demanded = clickCapture
+            || (mouseInteractionEnabled && scenePointerConsumersPossible)
+        surfaceControl.applyPacing(WPERenderPacingUpdate(
+            pointerEventsEnabled: currentProfile != .suspended && demanded
+        ))
+    }
+
     /// A pass animates per-frame when its shader samples `g_Time` /
     /// `g_AudioSpectrum*` — i.e. WPE local effects (`effects/…`) and workshop
     /// custom shaders (`workshop/…`). The static base shaders (`solidcolor`,
@@ -582,6 +630,9 @@ extension WPEMetalSceneRenderer {
             textMeshRenderer?.releaseCachedResources()
             executor.releaseTransientResources()
         }
+        // Post-switch so the gate sees the profile it just entered. Also the
+        // post-load demand evaluation: `load` ends by re-applying the profile.
+        pushPointerEventMonitoring()
     }
 
     // MARK: - Teardown
