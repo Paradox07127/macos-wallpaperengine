@@ -2820,6 +2820,8 @@ export function init(value) {
         )
 
         #expect(instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5)) == nil)
+        // WPEScriptFaultPolicy backoff: the tick after a failure is skipped.
+        #expect(instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5)) == nil)
         #expect(
             instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5)) == SIMD3<Double>(999, 20, 30)
         )
@@ -2945,6 +2947,8 @@ export function init(value) {
             shared: shared
         )
         _ = producer.tick(runtimeSeconds: 0, pointerFrame: .neutral)
+        // WPEScriptFaultPolicy backoff: the tick after the throw is skipped.
+        #expect(instance.tickString() == "placeholder")
         #expect(instance.tickString() == "[1.50]")
     }
 

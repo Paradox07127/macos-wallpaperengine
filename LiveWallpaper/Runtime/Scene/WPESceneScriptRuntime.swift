@@ -228,6 +228,10 @@ final class WPESceneScriptContextBeacon: NSObject {
 final class WPESceneScriptAudioBridge {
     /// WPE AUDIO_RESOLUTION_* constants (broker width = largest).
     private static let resolutions = [16, 32, 64]
+    /// FIFO cap on registrations: a script that calls registerAudioBuffers()
+    /// from update() would otherwise append 3 permanently-protected JSValues
+    /// per frame, pinning them for the context's lifetime.
+    private static let maxRegisteredBuffers = 16
 
     private struct Buffer {
         let bands: Int
@@ -269,9 +273,16 @@ final class WPESceneScriptAudioBridge {
                     category: .audioCapture
                 )
             }
-            self?.buffers.append(
-                Buffer(bands: bands, average: average, left: left, right: right)
-            )
+            if let self {
+                self.buffers.append(
+                    Buffer(bands: bands, average: average, left: left, right: right)
+                )
+                // A dropped buffer's JS arrays simply stop receiving updates;
+                // a per-update registrant converges on its newest registration.
+                if self.buffers.count > Self.maxRegisteredBuffers {
+                    self.buffers.removeFirst(self.buffers.count - Self.maxRegisteredBuffers)
+                }
+            }
             return buffer
         }
         // Undocumented 64-bin stereo average; sampled per call (rare, no per-tick cache).
@@ -800,6 +811,7 @@ final class WPESceneScriptInstance {
         /// that throws every tick surfaces once instead of spamming per frame.
         private var didLogException = false
         private var didThrow = false
+        private var faultPolicy = WPEScriptFaultPolicy()
         /// Scene render size, or nil to leave the sandbox's 1920x1080.
         private let canvasSize: SIMD2<Double>?
 
@@ -942,7 +954,7 @@ final class WPESceneScriptInstance {
                 guard !self.didLogException else { return }
                 self.didLogException = true
                 Logger.warning(
-                    "Text SceneScript raised an uncaught JS exception — keeping last value; update() retries each tick (logged once): \(ex?.toString() ?? "unknown")",
+                    "Text SceneScript raised an uncaught JS exception — keeping last value; retries back off exponentially (logged once): \(ex?.toString() ?? "unknown")",
                     category: .wpeRender
                 )
             }
@@ -985,9 +997,17 @@ final class WPESceneScriptInstance {
             audioBridge?.refresh()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
             guard let context, let updateFunction else { return nil }
+            let now = WPEScriptFaultPolicy.monotonicNow()
+            guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return nil }
             let arg = JSValue(object: lastValue, in: context) ?? JSValue(nullIn: context)!
-            guard let result = updateFunction.call(withArguments: [arg as Any]),
-                  !result.isUndefined && !result.isNull else {
+            didThrow = false
+            let result = updateFunction.call(withArguments: [arg as Any])
+            if didThrow {
+                faultPolicy.recordFailure(entryPoint: "update", at: now)
+                return nil
+            }
+            faultPolicy.recordSuccess(entryPoint: "update")
+            guard let result, !result.isUndefined && !result.isNull else {
                 return nil
             }
             if result.isString, let s = result.toString() {
@@ -2182,11 +2202,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private var neutralLayerHandle: JSValue?
         private var lastRuntimeSeconds: Double?
         private var didThrow = false
-        private var consecutiveRuntimeExceptions = 0
-        /// Cap repeated update() exceptions so JSC reporting cannot thrash every tick.
+        /// Repeated update() exceptions back off through the shared policy so
+        /// JSC reporting cannot thrash every tick.
+        private var faultPolicy = WPEScriptFaultPolicy()
+        /// Set on hard quarantine so callers can stop scheduling without a queue hop.
         private let runtimeFault = OSAllocatedUnfairLock(initialState: false)
         var hasRuntimeFault: Bool { runtimeFault.withLock { $0 } }
-        private static let runtimeExceptionLimit = 3
 
         init(
             seed: SIMD3<Double>,
@@ -2379,10 +2400,12 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
             didThrow = false
             guard let argument = jsValue(for: currentValue, in: context) else { return nil }
+            let now = WPEScriptFaultPolicy.monotonicNow()
+            guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return nil }
             let result = updateFunction.call(withArguments: [argument])
             if didThrow {
-                consecutiveRuntimeExceptions += 1
-                if consecutiveRuntimeExceptions >= Self.runtimeExceptionLimit {
+                let verdict = faultPolicy.recordFailure(entryPoint: "update", at: now)
+                if verdict == .quarantined {
                     // Release the JS callable on its owning queue and stop
                     // scheduling this broken transform until scene reload.
                     self.updateFunction = nil
@@ -2390,7 +2413,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 }
                 return nil
             }
-            consecutiveRuntimeExceptions = 0
+            faultPolicy.recordSuccess(entryPoint: "update")
             guard let result,
                   !result.isUndefined, !result.isNull else {
                 return nil

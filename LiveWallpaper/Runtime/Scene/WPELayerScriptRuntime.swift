@@ -476,6 +476,7 @@ final class WPELayerScriptInstance {
         /// Set by the context exception handler so `init()` failures can degrade
         /// safely (run on the engine queue, so no synchronization needed).
         private var didThrow = false
+        private var faultPolicy = WPEScriptFaultPolicy()
         /// One-shot latch for `logFirstThrow` (per instance, not per tick).
         private var hasLoggedThrow = false
         /// Handles minted by `thisScene.getLayer(name)`, keyed by layer name.
@@ -791,8 +792,11 @@ final class WPELayerScriptInstance {
             guard let context, let updateFunction else {
                 return WPELayerScriptOutput(own: .init(visible: true, alpha: 1, videoCommands: []), others: [:])
             }
+            let now = WPEScriptFaultPolicy.monotonicNow()
+            guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return readOutput() }
             pendingVideo.removeAll(keepingCapacity: true)
             evaluationResourceBudget.beginEvaluation()
+            didThrow = false
             switch outputMode {
             case .layerState:
                 // Official contract for property-attached scripts: update(value)
@@ -841,6 +845,11 @@ final class WPELayerScriptInstance {
                     }
                 }
             }
+            if didThrow {
+                faultPolicy.recordFailure(entryPoint: "update", at: now)
+            } else {
+                faultPolicy.recordSuccess(entryPoint: "update")
+            }
             return readOutput()
         }
 
@@ -852,8 +861,8 @@ final class WPELayerScriptInstance {
             guard !hasLoggedThrow else { return }
             hasLoggedThrow = true
             Logger.warning(
-                "SceneScript threw: \(exception?.toString() ?? "unknown") — it keeps running, but this "
-                    + "tick produced nothing and a throwing tick costs ~100x a clean one",
+                "SceneScript threw: \(exception?.toString() ?? "unknown") — this tick produced nothing; "
+                    + "retries back off exponentially (a throwing tick costs ~100x a clean one)",
                 category: .wpeRender
             )
         }
@@ -873,12 +882,24 @@ final class WPELayerScriptInstance {
                   !fn.isUndefined, fn.hasProperty("call") else {
                 return readOutput()
             }
+            // Keyed by handler name, so a throwing cursorClick backs off alone
+            // and never gates update() or the other cursor handlers.
+            let now = WPEScriptFaultPolicy.monotonicNow()
+            guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else {
+                return readOutput()
+            }
+            didThrow = false
             _ = fn.call(withArguments: [cursorEventObject(
                 event,
                 pointerFrame: pointerFrame,
                 hit: hit,
                 in: context
             )])
+            if didThrow {
+                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+            } else {
+                faultPolicy.recordSuccess(entryPoint: event.handlerName)
+            }
             return readOutput()
         }
 
