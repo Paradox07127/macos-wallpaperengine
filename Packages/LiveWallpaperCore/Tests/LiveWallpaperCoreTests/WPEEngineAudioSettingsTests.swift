@@ -115,6 +115,38 @@ struct WPEEngineKeySourceTests {
         #expect(try #require(WPEEngineAudioSettings.parse(d.presetSnapshot)).volumeScale == 0.8)
     }
 
+    @Test("Saving a preset does not promote an author's slider into the engine's volume")
+    func saveAsPresetDropsAuthorVolumeFromTheSnapshot() {
+        // The path "Save current as preset" takes: the new snapshot is built
+        // from what is on screen. An author `volume` slider left in it becomes
+        // a master-gain scale the next time the preset is applied.
+        let d = descriptor(presetValues: [:], overrides: ["volume": .number(20)])
+        #expect(WPEEngineAudioSettings.parse(d.presetSnapshotForCurrentState()) == nil)
+    }
+
+    @Test("Saving a preset keeps the engine volume the preset already carried")
+    func saveAsPresetKeepsExistingEngineVolume() throws {
+        // Control: dropping the author edit must not drop the engine setting
+        // the user made through the engine controls.
+        let d = descriptor(
+            presetValues: ["volume": .number(80)], overrides: ["volume": .number(20)]
+        )
+        let saved = d.presetSnapshotForCurrentState()
+        #expect(try #require(WPEEngineAudioSettings.parse(saved)).volumeScale == 0.8)
+    }
+
+    @Test("Saving a preset keeps author properties that aren't engine-reserved")
+    func saveAsPresetKeepsAuthorProperties() {
+        let d = descriptor(
+            presetValues: ["scale": .number(1)],
+            overrides: ["scale": .number(3), "wec_brs": .number(70)]
+        )
+        let saved = d.presetSnapshotForCurrentState()
+        #expect(saved["scale"]?.numberValue == 3)
+        // `wec_*` is engine-reserved too, for the same reason as `volume`.
+        #expect(saved["wec_brs"] == nil)
+    }
+
     @Test("Editing an author property does not shadow the preset's engine value")
     func userEditDoesNotOverrideEngineValue() throws {
         // Both present: the preset says 80, the user moved a same-named author

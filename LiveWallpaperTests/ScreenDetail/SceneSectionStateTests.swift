@@ -93,6 +93,54 @@ struct WPESceneSectionStateTests {
         #expect(parse.reason == .sceneParseFailed("missing camera"))
     }
 
+    @MainActor
+    @Test("Engine-assets recovery is offered on a ref-less failure whose cause fits")
+    func engineAssetsRecoveryCoversRefLessFailures() {
+        // The reported gap: a scene that failed before the resolver ran left the
+        // user with the error banner and no way to reach the assets setup.
+        #expect(SceneDetailView.showsEngineAssetsRecovery(
+            isEngineAssetsLinked: false,
+            missedRefCount: 0,
+            failureMightNeedAssets: true
+        ))
+        #expect(SceneDetailView.showsEngineAssetsRecovery(
+            isEngineAssetsLinked: false,
+            missedRefCount: 3,
+            failureMightNeedAssets: false
+        ))
+    }
+
+    @MainActor
+    @Test("Engine-assets recovery stays hidden when linked or when nothing is wrong")
+    func engineAssetsRecoveryStaysQuiet() {
+        // A linked install can't be the cause, however the scene failed.
+        #expect(!SceneDetailView.showsEngineAssetsRecovery(
+            isEngineAssetsLinked: true,
+            missedRefCount: 9,
+            failureMightNeedAssets: true
+        ))
+        // Unlinked is the normal state — most scenes use the built-in equivalents.
+        #expect(!SceneDetailView.showsEngineAssetsRecovery(
+            isEngineAssetsLinked: false,
+            missedRefCount: 0,
+            failureMightNeedAssets: false
+        ))
+    }
+
+    @Test("Only unresolved resources point at an engine-assets install")
+    func onlyResourceMissesBlameEngineAssets() {
+        #expect(FallbackReason.sceneResourceMissing.mightBeMissingEngineAssets)
+        // Downloading gigabytes fixes none of these, so none may advertise it.
+        #expect(!FallbackReason.requiresWindowsPlugin.mightBeMissingEngineAssets)
+        #expect(!FallbackReason.texContainerUnsupported(magic: "TEXV9999").mightBeMissingEngineAssets)
+        #expect(!FallbackReason.texUnsupportedFormat(code: 8).mightBeMissingEngineAssets)
+        #expect(!FallbackReason.texDecodeFailed(detail: "truncated").mightBeMissingEngineAssets)
+        #expect(!FallbackReason.sceneParseFailed("no camera").mightBeMissingEngineAssets)
+        #expect(!FallbackReason.sceneShaderUnsupported.mightBeMissingEngineAssets)
+        #expect(!FallbackReason.missingDependency(workshopIDs: ["1"]).mightBeMissingEngineAssets)
+        #expect(!FallbackReason.unsupportedType.mightBeMissingEngineAssets)
+    }
+
     private func makeOrigin() -> WPEOrigin {
         WPEOrigin(
             workshopID: "state-machine",

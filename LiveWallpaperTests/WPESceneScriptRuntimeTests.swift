@@ -16,7 +16,8 @@ struct WPESceneScriptRuntimeTests {
         shared: WPESharedScriptState? = nil,
         setupBudget: TimeInterval = 2,
         tickBudget: TimeInterval = 0.5,
-        governor: WPESceneScriptExecutionGovernor? = nil
+        governor: WPESceneScriptExecutionGovernor? = nil,
+        canvasSize: SIMD2<Double>? = nil
     ) throws -> LiveWallpaper.WPESceneScriptInstance {
         try LiveWallpaper.WPESceneScriptInstance(
             script: script,
@@ -25,7 +26,8 @@ struct WPESceneScriptRuntimeTests {
             shared: shared,
             setupBudget: setupBudget,
             tickBudget: tickBudget,
-            governor: governor ?? isolatedGovernor
+            governor: governor ?? isolatedGovernor,
+            canvasSize: canvasSize
         )
     }
 
@@ -433,6 +435,37 @@ struct WPESceneScriptRuntimeTests {
         #expect(text.textScript?.contains("update(value)") == true)
     }
 
+    @Test("A text script reads the scene's canvas, not the sandbox's 1920x1080")
+    func textScriptSeesTheSceneCanvas() throws {
+        // Text scripts position and wrap against these two, so a 4K scene laying
+        // out at 1080p is off by 2x. The layer and dynamic-transform engines
+        // already install the real size; this one only had the sandbox default.
+        let script = """
+        export function update(value) {
+            return engine.screenResolution.x + 'x' + engine.canvasSize.y;
+        }
+        """
+        let instance = try WPESceneScriptInstance(
+            script: script,
+            initialValue: "",
+            canvasSize: SIMD2<Double>(3840, 2160)
+        )
+        #expect(instance.tickString() == "3840x2160")
+    }
+
+    @Test("A text script with no canvas keeps the sandbox default")
+    func textScriptWithoutCanvasKeepsSandboxDefault() throws {
+        // Control: the parameter is optional, and omitting it must not change
+        // what every existing caller sees.
+        let script = """
+        export function update(value) {
+            return engine.screenResolution.x + 'x' + engine.canvasSize.y;
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "")
+        #expect(instance.tickString() == "1920x1080")
+    }
+
     @Test("Script runtime evaluates update() and returns new value")
     func scriptUpdateReturnsNewValue() throws {
         let script = """
@@ -748,7 +781,7 @@ struct WPESceneScriptRuntimeTests {
         }
         // The parse-time evaluator caches up to 64 contexts of its own and is the
         // only other JSContext owner in the app.
-        let evaluator = try leakedContexts {
+        let evaluator = leakedContexts {
             let evaluator = LiveWallpaper.WPETransformScriptEvaluator(
                 canvasWidth: 1000,
                 canvasHeight: 1000

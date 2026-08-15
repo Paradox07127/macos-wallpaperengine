@@ -57,7 +57,15 @@ struct WPESceneCustomSettingsCard: View {
         .onReceive(NotificationCenter.default.publisher(for: .scenePresetLibraryDidChange)) { _ in
             reloadPresetLibrary()
         }
-        .onChange(of: sceneIdentity) { _, _ in
+        .onChange(of: sceneIdentity) { oldIdentity, newIdentity in
+            // A coalesced commit scheduled for the previous display would fire
+            // after the binding has moved, writing that display's increment onto
+            // this one. Dropping the last ≤180ms of edits is the safe direction;
+            // letting them land on the wrong display is not.
+            if oldIdentity.screenID != newIdentity.screenID {
+                commitTask?.cancel()
+                commitTask = nil
+            }
             synchronizeEditor(force: true)
             refreshPresetDerivedState()
         }
@@ -141,7 +149,7 @@ struct WPESceneCustomSettingsCard: View {
         let preset = ScenePreset.local(
             name: name,
             baseWorkshopID: descriptor.workshopID,
-            values: descriptor.layeredPropertyValues(),
+            values: descriptor.presetSnapshotForCurrentState(),
             id: existing?.id ?? UUID().uuidString
         )
         // Inside `thenPersist` so the cleared descriptor is on disk before the
@@ -325,13 +333,20 @@ struct WPESceneCustomSettingsCard: View {
 
     private var sceneIdentity: SceneIdentity {
         SceneIdentity(
+            screenID: screen.id,
             workshopID: descriptor.workshopID,
             cacheRelativePath: descriptor.cacheRelativePath,
             entryFile: descriptor.entryFile
         )
     }
 
+    /// `screenID` is part of the identity because two displays can play the very
+    /// same scene. Without it, switching between them left `editor.overrides`
+    /// holding the first display's increment while the binding already pointed
+    /// at the second — the next commit then wrote one display's edits onto the
+    /// other.
     struct SceneIdentity: Equatable {
+        let screenID: CGDirectDisplayID
         let workshopID: String
         let cacheRelativePath: String
         let entryFile: String

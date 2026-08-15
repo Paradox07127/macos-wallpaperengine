@@ -30,7 +30,9 @@ public struct WPEEngineAudioSettings: Equatable, Sendable {
         min(max(master, 0), 1) * (preset ?? .neutral).volumeScale
     }
 
-    private static let volumeKey = "volume"
+    /// Public because it collides with a name scene authors use for their own
+    /// properties, so the preset layer has to be able to recognise it.
+    public static let volumeKey = "volume"
 
     /// `nil` when the preset carries no volume at all, which is every wallpaper
     /// that was never touched by one.

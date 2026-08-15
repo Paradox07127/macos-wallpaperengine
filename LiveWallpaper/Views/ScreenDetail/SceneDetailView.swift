@@ -52,6 +52,12 @@ struct SceneDetailView: View {
     let origin: WPEOrigin
     let descriptor: SceneDescriptor
     let session: SceneWallpaperSession?
+    /// Whether the display reports a *scene rendering* failure above this card.
+    /// Session-derived state misses failures that never produced a scene session
+    /// (`ScreenManager.transientRuntimeErrors`). Narrower than "any runtime
+    /// error" on purpose: a revoked bookmark or an unplayable file is not
+    /// something an engine-assets install fixes.
+    let hasSceneRenderingError: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.featureCatalog) private var featureCatalog
@@ -98,8 +104,10 @@ struct SceneDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .layoutPriority(1)
                 infoBar
-                errorBanner
+                // Above the error banner: the error names the symptom, this
+                // names the one cause the user can act on from here.
                 engineAssetsBanner
+                errorBanner
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
@@ -244,7 +252,12 @@ struct SceneDetailView: View {
         case .sceneShaderUnsupported:
             return Text("A custom shader couldn't be translated. Try re-downloading the project.")
         case .sceneResourceMissing:
-            return Text("Image layers couldn't be located inside the cache.")
+            // Names where the files were looked for, not what to do about it —
+            // `engineAssetsBanner` above owns the recovery.
+            if engineAssets.isAuthorized {
+                return Text("Image layers couldn't be found in this project or in your Wallpaper Engine assets.")
+            }
+            return Text("Image layers couldn't be found in this project. Wallpaper Engine's shared assets normally supply them.")
         case .missingDependency(let ids):
             if ids.count <= 2 {
                 return Text("Subscribe to \(ids.joined(separator: ", ")) in Steam, then re-import.", comment: "Scene dependency recovery hint. The placeholder is one or two Workshop IDs.")
@@ -340,13 +353,53 @@ struct SceneDetailView: View {
             || diagnostics.gpuErrors.count > 0
     }
 
-    /// Unresolved refs while no Wallpaper Engine install is linked: the refs that
-    /// would have come from its shared `assets/` are exactly the ones missing, so
-    /// this is the one diagnosis with a one-click fix.
+    /// Whether to offer the engine-assets recovery, given what the renderer got
+    /// far enough to report.
+    ///
+    /// Unresolved refs are the precise signal — the refs that would have come
+    /// from a Wallpaper Engine install's shared `assets/` are exactly the ones
+    /// missing. A failure that named no refs counts only when its cause could
+    /// actually be the missing install (`mightBeMissingEngineAssets`): a scene
+    /// can die before the resolver runs, but sending someone to download
+    /// gigabytes over a Windows plugin or an undecodable texture is worse than
+    /// saying nothing.
+    static func showsEngineAssetsRecovery(
+        isEngineAssetsLinked: Bool,
+        missedRefCount: Int,
+        failureMightNeedAssets: Bool
+    ) -> Bool {
+        guard !isEngineAssetsLinked else { return false }
+        return missedRefCount > 0 || failureMightNeedAssets
+    }
+
+    private var missedRefCount: Int {
+        session?.rendererDiagnostics?.resolution.missedRefs.count ?? 0
+    }
+
+    private var failureMightNeedAssets: Bool {
+        if case .error(let reason) = state {
+            return reason.mightBeMissingEngineAssets
+        }
+        // No scene session to classify against — the display is reporting a
+        // scene rendering failure we never got a `FallbackReason` for.
+        return hasSceneRenderingError
+    }
+
     private var showsEngineAssetsWarning: Bool {
-        guard featureCatalog.isEnabled(.wpeImport), !engineAssets.isAuthorized else { return false }
-        guard let resolution = session?.rendererDiagnostics?.resolution else { return false }
-        return !resolution.missedRefs.isEmpty
+        guard featureCatalog.isEnabled(.wpeImport) else { return false }
+        return Self.showsEngineAssetsRecovery(
+            isEngineAssetsLinked: engineAssets.isAuthorized,
+            missedRefCount: missedRefCount,
+            failureMightNeedAssets: failureMightNeedAssets
+        )
+    }
+
+    /// Named refs are evidence; a bare load failure is a hypothesis. Say which.
+    private var engineAssetsBannerBody: Text {
+        if missedRefCount > 0 {
+            return Text("Some of this scene's references didn't resolve. Download Wallpaper Engine's shared assets from Steam, or link an install you already have.")
+        }
+        return Text("If this scene needs Wallpaper Engine's shared textures or shaders, they aren't available here. Download them from Steam, or link an install you already have.")
     }
 
     @ViewBuilder
@@ -358,10 +411,10 @@ struct SceneDetailView: View {
                     .foregroundStyle(DesignTokens.Colors.Status.warning)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Wallpaper Engine assets aren't linked")
+                    Text("Wallpaper Engine assets aren't set up")
                         .font(.subheadline.weight(.semibold))
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Some of this scene's references didn't resolve. Linking your Wallpaper Engine install lets its shared textures and shaders load.")
+                    engineAssetsBannerBody
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -374,15 +427,15 @@ struct SceneDetailView: View {
                         object: nil,
                         userInfo: [
                             "destination": SettingsNavigation.workshopSetup.rawValue,
-                            "anchor": SettingsSearchAnchor.workshopSetup.rawValue
+                            "anchor": SettingsSearchAnchor.workshopAssets.rawValue
                         ]
                     )
                 } label: {
-                    Label("Link Assets", systemImage: "arrow.right")
+                    Label("Get Assets", systemImage: "arrow.right")
                         .font(.caption.weight(.semibold))
                 }
                 .adaptiveGlassButton(.prominent, size: .small)
-                .accessibilityHint(Text("Opens the Workshop settings page to link a Wallpaper Engine install"))
+                .accessibilityHint(Text("Opens the Workshop settings page to download or link Wallpaper Engine assets"))
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)

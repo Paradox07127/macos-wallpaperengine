@@ -140,6 +140,29 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         return presetSnapshot.merging(propertyOverrides) { _, userEdit in userEdit }
     }
 
+    /// Keys the engine reads out of a preset snapshot, which therefore may only
+    /// ever be written by the engine settings UI.
+    ///
+    /// `volume` is the collision that matters: it is a perfectly ordinary name
+    /// for a scene author's own `project.json` property, and author edits land
+    /// in `propertyOverrides`.
+    public static func isEngineReservedKey(_ key: String) -> Bool {
+        key == WPEEngineAudioSettings.volumeKey
+            || key.hasPrefix(WPEEngineColorCorrection.keyPrefix)
+    }
+
+    /// Values for a *new* preset snapshot capturing what is on screen.
+    ///
+    /// Layered like `layeredPropertyValues()`, except the increment may not
+    /// supply engine-reserved keys. Folding it in verbatim promotes an author's
+    /// `volume` slider into the engine's master-gain slot, so saving a preset
+    /// after touching that slider would rescale every sound in the scene.
+    public func presetSnapshotForCurrentState() -> [String: WallpaperEngineProjectPropertyValue] {
+        let authoredEdits = propertyOverrides.filter { !Self.isEngineReservedKey($0.key) }
+        guard presetID != nil, !presetSnapshot.isEmpty else { return authoredEdits }
+        return presetSnapshot.merging(authoredEdits) { _, userEdit in userEdit }
+    }
+
     /// Same workshop item + entry (ignores overrides/preflight) for re-pick restore.
     public func isSameScene(as other: SceneDescriptor) -> Bool {
         workshopID == other.workshopID
