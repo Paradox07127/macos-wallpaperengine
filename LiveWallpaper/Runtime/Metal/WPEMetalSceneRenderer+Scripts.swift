@@ -492,9 +492,11 @@ extension WPEMetalSceneRenderer {
             }
         }
     }
-    private var hoverCursorDebugEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "WPEHoverCursorDebug")
-    }
+    /// Read once (static because extensions can't add stored instance
+    /// properties): log-only toggle per WPERenderFlagRegistryTests, and no test
+    /// flips it at runtime, so skipping per-frame defaults reads is safe.
+    private static let hoverCursorDebugDefault = UserDefaults.standard.bool(forKey: "WPEHoverCursorDebug")
+    private var hoverCursorDebugEnabled: Bool { Self.hoverCursorDebugDefault }
 
     /// Pointer (top-left scene pixels) vs a layer's axis-aligned screen rect.
     private func pointerHits(_ pointerPixels: SIMD2<Double>, geometry: WPERenderLayerGeometry) -> Bool {
