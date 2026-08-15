@@ -28,7 +28,7 @@ GitHub Releases 分发。
 scripts/release_candidate_check.sh
 ```
 
-脚本会跑 Core 与 ProWPE 包测试、签名的 Pro 测试、四面 arm64 链接矩阵
+脚本会跑 Core 与 ProWPE 包测试、签名的 Pro 测试、四面链接矩阵
 （Pro Debug/Release 与 Lite Debug/Release）、Pro 与 Lite 的 Release archive 冒烟、
 发布版构建设置/隐私检查，以及 `git diff --check`。每个 Xcode 动作都带
 `SWIFT_EMIT_LOC_STRINGS=NO`。包、Pro、Lite 三段检查刻意串行并使用隔离的构建数据库，
@@ -45,8 +45,9 @@ Pro 与 Lite 的冒烟 archive 默认落在
 `/tmp/LoomscreenReleaseCandidate-arm64ProRelease/LiveWallpaper-LinkMatrix.xcarchive`
 和
 `/tmp/LoomscreenReleaseCandidate-arm64LiteRelease/Loomscreen-LinkMatrix.xcarchive`。
-它们只做 ad-hoc 签名，目的是走一遍真实的 archive/签名路径。两者都必须只含 arm64
-可执行文件且嵌套签名有效。Pro 必须且只能内嵌一个 XPC 服务 `SteamConnector.xpc`，
+它们只做 ad-hoc 签名，目的是走一遍真实的 archive/签名路径。Pro 必须只含 arm64；
+Lite 必须含 arm64，并允许额外带 x86_64——因为 Lite 以 universal 形式发布以支持
+Intel Mac。两者的嵌套签名都必须有效。Pro 必须且只能内嵌一个 XPC 服务 `SteamConnector.xpc`，
 并且它**不能**带 App Sandbox entitlement —— 辅助进程不进沙盒正是关键所在，
 因为一个进了沙盒的辅助进程会把它的 STEAMROOT 放回应用容器里，从而悄悄撤销 Steam
 库迁移。（本段原先描述的 SceneScript XPC 辅助进程已于 2026-07-23 退役。）

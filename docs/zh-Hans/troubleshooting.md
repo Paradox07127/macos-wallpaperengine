@@ -8,7 +8,7 @@
 |---|---|---|
 | "Loomscreen.app 已损坏 / 无法打开" | ad-hoc 签名构建上的 Gatekeeper 隔离标记——不是真的损坏 | 执行一次 `xattr -dr com.apple.quarantine /Applications/Loomscreen.app`，然后重新打开 |
 | 菜单栏图标不见了 | 应用还在运行吗（活动监视器）？菜单栏是不是太挤？ | 从 `/Applications` 重新启动；检查登录项限制 |
-| 完全启动不了 | 是否为 Apple Silicon 上的 macOS 14.6+？ | Intel Mac 与更老的 macOS 不受支持 |
+| 完全启动不了 | 是否 macOS 14.6+？Pro 另需 Apple Silicon | Lite 带一个未经测试的 Intel 切片；Pro 仅支持 Apple Silicon |
 
 ## 渲染
 

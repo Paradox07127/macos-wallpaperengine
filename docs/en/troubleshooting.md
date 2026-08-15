@@ -8,7 +8,7 @@
 |---|---|---|
 | "Loomscreen.app is damaged / can't be opened" | Gatekeeper quarantine flag on the ad-hoc-signed build — not actual damage | Run once: `xattr -dr com.apple.quarantine /Applications/Loomscreen.app`, then reopen |
 | Menu bar icon missing | Is the app running (Activity Monitor)? Crowded menu bar? | Relaunch from `/Applications`; check login-item restrictions |
-| App won't launch at all | macOS 14.6+ on Apple Silicon? | Intel Macs and older macOS are not supported |
+| App won't launch at all | macOS 14.6+? Pro additionally needs Apple Silicon | Lite ships an untested Intel slice; Pro is Apple Silicon only |
 
 ## Rendering
 

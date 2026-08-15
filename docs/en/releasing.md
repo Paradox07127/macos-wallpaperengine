@@ -33,7 +33,7 @@ scripts/release_candidate_check.sh
 ```
 
 The script runs the Core and ProWPE package tests, signed Pro tests,
-the four-surface arm64 link matrix (Pro Debug/Release and Lite Debug/Release),
+the four-surface link matrix (Pro Debug/Release and Lite Debug/Release),
 Pro and Lite Release archive smokes, release build-setting/privacy checks, and
 `git diff --check`. Every Xcode action uses
 `SWIFT_EMIT_LOC_STRINGS=NO`. Package, Pro, and Lite checks are deliberately
@@ -52,8 +52,10 @@ The Pro and Lite smoke archives default to
 `/tmp/LoomscreenReleaseCandidate-arm64ProRelease/LiveWallpaper-LinkMatrix.xcarchive`
 and
 `/tmp/LoomscreenReleaseCandidate-arm64LiteRelease/Loomscreen-LinkMatrix.xcarchive`.
-They are ad-hoc signed only to exercise the real archive/signing path. Both
-must contain exactly arm64 executables and valid nested signatures. Pro must
+They are ad-hoc signed only to exercise the real archive/signing path. Pro must
+contain exactly arm64; Lite must contain arm64 and may additionally carry
+x86_64, since Lite ships universal for Intel Macs. Both need valid nested
+signatures. Pro must
 embed exactly one XPC service, `SteamConnector.xpc`, and it must carry **no**
 App Sandbox entitlement — an unsandboxed helper is the whole point, since a
 sandboxed one would put its STEAMROOT back in the app container and silently

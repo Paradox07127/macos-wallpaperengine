@@ -28,6 +28,7 @@ Lite 是轻量运行时，不是被阉割的界面。视频 / 网页 / Apple Aer
 | **遮挡时自适应帧率** | — | ✅ |
 | **每显示器独立渲染线程** | — | ✅ |
 | **存储管理**（工程、引擎资源、缓存） | — | ✅ |
+| **可在 Intel Mac 上运行** | ⚠️ 未测试 | — |
 
 ## 这个划分是怎么实现的
 
@@ -42,6 +43,17 @@ Pro 独有的代码用 `#if !LITE_BUILD` 圈起来。Lite 的 scheme（`LiveWall
 GitHub Releases 更新检查两个版本都跑。它比对的是 release 的 tag 而不是 asset 名，
 所以同时挂着两个 DMG 的那一个 release 能服务两边。两个版本都不会安装任何东西——
 横幅只会打开 release 页面。
+
+## 架构
+
+Lite 以 universal 二进制（arm64 + x86_64）分发，因此可以在能升到 macOS 14.6 的
+Intel Mac 上运行。**Intel 切片从未在 Intel 硬件上测试过** —— 它能编译链接，硬件采样
+那几条路径（SMC 传感器键、`IOAccelerator` 的 GPU 统计、`hw.perflevel*` 核簇）也都带
+Intel 兜底，但没有人在真的 Intel Mac 上跑过。真出问题时，最可能的表现是监视器面板上
+读数为空，而不是崩溃。欢迎反馈。
+
+Pro 只有 arm64。它的 Metal 场景渲染器从未在 Intel GPU 上跑过；发一个未经测试的渲染器，
+和发一个未经测试的小组件是两个量级的风险。
 
 ## 许可
 
