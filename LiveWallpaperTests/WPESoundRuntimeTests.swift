@@ -344,13 +344,266 @@ struct WPESoundRuntimeTests {
         #expect(snapshot.hasOpenFile == false)
     }
 
-    private static func writeTinyWAV(to url: URL) throws {
+    // MARK: - PAR-12: master mute is gain-only (WPE keeps the audio timeline running)
+
+    @Test("Master mute zeroes player gain and unmute restores per-track volume")
+    func muteIsGainOnlyOnPlayerGain() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPESoundRuntimeMuteGain-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Self.writeTinyWAV(to: root.appendingPathComponent("gain.wav"))
+
+        let runtime = WPESoundRuntime(
+            resolver: WPEMultiRootResourceResolver(primaryRootURL: root, dependencyMounts: [])
+        )
+        defer { runtime.stop() }
+        let sound = WPESceneSoundObject(
+            id: "gain",
+            name: "Gain",
+            soundRelativePaths: ["gain.wav"],
+            volume: 0.5,
+            playbackMode: "loop",
+            startSilent: true
+        )
+
+        #expect(runtime.prepare(sounds: [sound]) == 1)
+        var snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume == 0.5)
+
+        runtime.setMuted(true)
+        snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume == 0)
+
+        // A volume binding arriving while muted must not leak through the mute.
+        runtime.setVolume(0.75, forSoundID: "gain")
+        snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume == 0)
+        #expect(snapshot.sceneVolume == 0.75)
+
+        runtime.setMuted(false)
+        snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume == 0.75)
+    }
+
+    @Test("Mute stops the engine outright and unmute restarts it")
+    func muteStopsTheEngine() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPESoundRuntimeMuteRun-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Self.writeTinyWAV(to: root.appendingPathComponent("run.wav"))
+
+        let runtime = WPESoundRuntime(
+            resolver: WPEMultiRootResourceResolver(primaryRootURL: root, dependencyMounts: [])
+        )
+        defer { runtime.stop() }
+        let sound = WPESceneSoundObject(
+            id: "run",
+            name: "Run",
+            soundRelativePaths: ["run.wav"],
+            volume: 1,
+            playbackMode: "loop",
+            startSilent: false
+        )
+
+        #expect(runtime.prepare(sounds: [sound]) == 1)
+        #expect(!runtime.debugEngineIsRunning())
+        runtime.setMuted(true)
+        #expect(!runtime.debugEngineIsRunning())
+
+        // AVAudioEngine.start() needs an output device; bail on headless hosts.
+        runtime.setMuted(false)
+        guard runtime.play() else { return }
+        #expect(runtime.debugEngineIsRunning())
+
+        runtime.setMuted(true)
+        #expect(
+            !runtime.debugEngineIsRunning(),
+            "mute must stop decode and render callbacks, not just zero the gain"
+        )
+        runtime.setMuted(false)
+        #expect(runtime.debugEngineIsRunning(), "unmute must restart the engine")
+    }
+
+    @Test("Unmuting stays paused while suspended; resume then restarts it")
+    func muteAndSuspendAreIndependentPauseReasons() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPESoundRuntimeSuspend-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Self.writeTinyWAV(to: root.appendingPathComponent("suspend.wav"))
+
+        let runtime = WPESoundRuntime(
+            resolver: WPEMultiRootResourceResolver(primaryRootURL: root, dependencyMounts: [])
+        )
+        defer { runtime.stop() }
+        let sound = WPESceneSoundObject(
+            id: "suspend",
+            name: "Suspend",
+            soundRelativePaths: ["suspend.wav"],
+            volume: 1,
+            playbackMode: "loop",
+            startSilent: false
+        )
+
+        #expect(runtime.prepare(sounds: [sound]) == 1)
+        // AVAudioEngine.start() needs an output device; bail on headless hosts.
+        guard runtime.play() else { return }
+
+        // Both reasons active; clearing only one must not resume playback.
+        runtime.setMuted(true)
+        runtime.pause()
+        #expect(!runtime.debugEngineIsRunning())
+        runtime.setMuted(false)
+        #expect(!runtime.debugEngineIsRunning(), "unmute must not defeat a performance suspend")
+        runtime.resume()
+        #expect(runtime.debugEngineIsRunning())
+        let snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume > 0, "resume must restore the unmuted gain")
+    }
+
+    @Test("Engine pauses when no track is enabled, muted or not")
+    func enginePausesWithoutEnabledTracks() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPESoundRuntimeIdle-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Self.writeTinyWAV(to: root.appendingPathComponent("idle.wav"))
+        let resolver = WPEMultiRootResourceResolver(primaryRootURL: root, dependencyMounts: [])
+
+        let runtime = WPESoundRuntime(resolver: resolver)
+        defer { runtime.stop() }
+        let silent = WPESceneSoundObject(
+            id: "idle",
+            name: "Idle",
+            soundRelativePaths: ["idle.wav"],
+            volume: 1,
+            playbackMode: "loop",
+            startSilent: true
+        )
+        #expect(runtime.prepare(sounds: [silent]) == 1)
+        #expect(runtime.play() == false)
+        #expect(!runtime.debugEngineIsRunning())
+
+        let audible = WPESceneSoundObject(
+            id: "idle",
+            name: "Idle",
+            soundRelativePaths: ["idle.wav"],
+            volume: 1,
+            playbackMode: "loop",
+            startSilent: false
+        )
+        #expect(runtime.prepare(sounds: [audible]) == 1)
+        // AVAudioEngine.start() needs an output device; bail on headless hosts.
+        guard runtime.play() else { return }
+        runtime.setVisible(false, forSoundID: "idle")
+        #expect(!runtime.debugEngineIsRunning(), "disabling the last track must pause the engine")
+    }
+
+    @Test("A muted loop stops advancing and resumes where it stopped")
+    func mutedLoopStopsAdvancing() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPESoundRuntimeMutedLoop-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Self.writeTinyWAV(to: root.appendingPathComponent("a.wav"))
+        try Self.writeTinyWAV(to: root.appendingPathComponent("b.wav"))
+
+        let runtime = WPESoundRuntime(
+            resolver: WPEMultiRootResourceResolver(primaryRootURL: root, dependencyMounts: [])
+        )
+        defer { runtime.stop() }
+        let sound = WPESceneSoundObject(
+            id: "mutedloop",
+            name: "MutedLoop",
+            soundRelativePaths: ["a.wav", "b.wav"],
+            volume: 1,
+            playbackMode: "loop",
+            startSilent: false
+        )
+
+        #expect(runtime.prepare(sounds: [sound]) == 1)
+        // AVAudioEngine.start() needs an output device; bail on headless hosts.
+        guard runtime.play() else { return }
+        // Control group: unmuted, this loop demonstrably keeps flipping segments.
+        var observed = try #require(runtime.debugTrackSnapshots().first).lastScheduledPathIndex
+        var flips = 0
+        let runningDeadline = Date().addingTimeInterval(3)
+        while flips < 2, Date() < runningDeadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+            let current = try #require(runtime.debugTrackSnapshots().first).lastScheduledPathIndex
+            if current != observed {
+                flips += 1
+                observed = current
+            }
+        }
+        #expect(flips >= 2, "control group: an unmuted loop must keep scheduling segments")
+
+        runtime.setMuted(true)
+        // Let any in-flight completion from before the mute settle before sampling.
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let quiesced = try #require(runtime.debugTrackSnapshots().first).lastScheduledPathIndex
+        try await Task.sleep(nanoseconds: 500_000_000)
+        #expect(
+            try #require(runtime.debugTrackSnapshots().first).lastScheduledPathIndex == quiesced,
+            "a muted loop must stop advancing; the engine is paused, not just silenced"
+        )
+    }
+
+    @Test("A muted single-shot is held, not consumed, and completes after unmute")
+    func mutedSingleShotIsHeldThenCompletes() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPESoundRuntimeMutedSingle-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        // 1 s of audio so the mute below lands well before the file can finish.
+        try Self.writeTinyWAV(to: root.appendingPathComponent("one.wav"), frameLength: 8000)
+
+        let runtime = WPESoundRuntime(
+            resolver: WPEMultiRootResourceResolver(primaryRootURL: root, dependencyMounts: [])
+        )
+        defer { runtime.stop() }
+        let sound = WPESceneSoundObject(
+            id: "one",
+            name: "One",
+            soundRelativePaths: ["one.wav"],
+            volume: 1,
+            playbackMode: "single",
+            startSilent: false
+        )
+
+        #expect(runtime.prepare(sounds: [sound]) == 1)
+        // AVAudioEngine.start() needs an output device; bail on headless hosts.
+        guard runtime.play() else { return }
+        runtime.setMuted(true)
+
+        // Muted for several times the file's own duration: a paused engine must not
+        // consume it, so the track is still pending when we unmute.
+        try await Task.sleep(nanoseconds: 3_000_000_000)
+        #expect(
+            try #require(runtime.debugTrackSnapshots().first).isEnabled,
+            "a muted single must be held, not silently consumed"
+        )
+
+        runtime.setMuted(false)
+        let deadline = Date().addingTimeInterval(5)
+        var snapshot = try #require(runtime.debugTrackSnapshots().first)
+        while snapshot.isEnabled, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            snapshot = try #require(runtime.debugTrackSnapshots().first)
+        }
+        #expect(!snapshot.isEnabled, "after unmute the single must reach its completion")
+        #expect(snapshot.scheduledSegmentCount == 0)
+    }
+
+    private static func writeTinyWAV(to url: URL, frameLength: AVAudioFrameCount = 80) throws {
         let format = try #require(AVAudioFormat(
             standardFormatWithSampleRate: 8_000,
             channels: 1
         ))
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 80))
-        buffer.frameLength = 80
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameLength))
+        buffer.frameLength = frameLength
         if let samples = buffer.floatChannelData?[0] {
             for index in 0..<Int(buffer.frameLength) {
                 samples[index] = 0
