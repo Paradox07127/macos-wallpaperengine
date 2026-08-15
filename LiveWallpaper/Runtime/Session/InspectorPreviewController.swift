@@ -93,6 +93,9 @@ final class InspectorPreviewController {
                 generator.appliesPreferredTrackTransform = true
                 generator.requestedTimeToleranceBefore = .zero
                 generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
+                // Poster only fills the inspector preview pane / monitor backdrop,
+                // so don't decode a 4K/8K frame; aspect-fit is preserved.
+                generator.maximumSize = CGSize(width: 1280, height: 1280)
 
                 let loadedDuration = try? await asset.load(.duration)
                 let (cgImage, actualTime) = try await generator.image(at: targetTime)

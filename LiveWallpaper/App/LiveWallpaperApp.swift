@@ -170,8 +170,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lifecycle.schedule { [weak self] in
                 self?.showOnboarding()
             }
-        } else {
-            scheduleSettingsWindowPrewarm()
         }
 
         #if !LITE_BUILD
@@ -324,14 +322,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Settings Window
 
-    private func scheduleSettingsWindowPrewarm() {
-        guard !runtimeOptions.isTesting, lifecycle.allowsWork else { return }
-
-        lifecycle.schedule(after: .milliseconds(1_200)) { [weak self] in
-            self?.prewarmSettingsWindow()
-        }
-    }
-
+    /// No launch-time caller anymore (the automatic prewarm kept the whole
+    /// SwiftUI tree resident in a background app); the window is built on first
+    /// `showSettings`. Kept because SamplerOwnershipTests slices this function.
     func prewarmSettingsWindow() {
         guard lifecycle.allowsWork,
               settingsWindowController == nil,
