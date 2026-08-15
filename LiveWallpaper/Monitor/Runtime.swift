@@ -4,6 +4,58 @@ import os
 
 let monitorSourcesLog = os.Logger(subsystem: "com.livewallpaper", category: "MonitorSources")
 
+/// The expensive samplers, keyed by whether any visible widget still displays
+/// their output. A widget's *kind* only says what it could ever need; these say
+/// what it wants right now, after its own section toggles.
+struct MonitorSampleDemand: Sendable, Equatable {
+    /// SMC temperature/fan reads.
+    var sensors = false
+    /// Full process-table walk.
+    var topProcesses = false
+    /// Per-process disk I/O attribution (rusage deltas inside that walk).
+    var processIO = false
+
+    func union(_ other: Self) -> Self {
+        Self(
+            sensors: sensors || other.sensors,
+            topProcesses: topProcesses || other.topProcesses,
+            processIO: processIO || other.processIO
+        )
+    }
+
+    /// Defaults are `true`: an absent option key means the section is showing.
+    private static func shows(_ placement: MonitorWidgetPlacement, _ key: String) -> Bool {
+        placement.options[key]?.boolValue ?? true
+    }
+
+    static func of(_ widgets: [MonitorWidgetPlacement]) -> Self {
+        var demand = Self()
+        for widget in widgets {
+            switch widget.kind {
+            case .cpu:
+                // CPU's "Top by CPU" column has no toggle — it draws whenever
+                // the sampler hands it processes, so the walk is unconditional.
+                demand.topProcesses = true
+                demand.sensors = demand.sensors || shows(widget, "showSensors")
+            case .gpu:
+                demand.sensors = demand.sensors || shows(widget, "showSensors")
+            case .power:
+                // No options popover, so its sensor row is always live.
+                demand.sensors = true
+            case .processes:
+                demand.topProcesses = true
+            case .memory:
+                demand.topProcesses = demand.topProcesses || shows(widget, "showTopProcesses")
+            case .disk:
+                demand.processIO = demand.processIO || shows(widget, "showTopProcesses")
+            case .network, .fleet, .aiEngine:
+                break
+            }
+        }
+        return demand
+    }
+}
+
 struct MonitorRuntimeOptions: Sendable, Equatable {
     var system = true
     var agents = false
@@ -13,6 +65,13 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
     /// Union of kinds across screens on this lease.
     var activeWidgetKinds: Set<MonitorWidgetKind>?
     var gpuSampleSeconds: Double?
+    /// Board-configured seconds between system samples. Nil keeps
+    /// `SystemMetricsSource`'s own default.
+    var sampleIntervalSeconds: Double?
+    /// What the visible widgets still want sampled after their own section
+    /// toggles. Nil = no per-widget information available, so nothing is
+    /// narrowed (fail open — a missing demand must never starve a widget).
+    var sampleDemand: MonitorSampleDemand?
 
     /// Exhaustive: new widget kinds must declare metrics demand (agent-only boards skip system pipeline).
     static func requiresSystemMetrics(for kinds: Set<MonitorWidgetKind>) -> Bool {
@@ -375,6 +434,7 @@ actor Runtime {
     static func merged(_ options: [MonitorRuntimeOptions]) -> MonitorRuntimeOptions? {
         guard !options.isEmpty else { return nil }
         var merged = MonitorRuntimeOptions(system: false)
+        var sawNilDemand = false
         for entry in options {
             merged.system = merged.system || entry.system
             merged.agents = merged.agents || entry.agents
@@ -387,17 +447,51 @@ actor Runtime {
             if let seconds = entry.gpuSampleSeconds {
                 merged.gpuSampleSeconds = min(merged.gpuSampleSeconds ?? seconds, seconds)
             }
+            // One shared sampler feeds every board, so the fastest board wins.
+            if let seconds = entry.sampleIntervalSeconds {
+                merged.sampleIntervalSeconds = min(merged.sampleIntervalSeconds ?? seconds, seconds)
+            }
+            // Union, and a single nil disables narrowing for the whole lease.
+            if let demand = entry.sampleDemand, !sawNilDemand {
+                merged.sampleDemand = merged.sampleDemand.map { $0.union(demand) } ?? demand
+            } else if entry.sampleDemand == nil {
+                sawNilDemand = true
+                merged.sampleDemand = nil
+            }
         }
         return merged
     }
 
-    static func gpuCadence(forSeconds seconds: Double?) -> Int? {
-        guard let seconds, seconds.isFinite, seconds > 0 else { return nil }
-        return max(1, Int((seconds / 2.0).rounded()))
+    /// How many base samples to skip between GPU reads.
+    ///
+    /// Must divide by the interval actually handed to `SystemMetricsSource`, not
+    /// by a constant: the base tick used to be a fixed 2s, and a board can now
+    /// pick anything in 0.5…5s. Rounding up rather than to nearest, because
+    /// sampling the GPU *more* often than asked is the expensive direction.
+    static func gpuCadence(forSeconds seconds: Double?, baseInterval: Double) -> Int? {
+        guard let seconds, seconds.isFinite, seconds > 0,
+              baseInterval.isFinite, baseInterval > 0 else { return nil }
+        return max(1, Int((seconds / baseInterval).rounded(.up)))
     }
 
     /// Map the union of placed widget kinds to the system source's per-concern
     /// demand gates. Each expensive walk runs only when its widget is on the board.
+    /// Kind says what a widget *could* need; the per-widget section toggles say
+    /// what it still wants. Sampling honours the narrower answer, so switching a
+    /// section off stops the SMC reads / process walk instead of only hiding the
+    /// result. `nil` demand leaves the kind baseline untouched.
+    static func narrowed(
+        _ options: SystemMetricsSource.Options,
+        to demand: MonitorSampleDemand?
+    ) -> SystemMetricsSource.Options {
+        guard let demand else { return options }
+        var narrowed = options
+        narrowed.sensors = options.sensors && demand.sensors
+        narrowed.topProcesses = options.topProcesses && demand.topProcesses
+        narrowed.processIO = options.processIO && demand.processIO
+        return narrowed
+    }
+
     static func systemOptions(for kinds: Set<MonitorWidgetKind>) -> SystemMetricsSource.Options {
         SystemMetricsSource.Options(
             gpu: kinds.contains(.gpu),
@@ -503,12 +597,26 @@ actor Runtime {
         var built: [any MonitorDataSource] = []
         if resolved.system {
             if let kinds = resolved.activeWidgetKinds {
+                let baseInterval = resolved.sampleIntervalSeconds ?? 2.0
                 built.append(SystemMetricsSource(
-                    options: Self.systemOptions(for: kinds),
-                    gpuSampleCadence: Self.gpuCadence(forSeconds: resolved.gpuSampleSeconds) ?? 3
+                    options: Self.narrowed(
+                        Self.systemOptions(for: kinds),
+                        to: resolved.sampleDemand
+                    ),
+                    interval: baseInterval,
+                    gpuSampleCadence: Self.gpuCadence(
+                        forSeconds: resolved.gpuSampleSeconds,
+                        baseInterval: baseInterval
+                    ) ?? Self.gpuCadence(
+                        forSeconds: MonitorWidgetDraft.gpuDefaultSeconds,
+                        baseInterval: baseInterval
+                    ) ?? 3
                 ))
             } else {
-                built.append(SystemMetricsSource(includeTopProcesses: resolved.topProcesses))
+                built.append(SystemMetricsSource(
+                    includeTopProcesses: resolved.topProcesses,
+                    interval: resolved.sampleIntervalSeconds ?? 2.0
+                ))
             }
         }
         let factories: [SourceFactory]

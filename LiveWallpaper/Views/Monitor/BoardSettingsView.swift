@@ -72,35 +72,40 @@ struct BoardSettingsView: View {
 
     // MARK: - Board-level controls
 
+    /// Title + readout on one line, slider on its own full-width line below.
+    /// The 19-stop grid needs a longer track than the shared 96 pt inspector
+    /// slider geometry allows next to a title.
     private var refreshRateRow: some View {
-        SettingRow(
-            icon: "arrow.triangle.2.circlepath",
-            iconColor: .blue,
-            title: "Refresh Rate",
-            info: "How often the instruments sample"
-        ) {
-            HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
-                // Dragging updates only the local draft (live label); the value is committed ONCE on release.
-                Slider(
-                    value: Binding(
-                        get: { draft.refreshHz },
-                        set: { draft.refreshHz = MonitorBoardConfiguration.clampedRefreshHz($0) }
-                    ),
-                    in: 0.2...2.0,
-                    onEditingChanged: { editing in
-                        if !editing { commit(draft) }
-                    }
-                )
-                .controlSize(.small)
-                // Flexible, not fixed: at the inspector's 268 pt floor a fixed 96 pt
-                // track starves the title down to "Re…". Shrinking the track first
-                // keeps the label readable; 56 pt is the narrowest still-draggable slider.
-                .frame(minWidth: 56, maxWidth: DesignTokens.Inspector.sliderWidth)
-                Text(verbatim: Self.refreshHzLabel(draft.refreshHz))
+        VStack(alignment: .leading, spacing: 6) {
+            SettingRow(
+                icon: "arrow.triangle.2.circlepath",
+                iconColor: .blue,
+                title: "Refresh Interval (seconds)",
+                info: "How often the instruments sample. Longer intervals use less energy."
+            ) {
+                Text(verbatim: Self.refreshIntervalLabel(draft.refreshIntervalSeconds))
                     .font(DesignTokens.Typography.metric)
                     .foregroundStyle(.secondary)
                     .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
             }
+            // Slider rides the step *index*, not the seconds value — that is what
+            // makes the scale non-uniform (0.1 s below 2 s, 1 s above) while every
+            // stop keeps the same drag distance.
+            Slider(
+                value: Binding(
+                    get: { Double(Self.refreshIntervalIndex(draft.refreshIntervalSeconds)) },
+                    set: { draft.refreshIntervalSeconds = Self.refreshInterval(atIndex: Int($0.rounded())) }
+                ),
+                in: 0...Double(MonitorBoardConfiguration.refreshIntervalSteps.count - 1),
+                step: 1,
+                onEditingChanged: { editing in
+                    if !editing { commit(draft) }
+                }
+            )
+            .controlSize(.small)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel(Text("Refresh Interval (seconds)"))
+            .accessibilityValue(Text(verbatim: Self.refreshIntervalLabel(draft.refreshIntervalSeconds)))
         }
     }
 
@@ -398,9 +403,23 @@ struct BoardSettingsView: View {
 
     // MARK: - Formatting helpers
 
-    nonisolated static func refreshHzLabel(_ hz: Double) -> String {
-        let clamped = MonitorBoardConfiguration.clampedRefreshHz(hz)
-        return String(format: "%.1f Hz", clamped)
+    /// Whole seconds print without a decimal so the coarse half of the grid
+    /// reads "3" rather than "3.0" next to the fine half's "1.2".
+    nonisolated static func refreshIntervalLabel(_ seconds: Double) -> String {
+        let snapped = MonitorBoardConfiguration.snappedRefreshInterval(seconds)
+        return snapped == snapped.rounded()
+            ? String(format: "%.0f", snapped)
+            : String(format: "%.1f", snapped)
+    }
+
+    nonisolated static func refreshIntervalIndex(_ seconds: Double) -> Int {
+        let snapped = MonitorBoardConfiguration.snappedRefreshInterval(seconds)
+        return MonitorBoardConfiguration.refreshIntervalSteps.firstIndex(of: snapped) ?? 0
+    }
+
+    nonisolated static func refreshInterval(atIndex index: Int) -> Double {
+        let steps = MonitorBoardConfiguration.refreshIntervalSteps
+        return steps[min(max(index, 0), steps.count - 1)]
     }
 
 }

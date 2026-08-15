@@ -30,9 +30,22 @@ struct CPUWidgetView: View {
     private var cpuFraction: Double { system?.cpuTotal ?? 0 }
     private var peakFraction: Double { history.cpuPeak }
 
-    /// Trailing window (seconds ≈ 1 Hz samples) of the total-load history.
+    /// Trailing window of the total-load history, cut by wall clock.
+    ///
+    /// Not `suffix(seconds)`: that only equals N seconds while the board samples
+    /// at exactly 1 Hz, and the refresh slider now spans 0.5…5s — at 5s a "60s"
+    /// sparkline was really showing five minutes. Same shape as the GPU widget's
+    /// window, which was already time-based.
     private func trend(_ seconds: Int) -> [Double] {
-        Array(history.cpuTotal.suffix(max(seconds, 2)))
+        let values = history.cpuTotal
+        let times = history.sampleTimes
+        guard times.count == values.count, let last = times.last else {
+            return Array(values.suffix(max(seconds, 2)))
+        }
+        let cutoff = last - Double(seconds)
+        let windowed = zip(times, values).filter { $0.0 >= cutoff }.map(\.1)
+        // Sparkline needs two points to draw a segment.
+        return windowed.count >= 2 ? windowed : Array(values.suffix(2))
     }
 
     private var cpuTempC: Double? { system?.sensors?.cpuTempC ?? system?.sensors?.socTempC }

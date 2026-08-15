@@ -6,6 +6,26 @@ import LiveWallpaperCore
 @Suite("Monitor runtime v2 plumbing")
 struct RuntimeV2PlumbingTests {
 
+    @Test("GPU cadence divides by the board's real sample interval")
+    func gpuCadenceFollowsTheBaseInterval() {
+        // The default board: 1s base, GPU asked for every 6s. Dividing by the
+        // old fixed 2s tick gave 3, i.e. twice the GPU reads the user asked for.
+        #expect(Runtime.gpuCadence(forSeconds: 6, baseInterval: 1) == 6)
+        // Fastest board: 0.5s base was 4x over-sampling.
+        #expect(Runtime.gpuCadence(forSeconds: 6, baseInterval: 0.5) == 12)
+        // Slowest board: never below one sample per tick.
+        #expect(Runtime.gpuCadence(forSeconds: 6, baseInterval: 5) == 2)
+        #expect(Runtime.gpuCadence(forSeconds: 2, baseInterval: 5) == 1)
+    }
+
+    @Test("GPU cadence rounds up so it never samples faster than requested")
+    func gpuCadenceRoundsUp() {
+        // 6s over a 4s tick is 1.5 — rounding to nearest would sample every 4s.
+        #expect(Runtime.gpuCadence(forSeconds: 6, baseInterval: 4) == 2)
+        #expect(Runtime.gpuCadence(forSeconds: nil, baseInterval: 1) == nil)
+        #expect(Runtime.gpuCadence(forSeconds: 6, baseInterval: 0) == nil)
+    }
+
     @Test("Each widget kind flips exactly its sampler gate")
     func kindMapsToItsGate() {
         #expect(Runtime.systemOptions(for: [.gpu]) == options(gpu: true, sensors: true))
@@ -15,6 +35,67 @@ struct RuntimeV2PlumbingTests {
         #expect(Runtime.systemOptions(for: [.disk]) == options(processIO: true))
         #expect(Runtime.systemOptions(for: [.aiEngine]) == options(ane: true))
         #expect(Runtime.systemOptions(for: [.power]) == options(accessories: true, sensors: true))
+    }
+
+    // MARK: - Per-widget demand narrowing
+
+    private func widget(
+        _ kind: MonitorWidgetKind,
+        _ options: [String: MonitorWidgetOptionValue] = [:]
+    ) -> MonitorWidgetPlacement {
+        MonitorWidgetPlacement(kind: kind, size: .large, options: options)
+    }
+
+    @Test("Turning a section off stops its sampler, not just its drawing")
+    func toggledOffSectionNarrowsTheSampler() {
+        let gpuNoSensors = MonitorSampleDemand.of([widget(.gpu, ["showSensors": .bool(false)])])
+        #expect(Runtime.narrowed(Runtime.systemOptions(for: [.gpu]), to: gpuNoSensors).sensors == false)
+
+        let memNoProcs = MonitorSampleDemand.of([widget(.memory, ["showTopProcesses": .bool(false)])])
+        #expect(Runtime.narrowed(Runtime.systemOptions(for: [.memory]), to: memNoProcs).topProcesses == false)
+
+        let diskNoProcs = MonitorSampleDemand.of([widget(.disk, ["showTopProcesses": .bool(false)])])
+        #expect(Runtime.narrowed(Runtime.systemOptions(for: [.disk]), to: diskNoProcs).processIO == false)
+    }
+
+    @Test("An absent option key counts as showing, so nothing is narrowed away")
+    func defaultOnKeepsSamplersLive() {
+        let demand = MonitorSampleDemand.of([widget(.gpu), widget(.memory), widget(.disk)])
+        let kinds: Set<MonitorWidgetKind> = [.gpu, .memory, .disk]
+        #expect(Runtime.narrowed(Runtime.systemOptions(for: kinds), to: demand)
+                == Runtime.systemOptions(for: kinds))
+    }
+
+    @Test("CPU's untoggleable process column keeps the walk alive")
+    func cpuAlwaysDemandsTopProcesses() {
+        // CPU has no "show top processes" switch, so no combination may drop it.
+        let demand = MonitorSampleDemand.of([widget(.cpu, ["showSensors": .bool(false)])])
+        #expect(demand.topProcesses == true)
+        #expect(demand.sensors == false)
+        let narrowed = Runtime.narrowed(Runtime.systemOptions(for: [.cpu]), to: demand)
+        #expect(narrowed.topProcesses == true)
+        #expect(narrowed.sensors == false)
+    }
+
+    @Test("One widget still wanting a sampler keeps it on for the whole board")
+    func demandUnionsAcrossWidgets() {
+        let demand = MonitorSampleDemand.of([
+            widget(.gpu, ["showSensors": .bool(false)]),
+            widget(.gpu, ["showSensors": .bool(true)]),
+        ])
+        #expect(demand.sensors == true)
+    }
+
+    @Test("Power has no options popover, so its sensor row is never narrowed away")
+    func powerAlwaysDemandsSensors() {
+        #expect(MonitorSampleDemand.of([widget(.power)]).sensors == true)
+    }
+
+    @Test("A nil demand leaves the kind baseline untouched")
+    func nilDemandFailsOpen() {
+        let kinds = Set(MonitorWidgetKind.allCases)
+        #expect(Runtime.narrowed(Runtime.systemOptions(for: kinds), to: nil)
+                == Runtime.systemOptions(for: kinds))
     }
 
     @Test("A kind with no expensive sampler leaves every gate off")

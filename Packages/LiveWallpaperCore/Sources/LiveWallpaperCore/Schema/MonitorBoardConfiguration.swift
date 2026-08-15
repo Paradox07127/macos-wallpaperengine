@@ -140,7 +140,6 @@ public struct MonitorWidgetPlacement: Codable, Equatable, Sendable, Identifiable
 
 public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
     public var schemaVersion: Int
-    public var gridColumns: Int
     public var widgets: [MonitorWidgetPlacement]
     /// Data-push cadence; renderer clamps to 0.2…2 Hz regardless of persistence.
     public var refreshHz: Double
@@ -150,7 +149,6 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
     public var reduceMotionOverride: Bool?
 
     public static let currentSchemaVersion = 4
-    public static let defaultGridColumns = 10
     public static let `default` = MonitorBoardConfiguration()
 
     /// Renderer-facing clamp for the data-push cadence (0.2…2 Hz), independent
@@ -160,16 +158,38 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
         return min(max(value, 0.2), 2.0)
     }
 
+    /// Selectable refresh intervals in seconds. Deliberately non-uniform: 0.1 s
+    /// resolution is only useful in the sub-2 s range people actually tune, so
+    /// past 2 s the grid coarsens to whole seconds instead of adding 30 stops
+    /// nobody drags to. The bounds mirror `clampedRefreshHz` exactly
+    /// (0.5 s == 2 Hz, 5 s == 0.2 Hz); 0.5 s is also `DataHub`'s publish
+    /// throttle, so sampling faster than that would be discarded work.
+    public static let refreshIntervalSteps: [Double] =
+        (5...19).map { Double($0) / 10.0 } + [2, 3, 4, 5]
+
+    /// Nearest selectable interval. Built by comparison rather than arithmetic
+    /// so the non-uniform grid stays the single source of truth.
+    public static func snappedRefreshInterval(_ seconds: Double) -> Double {
+        guard seconds.isFinite else { return 1.0 }
+        return refreshIntervalSteps.min { abs($0 - seconds) < abs($1 - seconds) } ?? 1.0
+    }
+
+    /// Seconds-per-sample view over the persisted `refreshHz`. The UI and the
+    /// sampler both speak seconds; Hz stays the stored form so existing boards
+    /// decode unchanged (no schema bump).
+    public var refreshIntervalSeconds: Double {
+        get { Self.snappedRefreshInterval(1.0 / refreshHz) }
+        set { refreshHz = Self.clampedRefreshHz(1.0 / Self.snappedRefreshInterval(newValue)) }
+    }
+
     public init(
         schemaVersion: Int = MonitorBoardConfiguration.currentSchemaVersion,
-        gridColumns: Int = MonitorBoardConfiguration.defaultGridColumns,
         widgets: [MonitorWidgetPlacement]? = nil,
         refreshHz: Double = 1.0,
         mouseInteractionEnabled: Bool = false,
         reduceMotionOverride: Bool? = nil
     ) {
         self.schemaVersion = schemaVersion
-        self.gridColumns = max(gridColumns, 1)
         self.widgets = widgets ?? Self.defaultSystemPlacements()
         self.refreshHz = Self.clampedRefreshHz(refreshHz)
         self.mouseInteractionEnabled = mouseInteractionEnabled
@@ -177,7 +197,7 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, gridColumns, widgets, refreshHz, mouseInteractionEnabled, reduceMotionOverride
+        case schemaVersion, widgets, refreshHz, mouseInteractionEnabled, reduceMotionOverride
     }
 
     /// Always consumes exactly one unkeyed element so a failed placement decode
@@ -193,7 +213,6 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? Self.currentSchemaVersion
-        gridColumns = max(try c.decodeIfPresent(Int.self, forKey: .gridColumns) ?? Self.defaultGridColumns, 1)
         let lossy = try c.decodeIfPresent([LossyPlacement].self, forKey: .widgets)
         widgets = lossy.map { $0.compactMap(\.value) } ?? Self.defaultSystemPlacements()
         refreshHz = Self.clampedRefreshHz(
@@ -202,11 +221,11 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
         mouseInteractionEnabled = try c.decodeIfPresent(Bool.self, forKey: .mouseInteractionEnabled) ?? false
         reduceMotionOverride = try c.decodeIfPresent(Bool.self, forKey: .reduceMotionOverride)
 
-        // v4: normalize the grid column density to the current default (10;
-        // earlier builds shipped 12 then 8). x/y stay 0…1 normalized, so no
-        // coordinate rewrite — the renderer's reflow/clamp absorbs the change.
+        // v4 only ever normalized `gridColumns`, which is gone — the board has
+        // laid out free-form against `MonitorBoardGeometry` (board size ÷ Apple
+        // cell pitch) for a while now. The bump is kept so a re-encoded board
+        // still records the newest schema it has been through.
         if schemaVersion < 4 {
-            gridColumns = Self.defaultGridColumns
             schemaVersion = 4
         }
     }
@@ -214,7 +233,6 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(schemaVersion, forKey: .schemaVersion)
-        try c.encode(gridColumns, forKey: .gridColumns)
         try c.encode(widgets, forKey: .widgets)
         try c.encode(refreshHz, forKey: .refreshHz)
         try c.encode(mouseInteractionEnabled, forKey: .mouseInteractionEnabled)
