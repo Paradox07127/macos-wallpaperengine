@@ -200,6 +200,48 @@ struct WPETexLazyAnimatedTextureSourceTests {
         #expect(source.texture(at: 0) == nil)
     }
 
+    @Test("Rejects a decompressedByteCount past the 256MB anti-OOM cap instead of allocating it")
+    func rejectsDecompressedByteCountPastAntiOOMCap() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        // Untrusted field from the .tex payload; must be capped before Data(count:) allocates it.
+        let oversizedByteCount = 268_435_456 + 1
+        let mip = WPETexCompressedMipmap(
+            index: 0,
+            width: 4,
+            height: 4,
+            isCompressed: true,
+            compressedBytes: Data([0x00, 0x01, 0x02, 0x03]),
+            decompressedByteCount: oversizedByteCount
+        )
+        let payload = WPETexStreamingPayload(
+            info: WPETexInfo(
+                containerVersion: 5,
+                infoVersion: 1,
+                width: 4,
+                height: 4,
+                textureFormatCode: WPETexFormat.rgba8888.rawValue,
+                format: .rgba8888,
+                mipmapCount: 1,
+                flags: 0
+            ),
+            compressedImages: [
+                WPETexCompressedImage(width: 4, height: 4, payloads: [mip]),
+            ],
+            frames: [
+                WPETexStreamingFrame(imageID: 0, subRect: CGRect(x: 0, y: 0, width: 2, height: 2), duration: 0.1),
+            ],
+            frameRate: 10,
+            loop: true
+        )
+        let source = try WPETexLazyAnimatedTextureSource(
+            payload: payload,
+            device: device,
+            label: "lazy-oom-guard"
+        )
+
+        #expect(source.texture(at: 0) == nil)
+    }
+
     @Test("LZ4-compressed source payload inflates correctly during playback")
     func lz4CompressedPayloadInflatesCorrectly() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

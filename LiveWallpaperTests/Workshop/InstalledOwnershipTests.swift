@@ -90,6 +90,35 @@ struct InstalledOwnershipCharacterizationTests {
         #expect(metadata.publishedFileID == 100)
         #expect(metadata.title == "Fixture")
         #expect(metadata.timeUpdated == Date(timeIntervalSince1970: 1_720_000_000))
+            #expect(metadata.appID == 431_960)
+        }
+
+        @Test("Steam metadata rejects consumer_app_id values that aren't exactly 431960")
+        @MainActor
+        func workshopMetadataRejectsForeignOrMalformedAppID() async {
+            // Negative — must not reach the trapping `UInt32(_:)` initializer.
+            var service = metadataService { _ in
+                .http(status: 200, headers: [:], body: Self.metadataPayload(id: "100", updated: 1, consumerAppIDLiteral: "-431960"))
+            }
+            #expect(await service.fetch(publishedFileID: 100) == .failure(.schemaMismatch))
+
+            // Overflows UInt32.max — must not reach the trapping initializer either.
+            service = metadataService { _ in
+                .http(status: 200, headers: [:], body: Self.metadataPayload(id: "100", updated: 1, consumerAppIDLiteral: "5000000000"))
+            }
+            #expect(await service.fetch(publishedFileID: 100) == .failure(.schemaMismatch))
+
+            // A different, validly-encoded Steam app's item.
+            service = metadataService { _ in
+                .http(status: 200, headers: [:], body: Self.metadataPayload(id: "100", updated: 1, consumerAppIDLiteral: "440"))
+            }
+            #expect(await service.fetch(publishedFileID: 100) == .failure(.schemaMismatch))
+
+            // Field omitted entirely.
+            service = metadataService { _ in
+                .http(status: 200, headers: [:], body: Self.metadataPayload(id: "100", updated: 1, consumerAppIDLiteral: nil))
+            }
+            #expect(await service.fetch(publishedFileID: 100) == .failure(.schemaMismatch))
     }
 
     @Test("Steam metadata maps cancellation, rate limit and transient network failure")
@@ -613,10 +642,11 @@ struct InstalledOwnershipCharacterizationTests {
         return SteamWorkshopMetadataService(session: URLSession(configuration: configuration))
     }
 
-    private static func metadataPayload(id: String, updated: Int) -> Data {
-        Data("""
+        private static func metadataPayload(id: String, updated: Int, consumerAppIDLiteral: String? = "431960") -> Data {
+            let appIDField = consumerAppIDLiteral.map { "\"consumer_app_id\":\($0)," } ?? ""
+            return Data("""
         {"response":{"result":1,"resultcount":1,"publishedfiledetails":[{
-          "publishedfileid":"\(id)","result":1,"consumer_app_id":431960,
+              "publishedfileid":"\(id)","result":1,\(appIDField)
           "title":" Fixture ","short_description":"summary","time_updated":\(updated),
           "visibility":0,"banned":0
         }]}}

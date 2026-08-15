@@ -627,6 +627,7 @@ extension WPEMetalSceneRenderer {
     /// unit testing.
     nonisolated static func staticCacheExcludedLayerIDs(
         originScriptIDs: some Sequence<String>,
+        originAnimationIDs: some Sequence<String>,
         scaleScriptIDs: some Sequence<String>,
         anglesScriptIDs: some Sequence<String>,
         colorScriptIDs: some Sequence<String>,
@@ -636,6 +637,9 @@ extension WPEMetalSceneRenderer {
         scriptAlphaOverriddenIDs: some Sequence<String>
     ) -> Set<String> {
         var ids = Set(originScriptIDs)
+        // Keyframed origins ride the same live-transform map as origin scripts,
+        // so an animated host would otherwise freeze at its first cached position.
+        ids.formUnion(originAnimationIDs)
         ids.formUnion(scaleScriptIDs)
         ids.formUnion(anglesScriptIDs)
         // Same reason as alpha: `applyingLayerColor` bakes the script value into
@@ -666,6 +670,10 @@ extension WPEMetalSceneRenderer {
         if let cached = cachedInstalledScriptLayerIDs { return cached }
         let ids = Self.staticCacheExcludedLayerIDs(
             originScriptIDs: dynamicOriginScriptInstances.keys,
+            // Memo-safe despite `dynamicOriginAnimations` having no invalidating
+            // didSet: loadDynamicOriginScripts writes it only AFTER resetting the
+            // script-instance dicts (which do invalidate) in the same sync pass.
+            originAnimationIDs: dynamicOriginAnimations.keys,
             scaleScriptIDs: dynamicScaleScriptInstances.keys,
             anglesScriptIDs: dynamicAnglesScriptInstances.keys,
             colorScriptIDs: dynamicColorScriptInstances.keys,

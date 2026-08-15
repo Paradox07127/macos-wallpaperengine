@@ -305,6 +305,54 @@ struct ResourceUtilitiesTests {
         ))
     }
 
+    @Test("Video fallback fingerprint tracks source file attributes")
+    func videoBookmarkFallbackFingerprintTracksSourceAttributes() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourceDirectory = root.appendingPathComponent("source", isDirectory: true)
+        let appSupportRoot = root.appendingPathComponent("ApplicationSupport/LiveWallpaper", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        try fileManager.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        let sourceURL = sourceDirectory.appendingPathComponent("bg.mp4")
+        try Data([0x00, 0x01, 0x02]).write(to: sourceURL)
+
+        _ = ResourceUtilities.createVideoBookmark(
+            for: sourceURL,
+            applicationSupportRootURL: appSupportRoot,
+            secureBookmarkCreator: { _ in nil },
+            localBookmarkCreator: { Data($0.path(percentEncoded: false).utf8) }
+        )
+
+        // A changed size + mtime must land in a different import directory. If
+        // the fingerprint's resourceValues read failed, both calls would
+        // collapse into the same -1/-1 identity and reuse one directory.
+        try Data([0x00, 0x01, 0x02, 0x03]).write(to: sourceURL)
+        try fileManager.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -3600)],
+            ofItemAtPath: sourceURL.path(percentEncoded: false)
+        )
+
+        // Fresh URL instance: NSURL caches resourceValues per instance, so
+        // reusing `sourceURL` would hand the fingerprint the pre-rewrite
+        // size/mtime and mask the very regression this test guards.
+        let rewrittenSourceURL = URL(fileURLWithPath: sourceURL.path(percentEncoded: false))
+
+        _ = ResourceUtilities.createVideoBookmark(
+            for: rewrittenSourceURL,
+            applicationSupportRootURL: appSupportRoot,
+            secureBookmarkCreator: { _ in nil },
+            localBookmarkCreator: { Data($0.path(percentEncoded: false).utf8) }
+        )
+
+        let importedRoot = appSupportRoot.appendingPathComponent("ImportedVideos", isDirectory: true)
+        let importedDirectories = try fileManager.contentsOfDirectory(
+            at: importedRoot,
+            includingPropertiesForKeys: nil
+        )
+        #expect(importedDirectories.count == 2)
+    }
+
     @Test("HTML folder index inference prefers standard names")
     func htmlFolderIndexInferencePrefersStandardNames() {
         let entries = ["about.html", "index.htm", "index.html"]

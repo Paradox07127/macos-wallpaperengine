@@ -578,3 +578,105 @@ private final class StubTransport: UpdateCheckerTransport, @unchecked Sendable {
         }
     }
 }
+
+@Suite("URLSessionUpdateCheckerTransport bounded fetch")
+struct URLSessionUpdateCheckerTransportBoundedFetchTests {
+    @Test("Rejects a declared Content-Length over the cap before reading any body")
+    func rejectsOversizedDeclaredLength() async {
+        UpdateCheckerURLProtocolStub.plan = { _ in
+            .http(
+                status: 200,
+                headers: [
+                    "Content-Type": "application/json",
+                    "Content-Length": "\(URLSessionUpdateCheckerTransport.maximumResponseBytes + 1)",
+                ],
+                body: Data("[]".utf8)
+            )
+        }
+        let transport = Self.makeTransport()
+        do {
+            _ = try await transport.fetchReleases(from: UpdateChecker.releasesAPI)
+            Issue.record("Expected fetchReleases to throw")
+        } catch let urlError as URLError {
+            #expect(urlError.code == .dataLengthExceedsMaximum)
+        } catch {
+            Issue.record("Expected URLError, got \(error)")
+        }
+    }
+
+    @Test("Aborts once the streamed body exceeds the cap when Content-Length is absent")
+    func abortsOnOversizedStreamedBody() async {
+        let oversized = Data(repeating: 0x5B, count: URLSessionUpdateCheckerTransport.maximumResponseBytes + 1)
+        UpdateCheckerURLProtocolStub.plan = { _ in
+            .http(status: 200, headers: ["Content-Type": "application/json"], body: oversized)
+        }
+        let transport = Self.makeTransport()
+        do {
+            _ = try await transport.fetchReleases(from: UpdateChecker.releasesAPI)
+            Issue.record("Expected fetchReleases to throw")
+        } catch let urlError as URLError {
+            #expect(urlError.code == .dataLengthExceedsMaximum)
+        } catch {
+            Issue.record("Expected URLError, got \(error)")
+        }
+    }
+
+    @Test("Still decodes a normal-size response")
+    func succeedsForNormalResponse() async throws {
+        let json = """
+        [{"tag_name":"loomscreen-v1.0.0","body":null,"draft":false,"prerelease":false,"published_at":"2026-06-01T12:00:00Z","html_url":"https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.0.0","assets":[]}]
+        """
+        UpdateCheckerURLProtocolStub.plan = { _ in
+            .http(status: 200, headers: ["Content-Type": "application/json"], body: Data(json.utf8))
+        }
+        let transport = Self.makeTransport()
+        let releases = try await transport.fetchReleases(from: UpdateChecker.releasesAPI)
+        #expect(releases.map(\.tagName) == ["loomscreen-v1.0.0"])
+    }
+
+    private static func makeTransport() -> URLSessionUpdateCheckerTransport {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [UpdateCheckerURLProtocolStub.self]
+        return URLSessionUpdateCheckerTransport(session: URLSession(configuration: config))
+    }
+}
+
+private final class UpdateCheckerURLProtocolStub: URLProtocol, @unchecked Sendable {
+    enum Plan: @unchecked Sendable {
+        case http(status: Int, headers: [String: String], body: Data)
+        case error(Error)
+    }
+
+    nonisolated(unsafe) static var plan: (@Sendable (URLRequest) -> Plan)?
+
+    override class func canInit(with _: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let plan = Self.plan else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
+        switch plan(request) {
+        case let .http(status, headers, body):
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: status,
+                httpVersion: "HTTP/1.1",
+                headerFields: headers
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+        case let .error(error):
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}

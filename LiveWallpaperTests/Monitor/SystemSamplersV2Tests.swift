@@ -284,12 +284,25 @@ struct SystemSamplersV2Tests {
         }
     }
 
-    @Test("Accessory percents are 0…1 fractions")
+    @Test("Accessory percents are 0…100")
     func accessoryUnits() {
         for accessory in SystemMetricsSamplers.sampleAccessoryBatteries() {
-            #expect(accessory.percent >= 0 && accessory.percent <= 1)
+            #expect(accessory.percent >= 0 && accessory.percent <= 100)
             #expect(!accessory.name.isEmpty)
         }
+    }
+
+    @Test("Accessory percent stores the raw IORegistry BatteryPercent value, not a 0…1 fraction")
+    func accessoryPercentMapping() {
+        #expect(SystemMetricsSamplers.clampPercent100(47) == 47)
+    }
+
+    @Test("Accessory percent clamps to 0...100 and rejects non-finite input")
+    func accessoryPercentClamp() {
+        #expect(SystemMetricsSamplers.clampPercent100(-5) == 0)
+        #expect(SystemMetricsSamplers.clampPercent100(150) == 100)
+        #expect(SystemMetricsSamplers.clampPercent100(.nan) == 0)
+        #expect(SystemMetricsSamplers.clampPercent100(.infinity) == 0)
     }
 
     @Test("ANE sample keeps only positive footprints and derives footprint-presence flag")

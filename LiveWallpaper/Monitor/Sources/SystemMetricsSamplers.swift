@@ -680,7 +680,7 @@ enum SystemMetricsSamplers {
                 accessories.append(MonitorAccessoryBattery(
                     name: product,
                     kind: accessoryKind(productName: product),
-                    percent: clamp01(percent / 100.0)
+                    percent: clampPercent100(percent)
                 ))
             }
             entry = IOIteratorNext(iterator)
@@ -778,5 +778,12 @@ enum SystemMetricsSamplers {
     private static func clamp01(_ value: Double) -> Double {
         guard value.isFinite else { return 0 }
         return min(1, max(0, value))
+    }
+
+    /// `MonitorAccessoryBattery.percent` is a 0…100 contract (matches `BatteryPercent`
+    /// from IORegistry); consumers like PowerWidgetView threshold and format it as such.
+    static func clampPercent100(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        return min(100, max(0, value))
     }
 }

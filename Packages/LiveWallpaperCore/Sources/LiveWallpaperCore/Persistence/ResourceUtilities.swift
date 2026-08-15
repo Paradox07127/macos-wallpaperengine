@@ -79,6 +79,15 @@ public final class ResourceUtilities {
             return secureBookmark
         }
 
+        // createBookmark closed its scope on return; the copy fallback reads the
+        // source (copyItem + fingerprint resourceValues) and needs its own scope.
+        let didStartScope = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartScope {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         guard let copiedURL = copyVideoIntoApplicationSupport(
             from: url,
             applicationSupportRootURL: applicationSupportRootURL

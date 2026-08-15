@@ -7,6 +7,7 @@ struct WPEStaticCacheExclusionTests {
     func alphaScriptLayersExcluded() {
         let ids = WPEMetalSceneRenderer.staticCacheExcludedLayerIDs(
             originScriptIDs: [],
+            originAnimationIDs: [],
             scaleScriptIDs: [],
             anglesScriptIDs: [],
             colorScriptIDs: [],
@@ -22,6 +23,7 @@ struct WPEStaticCacheExclusionTests {
     func layerScriptLayersExcluded() {
         let ids = WPEMetalSceneRenderer.staticCacheExcludedLayerIDs(
             originScriptIDs: [],
+            originAnimationIDs: [],
             scaleScriptIDs: [],
             anglesScriptIDs: [],
             colorScriptIDs: [],
@@ -37,6 +39,7 @@ struct WPEStaticCacheExclusionTests {
     func crossLayerAlphaWriteExcludesTarget() {
         let ids = WPEMetalSceneRenderer.staticCacheExcludedLayerIDs(
             originScriptIDs: [],
+            originAnimationIDs: [],
             scaleScriptIDs: [],
             anglesScriptIDs: [],
             colorScriptIDs: [],
@@ -52,6 +55,7 @@ struct WPEStaticCacheExclusionTests {
     func geometryExclusionsRetained() {
         let ids = WPEMetalSceneRenderer.staticCacheExcludedLayerIDs(
             originScriptIDs: ["o"],
+            originAnimationIDs: [],
             scaleScriptIDs: ["s"],
             anglesScriptIDs: ["a"],
             colorScriptIDs: [],
@@ -67,6 +71,7 @@ struct WPEStaticCacheExclusionTests {
     func colorScriptLayersExcluded() {
         let ids = WPEMetalSceneRenderer.staticCacheExcludedLayerIDs(
             originScriptIDs: [],
+            originAnimationIDs: [],
             scaleScriptIDs: [],
             anglesScriptIDs: [],
             colorScriptIDs: ["tinted"],
@@ -78,10 +83,27 @@ struct WPEStaticCacheExclusionTests {
         #expect(ids == ["tinted"])
     }
 
+    @Test("Keyframed origin-animation hosts are excluded from static caching")
+    func originAnimationLayersExcluded() {
+        let ids = WPEMetalSceneRenderer.staticCacheExcludedLayerIDs(
+            originScriptIDs: [],
+            originAnimationIDs: ["host"],
+            scaleScriptIDs: [],
+            anglesScriptIDs: [],
+            colorScriptIDs: [],
+            liveCreatedLayerIDs: [],
+            layerScriptIDs: [],
+            alphaScriptIDs: [],
+            scriptAlphaOverriddenIDs: []
+        )
+        #expect(ids == ["host"])
+    }
+
     @Test("No script sources → no exclusions")
     func emptySourcesYieldEmptySet() {
         let ids = WPEMetalSceneRenderer.staticCacheExcludedLayerIDs(
             originScriptIDs: [],
+            originAnimationIDs: [],
             scaleScriptIDs: [],
             anglesScriptIDs: [],
             colorScriptIDs: [],

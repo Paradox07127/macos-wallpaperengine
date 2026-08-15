@@ -224,10 +224,14 @@ struct ClaudeSessionModel {
 
     private mutating func accumulateTokens(from line: ClaudeTranscriptLine) {
         guard let usage = line.usage else { return }
-        tokens.input += usage.input
-        tokens.output += usage.output
-        tokens.cacheRead += usage.cacheRead
-        tokens.cacheWrite += usage.cacheWrite
+        // Routed through MonitorTokenTotals.+ so this shares its saturating-add guard
+        // against untrusted transcript usage fields (Monitor/Types.swift).
+        tokens = tokens + MonitorTokenTotals(
+            input: usage.input,
+            output: usage.output,
+            cacheRead: usage.cacheRead,
+            cacheWrite: usage.cacheWrite
+        )
     }
 
     private mutating func recordLastUsage(from line: ClaudeTranscriptLine) {

@@ -65,6 +65,9 @@ final class SteamWorkshopMetadataService {
     private let now: @Sendable () -> Date
 
     static let endpoint = URL(string: "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/")!
+        /// Single-item lookup; real payloads are a few KB. Bounds a hostile response
+        /// without risking a false reject on a legitimate one.
+        static let maxResponseBytes = 8 * 1024 * 1024
 
     init(session: URLSession = SteamWorkshopMetadataService.defaultSession(),
          now: @escaping @Sendable () -> Date = Date.init) {
@@ -89,7 +92,7 @@ final class SteamWorkshopMetadataService {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+                (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
         } catch let urlError as URLError {
             switch urlError.code {
             case .timedOut:
@@ -101,6 +104,8 @@ final class SteamWorkshopMetadataService {
             default:
                 return .failure(.unknown(urlError.localizedDescription))
             }
+            } catch is BoundedNetworkFetch.ResponseTooLarge {
+                return .failure(.responseParseFailure)
         } catch {
             return .failure(.unknown(error.localizedDescription))
         }
@@ -140,6 +145,16 @@ final class SteamWorkshopMetadataService {
         guard let id = UInt64(payload.publishedfileid), id == requested else {
             return .failure(.schemaMismatch)
         }
+            // GetPublishedFileDetails is looked up by id alone — it will happily return
+            // an item that belongs to a different Steam app. `UInt32(exactly:)` (not the
+            // trapping `UInt32(_:)`) also rejects negative/overflowing values instead of
+            // crashing on a hostile response.
+            guard let consumerAppID = payload.consumer_app_id,
+                  let appID = UInt32(exactly: consumerAppID),
+                  appID == UInt32(WorkshopQueryService.wallpaperEngineAppID)
+            else {
+                return .failure(.schemaMismatch)
+            }
         // Steam result code: 1 = OK, 9 = not found, 15 = access denied.
         switch payload.result {
         case 1:
@@ -184,7 +199,7 @@ final class SteamWorkshopMetadataService {
             timeCreated: payload.time_created.map { Date(timeIntervalSince1970: TimeInterval($0)) },
             visibility: visibility,
             isBanned: (payload.banned ?? 0) != 0,
-            appID: UInt32(payload.consumer_app_id ?? 0),
+                appID: appID,
             steamCommunityURL: communityURL
         ))
     }

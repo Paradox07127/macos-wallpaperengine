@@ -204,8 +204,11 @@ extension AppleAerialsLibrary {
                     "Apple Aerials directory bookmark is stale; refreshing in place",
                     category: .fileAccess
                 )
-                if let fresh = try? Self.createReadOnlyBookmark(for: resolution.url) {
-                    SettingsManager.shared.saveAerialsDirectoryBookmark(fresh)
+                // Re-bookmarking needs the scope open (same as WPEEngineAssetsLibrary).
+                SecurityScopedBookmarkResolver.withScopedAccess(resolution.url) { _ in
+                    if let fresh = try? Self.createReadOnlyBookmark(for: resolution.url) {
+                        SettingsManager.shared.saveAerialsDirectoryBookmark(fresh)
+                    }
                 }
             }
             isAuthorized = true

@@ -236,7 +236,15 @@ struct URLSessionUpdateCheckerTransport: UpdateCheckerTransport {
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("Loomscreen-UpdateChecker", forHTTPHeaderField: "User-Agent")
 
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maximumResponseBytes)
+        } catch is BoundedNetworkFetch.ResponseTooLarge {
+            throw URLError(.dataLengthExceedsMaximum)
+        } catch {
+            throw error
+        }
 
         guard let http = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
@@ -252,9 +260,6 @@ struct URLSessionUpdateCheckerTransport: UpdateCheckerTransport {
         let contentType = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
         guard contentType.contains("json") else {
             throw URLError(.cannotParseResponse)
-        }
-        guard data.count <= Self.maximumResponseBytes else {
-            throw URLError(.dataLengthExceedsMaximum)
         }
 
         let decoder = JSONDecoder()

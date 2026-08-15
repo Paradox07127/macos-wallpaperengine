@@ -122,6 +122,18 @@ final class VideoEffectsManager {
         return mutable
     }
 
+    // MARK: - Blur Radius Clamp
+
+    /// Matches the Color Adjustments blur slider's own cap (ColorAdjustmentsView.swift:19,
+    /// `0...30`) so an out-of-range or non-finite blurRadius can't demand unbounded
+    /// CIGaussianBlur work.
+    nonisolated static let maxBlurRadius: Double = 30
+
+    nonisolated static func clampedBlurRadius(_ value: Double) -> Double {
+        guard value.isFinite, value > 0 else { return 0 }
+        return min(value, maxBlurRadius)
+    }
+
     // MARK: - Time-of-Day Warmth
 
     nonisolated static func warmthForCurrentHour() -> Double {
@@ -154,8 +166,9 @@ private final class VideoFilterChain: @unchecked Sendable {
     init(params: FilterParameters) {
         self.params = params
 
-        if params.blurRadius > 0, let f = CIFilter(name: "CIGaussianBlur") {
-            f.setValue(params.blurRadius, forKey: kCIInputRadiusKey)
+        let clampedBlurRadius = VideoEffectsManager.clampedBlurRadius(params.blurRadius)
+        if clampedBlurRadius > 0, let f = CIFilter(name: "CIGaussianBlur") {
+            f.setValue(clampedBlurRadius, forKey: kCIInputRadiusKey)
             blur = f
         } else {
             blur = nil
