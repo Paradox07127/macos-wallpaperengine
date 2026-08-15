@@ -1,0 +1,150 @@
+#if !LITE_BUILD
+import Foundation
+import Testing
+@testable import LiveWallpaper
+
+/// What the Workshop page's status bar says about the Steam connection.
+@Suite("Workshop connection step state", .serialized)
+@MainActor
+struct ConnectionStepStateTests {
+    private func makeService() -> (SteamCMDDoctorService, UserDefaults) {
+        let suiteName = "LiveWallpaperTests.ConnectionStepState.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let service = SteamCMDDoctorService(defaults: defaults)
+        return (service, defaults)
+    }
+
+    /// The reported bug: after Locate found and bound SteamCMD, the bar stayed
+    /// amber until the user ran the probes by hand. Nothing had failed — the
+    /// cached-login probe simply had not run yet, and "unchecked" was being
+    /// read as "failing".
+    @Test("A step that has not been checked yet is not a failure")
+    func uncheckedStepDoesNotReadAsFailure() {
+        let (service, _) = makeService()
+        service.workdirBookmarkData = Data([0x01])
+        service.binaryPath = "/tmp/steamcmd"
+        service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
+        service.username = "someone"
+        // cachedLogin left at .notRun, exactly as it is right after a Locate.
+
+        #expect(service.accountStepState == .notStarted)
+        #expect(service.connectionStepState != .attention)
+    }
+
+    /// Reading a step state from a completely unconfigured service returns
+    /// before it ever touches `probes`, so the only thing that could register an
+    /// Observation dependency is the defaults-backed property in the `guard`.
+    /// Those are computed, and `@Observable` does not track computed properties
+    /// — the status bar stayed on "not started" for the rest of the session.
+    @Test("Configuring the library notifies observers of the step state")
+    func libraryStepStateNotifiesWhenConfiguredFromEmpty() async {
+        let (service, _) = makeService()
+        #expect(service.libraryStepState == .notStarted)
+
+        await confirmation("observer fired") { fired in
+            withObservationTracking {
+                _ = service.libraryStepState
+            } onChange: {
+                fired()
+            }
+            service.workdirBookmarkData = Data([0x01])
+        }
+    }
+
+    @Test("Binding a binary notifies observers of the step state")
+    func binaryStepStateNotifiesWhenBoundFromEmpty() async {
+        let (service, _) = makeService()
+        #expect(service.binaryStepState == .notStarted)
+
+        await confirmation("observer fired") { fired in
+            withObservationTracking {
+                _ = service.binaryStepState
+            } onChange: {
+                fired()
+            }
+            service.binaryPath = "/tmp/steamcmd"
+        }
+    }
+
+    @Test("Setting the account notifies observers of the step state")
+    func accountStepStateNotifiesWhenSetFromEmpty() async {
+        let (service, _) = makeService()
+        #expect(service.accountStepState == .notStarted)
+
+        await confirmation("observer fired") { fired in
+            withObservationTracking {
+                _ = service.accountStepState
+            } onChange: {
+                fired()
+            }
+            service.username = "someone"
+        }
+    }
+
+    /// The relaunch bug: probe results are not persisted, so a binding carried
+    /// across launches arrives at `.notRun`. The prominent button was gated on
+    /// the strict flag, so an already-installed SteamCMD was greeted with
+    /// "Install SteamCMD…" — clicking it reinstalls what is already there.
+    @Test("A binding carried across launches does not offer to install again")
+    func boundBinarySurvivesRelaunchWithoutOfferingInstall() {
+        let (service, _) = makeService()
+        service.binaryPath = "/tmp/steamcmd"
+        // Fresh launch: bound, nothing probed yet.
+
+        #expect(!service.isBinaryReady)          // strict gate still says unverified
+        #expect(service.isBinaryPresumedReady)   // the UI still offers "Change…"
+    }
+
+    @Test("A binary whose identity probe failed does offer to install")
+    func failedIdentityProbeOffersInstall() {
+        let (service, _) = makeService()
+        service.binaryPath = "/tmp/steamcmd"
+        service.setProbe(
+            .binaryIdentity,
+            status: .red(message: "signature mismatch", command: nil)
+        )
+
+        // Control: only an actual failure may demote it back to Install.
+        #expect(!service.isBinaryPresumedReady)
+    }
+
+    @Test("A binary bound but never probed reads as unverified, not broken")
+    func boundButUnprobedBinaryIsNotAFailure() {
+        let (service, _) = makeService()
+        service.binaryPath = "/tmp/steamcmd"
+
+        #expect(service.binaryStepState == .working)
+        #expect(service.connectionStepState != .attention)
+    }
+
+    @Test("A failing probe is what turns the bar amber")
+    func failingProbeReadsAsAttention() {
+        let (service, _) = makeService()
+        service.workdirBookmarkData = Data([0x01])
+        service.binaryPath = "/tmp/steamcmd"
+        service.setProbe(.binaryIdentity, status: .red(message: "not Valve's binary", command: nil))
+
+        #expect(service.binaryStepState == .attention)
+        #expect(service.connectionStepState == .attention)
+    }
+
+    @Test("All three steps green is the only way to read ready")
+    func allStepsGreenReadsAsReady() {
+        let (service, _) = makeService()
+        service.workdirBookmarkData = Data([0x01])
+        service.binaryPath = "/tmp/steamcmd"
+        service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
+        service.username = "someone"
+        service.setProbe(.cachedLogin, status: .green(detail: "someone"))
+
+        #expect(service.connectionStepState == .ready)
+    }
+
+    @Test("Nothing set up at all reads as not started")
+    func nothingSetUpReadsAsNotStarted() {
+        let (service, _) = makeService()
+
+        #expect(service.connectionStepState == .notStarted)
+    }
+}
+#endif

@@ -181,7 +181,7 @@ struct MenuBarContent: View {
     /// Thermal pressure has no percent — short word; over-wide localized values truncate.
     private func thermalShortLabel(for state: ProcessInfo.ThermalState) -> String {
         switch state {
-        case .nominal:  return AppLanguagePreference.localizedString("OK", defaultValue: "OK")
+        case .nominal:  return AppLanguagePreference.localizedString("Normal", defaultValue: "Normal")
         case .fair:     return AppLanguagePreference.localizedString("Warm", defaultValue: "Warm")
         case .serious:  return AppLanguagePreference.localizedString("Hot", defaultValue: "Hot")
         case .critical: return AppLanguagePreference.localizedString("Crit", defaultValue: "Crit")

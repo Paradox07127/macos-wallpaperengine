@@ -17,11 +17,14 @@ struct PasteSheet: View {
             // Form — a queue of rows with their own progress is a list, and
             // grouped Form insets make it read as a settings page.
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                // The privacy sentence used to be the body of an illustrated
+                // empty state below the field, which cost a screenful of blank
+                // space to say two lines. It says the same thing here.
                 SteamSheetHeader(
                     icon: "tray.and.arrow.down.fill",
                     title: "Add from Steam Workshop",
                     iconTint: .accentColor,
-                    subtitle: "Paste Workshop URLs or item IDs. No Web API key needed — that's only for searching."
+                    subtitle: "Paste Workshop URLs or item IDs — no Web API key needed. Only public metadata is read; your Steam credentials stay in SteamCMD."
                 )
                 pasteArea
                 downloadReadinessBanner
@@ -42,11 +45,9 @@ struct PasteSheet: View {
         .frame(
             minWidth: SteamSheetWidth.dense,
             idealWidth: SteamSheetWidth.dense,
-            maxWidth: 720,
-            minHeight: 380,
-            idealHeight: 460,
-            maxHeight: 760
+            maxWidth: 720
         )
+        .fixedSize(horizontal: false, vertical: true)
         .background(DesignTokens.Colors.pageBackground)
         .overlay(alignment: .bottom) {
             ExportToast(isPresented: $toastVisible)
@@ -156,21 +157,14 @@ struct PasteSheet: View {
 
     // MARK: - Queue area
 
+    /// Nothing at all until something is queued. An empty queue is the state
+    /// the sheet opens in, and illustrating it just pushed Done off the bottom
+    /// of a mostly-blank window.
     @ViewBuilder
     private var queueArea: some View {
-        if model.rows.isEmpty {
-            emptyState
-        } else {
+        if !model.rows.isEmpty {
             queueList
         }
-    }
-
-    private var emptyState: some View {
-        IllustratedEmptyState(
-            symbol: "tray",
-            title: "Paste a Workshop URL to get started.",
-            message: "Only public metadata is read for each item. Your Steam credentials stay in SteamCMD."
-        )
     }
 
     private var queueList: some View {
@@ -191,6 +185,9 @@ struct PasteSheet: View {
             .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
             .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
         }
+        // The list owns the scrollable height; the sheet itself now shrinks to
+        // its content when the queue is empty.
+        .frame(minHeight: 200, idealHeight: 280, maxHeight: 520)
     }
 
     // MARK: - Download readiness

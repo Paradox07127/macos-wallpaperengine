@@ -178,11 +178,26 @@ final class SteamCMDDoctorService {
     var binaryDisplayPath: String?
     var workdirDisplayPath: String?
 
+    /// Bumped by every defaults-backed setter below, and read by their getters.
+    ///
+    /// `@Observable` only tracks stored properties, and these three live in
+    /// `UserDefaults`. Without this, a view whose body reads only `binaryPath`
+    /// or `workdirBookmarkData` — including the step-state properties that
+    /// `guard` on them and return before touching `probes` — registers no
+    /// dependency at all, and keeps showing "not set up" after the user sets it
+    /// up. Refreshing the display paths is not enough: it only notifies views
+    /// that happen to read those.
+    private var defaultsRevision: UInt64 = 0
+
     /// Bound SteamCMD path (not a capability; connector enforces Valve signature).
     var binaryPath: String? {
-        get { defaults.string(forKey: Keys.binaryPath) }
+        get {
+            _ = defaultsRevision
+            return defaults.string(forKey: Keys.binaryPath)
+        }
         set {
             setOptional(newValue, forKey: Keys.binaryPath)
+            defaultsRevision &+= 1
             refreshDisplayPaths()
         }
     }
@@ -191,9 +206,13 @@ final class SteamCMDDoctorService {
     var hasBoundBinary: Bool { binaryPath != nil }
 
     var workdirBookmarkData: Data? {
-        get { defaults.data(forKey: Keys.workdirBookmark) }
+        get {
+            _ = defaultsRevision
+            return defaults.data(forKey: Keys.workdirBookmark)
+        }
         set {
             setOptional(newValue, forKey: Keys.workdirBookmark)
+            defaultsRevision &+= 1
             refreshDisplayPaths()
         }
     }
@@ -204,10 +223,13 @@ final class SteamCMDDoctorService {
     }
 
     var username: String? {
-        get { defaults.string(forKey: Keys.username) }
+        get {
+            _ = defaultsRevision
+            return defaults.string(forKey: Keys.username)
+        }
         set {
             setOptional(newValue, forKey: Keys.username)
-            _ = state  // re-trigger observation chain
+            defaultsRevision &+= 1
         }
     }
 
@@ -331,6 +353,11 @@ final class SteamCMDDoctorService {
     func autoConfigureIfNeeded() async {
         if !hasBoundBinary {
             await autoDetectBinary()
+        } else if case .notRun? = probes[.binaryIdentity]?.status {
+            // The binding survives relaunch; the probe result does not. Without
+            // this, an already-configured SteamCMD spends the whole session
+            // "unverified" and never earns its green.
+            await runProbe(.binaryIdentity)
         }
         await autoConfigureWorkdirIfNeeded()
     }

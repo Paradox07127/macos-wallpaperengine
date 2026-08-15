@@ -106,8 +106,6 @@ struct WorkshopBadgeSection: View {
             }
         } header: {
             SettingsSearchSectionHeader("Thumbnail badges", anchor: .workshopBadges)
-        } footer: {
-            Text("Hidden badges stay available in each wallpaper's detail panel.")
         }
     }
 }
