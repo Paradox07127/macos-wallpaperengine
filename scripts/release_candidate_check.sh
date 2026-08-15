@@ -24,6 +24,7 @@ esac
 BUILD_SETTINGS_LOG="$(mktemp -t livewallpaper-release-build-settings.XXXXXX)"
 MATRIX_BUILD_LOG="$(mktemp -t livewallpaper-link-matrix.XXXXXX)"
 APP_TEST_RESULT_BUNDLE="${APP_TEST_RESULT_BUNDLE:-/tmp/LiveWallpaperReleaseCandidateTests-$$.xcresult}"
+LITE_TEST_RESULT_BUNDLE="${LITE_TEST_RESULT_BUNDLE:-/tmp/LoomscreenLiteReleaseCandidateTests-$$.xcresult}"
 # The link-matrix archives are throwaway — nothing downstream reads them
 # (`release-app.sh` builds its own under build/release). They used to land on a
 # fixed path and were never cleaned, so the second run of a dual-SKU release
@@ -77,6 +78,34 @@ assert_arm64_binary() {
     lipo -archs "$binary" >&2
     exit 1
   fi
+}
+
+# Lite ships universal so it can run on the Intel Macs that reach macOS 14.6.
+# arm64 is still mandatory — a Lite that lost it would be a Rosetta-only app on
+# every machine we actually test. x86_64 is optional here so the gate keeps
+# passing whether or not the Lite target carries the universal ARCHS override.
+assert_contains_arm64() {
+  local binary="$1"
+  local label="$2"
+  local archs
+  archs="$(lipo -archs "$binary")"
+  case " $archs " in
+    *" arm64 "*) ;;
+    *)
+      echo "ERROR: $label does not contain arm64 (got: $archs)." >&2
+      exit 1
+      ;;
+  esac
+  for arch in $archs; do
+    case "$arch" in
+      arm64|x86_64) ;;
+      *)
+        echo "ERROR: $label carries an unexpected architecture '$arch' (got: $archs)." >&2
+        exit 1
+        ;;
+    esac
+  done
+  echo "  ✓ $label architectures: $archs"
 }
 
 
@@ -151,6 +180,26 @@ DERIVED_DATA="$DERIVED_DATA" \
 RESULT_BUNDLE="$APP_TEST_RESULT_BUNDLE" \
 scripts/app_tests.sh full
 
+# The Pro host can only ever prove Pro's signature, so Lite's signed grants need
+# their own host. Runs through the runner for the test-count and skipped-suite
+# validation; a plain `xcodebuild test` would report green on an empty run.
+echo "== Unit tests (Lite scheme) =="
+python3 scripts/xcode_test_runner.py \
+  --label "Lite SKU smoke" \
+  --result-bundle "$LITE_TEST_RESULT_BUNDLE" \
+  --minimum-test-count 3 \
+  --require-suite LiteHostSmokeTests \
+  -- \
+  -project LiveWallpaper.xcodeproj \
+  -scheme LiveWallpaperLite \
+  -configuration Debug \
+  -destination "$MACOS_DESTINATION" \
+  -derivedDataPath "${DERIVED_DATA}LiteTests" \
+  -enableCodeCoverage NO \
+  -parallel-testing-enabled NO \
+  test \
+  SWIFT_EMIT_LOC_STRINGS=NO
+
 # Cover Pro and Lite Debug/Release links with isolated build databases.
 # Developer ID entitlements and notarization remain a separate signing-machine gate.
 PRO_DEBUG_BIN="$DERIVED_DATA/Build/Products/Debug/Loomscreen Pro.app/Contents/MacOS/Loomscreen Pro"
@@ -214,14 +263,13 @@ xcodebuild archive \
   DEVELOPMENT_TEAM="" \
   PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
-  ARCHS=arm64 \
   SWIFT_EMIT_LOC_STRINGS=NO \
   > "$MATRIX_BUILD_LOG" 2>&1 || fail_with_log "LiveWallpaperLite Release archive failed."
 
 LITE_ARCHIVED_APP="$LITE_ARCHIVE_PATH/Products/Applications/Loomscreen.app"
 LITE_RELEASE_BIN="$LITE_ARCHIVED_APP/Contents/MacOS/Loomscreen"
 [[ -x "$LITE_RELEASE_BIN" ]] || fail_with_log "Lite Release archive did not produce Loomscreen.app."
-assert_arm64_binary "$LITE_RELEASE_BIN" "Lite Release archive"
+assert_contains_arm64 "$LITE_RELEASE_BIN" "Lite Release archive"
 codesign --verify --deep --strict --verbose=2 "$LITE_ARCHIVED_APP"
 assert_no_removed_dynamic_links "$LITE_RELEASE_BIN" "Lite Release archive"
 
@@ -258,6 +306,9 @@ if [[ -d "$PRO_ARCHIVED_APP/Contents/XPCServices" ]]; then
     echo "ERROR: SteamConnector is sandboxed; its \$HOME would be the app container." >&2
     exit 1
   fi
+else
+  echo "ERROR: $PRO_ARCHIVED_APP is missing its Contents/XPCServices/SteamConnector.xpc." >&2
+  exit 1
 fi
 echo "  ✓ Pro/Lite Debug/Release links, no embedded XPC services, and Lite archive purity verified"
 

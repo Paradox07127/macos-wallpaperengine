@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 import json
 from pathlib import Path
 import re
@@ -39,6 +40,29 @@ def required_suites_missing(tests: dict[str, Any], required: Iterable[str]) -> l
     return sorted(set(required) - identifiers)
 
 
+def required_suites_all_skipped(tests: dict[str, Any], required: Iterable[str]) -> list[str]:
+    """Required suites whose Test Case nodes exist but every one of them
+    reports result == "Skipped" — the suite ran and produced zero real
+    verification (e.g. an early crash left downstream suites unexecuted, or
+    a suite's tests are all gated behind a condition that never holds in
+    this environment). A node with no "result" key at all is treated as
+    non-skipped rather than flagged, since some xcresult "tests" reports
+    omit it on nodes that plainly ran.
+    """
+    cases_by_suite: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for node in walk_nodes(tests):
+        if node.get("nodeType") != "Test Case":
+            continue
+        suite = str(node.get("nodeIdentifier", "")).split("/", 1)[0]
+        cases_by_suite[suite].append(node)
+    return sorted(
+        suite
+        for suite in required
+        if cases_by_suite.get(suite)
+        and all(case.get("result") == "Skipped" for case in cases_by_suite[suite])
+    )
+
+
 def slowest_tests(tests: dict[str, Any], limit: int) -> list[tuple[float, str]]:
     candidates: list[tuple[float, str]] = []
     for node in walk_nodes(tests):
@@ -57,6 +81,7 @@ def validate_summary(
     errors: list[str] = []
     total = summary.get("totalTestCount")
     failed = summary.get("failedTests")
+    skipped = summary.get("skippedTests")
     result = summary.get("result")
     if not isinstance(total, int):
         errors.append("xcresult summary has no integer totalTestCount")
@@ -66,6 +91,8 @@ def validate_summary(
         errors.append(f"xcresult status is {result!r}, expected 'Passed'")
     if not isinstance(failed, int) or failed != 0:
         errors.append(f"xcresult reports {failed!r} failed tests")
+    if not isinstance(skipped, int):
+        errors.append("xcresult summary has no integer skippedTests")
     return errors
 
 
@@ -168,6 +195,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--log", type=Path)
     parser.add_argument("--minimum-test-count", type=int, default=1)
     parser.add_argument("--require-suite", action="append", default=[])
+    # Suites exempt from the all-skipped false-green check (still must be
+    # present). For suites gated on an environment the runner may lack, e.g.
+    # WPECorpusManifestTests needs a local Workshop corpus CI runners don't have.
+    parser.add_argument("--allow-skipped-suite", action="append", default=[])
     parser.add_argument("--slowest", type=int, default=0)
     parser.add_argument("xcodebuild_args", nargs=argparse.REMAINDER)
     arguments = parser.parse_args()
@@ -222,6 +253,21 @@ def main() -> int:
             if missing:
                 validation_errors.append(
                     f"required suites absent from xcresult: {', '.join(missing)}"
+                )
+            all_skipped = required_suites_all_skipped(tests, arguments.require_suite)
+            exempt = set(arguments.allow_skipped_suite)
+            tolerated = sorted(set(all_skipped) & exempt)
+            if tolerated:
+                print(
+                    "note: fully-skipped but explicitly allowed: "
+                    f"{', '.join(tolerated)}",
+                    flush=True,
+                )
+            all_skipped = [suite for suite in all_skipped if suite not in exempt]
+            if all_skipped:
+                validation_errors.append(
+                    "required suites present but every test case was skipped "
+                    f"(no real verification ran): {', '.join(all_skipped)}"
                 )
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError, ValueError) as error:
         validation_errors.append(f"could not read xcresult: {error}")

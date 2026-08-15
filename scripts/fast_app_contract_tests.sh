@@ -83,6 +83,7 @@ python3 scripts/xcode_test_runner.py \
   --result-bundle "$RESULT_BUNDLE" \
   --minimum-test-count 1 \
   --slowest 10 \
+  --allow-skipped-suite WPECorpusManifestTests \
   "${required_suites[@]}" \
   -- \
   -project LiveWallpaper.xcodeproj \

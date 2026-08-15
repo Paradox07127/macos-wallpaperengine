@@ -17,7 +17,12 @@ if ! command -v swiftformat >/dev/null 2>&1; then
 fi
 
 # Collect changed/staged/untracked .swift files (skip deletions).
-mapfile -t files < <(
+# `mapfile` is a Bash 4+ builtin; macOS ships Bash 3.2, so read the list
+# line-by-line instead.
+files=()
+while IFS= read -r file; do
+  [ -n "$file" ] && files+=("$file")
+done < <(
   {
     git diff --name-only --diff-filter=d "$BASE" -- '*.swift'
     git diff --name-only --cached --diff-filter=d -- '*.swift'
