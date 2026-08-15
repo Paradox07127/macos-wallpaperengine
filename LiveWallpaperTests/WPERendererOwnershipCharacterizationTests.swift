@@ -405,6 +405,9 @@
                     "previousFrameHistory = nil",
                     "outputTexturePool.removeAll()",
                     "bootstrapPreviousTextureCache.removeAll()",
+                    // Size/format-keyed; rebuilt on miss, so stale-scene entries
+                    // are dropped with the other transients instead of leaking.
+                    "sceneReadHazardSnapshotCache.removeAll()",
                     "compiledShaderResultByPassID.removeAll()",
                 ]
             )
@@ -415,7 +418,6 @@
                 "customSamplerStateCache",
                 "textGlyphPipelineCache",
                 "particlePipelineCache",
-                "sceneReadHazardSnapshotCache",
                 "refractionBackground",
                 "pipelineCache",
                 "depthCache",
