@@ -48,7 +48,11 @@ struct DefaultsIsolationTests {
             "LiveWallpaper/Views/Settings/WorkshopBadgeSection.swift",
             "LiveWallpaper/Views/Workshop/BrowseCard.swift",
             "LiveWallpaper/Views/ScreenDetail/HistoryRow.swift",
-            "LiveWallpaper/Views/Settings/WorkshopSettingsView.swift"
+            "LiveWallpaper/Views/Settings/WorkshopSettingsView.swift",
+            // The Workshop settings page's `@AppStorage` moved into these two
+            // when its setup rows became sections; the guard follows the code.
+            "LiveWallpaper/Views/Settings/WorkshopConnectionSetup.swift",
+            "LiveWallpaper/Views/Settings/WorkshopEngineAssetsSection.swift"
         ]
         for relativePath in appStorageFiles {
             let source = try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)

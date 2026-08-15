@@ -4,25 +4,21 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores the key in the Workshop container-file slot (this Mac only, no iCloud sync).
+///
+/// Kept for the surfaces that are genuinely modal — onboarding and the Browse
+/// pane's "you need a key to do this" prompt. Settings enters the same key
+/// inline through `WorkshopAPIKeySection`; both drive `SteamWebAPIKeyEntryModel`.
 struct SteamWebAPIKeyEntrySheet: View {
     let services: WorkshopServices
     let onSaved: () -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var apiKey: String = ""
-    @State private var hasReadTOU: Bool = false
-    @State private var isShowingKey: Bool = false
-    @State private var validation: Validation = .empty
-    @State private var validationTask: Task<Void, Never>?
-    @State private var validatedAPIKey: String?
-    @State private var savingError: String?
+    @State private var model: SteamWebAPIKeyEntryModel
 
-    enum Validation: Equatable {
-        case empty
-        case wrongShape
-        case validating
-        case valid
-        case error(String)
+    init(services: WorkshopServices, onSaved: @escaping () -> Void) {
+        self.services = services
+        self.onSaved = onSaved
+        _model = State(initialValue: SteamWebAPIKeyEntryModel(services: services))
     }
 
     var body: some View {
@@ -31,21 +27,7 @@ struct SteamWebAPIKeyEntrySheet: View {
             footer
         }
         .frame(width: SteamSheetWidth.form)
-        .onAppear {
-            Task {
-                if let stored = try? await services.keychain.loadWebAPIKey() {
-                    apiKey = stored
-                    hasReadTOU = true
-                    triggerValidation()
-                }
-            }
-        }
-    }
-
-    private enum SteamLinks {
-        static let apiKey = URL(string: "https://steamcommunity.com/dev/apikey")!
-        static let terms = URL(string: "https://steamcommunity.com/dev/apiterms")!
-        static let limitedAccounts = URL(string: "https://help.steampowered.com/en/faqs/view/71D3-35C2-AD96-AA3A")!
+        .task { await model.loadStoredKey() }
     }
 
     private var innerContent: some View {
@@ -61,7 +43,7 @@ struct SteamWebAPIKeyEntrySheet: View {
         SheetFooterBar(
             primaryTitle: "Save",
             primaryAction: { save() },
-            primaryDisabled: validation != .valid,
+            primaryDisabled: !model.canSave,
             primaryHelp: "Save key and close",
             cancelTitle: "Cancel",
             cancelAction: { dismiss() },
@@ -81,22 +63,11 @@ struct SteamWebAPIKeyEntrySheet: View {
     /// the official generate page (primary) and the revoke page.
     private var safetyCard: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            HStack(alignment: .top, spacing: DesignTokens.Spacing.xs) {
-                Image(systemName: "shield.lefthalf.filled")
-                    .foregroundStyle(DesignTokens.Colors.Status.warning)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Official source only")
-                        .font(DesignTokens.Typography.caption.weight(.bold))
-                    Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.")
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            SteamWebAPIKeySafetyNotice()
 
             HStack(spacing: DesignTokens.Spacing.sm) {
                 Button {
-                    NSWorkspace.shared.open(SteamLinks.apiKey)
+                    NSWorkspace.shared.open(SteamWebAPIKeyLinks.apiKey)
                 } label: {
                     Label("Revoke on Steam", systemImage: "arrow.uturn.backward")
                 }
@@ -105,7 +76,7 @@ struct SteamWebAPIKeyEntrySheet: View {
                 Spacer(minLength: 0)
 
                 Button {
-                    NSWorkspace.shared.open(SteamLinks.apiKey)
+                    NSWorkspace.shared.open(SteamWebAPIKeyLinks.apiKey)
                 } label: {
                     Label("Get a key", systemImage: "key.fill")
                 }
@@ -120,35 +91,26 @@ struct SteamWebAPIKeyEntrySheet: View {
     /// TOU consent, its reference links, and the gated key entry as one logical group.
     private var entryCard: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            Toggle(isOn: $hasReadTOU) {
-                Text("I have read the Steam Web API Terms of Use.")
-                    .font(DesignTokens.Typography.body)
-            }
-            .toggleStyle(.checkbox)
+            SteamWebAPIKeyTermsToggle(model: model)
 
             HStack(spacing: DesignTokens.Spacing.sm) {
                 Button {
-                    NSWorkspace.shared.open(SteamLinks.terms)
+                    NSWorkspace.shared.open(SteamWebAPIKeyLinks.terms)
                 } label: {
                     Label("Steam Web API TOU", systemImage: "doc.text")
                 }
                 .adaptiveGlassButton(.regular, size: .small)
 
                 Button {
-                    NSWorkspace.shared.open(SteamLinks.limitedAccounts)
+                    NSWorkspace.shared.open(SteamWebAPIKeyLinks.limitedAccounts)
                 } label: {
                     Label("About Limited Accounts", systemImage: "questionmark.circle")
                 }
                 .adaptiveGlassButton(.regular, size: .small)
             }
 
-            keyField
-            validationHint
-            if let savingError {
-                Text(savingError)
-                    .font(.caption)
-                    .foregroundStyle(DesignTokens.Colors.Status.danger)
-            }
+            SteamWebAPIKeyField(model: model, onSubmit: save)
+            SteamWebAPIKeyValidationHint(model: model)
         }
         .padding(DesignTokens.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,47 +124,112 @@ struct SteamWebAPIKeyEntrySheet: View {
         )
     }
 
-    private var keyField: some View {
+    private func save() {
+        Task {
+            if await model.save() {
+                onSaved()
+                dismiss()
+            }
+        }
+    }
+}
+
+// MARK: - Shared entry controls
+
+/// Anti-phishing line. Same words wherever a key is pasted.
+struct SteamWebAPIKeySafetyNotice: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: DesignTokens.Spacing.xs) {
+            Image(systemName: "shield.lefthalf.filled")
+                .foregroundStyle(DesignTokens.Colors.Status.warning)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Official source only")
+                    .font(DesignTokens.Typography.caption.weight(.bold))
+                Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct SteamWebAPIKeyTermsToggle: View {
+    @Bindable var model: SteamWebAPIKeyEntryModel
+
+    var body: some View {
+        Toggle(isOn: $model.hasReadTOU) {
+            Text("I have read the Steam Web API Terms of Use.")
+                .font(DesignTokens.Typography.body)
+        }
+        .toggleStyle(.checkbox)
+    }
+}
+
+/// The masked field plus its reveal button. Disabled until the TOU box is ticked.
+struct SteamWebAPIKeyField: View {
+    @Bindable var model: SteamWebAPIKeyEntryModel
+    let onSubmit: () -> Void
+
+    var body: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Group {
-                if isShowingKey {
-                    TextField("Paste your 32-character key", text: $apiKey)
+                if model.isShowingKey {
+                    TextField("Paste your 32-character key", text: $model.apiKey)
                         .textFieldStyle(.plain)
                         .font(DesignTokens.Typography.code)
                         .textSelection(.enabled)
                 } else {
-                    SecureField("Paste your 32-character key", text: $apiKey)
+                    SecureField("Paste your 32-character key", text: $model.apiKey)
                         .textFieldStyle(.plain)
                         .font(DesignTokens.Typography.code)
                 }
             }
-            .disabled(!hasReadTOU)
-            .onChange(of: apiKey) { _, _ in triggerValidation() }
-            .onSubmit(save)
+            .disabled(!model.hasReadTOU)
+            .onChange(of: model.apiKey) { _, _ in model.keyChanged() }
+            .onSubmit(onSubmit)
 
             Button {
-                isShowingKey.toggle()
+                model.isShowingKey.toggle()
             } label: {
-                Image(systemName: isShowingKey ? "eye.slash" : "eye")
+                Image(systemName: model.isShowingKey ? "eye.slash" : "eye")
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .disabled(!hasReadTOU)
-            .help(isShowingKey ? Text("Hide key") : Text("Show key"))
-            .accessibilityLabel(isShowingKey ? Text("Hide key") : Text("Show key"))
+            .disabled(!model.hasReadTOU)
+            .help(model.isShowingKey ? Text("Hide key") : Text("Show key"))
+            .accessibilityLabel(model.isShowingKey ? Text("Hide key") : Text("Show key"))
         }
         .padding(.horizontal, DesignTokens.Spacing.sm)
         .padding(.vertical, DesignTokens.Spacing.xs)
         .background(Color(.controlBackgroundColor), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
         .overlay {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.sm)
-                .strokeBorder(Color.primary.opacity(hasReadTOU ? 0.15 : 0.05), lineWidth: 0.5)
+                .strokeBorder(Color.primary.opacity(model.hasReadTOU ? 0.15 : 0.05), lineWidth: 0.5)
         }
+    }
+}
+
+struct SteamWebAPIKeyValidationHint: View {
+    let model: SteamWebAPIKeyEntryModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+            hint
+            if let savingError = model.savingError {
+                Text(verbatim: savingError)
+                    .font(.caption)
+                    .foregroundStyle(DesignTokens.Colors.Status.danger)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private var validationHint: some View {
-        switch validation {
+    private var hint: some View {
+        switch model.validation {
         case .empty:
             Text("Paste your 32-character hexadecimal API key.")
                 .font(.caption)
@@ -225,98 +252,6 @@ struct SteamWebAPIKeyEntrySheet: View {
         HStack(spacing: 4) {
             Image(systemName: system).foregroundStyle(tint).imageScale(.small)
             text.font(.caption).foregroundStyle(tint)
-        }
-    }
-
-    // MARK: - Validation + save
-
-    private func triggerValidation() {
-        savingError = nil
-        validatedAPIKey = nil
-        validationTask?.cancel()
-        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            validation = .empty
-            return
-        }
-        guard isHex32(trimmed) else {
-            validation = .wrongShape
-            return
-        }
-        validation = .validating
-        let service = services.queryService
-        validationTask = Task {
-            do {
-                try await Task.sleep(nanoseconds: 250_000_000)
-                if Task.isCancelled { return }
-                let ok = try await service.validateAPIKey(trimmed)
-                if Task.isCancelled { return }
-                guard apiKey.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
-                if ok {
-                    validation = .valid
-                    validatedAPIKey = trimmed
-                } else {
-                    validation = .error("Steam rejected the key.")
-                }
-            } catch is CancellationError {
-                return
-            } catch let error as WorkshopQueryError {
-                if Task.isCancelled { return }
-                guard apiKey.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
-                validation = .error(Self.message(for: error))
-            } catch {
-                if Task.isCancelled { return }
-                guard apiKey.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed else { return }
-                validation = .error("Validation failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func save() {
-        let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard validation == .valid, validatedAPIKey == trimmed else {
-            triggerValidation()
-            return
-        }
-        Task {
-            do {
-                try await services.keychain.setWebAPIKey(trimmed)
-                await services.refreshAPIKeyStatus()
-                onSaved()
-                dismiss()
-            } catch {
-                savingError = "Couldn't save: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func isHex32(_ key: String) -> Bool {
-        key.count == 32 && key.allSatisfy(\.isHexDigit)
-    }
-
-    private static func message(for error: WorkshopQueryError) -> String {
-        switch error {
-        case .unauthorized:
-            return String(localized: "Steam rejected the key.", comment: "Steam Web API key validation error.")
-        case .keyDisabled:
-            return String(
-                localized: "Your Steam API key was disabled by Valve.",
-                comment: "Steam Web API key validation error."
-            )
-        case .rateLimited:
-            return String(
-                localized: "Steam is rate-limiting right now. Retry in a moment.",
-                comment: "Steam Web API key validation error."
-            )
-        case .networkUnreachable:
-            return String(
-                localized: "Couldn't reach Steam. Check your connection.",
-                comment: "Steam Web API key validation error."
-            )
-        case .timeout:
-            return String(localized: "Steam took too long to respond.", comment: "Steam Web API key validation error.")
-        default:
-            return String(localized: "Validation failed.", comment: "Steam Web API key validation error.")
         }
     }
 }

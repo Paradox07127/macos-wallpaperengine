@@ -1300,6 +1300,36 @@
         }
       }
     },
+    "%lld of %lld ready" : {
+      "comment" : "Workshop setup status bar summary; first number is how many steps are done, second is the total.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld ready"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld / %lld 完了"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已就绪 %lld 项，共 %lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已就緒 %lld 項，共 %lld 項"
+          }
+        }
+      }
+    },
     "%lld of 3 ready" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3332,6 +3362,36 @@
         }
       }
     },
+    "All set" : {
+      "comment" : "Workshop setup status bar summary when all three setup steps are done.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All set"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて完了"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部就绪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部就緒"
+          }
+        }
+      }
+    },
     "all sources nominal" : {
       "comment" : "Health widget: everything reporting normally.",
       "extractionState" : "manual",
@@ -3555,6 +3615,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ANE 記憶體"
+          }
+        }
+      }
+    },
+    "API key" : {
+      "comment" : "Short legend label for the Steam Web API key step in the Workshop status bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API key"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API キー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 金鑰"
           }
         }
       }
@@ -4190,6 +4280,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在向 GitHub 查詢最新發行版標籤…"
+          }
+        }
+      }
+    },
+    "Assets" : {
+      "comment" : "Short legend label for the Wallpaper Engine assets step in the Workshop status bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assets"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アセット"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "资源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資源"
           }
         }
       }
@@ -10270,6 +10390,36 @@
         }
       }
     },
+    "Couldn't remove the key: %@" : {
+      "comment" : "Steam Web API key deletion failure.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't remove the key: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーを削除できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法删除密钥：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法刪除金鑰：%@"
+          }
+        }
+      }
+    },
     "Couldn't remove the SteamCMD copy Loomscreen installed." : {
       "comment" : "Workshop setup error when removing a managed SteamCMD install fails.",
       "localizations" : {
@@ -10295,6 +10445,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法刪除 Loomscreen 安裝的 SteamCMD。"
+          }
+        }
+      }
+    },
+    "Couldn't save: %@" : {
+      "comment" : "Steam Web API key save failure.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't save: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存：%@"
           }
         }
       }
@@ -12919,29 +13099,6 @@
         }
       }
     },
-    "Downloaded assets linked for extra scene coverage." : {
-      "comment" : "Engine-assets settings status for downloaded assets before checking updates.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "追加のシーン対応用にダウンロード済みアセットをリンクしました。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已链接下载的资源，用于扩展场景兼容性。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已連結下載的資源，用於擴充場景相容性。"
-          }
-        }
-      }
-    },
     "Downloaded assets linked, but their version is unknown. Download again to refresh them." : {
       "comment" : "Engine-assets settings status when installed build id is unknown.",
       "localizations" : {
@@ -13007,6 +13164,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已下載 Wallpaper Engine,但裁剪至 assets 資料夾時失敗。"
+          }
+        }
+      }
+    },
+    "Downloading Wallpaper Engine assets" : {
+      "comment" : "Accessibility label on the Wallpaper Engine assets download progress row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading Wallpaper Engine assets"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine アセットをダウンロード中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在下载 Wallpaper Engine 资源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在下載 Wallpaper Engine 資源"
           }
         }
       }
@@ -17689,6 +17876,36 @@
         }
       }
     },
+    "Get Assets" : {
+      "comment" : "Button on the scene page that opens Workshop settings to download or link the engine assets.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get Assets"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アセットを入手"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取素材"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取得素材"
+          }
+        }
+      }
+    },
     "Get Started" : {
       "localizations" : {
         "en" : {
@@ -18109,35 +18326,6 @@
         }
       }
     },
-    "Hidden badges stay available in each wallpaper's detail panel." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hidden badges stay available in each wallpaper's detail panel."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "非表示にしたバッジの情報は、各壁紙の詳細パネルで引き続き確認できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隐藏的标签信息仍可在各壁纸的详情面板中查看。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隱藏的標籤資訊仍可在各桌布的詳細面板中查看。"
-          }
-        }
-      }
-    },
     "Hide details" : {
       "comment" : "A label for a button that hides the details of",
       "isCommentAutoGenerated" : true,
@@ -18469,6 +18657,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "儀表取樣的頻率"
+          }
+        }
+      }
+    },
+    "How often the instruments sample. Longer intervals use less energy." : {
+      "comment" : "Info popover for the monitor board refresh interval setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How often the instruments sample. Longer intervals use less energy."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計器がサンプリングする間隔です。間隔を長くするほど消費電力が下がります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各仪表采样一次的间隔。间隔越长越省电。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各儀表取樣一次的間隔。間隔越長越省電。"
           }
         }
       }
@@ -18861,6 +19078,36 @@
         }
       }
     },
+    "If this scene needs Wallpaper Engine's shared textures or shaders, they aren't available here. Download them from Steam, or link an install you already have." : {
+      "comment" : "Scene page warning body when the scene failed to load before the resolver could name any missing reference.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If this scene needs Wallpaper Engine's shared textures or shaders, they aren't available here. Download them from Steam, or link an install you already have."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このシーンが Wallpaper Engine の共有テクスチャやシェーダーを必要とする場合、ここでは利用できません。Steam からダウンロードするか、既にあるインストール先をリンクしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果这个场景需要 Wallpaper Engine 的共享贴图或着色器，目前它们还不可用。可以从 Steam 下载，或链接你已有的安装目录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果這個場景需要 Wallpaper Engine 的共享貼圖或著色器，目前它們還不可用。可以從 Steam 下載，或連結你已有的安裝目錄。"
+          }
+        }
+      }
+    },
     "Image" : {
       "comment" : "Wallpaper Engine scene object type.",
       "extractionState" : "manual",
@@ -18891,30 +19138,62 @@
         }
       }
     },
-    "Image layers couldn't be located inside the cache." : {
+    "Image layers couldn't be found in this project or in your Wallpaper Engine assets." : {
+      "comment" : "Scene error body when assets are missing even though Wallpaper Engine assets are linked.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Image layers couldn't be located inside the cache."
+            "value" : "Image layers couldn't be found in this project or in your Wallpaper Engine assets."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キャッシュ内に画像レイヤーが見つかりませんでした。"
+            "value" : "画像レイヤーがこのプロジェクトにも、リンク済みの Wallpaper Engine アセットにも見つかりませんでした。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在缓存中找不到图像图层。"
+            "value" : "在这个项目和你已链接的 Wallpaper Engine 素材里都找不到图像图层。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法在快取中找到圖片圖層。"
+            "value" : "在這個專案和你已連結的 Wallpaper Engine 素材裡都找不到圖像圖層。"
+          }
+        }
+      }
+    },
+    "Image layers couldn't be found in this project. Wallpaper Engine's shared assets normally supply them." : {
+      "comment" : "Scene error body when assets are missing and no Wallpaper Engine assets are set up.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image layers couldn't be found in this project. Wallpaper Engine's shared assets normally supply them."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像レイヤーがこのプロジェクト内に見つかりませんでした。通常は Wallpaper Engine の共有アセットから読み込まれます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这个项目里找不到图像图层。它们通常来自 Wallpaper Engine 的共享素材。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這個專案裡找不到圖像圖層。它們通常來自 Wallpaper Engine 的共享素材。"
           }
         }
       }
@@ -20108,6 +20387,36 @@
         }
       }
     },
+    "Keep the key you already have" : {
+      "comment" : "Tooltip on the button that closes Steam Web API key editing without changing the stored key.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep the key you already have"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在のキーをそのまま使う"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留现有密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留現有金鑰"
+          }
+        }
+      }
+    },
     "Key %u" : {
       "comment" : "Fallback keyboard key name. The placeholder is a hardware key code.",
       "extractionState" : "manual",
@@ -20737,36 +21046,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "連結一個 Wallpaper Engine 安裝以支援更多場景"
-          }
-        }
-      }
-    },
-    "Link Assets" : {
-      "comment" : "Button on the scene page that opens Workshop settings to link the engine assets.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Link Assets"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アセットをリンク"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "链接素材"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連結素材"
           }
         }
       }
@@ -25496,7 +25775,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在常见位置未找到 SteamCMD。可用「安装 SteamCMD…」让 Loomscreen 安装自己的副本，或用「选择 SteamCMD…」自行指定。"
+            "value" : "在常见位置未找到 SteamCMD。可用“安装 SteamCMD…”让 Loomscreen 安装自己的副本，或用“选择 SteamCMD…”自行指定。"
           }
         },
         "zh-Hant" : {
@@ -26694,35 +26973,6 @@
         }
       }
     },
-    "Only public metadata is read for each item. Your Steam credentials stay in SteamCMD." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only public metadata is read for each item. Your Steam credentials stay in SteamCMD."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各項目については公開メタデータのみを読み取ります。Steam の資格情報は SteamCMD の中に留まります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每个项目只读取公开元数据。你的 Steam 凭据只留在 SteamCMD 里。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每個項目只讀取公開中繼資料。你的 Steam 憑證只留在 SteamCMD 裡。"
-          }
-        }
-      }
-    },
     "Only removes the current wallpaper from %@. Source files, bookmarks, and library items are not deleted." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27745,31 +27995,31 @@
         }
       }
     },
-    "Opens the Workshop settings page to link a Wallpaper Engine install" : {
+    "Opens the Workshop settings page to download or link Wallpaper Engine assets" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens the Workshop settings page to link a Wallpaper Engine install"
+            "value" : "Opens the Workshop settings page to download or link Wallpaper Engine assets"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ワークショップ 設定ページを開き、Wallpaper Engine のインストール先をリンクします"
+            "value" : "ワークショップ 設定ページを開き、Wallpaper Engine のアセットをダウンロードまたはリンクします"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开创意工坊设置页，链接 Wallpaper Engine 安装目录"
+            "value" : "打开创意工坊设置页，下载或链接 Wallpaper Engine 素材"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟創意工坊設定頁，連結 Wallpaper Engine 安裝目錄"
+            "value" : "開啟創意工坊設定頁，下載或連結 Wallpaper Engine 素材"
           }
         }
       }
@@ -28551,30 +28801,6 @@
         }
       }
     },
-    "Paste a Workshop URL to get started." : {
-      "comment" : "A description of the paste area.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップ URL を貼り付けて開始します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "粘贴 创意工坊 URL 以开始。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "貼上 創意工坊 URL 以開始。"
-          }
-        }
-      }
-    },
     "Paste a Workshop URL to install it without a key. Searching is what needs one." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28687,31 +28913,32 @@
         }
       }
     },
-    "Paste Workshop URLs or item IDs. No Web API key needed — that's only for searching." : {
+    "Paste Workshop URLs or item IDs — no Web API key needed. Only public metadata is read; your Steam credentials stay in SteamCMD." : {
+      "comment" : "Subtitle of the Add from Steam Workshop sheet.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Paste Workshop URLs or item IDs. No Web API key needed — that's only for searching."
+            "value" : "Paste Workshop URLs or item IDs — no Web API key needed. Only public metadata is read; your Steam credentials stay in SteamCMD."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ワークショップ の URL または項目 ID を貼り付けてください。Web API キーは不要です（必要なのは検索のみ）。"
+            "value" : "ワークショップの URL または項目 ID を貼り付けてください（Web API キーは不要）。読み取るのは公開メタデータのみで、Steam の認証情報は SteamCMD に留まります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "粘贴创意工坊链接或项目 ID。不需要 Web API 密钥 —— 那只有搜索才用得上。"
+            "value" : "粘贴创意工坊链接或项目 ID —— 无需 Web API 密钥。只读取公开元数据，你的 Steam 凭据始终留在 SteamCMD 中。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "貼上創意工坊連結或項目 ID。不需要 Web API 金鑰 —— 那只有搜尋才用得上。"
+            "value" : "貼上創意工坊連結或項目 ID —— 無需 Web API 金鑰。僅讀取公開中繼資料，你的 Steam 憑證始終留在 SteamCMD 中。"
           }
         }
       }
@@ -32011,6 +32238,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 macOS 完成下載影片後重新整理"
+          }
+        }
+      }
+    },
+    "Refresh Interval (seconds)" : {
+      "comment" : "Monitor board setting: seconds between metric samples.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh Interval (seconds)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新間隔（秒）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新间隔（秒）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新整理間隔（秒）"
           }
         }
       }
@@ -35835,6 +36091,36 @@
         }
       }
     },
+    "Scroll to this section" : {
+      "comment" : "Accessibility hint on the Workshop status bar legend entries.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scroll to this section"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このセクションへスクロール"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "滚动到该部分"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "捲動至該區段"
+          }
+        }
+      }
+    },
     "Scrub through the video timeline" : {
       "localizations" : {
         "en" : {
@@ -36322,30 +36608,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本次累計"
-          }
-        }
-      }
-    },
-    "Set" : {
-      "comment" : "A label that indicates that a key is set.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定済み"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已設定"
           }
         }
       }
@@ -38569,31 +38831,32 @@
         }
       }
     },
-    "Some of this scene's references didn't resolve. Linking your Wallpaper Engine install lets its shared textures and shaders load." : {
+    "Some of this scene's references didn't resolve. Download Wallpaper Engine's shared assets from Steam, or link an install you already have." : {
+      "comment" : "Scene page warning body when the renderer named unresolved references.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Some of this scene's references didn't resolve. Linking your Wallpaper Engine install lets its shared textures and shaders load."
+            "value" : "Some of this scene's references didn't resolve. Download Wallpaper Engine's shared assets from Steam, or link an install you already have."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このシーンの一部の参照が解決できませんでした。Wallpaper Engine のインストール先をリンクすると、共有のテクスチャやシェーダーを読み込めるようになります。"
+            "value" : "このシーンの一部の参照が解決できませんでした。Wallpaper Engine の共有アセットを Steam からダウンロードするか、既にあるインストール先をリンクしてください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这个场景有部分引用没能解析。链接你的 Wallpaper Engine 安装目录后，它的共享贴图和着色器就能被读取。"
+            "value" : "这个场景有部分引用没能解析。可以从 Steam 下载 Wallpaper Engine 的共享素材，或链接你已有的安装目录。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這個場景有部分參照沒能解析。連結你的 Wallpaper Engine 安裝目錄後，它的共享貼圖和著色器就能被讀取。"
+            "value" : "這個場景有部分參照沒能解析。可以從 Steam 下載 Wallpaper Engine 的共享素材，或連結你已有的安裝目錄。"
           }
         }
       }
@@ -41388,6 +41651,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "儲存空間占用"
+          }
+        }
+      }
+    },
+    "Stored on this Mac only — never synced" : {
+      "comment" : "Workshop settings subtitle once a Steam Web API key is saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stored on this Mac only — never synced"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac にのみ保存され、同期されません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅存储在这台 Mac 上，不会同步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅儲存在這台 Mac 上，不會同步"
           }
         }
       }
@@ -46350,6 +46643,36 @@
         }
       }
     },
+    "Validation failed: %@" : {
+      "comment" : "Steam Web API key validation error with the underlying failure.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Validation failed: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検証に失敗しました: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证失败：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驗證失敗：%@"
+          }
+        }
+      }
+    },
     "Validation failed." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -47285,32 +47608,32 @@
         }
       }
     },
-    "Wallpaper Engine assets aren't linked" : {
-      "comment" : "Scene page warning title when refs are unresolved and no engine install is linked.",
+    "Wallpaper Engine assets aren't set up" : {
+      "comment" : "Scene page warning title when the scene can't render and no engine assets are downloaded or linked.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine assets aren't linked"
+            "value" : "Wallpaper Engine assets aren't set up"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine のアセットがリンクされていません"
+            "value" : "Wallpaper Engine のアセットが未設定です"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未链接 Wallpaper Engine 素材"
+            "value" : "尚未准备 Wallpaper Engine 素材"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未連結 Wallpaper Engine 素材"
+            "value" : "尚未準備 Wallpaper Engine 素材"
           }
         }
       }
@@ -49634,6 +49957,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "創意工坊請求透過 HTTPS 直連 Valve，不會向 Loomscreen 傳送任何內容。"
+          }
+        }
+      }
+    },
+    "Workshop setup" : {
+      "comment" : "Page-top status bar title on the Workshop settings page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workshop setup"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークショップのセットアップ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创意工坊配置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "創意工坊設定"
           }
         }
       }

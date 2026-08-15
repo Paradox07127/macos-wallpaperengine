@@ -112,7 +112,7 @@ struct WorkshopProbeRow: View {
                     Label("Re-run", systemImage: "arrow.clockwise")
                         .font(DesignTokens.Typography.caption)
                 }
-                .buttonStyle(.link)
+                .adaptiveGlassButton(.regular, size: .small)
                 .help(Text("Re-run this probe"))
             }
         }

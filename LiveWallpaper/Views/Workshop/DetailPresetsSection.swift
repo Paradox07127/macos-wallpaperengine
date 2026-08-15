@@ -82,12 +82,12 @@ struct DetailPresetsSection: View {
             }
             if hidden > 0 {
                 Button("Show \(hidden) more") { isExpanded = true }
-                    .buttonStyle(.link)
-                    .font(DesignTokens.Typography.caption)
+                    .adaptiveGlassButton(.regular, size: .small)
+                    .fixedSize()
             } else if isExpanded, matches.count > Self.collapsedLimit {
                 Button("Show fewer") { isExpanded = false }
-                    .buttonStyle(.link)
-                    .font(DesignTokens.Typography.caption)
+                    .adaptiveGlassButton(.regular, size: .small)
+                    .fixedSize()
             }
         }
         communityFallbackLink
@@ -142,13 +142,14 @@ struct DetailPresetsSection: View {
     }
 
     private var noMatchesRow: some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
+        HStack(spacing: DesignTokens.Spacing.sm) {
             Text("No presets match your search.", bundle: .main)
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
             Button("Clear") { searchText = "" }
-                .buttonStyle(.link)
-                .font(DesignTokens.Typography.caption)
+                .adaptiveGlassButton(.regular, size: .small)
+                .fixedSize()
+            Spacer(minLength: 0)
         }
     }
 

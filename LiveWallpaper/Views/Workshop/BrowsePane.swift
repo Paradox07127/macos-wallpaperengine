@@ -325,7 +325,7 @@ struct BrowsePane: View {
                         Button(action: onDownloadByLink) {
                             Label("Or download by link", systemImage: "link")
                         }
-                        .buttonStyle(.link)
+                        .adaptiveGlassButton(.regular, size: .small)
                         Text("Paste a Workshop URL to install it without a key. Searching is what needs one.")
                             .font(.caption)
                             .foregroundStyle(.tertiary)

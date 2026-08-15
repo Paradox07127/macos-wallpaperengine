@@ -10,7 +10,12 @@ enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
     case shortcutsGlobal
     case storageDashboard
     case storageCaches
+    /// The Steam Web API key section. Keeps its original name so a search
+    /// result saved before the setup page split into three sections still
+    /// lands somewhere sensible.
     case workshopSetup
+    case workshopConnection
+    case workshopAssets
     case workshopContent
     case workshopBadges
 
@@ -270,12 +275,24 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         case .workshopSetup:
             return [
                 SettingsNavigationSearchTarget(
-                    label: "Setup",
+                    label: "Steam Web API key",
                     anchor: .workshopSetup,
+                    keywords: ["api key", "steam web api key", "web api", "key"]
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Steam connection",
+                    anchor: .workshopConnection,
                     keywords: [
-                        "steam", "api key", "steam web api key", "steamcmd",
-                        "doctor", "wallpaper engine assets", "engine assets",
-                        "download from steam"
+                        "steam", "steamcmd", "doctor", "diagnostics",
+                        "steam library", "steam account", "sign in"
+                    ]
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Wallpaper Engine assets",
+                    anchor: .workshopAssets,
+                    keywords: [
+                        "wallpaper engine assets", "engine assets",
+                        "download from steam", "link folder"
                     ]
                 ),
                 SettingsNavigationSearchTarget(

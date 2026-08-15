@@ -142,8 +142,20 @@ struct NavigationTests {
             capabilities: .pro,
             includeWorkshopOnline: false
         )
-        let workshopResults = SettingsNavigation.filteredResults(
+        // The Workshop setup page is three sections now, so each of its three
+        // concerns has to land on its own anchor rather than one shared "Setup".
+        let connectionResults = SettingsNavigation.filteredResults(
             matching: "steamcmd",
+            capabilities: .pro,
+            includeWorkshopOnline: true
+        )
+        let apiKeyResults = SettingsNavigation.filteredResults(
+            matching: "api key",
+            capabilities: .pro,
+            includeWorkshopOnline: true
+        )
+        let assetsResults = SettingsNavigation.filteredResults(
+            matching: "engine assets",
             capabilities: .pro,
             includeWorkshopOnline: true
         )
@@ -154,7 +166,9 @@ struct NavigationTests {
         )
 
         #expect(displayResults.first { $0.destination == .displayDefaults }?.anchor == .displayDefaultsVideo)
-        #expect(workshopResults.first { $0.destination == .workshopSetup }?.anchor == .workshopSetup)
+        #expect(connectionResults.first { $0.destination == .workshopSetup }?.anchor == .workshopConnection)
+        #expect(apiKeyResults.first { $0.destination == .workshopSetup }?.anchor == .workshopSetup)
+        #expect(assetsResults.first { $0.destination == .workshopSetup }?.anchor == .workshopAssets)
         #expect(storageResults.first { $0.destination == .storage }?.anchor == .storageCaches)
     }
 

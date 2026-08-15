@@ -1,0 +1,390 @@
+#if !LITE_BUILD
+import AppKit
+import LiveWallpaperCore
+import SwiftUI
+
+/// Linking or downloading a Wallpaper Engine install for the assets some
+/// scenes reference.
+///
+/// Split out of the Workshop settings page when the page's three setup
+/// concerns each became their own section. The download progress gets a row of
+/// its own here: a multi-GB bar squeezed into the trailing slot next to three
+/// buttons was the one place this page ran out of width.
+struct WorkshopEngineAssetsSection: View {
+    /// Called when an action needs the Steam connection set up first. The page
+    /// scrolls there rather than pushing a second-level screen — the steps are
+    /// now sections on this same page.
+    let onNeedsSteamConnection: () -> Void
+
+    @Environment(SteamCMDDoctorService.self) private var doctorService
+
+    @AppStorage("loomscreen.workshop.checkAssetsUpdateAtLaunch.v1", store: .appScoped()) private var checksAssetsUpdateAtLaunch = false
+
+    @State private var engineAssets = WPEEngineAssetsLibrary.shared
+    @State private var engineInstaller = WPEEngineAssetsInstaller.shared
+    @State private var preflightingDoctor = false
+    /// Set when an action was refused for a reason the connection steps cannot fix.
+    @State private var blockedActionMessage: String?
+    @State private var showingRemoveConfirm = false
+
+    var body: some View {
+        Section {
+            SettingRow(
+                icon: "shippingbox",
+                iconColor: .brown,
+                title: "Wallpaper Engine assets",
+                subtitle: engineAssetsSubtitle,
+                info: "Loomscreen bundles clean-room equivalents of the common Wallpaper Engine framework files, so most scenes render without a Wallpaper Engine install. Link one only for scenes that reference uncommon shared assets — read-only access, no files are modified."
+            ) {
+                engineAssetsControl
+                    .frame(maxHeight: 24)
+            }
+            .task {
+                engineInstaller.refreshManagedInstallState()
+            }
+
+            if let fraction = downloadFraction {
+                downloadProgressRow(fraction)
+            }
+
+            if engineInstaller.hasManagedInstall {
+                SettingRow(
+                    icon: "arrow.triangle.2.circlepath",
+                    iconColor: .brown,
+                    title: "Check for asset updates at launch",
+                    subtitle: "Look for a newer Wallpaper Engine build when Loomscreen starts",
+                    info: "Runs the same version check as the button, once per launch. It only reads Steam's build number — nothing is downloaded until you choose to update."
+                ) {
+                    Toggle("", isOn: $checksAssetsUpdateAtLaunch)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityLabel(Text("Check for Wallpaper Engine asset updates at launch"))
+                }
+            }
+
+            if let status = engineAssetsStatusLine {
+                Text(verbatim: status.message)
+                    .font(.caption)
+                    .foregroundStyle(status.tint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            SettingsSearchSectionHeader("Wallpaper Engine assets", anchor: .workshopAssets)
+        } footer: {
+            WorkshopPrivacyLink()
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var engineAssetsSubtitle: LocalizedStringKey {
+        engineInstaller.hasManagedInstall || engineAssets.isAuthorized
+            ? "Linked for extra scene coverage"
+            : "Link a Wallpaper Engine install for extra scene coverage"
+    }
+
+    // MARK: - Download progress
+
+    /// Only the determinate download has its own row; the short indeterminate
+    /// phases stay in the trailing slot where a spinner costs nothing.
+    private var downloadFraction: Double? {
+        guard engineInstaller.isBusy, case .downloading = engineInstaller.phase else { return nil }
+        return engineInstaller.progress
+    }
+
+    private func downloadProgressRow(_ fraction: Double) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            ProgressView(value: fraction)
+                .progressViewStyle(.linear)
+
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Text(verbatim: downloadProgressLabel(fraction))
+                    .font(DesignTokens.Typography.metric)
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: DesignTokens.Spacing.sm)
+
+                Button("Cancel") { engineInstaller.cancel() }
+                    .adaptiveGlassButton(.regular, size: .small)
+                    .fixedSize()
+            }
+        }
+        .padding(.vertical, DesignTokens.Spacing.xxs)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Downloading Wallpaper Engine assets"))
+        .accessibilityValue(Text(verbatim: downloadProgressLabel(fraction)))
+    }
+
+    /// Percent + transferred size so multi-GB downloads don't look stuck on a bare bar.
+    private func downloadProgressLabel(_ fraction: Double) -> String {
+        let percent = Int((fraction * 100).rounded())
+        guard let bytes = engineInstaller.progressBytes,
+              let downloaded = bytes.downloaded, let total = bytes.total, total > 0 else {
+            return "\(percent)%"
+        }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useMB, .useGB]
+        return "\(percent)%  ·  \(formatter.string(fromByteCount: Int64(downloaded))) / \(formatter.string(fromByteCount: Int64(total)))"
+    }
+
+    // MARK: - Controls
+
+    @ViewBuilder
+    private var engineAssetsControl: some View {
+        if preflightingDoctor {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                ProgressView().controlSize(.small)
+                Text("Checking…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
+            }
+        } else if engineInstaller.isBusy {
+            engineAssetsBusyControl
+        } else if engineInstaller.hasManagedInstall {
+            engineAssetsManagedControl
+        } else if engineAssets.isAuthorized {
+            engineAssetsManualControl
+        } else {
+            engineAssetsUnlinkedControl
+        }
+    }
+
+    @ViewBuilder
+    private var engineAssetsBusyControl: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            switch engineInstaller.phase {
+            case .downloading:
+                // The bar and its numbers live on their own row; anything left
+                // here would only duplicate them.
+                if engineInstaller.progress == nil {
+                    ProgressView().controlSize(.small)
+                    Text("Starting…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
+                    Button("Cancel") { engineInstaller.cancel() }
+                        .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                }
+            case .pruning:
+                ProgressView().controlSize(.small)
+                Text("Finishing…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
+            case .checking:
+                ProgressView().controlSize(.small)
+                Text("Checking…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var engineAssetsManagedControl: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            if engineInstaller.updateAvailable {
+                Button("Update") { preflightThen { engineInstaller.download(using: doctorService) } }
+                    .adaptiveGlassButton(.prominent, size: .small).fixedSize()
+            } else {
+                Button("Check for updates") { preflightThen { engineInstaller.checkForUpdate(using: doctorService) } }
+                    .adaptiveGlassButton(.regular, size: .small).fixedSize()
+            }
+            Button {
+                revealEngineAssetsInFinder()
+            } label: {
+                Image(systemName: "folder")
+            }
+            .adaptiveGlassButton(.regular, size: .small).fixedSize()
+            .help(Text("Show the Wallpaper Engine assets folder in Finder"))
+            .accessibilityLabel(Text("Show assets in Finder"))
+
+            Button("Remove", role: .destructive) { showingRemoveConfirm = true }
+                .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                .tint(DesignTokens.Colors.Status.danger)
+                .help(Text("Delete the downloaded Wallpaper Engine assets and unlink"))
+                .confirmationDialog(
+                    Text("Remove Wallpaper Engine assets?"),
+                    isPresented: $showingRemoveConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Remove", role: .destructive) { engineInstaller.remove() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This deletes the downloaded assets from this Mac. You can download them again anytime.")
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var engineAssetsManualControl: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            Button("Change") { Task { await requestManualEngineAssetsAccess() } }
+                .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                .help(Text("Pick a different Wallpaper Engine install folder"))
+            Button("Forget", role: .destructive) {
+                engineAssets.clearAccess()
+                engineInstaller.clearTransientStatus()
+            }
+                .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                .tint(DesignTokens.Colors.Status.danger)
+                .help(Text("Remove access to the Wallpaper Engine install folder"))
+        }
+    }
+
+    @ViewBuilder
+    private var engineAssetsUnlinkedControl: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            Button("Download from Steam") {
+                preflightThen { engineInstaller.download(using: doctorService) }
+            }
+            .adaptiveGlassButton(.regular, size: .small).fixedSize()
+            .help(Text("Download the copy of Wallpaper Engine you own for extra scene coverage"))
+            Button("Link folder…") { Task { await requestManualEngineAssetsAccess() } }
+                .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                .help(Text("Grant read-only access to a Wallpaper Engine install for extra scene coverage"))
+        }
+    }
+
+    private func requestManualEngineAssetsAccess() async {
+        if await engineAssets.requestAccess() {
+            engineInstaller.refreshManagedInstallState()
+            engineInstaller.clearTransientStatus()
+        }
+    }
+
+    private func revealEngineAssetsInFinder() {
+        guard let root = WPEEngineAssetsLibrary.managedInstallRoot() ?? engineAssets.resolveAuthorizedRoot() else { return }
+        // Steam-folder path: needs the same security scope as other library reads.
+        let scope = root.startAccessingSecurityScopedResource()
+        defer { if scope { root.stopAccessingSecurityScopedResource() } }
+        NSWorkspace.shared.activateFileViewerSelecting([root])
+    }
+
+    /// Run `action` when the connection preflight is green; scroll to the
+    /// Steam connection steps only if they can fix the blocker.
+    private func preflightThen(_ action: @escaping () -> Void) {
+        // Config + cached login required; advisory ownership must not block recovery.
+        blockedActionMessage = nil
+        if doctorService.isDownloadReady { action(); return }
+        // Unfixable blockers stay as inline copy — don't send the user to an all-green section.
+        guard doctorService.downloadBlocker?.isFixableInDoctor ?? true else {
+            blockedActionMessage = doctorService.downloadBlockerMessage
+            return
+        }
+        Task {
+            preflightingDoctor = true
+            await doctorService.runAll()
+            preflightingDoctor = false
+            if doctorService.isDownloadReady {
+                action()
+            } else if doctorService.downloadBlocker?.isFixableInDoctor ?? true {
+                onNeedsSteamConnection()
+            } else {
+                blockedActionMessage = doctorService.downloadBlockerMessage
+            }
+        }
+    }
+
+    // MARK: - Status line
+
+    private var showsEngineDownloadHint: Bool {
+        !engineInstaller.isBusy
+            && !engineInstaller.hasManagedInstall
+            && !engineAssets.isAuthorized
+            && !doctorService.isDownloadReady
+    }
+
+    private struct EngineAssetsStatusLine {
+        let message: String
+        let tint: Color
+    }
+
+    private var engineAssetsStatusLine: EngineAssetsStatusLine? {
+        if let blockedActionMessage {
+            return EngineAssetsStatusLine(message: blockedActionMessage, tint: DesignTokens.Colors.Status.warning)
+        }
+        if case .failed(let message) = engineInstaller.phase {
+            return EngineAssetsStatusLine(message: message, tint: DesignTokens.Colors.Status.danger)
+        }
+        if preflightingDoctor {
+            return EngineAssetsStatusLine(
+                message: String(localized: "Checking SteamCMD readiness before downloading.", comment: "Engine-assets settings status while preflighting SteamCMD."),
+                tint: .secondary
+            )
+        }
+        switch engineInstaller.phase {
+        case .downloading:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Downloading Wallpaper Engine, then Loomscreen will keep only the assets folder and link it automatically.", comment: "Engine-assets settings status while downloading."),
+                tint: .secondary
+            )
+        case .pruning:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Download finished. Keeping the assets folder and linking it now.", comment: "Engine-assets settings status while pruning the downloaded WPE app."),
+                tint: .secondary
+            )
+        case .checking:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Checking Steam for the latest Wallpaper Engine build.", comment: "Engine-assets settings status while checking for updates."),
+                tint: .secondary
+            )
+        case .idle, .failed:
+            break
+        }
+        if let error = engineAssets.lastError {
+            return EngineAssetsStatusLine(message: error, tint: DesignTokens.Colors.Status.danger)
+        }
+        if engineInstaller.hasManagedInstall {
+            return managedEngineAssetsStatusLine
+        }
+        if engineAssets.isAuthorized {
+            let name = engineAssets.engineRootDisplayName ?? String(
+                localized: "selected folder",
+                comment: "Fallback display name for a manually linked engine-assets folder."
+            )
+            return EngineAssetsStatusLine(
+                message: String(localized: "Linked to \(name) for extra scene coverage.", comment: "Engine-assets settings status for a manually linked folder."),
+                tint: DesignTokens.Colors.Status.active
+            )
+        }
+        if showsEngineDownloadHint {
+            return EngineAssetsStatusLine(
+                message: String(localized: "Steam downloads need Loomscreen's background connector. You can still link an existing folder manually.", comment: "Engine-assets settings status when the Steam download connector is unavailable."),
+                tint: .secondary
+            )
+        }
+        return EngineAssetsStatusLine(
+            message: String(localized: "Not linked. Most scenes still use Loomscreen's built-in equivalents.", comment: "Engine-assets settings status when no engine assets are linked."),
+            tint: .secondary
+        )
+    }
+
+    private var managedEngineAssetsStatusLine: EngineAssetsStatusLine? {
+        switch engineInstaller.updateCheckOutcome {
+        case .available:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Update available on Steam. Current downloaded assets are still linked.", comment: "Engine-assets settings status when an update is available."),
+                tint: DesignTokens.Colors.Status.warning
+            )
+        case .upToDate:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Downloaded assets linked and up to date.", comment: "Engine-assets settings status when downloaded assets are current."),
+                tint: DesignTokens.Colors.Status.active
+            )
+        case .unableToCompare:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Downloaded assets linked, but their version is unknown. Download again to refresh them.", comment: "Engine-assets settings status when installed build id is unknown."),
+                tint: DesignTokens.Colors.Status.warning
+            )
+        case .checkFailed:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Downloaded assets linked. Couldn't check Steam for updates.", comment: "Engine-assets settings status when update check fails."),
+                tint: DesignTokens.Colors.Status.warning
+            )
+        case .checking:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Checking Steam for the latest Wallpaper Engine build.", comment: "Engine-assets settings status while checking for updates."),
+                tint: .secondary
+            )
+        case .notChecked:
+            // Silent: the row's own subtitle already says the assets are
+            // linked, and repeating it underneath said nothing new.
+            return nil
+        }
+    }
+}
+#endif

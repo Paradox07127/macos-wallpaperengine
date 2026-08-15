@@ -25,6 +25,12 @@ public struct SettingRow<Content: View>: View {
     let subtitle: Text?
     let info: String.LocalizationValue?
     let content: Content
+    /// Set for subtitles that carry a runtime value rather than prose. Prose
+    /// wraps; a value stays on one line so a long path can't make its row
+    /// taller than the rows around it.
+    let subtitleIsValue: Bool
+    /// Full text of a truncated value subtitle, for hover.
+    let subtitleHelp: String?
 
     public init(
         icon: String,
@@ -42,6 +48,31 @@ public struct SettingRow<Content: View>: View {
         self.subtitle = subtitle.map { Text($0, bundle: .main) }
         self.info = info
         self.content = content()
+        self.subtitleIsValue = false
+        self.subtitleHelp = nil
+    }
+
+    /// Localized title over a runtime value — a file path, an account name.
+    /// The value is rendered verbatim (never looked up in the catalog) and
+    /// truncated in the middle to one line, with the whole of it on hover.
+    public init(
+        icon: String,
+        iconColor: Color = .accentColor,
+        title: LocalizedStringKey,
+        valueSubtitle: String?,
+        titleBadge: SettingRowTitleBadge? = nil,
+        info: String.LocalizationValue? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.icon = icon
+        self.iconColor = iconColor
+        self.title = Text(title, bundle: .main)
+        self.titleBadge = titleBadge
+        self.subtitle = valueSubtitle.map { Text(verbatim: $0) }
+        self.info = info
+        self.content = content()
+        self.subtitleIsValue = true
+        self.subtitleHelp = valueSubtitle
     }
 
     /// Verbatim variant for already-resolved runtime/author strings (e.g. a
@@ -64,6 +95,8 @@ public struct SettingRow<Content: View>: View {
         self.subtitle = verbatimSubtitle.map { Text(verbatim: $0) }
         self.info = info
         self.content = content()
+        self.subtitleIsValue = false
+        self.subtitleHelp = nil
     }
 
     /// Mixed variant: author-supplied title rendered verbatim, app-supplied
@@ -85,6 +118,8 @@ public struct SettingRow<Content: View>: View {
         self.subtitle = Text(subtitle, bundle: .main)
         self.info = info
         self.content = content()
+        self.subtitleIsValue = false
+        self.subtitleHelp = nil
     }
 
     public var body: some View {
@@ -116,10 +151,19 @@ public struct SettingRow<Content: View>: View {
                     }
                 }
                 if let subtitle = subtitle {
-                    subtitle
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if subtitleIsValue {
+                        subtitle
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(Text(verbatim: subtitleHelp ?? ""))
+                    } else {
+                        subtitle
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
