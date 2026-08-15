@@ -7,7 +7,7 @@
 ### Wallpaper Engine scenes on macOS — a native Metal renderer, plus video and web wallpapers across every display.
 
 ![macOS](https://img.shields.io/badge/macOS-14.6%2B-blue.svg)
-![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-Required-purple.svg)
+![Architecture](https://img.shields.io/badge/Apple_Silicon-required_for_Pro-purple.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Release](https://img.shields.io/github/v/release/Paradox07127/macos-wallpaperengine?include_prereleases&sort=semver)
 
@@ -80,7 +80,11 @@ Details, permission prompts, and updates: [docs/en/install.md](docs/en/install.m
 ## Requirements
 
 - macOS 14.6 or later
-- Apple Silicon (Intel is not supported)
+- **Loomscreen (Lite)**: Apple Silicon or Intel. The Intel slice is built and shipped but
+  **has not been tested on an Intel Mac** — hardware readings in the monitor board are the
+  most likely thing to come back empty. Reports welcome.
+- **Loomscreen Pro**: Apple Silicon only. Its Metal scene renderer has never been run on
+  Intel hardware.
 
 ## Build from source
 

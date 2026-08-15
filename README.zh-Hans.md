@@ -7,7 +7,7 @@
 ### 在 macOS 上运行 Wallpaper Engine 场景 —— 原生 Metal 渲染器，另支持视频与网页壁纸，多显示器统一管理。
 
 ![macOS](https://img.shields.io/badge/macOS-14.6%2B-blue.svg)
-![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-Required-purple.svg)
+![Architecture](https://img.shields.io/badge/Apple_Silicon-required_for_Pro-purple.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Release](https://img.shields.io/github/v/release/Paradox07127/macos-wallpaperengine?include_prereleases&sort=semver)
 
@@ -80,7 +80,10 @@ Lite 是更轻的运行时，不是阉割版 UI —— 视频、网页、Aerials
 ## 运行要求
 
 - macOS 14.6 及以上
-- Apple Silicon（不支持 Intel）
+- **Loomscreen（Lite）**：Apple Silicon 或 Intel。Intel 切片已构建并随包发布，但
+  **尚未在 Intel Mac 上测试过** —— 最可能出问题的是监视器面板里的硬件读数（可能为空）。
+  欢迎反馈。
+- **Loomscreen Pro**：仅 Apple Silicon。它的 Metal 场景渲染器从未在 Intel 硬件上运行过。
 
 ## 从源码构建
 

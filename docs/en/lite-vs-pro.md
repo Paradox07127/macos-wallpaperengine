@@ -29,6 +29,7 @@ stripped-down interface. Video / web / Apple Aerials fidelity is identical.
 | **Adaptive frame rate under occlusion** | — | ✅ |
 | **Per-display render threads** | — | ✅ |
 | **Storage management** (projects, engine assets, caches) | — | ✅ |
+| **Runs on Intel Macs** | ⚠️ untested | — |
 
 ## How the split is implemented
 
@@ -46,6 +47,19 @@ The GitHub Releases update check runs in both editions. It compares against the
 release tag rather than an asset name, so the single release that carries both
 DMGs serves both. Neither edition installs anything — the banner only opens the
 release page.
+
+## Architecture
+
+Lite ships as a universal binary (arm64 + x86_64), so it can run on the Intel Macs
+that reach macOS 14.6. **The Intel slice has never been tested on Intel hardware** —
+it compiles and links, and the hardware-sampling code paths (SMC sensor keys, the
+`IOAccelerator` GPU statistics, `hw.perflevel*` core clusters) all carry Intel
+fallbacks, but nobody has run it on an actual Intel Mac. The most likely symptom of
+a gap is blank readings in the monitor board rather than a crash. Reports are welcome.
+
+Pro is arm64-only. Its Metal scene renderer has never been exercised on Intel GPUs,
+and shipping an untested renderer is a different order of risk from shipping an
+untested widget.
 
 ## Licensing
 
