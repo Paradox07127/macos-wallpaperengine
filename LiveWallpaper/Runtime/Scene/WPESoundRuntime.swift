@@ -106,6 +106,8 @@ struct WPESoundRuntimeDebugTrackSnapshot: Equatable, Sendable {
     let isEnabled: Bool
     let isVisible: Bool
     let sceneVolume: Float
+    /// The gain actually applied on the player node (scene × master, 0 when muted).
+    let playerVolume: Float
 }
 
 /// Per-scene AVAudioEngine player for declared sound objects (spectrum comes
@@ -374,10 +376,15 @@ final class WPESoundRuntime: Sendable {
                     scheduledSegmentCount: $0.scheduledFiles.count,
                     isEnabled: $0.enabled,
                     isVisible: $0.visible,
-                    sceneVolume: $0.sceneVolume
+                    sceneVolume: $0.sceneVolume,
+                    playerVolume: $0.player.volume
                 )
             }
         }
+    }
+
+    func debugEngineIsRunning() -> Bool {
+        state.withLock { $0.engine.isRunning }
     }
 
     private func reconcileEngineRunState(state: inout State) {
@@ -392,6 +399,10 @@ final class WPESoundRuntime: Sendable {
             if state.engine.isRunning { state.engine.pause() }
             return
         }
+        // Deliberate divergence from WPE, which keeps the timeline advancing under a
+        // gain-only mute: muting here stops decode and render callbacks outright so a
+        // muted wallpaper costs no audio power. Cost is resume position — unmuting
+        // continues where it stopped rather than where an unmuted run would be.
         guard !state.isMuted, !state.isSuspended else {
             if state.engine.isRunning { state.engine.pause() }
             return
