@@ -41,6 +41,11 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Sendable surface handle: keeps the renderer region separate so it stays `sending`-adoptable.
     let surfaceControl: any WPESurfaceControl
     let mailbox: WPEPointerMailbox
+    /// Last click-capture value this renderer pushed. The mailbox copy is
+    /// written on the main thread, so a profile change racing that delivery
+    /// would recompute the pointer-monitor gate from a stale read; this keeps
+    /// the gate's input in renderer order.
+    var lastPushedClickCaptureEnabled: Bool?
     /// Sendable `CAMetalLayer` wrapper so the renderer region does not reach the main-thread surface.
     let metalLayer: WPEPresentLayer
     var surfaceDrawableSize: CGSize

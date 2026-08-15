@@ -22,6 +22,10 @@ final class WPEPointerPublisher {
     private var localMonitor: Any?
     private var geometryObservers: [NSObjectProtocol] = []
     private var lastMousePublishAt: TimeInterval = -.greatestFiniteMagnitude
+    private var isStarted = false
+    /// Defaults ON so `attach` behaves exactly as before the renderer's first
+    /// post-load demand evaluation arrives.
+    private var mouseMonitoringEnabled = true
 
     private static let mouseMask: NSEvent.EventTypeMask = [
         .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged
@@ -49,7 +53,43 @@ final class WPEPointerPublisher {
 
     /// Idempotent: a second `start()` while already running is a no-op.
     func start() {
-        guard !isRunning else { return }
+        guard !isStarted else { return }
+        isStarted = true
+        installGeometryObservers()
+        publishGeometry() // seed current geometry so the first read isn't `.none`
+        if mouseMonitoringEnabled { installMouseMonitors() }
+    }
+
+    /// The renderer's suspend/demand gate over the NSEvent monitors alone.
+    /// Geometry observers stay installed so a later re-enable publishes against
+    /// current geometry; the flag persists while stopped so a re-`start()` honors
+    /// the last request. The `isStarted` guard is load-bearing: an enable queued
+    /// before `detach()` can be delivered after it, and must not resurrect the
+    /// monitors on a torn-down surface. Main-actor because NSEvent monitors must be added and
+    /// removed on the main thread.
+    func setMouseMonitoringEnabled(_ enabled: Bool) {
+        mouseMonitoringEnabled = enabled
+        guard isStarted else { return }
+        if enabled {
+            installMouseMonitors()
+        } else {
+            removeMouseMonitors()
+        }
+    }
+
+    /// Idempotent: unloads both monitors and the geometry observers; safe to call
+    /// when never started or already stopped.
+    func stop() {
+        isStarted = false
+        removeMouseMonitors()
+        for observer in geometryObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        geometryObservers.removeAll()
+    }
+
+    private func installMouseMonitors() {
+        guard globalMonitor == nil, localMonitor == nil else { return }
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: Self.mouseMask) { [weak self] _ in
             self?.handleMouseEvent()
         }
@@ -57,20 +97,17 @@ final class WPEPointerPublisher {
             self?.handleMouseEvent()
             return event
         }
-        installGeometryObservers()
-        publishGeometry() // seed current geometry so the first read isn't `.none`
-        // Seed the cursor too: the old live sampler read `NSEvent.mouseLocation`
-        // every frame, so before any mouse *event* arrives the mailbox must still
-        // report the real cursor (not the off-screen sentinel) or the first frames
-        // would freeze parallax at center.
+        // Seed the cursor: the old live sampler read `NSEvent.mouseLocation`
+        // every frame, so before any mouse *event* arrives — including right
+        // after a gated-off stretch, when the slot still holds the pre-gate
+        // position — the mailbox must report the real cursor (not the off-screen
+        // sentinel) or the first frames would freeze parallax at center.
         let time = now()
         lastMousePublishAt = time
         mailbox.publishMouseLocation(NSEvent.mouseLocation, timestampNanos: Self.nanos(from: time))
     }
 
-    /// Idempotent: unloads both monitors and the geometry observers; safe to call
-    /// when never started or already stopped.
-    func stop() {
+    private func removeMouseMonitors() {
         if let globalMonitor {
             NSEvent.removeMonitor(globalMonitor)
             self.globalMonitor = nil
@@ -79,10 +116,6 @@ final class WPEPointerPublisher {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
-        for observer in geometryObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        geometryObservers.removeAll()
     }
 
     // MARK: - Mouse
