@@ -784,33 +784,10 @@ extension WPEMetalSceneRenderer {
         }
     }
 
+    /// Shares `WPEMetalTextureByteEstimator` with the memory-audit census so
+    /// diagnostics and the LRU budget count the same bytes.
     static func textureResidentBytes(for texture: MTLTexture) -> Int {
-        // BC is stored compressed in VRAM; per-pixel math would 4-6x over-count the budget.
-        let baseBytes: Int
-        switch texture.pixelFormat {
-        case .bc1_rgba, .bc1_rgba_srgb:
-            baseBytes = compressedTextureBytes(width: texture.width, height: texture.height, bytesPerBlock: 8)
-        case .bc2_rgba, .bc2_rgba_srgb, .bc3_rgba, .bc3_rgba_srgb,
-             .bc7_rgbaUnorm, .bc7_rgbaUnorm_srgb:
-            baseBytes = compressedTextureBytes(width: texture.width, height: texture.height, bytesPerBlock: 16)
-        default:
-            baseBytes = texture.width * texture.height * textureCacheBytesPerPixel(for: texture.pixelFormat)
-        }
-        // No loader path generates mips today; 4/3 keeps the estimate honest if one ever does.
-        return texture.mipmapLevelCount > 1 ? baseBytes * 4 / 3 : baseBytes
-    }
-
-    private static func compressedTextureBytes(width: Int, height: Int, bytesPerBlock: Int) -> Int {
-        max((width + 3) / 4, 1) * max((height + 3) / 4, 1) * bytesPerBlock
-    }
-
-    private static func textureCacheBytesPerPixel(for pixelFormat: MTLPixelFormat) -> Int {
-        switch pixelFormat {
-        case .rgba16Float: return 8
-        case .rg8Unorm: return 2
-        case .r8Unorm: return 1
-        default: return 4
-        }
+        WPEMetalTextureByteEstimator.estimatedBytes(of: texture)
     }
 
     // MARK: - Per-frame textures
