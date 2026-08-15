@@ -37,7 +37,7 @@ struct WPEMetalTextureCacheBudgetTests {
     func memoryTierDefaults() {
         #expect(WPEMemoryTier.constrained.defaultTextureCacheBudgetBytes == 256 * 1_048_576)
         #expect(WPEMemoryTier.standard.defaultTextureCacheBudgetBytes == 512 * 1_048_576)
-        #expect(WPEMemoryTier.expansive.defaultTextureCacheBudgetBytes == nil)
+        #expect(WPEMemoryTier.expansive.defaultTextureCacheBudgetBytes == 768 * 1_048_576)
         #expect(WPEMemoryTier.constrained.lazyAnimationRawByteThreshold == 100_000_000)
         #expect(WPEMemoryTier.standard.lazyAnimationRawByteThreshold == 200_000_000)
         #expect(WPEMemoryTier.expansive.lazyAnimationRawByteThreshold == 200_000_000)
@@ -113,8 +113,10 @@ struct WPEMetalTextureCacheBudgetTests {
         let flat = try makeTexture(mipmapped: false)
         let mipped = try makeTexture(mipmapped: true)
         let base = 64 * 64 * 4
+        // Exact per-level sum for the 7-level chain, not the old x4/3 shortcut.
+        let mipChain = (64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4 + 2 * 2 + 1) * 4
         #expect(WPEMetalSceneRenderer.textureResidentBytes(for: flat) == base)
-        #expect(WPEMetalSceneRenderer.textureResidentBytes(for: mipped) == base * 4 / 3)
+        #expect(WPEMetalSceneRenderer.textureResidentBytes(for: mipped) == mipChain)
     }
 
     @Test("LRU evicts least-recently-used inactive entries")

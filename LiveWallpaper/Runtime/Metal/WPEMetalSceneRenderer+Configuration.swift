@@ -44,8 +44,8 @@ extension WPEMetalSceneRenderer {
 
     static let textureCacheBudgetMiBDefaultsKey = "WPEMetalTextureCacheBudgetMiB"
     /// VRAM budget for reloadable static source textures. Unset ⇒ the machine's
-    /// memory-tier default (8/16 GB Macs bounded, ≥24 GB unbounded — see
-    /// `WPEMemoryTier`); explicit 0 or negative ⇒ unbounded (manual opt-out);
+    /// memory-tier default (every tier bounded — see `WPEMemoryTier`);
+    /// explicit 0 or negative ⇒ unbounded (manual opt-out);
     /// positive ⇒ that many MiB. Over-budget inactive (hidden-layer) textures
     /// are LRU-evicted and reloaded on demand. Snapshot per scene load, so
     /// `defaults write com.loomscreen.pro WPEMetalTextureCacheBudgetMiB -int 256`
