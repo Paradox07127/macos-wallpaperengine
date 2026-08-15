@@ -22,10 +22,10 @@ public final class FullScreenDetector {
     @ObservationIgnored private static let occlusionFractionStep: CGFloat = 0.05
 
     /// Cap on how many windows feed the union-area calculation per display.
-    /// The union is computed by coordinate compression (~O(n²) cells × n
-    /// rects); keeping only the largest few dozen windows bounds the cost
-    /// while losing negligible coverage (tiny windows barely move 85%).
-    @ObservationIgnored private static let occlusionWindowCap = 80
+    /// The union sweep is ~O(n² log n) over the x-strips; keeping only the
+    /// largest few dozen windows bounds the cost while losing negligible
+    /// coverage (tiny windows barely move 85%).
+    @ObservationIgnored private nonisolated static let occlusionWindowCap = 80
 
     // MARK: - Private Properties
 
@@ -55,14 +55,23 @@ public final class FullScreenDetector {
         NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in self?.checkFullScreenState() }
+            .sink { [weak self] _ in self?.scanIfDemanded() }
             .store(in: &cancellables)
 
         NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.didActivateApplicationNotification)
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in self?.checkFullScreenState() }
+            .sink { [weak self] _ in self?.scanIfDemanded() }
             .store(in: &cancellables)
+    }
+
+    /// Workspace/space churn only matters while something consumes the result
+    /// — the same demand gate as the fallback timer. Explicit `checkNow()`
+    /// bypasses this, and `setFallbackPollingEnabled(true)` rescans, so state
+    /// catches up as soon as a consumer appears.
+    private func scanIfDemanded() {
+        guard isFallbackPollingEnabled else { return }
+        checkFullScreenState()
     }
 
     public var isFallbackPollingEnabled: Bool {
@@ -81,7 +90,9 @@ public final class FullScreenDetector {
     private func startPollingIfNeeded() {
         guard pollTimer == nil else { return }
 
-        pollTimer = Timer.publish(every: pollInterval, on: .main, in: .common)
+        // pollInterval/6 = 5s leeway at the shipped 30s interval, letting the
+        // OS coalesce the fallback tick with other wakeups.
+        pollTimer = Timer.publish(every: pollInterval, tolerance: pollInterval / 6, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in self?.checkFullScreenState() }
     }
@@ -182,11 +193,42 @@ public final class FullScreenDetector {
             }
         }
 
+        // Always synchronous: callers (reconcileMonitorOverlays,
+        // setupFullScreenDetection) read the published state in the same turn,
+        // and the sweep-line union is cheap even at the 80-window cap.
+        applyOcclusionScan(
+            fullScreen: result,
+            seedOcclusion: occlusion,
+            seedFractions: fractions,
+            coverage: Self.unionCoverage(windowsByScreen: windowsByScreen, screenFrames: screenFrames)
+        )
+    }
+
+    /// Raw (unquantized) union-coverage fraction per display.
+    private static func unionCoverage(
+        windowsByScreen: [CGDirectDisplayID: [CGRect]],
+        screenFrames: [(id: CGDirectDisplayID, frame: CGRect)]
+    ) -> [CGDirectDisplayID: CGFloat] {
+        var coverage: [CGDirectDisplayID: CGFloat] = [:]
         for (screenID, cgScreenFrame) in screenFrames {
             let screenArea = cgScreenFrame.width * cgScreenFrame.height
             guard screenArea > 0 else { continue }
             let rects = windowsByScreen[screenID] ?? []
-            let fraction = Self.unionArea(of: rects) / screenArea
+            coverage[screenID] = unionArea(of: rects) / screenArea
+        }
+        return coverage
+    }
+
+    /// Quantization + threshold decision for one scan.
+    private func applyOcclusionScan(
+        fullScreen: [CGDirectDisplayID: Bool],
+        seedOcclusion: [CGDirectDisplayID: Bool],
+        seedFractions: [CGDirectDisplayID: CGFloat],
+        coverage: [CGDirectDisplayID: CGFloat]
+    ) {
+        var occlusion = seedOcclusion
+        var fractions = seedFractions
+        for (screenID, fraction) in coverage {
             // Floor (not round) to the step so a quantized value never exceeds
             // the true coverage — keeps the policy's 0.5/0.4 thresholds honest
             // instead of effectively shifting them to ~0.475/0.375.
@@ -194,14 +236,14 @@ public final class FullScreenDetector {
             fractions[screenID] = min(1, max(0, quantized))
             occlusion[screenID] = fraction >= 0.85
         }
-
-        updateIfChanged(result, occlusion, fractions)
+        updateIfChanged(fullScreen, occlusion, fractions)
     }
 
-    /// Area of the union of `rects` (overlaps counted once) via coordinate
-    /// compression. Only the largest `occlusionWindowCap` rectangles are
-    /// considered to bound the cost.
-    static func unionArea(of rects: [CGRect]) -> CGFloat {
+    /// Area of the union of `rects` (overlaps counted once): sweep the
+    /// compressed x-edges left→right and, per strip, merge the active
+    /// y-intervals into covered length. Only the largest `occlusionWindowCap`
+    /// rectangles are considered to bound the cost.
+    nonisolated static func unionArea(of rects: [CGRect]) -> CGFloat {
         let rects = rects
             .filter { $0.width > 0 && $0.height > 0 }
             .sorted { ($0.width * $0.height) > ($1.width * $1.height) }
@@ -209,33 +251,43 @@ public final class FullScreenDetector {
         guard !rects.isEmpty else { return 0 }
 
         var xSet = Set<CGFloat>()
-        var ySet = Set<CGFloat>()
         for r in rects {
             xSet.insert(r.minX); xSet.insert(r.maxX)
-            ySet.insert(r.minY); ySet.insert(r.maxY)
         }
         let xs = xSet.sorted()
-        let ys = ySet.sorted()
 
         var area: CGFloat = 0
+        var intervals: [(lo: CGFloat, hi: CGFloat)] = []
         for i in 0 ..< (xs.count - 1) {
             let x0 = xs[i], x1 = xs[i + 1]
             let w = x1 - x0
             if w <= 0 {
                 continue
             }
-            let cx = (x0 + x1) / 2
-            for j in 0 ..< (ys.count - 1) {
-                let y0 = ys[j], y1 = ys[j + 1]
-                let h = y1 - y0
-                if h <= 0 {
-                    continue
-                }
-                let cy = (y0 + y1) / 2
-                if rects.contains(where: { $0.minX <= cx && cx < $0.maxX && $0.minY <= cy && cy < $0.maxY }) {
-                    area += w * h
+            // Strips never straddle an x-edge, so a rect is active for the
+            // whole strip or none of it.
+            intervals.removeAll(keepingCapacity: true)
+            for r in rects where r.minX <= x0 && x1 <= r.maxX {
+                intervals.append((r.minY, r.maxY))
+            }
+            if intervals.isEmpty {
+                continue
+            }
+            intervals.sort { $0.lo < $1.lo }
+            var covered: CGFloat = 0
+            var runLo = intervals[0].lo
+            var runHi = intervals[0].hi
+            for interval in intervals.dropFirst() {
+                if interval.lo <= runHi {
+                    runHi = max(runHi, interval.hi)
+                } else {
+                    covered += runHi - runLo
+                    runLo = interval.lo
+                    runHi = interval.hi
                 }
             }
+            covered += runHi - runLo
+            area += w * covered
         }
         return area
     }
