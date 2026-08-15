@@ -335,8 +335,8 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         )
         let detectorOcclusion = try sourceSlice(
             detector,
-            from: "for (screenID, cgScreenFrame) in screenFrames",
-            to: "updateIfChanged(result, occlusion, fractions)"
+            from: "for (screenID, fraction) in coverage",
+            to: "updateIfChanged(fullScreen, occlusion, fractions)"
         )
         let detectorNotifications = try sourceSlice(
             detector,
