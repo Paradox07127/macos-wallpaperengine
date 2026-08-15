@@ -78,7 +78,6 @@ final class WPEVideoTextureSource {
         playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = false
 
         let queuePlayer = AVQueuePlayer()
-        queuePlayer.actionAtItemEnd = .none
         // Prefetch next looped item before wrap to avoid sparse-decode slow-mo.
         queuePlayer.automaticallyWaitsToMinimizeStalling = true
         queuePlayer.preventsDisplaySleepDuringVideoPlayback = false
@@ -292,6 +291,12 @@ final class WPEVideoTextureSource {
             return
         }
         latest = PublishedFrame(texture: texture, cvTexture: cvTexture)
+        // The cache holds a mapping per pixel buffer it has wrapped; the pool
+        // rotates buffers, so without a periodic flush the mappings accumulate
+        // for the source's lifetime. Flushing only drops unreferenced mappings —
+        // the frame just stored in `latest` retains its `CVMetalTexture`, so
+        // the in-use mapping survives.
+        CVMetalTextureCacheFlush(textureCache, 0)
     }
 
     /// 2s forward buffer (RAM-resident asset; longer buffers only cost decoder state).
@@ -307,7 +312,8 @@ final class WPEVideoTextureSource {
     /// Resource-loader queue — byte-range fulfilment stays off main.
     private static let resourceLoaderQueue = DispatchQueue(
         label: "app.livewallpaper.wpe.video.in-memory-loader",
-        qos: .userInitiated
+        qos: .userInitiated,
+        autoreleaseFrequency: .workItem
     )
 
     /// Current item time (s); used by play-once wrap detection in all builds.
