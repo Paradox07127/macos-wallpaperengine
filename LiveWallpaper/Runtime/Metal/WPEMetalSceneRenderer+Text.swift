@@ -291,7 +291,11 @@ extension WPEMetalSceneRenderer {
                         initialValue: object.text,
                         scriptProperties: object.scriptProperties,
                         shared: sharedState,
-                        batchDispatcher: self.sceneScriptBatchDispatcher
+                        batchDispatcher: self.sceneScriptBatchDispatcher,
+                        canvasSize: SIMD2<Double>(
+                            Double(self.sceneRenderSize.width),
+                            Double(self.sceneRenderSize.height)
+                        )
                     )
                 }) else { return }
                 textScriptInstances[object.id] = instance

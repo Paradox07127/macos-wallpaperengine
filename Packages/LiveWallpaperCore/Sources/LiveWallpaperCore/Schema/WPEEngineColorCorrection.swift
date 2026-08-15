@@ -49,6 +49,11 @@ public struct WPEEngineColorCorrection: Equatable, Sendable {
         self.hueDegrees = hueDegrees
     }
 
+    /// Every engine correction key starts with this. Exposed so the preset
+    /// layer can tell an engine key from a `project.json` property the scene's
+    /// own author named.
+    public static let keyPrefix = "wec_"
+
     private enum Key {
         static let enabled = "wec_e"
         static let brightness = "wec_brs"

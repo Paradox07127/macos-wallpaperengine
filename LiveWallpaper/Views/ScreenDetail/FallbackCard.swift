@@ -267,6 +267,28 @@ extension FallbackReason {
         }
     }
 
+    /// Whether a Wallpaper Engine install could plausibly be what's missing.
+    ///
+    /// Only unresolved resources qualify. A Windows plugin, an undecodable
+    /// texture format, a scene we couldn't parse, or an unsubscribed Workshop
+    /// dependency are all unaffected by the shared `assets/` folder — pointing
+    /// those at a multi-gigabyte download would send the user down a dead end.
+    var mightBeMissingEngineAssets: Bool {
+        switch self {
+        case .sceneResourceMissing:
+            return true
+        case .unsupportedType,
+             .sceneParseFailed,
+             .sceneShaderUnsupported,
+             .missingDependency,
+             .requiresWindowsPlugin,
+             .texContainerUnsupported,
+             .texUnsupportedFormat,
+             .texDecodeFailed:
+            return false
+        }
+    }
+
     /// Recoverable reasons that surface Retry on the detail view.
     var isActionable: Bool {
         switch self {

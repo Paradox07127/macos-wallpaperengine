@@ -95,7 +95,11 @@ final class WPESceneScriptLaneRelease<Value: AnyObject>: @unchecked Sendable {
     }
 
     deinit {
-        let laneOwnedValue = value
+        // Safe despite `Value` being non-Sendable: deinit runs when the last
+        // strong reference is already gone, so this closure is the only thing
+        // that can reach the value, and all it does is hold it until the lane
+        // drops it.
+        nonisolated(unsafe) let laneOwnedValue = value
         queue.async {
             withExtendedLifetime(laneOwnedValue) {}
         }
@@ -590,11 +594,20 @@ final class WPESceneScriptInstance {
         setupBudget: TimeInterval = 2.0,
         tickBudget: TimeInterval = 0.5,
         governor: WPESceneScriptExecutionGovernor = .processShared,
-        batchDispatcher: WPESceneScriptBatchDispatcher = .processShared
+        batchDispatcher: WPESceneScriptBatchDispatcher = .processShared,
+        /// The scene's render size. `nil` leaves the sandbox's 1920x1080, which
+        /// is only right for scenes that happen to be that size — every caller
+        /// that knows the real canvas must pass it.
+        canvasSize: SIMD2<Double>? = nil
     ) throws {
         self.lastValue = initialValue
         self.tickBudget = tickBudget
-        let engine = Engine(shared: shared, governor: governor, batchDispatcher: batchDispatcher)
+        let engine = Engine(
+            shared: shared,
+            governor: governor,
+            batchDispatcher: batchDispatcher,
+            canvasSize: canvasSize
+        )
         self.engineRelease = WPESceneScriptLaneRelease(value: engine, queue: engine.queue)
         var prepared = Self.preprocess(script: script)
         // Normalize `let/const scriptProperties` → `var` only when injecting, so
@@ -787,12 +800,16 @@ final class WPESceneScriptInstance {
         /// that throws every tick surfaces once instead of spamming per frame.
         private var didLogException = false
         private var didThrow = false
+        /// Scene render size, or nil to leave the sandbox's 1920x1080.
+        private let canvasSize: SIMD2<Double>?
 
         init(
             shared: WPESharedScriptState?,
             governor: WPESceneScriptExecutionGovernor,
-            batchDispatcher: WPESceneScriptBatchDispatcher
+            batchDispatcher: WPESceneScriptBatchDispatcher,
+            canvasSize: SIMD2<Double>?
         ) {
+            self.canvasSize = canvasSize
             self.shared = shared
             self.governor = governor
             self.participant = governor.makeParticipant()
@@ -886,6 +903,19 @@ final class WPESceneScriptInstance {
             }
         }
 
+        /// Same contract as the layer engine's: both keys, or the sandbox's
+        /// hardcoded 1920x1080 `screenResolution` survives and contradicts
+        /// `canvasSize` in the same context.
+        private func installCanvasSize(in context: JSContext) {
+            guard let canvasSize,
+                  let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
+                  let size = JSValue(newObjectIn: context) else { return }
+            size.setObject(canvasSize.x, forKeyedSubscript: "x" as NSString)
+            size.setObject(canvasSize.y, forKeyedSubscript: "y" as NSString)
+            engine.setObject(size, forKeyedSubscript: "canvasSize" as NSString)
+            engine.setObject(size, forKeyedSubscript: "screenResolution" as NSString)
+        }
+
         private func setUpOnQueue(
             script: String,
             scriptProperties: [String: WPESceneScriptPropertyValue],
@@ -903,6 +933,7 @@ final class WPESceneScriptInstance {
                 timerScheduler: timerScheduler
             )
             WPESceneScriptBaseclasses.install(in: context)
+            installCanvasSize(in: context)
             _ = updateEngineRuntime(0)
             if let shared { wpeInstallSharedState(shared, in: context) }
             context.exceptionHandler = { [weak self] _, ex in
