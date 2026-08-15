@@ -69,7 +69,17 @@ final class OggAudioTranscoder: @unchecked Sendable {
         lock.unlock()
 
         queue.async { [self] in
-            let produced = transcode(oggURL, to: destination)
+            // Timeout arbitration poisons the key; the decode loop polls that as
+            // a cancel signal so it cannot outlive the caller's security scope
+            // on the source URL.
+            let produced = transcode(oggURL, to: destination, isCancelled: {
+                lock.lock()
+                defer { lock.unlock() }
+                if case .unavailable = memo[key] {
+                    return true
+                }
+                return false
+            })
             lock.lock()
             if case .unavailable = memo[key] {
                 // A caller already timed out and poisoned this key — honor it and
@@ -108,7 +118,9 @@ final class OggAudioTranscoder: @unchecked Sendable {
         return nil
     }
 
-    private func transcode(_ source: URL, to destination: URL) -> URL? {
+    /// Internal (not private) so tests can drive the cancellation path directly.
+    /// A cancelled run deletes the half-written `.partial` and returns nil.
+    func transcode(_ source: URL, to destination: URL, isCancelled: () -> Bool) -> URL? {
         let partial = destination.appendingPathExtension("partial")
         try? FileManager.default.removeItem(at: partial)
         do {
@@ -138,6 +150,7 @@ final class OggAudioTranscoder: @unchecked Sendable {
                 // A `write` failure still propagates as a real error.
                 while !reachedEnd {
                     if ProcessInfo.processInfo.systemUptime - started > deadline { throw TranscodeError.timedOut }
+                    if isCancelled() { throw TranscodeError.cancelled }
                     try autoreleasepool {
                         do {
                             try input.read(into: buffer, frameCount: buffer.frameCapacity)
@@ -236,5 +249,5 @@ final class OggAudioTranscoder: @unchecked Sendable {
         }
     }
 
-    private enum TranscodeError: Error { case timedOut, truncated }
+    private enum TranscodeError: Error { case timedOut, truncated, cancelled }
 }

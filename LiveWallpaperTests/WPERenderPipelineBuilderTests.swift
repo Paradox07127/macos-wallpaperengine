@@ -220,6 +220,106 @@ struct WPERenderPipelineBuilderTests {
         #expect(rg88Request.translationCacheKey != r16fRequest.translationCacheKey)
     }
 
+    @Test("TEXnFORMAT for a `.previous` slot inherits the pass target's authored FBO format")
+    func textureFormatsForPreviousSlotsInheritThePassTargetFormat() throws {
+        /// `.previous` samples the prior frame of the pass's OWN target (the
+        /// executor rebinds the target's history texture 1:1), so a feedback
+        /// pass into an rg1616f FBO must compile with that format, not RGBA.
+        func makeGraph(targetFormat: String) -> WPERenderGraph {
+            WPERenderGraph(layers: [
+                WPERenderLayer(
+                    objectID: "prevformat",
+                    objectName: "Previous format probe",
+                    imagePath: "normal",
+                    materialPath: nil,
+                    geometry: .identity,
+                    compositeA: "a",
+                    compositeB: "b",
+                    localFBOs: [
+                        WPERenderFBO(name: "_rt_Feedback", scale: 1, format: targetFormat),
+                        WPERenderFBO(name: "_rt_Aux", scale: 1, format: "r8"),
+                    ],
+                    passes: [
+                        WPERenderPass(
+                            id: "prevformat.0",
+                            phase: .effect(file: "effects/format_probe/effect.json"),
+                            shader: "effects/format_probe",
+                            source: .image("normal"),
+                            target: .fbo(name: "_rt_Feedback"),
+                            textures: [
+                                1: .previous,
+                                2: .fbo("_rt_Aux"),
+                                3: .image("mask"),
+                            ],
+                            binds: [:],
+                            constants: [:],
+                            combos: [:],
+                            blending: "normal",
+                            cullMode: "nocull",
+                            depthTest: "disabled",
+                            depthWrite: "disabled"
+                        ),
+                    ]
+                ),
+            ])
+        }
+
+        let shaderFiles = [
+            "shaders/effects/format_probe.vert": """
+            attribute vec3 a_Position;
+            void main() { gl_Position = vec4(a_Position, 1.0); }
+            """,
+            "shaders/effects/format_probe.frag": """
+            #include "common_fragment.h"
+            void main() { gl_FragColor = vec4(1.0); }
+            """,
+        ]
+
+        let fixture = try makeFixture(
+            files: shaderFiles,
+            dataFiles: ["materials/mask.tex": makeHeaderOnlyTex(formatCode: 8)]
+        )
+        defer { fixture.cleanup() }
+        let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+
+        let rg1616fPass = try #require(
+            builder.build(graph: makeGraph(targetFormat: "rg1616f")).layers.first?.passes.first
+        )
+        #expect(rg1616fPass.comboValues["TEX1FORMAT"] == WPEOfficialTextureFormatABI.rg1616F)
+        // Sibling slots keep their own resolutions alongside the target inheritance.
+        #expect(rg1616fPass.comboValues["TEX2FORMAT"] == WPEOfficialTextureFormatABI.r8)
+        #expect(rg1616fPass.comboValues["TEX3FORMAT"] == WPEOfficialTextureFormatABI.rg88)
+
+        // Same graph, different authored target format ⇒ different compile identity.
+        let r16fPass = try #require(
+            builder.build(graph: makeGraph(targetFormat: "r16f")).layers.first?.passes.first
+        )
+        #expect(r16fPass.comboValues["TEX1FORMAT"] == WPEOfficialTextureFormatABI.r16F)
+        let rg1616fRequest = try #require(
+            try WPEMetalRenderExecutor.makeCompileRequest(for: rg1616fPass, recordFailure: false)
+        )
+        let r16fRequest = try #require(
+            try WPEMetalRenderExecutor.makeCompileRequest(for: r16fPass, recordFailure: false)
+        )
+        #expect(rg1616fRequest.sourceHash != r16fRequest.sourceHash)
+        #expect(rg1616fRequest.translationCacheKey != r16fRequest.translationCacheKey)
+
+        // A pass whose target has no non-RGBA authored format stays RGBA,
+        // matching the pre-existing `.previous` fallback for scene targets.
+        let rgbaPass = try #require(
+            builder.build(graph: makeGraph(targetFormat: "rgba8888")).layers.first?.passes.first
+        )
+        #expect(rgbaPass.comboValues["TEX1FORMAT"] == WPEOfficialTextureFormatABI.rgba8888)
+
+        // Regression guard: the target format may influence ONLY the `.previous`
+        // slot — every .tex/FBO/sparse slot must resolve identically across
+        // target formats, or target plumbing leaked into unrelated compile keys.
+        for slot in 0 ..< WPEShaderTranspiler.customTextureSlotCount where slot != 1 {
+            let macro = "TEX\(slot)FORMAT"
+            #expect(rg1616fPass.comboValues[macro] == rgbaPass.comboValues[macro])
+        }
+    }
+
     @Test("SceneScript transform journal overlays current-generation assignments before geometry preparation")
     func sceneScriptTransformJournalGeometryMerge() throws {
         let layer = WPERenderLayer(

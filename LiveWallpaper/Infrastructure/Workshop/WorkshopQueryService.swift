@@ -310,6 +310,10 @@ actor WorkshopQueryService {
     private static let queryFilesEndpoint = URL(string: "https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/")!
     private static let getUserFilesEndpoint = URL(string: "https://api.steampowered.com/IPublishedFileService/GetUserFiles/v1/")!
     private static let supportedAPIListEndpoint = URL(string: "https://api.steampowered.com/ISteamWebAPIUtil/GetSupportedAPIList/v1/")!
+        /// Covers QueryFiles (up to 100 items with previews/descriptions),
+        /// GetUserFiles, GetPlayerSummaries, and GetSupportedAPIList — one generous
+        /// cap for all four endpoints, well over their typical multi-KB payloads.
+        private static let maxResponseBytes = 8 * 1024 * 1024
     private static let maxAttempts = 3
     private static let tokenCapacity = 5.0
     private static let tokenRefillPerSecond = 1.0
@@ -375,7 +379,7 @@ actor WorkshopQueryService {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+                (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
         } catch {
             throw Self.mapNetworkError(error)
         }
@@ -444,7 +448,7 @@ actor WorkshopQueryService {
             let data: Data
             let response: URLResponse
             do {
-                (data, response) = try await session.data(for: urlRequest)
+                    (data, response) = try await BoundedNetworkFetch.fetch(urlRequest, session: session, byteCap: Self.maxResponseBytes)
             } catch {
                 throw Self.mapNetworkError(error)
             }
@@ -515,7 +519,7 @@ actor WorkshopQueryService {
             request.httpMethod = "GET"
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             request.timeoutInterval = 20
-            let (data, response) = try await session.data(for: request)
+                let (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [:] }
             let envelope = try JSONDecoder().decode(PlayerSummariesEnvelope.self, from: data)
             var map: [String: String] = [:]
@@ -711,6 +715,7 @@ actor WorkshopQueryService {
 
     private static func mapNetworkError(_ error: Error) -> WorkshopQueryError {
         if error is CancellationError { return .cancelled }
+        if error is BoundedNetworkFetch.ResponseTooLarge { return .responseParseFailure }
         guard let urlError = error as? URLError else { return .networkUnreachable }
         switch urlError.code {
         case .cancelled: return .cancelled

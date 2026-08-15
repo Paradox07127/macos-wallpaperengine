@@ -45,11 +45,19 @@ struct MonitorTokenTotals: Codable, Sendable, Equatable {
 
     static func + (lhs: Self, rhs: Self) -> Self {
         MonitorTokenTotals(
-            input: lhs.input + rhs.input,
-            output: lhs.output + rhs.output,
-            cacheRead: lhs.cacheRead + rhs.cacheRead,
-            cacheWrite: lhs.cacheWrite + rhs.cacheWrite
+            input: saturatingAdd(lhs.input, rhs.input),
+            output: saturatingAdd(lhs.output, rhs.output),
+            cacheRead: saturatingAdd(lhs.cacheRead, rhs.cacheRead),
+            cacheWrite: saturatingAdd(lhs.cacheWrite, rhs.cacheWrite)
         )
+    }
+
+    /// Token counts are folded from transcript JSON we don't control; a crafted or corrupted
+    /// usage field must cap at Int.max instead of trapping the process on overflow.
+    private static func saturatingAdd(_ lhs: Int, _ rhs: Int) -> Int {
+        let (result, overflow) = lhs.addingReportingOverflow(rhs)
+        guard overflow else { return result }
+        return lhs > 0 ? Int.max : Int.min
     }
 }
 

@@ -28,8 +28,9 @@ struct WPEMetalStaticLayerCachePlan: Equatable, Sendable {
 ///   - reads only frame-invariant textures: a non-dynamic image/asset, or an
 ///     FBO THIS layer already produced — never `.previous` (feedback) and never
 ///     a scene-alias FBO (`_rt_FullFrameBuffer`, which is the live scene output).
-/// …and the layer itself has no puppet, no `animationLayers`, no animated alpha,
-/// exactly one `.scene` pass, and ≥2 composite passes (the cost gate).
+/// …and the layer itself has no puppet, no `animationLayers`, no animated
+/// alpha/color on any of its geometries (base, local, group-local), exactly one
+/// `.scene` pass, and ≥2 composite passes (the cost gate).
 enum WPEMetalStaticLayerClassifier {
     static func cachePlan(
         for layer: WPEPreparedRenderLayer,
@@ -40,7 +41,11 @@ enum WPEMetalStaticLayerClassifier {
         guard layer.puppetModel == nil,
               layer.graphLayer.animationLayers.isEmpty,
               layer.graphLayer.geometry.alphaAnimation == nil,
+              layer.graphLayer.geometry.colorAnimation == nil,
               layer.graphLayer.localGeometry?.alphaAnimation == nil,
+              layer.graphLayer.localGeometry?.colorAnimation == nil,
+              layer.graphLayer.groupLocalGeometry?.alphaAnimation == nil,
+              layer.graphLayer.groupLocalGeometry?.colorAnimation == nil,
               !layer.passes.isEmpty else { return nil }
 
         var produced: Set<String> = []

@@ -91,6 +91,9 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     private static let decodedImagePrefetchLookahead = 2
     /// Decoded-cache upper bound = current + prefetch window + one slack.
     private static let decompressedImageCacheCapacity = 4
+        /// Anti-OOM hard cap on `Data(count:)` for an untrusted `decompressedByteCount`; mirrors
+        /// the eager path's cap (WPETexDecoder.swift:922, 256 MB).
+        private static let maxDecompressedByteCount = 268_435_456
 
     init(
         payload: WPETexStreamingPayload,
@@ -371,8 +374,14 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     }
 
     private nonisolated static func inflate(_ mipmap: WPETexCompressedMipmap) throws -> Data {
+            // decompressedByteCount is read straight off an untrusted .tex payload. Cap it before
+            // allocating, same as the eager path (WPETexDecoder.inflateIfNeeded, 256 MB). That path
+            // also clamps to a per-format expected size, but the format mapping isn't in scope for
+            // this static helper — the fixed ceiling alone already bounds worst-case allocation.
         let outputCount = mipmap.decompressedByteCount
-        guard outputCount > 0 else { throw Failure.decompressionFailed(mipmap.index) }
+            guard outputCount > 0, outputCount <= maxDecompressedByteCount else {
+                throw Failure.decompressionFailed(mipmap.index)
+            }
         var output = Data(count: outputCount)
         let written = output.withUnsafeMutableBytes { outRaw -> Int in
             mipmap.compressedBytes.withUnsafeBytes { srcRaw -> Int in

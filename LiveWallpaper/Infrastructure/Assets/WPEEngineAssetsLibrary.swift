@@ -202,8 +202,14 @@ extension WPEEngineAssetsLibrary {
 
         do {
             let resolution = try resolver(bookmarkData)
+                // The fileExists probes need the scope open — outside the container a
+                // valid grant otherwise reads as "no assets" (managed path already
+                // holds it in managedInstallRoot).
+                let validatedRoot = SecurityScopedBookmarkResolver.withScopedAccess(resolution.url) { _ in
+                    Self.validatedEngineRoot(from: resolution.url)
+                }
             // No assets/ → unauthorized for resolution; keep bookmark (may be transient).
-            guard let rootURL = Self.validatedEngineRoot(from: resolution.url) else {
+                guard let rootURL = validatedRoot else {
                 Logger.warning(
                     "Resolved Wallpaper Engine root has no assets folder; treating as unauthorized: \(resolution.url.path(percentEncoded: false))",
                     category: .fileAccess

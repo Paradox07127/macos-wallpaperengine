@@ -11,6 +11,11 @@ enum WallpaperSessionRestoreIntent: Equatable {
     case proposal
 }
 
+struct LegacyFingerprintMapping: Equatable {
+    let legacy: String
+    let current: String
+}
+
 extension ScreenManager {
     func refreshScreens(preserveRuntimeSessions: Bool = true) {
         guard !isTerminating else { return }
@@ -511,8 +516,10 @@ extension ScreenManager {
     /// on every refresh so a display that was unplugged during the upgrade still
     /// gets migrated the first time it comes back.
     private func migrateLegacyDisplayIdentities(of newScreens: [Screen]) {
-        var namesChanged = false
-        var overlaysChanged = false
+        let mappings: [LegacyFingerprintMapping] = newScreens.compactMap { screen in
+            guard let legacy = screen.legacyDisplayFingerprint else { return nil }
+            return LegacyFingerprintMapping(legacy: legacy, current: screen.displayFingerprint)
+        }
 
         let defaults = UserDefaults.appScoped()
         var sidebarOrder = SidebarDisplayOrder.decode(
@@ -520,24 +527,21 @@ extension ScreenManager {
         )
         let sidebarOrderBefore = sidebarOrder
 
+        let migratedNames = Self.migrateLegacyFingerprintKeys(screenNames, mappings: mappings)
+        let migratedOverlays = Self.migrateLegacyFingerprintKeys(monitorOverlays, mappings: mappings)
+        let namesChanged = migratedNames != screenNames
+        let overlaysChanged = migratedOverlays != monitorOverlays
+        screenNames = migratedNames
+        monitorOverlays = migratedOverlays
+
         for screen in newScreens {
             guard let legacy = screen.legacyDisplayFingerprint else { continue }
-            let current = screen.displayFingerprint
-
-            if screenNames[current] == nil, let name = screenNames.removeValue(forKey: legacy) {
-                screenNames[current] = name
-                namesChanged = true
-            }
-            if monitorOverlays[current] == nil, let overlay = monitorOverlays.removeValue(forKey: legacy) {
-                monitorOverlays[current] = overlay
-                overlaysChanged = true
-            }
-            configurationStore.migrateFingerprint(from: legacy, to: current, preferring: screen.id)
+            configurationStore.migrateFingerprint(from: legacy, to: screen.displayFingerprint, preferring: screen.id)
             // Without this the saved entry keeps the pre-UUID key, matches
             // neither by (ID, fingerprint) nor by fingerprint, and the user's
             // sidebar order silently resets to system order.
             sidebarOrder = SidebarDisplayOrder.rekeyed(
-                sidebarOrder, displayID: screen.id, from: legacy, to: current
+                sidebarOrder, displayID: screen.id, from: legacy, to: screen.displayFingerprint
             )
         }
 
@@ -550,6 +554,28 @@ extension ScreenManager {
         if sidebarOrder != sidebarOrderBefore {
             defaults.set(SidebarDisplayOrder.encode(sidebarOrder), forKey: SidebarDisplayOrder.preferencesKey)
         }
+    }
+
+    /// Migrates every value keyed by a legacy fingerprint to its current-key counterpart.
+    /// Two-phase so that a legacy key shared by multiple screens (two same-model panels
+    /// both reporting EDID serial 0) is cloned to every mapped current key instead of
+    /// being consumed by whichever screen is processed first; existing current-key
+    /// values always win, and legacy keys are only dropped after all clones are assigned.
+    nonisolated static func migrateLegacyFingerprintKeys<Value>(
+        _ dict: [String: Value],
+        mappings: [LegacyFingerprintMapping]
+    ) -> [String: Value] {
+        var result = dict
+        var consumedLegacyKeys: Set<String> = []
+        for mapping in mappings {
+            guard dict[mapping.current] == nil, let value = dict[mapping.legacy] else { continue }
+            result[mapping.current] = value
+            consumedLegacyKeys.insert(mapping.legacy)
+        }
+        for legacy in consumedLegacyKeys {
+            result.removeValue(forKey: legacy)
+        }
+        return result
     }
 
     /// Rename a display. Blank input, or the system's own name, clears the

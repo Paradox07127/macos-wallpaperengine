@@ -172,6 +172,27 @@ struct ClaudeSessionModelTests {
         #expect(model.tokens == MonitorTokenTotals(input: 200, output: 40, cacheRead: 600, cacheWrite: 80))
     }
 
+    @Test("Two near-Int.max usage lines saturate instead of trapping on overflow")
+    func tokenAggregationSaturatesOnOverflow() {
+        var model = ClaudeSessionModel(sessionId: "s1")
+        let now = Self.base
+        // Untrusted transcript JSON; a crafted or corrupted usage field must not crash ingest.
+        let huge: [String: Any] = [
+            "type": "assistant", "isSidechain": false, "timestamp": iso(now),
+            "sessionId": "s1", "cwd": "/Users/me/proj",
+            "message": [
+                "role": "assistant", "model": "claude-opus-4-8", "stop_reason": "end_turn",
+                "content": [["type": "text", "text": "redacted"]],
+                "usage": ["input_tokens": Int.max - 1, "output_tokens": Int.max - 1,
+                          "cache_read_input_tokens": Int.max - 1, "cache_creation_input_tokens": Int.max - 1],
+            ],
+        ]
+        model.ingest(line(huge))
+        model.ingest(line(huge))
+
+        #expect(model.tokens == MonitorTokenTotals(input: .max, output: .max, cacheRead: .max, cacheWrite: .max))
+    }
+
     @Test("user and system lines contribute no tokens")
     func nonAssistantLinesNoTokens() {
         var model = ClaudeSessionModel(sessionId: "s1")

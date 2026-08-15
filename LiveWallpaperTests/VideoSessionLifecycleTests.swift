@@ -1426,6 +1426,30 @@ struct VideoSessionLifecycleTests {
         #expect(!source.contains("observeInitialCurrentItemForDeferredFrameRateLimit"))
     }
 
+    @Test("setPlaybackSpeed clamps to [0.25, 4.0] and falls back to 1.0 for non-finite input")
+    func setPlaybackSpeedClampsRange() {
+        let player = WallpaperVideoPlayer(
+            url: URL(fileURLWithPath: "/tmp/speed-clamp-\(UUID().uuidString).mov"),
+            frame: CGRect(x: 0, y: 0, width: 32, height: 32),
+            loadImmediately: false
+        )
+
+        player.setPlaybackSpeed(-3.0)
+        #expect(player.currentPlaybackSpeed == 0.25)
+
+        player.setPlaybackSpeed(9999.0)
+        #expect(player.currentPlaybackSpeed == 4.0)
+
+        player.setPlaybackSpeed(.nan)
+        #expect(player.currentPlaybackSpeed == 1.0)
+
+        player.setPlaybackSpeed(.infinity)
+        #expect(player.currentPlaybackSpeed == 1.0)
+
+        player.setPlaybackSpeed(2.0)
+        #expect(player.currentPlaybackSpeed == 2.0)
+    }
+
     private static func waitUntil(_ predicate: @MainActor () -> Bool) async -> Bool {
         for _ in 0..<200 {
             if predicate() { return true }

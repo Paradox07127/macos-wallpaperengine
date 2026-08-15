@@ -5710,6 +5710,68 @@ private extension WPEMetalRenderExecutorTests {
             dynamicTextureNames: []) == nil)
     }
 
+    @Test("Animated geometry color is not cached")
+    func animatedGeometryColorIsNotCached() {
+        let shaders = ["genericimage4", "compose", "commands/copy"]
+        // Control: same geometry without the animation classifies as cacheable.
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(
+            for: staticCachePreparedLayer(shaderNames: shaders, geometry: staticCacheGeometry()),
+            dynamicTextureNames: []
+        ) != nil)
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(
+            for: staticCachePreparedLayer(
+                shaderNames: shaders,
+                geometry: staticCacheGeometry(colorAnimation: staticCacheAnimatedValue())
+            ),
+            dynamicTextureNames: []
+        ) == nil)
+    }
+
+    @Test("Animated local-geometry color is not cached")
+    func animatedLocalGeometryColorIsNotCached() {
+        let shaders = ["genericimage4", "compose", "commands/copy"]
+        // Control: a plain localGeometry alone must not reject the layer.
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(
+            for: staticCachePreparedLayer(shaderNames: shaders, localGeometry: staticCacheGeometry()),
+            dynamicTextureNames: []
+        ) != nil)
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(
+            for: staticCachePreparedLayer(
+                shaderNames: shaders,
+                localGeometry: staticCacheGeometry(colorAnimation: staticCacheAnimatedValue())
+            ),
+            dynamicTextureNames: []
+        ) == nil)
+    }
+
+    @Test("Animated group-local-geometry alpha is not cached")
+    func animatedGroupLocalGeometryAlphaIsNotCached() {
+        let shaders = ["genericimage4", "compose", "commands/copy"]
+        // Control: a plain groupLocalGeometry alone must not reject the layer.
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(
+            for: staticCachePreparedLayer(shaderNames: shaders, groupLocalGeometry: staticCacheGeometry()),
+            dynamicTextureNames: []
+        ) != nil)
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(
+            for: staticCachePreparedLayer(
+                shaderNames: shaders,
+                groupLocalGeometry: staticCacheGeometry(alphaAnimation: staticCacheAnimatedValue())
+            ),
+            dynamicTextureNames: []
+        ) == nil)
+    }
+
+    @Test("Animated group-local-geometry color is not cached")
+    func animatedGroupLocalGeometryColorIsNotCached() {
+        #expect(WPEMetalStaticLayerClassifier.cachePlan(
+            for: staticCachePreparedLayer(
+                shaderNames: ["genericimage4", "compose", "commands/copy"],
+                groupLocalGeometry: staticCacheGeometry(colorAnimation: staticCacheAnimatedValue())
+            ),
+            dynamicTextureNames: []
+        ) == nil)
+    }
+
     @Test("Single-pass layers are below the cache cost gate")
     func singlePassLayerIsNotCached() {
         #expect(WPEMetalStaticLayerClassifier.cachePlan(
@@ -5752,12 +5814,43 @@ private extension WPEMetalRenderExecutorTests {
     }
 }
 
+private func staticCacheAnimatedValue() -> WPESceneAnimatedValue {
+    WPESceneAnimatedValue(
+        animation: WPESceneNumericAnimation(
+            tracks: [[.init(frame: 0, value: 0), .init(frame: 30, value: 1)]],
+            fps: 30, length: 30, mode: "loop", wrapLoop: true
+        ),
+        scalarFallback: 1,
+        vectorFallback: nil
+    )
+}
+
+private func staticCacheGeometry(
+    alphaAnimation: WPESceneAnimatedValue? = nil,
+    colorAnimation: WPESceneAnimatedValue? = nil
+) -> WPERenderLayerGeometry {
+    WPERenderLayerGeometry(
+        origin: SIMD3<Double>(0, 0, 0),
+        scale: SIMD3<Double>(1, 1, 1),
+        angles: SIMD3<Double>(0, 0, 0),
+        alignment: .center,
+        size: nil,
+        alpha: 1,
+        alphaAnimation: alphaAnimation,
+        color: SIMD3<Double>(1, 1, 1),
+        colorAnimation: colorAnimation,
+        brightness: 1
+    )
+}
+
 private func staticCachePreparedLayer(
     shaderNames: [String],
     source: WPETextureReference = .image("materials/base.png"),
     puppetModel: WPEPuppetModel? = nil,
     animationLayers: [WPESceneAnimationLayer] = [],
     geometry: WPERenderLayerGeometry = .identity,
+    localGeometry: WPERenderLayerGeometry? = nil,
+    groupLocalGeometry: WPERenderLayerGeometry? = nil,
     isBuiltin: Bool = true,
     injectReadIntoFirstPass: WPETextureReference? = nil,
     firstPassConstants: [String: WPESceneShaderConstantValue] = [:],
@@ -5818,10 +5911,12 @@ private func staticCachePreparedLayer(
         materialPath: nil,
         animationLayers: animationLayers,
         geometry: geometry,
+        localGeometry: localGeometry,
         compositeA: compA,
         compositeB: compB,
         localFBOs: [],
-        passes: passes
+        passes: passes,
+        groupLocalGeometry: groupLocalGeometry
     )
     return WPEPreparedRenderLayer(
         graphLayer: layer,

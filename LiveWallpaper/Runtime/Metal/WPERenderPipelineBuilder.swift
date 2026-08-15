@@ -301,6 +301,7 @@ private struct WPEShaderSourceLoader: Sendable {
             textureFormatComboValues(
                 for: textureBindings,
                 fboFormats: fboFormats,
+                    passTarget: pass.target,
                 shaderName: shaderName,
                 source: vertexSource + "\n" + fragmentSource
             )
@@ -339,13 +340,14 @@ private struct WPEShaderSourceLoader: Sendable {
     private func textureFormatComboValues(
         for bindings: [Int: WPETextureReference],
         fboFormats: [String: String],
+        passTarget: WPERenderTarget,
         shaderName: String,
         source: String
     ) -> [String: Int] {
         var values: [String: Int] = [:]
         for slot in 0..<WPEShaderTranspiler.customTextureSlotCount {
             let macro = "TEX\(slot)FORMAT"
-            let resolution = textureFormatResolution(for: bindings[slot], fboFormats: fboFormats)
+            let resolution = textureFormatResolution(for: bindings[slot], fboFormats: fboFormats, passTarget: passTarget)
             values[macro] = resolution.value
 
             // Only emit fallback diagnostics when this shader actually branches
@@ -403,7 +405,8 @@ private struct WPEShaderSourceLoader: Sendable {
 
     private func textureFormatResolution(
         for reference: WPETextureReference?,
-        fboFormats: [String: String]
+            fboFormats: [String: String],
+            passTarget: WPERenderTarget
     ) -> TextureFormatResolution {
         guard let reference else {
             return .rgbaFallback("slot is sparse/unbound")
@@ -422,7 +425,21 @@ private struct WPEShaderSourceLoader: Sendable {
             }
             return TextureFormatResolution(value: value, diagnostic: nil, isMalformedTexture: false)
         case .previous:
-            return .rgbaFallback("previous-frame source is a four-channel Metal texture")
+                // `.previous` samples the prior frame of the pass's OWN target, so
+                // it inherits that target's authored format ABI (the executor
+                // rebinds the target's history texture 1:1).
+                guard case let .fbo(name) = passTarget else {
+                    return .rgbaFallback("previous-frame source samples the RGBA scene/composite target")
+                }
+                guard let authored = fboFormats[name] else {
+                    return .rgbaFallback("previous-frame target '\(name)' is not a layer-local FBO")
+                }
+                guard let value = WPEOfficialTextureFormatABI.shaderValue(forFBOFormatString: authored) else {
+                    return .rgbaFallback(
+                        "previous-frame target '\(name)' format '\(authored)' has no official shader-ABI code"
+                    )
+                }
+                return TextureFormatResolution(value: value, diagnostic: nil, isMalformedTexture: false)
         case .image(let path), .asset(let path):
             return textureFormatResolution(forExternalPath: path)
         }

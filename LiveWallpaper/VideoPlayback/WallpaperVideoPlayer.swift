@@ -762,10 +762,11 @@ final class WallpaperVideoPlayer {
     }
 
     func setPlaybackSpeed(_ speed: Double) {
-        playbackSpeed = speed
-        player?.defaultRate = Float(speed)
+        let clamped = Self.clampedPlaybackSpeed(speed)
+        playbackSpeed = clamped
+        player?.defaultRate = Float(clamped)
         if player?.timeControlStatus == .playing {
-            player?.rate = Float(speed)
+            player?.rate = Float(clamped)
         }
     }
 
@@ -813,6 +814,13 @@ final class WallpaperVideoPlayer {
     private static func clampedVolume(_ value: Double) -> Double {
         guard value.isFinite else { return 1.0 }
         return min(max(value, 0), 1)
+    }
+
+    /// Same [0.25, 4.0] range as DisplayPlaybackDefaults.clampedPlaybackSpeed
+    /// (Packages/LiveWallpaperCore/.../DisplayDefaults.swift:85-88).
+    private static func clampedPlaybackSpeed(_ value: Double) -> Double {
+        guard value.isFinite else { return 1.0 }
+        return min(max(value, 0.25), 4.0)
     }
 
     private func installQueueItemMaintenanceObserver() {
