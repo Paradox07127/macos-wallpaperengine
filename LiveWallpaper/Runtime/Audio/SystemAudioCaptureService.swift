@@ -2,7 +2,6 @@
 import CoreAudio
 import Foundation
 import LiveWallpaperCore
-import os
 
 /// App-wide Core Audio process-tap → spectrum processor → shared broker (WPE-style loopback).
 /// Main-thread lifecycle; IOProc is allocation-free steady-state on a dedicated queue.
@@ -34,20 +33,11 @@ final class SystemAudioCaptureService: @unchecked Sendable {
     /// Captured by IOProc (not `self`) so HAL cannot pin the service during teardown.
     private final class IOContext: @unchecked Sendable {
         let processor: AudioSpectrumProcessor
-        let broker: AudioSpectrumBroker
         var scratchLeft: [Float] = []
         var scratchRight: [Float] = []
-        
-        private let diagnosticLock = OSAllocatedUnfairLock(initialState: Float(0))
-        /// Diagnostic: confirms tap delivers normalized [-1, 1] samples.
-        var lastInputPeak: Float {
-            get { diagnosticLock.withLock { $0 } }
-            set { diagnosticLock.withLock { $0 = newValue } }
-        }
 
-        init(processor: AudioSpectrumProcessor, broker: AudioSpectrumBroker) {
+        init(processor: AudioSpectrumProcessor) {
             self.processor = processor
-            self.broker = broker
         }
     }
 
@@ -150,8 +140,10 @@ final class SystemAudioCaptureService: @unchecked Sendable {
         let processor = AudioSpectrumProcessor(
             configuration: AudioSpectrumProcessor.Configuration(sampleRate: Float(asbd.mSampleRate))
         )
-        let ioContext = IOContext(processor: processor, broker: broker)
+        let ioContext = IOContext(processor: processor)
         context = ioContext
+        // Consumers' snapshot() pulls analysis from this processor while capture runs.
+        broker.attachAnalyzer(processor)
 
         let channelCount = Int(asbd.mChannelsPerFrame)
         let isInterleaved = (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) == 0
@@ -219,6 +211,7 @@ final class SystemAudioCaptureService: @unchecked Sendable {
             AudioHardwareDestroyProcessTap(tapID)
             tapID = AudioObjectID(kAudioObjectUnknown)
         }
+        broker.attachAnalyzer(nil)
         context = nil
         isRunning = false
     }
@@ -255,7 +248,7 @@ final class SystemAudioCaptureService: @unchecked Sendable {
                     )
                 }
             }
-            publish(context, frameCount: frameCount, timestampNanos: timestampNanos)
+            ingest(context, timestampNanos: timestampNanos)
         } else {
             // Non-interleaved: buffer0=L, buffer1=R.
             let leftBuffer = bufferList[0]
@@ -279,24 +272,17 @@ final class SystemAudioCaptureService: @unchecked Sendable {
                     )
                 }
             }
-            publish(context, frameCount: frameCount, timestampNanos: timestampNanos)
+            ingest(context, timestampNanos: timestampNanos)
         }
     }
 
-    private static func publish(_ context: IOContext, frameCount: Int, timestampNanos: UInt64) {
-        var peak: Float = 0
-        let count = min(frameCount, context.scratchLeft.count)
-        for index in 0..<count {
-            peak = max(peak, abs(context.scratchLeft[index]))
-        }
-        context.lastInputPeak = peak
-
-        let frame = context.processor.process(
+    /// Ring write + cursor bump only — no FFT, no allocation on the IO thread.
+    private static func ingest(_ context: IOContext, timestampNanos: UInt64) {
+        context.processor.ingest(
             left: context.scratchLeft,
             right: context.scratchRight,
             timestampNanos: timestampNanos
         )
-        context.broker.publish(frame)
     }
 
     /// Resize scratch only when hardware buffer size changes (steady-state alloc-free).
