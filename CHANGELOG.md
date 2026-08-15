@@ -13,6 +13,34 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.5.1] — 2026-08-14
+
+Promotes `0.5.1-beta`. Everything below landed after that pre-release; the
+entry for it is kept underneath rather than rewritten. Most of the work in
+this window was again Pro-only (Wallpaper Engine scenes and the Steam Workshop
+setup), which this file does not cover.
+
+### Changed
+
+- The monitor board's refresh interval now reaches every stage behind it.
+  Samples were already taken at the chosen rate, but delivery stayed pinned at
+  once per second, so sub-second settings spent power on readings nothing drew.
+  The GPU's own sampling period was also computed against a fixed two-second
+  tick, which meant a board asking for a six-second GPU sample got one every
+  three seconds — and every 1.5 seconds at the fastest setting.
+- The CPU widget's trend is now windowed by wall clock instead of by sample
+  count, so a 60-second sparkline covers 60 seconds at any refresh rate. At the
+  five-second setting it had been showing five minutes.
+- Expensive sampling now follows each widget's section toggles rather than only
+  its kind. Switching off a sensor row or a process list stops the SMC reads and
+  the process-table walk instead of just hiding the result.
+
+### Removed
+
+- `gridColumns` is gone from the board configuration schema. Boards have laid
+  out free-form against the display's cell pitch for some time, and existing
+  configurations decode unchanged without it.
+
 ## [0.5.1-beta] — 2026-08-14
 
 `0.4.x` and `0.5.0` shipped without their own entries here. This one covers
