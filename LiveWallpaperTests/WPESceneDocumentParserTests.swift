@@ -378,59 +378,7 @@ struct WPESceneDocumentParserTests {
 
     @Test("Light objects and lightconfig preserve typed values and dynamic provenance without renderer consumption")
     func lightMetadataPreservesTypedFieldsAndBindings() throws {
-        let payload: [String: Any] = [
-            "camera": ["center": "0 0 0"],
-            "general": [
-                "orthogonalprojection": ["width": 1920, "height": 1080, "auto": true],
-                "lightconfig": [
-                    "directional": 1,
-                    "directionalshadow": 2,
-                    "point": 3,
-                    "pointshadow": 4,
-                    "spot": 5,
-                    "spotshadow": 6
-                ]
-            ],
-            "objects": [
-                [
-                    "id": 433,
-                    "name": "Point",
-                    "light": "lpoint",
-                    "origin": [
-                        "value": "10 20 30",
-                        "script": "export function update(value) { return value; }",
-                        "scriptproperties": ["offset": ["user": "lightOffset", "value": 1.0]]
-                    ],
-                    "color": "0.25 0.5 0.75",
-                    "radius": ["user": "lightRadius", "value": 100.0],
-                    "intensity": 6.0,
-                    "castshadow": true,
-                    "castvolumetrics": true,
-                    "innercone": 11.0,
-                    "outercone": 27.0,
-                    "attenuation": 0.125,
-                    "exponent": 2.0,
-                    "density": 3.0,
-                    "volumetricsexponent": 4.0,
-                    "lightsourcesize": 5.0,
-                    "mindistance": 6.0,
-                    "dependencies": [259, "459"]
-                ],
-                [
-                    "id": 259,
-                    "name": "Directional",
-                    "light": "ldirectional",
-                    "angles": [
-                        "value": "7 8 9",
-                        "script": "export function update(value) { return value; }"
-                    ],
-                    "cascadedistance0": 0.3,
-                    "cascadedistance1": 0.4,
-                    "cascadedistance2": 8.0,
-                    "visible": false
-                ]
-            ]
-        ]
+        let payload = lightMetadataPayload()
         let document = try WPESceneDocumentParser.parse(
             data: JSONSerialization.data(withJSONObject: payload),
             userValues: [
@@ -2440,4 +2388,63 @@ struct WPESceneDocumentParserTests {
         #expect(object.origin == SIMD3<Double>(1900, 1110, 0))
         #expect(object.scale == SIMD3<Double>(1, 0.5, 1))
     }
+}
+
+/// Lit-scene fixture kept out of the test body: inline, the literal pushed
+/// that function past the type checker's 300ms warning budget.
+private func lightMetadataPayload() -> [String: Any] {
+    let pointLight: [String: Any] = [
+        "id": 433,
+        "name": "Point",
+        "light": "lpoint",
+        "origin": [
+            "value": "10 20 30",
+            "script": "export function update(value) { return value; }",
+            "scriptproperties": ["offset": ["user": "lightOffset", "value": 1.0]]
+        ],
+        "color": "0.25 0.5 0.75",
+        "radius": ["user": "lightRadius", "value": 100.0],
+        "intensity": 6.0,
+        "castshadow": true,
+        "castvolumetrics": true,
+        "innercone": 11.0,
+        "outercone": 27.0,
+        "attenuation": 0.125,
+        "exponent": 2.0,
+        "density": 3.0,
+        "volumetricsexponent": 4.0,
+        "lightsourcesize": 5.0,
+        "mindistance": 6.0,
+        "dependencies": [259, "459"]
+    ]
+    let directionalLight: [String: Any] = [
+        "id": 259,
+        "name": "Directional",
+        "light": "ldirectional",
+        "angles": [
+            "value": "7 8 9",
+            "script": "export function update(value) { return value; }"
+        ],
+        "cascadedistance0": 0.3,
+        "cascadedistance1": 0.4,
+        "cascadedistance2": 8.0,
+        "visible": false
+    ]
+    let general: [String: Any] = [
+        "orthogonalprojection": ["width": 1920, "height": 1080, "auto": true],
+        "lightconfig": [
+            "directional": 1,
+            "directionalshadow": 2,
+            "point": 3,
+            "pointshadow": 4,
+            "spot": 5,
+            "spotshadow": 6
+        ]
+    ]
+    let payload: [String: Any] = [
+        "camera": ["center": "0 0 0"],
+        "general": general,
+        "objects": [pointLight, directionalLight]
+    ]
+    return payload
 }

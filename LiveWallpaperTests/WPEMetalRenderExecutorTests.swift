@@ -1541,12 +1541,6 @@ struct WPEMetalRenderExecutorTests {
             height: 4,
             bytes: Data(repeating: 255, count: 8 * 4 * 4)
         )
-        let destination = try makeRGBAInputTexture(
-            device: device,
-            width: 16,
-            height: 16,
-            bytes: Data(repeating: 0, count: 16 * 16 * 4)
-        )
         let pass = WPERenderPass(
             id: "resolution.0",
             phase: .effect(file: "effects/resolution/effect.json"),

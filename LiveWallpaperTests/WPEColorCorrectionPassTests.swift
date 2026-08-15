@@ -26,10 +26,8 @@ struct WPEColorCorrectionPassTests {
         // default one. Passing the test bundle instead finds no library at all.
         let library = try #require(device.makeDefaultLibrary())
         let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = try #require(library.makeFunction(name: "wpe_fullscreen_vertex"))
-        descriptor.fragmentFunction = try #require(
-            library.makeFunction(name: "wpe_color_correction_fragment")
-        )
+        descriptor.vertexFunction = library.makeFunction(name: "wpe_fullscreen_vertex")
+        descriptor.fragmentFunction = library.makeFunction(name: "wpe_color_correction_fragment")
         descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
         return Harness(
             device: device, queue: queue,
