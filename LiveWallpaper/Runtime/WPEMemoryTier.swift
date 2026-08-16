@@ -54,5 +54,26 @@ enum WPEMemoryTier: CaseIterable, Equatable, Sendable {
         case .standard, .expansive: return 200_000_000
         }
     }
+
+    /// Process-wide budget for decoded animation frame bytes shared by every
+    /// lazy `.tex` source across all scenes/displays (replaces the former
+    /// per-source 4-frame cap, whose worst case scaled with animation count).
+    var animatedFrameCacheBudgetBytes: Int {
+        switch self {
+        case .constrained: return 96 * 1_048_576
+        case .standard: return 128 * 1_048_576
+        case .expansive: return 192 * 1_048_576
+        }
+    }
+
+    /// Single decoded frame admission cap: frames above this decode, upload,
+    /// and release without entering the process cache (and never prefetch).
+    var animatedFrameAdmissionByteCap: Int {
+        switch self {
+        case .constrained: return 32 * 1_048_576
+        case .standard: return 48 * 1_048_576
+        case .expansive: return 64 * 1_048_576
+        }
+    }
 }
 #endif
