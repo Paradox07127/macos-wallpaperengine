@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperProWPE
 
 enum WPESceneAssetProviderError: Error, Equatable, Sendable {
     case invalidRelativePath(String)
@@ -21,8 +22,19 @@ protocol WPESceneAssetProvider: Sendable {
     /// the entry into the provider's session-lifetime temp dir (cleaned on deinit).
     func stagedURL(atRelativePath relativePath: String) throws -> URL
     func exists(atRelativePath relativePath: String) -> Bool
+    /// Zero-copy byte window for `.tex` payload parsing. A package backend maps
+    /// the whole `scene.pkg` once and windows the entry; a directory backend's
+    /// `data` is already `.mappedIfSafe`, so the default (full-range wrap of
+    /// `data`) is correct for it.
+    func mappedWindow(atRelativePath relativePath: String) throws -> WPEMappedByteSpan
     /// Diagnostic / enumeration use only — not on the hot path.
     var entryNames: [String] { get }
+}
+
+extension WPESceneAssetProvider {
+    func mappedWindow(atRelativePath relativePath: String) throws -> WPEMappedByteSpan {
+        WPEMappedByteSpan(data: try data(atRelativePath: relativePath))
+    }
 }
 
 /// Wraps a provider whose bytes live under a security-scoped source URL (a
@@ -56,6 +68,10 @@ final class WPESecurityScopedSceneAssetProvider: WPESceneAssetProvider, @uncheck
 
     func exists(atRelativePath relativePath: String) -> Bool {
         wrapped.exists(atRelativePath: relativePath)
+    }
+
+    func mappedWindow(atRelativePath relativePath: String) throws -> WPEMappedByteSpan {
+        try wrapped.mappedWindow(atRelativePath: relativePath)
     }
 
     var entryNames: [String] {

@@ -43,9 +43,9 @@ struct SceneResourceResolver: Sendable {
     }
 
     /// Opt-in TEXI/TEXB header dump for scene-debug sessions.
-    private func dumpRawTexMetadataIfActive(payload: Data, targetName: String) {
+    private func dumpRawTexMetadataIfActive(payload: WPEMappedByteSpan, targetName: String) {
         guard WPESceneDebugArtifacts.shared.activeSessionFolder != nil else { return }
-        guard case .success(let metadata) = decoder.extractRawMetadata(data: payload) else { return }
+        guard case .success(let metadata) = decoder.extractRawMetadata(span: payload) else { return }
         WPESceneDebugArtifacts.shared.dumpRawTexMetadata(
             name: (targetName as NSString).lastPathComponent,
             info: metadata.info,
@@ -71,9 +71,9 @@ struct SceneResourceResolver: Sendable {
         let resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
 
         if (resolvedPath as NSString).pathExtension.lowercased() == "tex" {
-            let payload: Data
+            let payload: WPEMappedByteSpan
             do {
-                payload = try providerData(resolvedPath)
+                payload = try providerWindow(resolvedPath)
             } catch ResolveError.fileMissing {
                 if let image = try resolveRasterSiblingImage(forMissingTexPath: resolvedPath) {
                     return image
@@ -81,7 +81,7 @@ struct SceneResourceResolver: Sendable {
                 throw ResolveError.fileMissing
             }
             dumpRawTexMetadataIfActive(payload: payload, targetName: resolvedPath)
-            switch decoder.decode(data: payload) {
+            switch decoder.decode(span: payload) {
             case .success(let image):
                 return image
             case .failure(let error):
@@ -141,9 +141,9 @@ struct SceneResourceResolver: Sendable {
             throw ResolveError.unsupportedTexture
         }
 
-        let payload = try providerData(resolvedPath)
+        let payload = try providerWindow(resolvedPath)
         dumpRawTexMetadataIfActive(payload: payload, targetName: resolvedPath)
-        switch decoder.extractTexturePayload(data: payload) {
+        switch decoder.extractTexturePayload(span: payload) {
         case .success(let texture):
             return texture
         case .failure(let error):
@@ -159,9 +159,9 @@ struct SceneResourceResolver: Sendable {
             throw ResolveError.unsupportedTexture
         }
 
-        let payload = try providerData(resolvedPath)
+        let payload = try providerWindow(resolvedPath)
         dumpRawTexMetadataIfActive(payload: payload, targetName: resolvedPath)
-        switch decoder.extractStreamingPayload(data: payload) {
+        switch decoder.extractStreamingPayload(span: payload) {
         case .success(let streaming):
             return streaming
         case .failure(let error):
@@ -238,18 +238,18 @@ struct SceneResourceResolver: Sendable {
         guard (relativePath as NSString).pathExtension.lowercased() == "tex" else {
             return .failure(.unsupportedTexture)
         }
-        let data: Data
+        let span: WPEMappedByteSpan
         do {
-            data = try provider.data(atRelativePath: relativePath)
+            span = try provider.mappedWindow(atRelativePath: relativePath)
         } catch {
             return .failure(.fileMissing)
         }
-        switch decoder.probe(data: data) {
+        switch decoder.probe(span: span) {
         case .success(let info):
             guard info.format?.isPhase21Decodable == true else {
                 return .success(info)
             }
-            switch decoder.decode(data: data) {
+            switch decoder.decode(span: span) {
             case .success:
                 break
             case .failure(let error):
@@ -315,6 +315,16 @@ struct SceneResourceResolver: Sendable {
     private func providerData(_ relativePath: String) throws -> Data {
         do {
             return try provider.data(atRelativePath: relativePath)
+        } catch WPESceneAssetProviderError.invalidRelativePath {
+            throw ResolveError.pathEscape
+        } catch {
+            throw ResolveError.fileMissing
+        }
+    }
+
+    private func providerWindow(_ relativePath: String) throws -> WPEMappedByteSpan {
+        do {
+            return try provider.mappedWindow(atRelativePath: relativePath)
         } catch WPESceneAssetProviderError.invalidRelativePath {
             throw ResolveError.pathEscape
         } catch {

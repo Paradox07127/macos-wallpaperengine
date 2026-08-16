@@ -13,13 +13,21 @@ import LiveWallpaperProWPE
 struct WPETexByteReader {
     let data: Data
     private(set) var cursor: Int
+    /// Exclusive end bound (buffer-relative). Lets the reader walk a window of
+    /// a larger mapping (a `scene.pkg` entry) without slicing a new `Data`.
+    let endBound: Int
 
-    init(data: Data, cursor: Int = 0) {
+    init(data: Data, cursor: Int = 0, endBound: Int? = nil) {
         self.data = data
         self.cursor = cursor
+        self.endBound = min(endBound ?? data.count, data.count)
     }
 
-    var isAtEnd: Bool { cursor >= data.count }
+    init(span: WPEMappedByteSpan) {
+        self.init(data: span.owner, cursor: span.range.lowerBound, endBound: span.range.upperBound)
+    }
+
+    var isAtEnd: Bool { cursor >= endBound }
 
     mutating func readUInt32(blockName: String = "?") throws -> UInt32 {
         try ensure(byteCount: 4, blockName: blockName)
@@ -58,12 +66,12 @@ struct WPETexByteReader {
         return asciiString
     }
 
-    mutating func readBytes(count: Int, blockName: String) throws -> Data {
+    /// Zero-copy view of the next `count` bytes; the span keeps `data` alive.
+    mutating func readSpan(count: Int, blockName: String) throws -> WPEMappedByteSpan {
         try ensure(byteCount: count, blockName: blockName)
-        let start = data.startIndex + cursor
-        let slice = data.subdata(in: start..<(start + count))
+        let span = WPEMappedByteSpan(owner: data, range: cursor..<(cursor + count))
         cursor += count
-        return slice
+        return span
     }
 
     /// Reads a NUL-terminated ASCII run, advancing past the terminator.
@@ -71,10 +79,11 @@ struct WPETexByteReader {
     /// for dump fidelity (older code path discarded it via skip-only).
     mutating func readNullTerminatedString(blockName: String) throws -> String {
         let absoluteCursor = data.startIndex + cursor
-        guard absoluteCursor <= data.endIndex else {
+        let absoluteEnd = data.startIndex + endBound
+        guard absoluteCursor <= absoluteEnd else {
             throw WPETexDecodeError.truncatedBlock(block: blockName, offset: cursor)
         }
-        guard let terminator = data[absoluteCursor...].firstIndex(of: 0) else {
+        guard let terminator = data[absoluteCursor..<absoluteEnd].firstIndex(of: 0) else {
             throw WPETexDecodeError.truncatedBlock(block: blockName, offset: cursor)
         }
         let slice = data.subdata(in: absoluteCursor..<terminator)
@@ -83,7 +92,7 @@ struct WPETexByteReader {
     }
 
     private func ensure(byteCount: Int, blockName: String) throws {
-        guard byteCount >= 0, cursor + byteCount <= data.count else {
+        guard byteCount >= 0, cursor + byteCount <= endBound else {
             throw WPETexDecodeError.truncatedBlock(block: blockName, offset: cursor)
         }
     }
