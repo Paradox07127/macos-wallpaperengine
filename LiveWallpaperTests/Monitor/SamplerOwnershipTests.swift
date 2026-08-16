@@ -169,12 +169,10 @@
             #expect(menu.contains(".onDisappear(perform: releaseSystemMonitorLeaseIfNeeded)"))
 
             let app = try productionSource("LiveWallpaper/App/LiveWallpaperApp.swift")
-            let prewarm = try slice(
-                app,
-                from: "func prewarmSettingsWindow() {",
-                until: "func showSettings("
-            )
-            #expect(!prewarm.contains("startMonitoring()"))
+            // B4 removed the settings-window prewarm entirely (the window is
+            // destroyed on close and cold-built on demand), so no hidden-window
+            // code path exists that could acquire a monitor lease pre-visibility.
+            #expect(!app.contains("prewarmSettingsWindow"))
             let present = try slice(
                 app,
                 from: "private func presentSettingsWindow(",
@@ -184,13 +182,23 @@
             #expect(present.contains("acquireSettingsSystemMonitorLeaseIfNeeded()"))
             #expect(present.contains("featureCatalog.isEnabled(.systemMonitor) == true"))
             #expect(present.contains("SystemMonitor.shared.startMonitoring()"))
+            // B4: close destroys the settings window, so the lease release and
+            // the controller drop both live in `windowWillClose`.
             let close = try slice(
+                app,
+                from: "func windowWillClose(",
+                until: "func windowDidMiniaturize("
+            )
+            #expect(close.contains("releaseSettingsSystemMonitorLeaseIfNeeded()"))
+            #expect(close.contains("settingsWindowController = nil"))
+            // Destroy-on-close means `windowShouldClose` must not re-grow a
+            // keep-alive branch for the settings window.
+            let shouldClose = try slice(
                 app,
                 from: "func windowShouldClose(",
                 until: "func windowWillClose("
             )
-            #expect(close.contains("releaseSettingsSystemMonitorLeaseIfNeeded()"))
-            #expect(close.contains("sender.orderOut(nil)"))
+            #expect(!shouldClose.contains("settingsWindowController"))
             #expect(app.contains("func windowDidMiniaturize("))
             #expect(app.contains("func windowDidDeminiaturize("))
             #expect(app.contains("SystemMonitor.shared.shutdown()"))

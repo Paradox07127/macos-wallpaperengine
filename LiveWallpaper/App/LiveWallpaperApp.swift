@@ -76,6 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @ObservationIgnored private let runtimeOptions = AppRuntimeOptions()
     @ObservationIgnored private var settingsWindowController: NSWindowController?
+    /// Lifecycle-probe seam for SettingsWindowLifecycleTests; production code
+    /// must not present or mutate through this.
+    var settingsWindowControllerForTesting: NSWindowController? { settingsWindowController }
     @ObservationIgnored private var settingsOwnsSystemMonitorLease = false
     @ObservationIgnored private var onboardingWindowController: NSWindowController?
     /// See `WeatherReactiveService.preferenceObserver` — same pattern.
@@ -322,23 +325,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Settings Window
 
-    /// No launch-time caller anymore (the automatic prewarm kept the whole
-    /// SwiftUI tree resident in a background app); the window is built on first
-    /// `showSettings`. Kept because SamplerOwnershipTests slices this function.
-    func prewarmSettingsWindow() {
-        guard lifecycle.allowsWork,
-              settingsWindowController == nil,
-              let manager = screenManager
-        else { return }
-
-        settingsWindowController = makeSettingsWindowController(
-            manager: manager,
-            initialNavigation: nil,
-            initialAddWallpaperPromptKind: nil
-        )
-        Logger.info("Settings window prewarmed", category: .ui)
-    }
-
     func showSettings(
         initialScreenID: CGDirectDisplayID? = nil,
         initialAddWallpaperPromptKind: String? = nil,
@@ -406,7 +392,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         window.backgroundColor = .windowBackgroundColor
         window.isMovableByWindowBackground = false
-        // Pair with `windowShouldClose` returning false: the close button only `orderOut`s the window so the warmed NavigationSplitView state survives.
+        // ARC owns the window through the controller; `windowWillClose` drops
+        // both so closing destroys the whole hierarchy instead of AppKit
+        // double-releasing it.
         window.isReleasedWhenClosed = false
         window.center()
         window.contentView = NSHostingView(rootView: contentView)
@@ -554,13 +542,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSWindowDelegate {
-    /// Hides the settings window on close so its warmed split-view state survives reopening.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if sender == settingsWindowController?.window {
-            releaseSettingsSystemMonitorLeaseIfNeeded()
-            sender.orderOut(nil)
-            return false
-        }
         if sender == onboardingWindowController?.window {
             // Closing is an intentional skip. Respect it on future launches;
             // the tour remains available from About.
@@ -569,11 +551,23 @@ extension AppDelegate: NSWindowDelegate {
         return true
     }
 
+    /// Destroys the settings window on close: a background app must not keep
+    /// the whole SwiftUI settings tree (previews, Workshop pages, caches)
+    /// resident. Long-running work (Workshop downloads, SteamCMD installs)
+    /// lives in app-lifetime services and survives; `showSettings` cold-builds
+    /// the next window.
     func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow else { return }
 
         if closingWindow == settingsWindowController?.window {
             releaseSettingsSystemMonitorLeaseIfNeeded()
+            closingWindow.delegate = nil
+            // Detaching the hosting view before dropping the controller is what
+            // deterministically fires SwiftUI `onDisappear` (audio consumer
+            // release, preview teardown); a plain dealloc is not guaranteed to.
+            closingWindow.contentView = nil
+            settingsWindowController = nil
+            Logger.info("Settings window destroyed on close", category: .ui)
             return
         }
 
