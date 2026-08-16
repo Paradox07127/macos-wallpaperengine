@@ -2511,8 +2511,14 @@ struct ScreenRuntimeOwnershipTests {
         #expect(renderActorSource.contains(
             "func commitScenePropertyPatch("
         ))
+        // Commit both applies the patch and refreshes the reload source of
+        // truth, so an in-place reload (hibernate wake / retry) can't revert
+        // the committed edits.
         #expect(renderActorSource.contains(
-            "renderer?.applyScenePropertyPatch(prepared.patch)"
+            "renderer.applyScenePropertyPatch(prepared.patch)"
+        ))
+        #expect(renderActorSource.contains(
+            "renderer.descriptor = updatedDescriptor"
         ))
         #expect(sessionSource.contains(
             "waitForScenePropertyPosterCommit"

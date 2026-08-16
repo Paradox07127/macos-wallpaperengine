@@ -182,7 +182,8 @@ extension ScreenManager {
                         let committedRevision = configurationStore.revision(for: screen.id)
                         let didCommit = await sceneSession.commitScenePropertyPatch(
                             preparedPatch,
-                            posterCommit: posterCommit
+                            posterCommit: posterCommit,
+                            updatedDescriptor: descriptor
                         )
                         if !didCommit {
                             restorePersistedSceneAfterFailedPatchDelivery(
