@@ -43,6 +43,13 @@ final class NetworkPathObserver: Sendable {
         latest.withLock { $0 }
     }
 
+    #if DEBUG
+    // Test-only introspection; no production reader.
+    var debugIsStarted: Bool {
+        started.withLock { $0 }
+    }
+    #endif
+
     private static func snapshot(from path: NWPath) -> Snapshot {
         let status: String
         switch path.status {
