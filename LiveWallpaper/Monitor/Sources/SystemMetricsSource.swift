@@ -15,6 +15,20 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         /// Per-app disk I/O attribution (rusage deltas inside the top-processes walk; needs the `process-info-rusage` sbpl exception).
         var processIO: Bool = false
 
+        // Base metric groups, keyed by whether any placed widget reads them.
+        // Default true: the legacy no-widget-info init must keep sampling
+        // everything (fail open — a missing demand must never starve a widget).
+        /// Host CPU ticks, per-core loads, CPU identity, and load averages (CPU widget).
+        var cpu: Bool = true
+        /// VM stats, breakdown, swap, and pressure (Memory widget).
+        var memory: Bool = true
+        /// Interface counters and the NWPathMonitor (Network widget).
+        var network: Bool = true
+        /// Block-storage read/write counters (Disk widget).
+        var disk: Bool = true
+        /// Battery/adapter state (Power widget).
+        var power: Bool = true
+
         static let `default` = Options()
     }
 
@@ -65,8 +79,14 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         reader.currentLevel().rawValue
     }
 
+    #if DEBUG
+    // Test-only introspection: proves the path monitor is demand-gated, not
+    // merely its snapshot dropped.
+    var debugNetPathStarted: Bool { netPath.debugIsStarted }
+    #endif
+
     func start(sink: any MonitorSnapshotSink) async {
-        netPath.start()
+        if options.network { netPath.start() }
         await state.startLoop(
             interval: interval,
             gpuSampleCadence: gpuSampleCadence,
@@ -158,35 +178,55 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             let elapsed = lastSampleTime.map { now.timeIntervalSince($0) } ?? interval
             lastSampleTime = now
 
-            if cpuInfo == nil {
-                cpuInfo = SystemMetricsSamplers.sampleCPUInfo()
+            // Base metric groups only run when a placed widget still reads
+            // them: the probe is skipped, not just its result hidden.
+            var cpuSample: SystemMetricsSamplers.CPUSample?
+            if options.cpu {
+                if cpuInfo == nil {
+                    cpuInfo = SystemMetricsSamplers.sampleCPUInfo()
+                }
+                let cpu = SystemMetricsSamplers.sampleCPU(previous: prevCPU)
+                prevCPU = cpu.counters
+                cpuSample = cpu.sample
             }
 
-            let cpu = SystemMetricsSamplers.sampleCPU(previous: prevCPU)
-            prevCPU = cpu.counters
+            var memory: SystemMetricsSamplers.MemorySample?
+            var swapUsedBytes: UInt64?
+            if options.memory {
+                memory = SystemMetricsSamplers.sampleMemory()
+                swapUsedBytes = SystemMetricsSamplers.sampleSwapUsedBytes()
+            }
 
-            let memory = SystemMetricsSamplers.sampleMemory()
+            var netRx: Double = 0
+            var netTx: Double = 0
+            var netInterfaces: [MonitorNetworkInterface] = []
+            var pathSnapshot: NetworkPathObserver.Snapshot?
+            if options.network {
+                let netRaw = SystemMetricsSamplers.sampleNetworkCounters()
+                netRx = SystemMetricsSamplers.rate(current: netRaw.rx, previous: prevNet?.rx ?? netRaw.rx, interval: elapsed)
+                netTx = SystemMetricsSamplers.rate(current: netRaw.tx, previous: prevNet?.tx ?? netRaw.tx, interval: elapsed)
+                pathSnapshot = netPath.currentSnapshot()
+                netInterfaces = SystemMetricsSamplers.networkInterfaces(
+                    previous: prevNetInterfaces,
+                    current: netRaw.interfaces,
+                    interval: elapsed,
+                    activeName: pathSnapshot?.activeInterfaceName
+                )
+                prevNet = (netRaw.rx, netRaw.tx)
+                prevNetInterfaces = Dictionary(
+                    netRaw.interfaces.map { ($0.name, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            }
 
-            let netRaw = SystemMetricsSamplers.sampleNetworkCounters()
-            let netRx = SystemMetricsSamplers.rate(current: netRaw.rx, previous: prevNet?.rx ?? netRaw.rx, interval: elapsed)
-            let netTx = SystemMetricsSamplers.rate(current: netRaw.tx, previous: prevNet?.tx ?? netRaw.tx, interval: elapsed)
-            let pathSnapshot = netPath.currentSnapshot()
-            let netInterfaces = SystemMetricsSamplers.networkInterfaces(
-                previous: prevNetInterfaces,
-                current: netRaw.interfaces,
-                interval: elapsed,
-                activeName: pathSnapshot?.activeInterfaceName
-            )
-            prevNet = (netRaw.rx, netRaw.tx)
-            prevNetInterfaces = Dictionary(
-                netRaw.interfaces.map { ($0.name, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
-
-            let diskRaw = SystemMetricsSamplers.sampleDiskCounters()
-            let diskRead = SystemMetricsSamplers.rate(current: diskRaw.read, previous: prevDisk?.read ?? diskRaw.read, interval: elapsed)
-            let diskWrite = SystemMetricsSamplers.rate(current: diskRaw.written, previous: prevDisk?.written ?? diskRaw.written, interval: elapsed)
-            prevDisk = diskRaw
+            var diskRead: Double = 0
+            var diskWrite: Double = 0
+            if options.disk {
+                let diskRaw = SystemMetricsSamplers.sampleDiskCounters()
+                diskRead = SystemMetricsSamplers.rate(current: diskRaw.read, previous: prevDisk?.read ?? diskRaw.read, interval: elapsed)
+                diskWrite = SystemMetricsSamplers.rate(current: diskRaw.written, previous: prevDisk?.written ?? diskRaw.written, interval: elapsed)
+                prevDisk = diskRaw
+            }
 
             if options.gpu, MonitoringCadence.shouldSampleGPU(updateCount: updateCount, cadence: gpuSampleCadence) {
                 lastGPU = SystemMetricsSamplers.sampleGPU()
@@ -196,7 +236,8 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 }
             }
 
-            let power = SystemMetricsSamplers.samplePower()
+            let power: SystemMetricsSamplers.PowerSample? =
+                options.power ? SystemMetricsSamplers.samplePower() : nil
 
             var accessories: [MonitorAccessoryBattery]?
             if options.accessories {
@@ -234,30 +275,32 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 sensors = sensorSampler?.sample()
             }
 
-            let loadAverages = loadAverageSampler()
+            let loadAverages = options.cpu ? loadAverageSampler() : nil
 
             let snapshot = MonitorSystemSnapshot(
-                cpuTotal: cpu.sample.total,
-                cpuUser: cpu.sample.user,
-                cpuSystem: cpu.sample.system,
-                perCore: cpu.sample.perCore.isEmpty ? nil : cpu.sample.perCore,
-                memUsedBytes: memory.usedBytes,
-                memTotalBytes: memory.totalBytes,
-                memPressure: SystemMetricsSource.memoryPressureWireValue(from: pressure),
-                swapUsedBytes: SystemMetricsSamplers.sampleSwapUsedBytes(),
+                cpuTotal: cpuSample?.total ?? 0,
+                cpuUser: cpuSample?.user ?? 0,
+                cpuSystem: cpuSample?.system ?? 0,
+                perCore: (cpuSample?.perCore).flatMap { $0.isEmpty ? nil : $0 },
+                memUsedBytes: memory?.usedBytes ?? 0,
+                memTotalBytes: memory?.totalBytes ?? 0,
+                memPressure: options.memory
+                    ? SystemMetricsSource.memoryPressureWireValue(from: pressure)
+                    : "normal",
+                swapUsedBytes: swapUsedBytes,
                 gpuUsage: lastGPU?.deviceUtil,
                 thermalState: SystemMetricsSamplers.thermalString(ProcessInfo.processInfo.thermalState),
                 netRxBytesPerSec: netRx,
                 netTxBytesPerSec: netTx,
                 diskReadBytesPerSec: diskRead,
                 diskWriteBytesPerSec: diskWrite,
-                batteryLevel: power.battery?.level,
-                batteryCharging: power.battery?.charging,
+                batteryLevel: power?.battery?.level,
+                batteryCharging: power?.battery?.charging,
                 loadAverage1: loadAverages?.first,
                 topProcesses: topProcesses,
                 cpuInfo: cpuInfo,
                 cpuLoadAvg: loadAverages,
-                memBreakdown: memory.breakdown,
+                memBreakdown: memory?.breakdown,
                 gpuDeviceName: gpuDeviceName,
                 gpuCoreCount: lastGPU?.coreCount,
                 gpuSampledAt: lastGPUSampledAt,
@@ -265,11 +308,11 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 gpuTilerUtil: lastGPU?.tilerUtil,
                 netInterfaces: netInterfaces.isEmpty ? nil : netInterfaces,
                 netPath: pathSnapshot?.path,
-                batteryIsCharged: power.battery?.isCharged,
-                powerSource: power.powerSource,
-                batteryMinutesRemaining: power.battery?.minutesRemaining,
-                batteryMinutesToFull: power.battery?.minutesToFull,
-                lowPowerMode: power.lowPowerMode,
+                batteryIsCharged: power?.battery?.isCharged,
+                powerSource: power?.powerSource,
+                batteryMinutesRemaining: power?.battery?.minutesRemaining,
+                batteryMinutesToFull: power?.battery?.minutesToFull,
+                lowPowerMode: power?.lowPowerMode,
                 accessories: accessories,
                 aneProcesses: lastANE.flatMap { $0.processes.isEmpty ? nil : $0.processes },
                 aneFootprintPresent: lastANE?.hasFootprint,
