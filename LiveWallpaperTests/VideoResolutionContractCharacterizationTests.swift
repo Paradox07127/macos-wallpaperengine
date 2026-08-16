@@ -111,6 +111,10 @@ struct VideoResolutionContractCharacterizationTests {
         #expect(compactPublishPath.contains("let height = CVPixelBufferGetHeight(pixelBuffer)"))
         #expect(compactPublishPath.contains(".bgra8Unorm_srgb, width, height, 0"))
         #expect(compactPublishPath.contains(".bgra8Unorm, width, height, 0"))
+        // NV12 planes mirror the decoder's per-plane dimensions the same way.
+        #expect(compactPublishPath.contains("CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)"))
+        #expect(compactPublishPath.contains(".r8Unorm, lumaWidth, lumaHeight, 0"))
+        #expect(compactPublishPath.contains(".rg8Unorm, chromaWidth, chromaHeight, 1"))
     }
 
     private enum SourceContractError: Error {

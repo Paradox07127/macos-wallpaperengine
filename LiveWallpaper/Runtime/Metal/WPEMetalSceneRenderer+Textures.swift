@@ -605,6 +605,7 @@ extension WPEMetalSceneRenderer {
             let source = try WPEVideoTextureSource(
                 device: executor.textureSourceDevice,
                 videoURL: url,
+                commandQueue: executor.textureSourceCommandQueue,
                 // Release the lease (keep the file); the cache owns lifetime now.
                 onInvalidate: { staleURL in
                     Task.detached(priority: .utility) {
