@@ -23,7 +23,10 @@ final class WPEMetalSceneRenderer: NSObject {
     var debugSurface: WPERenderSurface?
     #endif
 
-    let descriptor: SceneDescriptor
+    /// Updated on every committed property patch (actor-side) so an in-place
+    /// reload — hibernate wake, detail-view retry — rebuilds the PATCHED scene;
+    /// reloading the original would silently revert incremental edits.
+    var descriptor: SceneDescriptor
     let cacheRootURL: URL
     let dependencyMounts: [WPEAssetMount]
     /// Install root that contains `assets/`. This object owns the security scope for its lifetime.
@@ -161,7 +164,13 @@ final class WPEMetalSceneRenderer: NSObject {
     var cachedActiveStaticSignature: Int?
     var staticTextureRecordsEpoch = 0
     var dynamicTextureSources: [String: WPEDynamicTextureSource] = [:] {
-        didSet { cachedDynamicTextureNames = nil }
+        didSet {
+            cachedDynamicTextureNames = nil
+            // On-demand video release/rebuild flips frame demand at runtime (the
+            // released-videos-only scene may pause; a rebuilt one must resume).
+            // Load-time churn is skipped: the load tail re-applies the profile.
+            if didLoad { synchronizeFrameDemand() }
+        }
     }
     /// Memo of `dynamicTextureSources.keys`. Mutations are cold and clear it via `didSet`; the frame path only reads.
     private var cachedDynamicTextureNames: Set<String>?
@@ -209,6 +218,15 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Cached so callers arriving before deferred audio startup still record mute/volume; re-applied just before `play()`.
     var pendingAudioMuted: Bool = false
     var pendingAudioVolume: Double = 1.0
+    /// Last pacing decision derived from `needsContinuousFrames`, so the per-frame
+    /// demand re-check touches pacing only on a transition. Nil while suspended
+    /// (the next `.quality` application must re-apply unconditionally).
+    var lastAppliedContinuousFrames: Bool?
+    /// Session-facing push fired when frame/audio demand changes (App Nap mirror).
+    /// Set once by the builder before the actor adopts the renderer.
+    var onRuntimeActivityChange: (@Sendable (WPESceneRuntimeActivity) -> Void)?
+    /// Dedupe for `onRuntimeActivityChange`.
+    var lastPublishedRuntimeActivity: WPESceneRuntimeActivity?
     /// Preset level multiplies the master volume; it does not replace it.
     var presetAudioSettings: WPEEngineAudioSettings?
 

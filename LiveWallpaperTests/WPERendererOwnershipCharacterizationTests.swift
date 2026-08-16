@@ -53,13 +53,16 @@
                         "let metalLayer: WPEPresentLayer",
                         "let executor: WPEMetalRenderExecutor",
                         "var outputTexture: MTLTexture?",
+                        // Mutable since committed property patches update it
+                        // (actor-side) so in-place reloads rebuild the patched
+                        // scene instead of reverting edits.
+                        "var descriptor: SceneDescriptor",
                     ]
                 ),
                 SourceEvidence(
                     owner: "currently per-renderer immutable inputs and helpers",
                     source: renderer,
                     needles: [
-                        "let descriptor: SceneDescriptor",
                         "let dependencyMounts: [WPEAssetMount]",
                         "let resourceResolver: WPEMultiRootResourceResolver",
                         "let textureLoader: WPEMetalTextureLoader",
@@ -284,6 +287,7 @@
             let load = try sourceBlock(loadSource, from: "func load(on actor: isolated WPEDisplayRenderActor) async throws")
             let performLoad = try sourceBlock(loadSource, from: "private func performLoad(")
             let reload = try sourceBlock(lifecycleSource, from: "func reload(on actor: isolated WPEDisplayRenderActor) async throws")
+            let retire = try sourceBlock(lifecycleSource, from: "func retireRuntimeState(on actor: isolated WPEDisplayRenderActor) async")
             let cleanup = try sourceBlock(lifecycleSource, from: "func cleanup()")
             let releaseDynamic = try sourceBlock(textureSource, from: "func releaseDynamicTextureSources()")
             let renderFrame = try sourceBlock(frameSource, from: "func renderCurrentFrame(inputs: WPEFrameInputs) throws")
@@ -322,8 +326,18 @@
                     "didLoad = true",
                 ]
             )
+            // The teardown body moved into `retireRuntimeState` (shared with
+            // hibernate); `reload` must stay exactly retire-then-load.
+            expectOrder(
+                [
+                    "await retireRuntimeState(on: actor)",
+                    "try await load(on: actor)",
+                ],
+                in: reload,
+                owner: "reload teardown"
+            )
             expectContains(
-                reload,
+                retire,
                 owner: "reload teardown",
                 [
                     "loadGeneration &+= 1",
@@ -331,7 +345,6 @@
                     "releaseDynamicTextureSources()",
                     "clearSceneScriptRuntimeState()",
                     "executor.releaseTransientResources()",
-                    "try await load(on: actor)",
                 ]
             )
             expectContains(
@@ -523,6 +536,7 @@
             let upload = try sourceBlock(uploadSource, from: "func perform<T>(")
             let rendererLoad = try sourceBlock(loadSource, from: "func load(on actor: isolated WPEDisplayRenderActor) async throws")
             let rendererReload = try sourceBlock(lifecycleSource, from: "func reload(on actor: isolated WPEDisplayRenderActor) async throws")
+            let rendererRetire = try sourceBlock(lifecycleSource, from: "func retireRuntimeState(on actor: isolated WPEDisplayRenderActor) async")
             let rendererCleanup = try sourceBlock(lifecycleSource, from: "func cleanup()")
 
             expectContains(
@@ -601,6 +615,13 @@
                     "loadGeneration &+= 1",
                     "await staticTextureReloadDrain.wait()",
                     "releaseDynamicTextureSources()",
+                ],
+                in: rendererRetire,
+                owner: "renderer reload task drain"
+            )
+            expectOrder(
+                [
+                    "await retireRuntimeState(on: actor)",
                     "try await load(on: actor)",
                 ],
                 in: rendererReload,

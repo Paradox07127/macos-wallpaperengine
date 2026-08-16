@@ -995,6 +995,16 @@ final class WPEParticleSystem {
 
     var liveInstanceCount: Int { aliveCount }
 
+    /// Updated at the end of every `advance`: true once every spawn gate is
+    /// permanently closed (see the mirror computation there). False until the
+    /// first tick so an untouched system always counts as live.
+    private var emissionExhausted = false
+
+    /// True when this system can never put another particle on stage: nothing is
+    /// alive and no spawn path can reopen. Drives the renderer's frame-demand
+    /// gate — a finished one-shot/duration-bounded emitter stops forcing 30 FPS.
+    var isPermanentlyIdle: Bool { aliveCount == 0 && emissionExhausted }
+
     var tracksPointer: Bool { emitterTracksPointer }
 
     /// Follow Cursor off must clear pointer-locked spawns immediately.
@@ -1165,6 +1175,21 @@ final class WPEParticleSystem {
                 spawnAccumulator = min(spawnAccumulator, 1)
             }
         }
+        // Mirrors the spawn gates above exactly: `elapsed` is monotonic within a
+        // load, so once every gate is closed no later tick can reopen one. A
+        // pointer-blocked burst keeps `hasEmittedBurst` false and an eventfollow
+        // child without a duration stays emittable — both remain not-exhausted,
+        // which is the conservative direction for the frame-demand gate.
+        let rateExhausted = definition.rate <= 0 || !isWithinDuration
+        let burstExhausted: Bool
+        if definition.instantaneousCount <= 0 {
+            burstExhausted = true
+        } else if requiresFollowParent {
+            burstExhausted = !isWithinDuration
+        } else {
+            burstExhausted = hasEmittedBurst
+        }
+        emissionExhausted = hasStartedEmitting && rateExhausted && burstExhausted
     }
 
     #if !LITE_BUILD && DEBUG

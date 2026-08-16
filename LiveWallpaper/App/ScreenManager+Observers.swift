@@ -273,6 +273,19 @@ extension ScreenManager {
             suspendedScreenIDs.remove(screen.id)
         }
         applyAdaptiveFrameRate(to: screen, settings: settings)
+        #if !LITE_BUILD
+        // Deep hibernate is reserved for absence-like suspensions (lock, sleep,
+        // full-screen cover/occlusion) — an app-rule or battery pause stays a
+        // warm suspend for fast resume. The session owns the dwell countdown.
+        if let scene = screen.runtimeSession as? SceneWallpaperSession {
+            scene.setHibernationEligible(
+                profile == .suspended
+                    && (isUserAbsent
+                        || fullScreenDetector.isDesktopHidden(for: screen.id)
+                        || fullScreenDetector.isDesktopOccluded(for: screen.id))
+            )
+        }
+        #endif
         return profile
     }
 
@@ -345,12 +358,18 @@ extension ScreenManager {
     }
 
     /// Hold an activity assertion while ≥1 wallpaper session may be doing real work — producing frames, playing audio, or loading — so macOS doesn't App-Nap our background render loop down to ~1fps when the user focuses another window.
-    /// The release states are the provable idle ones only: no session, policy-suspended, or user-paused (each drives the session's effective profile to `.suspended`, which pauses the display link and the audio engine). A *playing static scene* still holds the assertion: the true frames signal (`WPEMetalSceneRenderer.needsContinuousFrames` → the render actor's `linkPaused`) is render-actor-isolated with no synchronous main-thread mirror, and ambiguity errs on holding.
+    /// The release states: no session, policy-suspended, user-paused, or a scene session whose renderer reported it is provably idle (static scene, no audio) through the session's runtime-activity mirror (`SceneWallpaperSession.mayPerformRuntimeWork`, pushed from the render actor on change). Non-scene sessions and scenes that have not reported yet err on holding.
     func refreshAppNapAssertion() {
-        let isRendering = screens.contains {
-            $0.runtimeSession != nil
-                && !suspendedScreenIDs.contains($0.id)
-                && ($0.playbackController?.userIntendsToPlay ?? true)
+        let isRendering = screens.contains { screen in
+            guard screen.runtimeSession != nil,
+                  !suspendedScreenIDs.contains(screen.id),
+                  screen.playbackController?.userIntendsToPlay ?? true else { return false }
+            #if !LITE_BUILD
+            if let scene = screen.runtimeSession as? SceneWallpaperSession {
+                return scene.mayPerformRuntimeWork
+            }
+            #endif
+            return true
         }
         if isRendering {
             guard renderingActivityToken == nil else { return }

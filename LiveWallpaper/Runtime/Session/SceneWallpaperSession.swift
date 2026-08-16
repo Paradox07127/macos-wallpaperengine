@@ -86,6 +86,21 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     private var audioCaptureDemandRetained = false
     private let audioCaptureDemandController: any SystemAudioCaptureDemandControlling
+    /// Deep hibernate (P1.5): while suspended for an absence-like reason the
+    /// renderer's loaded resources are dropped after `hibernationDelay`; waking
+    /// runs a full `reload()`. Session-level flag — the renderer's own state is
+    /// simply "not loaded" while hibernated.
+    private(set) var isHibernated = false
+    private let hibernationDelay: Duration
+    private var hibernationTask: Task<Void, Never>?
+    /// Retains the wake reload spawned on the suspended→quality transition so
+    /// `cleanup()` can cancel it.
+    private var wakeTask: Task<Void, Never>?
+    /// Latest renderer activity mirror (frame/audio work under `.quality`).
+    /// Nil until the renderer's first publish; consumers treat nil as "may be
+    /// working" so the App Nap gate errs on holding.
+    private(set) var rendererRuntimeActivity: WPESceneRuntimeActivity?
+    var onRuntimeActivityChange: (@MainActor () -> Void)?
     /// Durable user play intent; effective = `userIntendsToPlay && profile == .quality`.
     private(set) var userIntendsToPlay = true
     private var isVisible = true
@@ -131,13 +146,15 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         window: NSWindow,
         renderActor: WPEDisplayRenderActor,
         surface: WPERenderSurface,
-        audioCaptureDemandController: any SystemAudioCaptureDemandControlling = SystemAudioCaptureManager.shared
+        audioCaptureDemandController: any SystemAudioCaptureDemandControlling = SystemAudioCaptureManager.shared,
+        hibernationDelay: Duration = .seconds(20)
     ) {
         self.window = window
         self.renderActor = renderActor
         self.surface = surface
         self.rendererConfigAdapter = WPERendererConfigAdapter(renderActor: renderActor)
         self.audioCaptureDemandController = audioCaptureDemandController
+        self.hibernationDelay = hibernationDelay
     }
 
     private var effectivePerformanceProfile: WallpaperPerformanceProfile {
@@ -282,9 +299,12 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     func commitScenePropertyPatch(
         _ prepared: PreparedScenePropertyPatch,
-        posterCommit: ScenePropertyPosterCommit
+        posterCommit: ScenePropertyPosterCommit,
+        updatedDescriptor: SceneDescriptor
     ) async -> Bool {
-        let didCommit = await renderActor.commitScenePropertyPatch(prepared)
+        let didCommit = await renderActor.commitScenePropertyPatch(
+            prepared, updatedDescriptor: updatedDescriptor
+        )
         scenePropertyPosterCommitGate.resolve(posterCommit, result: didCommit)
         return didCommit
     }
@@ -322,11 +342,97 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     private func applyEffectivePerformanceProfile() {
         let effective = effectivePerformanceProfile
+        if effective == .quality {
+            // Any transition to playing cancels a pending hibernate countdown.
+            hibernationTask?.cancel()
+            hibernationTask = nil
+        }
         if lastAppliedPerformanceProfile != effective {
             lastAppliedPerformanceProfile = effective
             rendererConfigAdapter.applyPerformanceProfile(effective)
         }
+        if effective == .quality, isHibernated {
+            isHibernated = false
+            // Rebuild everything hibernate dropped; the profile command above
+            // (or the load tail's re-apply) restores pacing once loaded.
+            wakeTask = Task { [weak self] in
+                await self?.reload()
+            }
+        }
         reconcileSystemAudioCaptureDemand()
+    }
+
+    // MARK: - Deep hibernate (resource depth of the suspend path, not a profile)
+
+    /// `ScreenManager` marks the session eligible while it is suspended for an
+    /// absence-like reason (lock, display sleep, full-screen cover/occlusion).
+    /// After `hibernationDelay` of uninterrupted eligibility the renderer's
+    /// loaded resources are released; any flip back cancels the countdown.
+    func setHibernationEligible(_ eligible: Bool) {
+        guard eligible,
+              hasRenderer,
+              !isHibernated,
+              effectivePerformanceProfile == .suspended else {
+            hibernationTask?.cancel()
+            hibernationTask = nil
+            return
+        }
+        guard hibernationTask == nil else { return }
+        hibernationTask = Task { [weak self, hibernationDelay] in
+            // The handle stays set for the whole body — not just the countdown —
+            // so `cleanup()` can DRAIN an in-flight hibernate, and a transient
+            // blocker (an in-flight load) re-dwells instead of dropping the
+            // countdown (eligibility pushes are event-driven; a dropped
+            // countdown would skip the entire absence).
+            while true {
+                try? await Task.sleep(for: hibernationDelay)
+                guard !Task.isCancelled, let self else { return }
+                if await self.hibernateNow() {
+                    self.hibernationTask = nil
+                    return
+                }
+                if Task.isCancelled { return }
+            }
+        }
+    }
+
+    /// Returns false only on a transient blocker (an in-flight load/reload) so
+    /// the countdown re-arms; true when hibernated or no longer applicable.
+    private func hibernateNow() async -> Bool {
+        guard hasRenderer,
+              !isHibernated,
+              effectivePerformanceProfile == .suspended else { return true }
+        // Never tear down under an in-flight load/reload.
+        guard loadTask == nil else { return false }
+        let hibernated = await renderActor.hibernate()
+        guard hibernated, hasRenderer else { return true }
+        if effectivePerformanceProfile == .quality {
+            // Woken while the actor hop was in flight: rebuild immediately.
+            await reload()
+        } else {
+            isHibernated = true
+        }
+        return true
+    }
+
+    // MARK: - Runtime-activity mirror (App Nap gate)
+
+    /// Renderer push (dedup'd on its side); forwarded so `ScreenManager` can
+    /// re-evaluate the App Nap assertion on real transitions only.
+    func noteRendererRuntimeActivity(_ activity: WPESceneRuntimeActivity) {
+        guard activity != rendererRuntimeActivity else { return }
+        rendererRuntimeActivity = activity
+        onRuntimeActivityChange?()
+    }
+
+    /// Whether this session may be doing real work under `.quality` — the App
+    /// Nap assertion should stay held. Conservative: true until the renderer's
+    /// first activity push, and while a load/reload is in flight (preparing).
+    var mayPerformRuntimeWork: Bool {
+        guard let rendererRuntimeActivity else { return true }
+        return rendererRuntimeActivity.producesFrames
+            || rendererRuntimeActivity.audible
+            || loadTask != nil
     }
 
     /// Per-screen cursor-reactivity toggle (camera parallax + pointer shaders).
@@ -378,6 +484,12 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         lifecycleGeneration += 1
         scenePropertyMutationAuthority.advance()
         hasRenderer = false
+        let hibernation = hibernationTask
+        let wake = wakeTask
+        hibernationTask?.cancel()
+        hibernationTask = nil
+        wakeTask?.cancel()
+        wakeTask = nil
         scenePropertyPosterCommitGate.invalidate()
         requiresSystemAudioCapture = false
         reconcileSystemAudioCaptureDemand()
@@ -402,6 +514,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             await displayLinkStopTask?.value
             await startup?.value
             await load?.value
+            // A hibernate/wake may be mid-flight on the actor with no other
+            // drainable handle; teardown must not overtake it.
+            await hibernation?.value
+            await wake?.value
             await actor.teardownRenderer()
             actor.shutdown()
         }
@@ -462,6 +578,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             loadError = .cacheRootMissing
             return
         }
+        // A reload rebuilds everything hibernate dropped, whatever triggered it.
+        isHibernated = false
         // Cancel+drain in-flight load before reload — cooperative cancel can append half-loaded state.
         loadTask?.cancel()
         if let previous = loadTask {
