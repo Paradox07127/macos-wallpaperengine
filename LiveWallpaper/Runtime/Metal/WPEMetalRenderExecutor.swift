@@ -364,6 +364,13 @@ final class WPEMetalRenderExecutor {
         device
     }
 
+    /// Video NV12→BGRA conversion passes must commit on the frame queue:
+    /// same-queue hazard tracking orders them ahead of the frame that samples
+    /// the converted working texture (a separate queue would be unordered).
+    var textureSourceCommandQueue: MTLCommandQueue {
+        commandQueue
+    }
+
     /// One-shot guard so the waterwaves dispatch logs its first live execution per renderer
     /// (confirms the builtin effect_waterwaves path actually runs). Internal —
     /// flipped by the waterwaves `bind` closure in `WPEMetalEffectDispatchTable`.
