@@ -85,6 +85,12 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     /// Pull cadence cap: at most one FFT per 1/120 s regardless of caller count.
     static let minAnalysisIntervalNanos: UInt64 = 8_333_333
 
+    #if DEBUG
+    /// Test seam: runs between the window copy and the lap recheck so a test can
+    /// interleave producer writes deterministically.
+    var afterWindowCopyForTesting: (() -> Void)?
+    #endif
+
     init(configuration: Configuration = Configuration()) {
         var resolved = configuration
         if resolved.fftSize < 2 || !Self.isPowerOfTwo(resolved.fftSize) {
@@ -158,11 +164,15 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         }
     }
 
-    /// Immediate ingest + analysis (test / fallback path; capture pulls via `analyzeIfDue`).
+    /// Immediate ingest + analysis in one call (single-threaded test/oracle seam;
+    /// capture pulls via `analyzeIfDue`).
     func process(left: [Float], right: [Float], timestampNanos: UInt64) -> AudioSpectrumFrame {
         ingest(left: left, right: right, timestampNanos: timestampNanos)
         let total = ringCursor.withLock { $0.totalSamples }
+        // Single caller thread means no concurrent producer, so the lap discard
+        // cannot trip; the fallback only satisfies the optional.
         return analyze(total: total, timestampNanos: timestampNanos)
+            ?? AudioSpectrumFrame(validatedLeft: leftOutput, validatedRight: rightOutput, timestampNanos: timestampNanos)
     }
 
     /// Audio-thread entry: copy the callback's samples into the ring and publish the
@@ -195,11 +205,22 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
 
     /// One analysis of the latest window. The spectrum math (Hann window, FFT,
     /// normalization, band reduction, smoothing) is unchanged from the push-driven
-    /// version — only which windows get analyzed changed.
-    private func analyze(total: Int, timestampNanos: UInt64) -> AudioSpectrumFrame {
-        updateSmoothingIfNeeded(hopSize: total - lastAnalyzedTotal)
+    /// version — only which windows get analyzed changed. Returns nil when the
+    /// copied window was lapped by the producer (torn — see below).
+    private func analyze(total: Int, timestampNanos: UInt64) -> AudioSpectrumFrame? {
         copyWindow(from: leftRing, upTo: total, into: &leftInput)
         copyWindow(from: rightRing, upTo: total, into: &rightInput)
+        #if DEBUG
+        afterWindowCopyForTesting?()
+        #endif
+        // Recheck the write cursor after the copy: if the producer advanced past
+        // windowStart + capacity, the window's oldest samples were overwritten
+        // mid-copy (consumer stalled longer than the ring covers, ~170 ms at
+        // 48 kHz) and the copy mixes generations. Discard rather than render
+        // torn data; smoothing state is untouched so the next pull retries.
+        let writeTotal = ringCursor.withLock { $0.totalSamples }
+        guard writeTotal - (total - configuration.fftSize) <= ringCapacity else { return nil }
+        updateSmoothingIfNeeded(hopSize: total - lastAnalyzedTotal)
         lastAnalyzedTotal = total
 
         processChannel(input: leftInput, previous: &previousLeft, output: &leftOutput)
@@ -211,10 +232,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
             timestampNanos: timestampNanos
         )
     }
-
-    /// Used by the scene-owned audio fallback when system capture is unavailable.
-
-    // Capture boundary normalizes to noninterleaved Float (Tap vs SCK differ).
 
     private func updateSmoothingIfNeeded(hopSize: Int) {
         let hop = hopSize > 0 ? hopSize : configuration.fftSize

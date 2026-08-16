@@ -30,14 +30,6 @@ final class AudioSpectrumBroker: Sendable {
         lock.withLock { $0.analyzer = analyzer }
     }
 
-    func publish(_ frame: AudioSpectrumFrame) {
-        lock.withLockIfAvailable { state in
-            Self.copyChannel(frame.left, into: &state.left)
-            Self.copyChannel(frame.right, into: &state.right)
-            state.timestampNanos = frame.timestampNanos
-        }
-    }
-
     func snapshot() -> AudioSpectrumFrame {
         lock.withLock { state in
             // Analysis runs on the pulling consumer's thread; concurrent

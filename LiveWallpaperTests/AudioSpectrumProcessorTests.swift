@@ -90,18 +90,21 @@ struct AudioSpectrumProcessorTests {
         #expect(Self.isNormalized(frame.left))
     }
 
-    @Test("Published fast-path frame survives the processor reusing its output buffers")
-    func publishedFrameSurvivesProcessorBufferReuse() {
+    @Test("Cached broker frame survives the processor reusing its output buffers")
+    func cachedFrameSurvivesProcessorBufferReuse() {
         let processor = AudioSpectrumProcessor()
         let broker = AudioSpectrumBroker()
 
         let loud = Self.sineWave(cycles: 12, amplitude: 1.0)
-        let published = processor.process(left: loud, right: loud, timestampNanos: 1)
-        let expectedLeft = published.left.map { $0 }
-        let expectedRight = published.right.map { $0 }
+        let analyzed = processor.process(left: loud, right: loud, timestampNanos: 1)
+        let expectedLeft = analyzed.left.map { $0 }
+        let expectedRight = analyzed.right.map { $0 }
         #expect(expectedLeft.contains { $0 > 0 })
 
-        broker.publish(published)
+        // Cache the frame (whose arrays share storage with the processor's
+        // output buffers), then make the processor reuse those buffers.
+        broker.attachAnalyzer(SpectrumAnalyzerStub(analyzed))
+        _ = broker.snapshot()
 
         let silence = [Float](repeating: 0, count: 2048)
         _ = processor.process(left: silence, right: silence, timestampNanos: 2)
