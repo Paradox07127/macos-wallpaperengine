@@ -106,6 +106,41 @@ struct AudioSpectrumCadenceTests {
         #expect(control.left.contains { $0 > 0 })
     }
 
+    @Test("A producer lap during the window copy discards the analysis")
+    func lapDuringCopyDiscardsAnalysis() {
+        let processor = AudioSpectrumProcessor()
+        let tone = Self.orderSensitiveSignal(count: 2048)
+        processor.ingest(left: tone, right: tone, timestampNanos: 1)
+
+        // Ring capacity is 4x2048 = 8192; writing 8192 samples on top of the
+        // 2048-sample window laps its oldest sample mid-copy.
+        let flood = [Float](repeating: 0.25, count: 8192)
+        processor.afterWindowCopyForTesting = {
+            processor.ingest(left: flood, right: flood, timestampNanos: 2)
+        }
+        #expect(processor.analyzeIfDue(nowNanos: Self.interval) == nil)
+        processor.afterWindowCopyForTesting = nil
+
+        // The next pull analyzes the fresh (post-flood) data instead.
+        #expect(processor.analyzeIfDue(nowNanos: Self.interval * 2) != nil)
+    }
+
+    @Test("A concurrent write that stops short of a lap keeps the analysis")
+    func nearLapDuringCopyKeepsAnalysis() {
+        let processor = AudioSpectrumProcessor()
+        let tone = Self.orderSensitiveSignal(count: 2048)
+        processor.ingest(left: tone, right: tone, timestampNanos: 1)
+
+        // 6144 more samples put the write cursor exactly at windowStart +
+        // capacity — the window's oldest sample is still intact.
+        let nearFlood = [Float](repeating: 0.25, count: 6144)
+        processor.afterWindowCopyForTesting = {
+            processor.ingest(left: nearFlood, right: nearFlood, timestampNanos: 2)
+        }
+        defer { processor.afterWindowCopyForTesting = nil }
+        #expect(processor.analyzeIfDue(nowNanos: Self.interval) != nil)
+    }
+
     /// Ramp-enveloped two-tone signal: any cyclic shift of the window changes the
     /// windowed FFT, so spectrum equality implies sample order was preserved.
     private static func orderSensitiveSignal(count: Int) -> [Float] {

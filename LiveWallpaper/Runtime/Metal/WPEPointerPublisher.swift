@@ -49,6 +49,10 @@ final class WPEPointerPublisher {
         self.throttleInterval = throttleFPS > 0 ? 1.0 / throttleFPS : 0
     }
 
+    /// True while the NSEvent mouse monitors are installed — not the start/stop
+    /// lifecycle: a started publisher whose monitors were gated off by
+    /// `setMouseMonitoringEnabled(false)` reports false. No production reader;
+    /// tests observe the demand gate through it.
     var isRunning: Bool { globalMonitor != nil || localMonitor != nil }
 
     /// Idempotent: a second `start()` while already running is a no-op.

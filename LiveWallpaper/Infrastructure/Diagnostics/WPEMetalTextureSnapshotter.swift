@@ -3,6 +3,7 @@ import AppKit
 import LiveWallpaperCore
 import Metal
 import MetalPerformanceShaders
+import os
 
 /// Reads back the renderer's offscreen `MTLTexture` into an `NSImage` for
 /// `SceneDetailView` (without it the detail view falls into
@@ -146,7 +147,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         descriptor.usage = [.shaderRead, .shaderWrite]
         descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
         guard let destination = device.makeTexture(descriptor: descriptor),
-              let commandQueue = device.makeCommandQueue(),
+              let commandQueue = commandQueue(for: device),
               let commandBuffer = commandQueue.makeCommandBuffer() else {
             return nil
         }
@@ -175,6 +176,24 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         commandBuffer.waitUntilCompleted()
         guard commandBuffer.status == .completed else { return nil }
         return destination
+    }
+
+    /// Poster refreshes downsample on every capture; creating an MTLCommandQueue
+    /// per capture is measurable churn, so one queue per device is cached for the
+    /// process lifetime. Lock-protected because `makeImage` is callable from any
+    /// thread (poster path runs on the readback queue, tests call it directly).
+    private static let downsampleQueues =
+        OSAllocatedUnfairLock<[ObjectIdentifier: MTLCommandQueue]>(initialState: [:])
+
+    private static func commandQueue(for device: MTLDevice) -> MTLCommandQueue? {
+        downsampleQueues.withLock { cache in
+            let key = ObjectIdentifier(device)
+            if let cached = cache[key] { return cached }
+            let queue = device.makeCommandQueue()
+            queue?.label = "com.livewallpaper.wpe-metal.poster-downsample"
+            cache[key] = queue
+            return queue
+        }
     }
 
     private static func readRGBA8(_ texture: MTLTexture) -> [UInt8] {
