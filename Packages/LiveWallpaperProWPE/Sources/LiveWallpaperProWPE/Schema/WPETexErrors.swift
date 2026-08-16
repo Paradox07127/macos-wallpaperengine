@@ -249,7 +249,9 @@ public struct WPETexMipmap: Sendable, Equatable {
     public let height: Int
     public let storedByteCount: Int
     public let decompressedByteCount: Int?
-    public let payload: Data
+    /// View into the container bytes (mmap-backed when the provider maps the
+    /// file) — the compressed payload is never duplicated onto the heap.
+    public let payload: WPEMappedByteSpan
     public let isCompressed: Bool
     public let v4Fields: WPETexMipmapV4Fields?
 
@@ -259,7 +261,7 @@ public struct WPETexMipmap: Sendable, Equatable {
         height: Int,
         storedByteCount: Int,
         decompressedByteCount: Int?,
-        payload: Data,
+        payload: WPEMappedByteSpan,
         isCompressed: Bool,
         v4Fields: WPETexMipmapV4Fields? = nil
     ) {
@@ -358,8 +360,26 @@ public struct WPETexCompressedMipmap: Sendable, Equatable {
     public let width: Int
     public let height: Int
     public let isCompressed: Bool
-    public let compressedBytes: Data
+    /// View into the container bytes (mmap-backed when the provider maps the
+    /// file); the lazy streaming source inflates directly out of the mapping.
+    public let compressedBytes: WPEMappedByteSpan
     public let decompressedByteCount: Int
+
+    public init(
+        index: Int,
+        width: Int,
+        height: Int,
+        isCompressed: Bool,
+        compressedBytes: WPEMappedByteSpan,
+        decompressedByteCount: Int
+    ) {
+        self.index = index
+        self.width = width
+        self.height = height
+        self.isCompressed = isCompressed
+        self.compressedBytes = compressedBytes
+        self.decompressedByteCount = decompressedByteCount
+    }
 
     public init(
         index: Int,
@@ -369,12 +389,14 @@ public struct WPETexCompressedMipmap: Sendable, Equatable {
         compressedBytes: Data,
         decompressedByteCount: Int
     ) {
-        self.index = index
-        self.width = width
-        self.height = height
-        self.isCompressed = isCompressed
-        self.compressedBytes = compressedBytes
-        self.decompressedByteCount = decompressedByteCount
+        self.init(
+            index: index,
+            width: width,
+            height: height,
+            isCompressed: isCompressed,
+            compressedBytes: WPEMappedByteSpan(data: compressedBytes),
+            decompressedByteCount: decompressedByteCount
+        )
     }
 }
 
@@ -403,12 +425,11 @@ public struct WPETexStreamingFrame: Sendable, Equatable {
 }
 
 /// Lazy-decode counterpart to `WPETexTexturePayload`. Holds compressed
-/// per-image bytes plus the TEXS sub-rect schedule; consumers stream
-/// frames out one at a time, keeping a small LRU cache of recently
-/// decompressed images resident in RAM (consumer-controlled — see
-/// `WPETexLazyAnimatedTextureSource.decompressedImageCacheCapacity`).
-/// Peak CPU footprint is therefore the compressed `.tex` file size plus
-/// `cacheCapacity × image-bytes`, not the full eager-decode total.
+/// per-image byte spans plus the TEXS sub-rect schedule; consumers stream
+/// frames out one at a time, keeping recently decompressed images in a
+/// process-wide byte-budget LRU (see `WPEAnimatedFrameByteCache`).
+/// Peak CPU footprint is therefore the mapped `.tex` bytes plus the shared
+/// decoded-frame budget, not the full eager-decode total.
 public struct WPETexStreamingPayload: Sendable, Equatable {
     public let info: WPETexInfo
     public let compressedImages: [WPETexCompressedImage]

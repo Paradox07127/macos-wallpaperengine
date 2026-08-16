@@ -10,8 +10,12 @@ struct WPETexDecoder: Sendable {
 
     /// Cheap header probe — used by `WallpaperEngineImportService` during capability tier classification.
     func probe(data: Data) -> Result<WPETexInfo, WPETexDecodeError> {
+        probe(span: WPEMappedByteSpan(data: data))
+    }
+
+    func probe(span: WPEMappedByteSpan) -> Result<WPETexInfo, WPETexDecodeError> {
         do {
-            return .success(try parseHeader(data: data))
+            return .success(try parseHeader(span: span))
         } catch let error as WPETexDecodeError {
             return .failure(error)
         } catch {
@@ -21,8 +25,12 @@ struct WPETexDecoder: Sendable {
 
     /// Hot path.
     func decode(data: Data) -> Result<CGImage, WPETexDecodeError> {
+        decode(span: WPEMappedByteSpan(data: data))
+    }
+
+    func decode(span: WPEMappedByteSpan) -> Result<CGImage, WPETexDecodeError> {
         do {
-            let parsed = try parse(data: data)
+            let parsed = try parse(span: span)
             return .success(try makeCGImage(from: parsed))
         } catch let error as WPETexDecodeError {
             return .failure(error)
@@ -33,8 +41,12 @@ struct WPETexDecoder: Sendable {
 
     /// Headers + TEXS schedule only; leave compressed mipmaps for lazy playback.
     func extractStreamingPayload(data: Data) -> Result<WPETexStreamingPayload, WPETexDecodeError> {
+        extractStreamingPayload(span: WPEMappedByteSpan(data: data))
+    }
+
+    func extractStreamingPayload(span: WPEMappedByteSpan) -> Result<WPETexStreamingPayload, WPETexDecodeError> {
         do {
-            let parsed = try parse(data: data)
+            let parsed = try parse(span: span)
             return .success(try makeStreamingPayload(from: parsed))
         } catch let error as WPETexDecodeError {
             return .failure(error)
@@ -45,8 +57,12 @@ struct WPETexDecoder: Sendable {
 
     /// Header-only TEXI/TEXB probe for scene-debug dumps (no GPU/decompress).
     func extractRawMetadata(data: Data) -> Result<WPETexRawMetadata, WPETexDecodeError> {
+        extractRawMetadata(span: WPEMappedByteSpan(data: data))
+    }
+
+    func extractRawMetadata(span: WPEMappedByteSpan) -> Result<WPETexRawMetadata, WPETexDecodeError> {
         do {
-            let parsed = try parse(data: data)
+            let parsed = try parse(span: span)
             return .success(WPETexRawMetadata(info: parsed.info, bitmap: parsed.bitmap))
         } catch let error as WPETexDecodeError {
             return .failure(error)
@@ -57,8 +73,12 @@ struct WPETexDecoder: Sendable {
 
     /// Metal path.
     func extractTexturePayload(data: Data) -> Result<WPETexTexturePayload, WPETexDecodeError> {
+        extractTexturePayload(span: WPEMappedByteSpan(data: data))
+    }
+
+    func extractTexturePayload(span: WPEMappedByteSpan) -> Result<WPETexTexturePayload, WPETexDecodeError> {
         do {
-            let parsed = try parse(data: data)
+            let parsed = try parse(span: span)
 
             if let videoPayload = makeVideoPayload(from: parsed) {
                 return .success(WPETexTexturePayload(
@@ -177,7 +197,9 @@ struct WPETexDecoder: Sendable {
         guard parsed.bitmap.isVideoPayload || looksLikeMP4Payload(mip.payload) else {
             return nil
         }
-        return WPETexVideoPayload(bytes: mip.payload)
+        // Video bytes head straight to the disk cache; a one-shot copy here
+        // matches the pre-span behavior (readBytes subdata).
+        return WPETexVideoPayload(bytes: mip.payload.materializedData())
     }
 
     private func makeStreamingPayload(from parsed: ParsedTex) throws -> WPETexStreamingPayload {
@@ -298,8 +320,8 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    private func parseHeader(data: Data) throws -> WPETexInfo {
-        var reader = WPETexByteReader(data: data)
+    private func parseHeader(span: WPEMappedByteSpan) throws -> WPETexInfo {
+        var reader = WPETexByteReader(span: span)
         let containerMagic = try reader.readMagic()
         guard containerMagic.hasPrefix("TEXV") else {
             throw WPETexDecodeError.unsupportedContainer(magic: containerMagic)
@@ -317,8 +339,8 @@ struct WPETexDecoder: Sendable {
         )
     }
 
-    private func parse(data: Data) throws -> ParsedTex {
-        var reader = WPETexByteReader(data: data)
+    private func parse(span: WPEMappedByteSpan) throws -> ParsedTex {
+        var reader = WPETexByteReader(span: span)
         let containerMagic = try reader.readMagic()
         guard containerMagic.hasPrefix("TEXV") else {
             throw WPETexDecodeError.unsupportedContainer(magic: containerMagic)
@@ -577,7 +599,7 @@ struct WPETexDecoder: Sendable {
         }
 
         let storedSize = Int(try reader.readUInt32(blockName: "TEXB.mipSize"))
-        let payload = try reader.readBytes(count: storedSize, blockName: "TEXB.mipPayload")
+        let payload = try reader.readSpan(count: storedSize, blockName: "TEXB.mipPayload")
 
         return WPETexMipmap(
             index: index,
@@ -664,12 +686,12 @@ struct WPETexDecoder: Sendable {
         return try decoded.makeCGImage()
     }
 
-    private func looksLikeMP4Payload(_ data: Data) -> Bool {
-        guard data.count >= 12 else { return false }
-        return data[4] == 0x66
-            && data[5] == 0x74
-            && data[6] == 0x79
-            && data[7] == 0x70
+    private func looksLikeMP4Payload(_ span: WPEMappedByteSpan) -> Bool {
+        guard span.count >= 12 else { return false }
+        return span.byte(at: 4) == 0x66
+            && span.byte(at: 5) == 0x74
+            && span.byte(at: 6) == 0x79
+            && span.byte(at: 7) == 0x70
     }
 
     private func makeEncodedCGImage(from data: Data, mipmap: Int) throws -> CGImage {
@@ -907,7 +929,7 @@ struct WPETexDecoder: Sendable {
     }
 
     private func inflateIfNeeded(
-        payload: Data,
+        payload: WPEMappedByteSpan,
         expectedByteCount: Int?,
         decompressedByteCount: Int?,
         isCompressed: Bool,
@@ -930,16 +952,15 @@ struct WPETexDecoder: Sendable {
             return inflated
         }
 
-        guard let expectedByteCount else { return payload }
-        if payload.count == expectedByteCount { return payload }
-        if payload.count > expectedByteCount {
-            return payload.prefix(expectedByteCount)
+        guard let expectedByteCount else { return payload.materializedData() }
+        if payload.count >= expectedByteCount {
+            return payload.prefix(expectedByteCount).materializedData()
         }
 
         return try lz4Inflate(payload: payload, outputCount: expectedByteCount, mipmap: mipmap)
     }
 
-    private func lz4Inflate(payload: Data, outputCount: Int, mipmap: Int) throws -> Data {
+    private func lz4Inflate(payload: WPEMappedByteSpan, outputCount: Int, mipmap: Int) throws -> Data {
         var output = Data(count: outputCount)
         let written = output.withUnsafeMutableBytes { (out: UnsafeMutableRawBufferPointer) -> Int in
             payload.withUnsafeBytes { (input: UnsafeRawBufferPointer) -> Int in
@@ -949,7 +970,7 @@ struct WPETexDecoder: Sendable {
                 }
                 return compression_decode_buffer(
                     dst, outputCount,
-                    src, payload.count,
+                    src, input.count,
                     nil,
                     COMPRESSION_LZ4_RAW
                 )
