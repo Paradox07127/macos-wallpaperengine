@@ -1,22 +1,13 @@
 import Accelerate
 import Foundation
-import os
 
 /// Alloc-free stereo FFT → 64 log-spaced bins with treble EQ + attack/release (WPE-style).
-/// Input arrives through `ingest` into a ring (audio thread, no FFT); analysis is
-/// pull-driven via `analyzeIfDue`, so FFT rate follows consumer demand, capped at 120 Hz.
-/// @unchecked Sendable: producer fields are audio-IO-thread-only, analysis fields run
-/// under the broker snapshot lock (or single-threaded direct `process` use), and the
-/// `ringCursor` lock publishes the write position between them.
-///
-/// The lock covers the CURSOR, not the sample storage: the consumer copies its
-/// window out of `leftRing`/`rightRing` unsynchronized while the producer may be
-/// writing. Aligned 32-bit stores do not tear, so the observable failure is a
-/// window mixing two generations, which the post-copy lap check detects and
-/// discards. That is detection, not prevention — it stays a formal data race
-/// and Thread Sanitizer will say so. Removing it needs ownership transfer
-/// (SPSC hand-off or sealed double buffers), not a bigger ring; see the
-/// memory/CPU backlog.
+/// Input arrives through `ingest` into an `AudioSpectrumWindowExchange` (audio thread, no
+/// FFT); analysis is pull-driven via `analyzeIfDue`, so FFT rate follows consumer demand,
+/// capped at 120 Hz.
+/// @unchecked Sendable: the cross-thread sample hand-off is owned by the exchange, and
+/// every field declared here is consumer-only — reached from `process`/`analyzeIfDue`
+/// under the broker's snapshot lock (or single-threaded), never from the audio thread.
 final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable {
     struct Configuration: Equatable, Sendable {
         var fftSize: Int = 2048
@@ -67,25 +58,9 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     private var previousRight: [Float]
     private let bands: [Band]
 
-    // MARK: - Ring ingestion (SPSC: audio IO thread produces, snapshot pull consumes)
+    // MARK: - Sample hand-off (audio IO thread produces, snapshot pull consumes)
 
-    private struct RingCursor {
-        var totalSamples: Int
-        var timestampNanos: UInt64
-    }
-
-    /// Producer→consumer handoff of (samples written, host time). The unfair lock
-    /// stands in for a release/acquire atomic pair — deployment target 14.6 predates
-    /// the Synchronization module. Each critical section is a single store or load.
-    private let ringCursor = OSAllocatedUnfairLock(initialState: RingCursor(totalSamples: 0, timestampNanos: 0))
-    /// Running sample count, touched only by the single producer (audio IO thread).
-    private var producerTotal = 0
-    private let ringCapacity: Int
-    private let ringMask: Int
-    /// Raw buffers so concurrent producer writes / consumer reads don't trip Swift's
-    /// dynamic exclusivity checks (overlapping Array withUnsafe… accesses would).
-    private let leftRing: UnsafeMutableBufferPointer<Float>
-    private let rightRing: UnsafeMutableBufferPointer<Float>
+    private let exchange: AudioSpectrumWindowExchange
 
     /// Consumer-side analysis state; mutual exclusion is the caller's (broker lock).
     private var lastAnalyzedTotal = 0
@@ -95,8 +70,8 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     static let minAnalysisIntervalNanos: UInt64 = 8_333_333
 
     #if DEBUG
-    /// Test seam: runs between the window copy and the lap recheck so a test can
-    /// interleave producer writes deterministically.
+    /// Test seam: runs between taking the sealed window and the staleness recheck so a
+    /// test can interleave producer writes deterministically.
     var afterWindowCopyForTesting: (() -> Void)?
     #endif
 
@@ -133,21 +108,7 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         self.previousLeft = [Float](repeating: 0, count: resolved.binCount)
         self.previousRight = [Float](repeating: 0, count: resolved.binCount)
         self.bands = Self.logBands(configuration: resolved)
-
-        // 4× the window (power of two): the analyzed region trails the producer by
-        // ≥ 3×fftSize samples, so in-flight callback writes never touch it.
-        let capacity = resolved.fftSize * 4
-        self.ringCapacity = capacity
-        self.ringMask = capacity - 1
-        self.leftRing = .allocate(capacity: capacity)
-        self.rightRing = .allocate(capacity: capacity)
-        self.leftRing.initialize(repeating: 0)
-        self.rightRing.initialize(repeating: 0)
-    }
-
-    deinit {
-        leftRing.deallocate()
-        rightRing.deallocate()
+        self.exchange = AudioSpectrumWindowExchange(windowSize: resolved.fftSize)
     }
 
     /// Build log-spaced bands with treble EQ; each spans ≥1 bin; edges clamped.
@@ -177,60 +138,55 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     /// capture pulls via `analyzeIfDue`).
     func process(left: [Float], right: [Float], timestampNanos: UInt64) -> AudioSpectrumFrame {
         ingest(left: left, right: right, timestampNanos: timestampNanos)
-        let total = ringCursor.withLock { $0.totalSamples }
-        // Single caller thread means no concurrent producer, so the lap discard
-        // cannot trip; the fallback only satisfies the optional.
-        return analyze(total: total, timestampNanos: timestampNanos)
-            ?? AudioSpectrumFrame(validatedLeft: leftOutput, validatedRight: rightOutput, timestampNanos: timestampNanos)
+        // Discarding the returned frame: it carries the seal's timestamp, and this seam
+        // must stamp the caller's even when an ingest with no samples sealed nothing.
+        _ = analyze()
+        return AudioSpectrumFrame(
+            validatedLeft: leftOutput,
+            validatedRight: rightOutput,
+            timestampNanos: timestampNanos
+        )
     }
 
-    /// Audio-thread entry: copy the callback's samples into the ring and publish the
-    /// cursor. No allocation, no FFT — analysis happens on consumer pull.
-    /// Shorter channel zero-pads (HAL always delivers matched counts).
+    /// Audio-thread entry: hand the callback's samples to the exchange. No allocation,
+    /// no FFT, no waiting on a lock — analysis happens on consumer pull.
     func ingest(left: [Float], right: [Float], timestampNanos: UInt64) {
-        let frameCount = max(left.count, right.count)
-        guard frameCount > 0 else { return }
-        // Oversized batch (never from HAL): only the freshest ringCapacity samples matter.
-        let dropped = max(frameCount - ringCapacity, 0)
-        writeRing(leftRing, samples: left, from: dropped, count: frameCount - dropped, at: producerTotal + dropped)
-        writeRing(rightRing, samples: right, from: dropped, count: frameCount - dropped, at: producerTotal + dropped)
-        producerTotal += frameCount
-        let published = RingCursor(totalSamples: producerTotal, timestampNanos: timestampNanos)
-        ringCursor.withLock { $0 = published }
+        exchange.publish(left: left, right: right, timestampNanos: timestampNanos)
     }
 
     /// Consumer pull: run one analysis if new samples arrived since the last one and
     /// the cadence cap allows; nil means "cached frame is still current". Caller
     /// provides mutual exclusion (broker snapshot lock).
     func analyzeIfDue(nowNanos: UInt64) -> AudioSpectrumFrame? {
-        let cursor = ringCursor.withLock { $0 }
+        let cursor = exchange.publishedCursor()
         guard cursor.totalSamples > lastAnalyzedTotal else { return nil }
         guard lastAnalysisNanos == 0 || nowNanos &- lastAnalysisNanos >= Self.minAnalysisIntervalNanos else {
             return nil
         }
         lastAnalysisNanos = nowNanos
-        return analyze(total: cursor.totalSamples, timestampNanos: cursor.timestampNanos)
+        return analyze()
     }
 
-    /// One analysis of the latest window. The spectrum math (Hann window, FFT,
+    /// One analysis of the latest sealed window. The spectrum math (Hann window, FFT,
     /// normalization, band reduction, smoothing) is unchanged from the push-driven
-    /// version — only which windows get analyzed changed. Returns nil when the
-    /// copied window was lapped by the producer (torn — see below).
-    private func analyze(total: Int, timestampNanos: UInt64) -> AudioSpectrumFrame? {
-        copyWindow(from: leftRing, upTo: total, into: &leftInput)
-        copyWindow(from: rightRing, upTo: total, into: &rightInput)
+    /// version — only which windows get analyzed changed. Returns nil when the window
+    /// taken is already stale beyond the retained history (see below).
+    private func analyze() -> AudioSpectrumFrame? {
+        let cursor = exchange.copySealedWindow(into: &leftInput, and: &rightInput)
         #if DEBUG
         afterWindowCopyForTesting?()
         #endif
-        // Recheck the write cursor after the copy: if the producer advanced past
-        // windowStart + capacity, the window's oldest samples were overwritten
-        // mid-copy (consumer stalled longer than the ring covers, ~170 ms at
-        // 48 kHz) and the copy mixes generations. Discard rather than render
-        // torn data; smoothing state is untouched so the next pull retries.
-        let writeTotal = ringCursor.withLock { $0.totalSamples }
-        guard writeTotal - (total - configuration.fftSize) <= ringCapacity else { return nil }
-        updateSmoothingIfNeeded(hopSize: total - lastAnalyzedTotal)
-        lastAnalyzedTotal = total
+        // The copy runs under the exchange lock, so the window is always exactly one
+        // generation. It can still be old: a producer that has since run more than a
+        // full history (~170 ms at 48 kHz) past this window's start means the consumer
+        // was descheduled that long, so drop this frame and let the next pull take the
+        // fresh seal. Smoothing state is untouched, so nothing is lost but one interval.
+        let published = exchange.publishedCursor().totalSamples
+        guard published - (cursor.totalSamples - configuration.fftSize) <= exchange.historyCapacity else {
+            return nil
+        }
+        updateSmoothingIfNeeded(hopSize: cursor.totalSamples - lastAnalyzedTotal)
+        lastAnalyzedTotal = cursor.totalSamples
 
         processChannel(input: leftInput, previous: &previousLeft, output: &leftOutput)
         processChannel(input: rightInput, previous: &previousRight, output: &rightOutput)
@@ -238,7 +194,7 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         return AudioSpectrumFrame(
             validatedLeft: leftOutput,
             validatedRight: rightOutput,
-            timestampNanos: timestampNanos
+            timestampNanos: cursor.timestampNanos
         )
     }
 
@@ -247,10 +203,10 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         // leaves `lastAnalyzedTotal` arbitrarily far behind the producer, and a
         // hop of hundreds of thousands of samples drives both coefficients to
         // ~0 — no smoothing at all on the first frame back, i.e. a spectrum pop
-        // on resume. The window itself is fresh (the lap guard rejects torn
-        // ones), so clamp the hop to the ring: gaps larger than that carry no
-        // usable relation to the retained audio anyway.
-        let clamped = Swift.min(hopSize, ringCapacity)
+        // on resume. The window itself is one coherent generation, so clamp the
+        // hop to the retained history: gaps larger than that carry no usable
+        // relation to the retained audio anyway.
+        let clamped = Swift.min(hopSize, exchange.historyCapacity)
         let hop = clamped > 0 ? clamped : configuration.fftSize
         guard hop != lastHopSize else { return }
         lastHopSize = hop
@@ -264,40 +220,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
             stepSize: hop,
             sampleRate: configuration.sampleRate
         )
-    }
-
-    private func writeRing(
-        _ ring: UnsafeMutableBufferPointer<Float>,
-        samples: [Float],
-        from sourceStart: Int,
-        count: Int,
-        at ringStart: Int
-    ) {
-        for offset in 0..<count {
-            let sourceIndex = sourceStart + offset
-            ring[(ringStart + offset) & ringMask] = sourceIndex < samples.count ? samples[sourceIndex] : 0
-        }
-    }
-
-    /// Ring → contiguous FFT window (last `target.count` samples ending at `total`),
-    /// sanitizing non-finite samples like the old sliding append did.
-    private func copyWindow(
-        from ring: UnsafeMutableBufferPointer<Float>,
-        upTo total: Int,
-        into target: inout [Float]
-    ) {
-        let windowStart = total - target.count
-        target.withUnsafeMutableBufferPointer { buffer in
-            for offset in 0..<buffer.count {
-                let absolute = windowStart + offset
-                if absolute < 0 {
-                    buffer[offset] = 0
-                } else {
-                    let sample = ring[absolute & ringMask]
-                    buffer[offset] = sample.isFinite ? sample : 0
-                }
-            }
-        }
     }
 
     private func processChannel(input: [Float], previous: inout [Float], output: inout [Float]) {
