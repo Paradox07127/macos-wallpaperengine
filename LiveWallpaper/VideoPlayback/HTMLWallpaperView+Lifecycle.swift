@@ -45,99 +45,6 @@ struct HTMLMediaLifecycleState {
     }
 }
 
-/// Absence-dwell teardown: the resource depth of the suspend path (same signal
-/// and dwell as `SceneWallpaperSession`), not a third performance profile.
-/// Ordering is the whole point — the snapshot overlay has to be covering before
-/// the live document is dropped, or the desktop flashes blank (the same failure
-/// that keeps `aggressiveSuspend` opt-in).
-struct HTMLHibernationState {
-    enum Phase: Equatable {
-        case live
-        case hibernated
-        case restoring
-    }
-
-    /// `loadAboutBlank` is only ever returned by `snapshotDidPresent(_:generation:)`
-    /// with `presented == true`, never by `beginHibernation()`.
-    enum Step: Equatable {
-        case presentSnapshotOverlay
-        case loadAboutBlank
-        case reloadSource
-        /// A restore is already in flight under the cover — do nothing, and above
-        /// all do not uncover.
-        case keepCover
-    }
-
-    private(set) var phase: Phase = .live
-    /// Bumped by every resume and every source load so a snapshot reply that
-    /// lands after a wake cannot drop the document that wake just rebuilt.
-    private(set) var generation: UInt64 = 0
-    private(set) var isCoveringForHibernation = false
-
-    mutating func beginHibernation() -> Step? {
-        guard phase == .live, !isCoveringForHibernation else { return nil }
-        isCoveringForHibernation = true
-        return .presentSnapshotOverlay
-    }
-
-    mutating func snapshotDidPresent(_ presented: Bool, generation: UInt64) -> Step? {
-        guard isCoveringForHibernation, self.generation == generation else { return nil }
-        isCoveringForHibernation = false
-        guard presented, phase == .live else { return nil }
-        phase = .hibernated
-        return .loadAboutBlank
-    }
-
-    /// Any source load other than the `about:blank` teardown puts a real
-    /// document back; a restore in flight keeps its phase until it paints.
-    mutating func noteSourceLoad() {
-        isCoveringForHibernation = false
-        generation &+= 1
-        if phase == .hibernated { phase = .live }
-    }
-
-    mutating func requestRestore() -> Step? {
-        generation &+= 1
-        switch phase {
-        case .hibernated:
-            isCoveringForHibernation = false
-            phase = .restoring
-            return .reloadSource
-        case .restoring:
-            // A resume landing while the previous restore is still loading must
-            // not uncover: the document on screen is `about:blank` or a partial
-            // load. Keep the cover and let the in-flight reload finish under it.
-            return .keepCover
-        case .live:
-            isCoveringForHibernation = false
-            return nil
-        }
-    }
-
-    /// A suspend arriving mid-restore. The reload is still in flight behind the
-    /// cover, so the phase has to be one `setHibernationEligible` can arm from
-    /// again — otherwise the screen never hibernates for the rest of the session.
-    mutating func noteSuspendedDuringRestore() {
-        guard phase == .restoring else { return }
-        phase = .hibernated
-        isCoveringForHibernation = true
-        generation &+= 1
-    }
-
-    /// True once, when the rebuilt document has painted and the cover can go.
-    mutating func didRestore() -> Bool {
-        guard phase == .restoring else { return false }
-        phase = .live
-        return true
-    }
-
-    mutating func invalidate() {
-        phase = .live
-        isCoveringForHibernation = false
-        generation &+= 1
-    }
-}
-
 struct HTMLPreparationProbeState {
     let generation: UInt64
     let source: HTMLSource?
@@ -345,7 +252,7 @@ extension HTMLWallpaperView {
         } else {
             hibernationDwell.cancel()
             switch hibernationState.requestRestore() {
-            case .reloadSource:
+            case .rebuild:
                 restartPackageBackingAfterResume = false
                 // The overlay is stacked above the web view, so un-hiding it now
                 // lets the rebuilt document paint under cover; `didFinish` drops
@@ -430,13 +337,13 @@ extension HTMLWallpaperView {
     private func beginHibernationIfEligible() -> Bool {
         guard !isCleaningUp, mediaPlaybackSuspended, lastSource != nil else { return true }
         if hibernationState.phase == .restoring { return false }
-        guard hibernationState.beginHibernation() == .presentSnapshotOverlay else { return true }
+        guard hibernationState.begin() == .presentCover else { return true }
         let generation = hibernationState.generation
         presentHibernationCover { [weak self] presented in
             guard let self else { return }
             let covered = presented && !self.isCleaningUp && self.mediaPlaybackSuspended
-            guard self.hibernationState.snapshotDidPresent(covered, generation: generation)
-                == .loadAboutBlank else { return }
+            guard self.hibernationState.coverDidPresent(covered, generation: generation)
+                == .releaseResources else { return }
             self.dropDocumentForHibernation()
         }
         // The cover request is now the owner of the outcome — a snapshot failure

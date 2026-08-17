@@ -51,7 +51,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     /// past it a frozen pre-absence snapshot is worse than the live document.
     static let restoreCoverDeadline: Duration = .seconds(15)
     var restoreCoverDeadlineTask: Task<Void, Never>?
-    var hibernationState = HTMLHibernationState()
+    var hibernationState = HibernationPhase()
     let hibernationDwell = AbsenceDwell()
     var mediaLifecycleState = HTMLMediaLifecycleState()
     var mediaPlaybackSuspended: Bool {
@@ -540,7 +540,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         resetFailureCount: Bool,
         allowsPackageBackingWhileSuspended: Bool = false
     ) {
-        hibernationState.noteSourceLoad()
+        hibernationState.noteRebuildStarted()
         preparationGeneration &+= 1
         let navigationGeneration = preparationGeneration
         completedNavigationGeneration = nil
