@@ -87,7 +87,15 @@ grep -q -- '-configuration Release' <<<"$lite_release_block"
 grep -q -- '-destination "$MACOS_ARCHIVE_DESTINATION"' <<<"$lite_release_block"
 grep -q -- '-archivePath "$LITE_ARCHIVE_PATH"' <<<"$lite_release_block"
 grep -q 'CODE_SIGN_IDENTITY="-"' <<<"$lite_release_block"
-grep -q 'ARCHS=arm64' <<<"$lite_release_block"
+# Lite ships universal (ARCHS_STANDARD) so it runs on Intel Macs; Pro stays
+# pinned to arm64 above. The gate keeps its teeth by requiring the archive to be
+# checked for an arm64 slice — pinning the arch here would contradict the SKU.
+if grep -q 'ARCHS=' <<<"$lite_release_block"; then
+  echo "ERROR: Lite archive must not pin ARCHS — it ships universal for Intel support." >&2
+  exit 1
+fi
+# Lives just past the block's end marker, so assert against the whole script.
+grep -Fq 'assert_contains_arm64 "$LITE_RELEASE_BIN"' "$candidate_script"
 grep -q 'SWIFT_EMIT_LOC_STRINGS=NO' <<<"$lite_release_block"
 
 for scheme_file in \
