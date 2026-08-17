@@ -76,6 +76,60 @@ struct AbsenceDwellTests {
         #expect(attempts.count == 0)
     }
 
+    /// An attempt that finishes may be racing a `cancel()` + `arm()` pair.
+    /// Clearing the slot unconditionally dropped the replacement's handle: it kept
+    /// running while `isArmed` read false, so neither `cancel()` nor `drain()`
+    /// could reach it and a scene teardown could tear the renderer down under a
+    /// live hibernate.
+    /// Holds the first attempt right before it would clear the slot, so the
+    /// cancel→re-arm can land inside that window. Without the gate the attempt
+    /// clears the slot before a test can replace it and the race never happens.
+    @MainActor
+    private final class Gate {
+        var entered = false
+        var mayProceed = false
+
+        /// Cancellation-agnostic: `Task.sleep` throws instantly once the task is
+        /// cancelled, which is exactly the state under test.
+        func waitForProceed() async {
+            var spins = 0
+            while !mayProceed, spins < 200_000 {
+                await Task.yield()
+                spins += 1
+            }
+        }
+    }
+
+    @Test("A finishing attempt cannot clear a replacement's slot")
+    @MainActor
+    func finishingAttemptDoesNotClearReplacement() async throws {
+        let dwell = AbsenceDwell()
+        let gate = Gate()
+        let second = Attempts(blockFor: 99)
+
+        dwell.arm(initial: .milliseconds(20), retry: .milliseconds(20)) {
+            gate.entered = true
+            await gate.waitForProceed()
+            return true
+        }
+        try await Self.waitUntil("first attempt is parked") { gate.entered }
+
+        // Replace it while it is parked mid-attempt.
+        dwell.cancel()
+        dwell.arm(initial: .seconds(5), retry: .seconds(5)) { second.run() }
+        #expect(dwell.isArmed)
+
+        // Now let the old attempt run to completion. It must not clear the slot
+        // the replacement now owns.
+        gate.mayProceed = true
+        try await Task.sleep(for: .milliseconds(80))
+
+        #expect(dwell.isArmed, "the replacement's handle must survive the old attempt finishing")
+        await dwell.drain()
+        #expect(!dwell.isArmed)
+        #expect(second.count == 0, "drain cancelled it before its countdown elapsed")
+    }
+
     /// `cleanup()` must not return while an attempt is still running against the
     /// object being torn down.
     @Test("Draining waits for an in-flight attempt and clears the slot")
