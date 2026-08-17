@@ -138,6 +138,9 @@ final class WPEVideoTextureSource {
         playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = false
 
         let queuePlayer = AVQueuePlayer()
+        // Deliberately NOT `actionAtItemEnd = .none`: AVPlayerLooper loops by
+        // advancing the queue, and pinning the player at item end stalls it at
+        // the last frame of the first pass. Do not re-add it.
         // Prefetch next looped item before wrap to avoid sparse-decode slow-mo.
         queuePlayer.automaticallyWaitsToMinimizeStalling = true
         queuePlayer.preventsDisplaySleepDuringVideoPlayback = false

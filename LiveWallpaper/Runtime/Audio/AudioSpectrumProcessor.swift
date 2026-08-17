@@ -234,7 +234,15 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     }
 
     private func updateSmoothingIfNeeded(hopSize: Int) {
-        let hop = hopSize > 0 ? hopSize : configuration.fftSize
+        // A consumer that stopped pulling (suspended, hibernated, App-Napped)
+        // leaves `lastAnalyzedTotal` arbitrarily far behind the producer, and a
+        // hop of hundreds of thousands of samples drives both coefficients to
+        // ~0 — no smoothing at all on the first frame back, i.e. a spectrum pop
+        // on resume. The window itself is fresh (the lap guard rejects torn
+        // ones), so clamp the hop to the ring: gaps larger than that carry no
+        // usable relation to the retained audio anyway.
+        let clamped = Swift.min(hopSize, ringCapacity)
+        let hop = clamped > 0 ? clamped : configuration.fftSize
         guard hop != lastHopSize else { return }
         lastHopSize = hop
         attackCoefficient = Self.smoothingCoefficient(

@@ -279,8 +279,17 @@ final class WPESceneScriptAudioBridge {
                 )
                 // A dropped buffer's JS arrays simply stop receiving updates;
                 // a per-update registrant converges on its newest registration.
+                // A scene that legitimately registers more than the cap once at
+                // init loses its FIRST registrations instead, and the symptom
+                // (a subset of elements frozen at their initial values) is
+                // otherwise invisible — so say it happened.
                 if self.buffers.count > Self.maxRegisteredBuffers {
-                    self.buffers.removeFirst(self.buffers.count - Self.maxRegisteredBuffers)
+                    let dropped = self.buffers.count - Self.maxRegisteredBuffers
+                    self.buffers.removeFirst(dropped)
+                    Logger.warning(
+                        "[SceneScript] registerAudioBuffers exceeded \(Self.maxRegisteredBuffers) registrations — dropped \(dropped) oldest; those buffers stop updating",
+                        category: .wpeRender
+                    )
                 }
             }
             return buffer

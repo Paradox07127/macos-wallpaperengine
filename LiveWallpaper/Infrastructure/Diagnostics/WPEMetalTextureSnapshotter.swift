@@ -193,9 +193,12 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         downsampleQueues.withLock { cache in
             let key = ObjectIdentifier(device)
             if let cached = cache[key] { return cached }
+            // Count and cache only a real queue: assigning nil to the subscript
+            // would erase the key, so a failed creation must not pretend to be
+            // a cache entry (and must not inflate the creation seam).
+            guard let queue = device.makeCommandQueue() else { return nil }
             downsampleQueueCreationsForTesting.withLock { $0 += 1 }
-            let queue = device.makeCommandQueue()
-            queue?.label = "com.livewallpaper.wpe-metal.poster-downsample"
+            queue.label = "com.livewallpaper.wpe-metal.poster-downsample"
             cache[key] = queue
             return queue
         }
