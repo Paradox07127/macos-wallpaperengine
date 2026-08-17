@@ -7,7 +7,16 @@ import os
 /// pull-driven via `analyzeIfDue`, so FFT rate follows consumer demand, capped at 120 Hz.
 /// @unchecked Sendable: producer fields are audio-IO-thread-only, analysis fields run
 /// under the broker snapshot lock (or single-threaded direct `process` use), and the
-/// two sides hand off through the `ringCursor` lock.
+/// `ringCursor` lock publishes the write position between them.
+///
+/// The lock covers the CURSOR, not the sample storage: the consumer copies its
+/// window out of `leftRing`/`rightRing` unsynchronized while the producer may be
+/// writing. Aligned 32-bit stores do not tear, so the observable failure is a
+/// window mixing two generations, which the post-copy lap check detects and
+/// discards. That is detection, not prevention — it stays a formal data race
+/// and Thread Sanitizer will say so. Removing it needs ownership transfer
+/// (SPSC hand-off or sealed double buffers), not a bigger ring; see the
+/// memory/CPU backlog.
 final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable {
     struct Configuration: Equatable, Sendable {
         var fftSize: Int = 2048

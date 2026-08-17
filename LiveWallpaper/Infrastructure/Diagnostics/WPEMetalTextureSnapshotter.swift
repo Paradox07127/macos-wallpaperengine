@@ -131,6 +131,15 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         } else if let view = texture.makeTextureView(pixelFormat: workingFormat) {
             source = view
         } else {
+            // Apple documents `.pixelFormatView` as required for a differing-format
+            // view, and the renderer's output textures are `[.renderTarget,
+            // .shaderRead]`. Measured on this GPU family the view is vended anyway
+            // (probe: both usages return non-nil), so the sRGB poster path really
+            // does reach the GPU downsample here — but that is undocumented
+            // tolerance. The output pool is per-frame 4K on the hot path, and
+            // adding a usage flag there can cost lossless compression, so the
+            // spec-legal degradation is this nil: the caller falls back to the
+            // full-resolution readback, which is slower but correct.
             return nil
         }
 

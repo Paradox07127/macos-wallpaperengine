@@ -82,6 +82,11 @@ final class WPEVideoTextureSource {
     /// Test seam: retired frames whose wrappers are still held for the GPU.
     var pendingRetirementCountForTesting: Int { pendingRetirements.count }
 
+    /// Test seam: total fences ever registered. `pendingRetirements` is empty
+    /// both when a frame was fenced-and-drained and when it was never fenced at
+    /// all, so the count is what distinguishes them at teardown.
+    private(set) var retirementFencesCreatedForTesting = 0
+
     /// Test seam: skip the macOS 15+ player-level output so the item-level
     /// (`AVPlayerItemVideoOutput`) branch — the shipping path on macOS 14 — is
     /// exercisable on an OS where both APIs exist.
@@ -296,6 +301,18 @@ final class WPEVideoTextureSource {
         // completed handlers only mark flags — they hold no wrapper to carry a
         // late release past this point. Bounded wait (one small pass per
         // fence, already committed).
+        // The frame still published has never been retired — retirement happens
+        // at replacement, and there is no next publish. On the biplanar path the
+        // drain below already covers it (its conversion pass is the fence
+        // registered by that publish), but a BGRA frame is sampled by the
+        // renderer directly, so fence it now: without this, releasing the
+        // wrapper hands the buffer back to a pool the decoder is still feeding
+        // for the few milliseconds until `player.pause()` below, and a render
+        // command buffer mid-flight would sample the overwritten surface.
+        if let current = latest, let marker = conversionQueue.makeCommandBuffer() {
+            retire(current, fence: marker)
+            marker.commit()
+        }
         drainRetiredFrames()
         // Drop the published frame BEFORE the player goes away. Its
         // `CVMetalTexture` backing references a pixel buffer owned by the video
@@ -485,6 +502,7 @@ final class WPEVideoTextureSource {
     /// `invalidate()` can wait out the conversion pass reading the CURRENT
     /// frame's planes. Must run before `fence` is committed.
     private func retire(_ previous: PublishedFrame?, fence: MTLCommandBuffer) {
+        retirementFencesCreatedForTesting += 1
         let flag = WPEFrameFenceFlag()
         fence.addCompletedHandler { _ in flag.markCompleted() }
         pendingRetirements.append(PendingFrameRetirement(

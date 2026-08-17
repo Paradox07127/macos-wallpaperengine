@@ -57,4 +57,34 @@ struct WPEMetalSnapshotQueueCacheTests {
         let cachedAfter = try #require(WPEMetalTextureSnapshotter.commandQueue(for: device))
         #expect(cachedAfter === primed)
     }
+
+    /// The review flagged that the sRGB branch takes a differing-format texture
+    /// view, which Apple documents as needing `.pixelFormatView` — a usage the
+    /// renderer's output textures do not carry. This pins what the shipping
+    /// descriptor actually does: same format/usage as `makeOutputTexture`, and
+    /// the poster must come back downsampled rather than through the
+    /// full-resolution fallback.
+    @Test("an sRGB poster built with the renderer's own descriptor still downsamples on GPU")
+    func srgbPosterWithRendererDescriptorDownsamples() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm_srgb,
+            width: 2048,
+            height: 64,
+            mipmapped: false
+        )
+        // Verbatim from WPEMetalRenderExecutor.makeOutputTexture.
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .shared
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+
+        let snapshotter = WPEMetalTextureSnapshotter(label: "test.queue-cache.srgb")
+        let poster = try #require(await snapshotter.snapshotAsync(
+            from: WPEMetalTextureSnapshotter.SnapshotSource(texture: texture)
+        ))
+        #expect(
+            Int(poster.size.width) == WPEMetalTextureSnapshotter.posterMaxDimension,
+            "sRGB poster came back at \(poster.size.width)px — the GPU downsample was skipped"
+        )
+    }
 }

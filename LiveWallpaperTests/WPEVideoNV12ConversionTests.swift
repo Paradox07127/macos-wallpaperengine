@@ -272,6 +272,29 @@ struct WPEVideoNV12ConversionTests {
         #expect(settled, "completed retirements must be swept — pending stuck at \(source.pendingRetirementCountForTesting)")
     }
 
+    @Test("Invalidate fences the still-published frame, not just replaced ones")
+    func invalidateFencesTheCurrentFrame() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticNV12VideoFixture.writeMP4(durationSeconds: 0.5)
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
+
+        // One publish only: nothing has been replaced, so `pendingRetirements`
+        // is the empty case the drain used to walk right past — the published
+        // frame's wrappers were released with no fence at all.
+        let only = try Self.makeNV12PixelBuffer(width: 64, height: 64, luma: 120, cb: 110, cr: 140)
+        source.ingestForTesting(pixelBuffer: only)
+        let fencesAfterPublish = source.retirementFencesCreatedForTesting
+
+        source.invalidate()
+        #expect(
+            source.retirementFencesCreatedForTesting > fencesAfterPublish,
+            "invalidate released the published frame without fencing it"
+        )
+        #expect(source.pendingRetirementCountForTesting == 0,
+                "every fence must be waited out before teardown")
+    }
+
     @Test("Suspending playback releases retired wrappers instead of holding a frame")
     func suspendReleasesRetiredWrappers() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
