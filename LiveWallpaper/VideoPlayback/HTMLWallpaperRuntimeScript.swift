@@ -519,6 +519,8 @@ enum HTMLWallpaperRuntimeScript {
     // MARK: - GPU canvas MSAA / backing-store upgrader
 
     /// Default `antialias: true` for WebGL — WPE Spine often omits it (MSAA-off on WebKit).
+    /// Only fills the gap: a page that asked for `antialias:false` pays no MSAA
+    /// VRAM. WebIDL treats an absent key and an explicit `undefined` alike.
     static func gpuCanvasMSAAForcer() -> String {
         return """
         (function () {
@@ -531,12 +533,16 @@ enum HTMLWallpaperRuntimeScript {
                 proto.getContext = function (type, attrs) {
                     if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') {
                         var merged = {};
+                        var specifiedAntialias = false;
                         if (attrs && typeof attrs === 'object') {
                             for (var k in attrs) {
                                 if (Object.prototype.hasOwnProperty.call(attrs, k)) merged[k] = attrs[k];
                             }
+                            specifiedAntialias =
+                                Object.prototype.hasOwnProperty.call(attrs, 'antialias')
+                                && attrs.antialias !== undefined;
                         }
-                        merged.antialias = true;
+                        if (!specifiedAntialias) merged.antialias = true;
                         return orig.call(this, type, merged);
                     }
                     return orig.apply(this, arguments);
@@ -716,7 +722,8 @@ enum HTMLWallpaperRuntimeScript {
 
     // MARK: - Lifecycle Controller
 
-    /// Suspend/resume/RAF throttle for main-frame only (not cross-origin iframes).
+    /// Suspend/resume/RAF throttle. Injected into every frame; the host drives
+    /// the main frame, which relays the phase to subframes over `postMessage`.
     /// Layers visibility + rAF queue + CSS pause; `aggressiveSuspend` also
     /// loses GPU contexts (off by default — restore often leaves black pages).
     static func lifecycleController(aggressiveSuspend: Bool) -> String {
@@ -739,7 +746,12 @@ enum HTMLWallpaperRuntimeScript {
             var nativeClearInterval = window.clearInterval;
             var timerRecords = Object.create(null);
             var nextTimerId = 1000000000;
+            // Weak entries when available — auto-wrapped workers would otherwise
+            // be pinned for the page's lifetime.
             var managedWorkers = [];
+            var supportsWeakRef = (typeof WeakRef === 'function');
+            var isTopFrame = true;
+            try { isTopFrame = (window.top === window); } catch (e) { isTopFrame = false; }
 
             function timerNow() {
                 try {
@@ -866,29 +878,106 @@ enum HTMLWallpaperRuntimeScript {
                 } catch (e) {}
             }
 
-            function signalWorkers(phase) {
+            function workerFromEntry(entry) {
+                if (!entry) return null;
+                if (!supportsWeakRef) return entry;
+                try { return entry.deref() || null; } catch (e) { return null; }
+            }
+
+            function indexOfWorker(worker) {
                 for (var i = 0; i < managedWorkers.length; i++) {
-                    signalWorker(managedWorkers[i], phase);
+                    if (workerFromEntry(managedWorkers[i]) === worker) return i;
                 }
+                return -1;
+            }
+
+            function trackWorker(worker) {
+                if (!worker || typeof worker.postMessage !== 'function') {
+                    return function () {};
+                }
+                if (indexOfWorker(worker) < 0) {
+                    managedWorkers.push(supportsWeakRef ? new WeakRef(worker) : worker);
+                    if (suspended) signalWorker(worker, 'suspend');
+                }
+                return function () { untrackWorker(worker); };
+            }
+
+            function untrackWorker(worker) {
+                var index = indexOfWorker(worker);
+                if (index >= 0) managedWorkers.splice(index, 1);
+            }
+
+            function signalWorkers(phase) {
+                // Prune collected entries while walking: auto-wrapped workers have
+                // no page-side unregister call to rely on.
+                var live = [];
+                for (var i = 0; i < managedWorkers.length; i++) {
+                    var worker = workerFromEntry(managedWorkers[i]);
+                    if (!worker) continue;
+                    live.push(managedWorkers[i]);
+                    signalWorker(worker, phase);
+                }
+                managedWorkers = live;
             }
 
             function installWorkerLifecycle() {
-                // Workers are opt-in — unsolicited messages break app protocols.
+                // Kept for pages that build workers behind their own factory.
                 window.__lwRegisterWorkerForLifecycle__ = function (worker) {
-                    if (!worker || typeof worker.postMessage !== 'function') {
-                        return function () {};
-                    }
-                    if (managedWorkers.indexOf(worker) < 0) {
-                        managedWorkers.push(worker);
-                        if (suspended) signalWorker(worker, 'suspend');
-                    }
-                    return function () {
-                        var index = managedWorkers.indexOf(worker);
-                        if (index >= 0) managedWorkers.splice(index, 1);
-                    };
+                    return trackWorker(worker);
                 };
+
+                var NativeWorker = window.Worker;
+                if (typeof NativeWorker !== 'function' || NativeWorker.__lwWorkerWrapped__) return;
+                // Registration used to be opt-in, so a page that never called the
+                // hook kept its workers running through every suspend.
+                function LWManagedWorker(scriptURL, options) {
+                    var worker = new NativeWorker(scriptURL, options);
+                    trackWorker(worker);
+                    var nativeTerminate = worker.terminate;
+                    if (typeof nativeTerminate === 'function') {
+                        worker.terminate = function () {
+                            untrackWorker(worker);
+                            return nativeTerminate.apply(worker, arguments);
+                        };
+                    }
+                    // Returning the real Worker keeps `instanceof Worker` true.
+                    return worker;
+                }
+                LWManagedWorker.prototype = NativeWorker.prototype;
+                LWManagedWorker.__lwWorkerWrapped__ = true;
+                try { window.Worker = LWManagedWorker; } catch (e) {}
             }
             installWorkerLifecycle();
+
+            // The host can only evaluate script in the main frame, so an ad or
+            // embedded-player iframe keeps its own timers, rAF and canvases
+            // running; relay the phase down the frame tree instead.
+            function broadcastToChildFrames(phase) {
+                var children;
+                try { children = window.frames; } catch (e) { return; }
+                if (!children) return;
+                for (var i = 0; i < children.length; i++) {
+                    try {
+                        children[i].postMessage({ __lwLifecycle__: phase }, '*');
+                    } catch (e) {}
+                }
+            }
+
+            function installFrameLifecycleRelay() {
+                if (isTopFrame) return;
+                try {
+                    window.addEventListener('message', function (event) {
+                        var data = event && event.data;
+                        if (!data || typeof data !== 'object') return;
+                        var phase = data.__lwLifecycle__;
+                        if (phase !== 'suspend' && phase !== 'resume') return;
+                        // Only the embedding frame may drive this one.
+                        if (event.source !== window.parent) return;
+                        if (phase === 'suspend') window.__lwSuspend__();
+                        else window.__lwResume__();
+                    }, false);
+                } catch (e) {}
+            }
 
             function captureDescriptor(name) {
                 try {
@@ -1057,6 +1146,7 @@ enum HTMLWallpaperRuntimeScript {
                 suspended = true;
                 suspendTimers();
                 signalWorkers('suspend');
+                broadcastToChildFrames('suspend');
                 if (!hiddenDescriptorBackup) hiddenDescriptorBackup = captureDescriptor('hidden');
                 if (!visibilityDescriptorBackup) visibilityDescriptorBackup = captureDescriptor('visibilityState');
                 forceHidden(true);
@@ -1081,6 +1171,7 @@ enum HTMLWallpaperRuntimeScript {
                 restoreVisibility();
                 dispatchVisibility();
                 signalWorkers('resume');
+                broadcastToChildFrames('resume');
                 resumeTimers();
                 // Ratio 1 still reconciles so a pre-suspend throttle wrapper is cleared.
                 installRafThrottle(rafThrottleRatio);
@@ -1092,6 +1183,8 @@ enum HTMLWallpaperRuntimeScript {
                 if (r > 8) r = 8;
                 installRafThrottle(r);
             };
+
+            installFrameLifecycleRelay();
         })();
         """
     }

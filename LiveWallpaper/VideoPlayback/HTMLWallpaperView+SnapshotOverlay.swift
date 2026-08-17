@@ -7,8 +7,15 @@ extension HTMLWallpaperView {
     /// Cap suspend-snapshot width (~50 MB full 5K capture would defeat suspend memory relief).
     private static let maxSuspendSnapshotWidth: CGFloat = 1920
 
+    /// True while the overlay is actually covering the web view — the
+    /// precondition the hibernation teardown checks before dropping the document.
+    var isSnapshotOverlayPresenting: Bool {
+        !snapshotOverlay.isHidden && snapshotOverlay.image != nil
+    }
+
     /// Generation-counted so stale takeSnapshot cannot reappear after resume.
-    func captureSuspendSnapshot() {
+    /// `completion` reports whether this capture applied the overlay.
+    func captureSuspendSnapshot(completion: @MainActor @escaping (Bool) -> Void = { _ in }) {
         snapshotGeneration &+= 1
         let generation = snapshotGeneration
         let snapshotConfig = WKSnapshotConfiguration()
@@ -26,8 +33,12 @@ extension HTMLWallpaperView {
                       !self.isCleaningUp,
                       self.mediaPlaybackSuspended,
                       self.snapshotGeneration == generation,
-                      let image else { return }
+                      let image else {
+                    completion(false)
+                    return
+                }
                 self.applySnapshotOverlay(image: image)
+                completion(true)
             }
         }
     }

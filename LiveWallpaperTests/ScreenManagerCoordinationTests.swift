@@ -1089,9 +1089,15 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
+    /// The candidate must be one that cannot become ready. An inline source no
+    /// longer models that — `about:blank` is allowed, so inline loads and the
+    /// candidate commits — so point it at a port nothing listens on, which
+    /// fails the provisional navigation immediately and locally.
+    static let unreachableSource = HTMLSource.url(URL(string: "http://127.0.0.1:1/")!)
+
     @Test("A rebuild-required JavaScript change stays uncommitted until the candidate is ready")
     func unreadyJavaScriptRebuildKeepsSessionAndConfiguration() async throws {
-        try await Self.runWithHTMLConfiguration { manager, screen in
+        try await Self.runWithHTMLConfiguration(source: Self.unreachableSource) { manager, screen in
             let session = TestRuntimeSession(wallpaperType: .html)
             screen.installRuntimeSession(session)
             let previous = try #require(manager.getConfiguration(for: screen)?.htmlConfig)
@@ -1116,7 +1122,7 @@ struct ScreenManagerCoordinationTests {
 
     @Test("A rebuild-required tracker change stays uncommitted until the candidate is ready")
     func unreadyTrackerRebuildKeepsSessionAndConfiguration() async throws {
-        try await Self.runWithHTMLConfiguration { manager, screen in
+        try await Self.runWithHTMLConfiguration(source: Self.unreachableSource) { manager, screen in
             let session = TestRuntimeSession(wallpaperType: .html)
             screen.installRuntimeSession(session)
             let previous = try #require(manager.getConfiguration(for: screen)?.htmlConfig)

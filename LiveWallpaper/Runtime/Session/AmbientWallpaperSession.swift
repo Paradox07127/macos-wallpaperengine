@@ -91,6 +91,12 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         performanceTarget?.applyPerformanceProfile(effective)
     }
 
+    /// Absence-dwell teardown for HTML wallpapers; the view owns the countdown,
+    /// the snapshot cover, and the `about:blank` swap.
+    func setHibernationEligible(_ eligible: Bool) {
+        (performanceTarget as? HTMLWallpaperView)?.setHibernationEligible(eligible)
+    }
+
     func retry() async {
         guard let retryTarget = performanceTarget as? any HTMLWallpaperRetrying else { return }
         let result = await retryTarget.retryCurrentSource(timeout: .seconds(5))
