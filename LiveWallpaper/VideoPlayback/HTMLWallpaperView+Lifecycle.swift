@@ -63,6 +63,9 @@ struct HTMLHibernationState {
         case presentSnapshotOverlay
         case loadAboutBlank
         case reloadSource
+        /// A restore is already in flight under the cover — do nothing, and above
+        /// all do not uncover.
+        case keepCover
     }
 
     private(set) var phase: Phase = .live
@@ -94,14 +97,31 @@ struct HTMLHibernationState {
     }
 
     mutating func requestRestore() -> Step? {
-        isCoveringForHibernation = false
         generation &+= 1
-        guard phase == .hibernated else {
-            phase = .live
+        switch phase {
+        case .hibernated:
+            isCoveringForHibernation = false
+            phase = .restoring
+            return .reloadSource
+        case .restoring:
+            // A resume landing while the previous restore is still loading must
+            // not uncover: the document on screen is `about:blank` or a partial
+            // load. Keep the cover and let the in-flight reload finish under it.
+            return .keepCover
+        case .live:
+            isCoveringForHibernation = false
             return nil
         }
-        phase = .restoring
-        return .reloadSource
+    }
+
+    /// A suspend arriving mid-restore. The reload is still in flight behind the
+    /// cover, so the phase has to be one `setHibernationEligible` can arm from
+    /// again — otherwise the screen never hibernates for the rest of the session.
+    mutating func noteSuspendedDuringRestore() {
+        guard phase == .restoring else { return }
+        phase = .hibernated
+        isCoveringForHibernation = true
+        generation &+= 1
     }
 
     /// True once, when the rebuilt document has painted and the cover can go.
@@ -314,12 +334,19 @@ extension HTMLWallpaperView {
 
         if suspended {
             cancelPackageBackingForSuspend()
+            // Mid-restore the cover is already up and the reload is still in
+            // flight; snapshotting now would capture a blank document, and the
+            // phase has to stay hibernatable so the dwell can arm again.
+            hibernationState.noteSuspendedDuringRestore()
+            restoreCoverDeadlineTask?.cancel()
+            restoreCoverDeadlineTask = nil
             captureSuspendSnapshot()
             notifyWallpaperEngineGeneralProperties(fps: 1)
         } else {
             hibernationTask?.cancel()
             hibernationTask = nil
-            if hibernationState.requestRestore() == .reloadSource {
+            switch hibernationState.requestRestore() {
+            case .reloadSource:
                 restartPackageBackingAfterResume = false
                 // The overlay is stacked above the web view, so un-hiding it now
                 // lets the rebuilt document paint under cover; `didFinish` drops
@@ -328,7 +355,11 @@ extension HTMLWallpaperView {
                 webView.isHidden = false
                 reloadCurrentSource()
                 armRestoreCoverDeadline()
-            } else {
+            case .keepCover:
+                // Restore already running underneath; uncovering here is exactly
+                // the blank-desktop regression.
+                break
+            default:
                 hideSnapshotOverlay()
             }
         }
@@ -352,6 +383,10 @@ extension HTMLWallpaperView {
             guard !Task.isCancelled,
                   let self,
                   !isCleaningUp,
+                  // A suspend that landed during the restore put its own cover up
+                  // and warm suspend depends on it staying: dropping it here would
+                  // un-freeze a wallpaper the user cannot see.
+                  !mediaPlaybackSuspended,
                   hibernationState.generation == generation,
                   hibernationState.phase == .restoring else { return }
             Logger.warning(

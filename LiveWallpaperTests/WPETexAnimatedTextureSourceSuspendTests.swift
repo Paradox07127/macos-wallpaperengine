@@ -28,6 +28,31 @@ struct WPETexAnimatedTextureSourceSuspendTests {
         #expect(fixture.source.hasReleasedAtlases)
     }
 
+    /// The particle path stores frame 0's atlas in `particleTextures` for the
+    /// whole scene, so nilling our reference frees nothing — and the next restore
+    /// then allocates a *second* copy beside the pinned one, leaving GPU use
+    /// higher than before the feature existed.
+    @Test("A pinned slot survives suspend and is not reallocated on resume")
+    func pinnedSlotIsNeitherFreedNorDuplicated() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try makeEagerSource(device: device)
+        let bothAtlases = fixture.source.residentAtlasGPUBytes
+        let pinnedTexture = try #require(fixture.source.texture(at: 0))
+
+        fixture.source.pinSlotHoldingExternally(textureFor: 0)
+        fixture.source.applyPerformanceProfile(.suspended)
+
+        // Slot 0 stays; the other atlas is still released.
+        let afterSuspend = fixture.source.residentAtlasGPUBytes
+        #expect(afterSuspend > 0, "the externally held atlas must not be dropped")
+        #expect(afterSuspend < bothAtlases, "unpinned atlases must still be released")
+
+        // Resume must reuse the pinned object rather than upload a duplicate.
+        let afterResume = try #require(fixture.source.texture(at: 0))
+        #expect(afterResume === pinnedTexture)
+        #expect(fixture.source.residentAtlasGPUBytes == bothAtlases)
+    }
+
     @Test("Resume restores every frame's own atlas pixels")
     func resumeRestoresFramePixels() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

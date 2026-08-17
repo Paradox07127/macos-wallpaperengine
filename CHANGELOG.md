@@ -38,11 +38,12 @@ system-audio spectrum), which this file does not cover.
 
 ### Changed
 
-- Video wallpapers now decode into NV12 planes rather than 32-bit BGRA, and a
-  wallpaper that has been out of sight for twenty seconds is replaced by a still
-  frame while its player, decode pool, and in-memory mapping are released. It is
-  rebuilt on the way back; the still frame is held until the rebuilt player
-  actually has a picture, and dropped on a deadline if it never does.
+- A video wallpaper that has been out of sight for twenty seconds is replaced by
+  a still frame while its player, decode pool, and in-memory mapping are
+  released. It is rebuilt on the way back; the still frame is held until the
+  rebuilt player actually has a picture, and dropped on a deadline if it never
+  does. (Playback itself still decodes through `AVPlayerLayer` unchanged — the
+  saving is the release, not the pixel format.)
 - HTML wallpapers suspend more of what they are actually running. The lifecycle
   hooks now reach subframes (embedded players and ad frames own timers and
   canvases the main frame cannot touch), `Worker` instances are managed without
