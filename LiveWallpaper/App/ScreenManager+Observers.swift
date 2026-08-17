@@ -278,11 +278,18 @@ extension ScreenManager {
         // full-screen cover/occlusion) — an app-rule or battery pause stays a
         // warm suspend for fast resume. The session owns the dwell countdown.
         if let scene = screen.runtimeSession as? SceneWallpaperSession {
+            // Coverage inputs are only usable while the detector is actually
+            // rescanning: with fallback polling off, its space/app-activation
+            // rescans are demand-gated too, so hidden/occluded would be frozen
+            // at whatever the last scan saw. Absence stays authoritative either
+            // way — it is tracked independently of the detector.
+            let coverageIsLive = fullScreenDetector.isFallbackPollingEnabled
             scene.setHibernationEligible(
                 profile == .suspended
                     && (isUserAbsent
-                        || fullScreenDetector.isDesktopHidden(for: screen.id)
-                        || fullScreenDetector.isDesktopOccluded(for: screen.id))
+                        || (coverageIsLive
+                            && (fullScreenDetector.isDesktopHidden(for: screen.id)
+                                || fullScreenDetector.isDesktopOccluded(for: screen.id))))
             )
             // Reconciled from the watcher's live level on every refresh, not only
             // on a level change: a session installed (restore-at-launch, swap-in)

@@ -109,6 +109,15 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         let entry = try packageEntry(for: relativePath)
         lock.lock()
         defer { lock.unlock() }
+        return try entryDataLocked(entry, relativePath: relativePath)
+    }
+
+    /// Per-entry read: big entries stage to their own file and map from there,
+    /// so residency is bounded by the entry rather than the package.
+    private func entryDataLocked(
+        _ entry: WallpaperEnginePackage.Entry,
+        relativePath: String
+    ) throws -> Data {
         if entry.dataSize > Self.mmapThreshold {
             // Big entry: stage once, then memory-map — never resident in full.
             let url = try stageEntryLocked(entry, relativePath: relativePath)
@@ -125,6 +134,22 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         }
     }
 
+    /// `.mappedIfSafe` is advisory: Foundation refuses to map files on network
+    /// and removable volumes and silently reads them onto the heap instead.
+    /// Whole-package mapping is only worth it when the mapping really happens —
+    /// otherwise the entire pkg would sit resident, pinned by every span, which
+    /// inverts the point of the mapping.
+    private static func isPackageVolumeMappable(_ url: URL) -> Bool {
+        guard let values = try? url.resourceValues(
+            forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]
+        ) else {
+            // Unknown volume: keep the mapping path rather than silently
+            // changing behaviour for ordinary local libraries.
+            return true
+        }
+        return (values.volumeIsLocal ?? true) && !(values.volumeIsRemovable ?? false)
+    }
+
     /// Windows the entry inside a single whole-package mapping: no per-entry
     /// heap copy, and every span from this package shares one mmap owner.
     ///
@@ -138,6 +163,14 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         let entry = try packageEntry(for: relativePath)
         lock.lock()
         defer { lock.unlock() }
+        // On a volume that cannot actually be mapped, fall back to the
+        // per-entry path: same bytes, but residency stays bounded by the entry
+        // instead of pinning the whole package on the heap for the session.
+        guard Self.isPackageVolumeMappable(packageURL) else {
+            return WPEMappedByteSpan(
+                data: try entryDataLocked(entry, relativePath: relativePath)
+            )
+        }
         let mapped: Data
         if let existing = mappedPackageData {
             mapped = existing

@@ -52,8 +52,13 @@ final class FakeFullScreenDetector: FullScreenDetecting {
         checkNowCallCount += 1
     }
 
+    /// Mirrors the real detector: the last value pushed, defaulting to live so
+    /// existing tests keep exercising the coverage-driven paths.
+    private(set) var isFallbackPollingEnabled = true
+
     func setFallbackPollingEnabled(_ enabled: Bool) {
         setFallbackPollingEnabledValues.append(enabled)
+        isFallbackPollingEnabled = enabled
     }
 
     func stop() {
