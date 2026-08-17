@@ -73,6 +73,8 @@ extension WPEMetalSceneRenderer {
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
+        onDemandVideoKeysByConsumerID.removeAll(keepingCapacity: false)
+        onDemandVideoKeysByImagePath.removeAll(keepingCapacity: false)
         onDemandVideoLoading.removeAll(keepingCapacity: false)
         createdLayerTemplatesByImagePath.removeAll(keepingCapacity: false)
         soundRuntime?.stop()
@@ -703,6 +705,9 @@ extension WPEMetalSceneRenderer {
             // Pause the audio engine + FFT tap so a suspended wallpaper costs no
             // audio CPU; the decoded PCM stays resident for an instant resume.
             soundRuntime?.pause()
+            // Eager .tex animations released their atlases in the profile
+            // fan-out above; drop our own binding or nothing is actually freed.
+            purgeReleasedAnimatedTextureBindings()
             // The atlas is append-only while live strings change. Suspension is
             // a GPU-idle boundary, and memory pressure already resolves to this
             // profile, so discard mesh UVs before releasing their atlas pages.
@@ -756,6 +761,8 @@ extension WPEMetalSceneRenderer {
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
+        onDemandVideoKeysByConsumerID.removeAll(keepingCapacity: false)
+        onDemandVideoKeysByImagePath.removeAll(keepingCapacity: false)
         onDemandVideoLoading.removeAll(keepingCapacity: false)
         createdLayerTemplatesByImagePath.removeAll(keepingCapacity: false)
         soundRuntime?.stop()

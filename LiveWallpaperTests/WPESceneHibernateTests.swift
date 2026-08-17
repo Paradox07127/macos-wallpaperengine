@@ -31,7 +31,7 @@ struct WPESceneHibernateTests {
         // particles, and on-demand bookkeeping alike.
         renderer.loadedTextures["sentinel"] = try Self.makeTexture(device: device)
         renderer.dynamicTextureSources["sentinel"] = HibernateStubSource()
-        renderer.onDemandVideoKeyByID = ["obj": "sentinel"]
+        renderer.onDemandVideoKeyByID = ["obj": ["sentinel"]]
         renderer.particleSystems = [try #require(WPEParticleSystem(
             definition: WPEParticleDefinitionParser.parse(dictionary: [
                 "maxcount": 8,

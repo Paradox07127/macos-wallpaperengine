@@ -319,23 +319,184 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - On-demand video layers
 
-    /// Index video layers whose every pass targets `.scene` (so they're never a
-    /// hidden composite/FBO source another layer samples) — only these are safe to
-    /// release when hidden, since the executor skips a hidden scene pass entirely.
+    /// Index every video layer, plus the static graph of who can put each video's
+    /// pixels on screen. The predecessor filter admitted only scene-only layers,
+    /// so a hidden video that writes an FBO decoded at full rate forever; the
+    /// consumer graph replaces that proxy with the real question, answered per
+    /// frame by `reconcileVideoResidency`.
     func indexOnDemandVideoLayers(pipeline: WPEPreparedRenderPipeline) {
         onDemandVideoKeyByID = [:]
         onDemandVideoLoading = []
         for layer in pipeline.layers {
-            guard let key = videoTexturePaths(for: layer)
-                .first(where: { dynamicTextureSources[$0] is WPEVideoTextureSource }) else { continue }
-            let sceneOnly = layer.passes.allSatisfy { pass in
-                if case .scene = pass.pass.target { return true }
-                return false
+            // Every video the layer samples, not just the first: a layer can bind
+            // one video as its source and another in a shader slot, and indexing
+            // only one of them drops the other layer's consumer edge.
+            let keys = Set(videoTexturePaths(for: layer)
+                .filter { dynamicTextureSources[$0] is WPEVideoTextureSource })
+            guard !keys.isEmpty else { continue }
+            onDemandVideoKeyByID[layer.graphLayer.objectID] = keys
+        }
+        onDemandVideoKeysByConsumerID = Self.onDemandVideoKeysByConsumerLayer(
+            layers: pipeline.layers,
+            videoKeyByLayerID: onDemandVideoKeyByID
+        )
+        onDemandVideoKeysByImagePath = Self.onDemandVideoKeysByImagePath(
+            layers: pipeline.layers,
+            keysByConsumerID: onDemandVideoKeysByConsumerID
+        )
+    }
+
+    /// Static half of the release decision: layer objectID → the video keys whose
+    /// pixels that layer can put on screen. Seeded with the layers that sample the
+    /// video, then closed transitively over the FBO/composite graph — A writes
+    /// FBO1, B samples FBO1 and writes FBO2, C samples FBO2 ⇒ all three are
+    /// consumers of A's video. `.scene` and `_rt_layerGroup_*` writes deliberately
+    /// do NOT propagate: those are exactly the two targets `WPEMetalRenderExecutor`
+    /// skips for a hidden layer, so a hidden layer's pixels never reach them, and a
+    /// VISIBLE layer that writes them already counts as a consumer on its own.
+    /// Visibility is absent here on purpose — it changes every frame, this graph
+    /// does not. Pure + static for unit testing.
+    nonisolated static func onDemandVideoKeysByConsumerLayer(
+        layers: [WPEPreparedRenderLayer],
+        videoKeyByLayerID: [String: Set<String>]
+    ) -> [String: Set<String>] {
+        guard !videoKeyByLayerID.isEmpty else { return [:] }
+        // Per-layer unions, not per-pass: a layer's passes chain through
+        // `.previous` and its own composites, so any input reaching the layer can
+        // reach every target it writes.
+        let sampled = layers.map { Set($0.passes.flatMap(Self.passSampledTargetNames)) }
+        let written = layers.map { Set($0.passes.compactMap(Self.passPropagatedTargetName)) }
+        var result: [String: Set<String>] = [:]
+        for key in Set(videoKeyByLayerID.values.joined()) {
+            var consumers: Set<String> = []
+            var tainted: Set<String> = []
+            for (index, layer) in layers.enumerated()
+                where videoKeyByLayerID[layer.graphLayer.objectID]?.contains(key) == true {
+                consumers.insert(layer.graphLayer.objectID)
+                tainted.formUnion(written[index])
             }
-            if sceneOnly {
-                onDemandVideoKeyByID[layer.graphLayer.objectID] = key
+            var grew = true
+            while grew {
+                grew = false
+                for (index, layer) in layers.enumerated() {
+                    let objectID = layer.graphLayer.objectID
+                    guard !consumers.contains(objectID),
+                          !sampled[index].isDisjoint(with: tainted) else { continue }
+                    consumers.insert(objectID)
+                    tainted.formUnion(written[index])
+                    grew = true
+                }
+            }
+            for objectID in consumers {
+                result[objectID, default: []].insert(key)
             }
         }
+        return result
+    }
+
+    /// Both sides of the graph key on this. `WPEMetalShaderInputs`
+    /// `resolveAliasedNamedTexture` matches an `.fbo(name)` against the frame's
+    /// named textures after stripping `_rt_`/leading `_` and ignoring case, so
+    /// comparing raw strings here loses edges the executor actually draws
+    /// (author writes `_rt_Blur`, a visible layer samples `blur`). Merging more
+    /// names than the executor would only over-retains; missing an edge
+    /// releases a texture a visible layer still samples.
+    /// Stripping repeats, because the executor strips one `_rt_` and then matches:
+    /// a reader asking for `_rt__rt_Foo` resolves a writer's `_rt_Foo`, so keying
+    /// those to `rt_foo` and `foo` would lose that edge.
+    private nonisolated static func normalizedTargetKey(_ name: String) -> String {
+        var key = name.lowercased()
+        while true {
+            if key.hasPrefix("_rt_") { key = String(key.dropFirst(4)); continue }
+            if key.hasPrefix("rt_") { key = String(key.dropFirst(3)); continue }
+            if key.hasPrefix("_") { key = String(key.dropFirst()); continue }
+            break
+        }
+        return key
+    }
+
+    /// Render-target names a pass samples. Scene alias names are NOT excluded:
+    /// a name only enters the tainted set when some layer writes it as a real
+    /// target, and writing e.g. `_rt_HalfFrameBuffer` as an actual target is
+    /// supported. A `.scene` write contributes no name at all, so reading the
+    /// scene-so-far still taints nothing.
+    private nonisolated static func passSampledTargetNames(
+        _ pass: WPEPreparedRenderPass
+    ) -> [String] {
+        var references: [WPETextureReference] = [pass.pass.source]
+        references.append(contentsOf: pass.pass.textures.values)
+        references.append(contentsOf: pass.pass.binds.values)
+        references.append(contentsOf: pass.textureBindings.values)
+        return references.compactMap { reference in
+            switch reference {
+            case .fbo(let name):
+                return normalizedTargetKey(name)
+            case .previous:
+                // The executor resolves `.previous` from the pass's own target, so
+                // the pass samples whatever that target already holds. Reusing the
+                // propagation helper also drops `.scene`/layer-group correctly: a
+                // hidden layer never contributes to those.
+                return passPropagatedTargetName(pass)
+            case .image, .asset:
+                return nil
+            }
+        }
+    }
+
+    private nonisolated static func passPropagatedTargetName(
+        _ pass: WPEPreparedRenderPass
+    ) -> String? {
+        switch pass.pass.target {
+        case .scene:
+            return nil
+        case .fbo(let name) where WPERenderTargetNames.LayerGroup.matches(name):
+            return nil
+        case .fbo(let name), .layerComposite(let name):
+            return normalizedTargetKey(name)
+        }
+    }
+
+    /// Per-frame half: the video keys some visible layer can show this frame.
+    /// Pure + static for unit testing.
+    nonisolated static func neededOnDemandVideoKeys(
+        in layers: [WPEPreparedRenderLayer],
+        keysByConsumerID: [String: Set<String>],
+        keysByImagePath: [String: Set<String>] = [:]
+    ) -> Set<String> {
+        guard !keysByConsumerID.isEmpty else { return [] }
+        var needed: Set<String> = []
+        for layer in layers where layer.graphLayer.visible {
+            if let keys = keysByConsumerID[layer.graphLayer.objectID] {
+                needed.formUnion(keys)
+                continue
+            }
+            // `thisScene.createLayer` clones get a fresh objectID the load-time
+            // graph never saw, so they inherit their template's entry through the
+            // shared image path. Without this a hidden template releases the very
+            // video its visible clone samples, and the clone shows the placeholder
+            // for the rest of the scene.
+            let path = layer.graphLayer.imagePath
+            guard !path.isEmpty, let inherited = keysByImagePath[path] else { continue }
+            needed.formUnion(inherited)
+        }
+        return needed
+    }
+
+    /// Load-time companion to the consumer graph: image path → the video keys any
+    /// layer drawing that image consumes. Only script-created clones need it.
+    nonisolated static func onDemandVideoKeysByImagePath(
+        layers: [WPEPreparedRenderLayer],
+        keysByConsumerID: [String: Set<String>]
+    ) -> [String: Set<String>] {
+        guard !keysByConsumerID.isEmpty else { return [:] }
+        var result: [String: Set<String>] = [:]
+        for layer in layers {
+            let path = layer.graphLayer.imagePath
+            guard !path.isEmpty,
+                  let keys = keysByConsumerID[layer.graphLayer.objectID] else { continue }
+            result[path, default: []].formUnion(keys)
+        }
+        return result
     }
 
     static func createdLayerTemplatesByImagePath(
@@ -355,25 +516,21 @@ extension WPEMetalSceneRenderer {
         return templates
     }
 
-    /// Per-frame: an on-demand video source is resident iff some layer using it is
-    /// visible this frame; otherwise it's released (freeing its resident MP4 +
-    /// buffers) and rebuilt on the next reveal. Aggregated by texture key, so two
-    /// layers sharing one video keep it while either is visible. No-op for the
-    /// common single-always-visible-video scene.
+    /// Per-frame: an on-demand video source is resident iff some CONSUMER of it is
+    /// visible this frame — the layer sampling it, or any layer downstream of the
+    /// FBOs that layer feeds (`onDemandVideoKeysByConsumerID`, built at load).
+    /// Otherwise it's released (freeing its resident MP4 + buffers) and rebuilt on
+    /// the next reveal. Aggregated by texture key, so two layers sharing one video
+    /// keep it while either is visible.
     func reconcileVideoResidency(_ framePipeline: WPEPreparedRenderPipeline) {
         guard !onDemandVideoKeyByID.isEmpty else { return }
-        var visibleByID: [String: Bool] = [:]
-        visibleByID.reserveCapacity(framePipeline.layers.count)
-        for layer in framePipeline.layers {
-            visibleByID[layer.graphLayer.objectID] = layer.graphLayer.visible
-        }
-        var keyVisible: [String: Bool] = [:]
-        for (objectID, key) in onDemandVideoKeyByID {
-            if visibleByID[objectID] == true { keyVisible[key] = true }
-            else if keyVisible[key] == nil { keyVisible[key] = false }
-        }
-        for (key, visible) in keyVisible {
-            if visible {
+        let neededKeys = Self.neededOnDemandVideoKeys(
+            in: framePipeline.layers,
+            keysByConsumerID: onDemandVideoKeysByConsumerID,
+            keysByImagePath: onDemandVideoKeysByImagePath
+        )
+        for key in Set(onDemandVideoKeyByID.values.joined()) {
+            if neededKeys.contains(key) {
                 lazyLoadVideo(key: key)
             } else if let source = dynamicTextureSources[key] as? WPEVideoTextureSource {
                 // Phase-aligned intro/loop sources hold object references elsewhere;
@@ -382,7 +539,9 @@ extension WPEMetalSceneRenderer {
                 source.invalidate()
                 dynamicTextureSources.removeValue(forKey: key)
                 // 1×1 placeholder, not a removal: a stray sampler reference resolves
-                // instead of erroring (the hidden layer's scene pass is skipped).
+                // instead of erroring. A hidden layer's FBO passes DO still encode
+                // and will sample this placeholder — harmless only because we got
+                // here by proving nothing visible consumes those FBOs.
                 loadedTextures[key] = (try? makeDynamicPlaceholderTexture(label: "\(key) released")) ?? loadedTextures[key]
             }
         }
