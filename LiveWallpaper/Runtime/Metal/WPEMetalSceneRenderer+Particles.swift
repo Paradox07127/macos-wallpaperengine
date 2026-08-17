@@ -534,6 +534,12 @@ extension WPEMetalSceneRenderer {
             case .dynamicSource(let source): source.texture(at: 0)
             case nil: nil
             }
+            // `particleNormalTextures` keeps this atlas for the scene's lifetime,
+            // so the source must not release (and then re-allocate) that slot.
+            if case .dynamicSource(let source) = normalPayload,
+               let animated = source as? WPETexAnimatedTextureSource {
+                animated.pinSlotHoldingExternally(textureFor: 0)
+            }
             if let normalTexture {
                 system.isRefract = true
                 system.refractAmount = material?.refractAmount ?? 0.05
@@ -546,6 +552,9 @@ extension WPEMetalSceneRenderer {
         }
         particleSystems.append(system)
         particleTextures[ObjectIdentifier(system)] = resolved
+        // Same pin as the normal map: this binding outlives every suspend, and a
+        // released-then-restored slot would leave two copies of the atlas alive.
+        animatedTextureSource?.pinSlotHoldingExternally(textureFor: 0)
         if WPESceneDebugArtifacts.shared.isEnabled {
             // Motion-driving params: split parse errors from simulation errors.
             let idx = particleSystems.count - 1
