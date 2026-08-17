@@ -160,11 +160,18 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let shouldPlayVideo = isVisible && userIntendsToPlay && profile == .quality
         // Manual-pause contract (AVPlayer only); resource fix is for system suspend.
         player?.setParticleEffectsSuspended(profile == .suspended || !isVisible)
+        // Resource depth only — play/pause above stays the sole owner of intent.
+        player?.setSuspended(profile == .suspended)
         if shouldPlayVideo {
             player?.play()
         } else {
             player?.pause()
         }
+    }
+
+    /// Absence-dwell teardown; the player owns the countdown and the still frame.
+    func setHibernationEligible(_ eligible: Bool) {
+        player?.setHibernationEligible(eligible)
     }
 
     func retry() async {
