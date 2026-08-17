@@ -15,6 +15,28 @@ struct WPESceneSectionStateTests {
         #expect(SceneRenderState.idle != SceneRenderState.loading)
     }
 
+    @Test("every state equals itself")
+    func equalityIsReflexive() {
+        // A hand-written `==` that forgot `.notRendering` made it unequal to
+        // itself, so `next != state` fired on every refresh.
+        let states: [SceneRenderState] = [
+            .idle,
+            .notRendering,
+            .loading(progress: nil),
+            .loading(progress: "Decoding 3/12 textures…"),
+            .ready,
+            .error(.sceneResourceMissing)
+        ]
+        for state in states {
+            #expect(state == state)
+        }
+        for (index, lhs) in states.enumerated() {
+            for rhs in states[(index + 1)...] {
+                #expect(lhs != rhs)
+            }
+        }
+    }
+
     @Test("loading distinguishes nil vs progress text payloads")
     func loadingPayloadDifferentiates() {
         let plain = SceneRenderState.loading(progress: nil)

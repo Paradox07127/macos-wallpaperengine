@@ -959,16 +959,6 @@ enum SceneRenderState: Equatable {
     var needsPreviewPolling: Bool {
         self == .idle || isLoading
     }
-
-    static func == (lhs: SceneRenderState, rhs: SceneRenderState) -> Bool {
-        switch (lhs, rhs) {
-        case (.idle, .idle): return true
-        case (.loading(let l), .loading(let r)): return l == r
-        case (.ready, .ready): return true
-        case (.error(let l), .error(let r)): return l == r
-        default: return false
-        }
-    }
 }
 
 // MARK: - Information overlay
