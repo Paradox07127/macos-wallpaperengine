@@ -558,6 +558,40 @@ struct UpdateCheckerTests {
     }
 }
 
+/// Every surface that reports an update reads the one shared checker.
+///
+/// Two of them now do — the About panel's banner and the menu bar's Update
+/// button — and the thing that makes "skip this version" mean the same on both
+/// is that neither builds a checker of its own.
+@Suite("Update surfaces share one checker")
+struct UpdateSurfaceOwnershipTests {
+    private static let surfaces = [
+        "LiveWallpaper/Views/Settings/UpdateBannerView.swift",
+        "LiveWallpaper/Views/MenuBarContent.swift"
+    ]
+
+    @Test("No update surface constructs its own UpdateChecker")
+    func surfacesUseTheSharedChecker() throws {
+        for path in Self.surfaces {
+            let source = try RepositoryRoot.source(path)
+            #expect(source.contains("UpdateChecker.shared"), "\(path) does not read the shared checker")
+            #expect(
+                !source.contains("UpdateChecker("),
+                "\(path) builds its own UpdateChecker; skipped versions would diverge"
+            )
+        }
+    }
+
+    /// The button is the only reason the menu bar knows about releases, so it
+    /// has to be gated on a release actually being available.
+    @Test("The menu bar Update button only exists for an available release")
+    func menuBarButtonIsGatedOnAvailability() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
+        #expect(source.contains("if case .available(let release) = updateChecker.status"))
+        #expect(source.contains("NSWorkspace.shared.open(release.releasePageURL)"))
+    }
+}
+
 private final class StubTransport: UpdateCheckerTransport, @unchecked Sendable {
     private let response: Result<[GitHubRelease], Error>
     private(set) var fetchCount = 0

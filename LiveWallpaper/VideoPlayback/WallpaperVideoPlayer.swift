@@ -39,16 +39,6 @@ enum WallpaperVideoOutputNegotiation {
         ]
     }
 
-    /// Same predicate as `WPEVideoTextureSource.isHDRTransfer`.
-    static func isHDRTransfer(_ pixelBuffer: CVPixelBuffer) -> Bool {
-        guard let transfer = CVBufferCopyAttachment(
-            pixelBuffer, kCVImageBufferTransferFunctionKey, nil
-        ) as? String else {
-            return false
-        }
-        return transfer == (kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String)
-            || transfer == (kCVImageBufferTransferFunction_ITU_R_2100_HLG as String)
-    }
 }
 
 enum VideoDynamicRangePolicy {
@@ -168,7 +158,7 @@ final class WallpaperVideoPlayer {
     private(set) var isHibernated = false
     private var isHibernationEligible = false
     private let hibernationDelay: Duration
-    private var hibernationTask: Task<Void, Never>?
+    private let hibernationDwell = AbsenceDwell()
     /// Latch + generation: detached mmap/property loads may finish after cancel.
     private(set) var isCleanedUp = false
     private var lifecycleGeneration: UInt64 = 0
@@ -1324,32 +1314,15 @@ final class WallpaperVideoPlayer {
             cancelHibernationDwell()
             return
         }
-        guard hibernationTask == nil else { return }
-        hibernationTask = Task { [weak self, hibernationDelay] in
-            // The handle stays set for the whole body — not just the countdown —
-            // so `cleanup()` can drain an in-flight hibernate, and a transient
-            // blocker (an in-flight load) re-dwells instead of dropping the
-            // countdown (eligibility pushes are event-driven; a dropped
-            // countdown would skip the entire absence).
-            while true {
-                try? await Task.sleep(for: hibernationDelay)
-                guard !Task.isCancelled, let self else { return }
-                if await self.hibernateNow() {
-                    // Cancelled mid-`hibernateNow` means the canceller already
-                    // cleared (and may have re-armed) the slot.
-                    if !Task.isCancelled {
-                        self.hibernationTask = nil
-                    }
-                    return
-                }
-                if Task.isCancelled { return }
-            }
+        hibernationDwell.arm(initial: hibernationDelay, retry: hibernationDelay) {
+            [weak self] in
+            guard let self else { return true }
+            return await hibernateNow()
         }
     }
 
     private func cancelHibernationDwell() {
-        hibernationTask?.cancel()
-        hibernationTask = nil
+        hibernationDwell.cancel()
     }
 
     /// Returns false only on a transient blocker (an in-flight load or

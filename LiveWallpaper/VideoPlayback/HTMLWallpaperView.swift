@@ -52,7 +52,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     static let restoreCoverDeadline: Duration = .seconds(15)
     var restoreCoverDeadlineTask: Task<Void, Never>?
     var hibernationState = HTMLHibernationState()
-    var hibernationTask: Task<Void, Never>?
+    let hibernationDwell = AbsenceDwell()
     var mediaLifecycleState = HTMLMediaLifecycleState()
     var mediaPlaybackSuspended: Bool {
         mediaLifecycleState.desiredSuspended
@@ -133,7 +133,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
     deinit {
         packageBackingTask?.cancel()
-        hibernationTask?.cancel()
+        hibernationDwell.cancel()
         restoreCoverDeadlineTask?.cancel()
         let url = activeSecurityScopedURL
         if let url {
@@ -879,8 +879,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
     func cleanup() {
         isCleaningUp = true
-        hibernationTask?.cancel()
-        hibernationTask = nil
+        hibernationDwell.cancel()
         restoreCoverDeadlineTask?.cancel()
         restoreCoverDeadlineTask = nil
         hibernationState.invalidate()

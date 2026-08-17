@@ -826,12 +826,12 @@ struct VideoSessionLifecycleTests {
         let asset = AVURLAsset(
             url: URL(fileURLWithPath: "/tmp/video-effects-force-sdr-round-trip-asset.mov")
         )
-        var availableAsset: AVAsset? = asset
+        let availableAsset = AssetSlot(asset)
         let service = VideoEffectsApplicationService(
             compositionBuilder: { asset, config, duration in
                 try await builder.build(asset: asset, config: config, frameDuration: duration)
             },
-            assetProvider: { _ in availableAsset }
+            assetProvider: { _ in availableAsset.current }
         )
         let applyEffects: @MainActor (Screen, ScreenConfiguration) -> Void = {
             target, updatedConfiguration in
@@ -865,12 +865,12 @@ struct VideoSessionLifecycleTests {
 
         // Model AVPlayerLooper's transient nil-currentItem interval. Force SDR
         // must still invalidate the effect fingerprint before asset lookup.
-        availableAsset = nil
+        availableAsset.current = nil
         coordinator.updateVideoColorSpace(.forceSDR, for: screen)
         #expect(player.isForceSDRActive)
         #expect(player.videoCompositionOwner == .none)
 
-        availableAsset = asset
+        availableAsset.current = asset
         coordinator.updateVideoColorSpace(.auto, for: screen)
         #expect(await Self.waitUntil { builder.pendingCalls.contains(2) })
         builder.resume(call: 2)
@@ -1256,12 +1256,12 @@ struct VideoSessionLifecycleTests {
 
         let builder = ControlledVideoCompositionBuilder(failsFirstCall: false)
         let asset = AVURLAsset(url: URL(fileURLWithPath: "/tmp/video-effects-pending-asset.mov"))
-        var availableAsset: AVAsset?
+        let availableAsset = AssetSlot(nil)
         let service = VideoEffectsApplicationService(
             compositionBuilder: { asset, config, duration in
                 try await builder.build(asset: asset, config: config, frameDuration: duration)
             },
-            assetProvider: { _ in availableAsset }
+            assetProvider: { _ in availableAsset.current }
         )
         let screenID: CGDirectDisplayID = 8_105
         var configuration = ScreenConfiguration(screenID: screenID, videoBookmarkData: Data())
@@ -1281,7 +1281,7 @@ struct VideoSessionLifecycleTests {
         #expect(!service.hasInflightTask(for: screenID, player: player))
         #expect(completionResults.isEmpty)
 
-        availableAsset = asset
+        availableAsset.current = asset
         service.currentItemDidBecomeAvailable(for: player, screenID: screenID)
         #expect(await Self.waitUntil { builder.pendingCalls.contains(1) })
         #expect(!service.hasPendingRequest(for: screenID, player: player))
@@ -1638,5 +1638,22 @@ struct InspectorPosterLoadStateTests {
         #expect(controller.player == nil)
         #expect(controller.posterImage == nil)
         #expect(controller.assetURL == nil)
+    }
+}
+
+/// The provider closure captures this and the test mutates it afterwards, which
+/// Swift 6.4 diagnoses on a plain captured `var`.
+///
+/// `@unchecked Sendable`: every access to `asset` goes through `lock`, and the
+/// box holds nothing else.
+private final class AssetSlot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var asset: AVAsset?
+
+    init(_ asset: AVAsset?) { self.asset = asset }
+
+    var current: AVAsset? {
+        get { lock.withLock { asset } }
+        set { lock.withLock { asset = newValue } }
     }
 }

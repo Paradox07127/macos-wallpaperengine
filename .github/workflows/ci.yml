@@ -30,16 +30,18 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Xcode 26.6 (17F113) == the toolchain used for local dev builds.
-  # Available on the macos-26 image (default there is 26.5 until 2026-07-21).
-  # If GitHub ever retires this version, the "Verify toolchain" step lists
-  # what is installed so the pin can be bumped in one place.
-  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+  # Xcode 27.0 beta (27A5228h) == the toolchain shipping builds use locally.
+  # Only the `xcode-27` image label carries it (macOS 26.5 host); that image is
+  # marked "preview" upstream, so expect occasional queueing. Pinned through the
+  # stable symlink rather than /Applications/Xcode_27_beta_4.app, whose name
+  # changes with every seed. The "Verify toolchain" step lists what is installed
+  # so the pin can be bumped in one place.
+  DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
 
 jobs:
   build:
     name: Build ${{ matrix.sku }} (${{ matrix.scheme }})
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -88,7 +90,7 @@ jobs:
     # every package that owns a test target, sequential to avoid shared
     # compiler/module-cache contention.
     name: Swift package tests
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -114,7 +116,7 @@ jobs:
     # entitlement widening, trust/privacy regressions and localization drift on
     # every PR without running the Metal/display-heavy app suite.
     name: Fast app architecture/security contracts
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -130,7 +132,7 @@ jobs:
 
   release-contract:
     name: Release + quality tooling contract
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -153,7 +155,7 @@ jobs:
     # same approach scripts/release-app.sh uses for release archives.
     name: App unit tests (Pro scheme, opt-in)
     if: github.event_name == 'workflow_dispatch' && inputs.run-app-tests
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 90
     steps:
       - name: Checkout
