@@ -343,8 +343,7 @@ extension HTMLWallpaperView {
             captureSuspendSnapshot()
             notifyWallpaperEngineGeneralProperties(fps: 1)
         } else {
-            hibernationTask?.cancel()
-            hibernationTask = nil
+            hibernationDwell.cancel()
             switch hibernationState.requestRestore() {
             case .reloadSource:
                 restartPackageBackingAfterResume = false
@@ -411,23 +410,27 @@ extension HTMLWallpaperView {
               mediaPlaybackSuspended,
               lastSource != nil,
               hibernationState.phase == .live else {
-            hibernationTask?.cancel()
-            hibernationTask = nil
+            hibernationDwell.cancel()
             return
         }
-        guard hibernationTask == nil else { return }
-        hibernationTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: HTMLWallpaperView.hibernationDwell)
-            guard !Task.isCancelled, let self else { return }
-            self.hibernationTask = nil
-            self.beginHibernationIfEligible()
+        hibernationDwell.arm(
+            initial: HTMLWallpaperView.hibernationDwell,
+            retry: HTMLWallpaperView.hibernationDwell
+        ) { [weak self] in
+            guard let self else { return true }
+            return beginHibernationIfEligible()
         }
     }
 
     /// Re-checks across the dwell — cancellation races the sleep waking up.
-    private func beginHibernationIfEligible() {
-        guard !isCleaningUp, mediaPlaybackSuspended, lastSource != nil else { return }
-        guard hibernationState.beginHibernation() == .presentSnapshotOverlay else { return }
+    /// Returns false only for a transient blocker so the dwell re-arms: a restore
+    /// in flight will finish, and dropping the countdown there would skip the rest
+    /// of the absence (eligibility is pushed on policy changes, never polled).
+    @discardableResult
+    private func beginHibernationIfEligible() -> Bool {
+        guard !isCleaningUp, mediaPlaybackSuspended, lastSource != nil else { return true }
+        if hibernationState.phase == .restoring { return false }
+        guard hibernationState.beginHibernation() == .presentSnapshotOverlay else { return true }
         let generation = hibernationState.generation
         presentHibernationCover { [weak self] presented in
             guard let self else { return }
@@ -436,6 +439,9 @@ extension HTMLWallpaperView {
                 == .loadAboutBlank else { return }
             self.dropDocumentForHibernation()
         }
+        // The cover request is now the owner of the outcome — a snapshot failure
+        // is handled inside that completion, not by re-dwelling here.
+        return true
     }
 
     /// Reuses the suspend overlay when it is already covering: re-snapshotting a

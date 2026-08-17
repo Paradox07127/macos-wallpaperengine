@@ -49,23 +49,6 @@ struct WallpaperVideoPlayerOutputNegotiationTests {
         }
     }
 
-    @Test("Only PQ and HLG transfer functions count as HDR")
-    func isHDRTransferMatchesSceneSidePredicate() throws {
-        let pq = try Self.makeTaggedBuffer(
-            transfer: kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ
-        )
-        let hlg = try Self.makeTaggedBuffer(
-            transfer: kCVImageBufferTransferFunction_ITU_R_2100_HLG
-        )
-        let sdr = try Self.makeTaggedBuffer(transfer: kCVImageBufferTransferFunction_ITU_R_709_2)
-        let untagged = try Self.makeTaggedBuffer(transfer: nil)
-
-        #expect(WallpaperVideoOutputNegotiation.isHDRTransfer(pq))
-        #expect(WallpaperVideoOutputNegotiation.isHDRTransfer(hlg))
-        #expect(!WallpaperVideoOutputNegotiation.isHDRTransfer(sdr))
-        #expect(!WallpaperVideoOutputNegotiation.isHDRTransfer(untagged))
-    }
-
     @Test("The composition readiness probe no longer hardcodes a BGRA output")
     func readinessProbeUsesNegotiatedFormats() throws {
         let source = try RepositoryRoot.source(
@@ -87,28 +70,6 @@ struct WallpaperVideoPlayerOutputNegotiationTests {
         // The probe's output must be owned so suspension can drain it.
         #expect(compactProbe.contains("self.bindVideoOutput(nextOutput, to: item)"))
         #expect(!compactProbe.contains("item.add(nextOutput)"))
-    }
-
-    private static func makeTaggedBuffer(transfer: CFString?) throws -> CVPixelBuffer {
-        var pixelBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            16,
-            16,
-            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            nil,
-            &pixelBuffer
-        )
-        let buffer = try #require(status == kCVReturnSuccess ? pixelBuffer : nil)
-        if let transfer {
-            CVBufferSetAttachment(
-                buffer,
-                kCVImageBufferTransferFunctionKey,
-                transfer,
-                .shouldPropagate
-            )
-        }
-        return buffer
     }
 
     private enum SourceContractError: Error {

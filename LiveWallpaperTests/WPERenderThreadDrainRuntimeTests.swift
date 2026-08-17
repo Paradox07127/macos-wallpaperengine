@@ -40,7 +40,9 @@ private func drainProbeTick(_ info: UnsafeMutableRawPointer?) {
     guard let info else { return }
     let probe = Unmanaged<DrainProbe>.fromOpaque(info).takeUnretainedValue()
     let canary = PoolCanary { probe.deallocated.increment() }
-    Unmanaged.passRetained(canary).autorelease()
+    // Discarded on purpose: the point is the autorelease-pool entry, not the
+    // returned reference — a drained pool is what releases the canary.
+    _ = Unmanaged.passRetained(canary).autorelease()
     probe.executed.increment()
 }
 

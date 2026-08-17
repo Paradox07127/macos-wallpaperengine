@@ -19,6 +19,9 @@ struct MenuBarContent: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var ownsSystemMonitorLease = false
+    /// The same shared checker the About panel reads, so a version skipped
+    /// there is skipped here and neither can report a different verdict.
+    @State private var updateChecker = UpdateChecker.shared
 
     private var monitor: SystemMonitor { .shared }
 
@@ -52,6 +55,11 @@ struct MenuBarContent: View {
         .modifier(MenuBarOuterShell())
         .onAppear(perform: acquireSystemMonitorLeaseIfNeeded)
         .onDisappear(perform: releaseSystemMonitorLeaseIfNeeded)
+        // Without this the badge only ever reflects the launch-time check, so
+        // a Mac left running for days never learns about a release. `force:
+        // false` means the checker's own 12 h throttle decides whether this
+        // costs a request at all.
+        .task { await updateChecker.checkNow(force: false) }
     }
 
     private func acquireSystemMonitorLeaseIfNeeded() {
@@ -83,6 +91,8 @@ struct MenuBarContent: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
+                updateButton
+
                 Toggle("", isOn: Binding(
                     get: { isWallpaperEnabled },
                     set: { enabled in
@@ -104,6 +114,27 @@ struct MenuBarContent: View {
             usageStrip
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Present only when there is a release to go get. Update delivery is a
+    /// manual download, so the button's whole job is to open the release page —
+    /// the same page, from the same `UpdateChecker.Status`, as the About panel.
+    @ViewBuilder
+    private var updateButton: some View {
+        if case .available(let release) = updateChecker.status {
+            Button {
+                NSWorkspace.shared.open(release.releasePageURL)
+                dismiss()
+            } label: {
+                Label("Update", systemImage: "arrow.down.circle.fill")
+                    .font(.caption.weight(.semibold))
+            }
+            .adaptiveGlassButton(.regular, size: .small)
+            .fixedSize()
+            .tint(DesignTokens.Colors.Status.warning)
+            .help(Text("New version available"))
+            .accessibilityLabel(Text("Update available"))
+        }
     }
 
     private var displays: some View {
