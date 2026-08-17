@@ -16,6 +16,18 @@ extension ScreenManager {
     private func applyMemoryPressureLevel(_ level: SystemMemoryPressureLevel) {
         guard !isTerminating else { return }
         setMemoryPressure(level != .normal)
+        #if !LITE_BUILD
+        // Critical pressure skips the hibernate dwell: the refresh above has
+        // already suspended every session, so release scene renderer resources
+        // now instead of waiting out a countdown the system may not survive.
+        // Pushed on EVERY level change, not just the critical edge — the
+        // session's retry cadence has to be revoked when the pressure clears.
+        let isCritical = level == .critical
+        for screen in screens {
+            (screen.runtimeSession as? SceneWallpaperSession)?
+                .setCriticalMemoryPressureActive(isCritical)
+        }
+        #endif
     }
 
     /// Suspends all wallpaper types while memory pressure holds without changing

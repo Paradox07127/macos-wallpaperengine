@@ -284,6 +284,13 @@ extension ScreenManager {
                         || fullScreenDetector.isDesktopHidden(for: screen.id)
                         || fullScreenDetector.isDesktopOccluded(for: screen.id))
             )
+            // Reconciled from the watcher's live level on every refresh, not only
+            // on a level change: a session installed (restore-at-launch, swap-in)
+            // while pressure is ALREADY critical would otherwise never hear about
+            // it and stay fully resident for the whole emergency.
+            scene.setCriticalMemoryPressureActive(
+                memoryPressureWatcher.currentLevel() == .critical
+            )
         }
         #endif
         return profile
