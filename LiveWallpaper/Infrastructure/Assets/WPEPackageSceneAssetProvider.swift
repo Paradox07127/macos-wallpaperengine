@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 import LiveWallpaperCore
+import LiveWallpaperProWPE
 
 /// Reads packed scene assets in place with serialized seeks and mapped staging for large entries.
 /// A launch-time sweep reclaims staging directories left by abnormal termination.
@@ -14,9 +15,13 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
 
     private let package: WallpaperEnginePackage
     private let handle: FileHandle
+    private let packageURL: URL
     private let lock = NSLock()
     private let stagingRoot: URL
     private var stagedPaths: [String: URL] = [:]
+    /// Lazy whole-package mapping backing `mappedWindow`. Costs address space,
+    /// not resident memory; clean pages are kernel-reclaimable.
+    private var mappedPackageData: Data?
 
     init(packageURL: URL) throws {
         self.stagingRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -29,6 +34,7 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
             throw error
         }
         self.handle = handle
+        self.packageURL = packageURL
     }
 
     /// Async construction seam for MainActor import/session paths. Blocking
@@ -45,14 +51,15 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
             try? prepared.handle.close()
             throw error
         }
-        return WPEPackageSceneAssetProvider(prepared: prepared)
+        return WPEPackageSceneAssetProvider(prepared: prepared, packageURL: packageURL)
     }
 
-    private init(prepared: WPEPackageIndexLoader.PreparedPackage) {
+    private init(prepared: WPEPackageIndexLoader.PreparedPackage, packageURL: URL) {
         self.stagingRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("\(Self.stagingDirectoryNamePrefix)\(UUID().uuidString)", isDirectory: true)
         self.package = prepared.package
         self.handle = prepared.handle
+        self.packageURL = packageURL
     }
 
     deinit {
@@ -102,6 +109,15 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         let entry = try packageEntry(for: relativePath)
         lock.lock()
         defer { lock.unlock() }
+        return try entryDataLocked(entry, relativePath: relativePath)
+    }
+
+    /// Per-entry read: big entries stage to their own file and map from there,
+    /// so residency is bounded by the entry rather than the package.
+    private func entryDataLocked(
+        _ entry: WallpaperEnginePackage.Entry,
+        relativePath: String
+    ) throws -> Data {
         if entry.dataSize > Self.mmapThreshold {
             // Big entry: stage once, then memory-map — never resident in full.
             let url = try stageEntryLocked(entry, relativePath: relativePath)
@@ -116,6 +132,62 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         } catch {
             throw WPESceneAssetProviderError.unreadable(relativePath)
         }
+    }
+
+    /// `.mappedIfSafe` is advisory: Foundation refuses to map files on network
+    /// and removable volumes and silently reads them onto the heap instead.
+    /// Whole-package mapping is only worth it when the mapping really happens —
+    /// otherwise the entire pkg would sit resident, pinned by every span, which
+    /// inverts the point of the mapping.
+    private static func isPackageVolumeMappable(_ url: URL) -> Bool {
+        guard let values = try? url.resourceValues(
+            forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]
+        ) else {
+            // Unknown volume: keep the mapping path rather than silently
+            // changing behaviour for ordinary local libraries.
+            return true
+        }
+        return (values.volumeIsLocal ?? true) && !(values.volumeIsRemovable ?? false)
+    }
+
+    /// Windows the entry inside a single whole-package mapping: no per-entry
+    /// heap copy, and every span from this package shares one mmap owner.
+    ///
+    /// Lifetime contract: spans keep the mapping alive for the whole session
+    /// (lazy animated sources decompress out of it every frame). Deleting or
+    /// rename-replacing the pkg is safe on APFS; truncating or rewriting it IN
+    /// PLACE while a scene plays would SIGBUS on the next page fault. The pkg
+    /// reclaimer already skips in-use packages (its in-playback deletion bug
+    /// was fixed); any future writer must swap by rename.
+    func mappedWindow(atRelativePath relativePath: String) throws -> WPEMappedByteSpan {
+        let entry = try packageEntry(for: relativePath)
+        lock.lock()
+        defer { lock.unlock() }
+        // On a volume that cannot actually be mapped, fall back to the
+        // per-entry path: same bytes, but residency stays bounded by the entry
+        // instead of pinning the whole package on the heap for the session.
+        guard Self.isPackageVolumeMappable(packageURL) else {
+            return WPEMappedByteSpan(
+                data: try entryDataLocked(entry, relativePath: relativePath)
+            )
+        }
+        let mapped: Data
+        if let existing = mappedPackageData {
+            mapped = existing
+        } else {
+            do {
+                mapped = try Data(contentsOf: packageURL, options: [.mappedIfSafe])
+            } catch {
+                throw WPESceneAssetProviderError.unreadable(relativePath)
+            }
+            mappedPackageData = mapped
+        }
+        let start = Int(package.dataStart + entry.dataOffset)
+        let end = start + Int(entry.dataSize)
+        guard start >= 0, end <= mapped.count else {
+            throw WPESceneAssetProviderError.unreadable(relativePath)
+        }
+        return WPEMappedByteSpan(owner: mapped, range: start..<end)
     }
 
     func stagedURL(atRelativePath relativePath: String) throws -> URL {

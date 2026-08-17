@@ -33,6 +33,10 @@ extension WPEMetalRenderExecutor {
         outputTexturePool.removeAll()
         recentOutputTextureIDs.removeAll()
         bootstrapPreviousTextureCache.removeAll()
+        // Same size-keyed lifetime as the bootstrap cache: rebuilt on-miss in
+        // sceneReadHazardSnapshot(matching:commandBuffer:), so dropping it here
+        // only frees the old scene's size/format entries.
+        sceneReadHazardSnapshotCache.removeAll()
         // Pass-id keyed; a reload can reuse an id for a different shader, so drop
         // it here (reload routes through releaseTransientResources). The
         // content-keyed translatedShaderCache is safe to persist and is not cleared.

@@ -25,6 +25,15 @@ extension WPEMetalSceneRenderer {
     // MARK: - Reload & scene property patching
 
     func reload(on actor: isolated WPEDisplayRenderActor) async throws {
+        await retireRuntimeState(on: actor)
+        try await load(on: actor)
+    }
+
+    /// The teardown half of `reload`: drops every loaded runtime resource —
+    /// static/dynamic textures, particles, text, scripts (JSContexts), sound,
+    /// executor transients — while keeping the descriptor, resolvers, and asset
+    /// provider so a later `load` can rebuild the scene from disk.
+    func retireRuntimeState(on actor: isolated WPEDisplayRenderActor) async {
         sceneScriptLoadState.retireCurrent()
         didLoad = false
         let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()
@@ -73,8 +82,26 @@ extension WPEMetalSceneRenderer {
         lastRuntimeUniforms = nil
         lastFramePipeline = nil
         cachedSnapshot = nil
+        // Load rebuilds both (Load.swift). Left stale, a hibernated renderer's
+        // frameDemand stays non-empty and the wake's `.quality` command unpauses
+        // the display link for the whole reload — seconds of no-op vsync ticks
+        // on a heavy scene.
+        hasAnimatedShaderPasses = false
+        sceneSupportsAudioProcessing = false
         executor.releaseTransientResources()
-        try await load(on: actor)
+    }
+
+    /// Deep hibernate: the suspend path's resource-release depth, not a third
+    /// performance profile. Runs the reload teardown without the reload — the
+    /// session wakes a hibernated renderer by calling `reload()`, which rebuilds
+    /// everything from the retained descriptor/provider. Returns false when
+    /// nothing is loaded (mid-load or already hibernated), so the caller does not
+    /// mark the session hibernated on a no-op.
+    func hibernate(on actor: isolated WPEDisplayRenderActor) async -> Bool {
+        guard didLoad else { return false }
+        await retireRuntimeState(on: actor)
+        publishRuntimeActivity()
+        return true
     }
 
     func canApplyScenePropertyPatch(_ patch: WPEScenePropertyPatch) -> Bool {
@@ -406,7 +433,8 @@ extension WPEMetalSceneRenderer {
             // Re-present so the cleared state shows at once even if the scene is paused.
             surfaceControl.setNeedsRedraw()
         }
-        refreshLiveness()
+        synchronizeFrameDemand()
+        pushPointerEventMonitoring()
     }
 
     /// Updates how the scene is fitted to the screen. For a static (non-continuous)
@@ -422,18 +450,44 @@ extension WPEMetalSceneRenderer {
 
     func setClickCaptureEnabled(_ enabled: Bool) {
         surfaceControl.setClickCaptureEnabled(enabled)
-        refreshLiveness()
+        // Record before the demand re-evaluation so `pointerDrivenContent` sees
+        // this toggle instead of the possibly-stale mailbox copy.
+        lastPushedClickCaptureEnabled = enabled
+        synchronizeFrameDemand()
+        pushPointerEventMonitoring(clickCaptureEnabled: enabled)
     }
 
-    /// Re-evaluates the paused/continuous state after a mouse-interaction toggle
-    /// flips at runtime, so turning Follow Cursor / Interaction on un-pauses a
-    /// previously-static scene (and turning them off lets it re-pause).
-    private func refreshLiveness() {
-        guard currentProfile == .quality else { return }
-        surfaceControl.applyPacing(WPERenderPacingUpdate(
-            isPaused: !needsContinuousFrames,
-            enableSetNeedsDisplay: !needsContinuousFrames
-        ))
+    /// Re-evaluates frame demand after anything that can flip it at runtime — a
+    /// mouse-interaction toggle, an on-demand video release/rebuild, or a particle
+    /// emitter finishing — and pushes the paused/continuous state to the surface
+    /// (dedup'd on transitions) plus the activity mirror to the session.
+    func synchronizeFrameDemand() {
+        let continuous = needsContinuousFrames
+        if currentProfile == .quality, lastAppliedContinuousFrames != continuous {
+            lastAppliedContinuousFrames = continuous
+            surfaceControl.applyPacing(WPERenderPacingUpdate(
+                isPaused: !continuous,
+                enableSetNeedsDisplay: !continuous
+            ))
+        }
+        publishRuntimeActivity()
+    }
+
+    /// Pushes the "would this renderer do real work under `.quality`" mirror to
+    /// the session (App Nap gate). Renderer-side dedupe; the callback hops to
+    /// MainActor on the session side.
+    func publishRuntimeActivity() {
+        guard let onRuntimeActivityChange else { return }
+        let activity = WPESceneRuntimeActivity(
+            // retireRuntimeState clears the demand inputs, but `didLoad &&`
+            // stays as the belt: activity must never read "working" between a
+            // retire and the load that rebuilds those flags.
+            producesFrames: didLoad && needsContinuousFrames,
+            audible: soundRuntime != nil
+        )
+        guard activity != lastPublishedRuntimeActivity else { return }
+        lastPublishedRuntimeActivity = activity
+        onRuntimeActivityChange(activity)
     }
 
     /// Applies the user-selected frame rate ceiling. `.unlimited` falls
@@ -503,15 +557,30 @@ extension WPEMetalSceneRenderer {
     /// SceneScript-driven transform. Static-scene + dynamic-content combos must
     /// NOT short-circuit MTKView into the paused/on-demand path or they freeze
     /// after the first frame.
-    var needsContinuousFrames: Bool {
-        hasAnimatedShaderPasses
-            || sceneSupportsAudioProcessing
-            || !dynamicTextureSources.isEmpty
-            // On-demand videos may all be released (hidden) yet still need a live
-            // loop so a reveal triggers their rebuild via reconcileVideoResidency.
-            || !onDemandVideoKeyByID.isEmpty
-            || !particleSystems.isEmpty
-            || !dynamicOriginScriptInstances.isEmpty
+    var needsContinuousFrames: Bool { !frameDemand.isEmpty }
+
+    /// Per-category frame demand. Each bit answers "does this subsystem need the
+    /// loop running RIGHT NOW", not "does the scene contain this subsystem":
+    ///
+    /// - `.particles` excludes permanently finished emitters (one-shot bursts /
+    ///   duration-bounded systems whose last particle died) — nothing can respawn
+    ///   them short of a reload, so no wake path is needed.
+    /// - Fully released on-demand videos carry no demand: a reveal is script-
+    ///   (scripts hold `.scripts` demand) or property-patch-driven (the static
+    ///   patch path renders a frame, whose `reconcileVideoResidency` rebuild
+    ///   re-raises `.dynamicTextures` via the `dynamicTextureSources` didSet).
+    ///
+    /// Every other category is deliberately kept whole-scene conservative:
+    /// missing a shrink costs CPU, a wrong shrink freezes a live animation.
+    var frameDemand: WPEFrameDemand {
+        var demand: WPEFrameDemand = []
+        if hasAnimatedShaderPasses { demand.insert(.animatedShaders) }
+        if sceneSupportsAudioProcessing { demand.insert(.audioReactive) }
+        if !dynamicTextureSources.isEmpty { demand.insert(.dynamicTextures) }
+        if particleSystems.contains(where: { !$0.isPermanentlyIdle }) {
+            demand.insert(.particles)
+        }
+        if !dynamicOriginScriptInstances.isEmpty
             || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty
             || !dynamicColorScriptInstances.isEmpty
@@ -522,8 +591,11 @@ extension WPEMetalSceneRenderer {
             // text script must keep the loop running or it freezes at frame 0.
             || !textScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty
-            || !textAlphaScriptInstances.isEmpty
-            || pointerDrivenContent
+            || !textAlphaScriptInstances.isEmpty {
+            demand.insert(.scripts)
+        }
+        if pointerDrivenContent { demand.insert(.pointer) }
+        return demand
     }
 
     /// The cursor moves between frames, so anything that consumes it needs a
@@ -535,11 +607,62 @@ extension WPEMetalSceneRenderer {
     private var pointerDrivenContent: Bool {
         // `!= 0`, not `> 0`: a negative amount/influence is an INVERTED parallax
         // (WPE multiplies the sign straight in), so it still needs the pointer.
+        // The last-pushed click-capture value takes priority over the mailbox for
+        // the same reason as in `pushPointerEventMonitoring`: the mailbox copy is
+        // written on the main thread and may not have landed when the toggle's
+        // demand re-evaluation runs on the render actor.
         (mouseInteractionEnabled
             && cameraParallaxSettings.enabled
             && cameraParallaxSettings.amount != 0
             && cameraParallaxSettings.mouseInfluence != 0)
-            || mailbox.read().clickCaptureEnabled
+            || lastPushedClickCaptureEnabled
+            ?? mailbox.read().clickCaptureEnabled
+    }
+
+    /// Whether anything in the loaded scene could consume the mailbox pointer.
+    /// Deliberately conservative: effects/workshop shaders can sample
+    /// `g_PointerPosition*`, any script instance can read the pointer or register
+    /// cursor handlers at runtime, and particle systems can follow it through
+    /// pointer-locked control points/attractors even when `tracksPointer` is
+    /// false — all of those keep the monitors on. Only the provably pointer-free
+    /// scene gates them off.
+    private var scenePointerConsumersPossible: Bool {
+        (cameraParallaxSettings.enabled
+            && cameraParallaxSettings.amount != 0
+            && cameraParallaxSettings.mouseInfluence != 0)
+            || hasAnimatedShaderPasses
+            || !particleSystems.isEmpty
+            || !dynamicOriginScriptInstances.isEmpty
+            || !dynamicScaleScriptInstances.isEmpty
+            || !dynamicAnglesScriptInstances.isEmpty
+            || !dynamicColorScriptInstances.isEmpty
+            || !layerScriptInstances.isEmpty
+            || !layerAlphaScriptInstances.isEmpty
+            || !textScriptInstances.isEmpty
+            || !textVisibleScriptInstances.isEmpty
+            || !textAlphaScriptInstances.isEmpty
+            || !effectConstantScriptInstances.isEmpty
+            || !effectVisibilityScriptInstances.isEmpty
+    }
+
+    /// Pushes the NSEvent-monitor gate to the surface: every mouse move wakes the
+    /// main thread while monitors are installed, so they run only when the
+    /// renderer is unsuspended AND the pointer can be consumed. The config half
+    /// mirrors `sampleFrameContext`'s discard rule — with Follow Cursor and click
+    /// capture both off the sample is forced `.inactive`, so the mailbox feed is
+    /// provably unread. `clickCaptureEnabled` is passed explicitly on the toggle
+    /// path because the mailbox copy is written on the main thread and may not
+    /// have landed when this runs on the render actor.
+    private func pushPointerEventMonitoring(clickCaptureEnabled: Bool? = nil) {
+        if let clickCaptureEnabled { lastPushedClickCaptureEnabled = clickCaptureEnabled }
+        let clickCapture = clickCaptureEnabled
+            ?? lastPushedClickCaptureEnabled
+            ?? mailbox.read().clickCaptureEnabled
+        let demanded = clickCapture
+            || (mouseInteractionEnabled && scenePointerConsumersPossible)
+        surfaceControl.applyPacing(WPERenderPacingUpdate(
+            pointerEventsEnabled: currentProfile != .suspended && demanded
+        ))
     }
 
     /// A pass animates per-frame when its shader samples `g_Time` /
@@ -561,15 +684,20 @@ extension WPEMetalSceneRenderer {
         dynamicTextureSources.values.forEach { $0.applyPerformanceProfile(profile) }
         switch profile {
         case .quality:
+            let continuous = needsContinuousFrames
+            lastAppliedContinuousFrames = continuous
             surfaceControl.applyPacing(WPERenderPacingUpdate(
-                isPaused: !needsContinuousFrames,
-                enableSetNeedsDisplay: !needsContinuousFrames,
+                isPaused: !continuous,
+                enableSetNeedsDisplay: !continuous,
                 preferredFramesPerSecond: effectiveFPS
             ))
             // Restart scene audio that a prior `.suspended` paused. No-op when
             // audio never started (deferred startup) or is already running.
             soundRuntime?.resume()
         case .suspended:
+            // Nil, not false: the next `.quality` transition must re-apply the
+            // pause state unconditionally.
+            lastAppliedContinuousFrames = nil
             surfaceControl.applyPacing(WPERenderPacingUpdate(isPaused: true, enableSetNeedsDisplay: true))
             surfaceControl.releaseDrawables()
             // Pause the audio engine + FFT tap so a suspended wallpaper costs no
@@ -582,6 +710,10 @@ extension WPEMetalSceneRenderer {
             textMeshRenderer?.releaseCachedResources()
             executor.releaseTransientResources()
         }
+        // Post-switch so the gate sees the profile it just entered. Also the
+        // post-load demand evaluation: `load` ends by re-applying the profile.
+        pushPointerEventMonitoring()
+        publishRuntimeActivity()
     }
 
     // MARK: - Teardown
@@ -682,6 +814,11 @@ extension WPEMetalSceneRenderer {
                 throw error
             }
             didLogFrameFailure = false
+            // A frame can retire the last demand source (a one-shot emitter's
+            // final particle dying, a patch-hidden video releasing): settle the
+            // loop as soon as that happens instead of ticking a finished scene.
+            // Dedup'd inside, so steady continuous scenes pay two bool sweeps.
+            synchronizeFrameDemand()
         } catch is WPEMetalFrameInFlightBudgetExhausted {
             // GPU still busy on a prior frame — skip this vsync rather than
             // block this display's render actor (keeps other displays at full
@@ -696,5 +833,28 @@ extension WPEMetalSceneRenderer {
             }
         }
     }
+}
+
+/// One bit per subsystem that needs the render loop running this instant.
+/// Empty ⇒ the scene is static right now and may sit on the paused/on-demand
+/// path. See `WPEMetalSceneRenderer.frameDemand` for the per-bit semantics.
+struct WPEFrameDemand: OptionSet, Sendable {
+    let rawValue: UInt8
+    static let animatedShaders = Self(rawValue: 1 << 0)
+    static let audioReactive = Self(rawValue: 1 << 1)
+    static let dynamicTextures = Self(rawValue: 1 << 2)
+    static let particles = Self(rawValue: 1 << 3)
+    static let scripts = Self(rawValue: 1 << 4)
+    static let pointer = Self(rawValue: 1 << 5)
+}
+
+/// Renderer→session mirror of what would do real work under `.quality`, pushed
+/// on change so the App Nap assertion can be released for a playing-but-static
+/// scene without reaching across the render actor synchronously.
+struct WPESceneRuntimeActivity: Equatable, Sendable {
+    /// Mirrors `needsContinuousFrames` (false while hibernated/unloaded).
+    let producesFrames: Bool
+    /// A scene sound runtime exists (conservative: counts even while muted).
+    let audible: Bool
 }
 #endif

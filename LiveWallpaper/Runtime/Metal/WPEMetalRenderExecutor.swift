@@ -364,6 +364,13 @@ final class WPEMetalRenderExecutor {
         device
     }
 
+    /// Video NV12→BGRA conversion passes must commit on the frame queue:
+    /// same-queue hazard tracking orders them ahead of the frame that samples
+    /// the converted working texture (a separate queue would be unordered).
+    var textureSourceCommandQueue: MTLCommandQueue {
+        commandQueue
+    }
+
     /// One-shot guard so the waterwaves dispatch logs its first live execution per renderer
     /// (confirms the builtin effect_waterwaves path actually runs). Internal —
     /// flipped by the waterwaves `bind` closure in `WPEMetalEffectDispatchTable`.
@@ -412,6 +419,16 @@ final class WPEMetalRenderExecutor {
     /// single puppet/layer introduces an artifact. Scoped to one object to
     /// stay memory-safe (capturing every pass scene-wide would OOM the GPU).
     private var dumpLayerPassesID: String?
+    /// Both dump defaults read once at executor init instead of twice per frame.
+    /// Safe for the oracle gate: OracleCorpusCaptureTests.swift sets
+    /// `WPEDumpScenePasses` per scene BEFORE constructing WPEMetalSceneRenderer
+    /// (which builds this executor in its init), so an init-time read observes it.
+    private let dumpScenePassesDefaultID: String? =
+        UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
+    private let dumpLayerPassesDefaultID: String? = {
+        let id = UserDefaults.standard.string(forKey: "WPEDumpLayerPasses")
+        return (id?.isEmpty == false) ? id : nil
+    }()
     #endif
 
     func render(
@@ -474,12 +491,9 @@ final class WPEMetalRenderExecutor {
         // trace). Oracle collection forces particles standalone (below) — a render-
         // encoder boundary change only, byte-identical composite, consistent across
         // both before/after oracle runs.
-        let dumpScenePasses = (sceneID.map { !$0.isEmpty && UserDefaults.standard.string(forKey: "WPEDumpScenePasses") == $0 } ?? false)
+        let dumpScenePasses = (sceneID.map { !$0.isEmpty && dumpScenePassesDefaultID == $0 } ?? false)
             || WPEOracleMode.perPassHashesEnabled
-        dumpLayerPassesID = {
-            let id = UserDefaults.standard.string(forKey: "WPEDumpLayerPasses")
-            return (id?.isEmpty == false) ? id : nil
-        }()
+        dumpLayerPassesID = dumpLayerPassesDefaultID
         #endif
         let preparedPipeline = pipeline.addingMetalRuntimeUniforms(
             runtimeUniforms,

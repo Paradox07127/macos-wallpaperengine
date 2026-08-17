@@ -499,7 +499,12 @@ actor Runtime {
             ane: kinds.contains(.aiEngine),
             accessories: kinds.contains(.power),
             sensors: kinds.contains(.cpu) || kinds.contains(.gpu) || kinds.contains(.power),
-            processIO: kinds.contains(.disk)
+            processIO: kinds.contains(.disk),
+            cpu: kinds.contains(.cpu),
+            memory: kinds.contains(.memory),
+            network: kinds.contains(.network),
+            disk: kinds.contains(.disk),
+            power: kinds.contains(.power)
         )
     }
 

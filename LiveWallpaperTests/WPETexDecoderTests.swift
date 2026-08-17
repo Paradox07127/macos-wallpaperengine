@@ -346,7 +346,7 @@ struct WPETexDecoderTests {
         let payload = try WPETexDecoder().extractStreamingPayload(data: buffer).get()
 
         #expect(payload.compressedImages.count == 2)
-        #expect(payload.compressedImages[0].payloads[0].compressedBytes == compressed0)
+        #expect(payload.compressedImages[0].payloads[0].compressedBytes.materializedData() == compressed0)
         #expect(payload.compressedImages[0].payloads[0].isCompressed == true)
         #expect(payload.compressedImages[0].payloads[0].decompressedByteCount == width * height * 4)
         #expect(payload.frames.count == 4)

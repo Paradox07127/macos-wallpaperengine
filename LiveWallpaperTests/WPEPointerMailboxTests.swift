@@ -220,6 +220,27 @@ struct WPEPointerPublisherTests {
         #expect(publisher.isRunning == false)
     }
 
+    @Test("isRunning tracks monitor installation, not the start/stop lifecycle")
+    func isRunningTracksMonitorInstallation() {
+        let publisher = WPEPointerPublisher(mailbox: WPEPointerMailbox(), view: nil)
+        publisher.start()
+        defer { publisher.stop() }
+        // Relative asserts: monitor installation can fail in a headless runner,
+        // so compare against the started+enabled state instead of literal true.
+        let runningWhileEnabled = publisher.isRunning
+
+        publisher.setMouseMonitoringEnabled(false)
+        #expect(publisher.isRunning == false)
+
+        publisher.setMouseMonitoringEnabled(true)
+        #expect(publisher.isRunning == runningWhileEnabled)
+
+        // Gating while stopped installs nothing.
+        publisher.stop()
+        publisher.setMouseMonitoringEnabled(true)
+        #expect(publisher.isRunning == false)
+    }
+
     @Test("start seeds geometry into the mailbox")
     func startSeedsGeometry() {
         let mailbox = WPEPointerMailbox()

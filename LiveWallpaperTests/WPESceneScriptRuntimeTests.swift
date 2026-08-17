@@ -621,12 +621,13 @@ struct WPESceneScriptRuntimeTests {
         left[61] = 0.25
         right[60] = 0.25
         right[61] = 0.25
-        SystemAudioCaptureManager.broker.publish(
-            AudioSpectrumFrame(left: left, right: right, timestampNanos: 1)
+        SystemAudioCaptureManager.broker.attachAnalyzer(
+            SpectrumAnalyzerStub(AudioSpectrumFrame(left: left, right: right, timestampNanos: 1))
         )
         SystemAudioCaptureManager.setCapturingForTesting(true)
         defer {
             SystemAudioCaptureManager.setCapturingForTesting(false)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
             SystemAudioCaptureManager.broker.resetToSilence()
         }
         let script = """
@@ -647,10 +648,13 @@ struct WPESceneScriptRuntimeTests {
     func engineAudioBuffersSilentWhenCaptureOff() throws {
         var left = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
         left[0] = 1
-        SystemAudioCaptureManager.broker.publish(
-            AudioSpectrumFrame(left: left, right: left, timestampNanos: 1)
+        SystemAudioCaptureManager.broker.attachAnalyzer(
+            SpectrumAnalyzerStub(AudioSpectrumFrame(left: left, right: left, timestampNanos: 1))
         )
-        defer { SystemAudioCaptureManager.broker.resetToSilence() }
+        defer {
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
+            SystemAudioCaptureManager.broker.resetToSilence()
+        }
         let script = """
         let audioBuffer = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
         export function update(value) { return String(audioBuffer.average[0]); }
@@ -663,12 +667,13 @@ struct WPESceneScriptRuntimeTests {
     func transformScriptsReadLiveSpectrum() throws {
         var bins = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
         for index in bins.indices { bins[index] = 0.5 }
-        SystemAudioCaptureManager.broker.publish(
-            AudioSpectrumFrame(left: bins, right: bins, timestampNanos: 1)
+        SystemAudioCaptureManager.broker.attachAnalyzer(
+            SpectrumAnalyzerStub(AudioSpectrumFrame(left: bins, right: bins, timestampNanos: 1))
         )
         SystemAudioCaptureManager.setCapturingForTesting(true)
         defer {
             SystemAudioCaptureManager.setCapturingForTesting(false)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
             SystemAudioCaptureManager.broker.resetToSilence()
         }
         let instance = try LiveWallpaper.WPEDynamicTransformScriptInstance(
@@ -877,12 +882,13 @@ export function init(value) {
     func corpusAudioScaleTemplateUsesItsSeed() throws {
         var bins = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
         for index in bins.indices { bins[index] = 1 }
-        SystemAudioCaptureManager.broker.publish(
-            AudioSpectrumFrame(left: bins, right: bins, timestampNanos: 1)
+        SystemAudioCaptureManager.broker.attachAnalyzer(
+            SpectrumAnalyzerStub(AudioSpectrumFrame(left: bins, right: bins, timestampNanos: 1))
         )
         SystemAudioCaptureManager.setCapturingForTesting(true)
         defer {
             SystemAudioCaptureManager.setCapturingForTesting(false)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
             SystemAudioCaptureManager.broker.resetToSilence()
         }
         let instance = try LiveWallpaper.WPEDynamicTransformScriptInstance(
@@ -913,12 +919,13 @@ export function init(value) {
         // batch dispatch (what the frame loop uses) and a real shared state.
         var bins = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
         for index in bins.indices { bins[index] = 1 }
-        SystemAudioCaptureManager.broker.publish(
-            AudioSpectrumFrame(left: bins, right: bins, timestampNanos: 1)
+        SystemAudioCaptureManager.broker.attachAnalyzer(
+            SpectrumAnalyzerStub(AudioSpectrumFrame(left: bins, right: bins, timestampNanos: 1))
         )
         SystemAudioCaptureManager.setCapturingForTesting(true)
         defer {
             SystemAudioCaptureManager.setCapturingForTesting(false)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
             SystemAudioCaptureManager.broker.resetToSilence()
         }
         let instance = try LiveWallpaper.WPEDynamicTransformScriptInstance(
@@ -2820,6 +2827,8 @@ export function init(value) {
         )
 
         #expect(instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5)) == nil)
+        // WPEScriptFaultPolicy backoff: the tick after a failure is skipped.
+        #expect(instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5)) == nil)
         #expect(
             instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5)) == SIMD3<Double>(999, 20, 30)
         )
@@ -2945,6 +2954,8 @@ export function init(value) {
             shared: shared
         )
         _ = producer.tick(runtimeSeconds: 0, pointerFrame: .neutral)
+        // WPEScriptFaultPolicy backoff: the tick after the throw is skipped.
+        #expect(instance.tickString() == "placeholder")
         #expect(instance.tickString() == "[1.50]")
     }
 

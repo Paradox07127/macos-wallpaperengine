@@ -1,6 +1,7 @@
 import AppKit
 import LiveWallpaperCore
 import Metal
+import os
 
 #if !LITE_BUILD
 import LiveWallpaperProWPE
@@ -353,6 +354,21 @@ final class AmbientWallpaperSessionBuilder {
 
         // Adopt renderer into actor then load; session keeps surface (+ shim) alive.
         let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
+        // Frame/audio activity mirror for the App Nap gate. Installed before the
+        // handoff (the renderer must not be touched after adoption); the renderer
+        // pushes from its actor, the session consumes on MainActor.
+        // Unstructured MainActor hops are not FIFO: deliver latest-wins through
+        // a mailbox so a stale idle can't land after (and overwrite) a newer
+        // active — the renderer dedups on its side, so a lost transition would
+        // never be corrected.
+        let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
+        renderer.onRuntimeActivityChange = { [weak session] activity in
+            activityMailbox.withLock { $0 = activity }
+            Task { @MainActor in
+                guard let latest = activityMailbox.withLock({ $0 }) else { return }
+                session?.noteRendererRuntimeActivity(latest)
+            }
+        }
         // One-shot `WPERendererHandoff` (main-built, never touched again); session owns adopt+load task.
         session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
         return session
