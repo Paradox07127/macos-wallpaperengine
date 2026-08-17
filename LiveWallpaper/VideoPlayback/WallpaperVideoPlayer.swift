@@ -155,7 +155,13 @@ final class WallpaperVideoPlayer {
     private(set) var isSuspended = false
     /// Deep hibernation: player/looper/decode pool/`lwmem://` mapping released
     /// behind a captured still frame.
-    private(set) var isHibernated = false
+    /// Same cover-then-release lifecycle the HTML view uses: the still frame is
+    /// the cover, `retirePlaybackState()` the release, `setupPlayer` the rebuild.
+    /// Holding it as a phase rather than a bool is what makes "rebuilding" an
+    /// expressible state — a re-absence during a wake used to be indistinguishable
+    /// from "not hibernated".
+    private var hibernation = HibernationPhase()
+    var isHibernated: Bool { hibernation.phase == .hibernated }
     private var isHibernationEligible = false
     private let hibernationDelay: Duration
     private let hibernationDwell = AbsenceDwell()
@@ -737,6 +743,11 @@ final class WallpaperVideoPlayer {
         setupPlayerReadyObserver()
         // No-op unless a hibernation still frame is up; the frame is held until
         // the rebuilt layer actually has a picture, otherwise wake flashes black.
+        // The rebuild has a picture (or is about to): close out the restore so a
+        // later absence starts from `.live`. The one-shot return is the HTML
+        // view's "drop the cover now" signal; here the container owns that via
+        // `clearStillFrameWhenPlayerIsReady`, so the flag itself is what matters.
+        _ = hibernation.didRestore()
         containerView.clearStillFrameWhenPlayerIsReady()
     }
 
@@ -1286,6 +1297,10 @@ final class WallpaperVideoPlayer {
         isSuspended = suspended
         if suspended {
             drainVideoOutputs()
+            // A suspend landing mid-rebuild: the still frame is still up, so go
+            // back to a phase the dwell can arm from instead of stranding the
+            // player at `.restoring`, which never hibernates again.
+            hibernation.noteSuspendedDuringRestore()
             // Eligibility can be pushed before the suspend lands; re-evaluate so
             // the arming order between the two calls does not matter.
             if isHibernationEligible {
@@ -1360,9 +1375,11 @@ final class WallpaperVideoPlayer {
             )
             return true
         }
+        guard hibernation.begin() == .presentCover else { return true }
         videoView?.showStillFrame(stillFrame)
+        guard hibernation.coverDidPresent(true, generation: hibernation.generation)
+            == .releaseResources else { return true }
         retirePlaybackState()
-        isHibernated = true
         Logger.info(
             "Video wallpaper hibernated: \(videoURL?.lastPathComponent ?? "<unknown>")",
             category: .videoPlayer
@@ -1371,8 +1388,10 @@ final class WallpaperVideoPlayer {
     }
 
     private func resumeFromHibernationIfNeeded() {
-        guard isHibernated, !isCleanedUp, let url = videoURL else { return }
-        isHibernated = false
+        guard !isCleanedUp, let url = videoURL else { return }
+        // `.rebuild` only from `.hibernated`; `.keepCover` means a rebuild is
+        // already running under the still frame and must not be restarted.
+        guard hibernation.requestRestore() == .rebuild else { return }
         // Armed here, not at the end of the rebuild: a load that fails before
         // `configurePlaybackComponents` never reaches the readiness handoff, and
         // this player cannot re-hibernate or re-wake afterwards, so the still

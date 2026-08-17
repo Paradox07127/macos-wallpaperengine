@@ -97,9 +97,9 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// reusing the absence constant. Wake is a normal reload; seconds of latency
     /// on unpause are accepted.
     private let userPauseHibernationDelay: Duration
-    private var hibernationTask: Task<Void, Never>?
-    private var pauseHibernationTask: Task<Void, Never>?
-    private var pressureHibernationTask: Task<Void, Never>?
+    private let absenceDwell = AbsenceDwell()
+    private let pauseDwell = AbsenceDwell()
+    private let pressureDwell = AbsenceDwell()
     /// Retains the wake reload spawned on the suspended→quality transition so
     /// `cleanup()` can cancel it.
     private var wakeTask: Task<Void, Never>?
@@ -353,8 +353,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let effective = effectivePerformanceProfile
         if effective == .quality {
             // Any transition to playing cancels the pending hibernate countdowns.
-            cancelHibernationDwell(\.hibernationTask)
-            cancelHibernationDwell(\.pressureHibernationTask)
+            absenceDwell.cancel()
+            pressureDwell.cancel()
         }
         if lastAppliedPerformanceProfile != effective {
             lastAppliedPerformanceProfile = effective
@@ -383,14 +383,14 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
               hasRenderer,
               !isHibernated,
               effectivePerformanceProfile == .suspended else {
-            cancelHibernationDwell(\.hibernationTask)
+            absenceDwell.cancel()
             return
         }
-        armHibernationDwell(
-            \.hibernationTask,
-            initialDwell: hibernationDelay,
-            retryDwell: hibernationDelay
-        )
+        absenceDwell.arm(initial: hibernationDelay, retry: hibernationDelay) {
+            [weak self] in
+            guard let self else { return true }
+            return await hibernateNow()
+        }
     }
 
     /// Critical system memory pressure: skip the dwell and release renderer
@@ -404,7 +404,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// the manual-pause and absence dwells entirely.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         guard active else {
-            cancelHibernationDwell(\.pressureHibernationTask)
+            pressureDwell.cancel()
             return
         }
         guard hasRenderer,
@@ -412,11 +412,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
               effectivePerformanceProfile == .suspended else { return }
         // Non-zero retry: an in-flight load makes `hibernateNow` return false,
         // and a zero-dwell retry would spin until the load finishes.
-        armHibernationDwell(
-            \.pressureHibernationTask,
-            initialDwell: .zero,
-            retryDwell: .seconds(1)
-        )
+        pressureDwell.arm(initial: .zero, retry: .seconds(1)) { [weak self] in
+            guard let self else { return true }
+            return await hibernateNow()
+        }
     }
 
     /// Second hibernatable class (M4a): a user-paused wallpaper is not an
@@ -427,52 +426,16 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         guard !userIntendsToPlay,
               hasRenderer,
               !isHibernated else {
-            cancelHibernationDwell(\.pauseHibernationTask)
+            pauseDwell.cancel()
             return
         }
-        armHibernationDwell(
-            \.pauseHibernationTask,
-            initialDwell: userPauseHibernationDelay,
-            retryDwell: userPauseHibernationDelay
-        )
-    }
-
-    private func armHibernationDwell(
-        _ slot: ReferenceWritableKeyPath<SceneWallpaperSession, Task<Void, Never>?>,
-        initialDwell: Duration,
-        retryDwell: Duration
-    ) {
-        guard self[keyPath: slot] == nil else { return }
-        self[keyPath: slot] = Task { [weak self] in
-            // The handle stays set for the whole body — not just the countdown —
-            // so `cleanup()` can DRAIN an in-flight hibernate, and a transient
-            // blocker (an in-flight load) re-dwells instead of dropping the
-            // countdown (eligibility pushes are event-driven; a dropped
-            // countdown would skip the entire absence).
-            var dwell = initialDwell
-            while true {
-                try? await Task.sleep(for: dwell)
-                guard !Task.isCancelled, let self else { return }
-                if await self.hibernateNow() {
-                    // Cancelled mid-`hibernateNow` means the canceller already
-                    // cleared (and may have re-armed) the slot; clearing here
-                    // would orphan the replacement task.
-                    if !Task.isCancelled {
-                        self[keyPath: slot] = nil
-                    }
-                    return
-                }
-                if Task.isCancelled { return }
-                dwell = retryDwell
-            }
+        pauseDwell.arm(
+            initial: userPauseHibernationDelay,
+            retry: userPauseHibernationDelay
+        ) { [weak self] in
+            guard let self else { return true }
+            return await hibernateNow()
         }
-    }
-
-    private func cancelHibernationDwell(
-        _ slot: ReferenceWritableKeyPath<SceneWallpaperSession, Task<Void, Never>?>
-    ) {
-        self[keyPath: slot]?.cancel()
-        self[keyPath: slot] = nil
     }
 
     /// Returns false only on a transient blocker (an in-flight load/reload) so
@@ -563,16 +526,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         lifecycleGeneration += 1
         scenePropertyMutationAuthority.advance()
         hasRenderer = false
-        let hibernation = hibernationTask
-        let pauseHibernation = pauseHibernationTask
-        let pressureHibernation = pressureHibernationTask
         let wake = wakeTask
-        hibernationTask?.cancel()
-        hibernationTask = nil
-        pauseHibernationTask?.cancel()
-        pauseHibernationTask = nil
-        pressureHibernationTask?.cancel()
-        pressureHibernationTask = nil
         wakeTask?.cancel()
         wakeTask = nil
         scenePropertyPosterCommitGate.invalidate()
@@ -601,9 +555,9 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             await load?.value
             // A hibernate/wake may be mid-flight on the actor with no other
             // drainable handle; teardown must not overtake it.
-            await hibernation?.value
-            await pauseHibernation?.value
-            await pressureHibernation?.value
+            await absenceDwell.drain()
+            await pauseDwell.drain()
+            await pressureDwell.drain()
             await wake?.value
             await actor.teardownRenderer()
             actor.shutdown()

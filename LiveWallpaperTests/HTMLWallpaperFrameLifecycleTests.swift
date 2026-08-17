@@ -304,78 +304,78 @@ struct HTMLWallpaperHibernationStateTests {
 
     @Test("The dwell first asks for the snapshot cover, never for about:blank")
     func dwellExpiryCoversBeforeTearingDown() {
-        var state = HTMLHibernationState()
+        var state = HibernationPhase()
 
-        let first = state.beginHibernation()
-        #expect(first == .presentSnapshotOverlay)
+        let first = state.begin()
+        #expect(first == .presentCover)
         #expect(state.phase == .live)
-        #expect(state.isCoveringForHibernation)
+        #expect(state.isPresentingCover)
 
-        let second = state.snapshotDidPresent(true, generation: state.generation)
-        #expect(second == .loadAboutBlank)
+        let second = state.coverDidPresent(true, generation: state.generation)
+        #expect(second == .releaseResources)
         #expect(state.phase == .hibernated)
     }
 
     @Test("A failed cover never drops the document")
     func failedSnapshotDoesNotHibernate() {
-        var state = HTMLHibernationState()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
+        var state = HibernationPhase()
+        #expect(state.begin() == .presentCover)
 
-        #expect(state.snapshotDidPresent(false, generation: state.generation) == nil)
+        #expect(state.coverDidPresent(false, generation: state.generation) == nil)
         #expect(state.phase == .live)
-        #expect(!state.isCoveringForHibernation)
+        #expect(!state.isPresentingCover)
     }
 
     @Test("A snapshot reply from an abandoned dwell cannot decide for the next one")
     func staleSnapshotReplyIsRejected() {
-        var state = HTMLHibernationState()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
+        var state = HibernationPhase()
+        #expect(state.begin() == .presentCover)
         let staleGeneration = state.generation
 
         // The source reloaded mid-capture, then the dwell armed again: the
         // in-flight reply describes a document that is no longer on screen.
-        state.noteSourceLoad()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
+        state.noteRebuildStarted()
+        #expect(state.begin() == .presentCover)
         #expect(state.generation != staleGeneration)
 
-        #expect(state.snapshotDidPresent(true, generation: staleGeneration) == nil)
+        #expect(state.coverDidPresent(true, generation: staleGeneration) == nil)
         #expect(state.phase == .live)
-        #expect(state.snapshotDidPresent(true, generation: state.generation) == .loadAboutBlank)
+        #expect(state.coverDidPresent(true, generation: state.generation) == .releaseResources)
     }
 
     @Test("A resume while the cover is being captured cancels the teardown")
     func resumeDuringCaptureCancelsTeardown() {
-        var state = HTMLHibernationState()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
+        var state = HibernationPhase()
+        #expect(state.begin() == .presentCover)
         let generation = state.generation
 
         #expect(state.requestRestore() == nil)
 
-        #expect(state.snapshotDidPresent(true, generation: generation) == nil)
+        #expect(state.coverDidPresent(true, generation: generation) == nil)
         #expect(state.phase == .live)
     }
 
     @Test("Only a hibernated view rebuilds on resume")
     func restoreOnlyFromHibernated() {
-        var state = HTMLHibernationState()
+        var state = HibernationPhase()
         #expect(state.requestRestore() == nil)
 
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
-        #expect(state.snapshotDidPresent(true, generation: state.generation) == .loadAboutBlank)
+        #expect(state.begin() == .presentCover)
+        #expect(state.coverDidPresent(true, generation: state.generation) == .releaseResources)
 
-        #expect(state.requestRestore() == .reloadSource)
+        #expect(state.requestRestore() == .rebuild)
         #expect(state.phase == .restoring)
     }
 
     @Test("The cover is dropped exactly once, when the rebuilt document paints")
     func restoreCompletionIsSingleShot() {
-        var state = HTMLHibernationState()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
-        #expect(state.snapshotDidPresent(true, generation: state.generation) == .loadAboutBlank)
-        #expect(state.requestRestore() == .reloadSource)
+        var state = HibernationPhase()
+        #expect(state.begin() == .presentCover)
+        #expect(state.coverDidPresent(true, generation: state.generation) == .releaseResources)
+        #expect(state.requestRestore() == .rebuild)
 
         // The restore reload runs through the normal source path.
-        state.noteSourceLoad()
+        state.noteRebuildStarted()
         #expect(state.phase == .restoring)
 
         // Hoisted: `#expect` on a bare Bool captures the expression immutably,
@@ -389,14 +389,14 @@ struct HTMLWallpaperHibernationStateTests {
 
     @Test("A source load outside the teardown puts a real document back")
     func sourceLoadClearsHibernation() {
-        var state = HTMLHibernationState()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
-        #expect(state.snapshotDidPresent(true, generation: state.generation) == .loadAboutBlank)
+        var state = HibernationPhase()
+        #expect(state.begin() == .presentCover)
+        #expect(state.coverDidPresent(true, generation: state.generation) == .releaseResources)
 
-        state.noteSourceLoad()
+        state.noteRebuildStarted()
         #expect(state.phase == .live)
         // Having gone back to live, the dwell can arm again.
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
+        #expect(state.begin() == .presentCover)
     }
 
     /// A second resume arriving while the previous restore is still loading must
@@ -405,10 +405,10 @@ struct HTMLWallpaperHibernationStateTests {
     /// "hide the overlay" — a blank desktop.
     @Test("A resume during an in-flight restore keeps the cover")
     func resumeDuringRestoreKeepsTheCover() {
-        var state = HTMLHibernationState()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
-        #expect(state.snapshotDidPresent(true, generation: state.generation) == .loadAboutBlank)
-        #expect(state.requestRestore() == .reloadSource)
+        var state = HibernationPhase()
+        #expect(state.begin() == .presentCover)
+        #expect(state.coverDidPresent(true, generation: state.generation) == .releaseResources)
+        #expect(state.requestRestore() == .rebuild)
 
         #expect(state.requestRestore() == .keepCover)
         #expect(state.phase == .restoring, "the reload is still running underneath")
@@ -419,35 +419,35 @@ struct HTMLWallpaperHibernationStateTests {
     /// screen never hibernated again for the rest of the session.
     @Test("A suspend during an in-flight restore returns to a hibernatable phase")
     func suspendDuringRestoreStaysHibernatable() {
-        var state = HTMLHibernationState()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
-        #expect(state.snapshotDidPresent(true, generation: state.generation) == .loadAboutBlank)
-        #expect(state.requestRestore() == .reloadSource)
+        var state = HibernationPhase()
+        #expect(state.begin() == .presentCover)
+        #expect(state.coverDidPresent(true, generation: state.generation) == .releaseResources)
+        #expect(state.requestRestore() == .rebuild)
 
         state.noteSuspendedDuringRestore()
         #expect(state.phase == .hibernated)
         // And the next resume drives a real restore rather than a bare uncover.
-        #expect(state.requestRestore() == .reloadSource)
+        #expect(state.requestRestore() == .rebuild)
     }
 
     @Test("A suspend outside a restore leaves the phase alone")
     func suspendOutsideRestoreIsANoOp() {
-        var state = HTMLHibernationState()
+        var state = HibernationPhase()
         state.noteSuspendedDuringRestore()
         #expect(state.phase == .live, "control: only `.restoring` is rewritten")
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
+        #expect(state.begin() == .presentCover)
     }
 
     @Test("Cleanup drops any in-flight hibernation decision")
     func invalidateResetsPhase() {
-        var state = HTMLHibernationState()
-        #expect(state.beginHibernation() == .presentSnapshotOverlay)
+        var state = HibernationPhase()
+        #expect(state.begin() == .presentCover)
         let staleGeneration = state.generation
 
         state.invalidate()
 
         #expect(state.phase == .live)
-        #expect(!state.isCoveringForHibernation)
-        #expect(state.snapshotDidPresent(true, generation: staleGeneration) == nil)
+        #expect(!state.isPresentingCover)
+        #expect(state.coverDidPresent(true, generation: staleGeneration) == nil)
     }
 }
