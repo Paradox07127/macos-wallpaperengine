@@ -13,6 +13,37 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.5.3] — 2026-08-17
+
+Follow-up to the hibernation work in 0.5.2. Each of the three wallpaper
+runtimes had grown its own copy of the absence countdown and the
+cover-then-release sequence, and the copies had drifted apart; this release
+collapses them onto one implementation and fixes three cases where a display
+could stop hibernating for the rest of the session. As in the previous window
+a large share of the work was Pro-only (Wallpaper Engine scenes), which this
+file does not cover.
+
+### Fixed
+
+- A display could stop hibernating for the rest of the session. Two of the
+  three runtimes treated a transient blocker — a rebuild still in flight, so
+  there is nothing to release yet — as "no longer applicable" and dropped the
+  countdown. Eligibility is pushed on policy changes rather than polled, so a
+  dropped countdown was never re-armed and the wallpaper stayed fully resident.
+- A suspend arriving while a wallpaper was still rebuilding left it in a phase
+  that no eligibility check would arm from, with the same result: that display
+  never hibernated again.
+- Scene render states compared unequal to themselves. The hand-written equality
+  predated one of the states and never learned it, so a refresh that diffs the
+  previous state against the next one saw a change that had not happened.
+
+### Changed
+
+- Video, HTML, and scene wallpapers now share one absence countdown and one
+  cover-then-release phase machine instead of three drifting copies. Ordering
+  is the point of that machine: the cover has to be on screen before the live
+  document or player is released, or the desktop flashes blank.
+
 ## [0.5.2] — 2026-08-17
 
 A memory and power pass over the wallpaper runtimes, plus one long-standing
