@@ -42,7 +42,13 @@ public struct WPEMappedByteSpan: Sendable {
 
     public func byte(at offset: Int) -> UInt8 {
         precondition(offset >= 0 && offset < count)
-        return owner.withUnsafeBytes { $0[range.lowerBound + offset] }
+        // Explicit parameter type: `Data.withUnsafeBytes` still carries the
+        // deprecated typed-pointer overload, and the shipping compiler (26.6)
+        // cannot pick between them from `$0` alone — 27's can, so an unannotated
+        // closure compiles locally and breaks the release toolchain.
+        return owner.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
+            buffer[range.lowerBound + offset]
+        }
     }
 
     /// Explicit heap copy — the only way bytes leave the mapping. Callers that
