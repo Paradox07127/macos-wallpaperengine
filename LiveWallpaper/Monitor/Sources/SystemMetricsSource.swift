@@ -32,10 +32,27 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         static let `default` = Options()
     }
 
+    typealias TopProcessesSampler = @Sendable (
+        _ previous: [Int32: SystemMetricsSamplers.ProcessCPUCounters],
+        _ interval: TimeInterval,
+        _ includeIO: Bool
+    ) -> SystemMetricsSamplers.TopProcessesResult
+
+    static let defaultTopProcessesSampler: TopProcessesSampler = { previous, interval, includeIO in
+        SystemMetricsSamplers.sampleTopProcesses(
+            previous: previous,
+            interval: interval,
+            limit: 12,
+            includeIO: includeIO
+        )
+    }
+
     private let interval: TimeInterval
     private let gpuSampleCadence: Int
+    private let topProcessSampleSeconds: TimeInterval
     private let options: Options
     private let loadAverageSampler: @Sendable () -> [Double]?
+    private let topProcessesSampler: TopProcessesSampler
     private let pressure: any MemoryPressureReading
     private let state = MetricsState()
     private let netPath = NetworkPathObserver()
@@ -54,7 +71,9 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         self.options = options
         self.interval = interval
         self.gpuSampleCadence = gpuSampleCadence
+        self.topProcessSampleSeconds = 5.0
         self.loadAverageSampler = loadAverageSampler
+        self.topProcessesSampler = Self.defaultTopProcessesSampler
         pressure = memoryPressureReader
     }
 
@@ -62,15 +81,19 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         options: Options,
         interval: TimeInterval = 2.0,
         gpuSampleCadence: Int = 3,
+        topProcessSampleSeconds: TimeInterval = 5.0,
         loadAverageSampler: @escaping @Sendable () -> [Double]? = {
             SystemMetricsSamplers.sampleLoadAverages()
         },
+        topProcessesSampler: @escaping TopProcessesSampler = SystemMetricsSource.defaultTopProcessesSampler,
         memoryPressureReader: any MemoryPressureReading = SystemMemoryPressureWatcher.shared
     ) {
         self.options = options
         self.interval = interval
         self.gpuSampleCadence = gpuSampleCadence
+        self.topProcessSampleSeconds = topProcessSampleSeconds
         self.loadAverageSampler = loadAverageSampler
+        self.topProcessesSampler = topProcessesSampler
         pressure = memoryPressureReader
     }
 
@@ -90,8 +113,10 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         await state.startLoop(
             interval: interval,
             gpuSampleCadence: gpuSampleCadence,
+            topProcessSampleSeconds: topProcessSampleSeconds,
             options: options,
             loadAverageSampler: loadAverageSampler,
+            topProcessesSampler: topProcessesSampler,
             pressure: pressure,
             netPath: netPath,
             sink: sink
@@ -117,6 +142,9 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         private var lastGPU: SystemMetricsSamplers.GPUSample?
         private var lastGPUSampledAt: Double?
         private var prevProcessCounters: [Int32: SystemMetricsSamplers.ProcessCPUCounters] = [:]
+        private var lastTopProcesses: [MonitorProcessSample]?
+        private var lastTopIOProcesses: [MonitorProcessSample]?
+        private var lastTopProcessesSampledAt: Date?
         private var lastANE: SystemMetricsSamplers.ANESample?
         private var lastANESampledAt: Date?
         /// Lazily opened on the first sensors-enabled tick; caches its SMC connection.
@@ -127,8 +155,10 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         func startLoop(
             interval: TimeInterval,
             gpuSampleCadence: Int,
+            topProcessSampleSeconds: TimeInterval,
             options: Options,
             loadAverageSampler: @escaping @Sendable () -> [Double]?,
+            topProcessesSampler: @escaping TopProcessesSampler,
             pressure: any MemoryPressureReading,
             netPath: NetworkPathObserver,
             sink: any MonitorSnapshotSink
@@ -140,8 +170,10 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                     await tick(
                         interval: interval,
                         gpuSampleCadence: gpuSampleCadence,
+                        topProcessSampleSeconds: topProcessSampleSeconds,
                         options: options,
                         loadAverageSampler: loadAverageSampler,
+                        topProcessesSampler: topProcessesSampler,
                         pressure: pressure,
                         netPath: netPath,
                         sink: sink
@@ -167,8 +199,10 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         private func tick(
             interval: TimeInterval,
             gpuSampleCadence: Int,
+            topProcessSampleSeconds: TimeInterval,
             options: Options,
             loadAverageSampler: @Sendable () -> [Double]?,
+            topProcessesSampler: TopProcessesSampler,
             pressure: any MemoryPressureReading,
             netPath: NetworkPathObserver,
             sink: any MonitorSnapshotSink
@@ -245,18 +279,27 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 accessories = read.isEmpty ? nil : read
             }
 
+            // The full process-table walk rivals ANE as the priciest probe, so it
+            // shares ANE's wall-clock cadence pattern instead of running every base
+            // tick. CPU%/IO deltas must divide by the span since the *last walk*,
+            // not the base tick, or skipping would inflate them by the skip factor.
             var topProcesses: [MonitorProcessSample]?
             var topIOProcesses: [MonitorProcessSample]?
             if options.topProcesses || options.processIO {
-                let result = SystemMetricsSamplers.sampleTopProcesses(
-                    previous: prevProcessCounters,
-                    interval: elapsed,
-                    limit: 12,
-                    includeIO: options.processIO
-                )
-                prevProcessCounters = result.counters
-                topProcesses = result.samples.isEmpty ? nil : result.samples
-                topIOProcesses = result.ioSamples.isEmpty ? nil : result.ioSamples
+                if shouldSampleTopProcesses(now: now, cadenceSeconds: topProcessSampleSeconds) {
+                    let walkElapsed = lastTopProcessesSampledAt.map { now.timeIntervalSince($0) } ?? elapsed
+                    let result = topProcessesSampler(
+                        prevProcessCounters,
+                        walkElapsed,
+                        options.processIO
+                    )
+                    prevProcessCounters = result.counters
+                    lastTopProcesses = result.samples.isEmpty ? nil : result.samples
+                    lastTopIOProcesses = result.ioSamples.isEmpty ? nil : result.ioSamples
+                    lastTopProcessesSampledAt = now
+                }
+                topProcesses = lastTopProcesses
+                topIOProcesses = lastTopIOProcesses
             }
 
             // ANE's per-PID rusage walk is the priciest probe → ≥5s cadence, gated.
@@ -332,6 +375,11 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 detail: nil,
                 lastUpdateAt: now.timeIntervalSince1970
             ))
+        }
+
+        private func shouldSampleTopProcesses(now: Date, cadenceSeconds: TimeInterval) -> Bool {
+            guard let last = lastTopProcessesSampledAt else { return true }
+            return now.timeIntervalSince(last) >= cadenceSeconds
         }
 
         private func shouldSampleANE(now: Date) -> Bool {
