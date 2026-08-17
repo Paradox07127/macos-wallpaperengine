@@ -86,7 +86,7 @@
                     needles: [
                         "var loadedTextures: [String: MTLTexture] = [:]",
                         "var dynamicTextureSources: [String: WPEDynamicTextureSource]",
-                        "var onDemandVideoKeyByID: [String: String] = [:]",
+                        "var onDemandVideoKeyByID: [String: Set<String>] = [:]",
                         "var onDemandVideoLoading: Set<String> = []",
                         "var introPhaseSource: WPEVideoTextureSource?",
                         "var staticTextureCacheRecords: [String: StaticTextureCacheRecord]",

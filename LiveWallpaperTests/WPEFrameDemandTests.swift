@@ -138,7 +138,7 @@ struct WPEFrameDemandTests {
         try await stack.load()
 
         // Scene has releasable videos, all currently released (hidden).
-        renderer.onDemandVideoKeyByID = ["layer-1": "video/clip.mp4"]
+        renderer.onDemandVideoKeyByID = ["layer-1": ["video/clip.mp4"]]
         #expect(!renderer.needsContinuousFrames)
 
         // Reveal path: `rebuildOnDemandVideo` re-inserts the source; the didSet

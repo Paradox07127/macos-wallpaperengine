@@ -130,8 +130,16 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Video source key for `getVideoTexture()`. Populated for ALL video layers, not just scripted ones.
     var layerVideoSourceKey: [String: String] = [:]
     var layerObjectIDByName: [String: String] = [:]
-    /// Scene-output-only videos, resident while visible. Each 4K source is ~300 MB; `reconcileVideoResidency` flips per frame.
-    var onDemandVideoKeyByID: [String: String] = [:]
+    /// Every video layer's texture key. Each 4K source is ~300 MB; residency is decided by
+    /// `onDemandVideoKeysByConsumerID`, which `reconcileVideoResidency` flips per frame.
+    var onDemandVideoKeyByID: [String: Set<String>] = [:]
+    /// Load-time consumer graph: layer objectID → the video keys that layer's
+    /// visibility keeps resident (it samples the video, or samples an FBO the
+    /// video's pixels reach). Static — only visibility is per frame.
+    var onDemandVideoKeysByConsumerID: [String: Set<String>] = [:]
+    /// Image path → consumed video keys, so a script-created clone (fresh
+    /// objectID, absent from the graph above) inherits its template's entry.
+    var onDemandVideoKeysByImagePath: [String: Set<String>] = [:]
     /// In-flight rebuilds, so a still-visible layer does not spawn a duplicate Task.
     var onDemandVideoLoading: Set<String> = []
     var liveLayerAlpha: [String: Double] = [:]
