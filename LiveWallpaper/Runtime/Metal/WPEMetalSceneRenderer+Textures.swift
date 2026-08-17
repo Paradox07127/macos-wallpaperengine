@@ -326,6 +326,27 @@ extension WPEMetalSceneRenderer {
         throw lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
     }
 
+    /// GPU residency the eager path would create for a multi-frame `.tex`: one
+    /// texture per image the frame schedule actually references, billed with the
+    /// same estimator as the texture-cache LRU. `totalUncompressedImageBytes`
+    /// instead sums every container image at its stored payload size, so it
+    /// over-counts unreferenced images and mis-counts padded/absent mip levels.
+    nonisolated static func eagerAnimationGPUBytes(of payload: WPETexStreamingPayload) -> Int {
+        guard let format = payload.info.format else { return payload.totalUncompressedImageBytes }
+        let referenced = payload.frames.isEmpty
+            ? Set(payload.compressedImages.indices)
+            : Set(payload.frames.map(\.imageID))
+        return referenced.reduce(0) { total, imageID in
+            guard payload.compressedImages.indices.contains(imageID) else { return total }
+            let image = payload.compressedImages[imageID]
+            let mipmap = image.payloads.first
+            return total + format.expectedByteCount(
+                width: mipmap?.width ?? image.width,
+                height: mipmap?.height ?? image.height
+            )
+        }
+    }
+
     private nonisolated static func detectHeavyStreaming(
         _ candidate: String,
         resolver: WPEMultiRootResourceResolver,
@@ -345,7 +366,7 @@ extension WPEMetalSceneRenderer {
             guard let payload = try? resolver.resolveStreamingTexturePayload(relativePath: probe) else {
                 continue
             }
-            if payload.totalUncompressedImageBytes > threshold {
+            if eagerAnimationGPUBytes(of: payload) > threshold {
                 return true
             }
         }
@@ -501,6 +522,12 @@ extension WPEMetalSceneRenderer {
                                 from: payload,
                                 label: label
                             )
+                            attachAtlasProvider(
+                                to: source,
+                                eagerPayload: payload,
+                                candidate: candidate,
+                                label: label
+                            )
                             return .dynamicSource(source)
                         }
 
@@ -524,7 +551,35 @@ extension WPEMetalSceneRenderer {
         throw lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
     }
 
-    /// Lazy only when `.tex` raw bytes clear the threshold. Tiny sheets stay eager so they do not pay per-frame decompress.
+    /// Hands the eager animation the mmap-backed compressed `.tex` it was built
+    /// from, so `.suspended` can drop its atlases and re-upload them on resume.
+    ///
+    /// Skipped for two payload shapes the restore path cannot reproduce:
+    /// mip-chain uploads (it only re-uploads level 0), and PNG/JPEG-in-`.tex`
+    /// animations, whose atlases are rasterized CGImages — the streaming payload
+    /// hands back the *encoded* bytes, which would upload as garbage.
+    /// `WPETexDecoder.bridgeEncodedAnimatedImagePayload` is the only animated
+    /// path that returns an empty top-level `mipmaps`, which is the tell.
+    private func attachAtlasProvider(
+        to source: WPETexAnimatedTextureSource,
+        eagerPayload: WPETexTexturePayload,
+        candidate: String,
+        label: String
+    ) {
+        guard !eagerPayload.mipmaps.isEmpty,
+              !WPEMetalTextureLoader.isMipChainEnabled,
+              let streaming = try? resourceResolver.resolveStreamingTexturePayload(relativePath: candidate),
+              let provider = WPETexAnimatedAtlasProvider(
+                  payload: streaming,
+                  device: executor.textureSourceDevice,
+                  label: label
+              ) else { return }
+        if !source.attachAtlasProvider(provider) {
+            debugStage("tex.eager.provider-rejected", "candidate=\(candidate)")
+        }
+    }
+
+    /// Lazy only when `.tex` GPU bytes clear the threshold. Tiny sheets stay eager so they do not pay per-frame decompress.
     private func resolveStreamingPayloadIfHeavy(_ candidate: String) throws -> WPETexStreamingPayload? {
         try Task.checkCancellation()
         let probeCandidates: [String]
@@ -570,16 +625,17 @@ extension WPEMetalSceneRenderer {
                 )
                 continue
             }
-            if payload.totalUncompressedImageBytes <= Self.lazyAnimationRawByteThreshold {
+            let gpuBytes = Self.eagerAnimationGPUBytes(of: payload)
+            if gpuBytes <= Self.lazyAnimationRawByteThreshold {
                 debugStage(
                     "tex.lazy.skip",
-                    "probe=\(probe) raw=\(payload.totalUncompressedImageBytes)B below threshold"
+                    "probe=\(probe) gpu=\(gpuBytes)B below threshold"
                 )
                 continue
             }
             debugStage(
                 "tex.lazy.hit",
-                "probe=\(probe) raw=\(payload.totalUncompressedImageBytes)B images=\(payload.compressedImages.count) frames=\(payload.frames.count)"
+                "probe=\(probe) gpu=\(gpuBytes)B images=\(payload.compressedImages.count) frames=\(payload.frames.count)"
             )
             return payload
         }
@@ -819,6 +875,18 @@ extension WPEMetalSceneRenderer {
             }
         }
         return loadedTextures
+    }
+
+    /// `.suspended` releases the eager animation atlases, but `loadedTextures`
+    /// still holds the last atlas each source handed out — without dropping
+    /// those bindings the release frees nothing. The first resumed frame
+    /// re-populates them from the restored atlases before encode reads the map.
+    func purgeReleasedAnimatedTextureBindings() {
+        for (path, source) in dynamicTextureSources {
+            guard let animated = source as? WPETexAnimatedTextureSource,
+                  animated.hasReleasedAtlases else { continue }
+            loadedTextures.removeValue(forKey: path)
+        }
     }
 
     func releaseDynamicTextureSources() {
