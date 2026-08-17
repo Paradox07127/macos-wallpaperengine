@@ -219,6 +219,108 @@ struct WPEVideoNV12ConversionTests {
         #expect(isGray, "uniform gray input must stay gray through the YCbCr matrix")
     }
 
+    // MARK: - Wrapper lifetime (retirement fences)
+
+    @Test("Replaced frames keep their CV wrappers until a GPU fence completes")
+    func replacedFrameWrappersOutliveTheirPublish() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticNV12VideoFixture.writeMP4(durationSeconds: 0.5)
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
+        defer { source.invalidate() }
+
+        let first = try Self.makeNV12PixelBuffer(width: 64, height: 64, luma: 100, cb: 110, cr: 140)
+        source.ingestForTesting(pixelBuffer: first)
+        let second = try Self.makeNV12PixelBuffer(width: 64, height: 64, luma: 180, cb: 120, cr: 130)
+        source.ingestForTesting(pixelBuffer: second)
+
+        // The first frame's wrappers moved into a pending retirement fenced by
+        // the second publish's conversion buffer — they must not have been
+        // dropped synchronously at replacement.
+        #expect(source.pendingRetirementCountForTesting > 0,
+                "replaced frame must be fence-retired, not released at publish")
+    }
+
+    @Test("Completed fences release retired wrappers on a later publish (no unbounded growth)")
+    func sweepReleasesCompletedRetirements() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticNV12VideoFixture.writeMP4(durationSeconds: 0.5)
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
+        defer { source.invalidate() }
+
+        // Publish a burst, then keep publishing slowly: once the GPU catches
+        // up, each new publish sweeps the completed fences, so the pending
+        // count must settle at 1 (only the entry appended by that publish).
+        for step in 0..<6 {
+            let buffer = try Self.makeNV12PixelBuffer(
+                width: 64, height: 64, luma: UInt8(60 + step * 20), cb: 100, cr: 150
+            )
+            source.ingestForTesting(pixelBuffer: buffer)
+        }
+        var settled = false
+        let deadline = Date().addingTimeInterval(3.0)
+        while Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            let buffer = try Self.makeNV12PixelBuffer(width: 64, height: 64, luma: 90, cb: 100, cr: 150)
+            source.ingestForTesting(pixelBuffer: buffer)
+            if source.pendingRetirementCountForTesting == 1 {
+                settled = true
+                break
+            }
+        }
+        #expect(settled, "completed retirements must be swept — pending stuck at \(source.pendingRetirementCountForTesting)")
+    }
+
+    @Test("Suspending playback releases retired wrappers instead of holding a frame")
+    func suspendReleasesRetiredWrappers() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticNV12VideoFixture.writeMP4(durationSeconds: 0.5)
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
+        defer { source.invalidate() }
+
+        let first = try Self.makeNV12PixelBuffer(width: 64, height: 64, luma: 100, cb: 110, cr: 140)
+        source.ingestForTesting(pixelBuffer: first)
+        let second = try Self.makeNV12PixelBuffer(width: 64, height: 64, luma: 180, cb: 120, cr: 130)
+        source.ingestForTesting(pixelBuffer: second)
+        #expect(source.pendingRetirementCountForTesting > 0)
+
+        // Pausing stops publishes, so the sweep at the top of `publish` will
+        // never run again — a retired 4K NV12 plane pair (~12 MiB, ~32 MiB on
+        // BGRA) would sit there for the whole suspension.
+        source.applyPerformanceProfile(.suspended)
+        #expect(source.pendingRetirementCountForTesting == 0,
+                "suspend must drain fenced retirements, not hold a frame for the whole pause")
+    }
+
+    @Test("Invalidate with conversion work in flight: no crash, full teardown")
+    func invalidateWithInFlightConversions() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticNV12VideoFixture.writeMP4(durationSeconds: 0.5)
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
+
+        // Burst of publishes so conversion command buffers are still in flight
+        // when invalidate() lands — the earlier hardening attempt crashed in
+        // exactly this window (completed handler vs. pool teardown).
+        for step in 0..<12 {
+            let buffer = try Self.makeNV12PixelBuffer(
+                width: 256, height: 256, luma: UInt8(40 + step * 15), cb: 90, cr: 160
+            )
+            source.ingestForTesting(pixelBuffer: buffer)
+        }
+        #expect(source.pendingRetirementCountForTesting > 0)
+
+        source.invalidate()
+
+        #expect(source.pendingRetirementCountForTesting == 0,
+                "invalidate must drain and release every pending retirement")
+        #expect(source.texture(at: 0) == nil)
+        // Idempotent re-entry stays safe after the drain.
+        source.invalidate()
+    }
+
     // MARK: - Helpers
 
     /// Polls a 1-pixel (0,0) readback until `predicate` passes or 2s elapse.

@@ -59,32 +59,45 @@ final class WPEVideoTextureSource {
 
     private struct PublishedFrame {
         let texture: MTLTexture
-        /// CV wrappers stay retained until the next publish replaces this frame:
-        /// the pool must not recycle a plane's pixel buffer while the GPU may
-        /// still read it (conversion pass or direct sampling). One wrapper on
-        /// the BGRA path, two (luma + chroma) on the biplanar path.
-        ///
-        /// Known gap (accepted, predates NV12): "until the next publish" is not
-        /// "until command-buffer completion" — with the GPU a full publish
-        /// behind, the pool can reuse the buffer mid-read (transient tear, no
-        /// crash: the MTLTexture keeps the IOSurface mapped). The BGRA wrap
-        /// path shipped with the same window, and the NV12 conversion pass
-        /// completes strictly earlier than the render pass that window covered.
-        /// Extending retention to a completed-handler must first resolve the
-        /// invalidate() ordering documented above `latest = nil` in
-        /// `invalidate()` (wrapper release after pool teardown crashes).
+        /// CV wrappers stay retained here until the next publish replaces this
+        /// frame (one wrapper on the BGRA path, luma + chroma on biplanar).
+        /// At replacement they do NOT drop — they move into
+        /// `pendingRetirements`, fenced by a command buffer committed on
+        /// `conversionQueue` at that publish (NV12: the conversion pass itself;
+        /// BGRA: an empty marker buffer). In the app `conversionQueue` is the
+        /// render executor's frame queue, so the fence completes only after
+        /// every render command buffer that could still sample this frame —
+        /// the pool cannot recycle a plane mid-read anymore. Release happens
+        /// on the publishing thread (`sweepRetiredFrames`) or in `invalidate()`
+        /// after `waitUntilCompleted` on the fences; the completed handler
+        /// itself never releases anything (see `WPEFrameFenceFlag`).
         let retainedSourceTextures: [CVMetalTexture]
     }
+
+    /// Retired frame wrappers waiting for their GPU fence. Mutated only on the
+    /// thread that owns this source (render executor in the app); the completed
+    /// handler touches only the flag, never this array.
+    private var pendingRetirements: [PendingFrameRetirement] = []
+
+    /// Test seam: retired frames whose wrappers are still held for the GPU.
+    var pendingRetirementCountForTesting: Int { pendingRetirements.count }
+
+    /// Test seam: skip the macOS 15+ player-level output so the item-level
+    /// (`AVPlayerItemVideoOutput`) branch — the shipping path on macOS 14 — is
+    /// exercisable on an OS where both APIs exist.
+    private let forceLegacyItemLevelOutput: Bool
 
     init(
         device: MTLDevice,
         videoURL: URL,
         commandQueue: MTLCommandQueue? = nil,
-        onInvalidate: (@Sendable (URL) -> Void)? = nil
+        onInvalidate: (@Sendable (URL) -> Void)? = nil,
+        forceLegacyItemLevelOutputForTesting: Bool = false
     ) throws {
         self.cleanupURL = videoURL
         self.onInvalidate = onInvalidate
         self.device = device
+        self.forceLegacyItemLevelOutput = forceLegacyItemLevelOutputForTesting
         guard let queue = commandQueue ?? device.makeCommandQueue() else {
             throw WPEMetalTextureLoaderError.textureAllocationFailed
         }
@@ -137,7 +150,7 @@ final class WPEVideoTextureSource {
         self.videoOutput = output
 
         // macOS 15+: attach player-level output BEFORE looper enqueues items.
-        if #available(macOS 15.0, *) {
+        if #available(macOS 15.0, *), !forceLegacyItemLevelOutput {
             self.playerLevelOutput = WPEPlayerLevelVideoOutput(
                 player: queuePlayer,
                 pixelFormats: Self.negotiatedPixelFormats
@@ -146,8 +159,10 @@ final class WPEVideoTextureSource {
 
         self.playerLooper = AVPlayerLooper(player: queuePlayer, templateItem: playerItem)
 
-        // macOS 14: item-level output; stay paused until performance profile.
-        if #unavailable(macOS 15.0) {
+        // macOS 14 (or forced legacy): item-level output; stay paused until
+        // performance profile. `texture(at:)` falls through to this path
+        // whenever `playerLevelOutput` is nil.
+        if playerLevelOutput == nil {
             attachOutputIfNeeded(to: queuePlayer.currentItem ?? playerItem)
         }
     }
@@ -201,6 +216,12 @@ final class WPEVideoTextureSource {
             if !scriptControlled { player.play() }
         case .suspended:
             player.pause()
+            // `sweepRetiredFrames` only runs from `publish`, and a paused source
+            // never publishes again — without this the last replaced frame's
+            // planes (~12 MiB NV12 4K, ~32 MiB BGRA) stay resident for the whole
+            // suspension. Fences here are a conversion pass or an empty marker,
+            // both already committed, so the wait is bounded and short.
+            drainRetiredFrames()
         }
     }
 
@@ -267,6 +288,12 @@ final class WPEVideoTextureSource {
     func invalidate() {
         guard !isInvalidated else { return }
         isInvalidated = true
+        // Drain in-flight GPU work BEFORE releasing any CV wrapper: a pending
+        // conversion pass may still be reading retired planes, and the
+        // completed handlers only mark flags — they hold no wrapper to carry a
+        // late release past this point. Bounded wait (one small pass per
+        // fence, already committed).
+        drainRetiredFrames()
         // Drop the published frame BEFORE the player goes away. Its
         // `CVMetalTexture` backing references a pixel buffer owned by the video
         // output's pool, so releasing it after `remove(videoOutput)` /
@@ -313,6 +340,7 @@ final class WPEVideoTextureSource {
     }
 
     private func publish(pixelBuffer: CVPixelBuffer) {
+        sweepRetiredFrames()
         switch CVPixelBufferGetPixelFormatType(pixelBuffer) {
         case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
             publishBiPlanar(pixelBuffer: pixelBuffer, fullRange: false)
@@ -383,6 +411,10 @@ final class WPEVideoTextureSource {
         encoder.setFragmentBytes(&conversion, length: MemoryLayout<WPEVideoYCbCrConversion>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
+        // The conversion pass doubles as the retirement fence for the frame
+        // being replaced (same queue as the render executor → completes after
+        // any render pass that sampled it). Handler must attach pre-commit.
+        retire(latest, fence: commandBuffer)
         commandBuffer.commit()
 
         latest = PublishedFrame(texture: working.sampleView, retainedSourceTextures: [lumaCV, chromaCV])
@@ -431,10 +463,49 @@ final class WPEVideoTextureSource {
               let texture = CVMetalTextureGetTexture(cvTexture) else {
             return
         }
+        // No conversion pass on this path — commit an empty marker buffer as
+        // the retirement fence for the frame being replaced. If the marker
+        // cannot be created the wrappers drop immediately: that is exactly the
+        // pre-hardening contract, not a new hole.
+        if let previous = latest, let marker = conversionQueue.makeCommandBuffer() {
+            retire(previous, fence: marker)
+            marker.commit()
+        }
         latest = PublishedFrame(texture: texture, retainedSourceTextures: [cvTexture])
         lastPublishPathForTesting = .bgra
         // See publishBiPlanar for why this flush is safe and required.
         CVMetalTextureCacheFlush(textureCache, 0)
+    }
+
+    /// Queue a replaced frame's CV wrappers behind a GPU fence. Also called
+    /// with `nil` (biplanar first publish) purely to track the fence, so
+    /// `invalidate()` can wait out the conversion pass reading the CURRENT
+    /// frame's planes. Must run before `fence` is committed.
+    private func retire(_ previous: PublishedFrame?, fence: MTLCommandBuffer) {
+        let flag = WPEFrameFenceFlag()
+        fence.addCompletedHandler { _ in flag.markCompleted() }
+        pendingRetirements.append(PendingFrameRetirement(
+            fence: fence,
+            flag: flag,
+            wrappers: previous?.retainedSourceTextures ?? []
+        ))
+    }
+
+    /// Release wrappers whose fence completed. Runs on the publishing thread,
+    /// so wrapper release is never concurrent with player/pool teardown.
+    private func sweepRetiredFrames() {
+        guard !pendingRetirements.isEmpty else { return }
+        pendingRetirements.removeAll { $0.flag.isCompleted }
+    }
+
+    /// Wait out every pending fence and release all retired wrappers. Same
+    /// owning thread as `sweepRetiredFrames`; used where no further publish
+    /// will arrive to sweep (suspend, invalidate).
+    private func drainRetiredFrames() {
+        for retirement in pendingRetirements {
+            retirement.fence.waitUntilCompleted()
+        }
+        pendingRetirements.removeAll()
     }
 
     /// PQ/HLG-tagged buffers must not go through the 8-bit matrix path (that
@@ -454,6 +525,7 @@ final class WPEVideoTextureSource {
     private func rebuildOutputsForBGRAFallback(reason: String) {
         guard !forcedBGRAOutput else { return }
         forcedBGRAOutput = true
+        bgraFallbackRebuildCountForTesting += 1
         Logger.info(
             "[WPE.video] \(reason) — pinning video output to 32BGRA",
             category: .wpeRender
@@ -465,7 +537,7 @@ final class WPEVideoTextureSource {
         let output = AVPlayerItemVideoOutput(pixelBufferAttributes: Self.bgraFallbackPixelBufferAttributes)
         output.suppressesPlayerRendering = true
         videoOutput = output
-        if #available(macOS 15.0, *) {
+        if #available(macOS 15.0, *), !forceLegacyItemLevelOutput {
             (playerLevelOutput as? WPEPlayerLevelVideoOutput)?.detach()
             playerLevelOutput = WPEPlayerLevelVideoOutput(
                 player: player,
@@ -476,6 +548,9 @@ final class WPEVideoTextureSource {
             attachOutputIfNeeded(to: player.currentItem)
         }
     }
+
+    /// Test seam: number of HDR/shader-fallback output rebuilds (contract: at most 1).
+    private(set) var bgraFallbackRebuildCountForTesting = 0
 
     private func ensureConversionPipeline() -> MTLRenderPipelineState? {
         if let conversionPipeline { return conversionPipeline }
@@ -610,6 +685,38 @@ final class WPEVideoTextureSource {
 }
 
 extension WPEVideoTextureSource: WPEDynamicTextureSource {}
+
+/// The ONLY thing a frame-fence completed handler captures. It must never
+/// capture the source, the texture cache, or the wrappers themselves: an
+/// earlier attempt that released wrappers from the handler crashed when the
+/// handler fired after `invalidate()` had torn the buffer pool down
+/// (`CVBufferBacking::releaseUser` on a dead backing). A handler that only
+/// flips this flag is safe to fire at any time, on any thread.
+private final class WPEFrameFenceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+
+    func markCompleted() {
+        lock.lock()
+        completed = true
+        lock.unlock()
+    }
+
+    var isCompleted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return completed
+    }
+}
+
+/// Wrappers of a replaced frame plus the command buffer whose completion
+/// proves the GPU is done reading them. Owned exclusively by
+/// `WPEVideoTextureSource.pendingRetirements`.
+private struct PendingFrameRetirement {
+    let fence: MTLCommandBuffer
+    let flag: WPEFrameFenceFlag
+    let wrappers: [CVMetalTexture]
+}
 
 /// macOS 15+ player-level frame tap (spans looper rotations). Pixel formats
 /// come from the caller: NV12-first for the normal path, 32BGRA-only after the
