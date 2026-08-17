@@ -44,6 +44,15 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         self?.reloadCurrentSource()
     }
     var isCleaningUp = false
+    /// Matches `SceneWallpaperSession`'s absence dwell so both wallpaper kinds
+    /// release at the same point in an absence.
+    static let hibernationDwell: Duration = .seconds(20)
+    /// Generous enough for a cold reload of a heavy WebGL page off a slow volume;
+    /// past it a frozen pre-absence snapshot is worse than the live document.
+    static let restoreCoverDeadline: Duration = .seconds(15)
+    var restoreCoverDeadlineTask: Task<Void, Never>?
+    var hibernationState = HTMLHibernationState()
+    var hibernationTask: Task<Void, Never>?
     var mediaLifecycleState = HTMLMediaLifecycleState()
     var mediaPlaybackSuspended: Bool {
         mediaLifecycleState.desiredSuspended
@@ -124,6 +133,8 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
     deinit {
         packageBackingTask?.cancel()
+        hibernationTask?.cancel()
+        restoreCoverDeadlineTask?.cancel()
         let url = activeSecurityScopedURL
         if let url {
             Task { @MainActor in
@@ -155,6 +166,17 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     private func installBaselineUserScripts(for config: HTMLConfig?) {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
+
+        // Every frame gets the lifecycle controller: an ad or embedded-player
+        // iframe owns its own timers, rAF and canvases, none of which the main
+        // frame's hooks can reach. The main frame relays the phase down.
+        controller.addUserScript(WKUserScript(
+            source: HTMLWallpaperRuntimeScript.lifecycleController(
+                aggressiveSuspend: config?.aggressiveSuspend ?? false
+            ),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
 
         let baseline = makeBaselineScript(for: config)
         controller.addUserScript(WKUserScript(
@@ -201,14 +223,10 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         )
 
         let msaaForcer = HTMLWallpaperRuntimeScript.gpuCanvasMSAAForcer()
-        let lifecycle = HTMLWallpaperRuntimeScript.lifecycleController(
-            aggressiveSuspend: config?.aggressiveSuspend ?? false
-        )
 
         return """
         \(cspInjection)
         \(msaaForcer)
-        \(lifecycle)
         (function () {
             \(physicalPixelBootstrap)
             \(canvasUpgrader)
@@ -522,6 +540,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         resetFailureCount: Bool,
         allowsPackageBackingWhileSuspended: Bool = false
     ) {
+        hibernationState.noteSourceLoad()
         preparationGeneration &+= 1
         let navigationGeneration = preparationGeneration
         completedNavigationGeneration = nil
@@ -774,6 +793,13 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         switch navigationType {
         case .other, .reload:
             guard let url else { return .cancel }
+            // `about:blank` is what WebKit reports for `loadHTMLString` (every
+            // inline wallpaper) and for the hibernation teardown. Cancelling it
+            // left inline sources as a permanently empty document, silently:
+            // the resulting `NSURLErrorCancelled` is swallowed by
+            // `shouldIgnoreNavigationFailure`. Exact match, not the `about:`
+            // scheme — a page navigating itself blank is the worst it allows.
+            if url == Self.aboutBlank { return .allow }
             if url.isFileURL {
                 return fileURL(url, isContainedIn: localReadAccessRoot) ? .allow : .cancel
             }
@@ -853,6 +879,11 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
     func cleanup() {
         isCleaningUp = true
+        hibernationTask?.cancel()
+        hibernationTask = nil
+        restoreCoverDeadlineTask?.cancel()
+        restoreCoverDeadlineTask = nil
+        hibernationState.invalidate()
         mediaLifecycleState.invalidate()
         navigationGenerationState.invalidate()
         packageBackingGeneration &+= 1
@@ -1004,6 +1035,10 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         if mediaPlaybackSuspended {
             invokeLifecycleHook(.suspend)
             captureSuspendSnapshot()
+        } else if hibernationState.didRestore() {
+            restoreCoverDeadlineTask?.cancel()
+            restoreCoverDeadlineTask = nil
+            hideSnapshotOverlay()
         }
         lastRafThrottleRatio = 1
         applyRafThrottleRatio(rafThrottleRatio(for: ProcessInfo.processInfo.thermalState))

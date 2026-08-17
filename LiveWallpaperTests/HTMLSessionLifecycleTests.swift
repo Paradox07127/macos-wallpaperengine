@@ -332,7 +332,7 @@ struct HTMLWallpaperRuntimeScriptTests {
         #expect(script.contains("resumeTimers();"))
     }
 
-    @Test("Lifecycle script offers opt-in suspend and resume messages to cooperative workers")
+    @Test("Lifecycle script wraps Worker and signals suspend and resume to every instance")
     func lifecycleScriptSignalsWorkers() {
         let script = HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false)
 
@@ -343,7 +343,7 @@ struct HTMLWallpaperRuntimeScriptTests {
         #expect(script.contains("worker.postMessage"))
         #expect(script.contains("signalWorkers('suspend');"))
         #expect(script.contains("signalWorkers('resume');"))
-        #expect(!script.contains("window.Worker = ManagedWorker"))
+        #expect(script.contains("window.Worker = LWManagedWorker;"))
     }
 
     @Test("Lifecycle timer and worker state machine executes in JavaScriptCore")

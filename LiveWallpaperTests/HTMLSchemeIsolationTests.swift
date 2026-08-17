@@ -341,6 +341,38 @@ struct HTMLWallpaperNavigationPolicyTests {
         #expect(decision == .cancel)
     }
 
+    /// Cancelling this left every inline wallpaper a permanently empty document:
+    /// `loadHTMLString` is reported as an `about:blank` `.other` navigation, and
+    /// the resulting cancellation is swallowed as `NSURLErrorCancelled`.
+    @Test("about:blank is allowed so inline sources and hibernation teardown can load")
+    func aboutBlankIsAllowed() {
+        for type in [WKNavigationType.other, .reload] {
+            let decision = HTMLWallpaperView.navigationDecision(
+                for: HTMLWallpaperView.aboutBlank,
+                navigationType: type,
+                currentURL: nil,
+                allowMouseInteraction: false,
+                localReadAccessRoot: nil
+            )
+            #expect(decision == .allow, "about:blank must survive \(type)")
+        }
+    }
+
+    /// Control: the allowance is an exact-URL match, not the `about:` scheme.
+    @Test("Other about: URLs stay cancelled")
+    func otherAboutURLsAreCancelled() {
+        for raw in ["about:config", "about:blank#x", "about:"] {
+            let decision = HTMLWallpaperView.navigationDecision(
+                for: URL(string: raw)!,
+                navigationType: .other,
+                currentURL: nil,
+                allowMouseInteraction: false,
+                localReadAccessRoot: nil
+            )
+            #expect(decision == .cancel, "\(raw) must not ride the about:blank allowance")
+        }
+    }
+
     @Test("Remote source rejects scripted cross-origin navigation")
     func remoteSourceRejectsCrossOriginNavigation() {
         let source = URL(string: "https://trusted.example/wallpaper")!

@@ -45,6 +45,79 @@ struct HTMLMediaLifecycleState {
     }
 }
 
+/// Absence-dwell teardown: the resource depth of the suspend path (same signal
+/// and dwell as `SceneWallpaperSession`), not a third performance profile.
+/// Ordering is the whole point — the snapshot overlay has to be covering before
+/// the live document is dropped, or the desktop flashes blank (the same failure
+/// that keeps `aggressiveSuspend` opt-in).
+struct HTMLHibernationState {
+    enum Phase: Equatable {
+        case live
+        case hibernated
+        case restoring
+    }
+
+    /// `loadAboutBlank` is only ever returned by `snapshotDidPresent(_:generation:)`
+    /// with `presented == true`, never by `beginHibernation()`.
+    enum Step: Equatable {
+        case presentSnapshotOverlay
+        case loadAboutBlank
+        case reloadSource
+    }
+
+    private(set) var phase: Phase = .live
+    /// Bumped by every resume and every source load so a snapshot reply that
+    /// lands after a wake cannot drop the document that wake just rebuilt.
+    private(set) var generation: UInt64 = 0
+    private(set) var isCoveringForHibernation = false
+
+    mutating func beginHibernation() -> Step? {
+        guard phase == .live, !isCoveringForHibernation else { return nil }
+        isCoveringForHibernation = true
+        return .presentSnapshotOverlay
+    }
+
+    mutating func snapshotDidPresent(_ presented: Bool, generation: UInt64) -> Step? {
+        guard isCoveringForHibernation, self.generation == generation else { return nil }
+        isCoveringForHibernation = false
+        guard presented, phase == .live else { return nil }
+        phase = .hibernated
+        return .loadAboutBlank
+    }
+
+    /// Any source load other than the `about:blank` teardown puts a real
+    /// document back; a restore in flight keeps its phase until it paints.
+    mutating func noteSourceLoad() {
+        isCoveringForHibernation = false
+        generation &+= 1
+        if phase == .hibernated { phase = .live }
+    }
+
+    mutating func requestRestore() -> Step? {
+        isCoveringForHibernation = false
+        generation &+= 1
+        guard phase == .hibernated else {
+            phase = .live
+            return nil
+        }
+        phase = .restoring
+        return .reloadSource
+    }
+
+    /// True once, when the rebuilt document has painted and the cover can go.
+    mutating func didRestore() -> Bool {
+        guard phase == .restoring else { return false }
+        phase = .live
+        return true
+    }
+
+    mutating func invalidate() {
+        phase = .live
+        isCoveringForHibernation = false
+        generation &+= 1
+    }
+}
+
 struct HTMLPreparationProbeState {
     let generation: UInt64
     let source: HTMLSource?
@@ -231,7 +304,8 @@ extension HTMLWallpaperView {
         setMediaPlaybackSuspended(profile == .suspended)
     }
 
-    /// Main-frame native+JS suspend/resume; generation-ordered. No iframe patch.
+    /// Native+JS suspend/resume; generation-ordered. The JS half reaches
+    /// subframes through the main frame's relay (`broadcastToChildFrames`).
     private func setMediaPlaybackSuspended(_ suspended: Bool) {
         guard !isCleaningUp else { return }
         let request = mediaLifecycleState.request(suspended)
@@ -243,12 +317,118 @@ extension HTMLWallpaperView {
             captureSuspendSnapshot()
             notifyWallpaperEngineGeneralProperties(fps: 1)
         } else {
-            hideSnapshotOverlay()
+            hibernationTask?.cancel()
+            hibernationTask = nil
+            if hibernationState.requestRestore() == .reloadSource {
+                restartPackageBackingAfterResume = false
+                // The overlay is stacked above the web view, so un-hiding it now
+                // lets the rebuilt document paint under cover; `didFinish` drops
+                // the cover. Calling `hideSnapshotOverlay()` here would expose
+                // the `about:blank` we hibernated onto.
+                webView.isHidden = false
+                reloadCurrentSource()
+                armRestoreCoverDeadline()
+            } else {
+                hideSnapshotOverlay()
+            }
         }
 
         if let transition = request.start {
             runMediaLifecycleTransition(transition)
         }
+    }
+
+    /// Only `didFinish` drops the cover, and several `loadSource` exits report an
+    /// error without starting a navigation at all (a folder bookmark that went
+    /// stale while the volume was unmounted during the absence). Without a bound
+    /// the desktop stays frozen on the pre-absence snapshot, and because
+    /// `setHibernationEligible` requires `.live`, the screen also never
+    /// hibernates again. Mirrors the still-frame deadline on the video player.
+    private func armRestoreCoverDeadline() {
+        restoreCoverDeadlineTask?.cancel()
+        let generation = hibernationState.generation
+        restoreCoverDeadlineTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.restoreCoverDeadline)
+            guard !Task.isCancelled,
+                  let self,
+                  !isCleaningUp,
+                  hibernationState.generation == generation,
+                  hibernationState.phase == .restoring else { return }
+            Logger.warning(
+                "HTML wallpaper restore never painted; dropping the hibernation cover",
+                category: .screenManager
+            )
+            // Back to `.live` so a later absence can hibernate this screen again.
+            hibernationState.invalidate()
+            hideSnapshotOverlay()
+        }
+    }
+
+    // MARK: - Absence-dwell hibernation
+
+    /// `ScreenManager` marks the view eligible while it is suspended for an
+    /// absence-like reason (lock, display sleep, full-screen cover/occlusion) —
+    /// the same signal `SceneWallpaperSession.setHibernationEligible` takes. An
+    /// app-rule or battery pause stays a warm suspend.
+    func setHibernationEligible(_ eligible: Bool) {
+        guard eligible,
+              !isCleaningUp,
+              mediaPlaybackSuspended,
+              lastSource != nil,
+              hibernationState.phase == .live else {
+            hibernationTask?.cancel()
+            hibernationTask = nil
+            return
+        }
+        guard hibernationTask == nil else { return }
+        hibernationTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: HTMLWallpaperView.hibernationDwell)
+            guard !Task.isCancelled, let self else { return }
+            self.hibernationTask = nil
+            self.beginHibernationIfEligible()
+        }
+    }
+
+    /// Re-checks across the dwell — cancellation races the sleep waking up.
+    private func beginHibernationIfEligible() {
+        guard !isCleaningUp, mediaPlaybackSuspended, lastSource != nil else { return }
+        guard hibernationState.beginHibernation() == .presentSnapshotOverlay else { return }
+        let generation = hibernationState.generation
+        presentHibernationCover { [weak self] presented in
+            guard let self else { return }
+            let covered = presented && !self.isCleaningUp && self.mediaPlaybackSuspended
+            guard self.hibernationState.snapshotDidPresent(covered, generation: generation)
+                == .loadAboutBlank else { return }
+            self.dropDocumentForHibernation()
+        }
+    }
+
+    /// Reuses the suspend overlay when it is already covering: re-snapshotting a
+    /// hidden web view is what would hand back an empty image.
+    private func presentHibernationCover(completion: @MainActor @escaping (Bool) -> Void) {
+        guard !isSnapshotOverlayPresenting else {
+            completion(true)
+            return
+        }
+        captureSuspendSnapshot { [weak self] _ in
+            // Report what is on screen, not this capture's own result: a
+            // concurrent suspend-path capture may have won the generation.
+            completion(self?.isSnapshotOverlayPresenting ?? false)
+        }
+    }
+
+    private func dropDocumentForHibernation() {
+        webView.stopLoading()
+        reloadScheduler.cancelRetry()
+        // Register the teardown navigation, then advance past its generation so
+        // its `didFinish` cannot be mistaken for the source becoming ready.
+        navigationGenerationState.registerHostNavigation(
+            webView.load(URLRequest(url: Self.aboutBlank)),
+            generation: preparationGeneration
+        )
+        preparationGeneration &+= 1
+        completedNavigationGeneration = nil
+        failedPreparationGeneration = nil
     }
 
     private func runMediaLifecycleTransition(
