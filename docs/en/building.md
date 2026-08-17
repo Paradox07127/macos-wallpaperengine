@@ -5,8 +5,9 @@
 ## Requirements
 
 - macOS 14.6+ on an **Apple Silicon** Mac
-- Xcode 26 or later (CI pins 26.6; the UI layer uses macOS 26 SDK APIs such as
-  `glassEffect`, so older toolchains will not compile)
+- Xcode 26 or later. Shipping builds and CI both use **Xcode 27.0** (the
+  `xcode-27` runner image); the UI layer uses macOS 26 SDK APIs such as
+  `glassEffect`, so older toolchains will not compile.
 - The **Metal Toolchain** component (Xcode 26 ships it as a separate download):
   ```bash
   xcodebuild -downloadComponent MetalToolchain

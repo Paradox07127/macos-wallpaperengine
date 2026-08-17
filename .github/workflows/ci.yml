@@ -5,8 +5,8 @@ name: CI
 # AdaptiveGlass.swift (now LiveWallpaperCore/UI/Components) uses macOS 26 SDK APIs
 # (glassEffect / GlassEffectContainer / .buttonStyle(.glass)) that do not exist
 # in the macOS 15.x SDKs shipped with Xcode 16.x — #available gates the
-# runtime, not the compile. This workflow pins Xcode 26.6 (17F113) on the
-# macos-26 image, matching the local dev toolchain exactly.
+# runtime, not the compile. This workflow pins Xcode 27.0 on the `xcode-27`
+# image, matching the local shipping toolchain exactly.
 #
 # No secrets, no signing, no publishing — pure compile/test gate.
 

@@ -5,7 +5,7 @@
 ## 环境要求
 
 - Apple Silicon Mac 上的 macOS 14.6+
-- Xcode 26 或更高（CI 钉在 26.6；UI 层用了 macOS 26 SDK 的 API，例如 `glassEffect`，更老的工具链编译不过）
+- Xcode 26 或更高。出货构建与 CI 都用 **Xcode 27.0**（CI 走 `xcode-27` runner 镜像）；UI 层用了 macOS 26 SDK 的 API，例如 `glassEffect`，更老的工具链编译不过
 - **Metal Toolchain** 组件（Xcode 26 把它作为单独下载项）：
   ```bash
   xcodebuild -downloadComponent MetalToolchain
