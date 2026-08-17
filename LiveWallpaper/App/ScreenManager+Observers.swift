@@ -273,24 +273,30 @@ extension ScreenManager {
             suspendedScreenIDs.remove(screen.id)
         }
         applyAdaptiveFrameRate(to: screen, settings: settings)
-        #if !LITE_BUILD
         // Deep hibernate is reserved for absence-like suspensions (lock, sleep,
         // full-screen cover/occlusion) — an app-rule or battery pause stays a
         // warm suspend for fast resume. The session owns the dwell countdown.
+        //
+        // Coverage inputs are only usable while the detector is actually
+        // rescanning: with fallback polling off, its space/app-activation
+        // rescans are demand-gated too, so hidden/occluded would be frozen
+        // at whatever the last scan saw. Absence stays authoritative either
+        // way — it is tracked independently of the detector.
+        let coverageIsLive = fullScreenDetector.isFallbackPollingEnabled
+        let isAbsenceLikeSuspension = profile == .suspended
+            && (isUserAbsent
+                || (coverageIsLive
+                    && (fullScreenDetector.isDesktopHidden(for: screen.id)
+                        || fullScreenDetector.isDesktopOccluded(for: screen.id))))
+        // Video and HTML ship in both SKUs, so their dwell wiring stays outside
+        // the Pro-only block below.
+        (screen.runtimeSession as? VideoWallpaperSession)?
+            .setHibernationEligible(isAbsenceLikeSuspension)
+        (screen.runtimeSession as? AmbientWallpaperSession)?
+            .setHibernationEligible(isAbsenceLikeSuspension)
+        #if !LITE_BUILD
         if let scene = screen.runtimeSession as? SceneWallpaperSession {
-            // Coverage inputs are only usable while the detector is actually
-            // rescanning: with fallback polling off, its space/app-activation
-            // rescans are demand-gated too, so hidden/occluded would be frozen
-            // at whatever the last scan saw. Absence stays authoritative either
-            // way — it is tracked independently of the detector.
-            let coverageIsLive = fullScreenDetector.isFallbackPollingEnabled
-            scene.setHibernationEligible(
-                profile == .suspended
-                    && (isUserAbsent
-                        || (coverageIsLive
-                            && (fullScreenDetector.isDesktopHidden(for: screen.id)
-                                || fullScreenDetector.isDesktopOccluded(for: screen.id))))
-            )
+            scene.setHibernationEligible(isAbsenceLikeSuspension)
             // Reconciled from the watcher's live level on every refresh, not only
             // on a level change: a session installed (restore-at-launch, swap-in)
             // while pressure is ALREADY critical would otherwise never hear about

@@ -361,6 +361,18 @@ final class OverlayController: NSObject {
             guard let lease = appliedRuntimeState.lease else { return }
 
             if appliedRuntimeState.options != options {
+                // A metric group no placed widget read was not sampled at all —
+                // the source still emits a literal 0 for it (`"normal"` for
+                // pressure), and those placeholders are indistinguishable from
+                // a real idle reading once they are in the series. A widget
+                // added later would therefore draw a fabricated flat history,
+                // so restart the series whenever the sampled set grows. Both
+                // edit paths (overlay-side and Settings-side) funnel here.
+                let previousKinds = appliedRuntimeState.options?.activeWidgetKinds ?? []
+                let gainedKinds = (options.activeWidgetKinds ?? []).subtracting(previousKinds)
+                if !gainedKinds.isEmpty {
+                    for host in hosts.values { host.board.resetHistory() }
+                }
                 await lease.updateOptions(options).value
                 appliedRuntimeState.options = options
             }
