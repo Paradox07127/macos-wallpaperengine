@@ -57,8 +57,6 @@ struct MonitorHistorySnapshot: Sendable, Equatable {
     var netTxSessionBytes: Double = 0
     var diskReadSessionBytes: Double = 0
     var diskWriteSessionBytes: Double = 0
-
-    /// Sparse 5h-quota used% (statusline slow); burn-ETA needs ≥2 samples.
 }
 
 @MainActor

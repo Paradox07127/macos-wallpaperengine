@@ -72,8 +72,6 @@ final class InteractionModel: ObservableObject {
         )
     }
 
-    var catalogKinds: [MonitorWidgetKind] { MonitorWidgetKind.allCases }
-
     // MARK: - External config application
 
     /// Live config change: cancel in-flight drag; drop selection that no longer exists.

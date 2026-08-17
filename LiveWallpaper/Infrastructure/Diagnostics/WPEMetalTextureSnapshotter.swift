@@ -194,9 +194,11 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
     private static let downsampleQueues =
         OSAllocatedUnfairLock<[ObjectIdentifier: MTLCommandQueue]>(initialState: [:])
 
+    #if DEBUG
     /// Cache-miss count. Test seam (internal, not private, like `commandQueue(for:)`):
     /// lets tests prove repeated poster downsamples reuse one queue per device.
     static let downsampleQueueCreationsForTesting = OSAllocatedUnfairLock<Int>(initialState: 0)
+    #endif
 
     static func commandQueue(for device: MTLDevice) -> MTLCommandQueue? {
         downsampleQueues.withLock { cache in
@@ -206,7 +208,9 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
             // would erase the key, so a failed creation must not pretend to be
             // a cache entry (and must not inflate the creation seam).
             guard let queue = device.makeCommandQueue() else { return nil }
+            #if DEBUG
             downsampleQueueCreationsForTesting.withLock { $0 += 1 }
+            #endif
             queue.label = "com.livewallpaper.wpe-metal.poster-downsample"
             cache[key] = queue
             return queue

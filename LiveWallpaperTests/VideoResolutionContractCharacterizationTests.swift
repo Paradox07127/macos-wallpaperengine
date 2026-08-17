@@ -7,20 +7,6 @@ import Testing
 @MainActor
 @Suite("Video resolution characterization baselines", .serialized)
 struct VideoResolutionContractCharacterizationTests {
-    @Test("A local item stores the HLS-only resolution preference without proving a decoder cap")
-    func localItemStoresResolutionPreferenceAsConfigurationOnly() {
-        let asset = AVURLAsset(
-            url: URL(fileURLWithPath: "/tmp/rr13-local-resolution-contract.mov")
-        )
-        let item = AVPlayerItem(asset: asset)
-        let requestedResolution = CGSize(width: 1920, height: 1080)
-
-        item.preferredMaximumResolution = requestedResolution
-
-        #expect(asset.url.isFileURL)
-        #expect(item.preferredMaximumResolution == requestedResolution)
-    }
-
     @Test("Current local-only player contains no HLS-only resolution preference path")
     func currentLocalPlayerHasNoHLSResolutionPreferencePath() throws {
         let source = try RepositoryRoot.source(

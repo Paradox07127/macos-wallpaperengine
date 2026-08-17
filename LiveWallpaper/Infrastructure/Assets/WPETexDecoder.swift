@@ -23,10 +23,12 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// Hot path.
+    #if DEBUG
+    /// Test-only `Data` entry point; production decodes through `decode(span:)`.
     func decode(data: Data) -> Result<CGImage, WPETexDecodeError> {
         decode(span: WPEMappedByteSpan(data: data))
     }
+    #endif
 
     func decode(span: WPEMappedByteSpan) -> Result<CGImage, WPETexDecodeError> {
         do {
@@ -39,10 +41,12 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// Headers + TEXS schedule only; leave compressed mipmaps for lazy playback.
+    #if DEBUG
+    /// Test-only `Data` entry point; production goes through the span overload.
     func extractStreamingPayload(data: Data) -> Result<WPETexStreamingPayload, WPETexDecodeError> {
         extractStreamingPayload(span: WPEMappedByteSpan(data: data))
     }
+    #endif
 
     func extractStreamingPayload(span: WPEMappedByteSpan) -> Result<WPETexStreamingPayload, WPETexDecodeError> {
         do {

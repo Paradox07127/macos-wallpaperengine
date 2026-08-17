@@ -53,9 +53,11 @@ final class WPEVideoTextureSource {
         case bgra
     }
 
+    #if DEBUG
     /// Last publish branch taken — observation seam for the NV12 tests.
     private(set) var lastPublishPathForTesting: PublishPath?
     var didForceBGRAOutputForTesting: Bool { forcedBGRAOutput }
+    #endif
 
     private struct PublishedFrame {
         let texture: MTLTexture
@@ -82,10 +84,12 @@ final class WPEVideoTextureSource {
     /// Test seam: retired frames whose wrappers are still held for the GPU.
     var pendingRetirementCountForTesting: Int { pendingRetirements.count }
 
+    #if DEBUG
     /// Test seam: total fences ever registered. `pendingRetirements` is empty
     /// both when a frame was fenced-and-drained and when it was never fenced at
     /// all, so the count is what distinguishes them at teardown.
     private(set) var retirementFencesCreatedForTesting = 0
+    #endif
 
     /// Test seam: skip the macOS 15+ player-level output so the item-level
     /// (`AVPlayerItemVideoOutput`) branch — the shipping path on macOS 14 — is
@@ -438,7 +442,9 @@ final class WPEVideoTextureSource {
         commandBuffer.commit()
 
         latest = PublishedFrame(texture: working.sampleView, retainedSourceTextures: [lumaCV, chromaCV])
+        #if DEBUG
         lastPublishPathForTesting = .biPlanar
+        #endif
         // The cache holds a mapping per pixel buffer it has wrapped; the pool
         // rotates buffers, so without a periodic flush the mappings accumulate
         // for the source's lifetime. Flushing only drops unreferenced mappings —
@@ -492,7 +498,9 @@ final class WPEVideoTextureSource {
             marker.commit()
         }
         latest = PublishedFrame(texture: texture, retainedSourceTextures: [cvTexture])
+        #if DEBUG
         lastPublishPathForTesting = .bgra
+        #endif
         // See publishBiPlanar for why this flush is safe and required.
         CVMetalTextureCacheFlush(textureCache, 0)
     }
@@ -502,7 +510,9 @@ final class WPEVideoTextureSource {
     /// `invalidate()` can wait out the conversion pass reading the CURRENT
     /// frame's planes. Must run before `fence` is committed.
     private func retire(_ previous: PublishedFrame?, fence: MTLCommandBuffer) {
+        #if DEBUG
         retirementFencesCreatedForTesting += 1
+        #endif
         let flag = WPEFrameFenceFlag()
         fence.addCompletedHandler { _ in flag.markCompleted() }
         pendingRetirements.append(PendingFrameRetirement(

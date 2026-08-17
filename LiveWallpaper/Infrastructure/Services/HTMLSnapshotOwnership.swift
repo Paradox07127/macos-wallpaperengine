@@ -106,12 +106,12 @@ struct HTMLSnapshotLeaseState {
         return entry.leaseIDs
     }
 
+    #if DEBUG
+    // Test-only introspection; no production reader.
     func producerID(for cacheKey: String) -> ProducerID? {
         entriesByCacheKey[cacheKey]?.producerID
     }
 
-    #if DEBUG
-    // Test-only introspection; no production reader.
     func waiterCount(for cacheKey: String) -> Int {
         entriesByCacheKey[cacheKey]?.leaseIDs.count ?? 0
     }

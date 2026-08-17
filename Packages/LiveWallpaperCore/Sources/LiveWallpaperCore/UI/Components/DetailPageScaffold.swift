@@ -87,16 +87,3 @@ public struct DetailHeaderBar<Title: View, Metadata: View, Actions: View>: View 
         .padding(.vertical, DesignTokens.DetailHeader.verticalPadding)
     }
 }
-
-public struct GuidedLibrarySurface<Content: View>: View {
-    private let content: Content
-
-    public init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    public var body: some View {
-        content
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}

@@ -827,6 +827,9 @@ struct VideoEffectConfigTests {
         #expect(decoded == config)
     }
 
+    /// Pins the stored-property default, which is a separate literal from the
+    /// decoder's `?? 1.0` fallback that `legacyJsonDefaultsParticleDensityToOne`
+    /// covers — changing one does not make the other's test fail.
     @Test("Default particleDensity is 1.0")
     func defaultParticleDensity() {
         let config = VideoEffectConfig.default

@@ -363,7 +363,6 @@ private struct SelectionChrome: ViewModifier {
                 color: Color.black.opacity(isDragging ? 0.55 : 0),
                 radius: isDragging ? 28 : 0, x: 0, y: isDragging ? 16 : 0
             )
-            .scaleEffect(isEditing && hovering && !isDragging ? 1.0 : 1.0)
             .onHover { if isEditing { hovering = $0 } }
     }
 

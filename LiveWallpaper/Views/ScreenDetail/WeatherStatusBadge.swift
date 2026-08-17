@@ -112,7 +112,6 @@ struct WeatherStatusBadge: View {
         case .denied: return "location.slash"
         case .notDetermined: return "location.circle"
         case .error: return "exclamationmark.triangle"
-        case .authorized: return "cloud.fill"
         }
     }
 
@@ -123,7 +122,6 @@ struct WeatherStatusBadge: View {
         case .denied: return DesignTokens.Colors.Status.danger
         case .notDetermined: return DesignTokens.Colors.Status.warning
         case .error: return DesignTokens.Colors.Status.danger
-        case .authorized: return .secondary
         }
     }
 
@@ -139,7 +137,6 @@ private extension WeatherReactiveService.LocationStatus {
     var titleKey: LocalizedStringKey {
         switch self {
         case .notDetermined: return "Not Determined"
-        case .authorized: return "Authorized"
         case .denied: return "Location Denied"
         case .fetching: return "Fetching..."
         case .available: return "Available"
@@ -151,8 +148,6 @@ private extension WeatherReactiveService.LocationStatus {
         switch self {
         case .notDetermined:
             return String(localized: "Not Determined", defaultValue: "Not Determined", comment: "Weather location status.")
-        case .authorized:
-            return String(localized: "Authorized", defaultValue: "Authorized", comment: "Weather location status.")
         case .denied:
             return String(localized: "Location Denied", defaultValue: "Location Denied", comment: "Weather location status.")
         case .fetching:

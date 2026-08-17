@@ -184,7 +184,7 @@ struct ContentView: View {
 
     private func exitSettingsMode() {
         isSettingsMode = false
-        if selectedNavigation == nil, lastAppNavigation != .general {
+        if selectedNavigation == nil {
             selectedNavigation = lastAppNavigation
         }
         scheduleDefaultDisplaySelection()
@@ -193,9 +193,7 @@ struct ContentView: View {
     private func selectAppNavigation(_ navigation: Navigation?) {
         isSettingsMode = false
         selectedNavigation = navigation
-        if navigation != .general {
-            lastAppNavigation = navigation
-        }
+        lastAppNavigation = navigation
     }
 
     private func selectDefaultDisplayIfNeeded() {
@@ -641,8 +639,10 @@ struct DetailContent: View {
     var body: some View {
         Group {
             switch selection {
+            // `.general` never reaches here — it is the "open settings" signal and
+            // flips `isSettingsMode`, which routes to `SettingsDetailContent` instead.
             case .general:
-                GeneralSettingsView()
+                EmptyView()
 
             case .screen(let screenId):
                 if let screen = screenManager.screens.first(where: { $0.id == screenId }) {

@@ -1161,7 +1161,7 @@ struct WPERenderGraphBuilder: Sendable {
         let explicitMaterial = object.materialRelativePath?.isEmpty == false
             ? object.materialRelativePath
             : nil
-        if isBuiltinModelPath(object.imageRelativePath) {
+        if Self.builtinSolidLayerDepthTest(forModelPath: object.imageRelativePath) != nil {
             return WPEModelDescriptor(materialPath: explicitMaterial ?? object.imageRelativePath, puppetPath: nil)
         }
         let extensionName = (object.imageRelativePath as NSString).pathExtension.lowercased()
@@ -1271,10 +1271,6 @@ struct WPERenderGraphBuilder: Sendable {
         }
         #endif
         return pass.replacingTextures(textures)
-    }
-
-    private func isBuiltinModelPath(_ path: String) -> Bool {
-        Self.builtinSolidLayerDepthTest(forModelPath: path) != nil
     }
 
     /// The two bundled solid-layer models (`solidlayer.json` and its depth-test

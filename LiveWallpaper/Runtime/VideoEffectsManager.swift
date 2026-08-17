@@ -24,22 +24,6 @@ struct FilterParameters: Sendable {
 @MainActor
 final class VideoEffectsManager {
 
-    // MARK: - Properties
-
-    private(set) var parameters: FilterParameters
-
-    // MARK: - Initialization
-
-    init(config: VideoEffectConfig = .default) {
-        self.parameters = FilterParameters(from: config)
-    }
-
-    // MARK: - Configuration
-
-    func updateConfig(_ config: VideoEffectConfig) {
-        parameters = FilterParameters(from: config)
-    }
-
     // MARK: - Composition Building
 
     func buildComposition(
@@ -47,8 +31,7 @@ final class VideoEffectsManager {
         config: VideoEffectConfig,
         frameDuration: CMTime
     ) async throws -> AVVideoComposition {
-        updateConfig(config)
-        let params = self.parameters
+        let params = FilterParameters(from: config)
 
         if #available(macOS 26.0, *) {
             return try await Self.buildUsingApplier(

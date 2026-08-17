@@ -4575,7 +4575,7 @@
       }
     },
     "Authorized" : {
-      "comment" : "Weather location status.",
+      "comment" : "Generic authorization state; used by the Monitor board's granted-access badge.",
       "localizations" : {
         "en" : {
           "stringUnit" : {

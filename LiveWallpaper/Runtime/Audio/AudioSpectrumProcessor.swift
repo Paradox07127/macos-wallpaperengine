@@ -11,7 +11,6 @@ import Foundation
 final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable {
     struct Configuration: Equatable, Sendable {
         var fftSize: Int = 2048
-        var binCount: Int = 64
         // dB→[0,1] window calibrated to WPE oracle 3470764447 (narrow 32 dB for bar contrast).
         var minDB: Float = -56
         var maxDB: Float = -24
@@ -80,7 +79,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         if resolved.fftSize < 2 || !Self.isPowerOfTwo(resolved.fftSize) {
             resolved.fftSize = 2048
         }
-        resolved.binCount = AudioSpectrumFrame.binCount
         if resolved.maxDB <= resolved.minDB {
             resolved.maxDB = resolved.minDB + 1
         }
@@ -102,11 +100,11 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         self.realBuffer = [Float](repeating: 0, count: resolved.fftSize / 2)
         self.imagBuffer = [Float](repeating: 0, count: resolved.fftSize / 2)
         self.magnitudes = [Float](repeating: 0, count: resolved.fftSize / 2)
-        self.compressedBins = [Float](repeating: 0, count: resolved.binCount)
-        self.leftOutput = [Float](repeating: 0, count: resolved.binCount)
-        self.rightOutput = [Float](repeating: 0, count: resolved.binCount)
-        self.previousLeft = [Float](repeating: 0, count: resolved.binCount)
-        self.previousRight = [Float](repeating: 0, count: resolved.binCount)
+        self.compressedBins = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
+        self.leftOutput = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
+        self.rightOutput = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
+        self.previousLeft = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
+        self.previousRight = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
         self.bands = Self.logBands(configuration: resolved)
         self.exchange = AudioSpectrumWindowExchange(windowSize: resolved.fftSize)
     }
@@ -119,7 +117,7 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         let low = max(min(configuration.lowFrequency, nyquist * 0.5), binWidth)
         let high = max(min(configuration.highFrequency, nyquist * 0.98), low * 2)
         let ratio = high / low
-        let count = configuration.binCount
+        let count = AudioSpectrumFrame.binCount
 
         return (0..<count).map { band in
             let fStart = low * powf(ratio, Float(band) / Float(count))
@@ -270,7 +268,7 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     private func normalizeAndSmooth(previous: inout [Float], output: inout [Float]) {
         let dbRange = configuration.maxDB - configuration.minDB
 
-        for index in 0..<configuration.binCount {
+        for index in 0..<AudioSpectrumFrame.binCount {
             let mean = compressedBins[index]
             let target: Float
             if mean <= configuration.noiseFloor || !mean.isFinite {
