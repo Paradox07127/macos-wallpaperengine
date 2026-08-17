@@ -73,12 +73,17 @@ struct HibernationPhase: Equatable {
         }
     }
 
-    /// A suspend landing mid-restore: the rebuild is still in flight behind the
-    /// cover, so go back to a phase the dwell can arm from.
+    /// A suspend landing mid-restore. The rebuild is still in flight and will
+    /// finish, so the resources are about to be live again — `.live` is the honest
+    /// phase and the only one both runtimes' eligibility guards will arm from.
+    ///
+    /// It must NOT go to `.hibernated`: that claims the resources are gone while
+    /// they are coming back, and both guards reject `.hibernated`, so the dwell
+    /// would never re-arm and nothing would ever release them again.
     mutating func noteSuspendedDuringRestore() {
         guard phase == .restoring else { return }
-        phase = .hibernated
-        isPresentingCover = true
+        phase = .live
+        isPresentingCover = false
         generation &+= 1
     }
 

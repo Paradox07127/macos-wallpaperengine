@@ -18,7 +18,18 @@ import os
 final class AbsenceDwell: Sendable {
     /// Held for the whole attempt, not just the countdown, so a teardown can
     /// drain an in-flight hibernate rather than racing it.
-    private let slot = OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
+    ///
+    /// The token is an identity, not bookkeeping: an attempt that finishes may be
+    /// racing a `cancel()` + `arm()` pair, and clearing the slot unconditionally
+    /// would drop the *replacement*'s handle — leaving it running while
+    /// `isArmed` reads false and neither `cancel()` nor `drain()` can reach it.
+    private struct Armed {
+        let token: UInt64
+        let task: Task<Void, Never>
+    }
+
+    private let slot = OSAllocatedUnfairLock<Armed?>(initialState: nil)
+    private let nextToken = OSAllocatedUnfairLock<UInt64>(initialState: 0)
 
     var isArmed: Bool { slot.withLock { $0 != nil } }
 
@@ -30,30 +41,39 @@ final class AbsenceDwell: Sendable {
         retry: Duration,
         attempt: @escaping @MainActor () async -> Bool
     ) {
+        let token = nextToken.withLock { current -> UInt64 in
+            current &+= 1
+            return current
+        }
         slot.withLock { current in
             guard current == nil else { return }
-            current = Task { [weak self] in
+            current = Armed(token: token, task: Task { [weak self] in
                 var delay = initial
                 while true {
                     try? await Task.sleep(for: delay)
                     guard !Task.isCancelled else { return }
                     if await attempt() {
-                        // Cancelled mid-attempt means the canceller already
-                        // cleared (and may have re-armed) the slot; clearing it
-                        // here would orphan that replacement.
-                        if !Task.isCancelled { self?.slot.withLock { $0 = nil } }
+                        self?.releaseSlot(token: token)
                         return
                     }
                     if Task.isCancelled { return }
                     delay = retry
                 }
-            }
+            })
+        }
+    }
+
+    /// Clears the slot only while it still holds this attempt.
+    private func releaseSlot(token: UInt64) {
+        slot.withLock { current in
+            guard current?.token == token else { return }
+            current = nil
         }
     }
 
     func cancel() {
         slot.withLock { current in
-            current?.cancel()
+            current?.task.cancel()
             current = nil
         }
     }
@@ -62,7 +82,7 @@ final class AbsenceDwell: Sendable {
     /// running against the object being torn down.
     func drain() async {
         let inFlight = slot.withLock { current -> Task<Void, Never>? in
-            let task = current
+            let task = current?.task
             current = nil
             return task
         }

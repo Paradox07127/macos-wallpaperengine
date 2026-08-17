@@ -415,19 +415,22 @@ struct HTMLWallpaperHibernationStateTests {
     }
 
     /// A suspend landing mid-restore has to leave a phase the dwell can arm from.
-    /// Stuck at `.restoring`, `setHibernationEligible` refused forever and the
-    /// screen never hibernated again for the rest of the session.
-    @Test("A suspend during an in-flight restore returns to a hibernatable phase")
-    func suspendDuringRestoreStaysHibernatable() {
+    /// Both runtimes' eligibility guards only arm from `.live`, and the rebuild in
+    /// flight is about to make the resources live again — so `.hibernated` here is
+    /// doubly wrong: it claims they are gone AND blocks the dwell that would
+    /// release them, so nothing ever would.
+    @Test("A suspend during an in-flight restore returns to an armable phase")
+    func suspendDuringRestoreStaysArmable() {
         var state = HibernationPhase()
         #expect(state.begin() == .presentCover)
         #expect(state.coverDidPresent(true, generation: state.generation) == .releaseResources)
         #expect(state.requestRestore() == .rebuild)
 
         state.noteSuspendedDuringRestore()
-        #expect(state.phase == .hibernated)
-        // And the next resume drives a real restore rather than a bare uncover.
-        #expect(state.requestRestore() == .rebuild)
+        #expect(state.phase == .live, "the rebuild in flight will make resources live")
+        #expect(!state.isPresentingCover)
+        // The dwell can arm again, which is the whole point.
+        #expect(state.begin() == .presentCover)
     }
 
     @Test("A suspend outside a restore leaves the phase alone")
