@@ -4,10 +4,15 @@ import LiveWallpaperCore
 @MainActor
 extension ScreenManager {
     func setupMemoryPressureMonitoring() {
-        memoryPressureWatcher.start { [weak self] level in
+        memoryPressureWatcher.start { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, !self.isTerminating else { return }
-                self.applyMemoryPressureLevel(level)
+                // Unstructured MainActor hops are not FIFO: applying the level
+                // this callback captured lets a late `critical` land after the
+                // `normal` that cleared it and re-arm the hibernate retry
+                // cadence for an emergency that is already over. Read the live
+                // level instead, which is latest-wins by construction.
+                self.applyMemoryPressureLevel(self.memoryPressureWatcher.currentLevel())
             }
         }
         applyMemoryPressureLevel(memoryPressureWatcher.currentLevel())

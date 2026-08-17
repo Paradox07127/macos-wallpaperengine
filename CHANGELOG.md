@@ -13,6 +13,45 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.5.2] — 2026-08-17
+
+A memory and power pass over the wallpaper runtimes, plus one long-standing
+bug that made inline HTML wallpapers render as a blank page. As in the previous
+window a large share of the work was Pro-only (Wallpaper Engine scenes and the
+system-audio spectrum), which this file does not cover.
+
+### Fixed
+
+- Inline HTML sources rendered as an empty document. `loadHTMLString` reaches
+  the navigation policy as an `about:blank` navigation, which the policy
+  cancelled; the resulting cancellation was then swallowed as a routine
+  "navigation cancelled" error, so the page stayed blank with nothing logged.
+- The monitor board drew fabricated history for a widget added to a board that
+  was already running. Metric groups no placed widget reads are not sampled at
+  all, and the unsampled slot was recorded as a literal zero — indistinguishable
+  from a real idle reading once it was in the series. Adding a CPU widget to a
+  board that had been showing only network could therefore draw several minutes
+  of "CPU at 0%" that never happened.
+- A memory-pressure notification that cleared could be overtaken by the
+  critical one that preceded it, re-arming an emergency release cycle after the
+  emergency was over.
+
+### Changed
+
+- Video wallpapers now decode into NV12 planes rather than 32-bit BGRA, and a
+  wallpaper that has been out of sight for twenty seconds is replaced by a still
+  frame while its player, decode pool, and in-memory mapping are released. It is
+  rebuilt on the way back; the still frame is held until the rebuilt player
+  actually has a picture, and dropped on a deadline if it never does.
+- HTML wallpapers suspend more of what they are actually running. The lifecycle
+  hooks now reach subframes (embedded players and ad frames own timers and
+  canvases the main frame cannot touch), `Worker` instances are managed without
+  the page having to opt in, and a wallpaper that has been out of sight for
+  twenty seconds has its document dropped behind a snapshot of its last frame.
+- WebGL contexts no longer have multisampling forced on when the page explicitly
+  asked for `antialias: false`. The default stays on for pages that do not
+  specify it.
+
 ## [0.5.1] — 2026-08-14
 
 Promotes `0.5.1-beta`. Everything below landed after that pre-release; the
