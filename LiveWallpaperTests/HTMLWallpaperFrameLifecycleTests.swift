@@ -399,16 +399,42 @@ struct HTMLWallpaperHibernationStateTests {
         #expect(state.beginHibernation() == .presentSnapshotOverlay)
     }
 
-    @Test("A stuck restore heals on the next suspend cycle instead of blocking hibernation forever")
-    func restoringPhaseIsReleasedByTheNextResume() {
+    /// A second resume arriving while the previous restore is still loading must
+    /// NOT uncover: what is on screen is `about:blank` or a half-built document.
+    /// This used to force `.live` and return nil, which the view reads as
+    /// "hide the overlay" — a blank desktop.
+    @Test("A resume during an in-flight restore keeps the cover")
+    func resumeDuringRestoreKeepsTheCover() {
         var state = HTMLHibernationState()
         #expect(state.beginHibernation() == .presentSnapshotOverlay)
         #expect(state.snapshotDidPresent(true, generation: state.generation) == .loadAboutBlank)
         #expect(state.requestRestore() == .reloadSource)
 
-        // The rebuild never finished (navigation failed), so `didRestore()` never ran.
-        #expect(state.requestRestore() == nil)
-        #expect(state.phase == .live)
+        #expect(state.requestRestore() == .keepCover)
+        #expect(state.phase == .restoring, "the reload is still running underneath")
+    }
+
+    /// A suspend landing mid-restore has to leave a phase the dwell can arm from.
+    /// Stuck at `.restoring`, `setHibernationEligible` refused forever and the
+    /// screen never hibernated again for the rest of the session.
+    @Test("A suspend during an in-flight restore returns to a hibernatable phase")
+    func suspendDuringRestoreStaysHibernatable() {
+        var state = HTMLHibernationState()
+        #expect(state.beginHibernation() == .presentSnapshotOverlay)
+        #expect(state.snapshotDidPresent(true, generation: state.generation) == .loadAboutBlank)
+        #expect(state.requestRestore() == .reloadSource)
+
+        state.noteSuspendedDuringRestore()
+        #expect(state.phase == .hibernated)
+        // And the next resume drives a real restore rather than a bare uncover.
+        #expect(state.requestRestore() == .reloadSource)
+    }
+
+    @Test("A suspend outside a restore leaves the phase alone")
+    func suspendOutsideRestoreIsANoOp() {
+        var state = HTMLHibernationState()
+        state.noteSuspendedDuringRestore()
+        #expect(state.phase == .live, "control: only `.restoring` is rewritten")
         #expect(state.beginHibernation() == .presentSnapshotOverlay)
     }
 

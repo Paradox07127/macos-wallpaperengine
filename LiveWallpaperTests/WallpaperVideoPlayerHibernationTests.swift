@@ -196,6 +196,30 @@ struct WallpaperVideoPlayerHibernationTests {
         #expect(harness.player.hasInstalledPlaybackWindow)
     }
 
+    /// The wake rebuild is async, so eligibility can arrive while `player` is
+    /// still nil. Gating the dwell on a live player cancelled it, and because
+    /// eligibility is event-driven nothing pushed again — the rebuilt player then
+    /// stayed fully resident for the rest of the absence.
+    @Test("Going absent again during the wake rebuild still hibernates")
+    func reAbsenceDuringWakeRearmsTheDwell() async throws {
+        let harness = try await Harness.make()
+        defer { harness.cleanup() }
+
+        harness.player.setSuspended(true)
+        harness.player.setHibernationEligible(true)
+        try await Harness.waitUntil("player hibernates") { harness.player.isHibernated }
+
+        // Wake, then go absent again inside the rebuild window.
+        harness.player.setSuspended(false)
+        #expect(harness.player.player == nil, "the rebuild is asynchronous, so this is the window under test")
+        harness.player.setSuspended(true)
+        harness.player.setHibernationEligible(true)
+
+        try await Harness.waitUntil("player hibernates again") { harness.player.isHibernated }
+        #expect(harness.player.player == nil)
+        #expect(!harness.player.hasInMemoryAssetLoaderForTesting)
+    }
+
     @Test("Resuming rebuilds the player through the normal load path")
     func wakeRebuildsThePlayer() async throws {
         let harness = try await Harness.make()

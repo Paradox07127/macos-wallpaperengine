@@ -1315,7 +1315,12 @@ final class WallpaperVideoPlayer {
     /// still frame; any flip back cancels the countdown.
     func setHibernationEligible(_ eligible: Bool) {
         isHibernationEligible = eligible
-        guard eligible, !isCleanedUp, !isHibernated, isSuspended, player != nil else {
+        // Deliberately not gated on `player != nil`: a wake rebuilds the player
+        // asynchronously, so an absence that returns during that window would
+        // cancel the dwell and — because eligibility is event-driven — never see
+        // another push, leaving the rebuilt player resident for the whole
+        // absence. `hibernateNow` treats a missing player as transient instead.
+        guard eligible, !isCleanedUp, !isHibernated, isSuspended else {
             cancelHibernationDwell()
             return
         }
@@ -1351,9 +1356,12 @@ final class WallpaperVideoPlayer {
     /// frame-rate build) so the countdown re-arms; true when hibernated or no
     /// longer applicable.
     private func hibernateNow() async -> Bool {
-        guard !isCleanedUp, !isHibernated, isSuspended, isHibernationEligible, player != nil else {
+        guard !isCleanedUp, !isHibernated, isSuspended, isHibernationEligible else {
             return true
         }
+        // Transient while a load can still produce a player (the wake window);
+        // terminal once nothing is in flight to build one.
+        guard player != nil else { return loadingTask == nil }
         // Never tear down under an in-flight load or composition build.
         guard loadingTask == nil, frameRateLimitTask == nil else { return false }
 
