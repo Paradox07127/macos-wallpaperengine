@@ -3,11 +3,69 @@
 
 from __future__ import annotations
 
+from contextlib import redirect_stderr, redirect_stdout
+import io
 from pathlib import Path
+import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 import xcode_test_runner as runner
+
+
+PASSING_SUMMARY = {
+    "result": "Passed",
+    "totalTestCount": 3,
+    "passedTests": 3,
+    "failedTests": 0,
+    "skippedTests": 0,
+}
+
+
+def run_main(required_suite: str, present_suite: str) -> int:
+    """Drive main() end to end with xcodebuild stubbed out as a clean pass.
+
+    Guards the exit code itself, not just the helpers: a required suite that
+    never appears in the xcresult must not exit 0, or `-only-testing` with a
+    misspelled suite name reports success having run none of those tests.
+    """
+    tests_report = {
+        "testNodes": [
+            {
+                "children": [
+                    {
+                        "nodeType": "Test Case",
+                        "nodeIdentifier": f"{present_suite}/onlyTest()",
+                        "durationInSeconds": 0.1,
+                    }
+                ]
+            }
+        ]
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        bundle = Path(directory) / "run.xcresult"
+        argv = [
+            "xcode_test_runner.py",
+            "--label", "self-test",
+            "--result-bundle", str(bundle),
+            "--minimum-test-count", "1",
+            "--require-suite", required_suite,
+            "--", "test",
+        ]
+        with mock.patch.object(sys, "argv", argv), mock.patch.object(
+            runner.subprocess,
+            "run",
+            return_value=types.SimpleNamespace(returncode=0),
+        ), mock.patch.object(
+            runner,
+            "xcresult_json",
+            side_effect=lambda _bundle, report: (
+                PASSING_SUMMARY if report == "summary" else tests_report
+            ),
+        ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            return runner.main()
 
 
 class XcodeTestRunnerTests(unittest.TestCase):
@@ -60,6 +118,18 @@ class XcodeTestRunnerTests(unittest.TestCase):
         self.assertEqual(
             runner.slowest_tests(self.tests, 1),
             [(1.5, "RequiredSuite/slowTest()")],
+        )
+
+    def test_missing_required_suite_exits_nonzero(self) -> None:
+        self.assertNotEqual(
+            run_main("WallpaperArchitectureTests", "InfrastructureRuntimeBoundaryTests"),
+            0,
+        )
+
+    def test_present_required_suite_exits_zero(self) -> None:
+        self.assertEqual(
+            run_main("InfrastructureRuntimeBoundaryTests", "InfrastructureRuntimeBoundaryTests"),
+            0,
         )
 
     def test_failure_excerpt_includes_nearby_assertion_context(self) -> None:
