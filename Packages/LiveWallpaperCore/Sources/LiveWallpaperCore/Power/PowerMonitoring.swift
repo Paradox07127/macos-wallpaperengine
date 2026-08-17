@@ -25,6 +25,11 @@ public protocol FullScreenDetecting: AnyObject {
     func isDesktopOccluded(for screenID: CGDirectDisplayID) -> Bool
     func occlusionFraction(for screenID: CGDirectDisplayID) -> Double
     func checkNow()
+    /// Whether coverage state is being kept current. Space-change and
+    /// app-activation rescans share the fallback timer's demand gate, so with
+    /// this off `hiddenScreens`/`occludedScreens` stay frozen at the last scan —
+    /// a consumer that needs fresh coverage must not read them.
+    var isFallbackPollingEnabled: Bool { get }
     func setFallbackPollingEnabled(_ enabled: Bool)
     /// Permanently releases notification subscriptions and polling owned by
     /// this detector instance. Used by application teardown, not by the

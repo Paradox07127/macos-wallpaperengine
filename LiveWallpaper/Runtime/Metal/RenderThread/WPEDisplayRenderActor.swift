@@ -353,9 +353,23 @@ actor WPEDisplayRenderActor {
         defer { renderer.onDemandVideoLoading.remove(key) }
         guard renderer.loadGeneration == generation else { return }
         do {
-            try await renderer.loadDynamicTextureOnActor(path: key, layerName: key, on: self)
+            // The generation must hold at PUBLICATION time, not just entry: the
+            // asset load suspends, and a hibernate/reload in that window bumps
+            // the generation — a stale rebuild must not overwrite the sources a
+            // wake reload just installed (or revive a hibernated renderer).
+            try await renderer.loadDynamicTextureOnActor(
+                path: key,
+                layerName: key,
+                publicationAllowed: { renderer.loadGeneration == generation },
+                on: self
+            )
         } catch {
             Logger.warning("Scene \(renderer.descriptor.workshopID) [OnDemandVideo] rebuild failed for \(key): \(error)", category: .wpeRender)
+            // With released on-demand videos carrying no frame demand, a silent
+            // failure here would leave the loop paused forever: nothing else
+            // retries. Kick one frame so reconcileVideoResidency runs again
+            // (the defer above already cleared the loading marker).
+            renderer.surfaceControl.setNeedsRedraw()
             return
         }
         guard renderer.loadGeneration == generation,
@@ -392,6 +406,8 @@ actor WPEDisplayRenderActor {
         } else {
             runtime.pause()
         }
+        // Audio arriving flips the session's audible mirror (App Nap gate).
+        renderer.publishRuntimeActivity()
     }
 
     /// Promote a submitted present to "ready" only after Metal reports successful
@@ -433,6 +449,15 @@ actor WPEDisplayRenderActor {
         scenePropertyRendererGeneration &+= 1
         try await renderer?.reload(on: self)
         thread?.boostRenderQoSWarmup()
+    }
+
+    /// Deep hibernate: releases the loaded scene's runtime resources while the
+    /// session stays alive. Waking is a plain `reload()`. Bumps the property
+    /// generation because prepared patches preflighted against the loaded state.
+    func hibernate() async -> Bool {
+        guard let renderer else { return false }
+        scenePropertyRendererGeneration &+= 1
+        return await renderer.hibernate(on: self)
     }
 
     /// Tear down the renderer on this actor, then drop it. Sync: `cleanup()`
@@ -518,11 +543,19 @@ actor WPEDisplayRenderActor {
     /// The caller has already persisted this patch's descriptor. Actor FIFO and
     /// renderer-generation identity make this a committed delivery, not another
     /// fallible latest-intent proposal.
-    func commitScenePropertyPatch(_ prepared: PreparedScenePropertyPatch) -> Bool {
+    func commitScenePropertyPatch(
+        _ prepared: PreparedScenePropertyPatch,
+        updatedDescriptor: SceneDescriptor
+    ) -> Bool {
         guard prepared.rendererGeneration == scenePropertyRendererGeneration else {
             return false
         }
-        return renderer?.applyScenePropertyPatch(prepared.patch) ?? false
+        guard let renderer, renderer.applyScenePropertyPatch(prepared.patch) else {
+            return false
+        }
+        // Keep the reload source of truth in step with the live structures.
+        renderer.descriptor = updatedDescriptor
+        return true
     }
 
     func captureLivePoster() async -> NSImage? {

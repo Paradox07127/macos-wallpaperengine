@@ -29,12 +29,12 @@ struct RuntimeV2PlumbingTests {
     @Test("Each widget kind flips exactly its sampler gate")
     func kindMapsToItsGate() {
         #expect(Runtime.systemOptions(for: [.gpu]) == options(gpu: true, sensors: true))
-        #expect(Runtime.systemOptions(for: [.cpu]) == options(topProcesses: true, sensors: true))
+        #expect(Runtime.systemOptions(for: [.cpu]) == options(topProcesses: true, sensors: true, cpu: true))
         #expect(Runtime.systemOptions(for: [.processes]) == options(topProcesses: true))
-        #expect(Runtime.systemOptions(for: [.memory]) == options(topProcesses: true))
-        #expect(Runtime.systemOptions(for: [.disk]) == options(processIO: true))
+        #expect(Runtime.systemOptions(for: [.memory]) == options(topProcesses: true, memory: true))
+        #expect(Runtime.systemOptions(for: [.disk]) == options(processIO: true, disk: true))
         #expect(Runtime.systemOptions(for: [.aiEngine]) == options(ane: true))
-        #expect(Runtime.systemOptions(for: [.power]) == options(accessories: true, sensors: true))
+        #expect(Runtime.systemOptions(for: [.power]) == options(accessories: true, sensors: true, power: true))
     }
 
     // MARK: - Per-widget demand narrowing
@@ -98,11 +98,9 @@ struct RuntimeV2PlumbingTests {
                 == Runtime.systemOptions(for: kinds))
     }
 
-    @Test("A kind with no expensive sampler leaves every gate off")
+    @Test("A kind with no expensive sampler flips only its own base group")
     func inertKindKeepsAllGatesOff() {
-        #expect(Runtime.systemOptions(for: [.network]) == SystemMetricsSource.Options(
-            gpu: false, topProcesses: false, ane: false, accessories: false
-        ))
+        #expect(Runtime.systemOptions(for: [.network]) == options(network: true))
     }
 
     @Test("Empty kind set gates every expensive sampler off")
@@ -130,7 +128,7 @@ struct RuntimeV2PlumbingTests {
         let opts = Runtime.systemOptions(for: Set(MonitorWidgetKind.allCases))
         #expect(opts == SystemMetricsSource.Options(
             gpu: true, topProcesses: true, ane: true, accessories: true, sensors: true,
-            processIO: true
+            processIO: true, cpu: true, memory: true, network: true, disk: true, power: true
         ))
     }
 
@@ -149,8 +147,9 @@ struct RuntimeV2PlumbingTests {
 
         let merged = Runtime.merged([a, b])
         #expect(merged?.activeWidgetKinds == [.gpu, .cpu, .power])
-        #expect(Runtime.systemOptions(for: merged?.activeWidgetKinds ?? []) == SystemMetricsSource.Options(
-            gpu: true, topProcesses: true, ane: false, accessories: true, sensors: true
+        #expect(Runtime.systemOptions(for: merged?.activeWidgetKinds ?? []) == options(
+            gpu: true, topProcesses: true, accessories: true, sensors: true,
+            cpu: true, power: true
         ))
     }
 
@@ -180,11 +179,14 @@ struct RuntimeV2PlumbingTests {
 
     private func options(
         gpu: Bool = false, topProcesses: Bool = false, ane: Bool = false,
-        accessories: Bool = false, sensors: Bool = false, processIO: Bool = false
+        accessories: Bool = false, sensors: Bool = false, processIO: Bool = false,
+        cpu: Bool = false, memory: Bool = false, network: Bool = false,
+        disk: Bool = false, power: Bool = false
     ) -> SystemMetricsSource.Options {
         SystemMetricsSource.Options(
             gpu: gpu, topProcesses: topProcesses, ane: ane, accessories: accessories,
-            sensors: sensors, processIO: processIO
+            sensors: sensors, processIO: processIO,
+            cpu: cpu, memory: memory, network: network, disk: disk, power: power
         )
     }
 }

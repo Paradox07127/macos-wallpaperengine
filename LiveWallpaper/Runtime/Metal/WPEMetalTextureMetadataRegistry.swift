@@ -212,22 +212,11 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
         return label.split(separator: " ").prefix(2).joined(separator: " ")
     }
 
-    /// Bytes for the mip-0 slice times array length. Compressed formats report
-    /// their block size, so this stays an approximation for BC/ASTC — good
-    /// enough to rank categories, which is what the census is for.
+    /// Shares `WPEMetalTextureByteEstimator` with the texture-cache LRU so the
+    /// census reports the same bytes the eviction budget counts (BC block math
+    /// included — the old per-pixel path billed BC textures 4-6x over).
     private static func approximateBytes(of texture: MTLTexture) -> Int {
-        let bytesPerPixel: Int
-        switch texture.pixelFormat {
-        case .rgba32Float: bytesPerPixel = 16
-        case .rgba16Float, .rg32Float: bytesPerPixel = 8
-        case .rgba8Unorm, .rgba8Unorm_srgb, .bgra8Unorm, .bgra8Unorm_srgb, .r32Float, .rg16Float:
-            bytesPerPixel = 4
-        case .rg8Unorm, .r16Float, .r16Unorm: bytesPerPixel = 2
-        case .r8Unorm: bytesPerPixel = 1
-        default: bytesPerPixel = 4
-        }
-        let slices = max(texture.arrayLength, 1) * (texture.textureType == .typeCube ? 6 : 1)
-        return texture.width * texture.height * bytesPerPixel * slices
+        WPEMetalTextureByteEstimator.estimatedBytes(of: texture)
     }
 }
 #endif

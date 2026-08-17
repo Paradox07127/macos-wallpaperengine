@@ -585,7 +585,9 @@ struct WPEMetalShaderDispatcher {
         let isWaveLikePass = Self.isWaveLikePass(pass)
         // The transpiler is fragment-only: it always uses wpe_fullscreen_vertex and
         // synthesizes v_TexCoord / v_Direction in the fragment (it does NOT run the scene .vert).
-        if isWaveLikePass {
+        // isEnabled checked here so the interpolated log line (and the slot scan
+        // feeding it) isn't built every frame just for appendLog to discard it.
+        if isWaveLikePass, WPESceneDebugArtifacts.shared.isEnabled {
             let maskLive = Self.hasExplicitTextureSlot(1, in: pass)
             WPESceneDebugArtifacts.shared.appendLog(
                 "🌊 [WPE.fx.vtx] \(pass.pass.shader) target=\(pass.pass.target) "

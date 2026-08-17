@@ -111,6 +111,16 @@ extension ScreenManager {
                 self?.handleScreenUnlocked()
             }
             .store(in: &cleanupTasks)
+
+        // Global play/pause (`togglePlayback()` in ScreenManager+Wallpaper.swift)
+        // flips every session's intent without a policy refresh, leaving the
+        // assertion stale until some unrelated refresh; the session-state
+        // commit's isAnyPlaying edge is the signal that reaches this file.
+        playbackStateSubject
+            .sink { [weak self] _ in
+                self?.refreshAppNapAssertion()
+            }
+            .store(in: &cleanupTasks)
     }
 
     private func handleScreenLocked() {
@@ -263,6 +273,33 @@ extension ScreenManager {
             suspendedScreenIDs.remove(screen.id)
         }
         applyAdaptiveFrameRate(to: screen, settings: settings)
+        #if !LITE_BUILD
+        // Deep hibernate is reserved for absence-like suspensions (lock, sleep,
+        // full-screen cover/occlusion) — an app-rule or battery pause stays a
+        // warm suspend for fast resume. The session owns the dwell countdown.
+        if let scene = screen.runtimeSession as? SceneWallpaperSession {
+            // Coverage inputs are only usable while the detector is actually
+            // rescanning: with fallback polling off, its space/app-activation
+            // rescans are demand-gated too, so hidden/occluded would be frozen
+            // at whatever the last scan saw. Absence stays authoritative either
+            // way — it is tracked independently of the detector.
+            let coverageIsLive = fullScreenDetector.isFallbackPollingEnabled
+            scene.setHibernationEligible(
+                profile == .suspended
+                    && (isUserAbsent
+                        || (coverageIsLive
+                            && (fullScreenDetector.isDesktopHidden(for: screen.id)
+                                || fullScreenDetector.isDesktopOccluded(for: screen.id))))
+            )
+            // Reconciled from the watcher's live level on every refresh, not only
+            // on a level change: a session installed (restore-at-launch, swap-in)
+            // while pressure is ALREADY critical would otherwise never hear about
+            // it and stay fully resident for the whole emergency.
+            scene.setCriticalMemoryPressureActive(
+                memoryPressureWatcher.currentLevel() == .critical
+            )
+        }
+        #endif
         return profile
     }
 
@@ -334,12 +371,19 @@ extension ScreenManager {
         commitWallpaperSessionState()
     }
 
-    /// Hold an activity assertion whenever ≥1 wallpaper session is actively rendering, so macOS doesn't App-Nap our background render loop down to ~1fps when the user focuses another window.
+    /// Hold an activity assertion while ≥1 wallpaper session may be doing real work — producing frames, playing audio, or loading — so macOS doesn't App-Nap our background render loop down to ~1fps when the user focuses another window.
+    /// The release states: no session, policy-suspended, user-paused, or a scene session whose renderer reported it is provably idle (static scene, no audio) through the session's runtime-activity mirror (`SceneWallpaperSession.mayPerformRuntimeWork`, pushed from the render actor on change). Non-scene sessions and scenes that have not reported yet err on holding.
     func refreshAppNapAssertion() {
-        let isRendering = screens.contains {
-            $0.runtimeSession != nil
-                && !suspendedScreenIDs.contains($0.id)
-                && ($0.playbackController?.userIntendsToPlay ?? true)
+        let isRendering = screens.contains { screen in
+            guard screen.runtimeSession != nil,
+                  !suspendedScreenIDs.contains(screen.id),
+                  screen.playbackController?.userIntendsToPlay ?? true else { return false }
+            #if !LITE_BUILD
+            if let scene = screen.runtimeSession as? SceneWallpaperSession {
+                return scene.mayPerformRuntimeWork
+            }
+            #endif
+            return true
         }
         if isRendering {
             guard renderingActivityToken == nil else { return }

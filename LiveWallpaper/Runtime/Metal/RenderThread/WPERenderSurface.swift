@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import AppKit
 import MetalKit
+import os
 import QuartzCore
 
 /// Owns the AppKit-bound Metal surface and pointer publishing on the main actor.
@@ -14,6 +15,9 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
     let metalLayer: CAMetalLayer
 
     private let publisher: WPEPointerPublisher
+    /// Written synchronously (caller order) by the nonisolated pacing seam;
+    /// main-thread deliveries apply this latest value, not their captured one.
+    private let desiredPointerEventsEnabled = OSAllocatedUnfairLock<Bool?>(initialState: nil)
     /// Strongly held delivery shim; the session owns the surface and the shim targets the render actor.
     private var client: WPERenderSurfaceClient?
 
@@ -140,6 +144,14 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         if let paused = update.isPaused { mtkView.isPaused = paused }
         if let enable = update.enableSetNeedsDisplay { mtkView.enableSetNeedsDisplay = enable }
         if let fps = update.preferredFramesPerSecond { mtkView.preferredFramesPerSecond = fps }
+        if update.pointerEventsEnabled != nil,
+           let latest = desiredPointerEventsEnabled.withLock({ $0 }) {
+            // Latest-wins: `deliver`'s unstructured Tasks are not FIFO, so a
+            // rapid suspend→resume pair could apply gates inverted. The seam
+            // writes the lock in caller order; every delivery applies the
+            // newest value, so out-of-order Tasks converge instead of sticking.
+            publisher.setMouseMonitoringEnabled(latest)
+        }
     }
 
     private func setNeedsRedrawOnMain() { mtkView.setNeedsDisplay(mtkView.bounds) }
@@ -201,6 +213,9 @@ struct WPERenderPacingUpdate: Sendable {
     var isPaused: Bool?
     var enableSetNeedsDisplay: Bool?
     var preferredFramesPerSecond: Int?
+    /// Gates the pointer publisher's NSEvent monitors (suspend + demand). Rides
+    /// the pacing update so it stays ordered with the pause state it mirrors.
+    var pointerEventsEnabled: Bool?
 }
 
 /// What the surface calls back into (the renderer). Kept a protocol so the
@@ -227,6 +242,9 @@ protocol WPESurfaceControl: Sendable {
 
 extension WPERenderSurface: WPESurfaceControl {
     nonisolated func applyPacing(_ update: WPERenderPacingUpdate) {
+        if let pointerEvents = update.pointerEventsEnabled {
+            desiredPointerEventsEnabled.withLock { $0 = pointerEvents }
+        }
         deliver { $0.applyPacingOnMain(update) }
     }
 

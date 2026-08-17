@@ -72,6 +72,11 @@ final class WPERenderThreadFramePacer: WPESurfaceControl, @unchecked Sendable {
             if let paused = update.isPaused { actor.setLinkPaused(paused) }
             if let fps = update.preferredFramesPerSecond { actor.setLinkPreferredFPS(fps) }
         }
+        // The pointer-event monitor gate belongs to the main-thread surface (like
+        // click capture); forward only that field so the view knobs stay dropped.
+        if let pointerEvents = update.pointerEventsEnabled {
+            surface.applyPacing(WPERenderPacingUpdate(pointerEventsEnabled: pointerEvents))
+        }
     }
 
     nonisolated func setNeedsRedraw() {

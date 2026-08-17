@@ -302,7 +302,11 @@ struct OracleCorpusCaptureTests {
                     descriptor: summary
                 )
             }
-            let texture = try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+            // Drain per frame like WPERenderThread does in-app; without this the
+            // loop accumulates every autoreleased Metal object (measured ~0.5 MB/frame).
+            let texture = try autoreleasepool {
+                try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
+            }
             guard isLast else { continue }
             if perPass {
                 renderer.dumpScenePassesIfRequested(suffix: "-f\(index)")

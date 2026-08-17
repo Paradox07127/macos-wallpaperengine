@@ -319,7 +319,12 @@ extension WPEMetalSceneRenderer {
         let manager = MTLCaptureManager.shared()
         guard manager.supportsDestination(.gpuTraceDocument) else {
             Logger.info(
-                "[WPEMetalCaptureScene] device does not support gpuTraceDocument capture; ensure MetalCaptureEnabled is YES in Info.plist and Xcode is attached.",
+                // MetalCaptureEnabled is deliberately absent from the shipped
+                // Info.plists: it loads GPUToolsCapture into every launch, whose
+                // per-draw interposition grew the AGX DataBufferAllocator arena
+                // without bound (~40-60MB/min, ledger §14). Capture instead via
+                // Xcode attach or an MTL_CAPTURE_ENABLED=1 launch.
+                "[WPEMetalCaptureScene] device does not support gpuTraceDocument capture; attach Xcode or launch with MTL_CAPTURE_ENABLED=1.",
                 category: .wpeRender
             )
             return nil

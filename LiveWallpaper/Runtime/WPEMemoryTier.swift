@@ -2,10 +2,10 @@
 import Foundation
 
 /// Physical-memory tiers driving renderer resource defaults, so base-RAM Macs
-/// (8 GB M1/M2) get bounded texture residency out of the box while high-RAM
-/// machines keep the everything-resident behavior. Manual defaults always win
-/// (`WPEMetalTextureCacheBudgetMiB`; explicit 0 ⇒ unbounded).
-enum WPEMemoryTier: Equatable, Sendable {
+/// (8 GB M1/M2) get tight texture residency out of the box while high-RAM
+/// machines get a roomier — but still bounded — budget. Manual defaults always
+/// win (`WPEMetalTextureCacheBudgetMiB`; explicit 0 ⇒ unbounded).
+enum WPEMemoryTier: CaseIterable, Equatable, Sendable {
     case constrained
     case standard
     case expansive
@@ -21,11 +21,15 @@ enum WPEMemoryTier: Equatable, Sendable {
         return .expansive
     }
 
+    /// Every tier is bounded: nil here would skip LRU eviction entirely, so
+    /// hidden-layer / time-of-day texture variants stayed resident forever on
+    /// ≥24 GB machines. Unbounded remains available only via the manual
+    /// defaults override (explicit ≤0).
     var defaultTextureCacheBudgetBytes: Int? {
         switch self {
         case .constrained: return 256 * 1_048_576
         case .standard: return 512 * 1_048_576
-        case .expansive: return nil
+        case .expansive: return 768 * 1_048_576
         }
     }
 
@@ -48,6 +52,27 @@ enum WPEMemoryTier: Equatable, Sendable {
         switch self {
         case .constrained: return 100_000_000
         case .standard, .expansive: return 200_000_000
+        }
+    }
+
+    /// Process-wide budget for decoded animation frame bytes shared by every
+    /// lazy `.tex` source across all scenes/displays (replaces the former
+    /// per-source 4-frame cap, whose worst case scaled with animation count).
+    var animatedFrameCacheBudgetBytes: Int {
+        switch self {
+        case .constrained: return 96 * 1_048_576
+        case .standard: return 128 * 1_048_576
+        case .expansive: return 192 * 1_048_576
+        }
+    }
+
+    /// Single decoded frame admission cap: frames above this decode, upload,
+    /// and release without entering the process cache (and never prefetch).
+    var animatedFrameAdmissionByteCap: Int {
+        switch self {
+        case .constrained: return 32 * 1_048_576
+        case .standard: return 48 * 1_048_576
+        case .expansive: return 64 * 1_048_576
         }
     }
 }

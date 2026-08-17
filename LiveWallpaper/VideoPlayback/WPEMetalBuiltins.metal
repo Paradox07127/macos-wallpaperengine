@@ -619,6 +619,32 @@ fragment half4 wpe_copy_fragment(
     return texture0.sample(linearSampler, in.uv);
 }
 
+struct WPEVideoYCbCrUniforms {
+    float3x3 colorMatrix;
+    float3 offset;
+};
+
+// Decoder NV12 plane pair (r8 luma + rg8 chroma) → the video source's reused
+// BGRA working texture. Matrix/offset come from the pixel buffer's colorimetry
+// attachments (BT.601/709/2020, video/full range), computed CPU-side in
+// `WPEVideoYCbCrConversion` so tests can pin the coefficients. Output is
+// gamma-encoded R'G'B' into a non-sRGB target; the renderer samples it through
+// an sRGB view — byte-identical to the old direct `.bgra8Unorm_srgb` CV wrap.
+fragment half4 wpe_video_nv12_convert_fragment(
+    WPEVertexOut in [[stage_in]],
+    texture2d<float, access::sample> luma [[texture(0)]],
+    texture2d<float, access::sample> chroma [[texture(1)]],
+    constant WPEVideoYCbCrUniforms& conversion [[buffer(0)]]
+) {
+    constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+    float3 ycbcr = float3(
+        luma.sample(linearSampler, in.uv).r,
+        chroma.sample(linearSampler, in.uv).rg
+    );
+    float3 rgb = clamp(conversion.colorMatrix * (ycbcr - conversion.offset), 0.0, 1.0);
+    return half4(half3(rgb), 1.0h);
+}
+
 // Utility built-ins. `solidlayer` writes color * alpha into the
 // per-layer FBO. `util_copy` is the parallax-free copy used when chaining
 // `materials/util/copy.json` between FBOs. `compose` blends two layer

@@ -56,8 +56,15 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         repeating: WorkingTextureSlot(),
         count: WPEMetalRenderExecutor.maxFramesInFlight
     )
-    private var decodedImageCache: [Int: Data] = [:]
-    private var decodedImageOrder: [Int] = []
+    /// Process-wide decoded-frame byte budget (shared across all lazy sources).
+    private let frameByteCache: WPEAnimatedFrameByteCache
+    private let cacheToken: WPEAnimatedFrameByteCache.SourceToken
+    /// Reusable sub-rect crop target per frame slot — steady state allocates
+    /// nothing per frame (the slot's texture.replace copies out synchronously).
+    private var cropScratchSlots = Array(
+        repeating: Data(),
+        count: WPEMetalRenderExecutor.maxFramesInFlight
+    )
     /// In-flight prefetch jobs (dedup + bounded backlog; drop when leaving look-ahead).
     private var prefetchJobs: [Int: (item: DispatchWorkItem, box: OSAllocatedUnfairLock<PrefetchOutcome>)] = [:]
     /// Failed image IDs — never re-scheduled (corrupt frame thrash guard).
@@ -75,7 +82,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     // Probes harvest first so tests without a completion pump see finished decodes.
     var debugDecodedImageCacheIDs: Set<Int> {
         harvestCompletedPrefetches()
-        return Set(decodedImageCache.keys)
+        return frameByteCache.imageIDs(for: cacheToken)
     }
     var debugPrefetchInFlightImageIDs: Set<Int> {
         harvestCompletedPrefetches()
@@ -89,8 +96,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
 
     /// Distinct upcoming source images to keep warm (wrap-aware, by image not frame).
     private static let decodedImagePrefetchLookahead = 2
-    /// Decoded-cache upper bound = current + prefetch window + one slack.
-    private static let decompressedImageCacheCapacity = 4
         /// Anti-OOM hard cap on `Data(count:)` for an untrusted `decompressedByteCount`; mirrors
         /// the eager path's cap (WPETexDecoder.swift:922, 256 MB).
         private static let maxDecompressedByteCount = 268_435_456
@@ -100,7 +105,8 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         device: MTLDevice,
         label: String,
         capabilities: WPEMetalTextureCapabilities? = nil,
-        maximumTextureDimension2D: Int? = nil
+        maximumTextureDimension2D: Int? = nil,
+        frameByteCache: WPEAnimatedFrameByteCache = .shared
     ) throws {
         guard !payload.frames.isEmpty else { throw Failure.missingFrames }
         guard let format = payload.info.format else {
@@ -124,6 +130,8 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         self.label = label
         self.maximumTextureDimension2D = maximumTextureDimension2D
             ?? WPEMetalTextureLimits.maximum2DTextureDimension(for: device)
+        self.frameByteCache = frameByteCache
+        self.cacheToken = frameByteCache.registerSource()
 
         var cursor: TimeInterval = 0
         var starts: [TimeInterval] = []
@@ -134,6 +142,11 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         }
         self.frameStartTimes = starts
         self.totalDuration = cursor > 0 ? cursor : Double(payload.frames.count) / self.frameRate
+    }
+
+    deinit {
+        // Return the process-cache lease; entries must not outlive the source.
+        frameByteCache.unregisterSource(cacheToken)
     }
 
     func texture(at time: TimeInterval) -> MTLTexture? {
@@ -151,7 +164,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         do {
             let frame = frames[index]
             let image = try decodedImage(for: frame.imageID)
-            let cropped = try crop(image: image, frame: frame)
+            let cropped = try crop(image: image, frame: frame, frameSlot: frameSlot)
             let texture = try textureForUpload(
                 width: cropped.width,
                 height: cropped.height,
@@ -214,8 +227,11 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
             repeating: WorkingTextureSlot(),
             count: WPEMetalRenderExecutor.maxFramesInFlight
         )
-        decodedImageCache.removeAll(keepingCapacity: false)
-        decodedImageOrder.removeAll(keepingCapacity: false)
+        cropScratchSlots = Array(
+            repeating: Data(),
+            count: WPEMetalRenderExecutor.maxFramesInFlight
+        )
+        frameByteCache.removeAll(for: cacheToken)
         // Cancel in-flight jobs; orphaned boxes are never harvested.
         for job in prefetchJobs.values { job.item.cancel() }
         prefetchJobs.removeAll(keepingCapacity: false)
@@ -229,8 +245,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     private func decodedImage(for imageID: Int) throws -> Data {
         // Prefetch may already have completed off-thread.
         harvestCompletedPrefetches()
-        if let cached = decodedImageCache[imageID] {
-            touchDecodedImage(imageID)
+        if let cached = frameByteCache.lookup(source: cacheToken, imageID: imageID) {
             return cached
         }
         guard compressedImages.indices.contains(imageID) else {
@@ -252,7 +267,11 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
 #if DEBUG
         debugSynchronousDecodedImageIDs.append(imageID)
 #endif
-        storeDecodedImage(decoded, for: imageID)
+        // Pin before store so the concurrent prune from another source's
+        // admission cannot evict the frame we are about to upload. Oversize
+        // frames stay out of the cache (upload-and-release).
+        frameByteCache.pin(source: cacheToken, imageID: imageID)
+        frameByteCache.store(decoded, source: cacheToken, imageID: imageID, speculative: false)
         return decoded
     }
 
@@ -273,11 +292,15 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         }
 
         for imageID in wanted {
-            guard decodedImageCache[imageID] == nil,
+            guard !frameByteCache.contains(source: cacheToken, imageID: imageID),
                   prefetchJobs[imageID] == nil,
                   !prefetchFailedImageIDs.contains(imageID),
                   compressedImages.indices.contains(imageID),
-                  let mipmap = compressedImages[imageID].payloads.first else { continue }
+                  let mipmap = compressedImages[imageID].payloads.first,
+                  // Oversize frames never prefetch: they cannot enter the
+                  // cache, so a speculative decode would be thrown away.
+                  mipmap.decompressedByteCount <= frameByteCache.admissionByteCap
+            else { continue }
 
 #if DEBUG
             let delay = debugPrefetchDecodeDelay
@@ -311,8 +334,9 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
                 continue
             }
             // Drop stale results so they can't LRU-evict current/next.
-            guard prefetchWantedImageIDs.contains(imageID), decodedImageCache[imageID] == nil else { continue }
-            storeDecodedImage(decoded, for: imageID)
+            guard prefetchWantedImageIDs.contains(imageID),
+                  !frameByteCache.contains(source: cacheToken, imageID: imageID) else { continue }
+            frameByteCache.store(decoded, source: cacheToken, imageID: imageID, speculative: true)
         }
     }
 
@@ -333,7 +357,8 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
                 break
             }
             let imageID = frames[targetIndex].imageID
-            guard seen.insert(imageID).inserted, decodedImageCache[imageID] == nil else { continue }
+            guard seen.insert(imageID).inserted,
+                  !frameByteCache.contains(source: cacheToken, imageID: imageID) else { continue }
             imageIDs.append(imageID)
             if imageIDs.count == Self.decodedImagePrefetchLookahead { break }
         }
@@ -344,25 +369,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         prefetchJobs.removeValue(forKey: imageID)?.item.cancel()
     }
 
-    private func storeDecodedImage(_ decoded: Data, for imageID: Int) {
-        decodedImageCache[imageID] = decoded
-        touchDecodedImage(imageID)
-        evictIfNeeded()
-    }
-
-    private func touchDecodedImage(_ imageID: Int) {
-        decodedImageOrder.removeAll { $0 == imageID }
-        decodedImageOrder.append(imageID)
-    }
-
-    private func evictIfNeeded() {
-        while decodedImageOrder.count > Self.decompressedImageCacheCapacity,
-              let victim = decodedImageOrder.first {
-            decodedImageOrder.removeFirst()
-            decodedImageCache.removeValue(forKey: victim)
-        }
-    }
-
     private nonisolated static func decodedBytes(from mipmap: WPETexCompressedMipmap) throws -> Data {
         if mipmap.isCompressed {
             return try inflate(mipmap)
@@ -370,7 +376,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         guard mipmap.compressedBytes.count >= mipmap.decompressedByteCount else {
             throw Failure.truncatedImageBytes
         }
-        return mipmap.compressedBytes.prefix(mipmap.decompressedByteCount)
+        return mipmap.compressedBytes.prefix(mipmap.decompressedByteCount).materializedData()
     }
 
     private nonisolated static func inflate(_ mipmap: WPETexCompressedMipmap) throws -> Data {
@@ -389,7 +395,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
                       let src = srcRaw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
                 return compression_decode_buffer(
                     dst, outputCount,
-                    src, mipmap.compressedBytes.count,
+                    src, srcRaw.count,
                     nil,
                     COMPRESSION_LZ4_RAW
                 )
@@ -407,21 +413,28 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     }
 
     /// Crop sub-rect (row copy or 4×4 BC blocks). Non-block-aligned BC rects throw.
-    private func crop(image: Data, frame: WPETexStreamingFrame) throws -> Cropped {
+    /// A frame covering the whole image uploads the decoded buffer directly —
+    /// no second full-frame copy (P1.4); sub-rects reuse a per-slot scratch.
+    private func crop(image: Data, frame: WPETexStreamingFrame, frameSlot: Int) throws -> Cropped {
         guard compressedImages.indices.contains(frame.imageID),
               let mipmap = compressedImages[frame.imageID].payloads.first else {
             throw Failure.missingCompressedImage(frame.imageID)
         }
         let rect = pixelRect(frame.subRect, width: mipmap.width, height: mipmap.height)
         try validateTextureDimensions(width: rect.width, height: rect.height)
+        let coversFullImage = rect.x == 0 && rect.y == 0
+            && rect.width == mipmap.width && rect.height == mipmap.height
 
         if let bytesPerPixel = mapping.bytesPerPixel {
             let sourceBytesPerRow = mipmap.width * bytesPerPixel
-            let outputBytesPerRow = rect.width * bytesPerPixel
             guard image.count >= sourceBytesPerRow * mipmap.height else {
                 throw Failure.truncatedImageBytes
             }
-            var output = Data(count: outputBytesPerRow * rect.height)
+            if coversFullImage {
+                return Cropped(bytes: image, width: rect.width, height: rect.height, bytesPerRow: sourceBytesPerRow)
+            }
+            let outputBytesPerRow = rect.width * bytesPerPixel
+            var output = takeCropScratch(slot: frameSlot, byteCount: outputBytesPerRow * rect.height)
             image.withUnsafeBytes { srcRaw in
                 output.withUnsafeMutableBytes { dstRaw in
                     guard let src = srcRaw.bindMemory(to: UInt8.self).baseAddress,
@@ -433,6 +446,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
                     }
                 }
             }
+            cropScratchSlots[frameSlot] = output
             return Cropped(bytes: output, width: rect.width, height: rect.height, bytesPerRow: outputBytesPerRow)
         }
 
@@ -460,7 +474,10 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         guard image.count >= sourceBytesPerBlockRow * sourceBlocksY else {
             throw Failure.truncatedImageBytes
         }
-        var output = Data(count: outputBytesPerBlockRow * cropBlocksY)
+        if coversFullImage {
+            return Cropped(bytes: image, width: rect.width, height: rect.height, bytesPerRow: sourceBytesPerBlockRow)
+        }
+        var output = takeCropScratch(slot: frameSlot, byteCount: outputBytesPerBlockRow * cropBlocksY)
         image.withUnsafeBytes { srcRaw in
             output.withUnsafeMutableBytes { dstRaw in
                 guard let src = srcRaw.bindMemory(to: UInt8.self).baseAddress,
@@ -472,7 +489,20 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
                 }
             }
         }
+        cropScratchSlots[frameSlot] = output
         return Cropped(bytes: output, width: rect.width, height: rect.height, bytesPerRow: outputBytesPerBlockRow)
+    }
+
+    /// Detaches the slot's scratch so the mutation below cannot CoW-copy
+    /// (the array would otherwise hold a second reference). Same-size frames
+    /// reuse the allocation; a size change (rare) reallocates once.
+    private func takeCropScratch(slot: Int, byteCount: Int) -> Data {
+        var scratch = cropScratchSlots[slot]
+        cropScratchSlots[slot] = Data()
+        if scratch.count != byteCount {
+            scratch = Data(count: byteCount)
+        }
+        return scratch
     }
 
     private struct PixelRect {

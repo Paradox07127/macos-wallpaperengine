@@ -60,6 +60,9 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         if let testingOverride { return testingOverride }
         // The render oracle needs the canonical trace recorder to run, so enabling
         // oracle mode implies artifacts are enabled (no need to set both defaults).
+        // Both stay live reads: WPEMetalSceneRendererTests flips the defaults key
+        // at runtime, and WPEOracleMode's testingOverride flips too. DEBUG-only
+        // cost — Release compiles isEnabled to a constant false.
         return UserDefaults.standard.bool(forKey: Self.defaultsKey) || WPEOracleMode.isEnabled
         #else
         return false
@@ -199,6 +202,12 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         }
     }
 
+    /// Shared instead of one formatter per log line. Only ever touched inside
+    /// `writeQueue` (serial), because `ISO8601DateFormatter` — unlike
+    /// `DateFormatter`, which the SDK marks `NS_SWIFT_SENDABLE` — carries no
+    /// documented thread-safety guarantee.
+    private nonisolated(unsafe) static let logTimestampFormatter = ISO8601DateFormatter()
+
     /// Append a single line to the per-scene log (in addition to the global
     /// runtime.log mirror Logger already handles).
     func appendLog(_ message: String, level: Logger.Level = .info) {
@@ -207,9 +216,10 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         let url = session?.logURL
         sessionLock.unlock()
         guard let url else { return }
-        let prefix = "[\(ISO8601DateFormatter().string(from: Date()))][\(levelTag(level))]"
-        let line = "\(prefix) \(message)\n"
+        let timestamp = Date()
+        let tag = levelTag(level)
         writeQueue.async {
+            let line = "[\(Self.logTimestampFormatter.string(from: timestamp))][\(tag)] \(message)\n"
             guard let data = line.data(using: .utf8) else { return }
             if let handle = try? FileHandle(forWritingTo: url) {
                 defer { try? handle.close() }

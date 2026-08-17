@@ -2,6 +2,8 @@
 import AppKit
 import LiveWallpaperCore
 import Metal
+import MetalPerformanceShaders
+import os
 
 /// Reads back the renderer's offscreen `MTLTexture` into an `NSImage` for
 /// `SceneDetailView` (without it the detail view falls into
@@ -22,21 +24,37 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         self.queue = DispatchQueue(label: label, qos: .utility)
     }
 
+    /// Posters render at pane size, so a 4K rgba16Float readback (~63 MiB) is
+    /// pure waste; frames are GPU-scaled to this max dimension before `getBytes`.
+    static let posterMaxDimension = 1440
+
+    /// Full-resolution path: debug-artifacts first-frame capture
+    /// (`WPEMetalSceneRenderer+Load.swift`) and format tests.
     func snapshot(from texture: MTLTexture) -> NSImage? {
-        Self.makeImage(from: texture)
+        Self.makeImage(from: texture, maxDimension: nil)
     }
 
+    /// Poster path (`SceneRenderer+LivePoster`): downsampled before readback.
     func snapshotAsync(from source: SnapshotSource) async -> NSImage? {
         await withCheckedContinuation { continuation in
             queue.async {
-                continuation.resume(returning: Self.makeImage(from: source.texture))
+                continuation.resume(
+                    returning: Self.makeImage(from: source.texture, maxDimension: Self.posterMaxDimension)
+                )
             }
         }
     }
 
-    private static func makeImage(from texture: MTLTexture) -> NSImage? {
+    private static func makeImage(from texture: MTLTexture, maxDimension: Int?) -> NSImage? {
         guard texture.width > 0, texture.height > 0 else {
             return nil
+        }
+
+        var texture = texture
+        if let maxDimension,
+           max(texture.width, texture.height) > maxDimension,
+           let scaled = downsampleOnGPU(texture, maxDimension: maxDimension) {
+            texture = scaled
         }
 
         let bytes: [UInt8]
@@ -89,6 +107,110 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
             cgImage: cgImage,
             size: CGSize(width: texture.width, height: texture.height)
         )
+    }
+
+    /// Bilinear-scales on GPU so the CPU readback and conversion touch a
+    /// pane-sized frame instead of the full render target. Returns nil on any
+    /// failure so the caller falls back to the full-resolution readback.
+    /// sRGB variants are scaled through non-sRGB views (raw encoded bytes):
+    /// sRGB stores are not writable on every Mac GPU family, and the downstream
+    /// switch reads raw bytes as sRGB-encoded either way.
+    private static func downsampleOnGPU(_ texture: MTLTexture, maxDimension: Int) -> MTLTexture? {
+        let device = texture.device
+        guard MPSSupportsMTLDevice(device) else { return nil }
+
+        let workingFormat: MTLPixelFormat
+        switch texture.pixelFormat {
+        case .rgba8Unorm_srgb: workingFormat = .rgba8Unorm
+        case .bgra8Unorm_srgb: workingFormat = .bgra8Unorm
+        default: workingFormat = texture.pixelFormat
+        }
+        let source: MTLTexture
+        if workingFormat == texture.pixelFormat {
+            source = texture
+        } else if let view = texture.makeTextureView(pixelFormat: workingFormat) {
+            source = view
+        } else {
+            // Apple documents `.pixelFormatView` as required for a differing-format
+            // view, and the renderer's output textures are `[.renderTarget,
+            // .shaderRead]`. Measured on this GPU family the view is vended anyway
+            // (probe: both usages return non-nil), so the sRGB poster path really
+            // does reach the GPU downsample here — but that is undocumented
+            // tolerance. The output pool is per-frame 4K on the hot path, and
+            // adding a usage flag there can cost lossless compression, so the
+            // spec-legal degradation is this nil: the caller falls back to the
+            // full-resolution readback, which is slower but correct.
+            return nil
+        }
+
+        let scale = Double(maxDimension) / Double(max(texture.width, texture.height))
+        let width = max(1, Int((Double(texture.width) * scale).rounded()))
+        let height = max(1, Int((Double(texture.height) * scale).rounded()))
+
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: workingFormat,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
+        guard let destination = device.makeTexture(descriptor: descriptor),
+              let commandQueue = commandQueue(for: device),
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            return nil
+        }
+        destination.label = "WPE Metal poster downsample"
+
+        var transform = MPSScaleTransform(
+            scaleX: Double(width) / Double(texture.width),
+            scaleY: Double(height) / Double(texture.height),
+            translateX: 0,
+            translateY: 0
+        )
+        let kernel = MPSImageBilinearScale(device: device)
+        withUnsafePointer(to: &transform) { pointer in
+            kernel.scaleTransform = pointer
+            kernel.encode(
+                commandBuffer: commandBuffer,
+                sourceTexture: source,
+                destinationTexture: destination
+            )
+        }
+        if destination.storageMode == .managed, let blit = commandBuffer.makeBlitCommandEncoder() {
+            blit.synchronize(resource: destination)
+            blit.endEncoding()
+        }
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        guard commandBuffer.status == .completed else { return nil }
+        return destination
+    }
+
+    /// Poster refreshes downsample on every capture; creating an MTLCommandQueue
+    /// per capture is measurable churn, so one queue per device is cached for the
+    /// process lifetime. Lock-protected because `makeImage` is callable from any
+    /// thread (poster path runs on the readback queue, tests call it directly).
+    private static let downsampleQueues =
+        OSAllocatedUnfairLock<[ObjectIdentifier: MTLCommandQueue]>(initialState: [:])
+
+    /// Cache-miss count. Test seam (internal, not private, like `commandQueue(for:)`):
+    /// lets tests prove repeated poster downsamples reuse one queue per device.
+    static let downsampleQueueCreationsForTesting = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+    static func commandQueue(for device: MTLDevice) -> MTLCommandQueue? {
+        downsampleQueues.withLock { cache in
+            let key = ObjectIdentifier(device)
+            if let cached = cache[key] { return cached }
+            // Count and cache only a real queue: assigning nil to the subscript
+            // would erase the key, so a failed creation must not pretend to be
+            // a cache entry (and must not inflate the creation seam).
+            guard let queue = device.makeCommandQueue() else { return nil }
+            downsampleQueueCreationsForTesting.withLock { $0 += 1 }
+            queue.label = "com.livewallpaper.wpe-metal.poster-downsample"
+            cache[key] = queue
+            return queue
+        }
     }
 
     private static func readRGBA8(_ texture: MTLTexture) -> [UInt8] {

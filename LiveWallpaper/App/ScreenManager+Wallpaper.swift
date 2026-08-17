@@ -154,6 +154,11 @@ extension ScreenManager {
         #if !LITE_BUILD
         if let session = session as? SceneWallpaperSession {
             session.onRuntimeErrorChange = notify
+            // A static scene reports idle after load: re-fold the App Nap
+            // assertion on the renderer's own transitions, not only on policy events.
+            session.onRuntimeActivityChange = { [weak self] in
+                self?.refreshAppNapAssertion()
+            }
         }
         #endif
     }

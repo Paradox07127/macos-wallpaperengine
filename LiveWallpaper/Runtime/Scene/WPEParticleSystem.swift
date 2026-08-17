@@ -51,11 +51,73 @@ struct SplitMix64: RandomNumberGenerator {
     }
 }
 
+/// Live-slot bitset over the particle pool. Birth takes the LOWEST free slot and
+/// live iteration is ASCENDING — both must match the old 0..<capacity linear
+/// scans exactly, or RNG consumption, draw order, and spawn-event order drift.
+struct WPEParticleSlotIndex {
+    private var words: [UInt64]
+    let capacity: Int
+
+    init(capacity: Int) {
+        self.capacity = capacity
+        self.words = .init(repeating: 0, count: (capacity + 63) >> 6)
+    }
+
+    var wordCount: Int { words.count }
+
+    func word(at index: Int) -> UInt64 { words[index] }
+
+    func isLive(_ slot: Int) -> Bool {
+        words[slot >> 6] & ((1 as UInt64) << UInt64(slot & 63)) != 0
+    }
+
+    mutating func markLive(_ slot: Int) {
+        words[slot >> 6] |= (1 as UInt64) << UInt64(slot & 63)
+    }
+
+    mutating func markDead(_ slot: Int) {
+        words[slot >> 6] &= ~((1 as UInt64) << UInt64(slot & 63))
+    }
+
+    mutating func removeAll() {
+        for index in words.indices { words[index] = 0 }
+    }
+
+    /// Equivalent to the old linear free scan from slot 0. Tail bits past
+    /// `capacity` are never set, so a full pool maps them to nil, not a slot.
+    var lowestFreeSlot: Int? {
+        for wordIndex in words.indices {
+            let free = ~words[wordIndex]
+            if free != 0 {
+                let slot = wordIndex << 6 | free.trailingZeroBitCount
+                return slot < capacity ? slot : nil
+            }
+        }
+        return nil
+    }
+
+    /// Ascending live slots. The body must not mutate this index (exclusivity);
+    /// loops that kill mid-iteration use `wordCount`/`word(at:)` instead.
+    func forEachLiveSlot(_ body: (Int) -> Void) {
+        for wordIndex in words.indices {
+            var word = words[wordIndex]
+            while word != 0 {
+                body(wordIndex << 6 | word.trailingZeroBitCount)
+                word &= word &- 1
+            }
+        }
+    }
+}
+
 /// WPE author space is Y-up; origin, velocity, gravity, and rotation must not be flipped.
 struct WPEParticleSceneTransform {
     var renderOrigin: SIMD3<Float>
     var objectScale: SIMD3<Float>
-    var objectAngleZ: Float
+    let objectAngleZ: Float
+    /// Hoisted cos/sin(objectAngleZ) — same libm calls, so results stay bit-exact.
+    /// `objectAngleZ` is `let` so these cannot go stale.
+    let cosAngleZ: Float
+    let sinAngleZ: Float
     /// Caps oversized additive sprites so a scaled emitter cannot saturate the frame.
     var sceneHeight: Float
 
@@ -67,6 +129,8 @@ struct WPEParticleSceneTransform {
         )
         self.objectScale = objectScale
         self.objectAngleZ = objectAngleZ
+        self.cosAngleZ = cos(objectAngleZ)
+        self.sinAngleZ = sin(objectAngleZ)
         self.sceneHeight = max(1, sceneSize.y)
     }
 
@@ -79,8 +143,8 @@ struct WPEParticleSceneTransform {
 
     func applyModelMatrix(toLocalPoint p: SIMD3<Float>) -> SIMD3<Float> {
         let scaled = SIMD3<Float>(p.x * objectScale.x, p.y * objectScale.y, p.z * objectScale.z)
-        let cosA = cos(objectAngleZ)
-        let sinA = sin(objectAngleZ)
+        let cosA = cosAngleZ
+        let sinA = sinAngleZ
         return renderOrigin + SIMD3<Float>(
             scaled.x * cosA - scaled.y * sinA,
             scaled.x * sinA + scaled.y * cosA,
@@ -91,8 +155,8 @@ struct WPEParticleSceneTransform {
     /// No Y-flip. Oracle 3526278753: velocity Y must stay negative = falling.
     func applyModelDirection(_ v: SIMD3<Float>) -> SIMD3<Float> {
         let scaled = SIMD3<Float>(v.x * objectScale.x, v.y * objectScale.y, v.z * objectScale.z)
-        let cosA = cos(objectAngleZ)
-        let sinA = sin(objectAngleZ)
+        let cosA = cosAngleZ
+        let sinA = sinAngleZ
         return SIMD3<Float>(
             scaled.x * cosA - scaled.y * sinA,
             scaled.x * sinA + scaled.y * cosA,
@@ -178,14 +242,18 @@ final class WPEParticleSystem {
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
     var pointerCentered: SIMD2<Float>?
 
-    weak var followParent: WPEParticleSystem?
+    weak var followParent: WPEParticleSystem? {
+        didSet { followParent?.beginRecordingSpawnEvents() }
+    }
     var followControlPointID: Int = 1
     var requiresFollowParent: Bool = false
     var injectedControlPoints: [Int: SIMD3<Float>] = [:]
     /// Event-driven children only: roll `probability` per parent event, not per scene.
     var spawnProbability: Double = 1
     /// Birth positions this `advance`; an `eventfollow` child bursts once per entry.
+    /// Recorded only once a child attaches (`recordsSpawnEvents`) — nothing else reads it.
     private(set) var spawnEventsThisTick: [SIMD3<Float>] = []
+    private var recordsSpawnEvents = false
 
     private let attractors: [WPEParticleControlPointAttractor]
     private let emitterTracksPointer: Bool
@@ -195,6 +263,23 @@ final class WPEParticleSystem {
     private var aliveCount: Int = 0
     private(set) var lastAttractorAffectedCount = 0
     private var particles: [Particle]
+    /// Must stay exactly consistent with the `age` sentinel: every alive/dead
+    /// transition (spawn, lifetime expiry, clearLiveParticles) updates both.
+    private var liveSlots: WPEParticleSlotIndex
+    private struct ResolvedAttractor {
+        var position: SIMD3<Float>
+        var threshold: Float
+        var scale: Float
+    }
+    /// Rebuilt each `advance`: injected/pointer control points move between ticks,
+    /// but never inside the per-particle loop.
+    private var resolvedAttractors: [ResolvedAttractor] = []
+    private var ropeKnotScratch: [(position: SIMD2<Float>, color: SIMD4<Float>, halfSize: Float, age: Float)] = []
+    /// Youngest live particle (equal ages keep the lower slot), maintained by
+    /// `advance` so follow-child queries skip the full pool scan.
+    private var cachedPrimaryPosition: SIMD3<Float>?
+    private var cachedPrimaryAge: Float = .greatestFiniteMagnitude
+    private var cachedPrimarySlot: Int = .max
     private var spawnAccumulator: Double = 0
     private var hasEmittedBurst = false
     private var lastTickTime: Double?
@@ -205,6 +290,11 @@ final class WPEParticleSystem {
     /// Cached gravity in render space (Y-up).
     private let gravity: SIMD3<Float>
     private let oscillatePositionMask: SIMD3<Float>
+    /// Per-system invariants (definition/transform/gravity are all `let`),
+    /// hoisted out of the per-particle draw and spawn paths.
+    private let perspectiveExtent: Float
+    private let visualScaleSigns: SIMD2<Float>
+    private let spawnWorldSizeMultiplier: Float
 
     /// Pre-uploaded TEXS UV rects; avoids the 4 KB `setVertexBytes` limit.
     let frameRectsBuffer: MTLBuffer?
@@ -287,6 +377,7 @@ final class WPEParticleSystem {
             oscSizeFrequency: 0,
             oscSizePhase: 0
         ), count: cap)
+        self.liveSlots = WPEParticleSlotIndex(capacity: cap)
         var instanceBuffers: [MTLBuffer] = []
         instanceBuffers.reserveCapacity(WPEMetalRenderExecutor.maxFramesInFlight)
         for slot in 0..<WPEMetalRenderExecutor.maxFramesInFlight {
@@ -352,7 +443,12 @@ final class WPEParticleSystem {
             Float(definition.gravity.y),
             Float(definition.gravity.z)
         )
-        self.gravity = sceneTransform.applyModelDirection(localGravity)
+        let gravity = sceneTransform.applyModelDirection(localGravity)
+        self.gravity = gravity
+        self.perspectiveExtent = Self.perspectiveDepthExtent(
+            definition: definition, sceneTransform: sceneTransform, gravity: gravity)
+        self.visualScaleSigns = sceneTransform.visualScaleSigns()
+        self.spawnWorldSizeMultiplier = sceneTransform.worldSizeMultiplier()
         if let osc = definition.oscillatePosition {
             // Mask gates axes, does not scale them (snowperspective 1 0.5 0).
             let gate = SIMD3<Float>(
@@ -391,6 +487,8 @@ final class WPEParticleSystem {
                 Double.random(in: 0..<10, using: &rng)
             )
         }
+        if definition.isRope { ropeKnotScratch.reserveCapacity(cap) }
+        resolvedAttractors.reserveCapacity(definition.attractors.count)
     }
 
     func controlPointPosition(_ id: Int) -> SIMD3<Float>? {
@@ -627,12 +725,16 @@ final class WPEParticleSystem {
     }
 
     private func perspectiveDepthScale(depth z: Float) -> Float {
-        let maxDepth = perspectiveDepthExtent()
-        let t = min(max(z / maxDepth, 0), 1)
+        let t = min(max(z / perspectiveExtent, 0), 1)
         return 1 + Self.perspectiveNearBoost * t
     }
 
-    private func perspectiveDepthExtent() -> Float {
+    /// Called once from init; every input is a per-system invariant.
+    private static func perspectiveDepthExtent(
+        definition: WPEParticleDefinition,
+        sceneTransform: WPEParticleSceneTransform,
+        gravity: SIMD3<Float>
+    ) -> Float {
         let localSpawnDepth: Double
         switch definition.emitterShape {
         case .box:
@@ -676,10 +778,8 @@ final class WPEParticleSystem {
         let frameCount: Float = Float(max(1, spriteSheet?.frameCount ?? 1))
         let animatesSequence = definition.animationMode == .sequence && frameCount > 1
         let cyclesPerLifetime = max(0.0001, Float(definition.sequenceMultiplier))
-        let visualScaleSigns = sceneTransform.visualScaleSigns()
         var written = 0
-        for index in 0..<capacity {
-            guard particles[index].age != .greatestFiniteMagnitude else { continue }
+        liveSlots.forEachLiveSlot { index in
             let particle = particles[index]
             let attrs = drawAttributes(of: particle)
             let lifetimeFraction = attrs.lifetimeFraction
@@ -713,34 +813,32 @@ final class WPEParticleSystem {
             ropeVertexCount = 0
             return
         }
-        var knots: [(position: SIMD2<Float>, color: SIMD4<Float>, halfSize: Float, age: Float)] = []
-        knots.reserveCapacity(capacity)
-        for index in 0..<capacity {
+        ropeKnotScratch.removeAll(keepingCapacity: true)
+        liveSlots.forEachLiveSlot { index in
             let particle = particles[index]
-            guard particle.age != .greatestFiniteMagnitude else { continue }
             let attrs = drawAttributes(of: particle)
-            knots.append((
+            ropeKnotScratch.append((
                 SIMD2<Float>(attrs.position.x, attrs.position.y),
                 SIMD4<Float>(attrs.rgb.x, attrs.rgb.y, attrs.rgb.z, attrs.alpha),
                 max(0, attrs.size * 0.5),
                 particle.age
             ))
         }
-        aliveCount = knots.count
-        guard knots.count >= 2 else {
+        aliveCount = ropeKnotScratch.count
+        guard ropeKnotScratch.count >= 2 else {
             ropeVertexCount = 0
             return
         }
-        knots.sort { $0.age < $1.age }
+        ropeKnotScratch.sort { $0.age < $1.age }
 
         let verts = buffer.contents().bindMemory(to: WPEParticleRopeVertex.self, capacity: capacity * 2)
-        let count = knots.count
+        let count = ropeKnotScratch.count
         // Carry the last valid normal across coincident knots so the ribbon does not spike.
         var lastNormal = SIMD2<Float>(0, 1)
         var written = 0
         for i in 0..<count {
-            let prev = knots[max(0, i - 1)].position
-            let next = knots[min(count - 1, i + 1)].position
+            let prev = ropeKnotScratch[max(0, i - 1)].position
+            let next = ropeKnotScratch[min(count - 1, i + 1)].position
             let tangent = next - prev
             let length = (tangent.x * tangent.x + tangent.y * tangent.y).squareRoot()
             var normal = lastNormal
@@ -749,7 +847,7 @@ final class WPEParticleSystem {
                 normal = SIMD2<Float>(-unit.y, unit.x)
                 lastNormal = normal
             }
-            let knot = knots[i]
+            let knot = ropeKnotScratch[i]
             let offset = normal * knot.halfSize
             let along = Float(i) / Float(count - 1)
             verts[written] = WPEParticleRopeVertex(
@@ -777,11 +875,10 @@ final class WPEParticleSystem {
         let perRibbon = pointCount * 2 + 2
         var written = 0
         var live = 0
-        for index in 0..<capacity {
+        liveSlots.forEachLiveSlot { index in
             let particle = particles[index]
-            guard particle.age != .greatestFiniteMagnitude else { continue }
             live += 1
-            guard written + perRibbon <= ropeVertexCapacity else { continue }
+            guard written + perRibbon <= ropeVertexCapacity else { return }
             let attrs = drawAttributes(of: particle)
             let color = SIMD4<Float>(attrs.rgb.x, attrs.rgb.y, attrs.rgb.z, attrs.alpha)
             let halfSize = max(0, attrs.size * 0.5)
@@ -898,25 +995,56 @@ final class WPEParticleSystem {
 
     var liveInstanceCount: Int { aliveCount }
 
+    /// Updated at the end of every `advance`: true once every spawn gate is
+    /// permanently closed (see the mirror computation there). False until the
+    /// first tick so an untouched system always counts as live.
+    private var emissionExhausted = false
+
+    /// True when this system can never put another particle on stage: nothing is
+    /// alive and no spawn path can reopen. Drives the renderer's frame-demand
+    /// gate — a finished one-shot/duration-bounded emitter stops forcing 30 FPS.
+    var isPermanentlyIdle: Bool { aliveCount == 0 && emissionExhausted }
+
     var tracksPointer: Bool { emitterTracksPointer }
 
     /// Follow Cursor off must clear pointer-locked spawns immediately.
     func clearLiveParticles() {
+        // Deliberately sweeps every slot: clearing must reach all of them.
         for index in 0..<capacity {
             particles[index].age = .greatestFiniteMagnitude
         }
+        liveSlots.removeAll()
+        resetPrimaryCache()
         aliveCount = 0
         spawnAccumulator = 0
     }
 
-    var primaryLiveParticlePosition: SIMD3<Float>? {
-        var bestPosition: SIMD3<Float>?
-        var bestAge = Float.greatestFiniteMagnitude
-        for particle in particles where particle.age != .greatestFiniteMagnitude && particle.age < bestAge {
-            bestAge = particle.age
-            bestPosition = particle.position
+    /// Youngest live particle; equal ages keep the lower slot (cache preserves
+    /// the old ascending strict-< scan). Valid between ticks, which is the only
+    /// time `injectFollowControlPoint` reads it.
+    var primaryLiveParticlePosition: SIMD3<Float>? { cachedPrimaryPosition }
+
+    private func resetPrimaryCache() {
+        cachedPrimaryPosition = nil
+        cachedPrimaryAge = .greatestFiniteMagnitude
+        cachedPrimarySlot = .max
+    }
+
+    /// Lexicographic (age, slot) min — identical to the old ascending strict-< scan,
+    /// including a fresh spawn landing in a lower slot than an equal-age survivor.
+    private func notePrimaryCandidate(age: Float, slot: Int, position: SIMD3<Float>) {
+        if age < cachedPrimaryAge || (age == cachedPrimaryAge && slot < cachedPrimarySlot) {
+            cachedPrimaryAge = age
+            cachedPrimarySlot = slot
+            cachedPrimaryPosition = position
         }
-        return bestPosition
+    }
+
+    private func beginRecordingSpawnEvents() {
+        guard !recordsSpawnEvents else { return }
+        recordsSpawnEvents = true
+        // Upper bound on births observable in one tick.
+        spawnEventsThisTick.reserveCapacity(capacity)
     }
 
     private var systemElapsed: Double = 0
@@ -943,53 +1071,70 @@ final class WPEParticleSystem {
         let turbulenceMask = turbulenceOp.map {
             SIMD3<Double>($0.mask.x, $0.mask.y, $0.mask.z)
         } ?? .zero
+        // Control points move between ticks (injection, pointer), never inside
+        // the particle loop, so one resolution per tick observes the same values.
+        resolvedAttractors.removeAll(keepingCapacity: true)
+        for attractor in attractors {
+            guard let cp = controlPointPosition(attractor.controlPointID) else { continue }
+            resolvedAttractors.append(ResolvedAttractor(
+                position: cp,
+                threshold: Float(attractor.threshold),
+                scale: Float(attractor.scale)
+            ))
+        }
 
+        resetPrimaryCache()
         var attractorAffectedThisTick = 0
-        for index in 0..<capacity {
-            guard particles[index].age != .greatestFiniteMagnitude else { continue }
-            particles[index].age += dt
-            if particles[index].age >= particles[index].lifetime {
-                particles[index].age = .greatestFiniteMagnitude
-                continue
-            }
-            particles[index].velocity += gravity * dt
-            if dragScalar < 1 { particles[index].velocity *= dragScalar }
-            if !attractors.isEmpty {
-                let pos = particles[index].position
-                var affectedThisParticle = false
-                for attractor in attractors {
-                    guard let cp = controlPointPosition(attractor.controlPointID) else { continue }
-                    let dx = cp.x - pos.x
-                    let dy = cp.y - pos.y
-                    let dist = (dx * dx + dy * dy).squareRoot()
-                    let threshold = Float(attractor.threshold)
-                    guard dist > 1e-3, dist < threshold else { continue }
-                    let falloff = 1 - dist / threshold
-                    let accel = Float(attractor.scale) * falloff / dist
-                    particles[index].velocity.x += dx * accel * dt
-                    particles[index].velocity.y += dy * accel * dt
-                    affectedThisParticle = true
+        for wordIndex in 0..<liveSlots.wordCount {
+            var liveWord = liveSlots.word(at: wordIndex)
+            while liveWord != 0 {
+                let index = wordIndex << 6 | liveWord.trailingZeroBitCount
+                liveWord &= liveWord &- 1
+                particles[index].age += dt
+                if particles[index].age >= particles[index].lifetime {
+                    particles[index].age = .greatestFiniteMagnitude
+                    liveSlots.markDead(index)
+                    continue
                 }
-                if affectedThisParticle { attractorAffectedThisTick += 1 }
+                particles[index].velocity += gravity * dt
+                if dragScalar < 1 { particles[index].velocity *= dragScalar }
+                if !resolvedAttractors.isEmpty {
+                    let pos = particles[index].position
+                    var affectedThisParticle = false
+                    for attractor in resolvedAttractors {
+                        let dx = attractor.position.x - pos.x
+                        let dy = attractor.position.y - pos.y
+                        let dist = (dx * dx + dy * dy).squareRoot()
+                        guard dist > 1e-3, dist < attractor.threshold else { continue }
+                        let falloff = 1 - dist / attractor.threshold
+                        let accel = attractor.scale * falloff / dist
+                        particles[index].velocity.x += dx * accel * dt
+                        particles[index].velocity.y += dy * accel * dt
+                        affectedThisParticle = true
+                    }
+                    if affectedThisParticle { attractorAffectedThisTick += 1 }
+                }
+                if turbulenceOp != nil, particles[index].turbulenceSpeed > 0 {
+                    let pos = particles[index].position
+                    let sample = SIMD3<Double>(
+                        Double(pos.x) + Double(particles[index].turbulencePhase) + turbulenceTimescale * elapsed,
+                        Double(pos.y),
+                        Double(pos.z)
+                    ) * turbulenceScale
+                    let dir = WPEParticleCurlNoise.direction(at: sample)
+                    let speed = Double(particles[index].turbulenceSpeed)
+                    particles[index].velocity.x += Float(dir.x * speed * turbulenceMask.x) * dt
+                    particles[index].velocity.y += Float(dir.y * speed * turbulenceMask.y) * dt
+                    particles[index].velocity.z += Float(dir.z * speed * turbulenceMask.z) * dt
+                }
+                particles[index].position += particles[index].velocity * dt
+                particles[index].angularVelocityZ += angularForce * dt
+                if angularDragScalar < 1 { particles[index].angularVelocityZ *= angularDragScalar }
+                particles[index].rotationZ += particles[index].angularVelocityZ * dt
+                if trailPointCount > 0 { pushTrailPoint(index) }
+                notePrimaryCandidate(
+                    age: particles[index].age, slot: index, position: particles[index].position)
             }
-            if turbulenceOp != nil, particles[index].turbulenceSpeed > 0 {
-                let pos = particles[index].position
-                let sample = SIMD3<Double>(
-                    Double(pos.x) + Double(particles[index].turbulencePhase) + turbulenceTimescale * elapsed,
-                    Double(pos.y),
-                    Double(pos.z)
-                ) * turbulenceScale
-                let dir = WPEParticleCurlNoise.direction(at: sample)
-                let speed = Double(particles[index].turbulenceSpeed)
-                particles[index].velocity.x += Float(dir.x * speed * turbulenceMask.x) * dt
-                particles[index].velocity.y += Float(dir.y * speed * turbulenceMask.y) * dt
-                particles[index].velocity.z += Float(dir.z * speed * turbulenceMask.z) * dt
-            }
-            particles[index].position += particles[index].velocity * dt
-            particles[index].angularVelocityZ += angularForce * dt
-            if angularDragScalar < 1 { particles[index].angularVelocityZ *= angularDragScalar }
-            particles[index].rotationZ += particles[index].angularVelocityZ * dt
-            if trailPointCount > 0 { pushTrailPoint(index) }
         }
         lastAttractorAffectedCount = attractorAffectedThisTick
 
@@ -1030,6 +1175,21 @@ final class WPEParticleSystem {
                 spawnAccumulator = min(spawnAccumulator, 1)
             }
         }
+        // Mirrors the spawn gates above exactly: `elapsed` is monotonic within a
+        // load, so once every gate is closed no later tick can reopen one. A
+        // pointer-blocked burst keeps `hasEmittedBurst` false and an eventfollow
+        // child without a duration stays emittable — both remain not-exhausted,
+        // which is the conservative direction for the frame-demand gate.
+        let rateExhausted = definition.rate <= 0 || !isWithinDuration
+        let burstExhausted: Bool
+        if definition.instantaneousCount <= 0 {
+            burstExhausted = true
+        } else if requiresFollowParent {
+            burstExhausted = !isWithinDuration
+        } else {
+            burstExhausted = hasEmittedBurst
+        }
+        emissionExhausted = hasStartedEmitting && rateExhausted && burstExhausted
     }
 
     #if !LITE_BUILD && DEBUG
@@ -1146,12 +1306,7 @@ final class WPEParticleSystem {
     }
 
     private func nextFreeSlot() -> Int? {
-        for index in 0..<capacity {
-            if particles[index].age == .greatestFiniteMagnitude {
-                return index
-            }
-        }
-        return nil
+        liveSlots.lowestFreeSlot
     }
 
     @discardableResult
@@ -1206,7 +1361,7 @@ final class WPEParticleSystem {
             position = sceneTransform.applyModelMatrix(toLocalPoint: localPoint)
         }
         let velocity = sceneTransform.applyModelDirection(localVelocity)
-        let sizeScale = (isRefract || isNestedChildSystem) ? 1.0 : sceneTransform.worldSizeMultiplier()
+        let sizeScale = (isRefract || isNestedChildSystem) ? 1.0 : spawnWorldSizeMultiplier
         // `sizerandom`: min + (max-min)·rand^exp (exp>1 biases toward min).
         let sizeSample: Double
         if abs(definition.sizeExponent - 1) < 0.0001 {
@@ -1297,8 +1452,10 @@ final class WPEParticleSystem {
             oscSizeFrequency: oscSizeFrequency,
             oscSizePhase: oscSizePhase
         )
+        liveSlots.markLive(slot)
+        notePrimaryCandidate(age: 0, slot: slot, position: position)
         if trailPointCount > 0 { resetTrailHistory(slot, to: position) }
-        spawnEventsThisTick.append(position)
+        if recordsSpawnEvents { spawnEventsThisTick.append(position) }
         return true
     }
 
