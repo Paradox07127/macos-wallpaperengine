@@ -20,6 +20,85 @@ struct LocalizationCoverageTests {
         }
     }
 
+    // The catalog tests above only look at entries the catalog already has, so
+    // they are blind to the opposite gap: a key deleted from the catalog while
+    // code still asks for it. 2026-08-17: removing a dead
+    // `WeatherReactiveService.LocationStatus.authorized` case took the
+    // "Authorized" key with it while BoardSettingsView still rendered
+    // `Text("Authorized")`, and ja/zh-Hans/zh-Hant VoiceOver read English with
+    // all 3020 tests green. Catalog keys are shared by text, not by feature —
+    // a "Weather location status" comment does not make the key weather-only.
+    @Test("Literal localization keys used in source still exist in the catalog")
+    func literalLocalizationKeysExistInCatalog() throws {
+        let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
+        let scan = try LocalizedLiteralScan.scanRepository(["LiveWallpaper", "Packages"])
+
+        #expect(scan.fileCount > 100, "Source sweep collapsed to \(scan.fileCount) files — the key scan is unenforced")
+        #expect(scan.keys.count > 500, "Only \(scan.keys.count) literal keys matched — the scan patterns stopped matching")
+
+        let missing = Set(scan.keys.filter { catalog.strings[$0.key] == nil }.map { "\($0.key) (\($0.location))" }).sorted()
+        #expect(
+            missing.isEmpty,
+            "Localizable.xcstrings is missing keys the app still asks for: \(missing.prefix(20).joined(separator: "; "))"
+        )
+    }
+
+    // Every skipped form is followed by a scanned one, so a scanner that bails out
+    // early (rather than skipping just that form) fails this test instead of
+    // passing it by finding less.
+    @Test("The literal-key scan reads live call sites and skips the forms it cannot resolve")
+    func literalLocalizationKeyScanHasTeeth() {
+        let probe = """
+        struct Probe: View {
+            var body: some View {
+                Text("Scanned literal")
+                Text(
+                    // A translator note sitting inside the call.
+                    "Scanned across lines"
+                )
+                SettingRow(badge: Badge(accessibilityLabel: Text("Scanned nested")))
+                Button("Scanned button", action: run)
+                ProgressView("Scanned progress")
+                let copy = String(localized: "Scanned labelled")
+                Text(verbatim: "Skipped verbatim")
+                Text("Skipped \\(interpolated) literal")
+                Text(runtimeKey)
+                Image("Skipped asset name")
+                // Text("Skipped whole-line comment")
+                let trailing = 1 // Text("Skipped trailing comment")
+                /* Text("Skipped block comment")
+                   Text("Skipped block comment second line") */
+                let fixture = #"Text("Skipped raw fixture")"#
+                Link("https://example.com", destination: url); Text("Scanned after a URL on the same line")
+                Text("Scanned after every skipped form")
+            }
+        }
+
+        #Preview("Probe") {
+            Text("Skipped preview")
+        }
+
+        struct BelowThePreview: View {
+            var body: some View { Text("Scanned below the preview block") }
+        }
+        """
+
+        let found = Set(LocalizedLiteralScan.keys(in: probe, path: "Probe.swift").map(\.key))
+
+        #expect(LocalizedLiteralScan.patternCount == 2, "A scan pattern failed to compile and was dropped")
+        #expect(found == [
+            "Scanned literal",
+            "Scanned across lines",
+            "Scanned nested",
+            "Scanned button",
+            "Scanned progress",
+            "Scanned labelled",
+            "Scanned after a URL on the same line",
+            "Scanned after every skipped form",
+            "Scanned below the preview block",
+        ])
+    }
+
     @Test("Supported translations preserve string format placeholders")
     func supportedTranslationsPreservePlaceholders() throws {
         for catalogName in ["Localizable.xcstrings", "InfoPlist.xcstrings"] {
@@ -203,6 +282,144 @@ struct LocalizationCoverageTests {
         return normalized.components(separatedBy: expected).count - 1 == 1
             && normalized.components(separatedBy: "staticfuncsceneCapable(incatalog:FeatureCatalog)->Bool{").count - 1 == 1
     }
+}
+
+/// Collects the localization keys that source code spells out as a plain string
+/// literal, so they can be checked back against the catalog.
+///
+/// Deliberately blind — under-reporting beats a false alarm, and every form
+/// below stays uncovered by this gate:
+/// - interpolated or escaped literals (`Text("\(count) items")`, `Text("a\nb")`),
+///   because the source text is not the catalog key verbatim;
+/// - keys that arrive as a variable, enum property, or `LocalizedStringKey`
+///   passed down from a caller, and keys spelled inside a conditional
+///   expression (`Text(busy ? "Importing…" : "Idle")`);
+/// - project-defined wrappers that take a `LocalizedStringKey` of their own
+///   (`WorkshopFilterRow("Maturity")`, `SettingsSearchSectionHeader(…)`). The
+///   allowlist stays SwiftUI-only on purpose: `appendingPathComponent("Workshop")`
+///   and `contains("error")` also spell a live catalog key, so widening it by
+///   name would invent failures rather than find them;
+/// - raw (`#"…"#`) and multi-line (`"""`) string literals;
+/// - preview bodies (that copy never ships) and comments.
+///
+/// `Text(verbatim:)` is excluded by construction: it does not localize, and the
+/// patterns only match a literal that directly follows the opening paren.
+private enum LocalizedLiteralScan {
+    struct Hit: Hashable {
+        let key: String
+        let location: String
+    }
+
+    static var patternCount: Int { patterns.count }
+
+    static func scanRepository(_ relativePaths: [String]) throws -> (keys: [Hit], fileCount: Int) {
+        var collected: [Hit] = []
+        var fileCount = 0
+        let rootPath = RepositoryRoot.url.path + "/"
+        for relativePath in relativePaths {
+            // Package test fixtures are free to spell any string they like; only
+            // shipping sources owe the catalog a key.
+            for url in RepositoryRoot.swiftFiles(under: relativePath) where !url.path.contains("/Tests/") {
+                fileCount += 1
+                let source = try String(contentsOf: url, encoding: .utf8)
+                let display = url.path.replacingOccurrences(of: rootPath, with: "")
+                collected.append(contentsOf: keys(in: source, path: display))
+            }
+        }
+        return (collected, fileCount)
+    }
+
+    static func keys(in source: String, path: String) -> [Hit] {
+        let scannable = scannableText(in: source)
+        let range = NSRange(scannable.startIndex..<scannable.endIndex, in: scannable)
+        return patterns.flatMap { pattern in
+            pattern.matches(in: scannable, range: range).compactMap { match -> Hit? in
+                guard let keyRange = Range(match.range(at: 1), in: scannable) else { return nil }
+                let key = String(scannable[keyRange])
+                guard !key.isEmpty, !key.contains("\\") else { return nil }
+                let line = scannable[scannable.startIndex..<keyRange.lowerBound].filter { $0 == "\n" }.count + 1
+                return Hit(key: key, location: "\(path):\(line)")
+            }
+        }
+    }
+
+    /// Blanks comments and `#Preview` bodies while keeping one line per line, so
+    /// reported line numbers still point at the real call site. A preview is
+    /// skipped up to its closing column-zero `}` rather than to end of file —
+    /// truncating would silently drop every declaration written below it.
+    private static func scannableText(in source: String) -> String {
+        var lines: [String] = []
+        var blockCommentDepth = 0
+        var insidePreview = false
+        for line in source.components(separatedBy: "\n") {
+            let (stripped, depth) = strippingComments(line, blockCommentDepth: blockCommentDepth)
+            blockCommentDepth = depth
+            if insidePreview {
+                lines.append("")
+                if stripped.hasPrefix("}") { insidePreview = false }
+                continue
+            }
+            if stripped.trimmingCharacters(in: .whitespaces).hasPrefix("#Preview") {
+                insidePreview = true
+                lines.append("")
+                continue
+            }
+            lines.append(stripped)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Quote-aware enough that `//` inside a string literal (a URL) is kept and a
+    /// trailing `// Text("…")` note is dropped. String state does not carry across
+    /// lines, so a `"""` body degrades to over-stripping, never to a false hit.
+    private static func strippingComments(_ line: String, blockCommentDepth: Int) -> (String, Int) {
+        var depth = blockCommentDepth
+        var output = ""
+        var insideString = false
+        var index = line.startIndex
+        while index < line.endIndex {
+            let character = line[index]
+            let next = line.index(after: index)
+            let pair = next < line.endIndex ? String([character, line[next]]) : ""
+            if depth > 0 {
+                if pair == "*/" { depth -= 1; index = line.index(after: next); continue }
+                if pair == "/*" { depth += 1; index = line.index(after: next); continue }
+                output.append(" ")
+                index = next
+                continue
+            }
+            if insideString {
+                if character == "\\", next < line.endIndex {
+                    output.append(character)
+                    output.append(line[next])
+                    index = line.index(after: next)
+                    continue
+                }
+                if character == "\"" { insideString = false }
+                output.append(character)
+                index = next
+                continue
+            }
+            if character == "\"" { insideString = true; output.append(character); index = next; continue }
+            if pair == "//" { break }
+            if pair == "/*" { depth += 1; index = line.index(after: next); continue }
+            output.append(character)
+            index = next
+        }
+        return (output, depth)
+    }
+
+    private static let patterns: [NSRegularExpression] = {
+        let literal = #""((?:[^"\\\n]|\\.)*)""#
+        let initializers = "Text|Button|Label|Toggle|TextField|SecureField|Picker|Section|Menu|Stepper|ProgressView|LocalizedStringKey|LocalizedStringResource"
+        let modifiers = "help|alert|confirmationDialog|navigationTitle|accessibilityLabel|accessibilityHint"
+        // The `"` in the lookbehind keeps a raw-string source fixture (`#"Text("…")"#`)
+        // from reading as a call site.
+        return [
+            #"(?<![A-Za-z0-9_"])(?:\#(initializers))\(\s*"# + literal,
+            #"(?:String\(localized:|\.(?:\#(modifiers))\()\s*"# + literal,
+        ].compactMap { try? NSRegularExpression(pattern: $0) }
+    }()
 }
 
 private struct StringCatalog: Decodable {
