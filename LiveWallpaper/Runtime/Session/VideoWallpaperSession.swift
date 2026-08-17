@@ -28,8 +28,6 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private(set) var userIntendsToPlay = true
     /// Last policy profile; manual play re-derives effective state from this + intent.
     private var currentProfile: WallpaperPerformanceProfile = .quality
-    /// Window visibility (master off orderOut); distinct from pause (last frame stays).
-    private var isVisible = true
     private(set) var runtimeError: WallpaperRuntimeError? {
         didSet {
             guard oldValue != runtimeError else { return }
@@ -108,8 +106,6 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let activity: WallpaperSessionActivity
         if runtimeError != nil {
             activity = .error
-        } else if !isVisible {
-            activity = .off
         } else if player.isPlaying {
             activity = .active
         } else {
@@ -150,16 +146,15 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func show() {
-        isVisible = true
-        player?.setWindowVisible(true)
+        player?.orderWindowBack()
         applyPerformanceProfile(currentProfile)
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         currentProfile = profile
-        let shouldPlayVideo = isVisible && userIntendsToPlay && profile == .quality
+        let shouldPlayVideo = userIntendsToPlay && profile == .quality
         // Manual-pause contract (AVPlayer only); resource fix is for system suspend.
-        player?.setParticleEffectsSuspended(profile == .suspended || !isVisible)
+        player?.setParticleEffectsSuspended(profile == .suspended)
         // Resource depth only — play/pause above stays the sole owner of intent.
         player?.setSuspended(profile == .suspended)
         if shouldPlayVideo {
@@ -232,8 +227,9 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             return
         }
         replacement.setMuted(latestMuted)
-        // Intent/policy/visibility are never snapshotted — apply latest after replace.
-        replacement.setWindowVisible(isVisible)
+        // Intent and policy are never snapshotted — apply latest after replace.
+        // The replacement is built `startsHidden`, so it must be ordered back here.
+        replacement.orderWindowBack()
         runtimeError = replacement.runtimeError
         applyPerformanceProfile(currentProfile)
         retireEffectsWork(oldPlayer)
