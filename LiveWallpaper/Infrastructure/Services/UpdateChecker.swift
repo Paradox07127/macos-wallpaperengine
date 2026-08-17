@@ -242,8 +242,6 @@ struct URLSessionUpdateCheckerTransport: UpdateCheckerTransport {
             (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maximumResponseBytes)
         } catch is BoundedNetworkFetch.ResponseTooLarge {
             throw URLError(.dataLengthExceedsMaximum)
-        } catch {
-            throw error
         }
 
         guard let http = response as? HTTPURLResponse else {

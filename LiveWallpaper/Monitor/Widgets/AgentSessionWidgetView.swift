@@ -146,7 +146,7 @@ struct AgentSessionWidgetView: View {
         HStack(spacing: scale.label * 0.6) {
             if c.needsInput > 0 {
                 actionSeg(dot: Design.signalCoral, count: c.needsInput,
-                          keyword: AgentSessionStrings.awaitingYou, emphatic: true, scale: scale)
+                          keyword: AgentSessionStrings.needsYou, emphatic: true, scale: scale)
             }
             if c.running > 0 {
                 if c.needsInput > 0 { actionDot() }
@@ -640,7 +640,6 @@ private enum AgentSessionStrings {
     /// `unauthorized` health from the runtime).
     static var authorizeHint: LocalizedStringKey { "Authorize the agent folders in Monitor settings." }
 
-    static var awaitingYou: LocalizedStringKey { "needs you" }
     static var runningKeyword: LocalizedStringKey { "running" }
     static var warnKeyword: LocalizedStringKey { "warn" }
     static var idleKeyword: LocalizedStringKey { "idle" }

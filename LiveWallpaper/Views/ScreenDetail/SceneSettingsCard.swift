@@ -367,12 +367,8 @@ struct WPESceneCustomSettingsCard: View {
         _ property: WallpaperEngineProjectPropertySchema.Property
     ) -> Bool {
         !excludedSceneSettingKeys.contains(property.key)
-            && isInteractive(property.type)
+            && WPEProjectSettingsPresentation.isSceneInteractive(property.type)
             && !property.isPromotionalLink
-    }
-
-    static func isInteractive(_ type: WallpaperEngineProjectPropertySchema.PropertyType) -> Bool {
-        WPEProjectSettingsPresentation.isSceneInteractive(type)
     }
 
     @ViewBuilder
@@ -474,22 +470,10 @@ struct WPESceneCustomSettingsCard: View {
                     .controlSize(.small)
                     .accessibilityLabel(property.displayText)
             }
-        case .file, .directory:
-            SettingRow(
-                icon: WPEPropertyRowIcon.symbol(for: property.type),
-                iconColor: .secondary,
-                verbatimTitle: property.displayText,
-                subtitle: "Not supported on macOS yet"
-            ) {
-                EmptyView()
-            }
-            .disabled(true)
-            .opacity(0.55)
-        case .group:
-            WPEProjectTextBlock(text: property.displayText, isHeader: true)
-        case .text:
-            WPEProjectTextBlock(text: property.displayText, isHeader: false)
-        case .unsupported:
+        // Only the interactive types reach here: the presentation's `isInteractive`
+        // filter drops file/directory/text/unsupported and turns `group` into a
+        // section boundary before any row is built.
+        default:
             EmptyView()
         }
     }

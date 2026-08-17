@@ -20,15 +20,6 @@ final class WorkshopDownloadCoordinator {
         /// and the user has to be told where.
         case succeededAsPreset(baseWorkshopID: String)
         case failed(String)
-
-        /// Anything that finished without an error, for callers that only care
-        /// whether the item is still in flight.
-        var isSuccess: Bool {
-            switch self {
-            case .succeeded, .succeededAsPreset: return true
-            case .idle, .downloading, .importing, .failed: return false
-            }
-        }
     }
 
     struct DownloadProgressBytes: Equatable, Sendable {

@@ -264,7 +264,7 @@ struct CPUWidgetView: View {
                 .frame(width: scale.caption * 0.62, height: scale.caption * 0.62)
                 .shadow(color: Design.temperatureColor(celsius).opacity(0.7), radius: 2)
             HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(verbatim: Self.tempValue(celsius))
+                Text(verbatim: MonitorTemperature.valueText(celsius))
                     .font(Design.subFont(size: scale.caption))
                     .monospacedDigit()
                     .foregroundStyle(Design.inkPrimary)
@@ -458,7 +458,7 @@ struct CPUWidgetView: View {
         HStack(spacing: scale.label * 0.7) {
             Spacer(minLength: 0)
             if let temp = cpuTempC { sensorReading(dot: Design.temperatureColor(temp),
-                                                    value: Self.tempValue(temp), unit: MonitorTemperature.symbol, scale: scale) }
+                                                    value: MonitorTemperature.valueText(temp), unit: MonitorTemperature.symbol, scale: scale) }
             if let rpm = fanRPM { sensorReading(dot: Design.signalSteel,
                                                 value: Self.rpmValue(rpm), unit: "RPM", scale: scale) }
         }
@@ -472,7 +472,7 @@ struct CPUWidgetView: View {
                 .tracking(Design.labelTracking(size: scale.label))
                 .foregroundStyle(Design.inkFaint)
             if let temp = cpuTempC { sensorReading(dot: Design.temperatureColor(temp),
-                                                   value: Self.tempValue(temp), unit: MonitorTemperature.symbol, scale: scale) }
+                                                   value: MonitorTemperature.valueText(temp), unit: MonitorTemperature.symbol, scale: scale) }
             if cpuTempC != nil && fanRPM != nil {
                 Text(verbatim: "·").font(Design.captionFont(size: scale.caption)).foregroundStyle(Design.inkFaint).opacity(0.5)
             }
@@ -784,10 +784,6 @@ extension CPUWidgetView {
     nonisolated static func wholeNumber(_ fraction: Double) -> String {
         let f = fraction.isFinite ? min(max(fraction, 0), 1) : 0
         return "\(Int((f * 100).rounded()))"
-    }
-
-    nonisolated static func tempValue(_ celsius: Double) -> String {
-        MonitorTemperature.valueText(celsius)
     }
 
     nonisolated static func rpmValue(_ rpm: Double) -> String {

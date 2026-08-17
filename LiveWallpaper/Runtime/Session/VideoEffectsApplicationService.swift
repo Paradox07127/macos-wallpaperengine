@@ -76,6 +76,8 @@ final class VideoEffectsApplicationService {
         self.assetProvider = assetProvider
     }
 
+    #if DEBUG
+    // Test-only introspection; no production reader.
     func hasInflightTask(for screenID: CGDirectDisplayID) -> Bool {
         inflightTasks.keys.contains { $0.screenID == screenID }
     }
@@ -87,7 +89,6 @@ final class VideoEffectsApplicationService {
         inflightTasks[WorkKey(screenID: screenID, player: player)] != nil
     }
 
-    #if DEBUG
     // Test-only introspection; no production reader.
     func hasPendingRequest(
         for screenID: CGDirectDisplayID,
@@ -126,9 +127,12 @@ final class VideoEffectsApplicationService {
     }
     #endif
 
+    #if DEBUG
+    // Test-only introspection; no production reader.
     func trackedWorkKeyCount(for screenID: CGDirectDisplayID) -> Int {
         trackedWorkKeys(for: screenID).count
     }
+    #endif
 
     func applyEffects(
         to player: WallpaperVideoPlayer,
@@ -286,8 +290,6 @@ final class VideoEffectsApplicationService {
         workIdentity: WorkIdentity,
         completion: @MainActor @escaping (Bool) -> Void
     ) {
-        effectsManager.updateConfig(config.effectConfig)
-
         let effectiveFPS = FrameRateLimit.resolveCompositionFPS(
             limit: config.frameRateLimit,
             videoFrameRate: player.videoFrameRate,

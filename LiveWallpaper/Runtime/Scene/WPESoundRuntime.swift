@@ -365,6 +365,7 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
+    #if DEBUG
     func debugTrackSnapshots() -> [WPESoundRuntimeDebugTrackSnapshot] {
         state.withLock { state in
             state.tracks.map {
@@ -386,6 +387,7 @@ final class WPESoundRuntime: Sendable {
     func debugEngineIsRunning() -> Bool {
         state.withLock { $0.engine.isRunning }
     }
+    #endif
 
     private func reconcileEngineRunState(state: inout State) {
         guard !state.tracks.isEmpty else { return }

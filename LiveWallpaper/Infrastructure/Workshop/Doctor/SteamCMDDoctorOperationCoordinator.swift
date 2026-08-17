@@ -76,9 +76,12 @@
             return try await operation(lease)
         }
 
+        #if DEBUG
+        // Test-only introspection; no production reader.
         func isCurrent(_ lease: SteamCMDDoctorOperationLease) -> Bool {
             activeLease == lease
         }
+        #endif
     }
 
     /// Suspension-based counting semaphore. Lived in the retired

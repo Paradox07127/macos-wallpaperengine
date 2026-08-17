@@ -232,12 +232,12 @@ final class OverlayController: NSObject {
     var hasActiveOverlay: Bool {
         !hosts.isEmpty
     }
-    #endif
 
     func waitUntilRuntimeSettled() async {
         let task = runtimeReconciliationTask
         await task?.value
     }
+    #endif
 
     private func updateInteractive(_ host: Host) {
         let interactive = host.board.isEditing || host.config.mouseInteractionEnabled
@@ -434,7 +434,7 @@ final class OverlayController: NSObject {
                 guard let self,
                       !Task.isCancelled,
                       hosts.values.contains(where: \.isDeliveringSnapshots) else { return }
-                pushLatest(force: false)
+                pushLatest()
             }
         }
     }
@@ -451,10 +451,9 @@ final class OverlayController: NSObject {
         host.board.push(update.snapshot)
     }
 
-    private func pushLatest(force: Bool) {
+    private func pushLatest() {
         let broker = runtime.broker
-        let after = force ? 0 : lastGeneration
-        guard let update = broker.latest(after: after) else { return }
+        guard let update = broker.latest(after: lastGeneration) else { return }
         lastGeneration = update.generation
         for host in hosts.values where host.isVisible && host.isDeliveringSnapshots {
             host.board.push(update.snapshot)

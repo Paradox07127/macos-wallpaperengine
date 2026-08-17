@@ -254,7 +254,9 @@ private struct WPEShaderSourceLoader: Sendable {
         pass: WPERenderPass,
         fboFormats: [String: String] = [:]
     ) throws -> WPEShaderLoadResult {
-        if shouldPreferSceneSource(shaderName: shaderName) {
+        // `effect_*` shaders are authored per scene, so the workshop's own source
+        // wins over any Metal-side built-in of the same name.
+        if WPEBuiltinShaderName.normalized(shaderName).hasPrefix("effect_") {
             do {
                 return try sourceProgram(shaderName: shaderName, pass: pass, fboFormats: fboFormats)
             } catch WPERenderPipelineError.shaderMissing {
@@ -275,10 +277,6 @@ private struct WPEShaderSourceLoader: Sendable {
         }
 
         return try sourceProgram(shaderName: shaderName, pass: pass, fboFormats: fboFormats)
-    }
-
-    private func shouldPreferSceneSource(shaderName: String) -> Bool {
-        WPEBuiltinShaderName.normalized(shaderName).hasPrefix("effect_")
     }
 
     private func sourceProgram(

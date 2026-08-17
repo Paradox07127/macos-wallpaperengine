@@ -182,11 +182,11 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         let prime = try sourceSlice(
             controller,
             from: "private func primeHost(_ host: Host)",
-            to: "private func pushLatest(force: Bool)"
+            to: "private func pushLatest()"
         )
         let push = try sourceBlock(
             controller,
-            from: "private func pushLatest(force: Bool)"
+            from: "private func pushLatest()"
         )
 
         #expect(hostState.contains("var level: MonitorOverlayLevel"))
