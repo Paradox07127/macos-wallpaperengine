@@ -1026,13 +1026,8 @@ final class WallpaperVideoPlayer {
         }
     }
 
-    func setWindowVisible(_ visible: Bool) {
-        guard let window else { return }
-        if visible {
-            window.orderBack(nil)
-        } else {
-            window.orderOut(nil)
-        }
+    func orderWindowBack() {
+        window?.orderBack(nil)
     }
 
     private func isValidFrame(_ frame: CGRect) -> Bool {

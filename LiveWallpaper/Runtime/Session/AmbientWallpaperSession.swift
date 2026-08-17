@@ -8,7 +8,6 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     private var currentProfile: WallpaperPerformanceProfile = .quality
     /// Durable user play intent; effective = `userIntendsToPlay && profile == .quality`.
     private(set) var userIntendsToPlay = true
-    private var isVisible = true
     let wallpaperType: WallpaperType
     private(set) var runtimeError: WallpaperRuntimeError? {
         didSet {
@@ -35,8 +34,6 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         let activity: WallpaperSessionActivity
         if runtimeError != nil {
             activity = .error
-        } else if !isVisible {
-            activity = .off
         } else if currentProfile == .suspended || !userIntendsToPlay {
             activity = .paused
         } else {
@@ -63,14 +60,13 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     }
 
     func show() {
-        isVisible = true
         window?.orderBack(nil)
         // Honour userIntendsToPlay — a manual pause must not resume on visibility alone.
         applyPerformanceProfile(currentProfile)
     }
 
     var isPlaying: Bool {
-        isVisible && userIntendsToPlay && currentProfile == .quality
+        userIntendsToPlay && currentProfile == .quality
     }
 
     func play() {
@@ -85,9 +81,9 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         currentProfile = profile
-        // Run only when policy, user intent, and visibility all allow.
+        // Run only when policy and user intent both allow.
         let effective: WallpaperPerformanceProfile =
-            (isVisible && userIntendsToPlay && profile == .quality) ? .quality : .suspended
+            (userIntendsToPlay && profile == .quality) ? .quality : .suspended
         performanceTarget?.applyPerformanceProfile(effective)
     }
 

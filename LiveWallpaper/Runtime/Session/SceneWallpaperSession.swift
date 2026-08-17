@@ -110,7 +110,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     var onRuntimeActivityChange: (@MainActor () -> Void)?
     /// Durable user play intent; effective = `userIntendsToPlay && profile == .quality`.
     private(set) var userIntendsToPlay = true
-    private var isVisible = true
     private var didStartLoad = false
     private var loadTask: Task<Void, Never>?
     /// The controlled startup task (renderer adopt → initial load). Session-owned
@@ -167,8 +166,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     private var effectivePerformanceProfile: WallpaperPerformanceProfile {
-        guard isVisible,
-              userIntendsToPlay,
+        guard userIntendsToPlay,
               currentProfile == .quality,
               previewProfileOverride != .suspended else {
             return .suspended
@@ -180,8 +178,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         let activity: WallpaperSessionActivity
         if loadError != nil {
             activity = .error
-        } else if !isVisible {
-            activity = .off
         } else if effectivePerformanceProfile == .suspended {
             activity = .paused
         } else {
@@ -336,7 +332,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func show() {
-        isVisible = true
         window?.orderBack(nil)
         // Route through the session so the effective profile honours
         // `userIntendsToPlay` — a manually paused scene must not resume just
@@ -719,18 +714,17 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private func reconcileSystemAudioCaptureDemand() {
         let shouldRetain = hasRenderer
             && requiresSystemAudioCapture
-            && isVisible
             && userIntendsToPlay
             && effectivePerformanceProfile == .quality
         // Log which audio-tap gate is false (demand never transitioning is the interesting case).
-        let inputs = "\(hasRenderer)/\(requiresSystemAudioCapture)/\(isVisible)"
+        let inputs = "\(hasRenderer)/\(requiresSystemAudioCapture)"
             + "/\(userIntendsToPlay)/\(effectivePerformanceProfile)"
         if inputs != lastLoggedAudioDemandInputs {
             lastLoggedAudioDemandInputs = inputs
             Logger.notice(
                 "[AudioCapture] session demand=\(shouldRetain)"
                     + " renderer=\(hasRenderer) sceneNeedsAudio=\(requiresSystemAudioCapture)"
-                    + " visible=\(isVisible) playing=\(userIntendsToPlay)"
+                    + " playing=\(userIntendsToPlay)"
                     + " profile=\(effectivePerformanceProfile)",
                 category: .audioCapture
             )
