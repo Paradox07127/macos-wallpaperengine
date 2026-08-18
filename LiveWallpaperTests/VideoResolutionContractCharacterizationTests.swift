@@ -81,7 +81,7 @@ struct VideoResolutionContractCharacterizationTests {
         let publishPath = try Self.slice(
             source,
             from: "private func publish(pixelBuffer:",
-            to: "private static let bufferHintSeconds"
+            to: "private func retire("
         )
 
         for settings in [itemOutputSettings, playerOutputSettings] {
