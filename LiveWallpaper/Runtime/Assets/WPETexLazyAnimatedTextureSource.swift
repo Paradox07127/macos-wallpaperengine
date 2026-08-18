@@ -92,6 +92,9 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         harvestCompletedPrefetches()
         return prefetchFailedImageIDs
     }
+    var debugResidentWorkingTextureCount: Int {
+        workingTextureSlots.count { $0.texture != nil }
+    }
 #endif
 
     /// Distinct upcoming source images to keep warm (wrap-aware, by image not frame).
@@ -219,10 +222,21 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
-        _ = profile
+        switch profile {
+        case .suspended:
+            releaseWorkingSlots()
+        case .quality:
+            // Restore is lazy: the next `texture(at:)` re-decodes and re-uploads
+            // before it binds, so no slot is ever nil while something samples it.
+            break
+        }
     }
 
-    func invalidate() {
+    /// Warm release: upload targets, crop scratch and in-flight prefetch go; the
+    /// decoded-byte cache stays. App-rule and battery suspends are designed to
+    /// resume fast (ScreenManager+Observers), and absence-like ones reach
+    /// `invalidate()` through the session's dwell countdown instead.
+    private func releaseWorkingSlots() {
         workingTextureSlots = Array(
             repeating: WorkingTextureSlot(),
             count: WPEMetalRenderExecutor.maxFramesInFlight
@@ -231,13 +245,17 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
             repeating: Data(),
             count: WPEMetalRenderExecutor.maxFramesInFlight
         )
-        frameByteCache.removeAll(for: cacheToken)
         // Cancel in-flight jobs; orphaned boxes are never harvested.
         for job in prefetchJobs.values { job.item.cancel() }
         prefetchJobs.removeAll(keepingCapacity: false)
-        prefetchFailedImageIDs.removeAll(keepingCapacity: false)
         prefetchWantedImageIDs.removeAll(keepingCapacity: false)
         lastScheduledFrameIndex = -1
+    }
+
+    func invalidate() {
+        releaseWorkingSlots()
+        frameByteCache.removeAll(for: cacheToken)
+        prefetchFailedImageIDs.removeAll(keepingCapacity: false)
     }
 
     // MARK: - Decode + crop
