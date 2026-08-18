@@ -123,6 +123,8 @@ struct Header: View {
         switch wallpaperSessionSummary.activity {
         case .active:   return "Playing"
         case .paused:   return "Paused"
+        case .policySuspended: return "Paused by system"
+        case .restoring: return "Restoring"
         case .off:      return "Off"
         case .error:    return "Error"
         case .inactive: return "Not configured"
@@ -133,6 +135,8 @@ struct Header: View {
         switch wallpaperSessionSummary.activity {
         case .active:   return DesignTokens.Colors.Status.active
         case .paused:   return DesignTokens.Colors.Status.warning
+        case .policySuspended: return DesignTokens.Colors.Status.warning
+        case .restoring: return DesignTokens.Colors.Status.active
         case .off:      return .secondary
         case .error:    return DesignTokens.Colors.Status.danger
         case .inactive: return .secondary

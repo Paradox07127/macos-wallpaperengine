@@ -10,7 +10,8 @@ struct WallpaperPolicyInputs {
     var isApplicationRuleActive: Bool
     var thermalState: ProcessInfo.ThermalState
     var isUserAbsent: Bool
-    var isUnderMemoryPressure: Bool
+    /// Graded, not boolean: `warning` throttles while `critical` suspends.
+    var memoryPressureLevel: SystemMemoryPressureLevel
     var isLowPowerMode: Bool = false
     /// Vetoes discretionary suspension without overriding safety suspension.
     var isFrontmostExcludedByRule: Bool = false
@@ -22,34 +23,80 @@ enum WallpaperPolicyEngine {
         inputs: WallpaperPolicyInputs,
         settings: GlobalSettings
     ) -> WallpaperPerformanceProfile {
-        // Hard safety suspends (occlusion/memory/thermal); neverPause cannot veto.
-        let safetySuspend = inputs.isUserAbsent ||
-            inputs.isUnderMemoryPressure ||
-            shouldSuspendForThermal(inputs.thermalState)
+        decision(inputs: inputs, settings: settings).profile
+    }
+
+    /// Resolves raw signals and user settings into a profile plus the reasons
+    /// behind it, so callers can both act on it and explain it.
+    static func decision(
+        inputs: WallpaperPolicyInputs,
+        settings: GlobalSettings
+    ) -> WallpaperPolicyDecision {
+        // Hard safety suspends (absence/memory/thermal); neverPause cannot veto.
+        var safety: Set<WallpaperSuspendReason> = []
+        if inputs.isUserAbsent { safety.insert(.userAbsent) }
+        if shouldSuspendForMemory(inputs.memoryPressureLevel) { safety.insert(.memoryPressure) }
+        if shouldSuspendForThermal(inputs.thermalState) { safety.insert(.thermal) }
 
         // Discretionary suspends yield the GPU for full-screen / battery / Low
         // Power Mode / app rules. A `.neverPause` exception on the frontmost app
         // vetoes them.
-        let discretionarySuspend = inputs.isApplicationRuleActive ||
-            (settings.pauseInLowPowerMode && inputs.isLowPowerMode) ||
-            shouldPauseForPower(globalSettings: settings, powerSource: inputs.powerSource) ||
-            shouldApplyFullScreenPolicy(globalSettings: settings, isHiddenByFullScreen: inputs.isHiddenByFullScreen) ||
-            shouldApplyWindowOcclusionPolicy(globalSettings: settings, isWindowOccluding: inputs.isWindowOccluding)
+        var discretionary: Set<WallpaperSuspendReason> = []
+        if inputs.isApplicationRuleActive { discretionary.insert(.applicationRule) }
+        if settings.pauseInLowPowerMode, inputs.isLowPowerMode { discretionary.insert(.lowPowerMode) }
+        if shouldPauseForPower(globalSettings: settings, powerSource: inputs.powerSource) {
+            discretionary.insert(.battery)
+        }
+        if shouldApplyFullScreenPolicy(globalSettings: settings, isHiddenByFullScreen: inputs.isHiddenByFullScreen) {
+            discretionary.insert(.fullScreen)
+        }
+        if shouldApplyWindowOcclusionPolicy(globalSettings: settings, isWindowOccluding: inputs.isWindowOccluding) {
+            discretionary.insert(.windowOcclusion)
+        }
+        if inputs.isFrontmostExcludedByRule { discretionary.removeAll() }
 
-        let shouldSuspend = safetySuspend || (discretionarySuspend && !inputs.isFrontmostExcludedByRule)
-        return shouldSuspend ? .suspended : .quality
+        // Pressure that asks for less work rather than none. Only meaningful
+        // while still playing — a suspended wallpaper is already doing nothing.
+        var throttle: Set<WallpaperSuspendReason> = []
+        if shouldThrottleForThermal(inputs.thermalState) { throttle.insert(.thermal) }
+        if shouldThrottleForMemory(inputs.memoryPressureLevel) { throttle.insert(.memoryPressure) }
+
+        let suspendReasons = safety.union(discretionary)
+        guard suspendReasons.isEmpty else {
+            return WallpaperPolicyDecision(profile: .suspended, suspendReasons: suspendReasons)
+        }
+        return WallpaperPolicyDecision(profile: .quality, throttleReasons: throttle)
     }
 
-    /// serious/critical → suspend; fair/nominal leave FPS to user caps/ASIC.
+    /// Only `critical` stops the show. `serious` means "shed load" in Apple's
+    /// own vocabulary, and this app's steady state on a busy scene already sits
+    /// near it (measured: GPU pinned at its top power state), so suspending
+    /// there stopped wallpapers during ordinary use with no way to opt out.
     private static func shouldSuspendForThermal(_ thermalState: ProcessInfo.ThermalState) -> Bool {
         switch thermalState {
-        case .critical, .serious:
+        case .critical:
             return true
-        case .fair, .nominal:
+        case .serious, .fair, .nominal:
             return false
         @unknown default:
             return true
         }
+    }
+
+    /// `serious` throttles instead of suspending; `fair`/`nominal` leave FPS to
+    /// user caps and the ASIC.
+    private static func shouldThrottleForThermal(_ thermalState: ProcessInfo.ThermalState) -> Bool {
+        thermalState == .serious
+    }
+
+    /// Only `critical` suspends. `warning` is routine on a loaded Mac, and the
+    /// byte caches already shrink themselves under it.
+    private static func shouldSuspendForMemory(_ level: SystemMemoryPressureLevel) -> Bool {
+        level == .critical
+    }
+
+    private static func shouldThrottleForMemory(_ level: SystemMemoryPressureLevel) -> Bool {
+        level == .warning
     }
 
     static func shouldPauseForPower(

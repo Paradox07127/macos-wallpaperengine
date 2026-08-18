@@ -315,14 +315,13 @@ private enum LocalizedLiteralScan {
     static func scanRepository(_ relativePaths: [String]) throws -> (keys: [Hit], fileCount: Int) {
         var collected: [Hit] = []
         var fileCount = 0
-        let rootPath = RepositoryRoot.url.path + "/"
         for relativePath in relativePaths {
             // Package test fixtures are free to spell any string they like; only
             // shipping sources owe the catalog a key.
             for url in RepositoryRoot.swiftFiles(under: relativePath) where !url.path.contains("/Tests/") {
                 fileCount += 1
                 let source = try String(contentsOf: url, encoding: .utf8)
-                let display = url.path.replacingOccurrences(of: rootPath, with: "")
+                let display = RepositoryRoot.relativePath(of: url)
                 collected.append(contentsOf: keys(in: source, path: display))
             }
         }

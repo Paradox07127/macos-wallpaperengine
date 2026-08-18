@@ -28,6 +28,20 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private(set) var userIntendsToPlay = true
     /// Last policy profile; manual play re-derives effective state from this + intent.
     private var currentProfile: WallpaperPerformanceProfile = .quality
+    /// Manual pause is not an absence: the user may unpause any moment, so it
+    /// keeps the player warm for its own much longer dwell instead of reusing the
+    /// absence constant. Mirrors `SceneWallpaperSession.userPauseHibernationDelay`.
+    private let userPauseHibernationDelay: Duration
+    /// Own slot. The player has a single eligibility flag driven by the absence
+    /// signal, and an absence-false push must not cancel this countdown.
+    private let pauseDwell = AbsenceDwell()
+    /// Last absence eligibility pushed by `ScreenManager`, kept so lifting the
+    /// manual-pause override restores the real value instead of inventing one.
+    private var absenceHibernationEligible = false
+    /// True once the manual-pause dwell has handed the player to deep
+    /// hibernation. Folded into suspend depth and eligibility so a policy
+    /// refresh or an absence push cannot wake a wallpaper the user still paused.
+    private var isManualPauseHibernating = false
     private(set) var runtimeError: WallpaperRuntimeError? {
         didSet {
             guard oldValue != runtimeError else { return }
@@ -43,6 +57,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     init(
         player: WallpaperVideoPlayer,
+        userPauseHibernationDelay: Duration = .seconds(300),
         effectsWorkRevisionProvider: @MainActor @escaping (
             WallpaperVideoPlayer
         ) -> UInt64? = { _ in nil },
@@ -88,6 +103,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     ) {
         self.player = player
+        self.userPauseHibernationDelay = userPauseHibernationDelay
         self.effectsWorkRevisionProvider = effectsWorkRevisionProvider
         self.effectsWorkIsActiveProvider = effectsWorkIsActiveProvider
         self.retireEffectsWork = retireEffectsWork
@@ -108,6 +124,12 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             activity = .error
         } else if player.isPlaying {
             activity = .active
+        } else if player.isRestoringFromHibernation {
+            activity = .restoring
+        } else if userIntendsToPlay {
+            // `isPlaying` mirrors AVPlayer, so "wants to play but isn't" means
+            // policy is holding it — never report that as a user pause.
+            activity = .policySuspended
         } else {
             activity = .paused
         }
@@ -153,20 +175,63 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         currentProfile = profile
         let shouldPlayVideo = userIntendsToPlay && profile == .quality
-        // Manual-pause contract (AVPlayer only); resource fix is for system suspend.
+        // Manual play is the wake trigger, so the override has to go before the
+        // suspend depth below is recomputed.
+        if userIntendsToPlay {
+            isManualPauseHibernating = false
+        }
+        // Particles ride the policy profile only; a manual pause leaves them running.
         player?.setParticleEffectsSuspended(profile == .suspended)
-        // Resource depth only — play/pause above stays the sole owner of intent.
-        player?.setSuspended(profile == .suspended)
+        // Resource depth only — play/pause below stays the sole owner of intent.
+        // A manual pause stays warm for `userPauseHibernationDelay`, after which
+        // `pauseDwell` sets `isManualPauseHibernating` and folds in here.
+        player?.setSuspended(profile == .suspended || isManualPauseHibernating)
+        // After the suspend: the player only arms its own dwell while suspended.
+        player?.setHibernationEligible(
+            absenceHibernationEligible || isManualPauseHibernating
+        )
         if shouldPlayVideo {
             player?.play()
         } else {
             player?.pause()
         }
+        reconcileManualPauseHibernation()
     }
 
     /// Absence-dwell teardown; the player owns the countdown and the still frame.
+    /// A manual-pause hibernation holds eligibility true through an absence-false
+    /// push — the two triggers share the player's single dwell slot.
     func setHibernationEligible(_ eligible: Bool) {
-        player?.setHibernationEligible(eligible)
+        absenceHibernationEligible = eligible
+        player?.setHibernationEligible(eligible || isManualPauseHibernating)
+    }
+
+    /// Second hibernatable class, mirroring `SceneWallpaperSession`: a paused
+    /// wallpaper is not an absence, so it counts down in its own slot and never
+    /// touches the absence one. Called from every profile fold; the dwell's slot
+    /// guard makes repeats idempotent instead of restarting the countdown.
+    private func reconcileManualPauseHibernation() {
+        guard !userIntendsToPlay, player != nil, !isManualPauseHibernating else {
+            pauseDwell.cancel()
+            return
+        }
+        pauseDwell.arm(
+            initial: userPauseHibernationDelay,
+            retry: userPauseHibernationDelay
+        ) { [weak self] in
+            guard let self else { return true }
+            return hibernateForManualPause()
+        }
+    }
+
+    /// Hands the paused player into the deep-hibernation path it already owns;
+    /// the player's own dwell then captures the still frame and releases.
+    private func hibernateForManualPause() -> Bool {
+        guard !userIntendsToPlay, let player else { return true }
+        isManualPauseHibernating = true
+        player.setSuspended(true)
+        player.setHibernationEligible(true)
+        return true
     }
 
     func retry() async {
@@ -276,6 +341,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func cleanup() {
+        pauseDwell.cancel()
         guard let currentPlayer = player else { return }
         // Clear ownership before retirement callback so a
         // re-entrant cleanup remains idempotent. Effects work must be retired

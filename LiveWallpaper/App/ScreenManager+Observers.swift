@@ -145,18 +145,70 @@ extension ScreenManager {
 
     /// Lock screen and display sleep both mean "user is not watching".
     private func setUserAbsence(_ reason: UserAbsenceReason, present: Bool) {
+        guard applyUserAbsenceChange(reason, present: present) else { return }
+        refreshPerformancePolicyForAllScreens()
+    }
+
+    /// Everything `setUserAbsence` does except the policy refresh, so the
+    /// revalidation below can clear a reason from *inside* a refresh without
+    /// recursing back into it. Returns whether the reason set actually changed.
+    @discardableResult
+    private func applyUserAbsenceChange(_ reason: UserAbsenceReason, present: Bool) -> Bool {
         let wasAbsent = isUserAbsent
         let changed = present
             ? userAbsenceReasons.insert(reason).inserted
             : (userAbsenceReasons.remove(reason) != nil)
-        guard changed else { return }
+        guard changed else { return false }
+        if present {
+            absenceMarkedAt[reason] = ContinuousClock.now
+        } else {
+            absenceMarkedAt[reason] = nil
+        }
         if !wasAbsent, isUserAbsent {
             automationOrchestrator.suspendForUserAbsence()
         } else if wasAbsent, !isUserAbsent {
             automationOrchestrator.resumeAfterUserAbsence()
         }
         refreshMonitorOverlayVisibility()
-        refreshPerformancePolicyForAllScreens()
+        return true
+    }
+
+    /// Absence is driven only by OS notifications, with no redundancy: one
+    /// dropped unlock or display wake pins every wallpaper suspended forever,
+    /// unreachable by settings or the play button. This asks an independent
+    /// truth source whether the user is in fact back, and only ever *clears*
+    /// reasons — it can never invent an absence.
+    ///
+    /// Deliberately unequal trust: `CGDisplayIsAsleep` is an unambiguous
+    /// boolean, while a missing `CGSSessionScreenIsLocked` key cannot be told
+    /// apart from a failed read (probe 2026-08-18), so unlocking demands
+    /// corroboration from an active display. System sleep is not revalidated at
+    /// all — the process is suspended through it and always gets its wake.
+    func revalidateUserAbsence() {
+        guard !userAbsenceReasons.isEmpty else { return }
+
+        // A reason recorded moments ago is trusted as-is: `setUserAbsence`
+        // refreshes policy synchronously, so without this the sleep/lock
+        // notification's own refresh would revalidate the absence it just
+        // recorded — and CoreGraphics often has not caught up yet, which would
+        // clear it instantly on every single sleep.
+        func isSettled(_ reason: UserAbsenceReason) -> Bool {
+            guard let marked = absenceMarkedAt[reason] else { return true }
+            return ContinuousClock.now - marked >= absenceRevalidationGrace
+        }
+
+        if userAbsenceReasons.contains(.displaySleep), isSettled(.displaySleep),
+           !userPresenceProbe.isAnyDisplayAsleep() {
+            Logger.notice("Display is awake but absence persisted — clearing stale display-sleep absence", category: .lifecycle)
+            applyUserAbsenceChange(.displaySleep, present: false)
+        }
+
+        if userAbsenceReasons.contains(.screenLocked), isSettled(.screenLocked),
+           userPresenceProbe.screenLockState() == .unlocked,
+           userPresenceProbe.isMainDisplayActive() {
+            Logger.notice("Session reports unlocked but absence persisted — clearing stale lock absence", category: .lifecycle)
+            applyUserAbsenceChange(.screenLocked, present: false)
+        }
     }
 
     private func handleScreenParameterChange() {
@@ -255,7 +307,7 @@ extension ScreenManager {
         applicationRuleActive: Bool,
         frontmostExcluded: Bool
     ) -> WallpaperPerformanceProfile {
-        let profile = WallpaperPolicyEngine.performanceProfile(
+        let decision = WallpaperPolicyEngine.decision(
             inputs: policyInputs(
                 for: screen,
                 applicationRuleActive: applicationRuleActive,
@@ -263,6 +315,8 @@ extension ScreenManager {
             ),
             settings: settings
         )
+        let profile = decision.profile
+        suspendReasonsByScreen[screen.id] = decision.suspendReasons
         screen.runtimeSession?.applyPerformanceProfile(profile)
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.setEnvironmentOverlaySuspended(profile == .suspended, for: screen)
@@ -272,7 +326,7 @@ extension ScreenManager {
         } else {
             suspendedScreenIDs.remove(screen.id)
         }
-        applyAdaptiveFrameRate(to: screen, settings: settings)
+        applyAdaptiveFrameRate(to: screen, settings: settings, throttleReasons: decision.throttleReasons)
         // Deep hibernate is reserved for absence-like suspensions (lock, sleep,
         // full-screen cover/occlusion) — an app-rule or battery pause stays a
         // warm suspend for fast resume. The session owns the dwell countdown.
@@ -310,17 +364,26 @@ extension ScreenManager {
     }
 
     /// Layers the adaptive background frame-rate throttle on top of the binary play/pause profile.
-    private func applyAdaptiveFrameRate(to screen: Screen, settings: GlobalSettings) {
+    private func applyAdaptiveFrameRate(
+        to screen: Screen,
+        settings: GlobalSettings,
+        throttleReasons: Set<WallpaperSuspendReason> = []
+    ) {
         #if !LITE_BUILD
         guard let scene = screen.runtimeSession as? SceneWallpaperSession,
               let controller = scene.frameRateController else {
             adaptiveFrameRateOcclusionThrottled[screen.id] = nil
             return
         }
+        // Heat and memory pressure are safety signals, not preferences: they
+        // throttle even with adaptive FPS switched off. Otherwise turning that
+        // setting off would disable thermal protection along with it, which is
+        // exactly what suspending on `.serious` used to hide.
+        let safetyThrottle = !throttleReasons.isEmpty
         // Setting off must release any live throttle, not only stop computing.
         guard settings.adaptiveFrameRateEnabled else {
             adaptiveFrameRateOcclusionThrottled[screen.id] = nil
-            controller.setAdaptiveFrameRateThrottle(false)
+            controller.setAdaptiveFrameRateThrottle(safetyThrottle)
             return
         }
         let occlusionThrottled = AdaptiveFrameRatePolicy.shouldThrottleForOcclusion(
@@ -334,7 +397,7 @@ extension ScreenManager {
             onBattery: powerMonitor.currentPowerSource.isOnBattery,
             pausesOnBattery: settings.globalPauseOnBattery
         )
-        controller.setAdaptiveFrameRateThrottle(shouldThrottle)
+        controller.setAdaptiveFrameRateThrottle(safetyThrottle || shouldThrottle)
         #endif
     }
 
@@ -351,7 +414,7 @@ extension ScreenManager {
             isApplicationRuleActive: applicationRuleActive,
             thermalState: ProcessInfo.processInfo.thermalState,
             isUserAbsent: isUserAbsent,
-            isUnderMemoryPressure: isUnderMemoryPressure,
+            memoryPressureLevel: memoryPressureLevel,
             isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
             isFrontmostExcludedByRule: frontmostExcluded
         )
@@ -362,6 +425,7 @@ extension ScreenManager {
     }
 
     func refreshPerformancePolicyForAllScreens() {
+        revalidateUserAbsence()
         let settings = SettingsManager.shared.loadGlobalSettings()
         let applicationRuleActive = currentApplicationRuleActive(settings)
         let frontmostExcluded = ApplicationPerformanceRuleEngine.isFrontmostExcluded(for: settings)

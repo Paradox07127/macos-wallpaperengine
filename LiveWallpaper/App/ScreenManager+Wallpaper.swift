@@ -226,18 +226,35 @@ extension ScreenManager {
         }
     }
 
+    /// Whether a toggle should stop this one wallpaper. Intent alone is the
+    /// wrong test: during a safety suspend intent stays true while playback is
+    /// stopped, so the button reads Play — and an intent-only toggle would run
+    /// `pause()`, clearing intent and leaving the wallpaper dead after the
+    /// suspend lifts.
+    static func shouldPauseOnToggle(_ playback: any WallpaperPlaybackControllable) -> Bool {
+        playback.userIntendsToPlay && playback.isPlaying
+    }
+
+    /// Direction for the all-screens toggle: pause only while something is
+    /// genuinely running.
+    static func globalToggleWantsPause(_ controllers: [any WallpaperPlaybackControllable]) -> Bool {
+        controllers.contains(where: shouldPauseOnToggle)
+    }
+
     func togglePlayback() {
         guard hasControllableWallpaperSessions else { return }
 
-        // Decide from user INTENT, not actual playback: a policy-suspended video reads `isPlaying == false` but the user still "intends" to play, so toggling must flip intent, not chase the suppressed state.
-        let anyIntendsToPlay = screens.contains { $0.playbackController?.userIntendsToPlay ?? false }
+        let controllers = screens.compactMap(\.playbackController)
+        let wantsPause = Self.globalToggleWantsPause(controllers)
 
-        Logger.info("Toggling global playback: \(anyIntendsToPlay ? "pausing" : "playing") all videos", category: .videoPlayer)
+        Logger.info("Toggling global playback: \(wantsPause ? "pausing" : "playing") all videos", category: .videoPlayer)
 
-        for screen in screens {
-            guard let playback = screen.playbackController else { continue }
-            if anyIntendsToPlay {
-                playback.pause()
+        for playback in controllers {
+            if wantsPause {
+                // Skip the ones policy is already holding down: pausing them
+                // would clear an intent nothing restores, so they would stay
+                // dead after the suspend lifted.
+                if Self.shouldPauseOnToggle(playback) { playback.pause() }
             } else {
                 playback.play()
             }
@@ -249,7 +266,10 @@ extension ScreenManager {
     /// Per-screen play/pause toggle.
     func togglePlayback(for screen: Screen) {
         guard let playback = screen.playbackController else { return }
-        if playback.userIntendsToPlay {
+        // Matches the button's own label, which is drawn from actual playback:
+        // pause only when something is really running, otherwise play (a no-op
+        // that preserves intent while policy still holds the session down).
+        if playback.userIntendsToPlay, playback.isPlaying {
             playback.pause()
         } else {
             playback.play()

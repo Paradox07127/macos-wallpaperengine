@@ -610,7 +610,8 @@ struct ScreenRow: View {
     private func iconColor(for summary: WallpaperSessionSummary) -> Color {
         switch summary.activity {
         case .active:   return DesignTokens.Colors.Status.active
-        case .paused:   return DesignTokens.Colors.Status.warning
+        case .paused, .policySuspended: return DesignTokens.Colors.Status.warning
+        case .restoring: return DesignTokens.Colors.Status.active
         case .error:    return DesignTokens.Colors.Status.danger
         case .off:      return .secondary
         case .inactive: return .secondary
@@ -622,7 +623,9 @@ struct ScreenRow: View {
         case .html:
             return Text("Web wallpaper active")
         case .video:
-            return summary.activity == .active ? Text("Wallpaper playing") : Text("Wallpaper paused")
+            return summary.activity == .active || summary.activity == .restoring
+                ? Text("Wallpaper playing")
+                : Text("Wallpaper paused")
         case .scene:
             return Text("Scene wallpaper")
         case nil:

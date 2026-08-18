@@ -98,6 +98,23 @@ struct WallpaperStatusAggregatorTests {
         #expect(overview == .paused)
     }
 
+    /// A wallpaper rebuilding after a deep hibernate is coming back, not being
+    /// held down; falling through to `.paused` drew the pause glyph and made
+    /// VoiceOver announce a paused wallpaper mid-restore.
+    @Test("A restoring session reports active, not paused")
+    func restoringSessionReportsActive() {
+        let summaries = [
+            WallpaperSessionSummary(
+                wallpaperType: .video,
+                activity: .restoring,
+                supportsPlaybackControl: true,
+                subtitle: "Demo.mp4"
+            )
+        ]
+
+        #expect(WallpaperStatusAggregator.overview(for: summaries) == .active)
+    }
+
     @Test("No configured sessions reports not configured")
     func noConfiguredSessionsReportsNotConfigured() {
         let summaries = [WallpaperSessionSummary.notConfigured]
@@ -341,8 +358,63 @@ struct MenuBarPlaybackControlTests {
         #expect(playback.pauseCount == 0)
     }
 
-    @Test("Toggle reads intent, not playback: a policy-suspended (intends-to-play) wallpaper pauses")
-    func toggleReadsIntentNotPlaybackState() {
+    /// Regression: the menu bar draws the button from `summary.activity`
+    /// (actual playback) while the toggle decided direction from
+    /// `userIntendsToPlay`. During a safety suspend the button says Play, the
+    /// tap ran `pause()`, and the wallpaper then stayed dead after the
+    /// suspend lifted because intent had been flipped to false.
+    @Test("Tapping play during a policy suspend keeps intent, and playback resumes when it lifts")
+    func playTapDuringPolicySuspendSurvivesAndResumes() {
+        let playback = FakePlaybackController(isPlaying: true)
+        guard let screen = makeScreen(installing: playback) else {
+            Issue.record("No NSScreen available for test")
+            return
+        }
+
+        playback.applyPerformanceProfile(.suspended)
+        #expect(!playback.isPlaying, "Policy suspend should stop visible playback")
+        #expect(playback.userIntendsToPlay, "Policy suspend must not touch user intent")
+
+        // The button reads Play here, so the tap must mean play.
+        makeManager().togglePlayback(for: screen)
+        #expect(playback.userIntendsToPlay, "A tap on a Play-labelled button must not clear intent")
+        #expect(playback.pauseCount == 0)
+
+        playback.applyPerformanceProfile(.quality)
+        #expect(playback.isPlaying, "Playback must resume once the policy suspend lifts")
+    }
+
+    /// Regression: `togglePlayback()` picked its direction globally and then
+    /// applied it to every screen, so one playing wallpaper made the tap pause
+    /// a policy-suspended sibling — clearing its intent and stranding it after
+    /// the suspend lifted. Same failure the per-screen toggle was fixed for.
+    ///
+    /// Driven through the decision helpers rather than two `Screen`s: `Screen.id`
+    /// comes from the panel, so two of them on one `NSScreen` collide, and
+    /// requiring a second physical display would make this vacuous on CI.
+    @Test("Global toggle pauses only what is actually running")
+    func globalTogglePreservesIntentOnSuspendedScreens() {
+        let playing = FakePlaybackController(isPlaying: true)
+        let suspended = FakePlaybackController(isPlaying: false, userIntendsToPlay: true)
+
+        #expect(
+            ScreenManager.globalToggleWantsPause([playing, suspended]),
+            "One genuinely playing wallpaper makes the tap mean pause"
+        )
+        #expect(ScreenManager.shouldPauseOnToggle(playing))
+        #expect(
+            !ScreenManager.shouldPauseOnToggle(suspended),
+            "A screen policy already holds down must keep its intent"
+        )
+
+        // And the direction flips once nothing is really running, so the same
+        // tap on an all-suspended set means play — not another intent-clearing
+        // pause.
+        #expect(!ScreenManager.globalToggleWantsPause([suspended]))
+    }
+
+    @Test("Toggle follows the button label: a policy-suspended wallpaper plays, it does not pause")
+    func toggleFollowsButtonLabelNotIntent() {
         let playback = FakePlaybackController(isPlaying: false, userIntendsToPlay: true)
         guard let screen = makeScreen(installing: playback) else {
             Issue.record("No NSScreen available for test")
@@ -351,9 +423,9 @@ struct MenuBarPlaybackControlTests {
 
         makeManager().togglePlayback(for: screen)
 
-        #expect(!playback.userIntendsToPlay)
-        #expect(playback.pauseCount == 1)
-        #expect(playback.playCount == 0)
+        #expect(playback.userIntendsToPlay)
+        #expect(playback.pauseCount == 0)
+        #expect(playback.playCount == 1)
     }
 }
 
@@ -1113,18 +1185,43 @@ private final class FakePlaybackController: WallpaperPlaybackControllable {
     var playCount = 0
     var pauseCount = 0
 
-    init(isPlaying: Bool, userIntendsToPlay: Bool? = nil) {
+    /// Mirrors the real three-layer fold: visible playback is
+    /// `userIntendsToPlay && policy == .quality`. Without it a fake `play()`
+    /// reports success while policy still has the session pinned down, and no
+    /// test can express "tapped play while suspended".
+    private var policyAllowsPlayback: Bool
+
+    init(isPlaying: Bool, userIntendsToPlay: Bool? = nil, policyAllowsPlayback: Bool? = nil) {
         self.isPlaying = isPlaying
         self.userIntendsToPlay = userIntendsToPlay ?? isPlaying
+        // Default: policy is not suppressing. `isPlaying: false` alone means the
+        // USER paused; only an explicit intends-to-play-but-not-playing pair
+        // describes a policy suspend.
+        self.policyAllowsPlayback = policyAllowsPlayback ?? (isPlaying || !(userIntendsToPlay ?? isPlaying))
     }
 
     var wallpaperType: WallpaperType { .video }
-    var summary: WallpaperSessionSummary { .notConfigured }
+    /// Mirrors `VideoWallpaperSession`'s own three-way: wanting to play without
+    /// playing is policy holding it down, never a user pause. Reporting
+    /// `.notConfigured` here made `hasControllableWallpaperSessions` false, so
+    /// the global toggle returned before doing anything and any test of it
+    /// passed vacuously.
+    var summary: WallpaperSessionSummary {
+        WallpaperSessionSummary(
+            wallpaperType: .video,
+            activity: isPlaying ? .active : (userIntendsToPlay ? .policySuspended : .paused),
+            supportsPlaybackControl: true,
+            subtitle: "Fake"
+        )
+    }
     var videoPlayer: WallpaperVideoPlayer? { nil }
     var wallpaperWindow: NSWindow? { nil }
 
     func show() {}
-    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {}
+    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+        policyAllowsPlayback = profile == .quality
+        isPlaying = userIntendsToPlay && policyAllowsPlayback
+    }
     func updateFrame(to frame: CGRect) {}
     func cleanup() {}
 
@@ -1135,7 +1232,7 @@ private final class FakePlaybackController: WallpaperPlaybackControllable {
     func play() {
         playCount += 1
         userIntendsToPlay = true
-        isPlaying = true
+        isPlaying = policyAllowsPlayback
     }
 
     func pause() {
@@ -1246,7 +1343,7 @@ struct WallpaperPolicyEngineTests {
                     isApplicationRuleActive: appRule,
                     thermalState: thermal,
                     isUserAbsent: userAbsent,
-                    isUnderMemoryPressure: memoryPressure
+                    memoryPressureLevel: memoryPressure ? .critical : .normal
                 ),
                 settings: GlobalSettings(
                     globalPauseOnBattery: true,
@@ -1260,7 +1357,8 @@ struct WallpaperPolicyEngineTests {
         #expect(profile(hidden: true) == .suspended)
         #expect(profile(occluding: true) == .suspended)
         #expect(profile(appRule: true) == .suspended)
-        #expect(profile(thermal: .serious) == .suspended)
+        // `.serious` sheds load instead of stopping; only `.critical` suspends.
+        #expect(profile(thermal: .serious) == .quality)
         #expect(profile(thermal: .critical) == .suspended)
         #expect(profile(powerSource: .battery(level: 50)) == .suspended)
         #expect(profile(userAbsent: true) == .suspended)

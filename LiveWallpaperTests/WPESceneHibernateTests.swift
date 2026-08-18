@@ -389,6 +389,66 @@ struct WPESceneHibernateTests {
         )
     }
 
+    @Test("A wake reload that fails is retried once and heals the session")
+    func failedWakeReloadRetriesAutomatically() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            projectManifestRootURL: fixture.root,
+            dependencyMounts: [],
+            surfaceControl: surface,
+            mailbox: surface.mailbox,
+            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
+            drawableSize: surface.metalLayer.drawableSize,
+            device: device,
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: true
+        )
+        window.isReleasedWhenClosed = false
+        let session = SceneWallpaperSession(
+            window: window,
+            renderActor: actor,
+            surface: surface,
+            audioCaptureDemandController: HibernateStubAudioDemand(),
+            hibernationDelay: .milliseconds(50),
+            wakeRetryDelay: .milliseconds(400)
+        )
+        defer { session.cleanup() }
+        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        try await Self.poll("initial load") {
+            await actor.rendererStateSnapshot()?.isLoaded == true
+        }
+
+        session.applyPerformanceProfile(.suspended)
+        session.setHibernationEligible(true)
+        try await Self.poll("hibernate after dwell") { session.isHibernated }
+
+        // Stashing the entry file makes exactly the wake reload fail; the wake
+        // has no user behind it, so without a retry the session stays dead.
+        let entry = fixture.root.appendingPathComponent("scene.json")
+        let stash = fixture.root.appendingPathComponent("scene.json.stashed")
+        try FileManager.default.moveItem(at: entry, to: stash)
+        session.applyPerformanceProfile(.quality)
+        try await Self.poll("wake reload fails") { session.loadError != nil }
+        try FileManager.default.moveItem(at: stash, to: entry)
+
+        try await Self.poll("automatic retry heals the session") {
+            guard session.loadError == nil else { return false }
+            return await actor.rendererStateSnapshot()?.isLoaded == true
+        }
+        #expect(!session.isHibernated)
+    }
+
     // MARK: - Helpers
 
     private static func poll(

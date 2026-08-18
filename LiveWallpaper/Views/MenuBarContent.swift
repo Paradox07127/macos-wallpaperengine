@@ -353,6 +353,16 @@ struct MenuBarContent: View {
     }
 
     private func displaySource(for screen: Screen, summary: WallpaperSessionSummary) -> String {
+        // A system suspension outranks the wallpaper's name here: the name is
+        // already visible elsewhere, while "why did it stop" is the question
+        // the user actually has, and the play button cannot answer it.
+        if summary.activity == .policySuspended,
+           let reason = SuspendReasonText.localized(
+               for: screenManager.suspendReasonsByScreen[screen.id] ?? []
+           ) {
+            return reason
+        }
+
         if summary.wallpaperType == .video,
            let name = screenManager.currentVideoDisplayName(for: screen),
            !name.isEmpty {
@@ -389,6 +399,10 @@ struct MenuBarContent: View {
             return .active
         case .paused:
             return .paused
+        case .policySuspended:
+            return .policySuspended
+        case .restoring:
+            return .restoring
         case .off:
             return .off
         case .error:
@@ -519,11 +533,16 @@ private enum DisplayVisualState: Equatable {
     case off
     case error
     case inactive
+    /// Held down by system policy rather than by the user.
+    case policySuspended
+    /// Rebuilding after a deep hibernate.
+    case restoring
 
     var tint: Color {
         switch self {
         case .active:   return DesignTokens.Colors.Status.active
-        case .paused:   return DesignTokens.Colors.Status.warning
+        case .paused, .policySuspended: return DesignTokens.Colors.Status.warning
+        case .restoring: return DesignTokens.Colors.Status.active
         case .off:      return .secondary
         case .error:    return DesignTokens.Colors.Status.danger
         case .inactive: return .secondary
@@ -536,6 +555,10 @@ private enum DisplayVisualState: Equatable {
             return AppLanguagePreference.localizedString("active")
         case .paused:
             return AppLanguagePreference.localizedString("paused")
+        case .policySuspended:
+            return AppLanguagePreference.localizedString("Paused by system")
+        case .restoring:
+            return AppLanguagePreference.localizedString("Restoring")
         case .off:
             return AppLanguagePreference.localizedString("off")
         case .error:
