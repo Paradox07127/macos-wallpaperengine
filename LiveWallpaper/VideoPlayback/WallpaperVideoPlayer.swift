@@ -300,7 +300,6 @@ final class WallpaperVideoPlayer {
                     try await self.installPreparedPlayback(
                         asset: asset,
                         loader: nil,
-                        bufferDuration: Self.inMemoryBufferDuration,
                         generation: generation,
                         timer: timer,
                         url: url
@@ -348,35 +347,16 @@ final class WallpaperVideoPlayer {
                     Logger.debug("Video frame rate: \(self.videoFrameRate) FPS", category: .videoPlayer)
                 }
 
-                let cmDuration: CMTime?
-                do {
-                    let loadedDuration = try await asset.load(.duration)
-                    try self.ensureLifecycleActive(generation)
-                    cmDuration = loadedDuration
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-                    try self.ensureLifecycleActive(generation)
-                    cmDuration = nil
-                }
-                let durationSeconds = Self.usableDuration(from: cmDuration)
-
                 let activeAsset: AVURLAsset
                 let loader: InMemoryVideoAssetLoader?
-                let bufferDuration: TimeInterval
 
                 if let packagedLoader {
                     // Package path always windowed mmap — skip size-based memory decision.
                     activeAsset = asset
                     loader = packagedLoader
-                    bufferDuration = Self.inMemoryBufferDuration
                 } else {
                     let fileSize = Self.fileSize(of: url)
                     let memoryCached = Self.shouldUseInMemoryCache(fileSize: fileSize)
-                    // In-RAM path uses a flat short buffer, not duration×bitrate.
-                    bufferDuration = memoryCached
-                        ? Self.inMemoryBufferDuration
-                        : Self.bufferDuration(forDuration: durationSeconds)
 
                     if memoryCached {
                         do {
@@ -420,7 +400,6 @@ final class WallpaperVideoPlayer {
                 try await self.installPreparedPlayback(
                     asset: activeAsset,
                     loader: loader,
-                    bufferDuration: bufferDuration,
                     generation: generation,
                     timer: timer,
                     url: url
@@ -558,7 +537,6 @@ final class WallpaperVideoPlayer {
     private func installPreparedPlayback(
         asset: AVURLAsset,
         loader: InMemoryVideoAssetLoader?,
-        bufferDuration: TimeInterval,
         generation: UInt64,
         timer: PerformanceTimer,
         url: URL
@@ -566,11 +544,7 @@ final class WallpaperVideoPlayer {
         try ensureLifecycleActive(generation)
         currentLoadingAsset = asset
         inMemoryAssetLoader = loader
-        configurePlaybackComponents(
-            with: asset,
-            bufferDuration: bufferDuration,
-            generation: generation
-        )
+        configurePlaybackComponents(with: asset, generation: generation)
         try ensureLifecycleActive(generation)
         timer.checkpoint("Playback configured")
 
@@ -602,12 +576,6 @@ final class WallpaperVideoPlayer {
         currentLoadingAsset = nil
     }
     
-    /// Cap full-buffer mode; longer clips fall back to 5s (avoids multi-GB buffers).
-    private static let fullBufferCapSeconds: TimeInterval = 60
-
-    /// In-memory path buffer: 5s decoder headroom (bytes already mmap'd).
-    private static let inMemoryBufferDuration: TimeInterval = 5
-
     /// Resource-loader callbacks off main (byte-range / Data copies).
     private static let resourceLoaderQueue = DispatchQueue(
         label: "app.livewallpaper.video.in-memory-loader",
@@ -652,38 +620,18 @@ final class WallpaperVideoPlayer {
         return fileSize <= budget
     }
 
-    /// Loop wrap headroom for full-buffer mode (looper cross-fades past duration).
-    private static let bufferSafetyMargin: TimeInterval = 2
-
-    private static func usableDuration(from cmTime: CMTime?) -> TimeInterval {
-        guard let cmTime, cmTime.isValid, !cmTime.isIndefinite else { return 0 }
-        let seconds = cmTime.seconds
-        guard seconds.isFinite, seconds > 0 else { return 0 }
-        return seconds
-    }
-
-    private static func bufferDuration(forDuration durationSeconds: TimeInterval) -> TimeInterval {
-        guard durationSeconds > 0 else { return 5 }
-        if durationSeconds <= fullBufferCapSeconds {
-            return durationSeconds + bufferSafetyMargin
-        }
-        return 5
-    }
-
-    private func configurePlaybackComponents(
-        with asset: AVURLAsset,
-        bufferDuration: TimeInterval,
-        generation: UInt64
-    ) {
+    private func configurePlaybackComponents(with asset: AVURLAsset, generation: UInt64) {
         guard isLifecycleActive(generation) else { return }
         let playerItem = AVPlayerItem(asset: asset)
 
-        playerItem.preferredForwardBufferDuration = bufferDuration
+        // No `preferredForwardBufferDuration`: measured inert here (unset / 5s / 32s
+        // gave the same footprint, swing, delivered bytes and request count on both
+        // the file-URL and the lwmem path once the resource declares on-demand
+        // availability). The duration probe that used to size it went with it.
         // Local sources: skip composition seek waits and remote stall heuristics.
         playerItem.seekingWaitsForVideoCompositionRendering = false
         playerItem.audioTimePitchAlgorithm = .timeDomain
         playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = false
-        Logger.debug("Forward buffer hint: \(String(format: "%.1f", bufferDuration))s", category: .videoPlayer)
 
         applyAudioPolicy(to: playerItem)
 

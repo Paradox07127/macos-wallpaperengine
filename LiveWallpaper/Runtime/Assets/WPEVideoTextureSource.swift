@@ -143,7 +143,9 @@ final class WPEVideoTextureSource {
         }
 
         let playerItem = AVPlayerItem(asset: asset)
-        playerItem.preferredForwardBufferDuration = Self.bufferHintSeconds
+        // No forward-buffer hint: measured inert on this path (unset / 2s / 32s
+        // gave the same footprint, swing, frame delivery, request count and byte
+        // volume across three loops), same as the wallpaper player.
         playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = false
 
         let queuePlayer = AVQueuePlayer()
@@ -646,8 +648,6 @@ final class WPEVideoTextureSource {
     }
 
     /// 2s forward buffer (RAM-resident asset; longer buffers only cost decoder state).
-    private static let bufferHintSeconds: TimeInterval = 2
-
     /// Decoder-native NV12 first (video then full range) with a 32BGRA tail:
     /// AVFoundation picks the closest match to the source, so 8-bit SDR lands
     /// on the biplanar path and sources NV12 cannot represent (alpha video)
