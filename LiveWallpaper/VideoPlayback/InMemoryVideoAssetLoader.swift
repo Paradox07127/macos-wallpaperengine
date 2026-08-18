@@ -14,7 +14,31 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
     private let windowStart: Int
     private let windowLength: Int
 
+    /// `.mappedIfSafe` is advisory: Foundation refuses to map files on network and
+    /// removable volumes and silently reads them onto the heap instead, which
+    /// turns "serve it from a mapping" into "hold the whole file as dirty memory"
+    /// — the case the cache budget exists to avoid. Same predicate and same
+    /// reasoning as `WPEPackageSceneAssetProvider.isPackageVolumeMappable`.
+    static func isVolumeMappable(_ url: URL) -> Bool {
+        guard let values = try? url.resourceValues(
+            forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]
+        ) else {
+            // Unknown volume: keep the mapping path rather than silently
+            // changing behaviour for ordinary local libraries.
+            return true
+        }
+        return (values.volumeIsLocal ?? true) && !(values.volumeIsRemovable ?? false)
+    }
+
     static func load(from url: URL) throws -> (loader: InMemoryVideoAssetLoader, customURL: URL) {
+        // Both callers treat a throw here as "use the plain file URL instead",
+        // which is the right answer when the bytes would land on the heap anyway.
+        guard isVolumeMappable(url) else {
+            throw NSError(domain: "InMemoryVideoAssetLoader", code: 415, userInfo: [
+                NSLocalizedDescriptionKey:
+                    "\(url.lastPathComponent) is on a volume Foundation will not memory-map"
+            ])
+        }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         let mime = mimeType(forPathExtension: url.pathExtension)
         let loader = InMemoryVideoAssetLoader(

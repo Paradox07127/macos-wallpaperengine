@@ -135,6 +135,17 @@ struct InMemoryVideoAssetLoaderRangeTests {
         #expect(range.isEmpty)
     }
 
+    /// An inverted predicate here would silently push every ordinary local video
+    /// onto the streaming path, which nothing else would catch.
+    @Test("An ordinary local file counts as mappable")
+    func localFileIsMappable() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("lwmem-volume-probe.bin")
+        try Data(repeating: 0, count: 1024).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(InMemoryVideoAssetLoader.isVolumeMappable(url))
+    }
+
     /// `offset &+ requestedLength` used to wrap negative here, which made the
     /// chunk loop serve zero bytes and then finish — the same truncation.
     @Test("A length that overflows the offset falls back to the end of the window")
