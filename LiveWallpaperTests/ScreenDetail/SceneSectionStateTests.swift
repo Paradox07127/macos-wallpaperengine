@@ -8,13 +8,6 @@ import Testing
 @Suite("SceneSection state machine")
 struct WPESceneSectionStateTests {
 
-    @Test("idle and loading states compare independently of associated values")
-    func idleLoadingEquality() {
-        #expect(SceneRenderState.idle == SceneRenderState.idle)
-        #expect(SceneRenderState.loading == SceneRenderState.loading)
-        #expect(SceneRenderState.idle != SceneRenderState.loading)
-    }
-
     @Test("every state equals itself")
     func equalityIsReflexive() {
         // A hand-written `==` that forgot `.notRendering` made it unequal to

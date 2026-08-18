@@ -35,6 +35,31 @@ struct WPETexLazyAnimatedTextureSourceTests {
         ])
     }
 
+    @Test("A suspended profile drops upload slots but keeps decoded bytes")
+    func suspendedReleasesWorkingSlotsKeepingDecodedBytes() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let source = try WPETexLazyAnimatedTextureSource(
+            payload: makeStreamingPayload(),
+            device: device,
+            label: "lazy-suspend"
+        )
+
+        _ = try #require(source.texture(at: 0.0))
+        #expect(source.debugResidentWorkingTextureCount > 0)
+        let decodedBefore = source.debugDecodedImageCacheIDs
+        #expect(!decodedBefore.isEmpty)
+
+        source.applyPerformanceProfile(.suspended)
+        #expect(source.debugResidentWorkingTextureCount == 0)
+        // Warm suspend: app-rule and battery pauses resume fast, so the decoded
+        // bytes survive and only the upload targets are dropped.
+        #expect(source.debugDecodedImageCacheIDs == decodedBefore)
+
+        let resumed = try #require(source.texture(at: 0.0))
+        #expect(resumed.width == 2)
+        #expect(source.debugResidentWorkingTextureCount > 0)
+    }
+
     @Test("Frame index respects per-frame durations and looping")
     func frameIndexRespectsDurationsAndLooping() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
