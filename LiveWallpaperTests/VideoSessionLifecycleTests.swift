@@ -1450,12 +1450,197 @@ struct VideoSessionLifecycleTests {
         #expect(player.currentPlaybackSpeed == 2.0)
     }
 
+    // MARK: - Manual-pause deep hibernation (parity with SceneWallpaperSession)
+
+    @Test("A manual pause deep-hibernates after its dwell and play rebuilds the player")
+    func manualPauseHibernatesAfterDwellAndPlayRestores() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4()
+        let player = WallpaperVideoPlayer(
+            url: url,
+            frame: CGRect(x: 0, y: 0, width: 128, height: 128),
+            hibernationDelay: .milliseconds(80)
+        )
+        let session = VideoWallpaperSession(
+            player: player,
+            userPauseHibernationDelay: .milliseconds(120)
+        )
+        defer {
+            session.cleanup()
+            try? FileManager.default.removeItem(at: url)
+        }
+        try await Self.waitForCondition("player enqueues its first item") {
+            player.player?.currentItem != nil
+        }
+        #expect(player.hasInMemoryAssetLoaderForTesting)
+
+        session.pause()
+        // The dwell has not run yet: a pause the user may undo immediately stays warm.
+        #expect(!player.isSuspended)
+        #expect(!player.isHibernated)
+
+        try await Self.waitForCondition("manual pause hibernates the player") {
+            player.isHibernated
+        }
+        #expect(player.player == nil)
+        #expect(!player.hasInMemoryAssetLoaderForTesting)
+        #expect(player.boundVideoOutputCountForTesting == 0)
+        // Released behind a still frame, not to a black desktop.
+        #expect(player.isShowingHibernationStillFrameForTesting)
+        #expect(player.hasInstalledPlaybackWindow)
+
+        session.play()
+
+        #expect(!player.isHibernated)
+        try await Self.waitForCondition("play rebuilds the player") {
+            player.player?.currentItem != nil
+        }
+        #expect(player.hasInMemoryAssetLoaderForTesting)
+        try await Self.waitForCondition("the still frame is retired after the wake") {
+            !player.isShowingHibernationStillFrameForTesting
+        }
+    }
+
+    /// The absence signal and the manual pause share the player's single dwell
+    /// slot, so the session has to hold eligibility and suspend depth true across
+    /// both an absence-false push and a `.quality` policy refresh.
+    @Test("Neither an absence-false push nor a quality refresh cancels a manual-pause hibernation")
+    func manualPauseHibernationSurvivesAbsenceAndPolicyPushes() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4()
+        let player = WallpaperVideoPlayer(
+            url: url,
+            frame: CGRect(x: 0, y: 0, width: 128, height: 128),
+            hibernationDelay: .milliseconds(600)
+        )
+        let session = VideoWallpaperSession(
+            player: player,
+            userPauseHibernationDelay: .milliseconds(60)
+        )
+        defer {
+            session.cleanup()
+            try? FileManager.default.removeItem(at: url)
+        }
+        try await Self.waitForCondition("player enqueues its first item") {
+            player.player?.currentItem != nil
+        }
+
+        session.pause()
+        // Synchronise on the suspend rather than on the clock: it flips exactly
+        // when the manual-pause dwell hands the player over, which leaves the
+        // player's own (long) dwell still counting down underneath.
+        try await Self.waitForCondition("manual pause suspends the player") {
+            player.isSuspended
+        }
+        #expect(!player.isHibernated)
+
+        // `ScreenManager.resolveAndApplyPerformanceState` order: the profile
+        // first, the absence push last — so the eligibility fold is the one that
+        // has to survive, not just the profile fold.
+        session.applyPerformanceProfile(.quality)
+        session.setHibernationEligible(false)
+
+        #expect(player.isSuspended)
+        try await Self.waitForCondition("the player still hibernates") {
+            player.isHibernated
+        }
+        #expect(player.player == nil)
+        #expect(!session.userIntendsToPlay)
+    }
+
+    private static func waitForCondition(
+        _ description: String,
+        timeout: Duration = .seconds(10),
+        _ condition: @MainActor () -> Bool
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        Issue.record("Timed out waiting for: \(description)")
+        throw ManualPauseVideoFixture.FixtureError.setupFailed(description)
+    }
+
     private static func waitUntil(_ predicate: @MainActor () -> Bool) async -> Bool {
         for _ in 0..<200 {
             if predicate() { return true }
             await Task.yield()
         }
         return predicate()
+    }
+}
+
+/// A tiny real MP4. The deep-hibernation path needs a live `AVQueuePlayer` and a
+/// still-frame capture, so a nonexistent URL cannot exercise it.
+private enum ManualPauseVideoFixture {
+    static func writeMP4(durationSeconds: TimeInterval = 1.5) async throws -> URL {
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("manual-pause-hibernate-\(UUID().uuidString).mp4")
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        let width = 128
+        let height = 128
+        let frameRate: Int32 = 30
+        let input = AVAssetWriterInput(
+            mediaType: .video,
+            outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: width,
+                AVVideoHeightKey: height
+            ]
+        )
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: input,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height
+            ]
+        )
+        guard writer.canAdd(input) else { throw FixtureError.setupFailed("cannot add input") }
+        writer.add(input)
+        guard writer.startWriting() else {
+            throw FixtureError.setupFailed(writer.error?.localizedDescription ?? "startWriting failed")
+        }
+        writer.startSession(atSourceTime: .zero)
+
+        let totalFrames = max(2, Int(Double(frameRate) * durationSeconds))
+        for index in 0 ..< totalFrames {
+            while !input.isReadyForMoreMediaData { await Task.yield() }
+            var pixelBuffer: CVPixelBuffer?
+            let status = CVPixelBufferCreate(
+                kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, nil, &pixelBuffer
+            )
+            guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
+                throw FixtureError.setupFailed("CVPixelBufferCreate returned \(status)")
+            }
+            CVPixelBufferLockBaseAddress(buffer, [])
+            memset(
+                CVPixelBufferGetBaseAddress(buffer),
+                Int32(40 + (index * 7) % 180),
+                CVPixelBufferGetBytesPerRow(buffer) * height
+            )
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+            guard adaptor.append(
+                buffer,
+                withPresentationTime: CMTime(value: Int64(index), timescale: frameRate)
+            ) else {
+                throw FixtureError.setupFailed(writer.error?.localizedDescription ?? "append failed")
+            }
+        }
+        input.markAsFinished()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writer.finishWriting { continuation.resume() }
+        }
+        guard writer.status == .completed else {
+            throw FixtureError.setupFailed(
+                writer.error?.localizedDescription ?? "status \(writer.status.rawValue)"
+            )
+        }
+        return outputURL
+    }
+
+    enum FixtureError: Error {
+        case setupFailed(String)
     }
 }
 

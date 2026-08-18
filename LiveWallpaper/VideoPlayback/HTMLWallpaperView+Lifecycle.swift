@@ -486,8 +486,12 @@ extension HTMLWallpaperView {
         switch thermalState {
         case .nominal: 1
         case .fair: 2
-        case .serious, .critical: 1
-        @unknown default: 1
+        // Was 1 (full speed) back when `.serious` suspended the wallpaper
+        // outright, so the ratio never applied. Now that serious only throttles,
+        // running faster than `.fair` while hotter would invert the whole point.
+        case .serious: 4
+        case .critical: 4
+        @unknown default: 4
         }
     }
 
@@ -502,3 +506,5 @@ extension HTMLWallpaperView {
 }
 
 extension HTMLWallpaperView: HTMLWallpaperRetrying {}
+
+extension HTMLWallpaperView: WallpaperHibernationEligible {}

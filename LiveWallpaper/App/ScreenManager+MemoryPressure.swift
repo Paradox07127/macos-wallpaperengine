@@ -20,7 +20,7 @@ extension ScreenManager {
 
     private func applyMemoryPressureLevel(_ level: SystemMemoryPressureLevel) {
         guard !isTerminating else { return }
-        setMemoryPressure(level != .normal)
+        setMemoryPressure(level)
         #if !LITE_BUILD
         // Critical pressure skips the hibernate dwell: the refresh above has
         // already suspended every session, so release scene renderer resources
@@ -35,15 +35,13 @@ extension ScreenManager {
         #endif
     }
 
-    /// Suspends all wallpaper types while memory pressure holds without changing
-    /// the user's play/pause intent, then restores the prior policy when it clears.
-    private func setMemoryPressure(_ active: Bool) {
-        guard isUnderMemoryPressure != active else { return }
-        isUnderMemoryPressure = active
-        Logger.notice(
-            active ? "Memory pressure: suspending wallpapers" : "Memory pressure cleared: restoring wallpapers",
-            category: .memory
-        )
+    /// Records the graded level without changing the user's play/pause intent.
+    /// `warning` throttles and `critical` suspends — the grading itself lives in
+    /// `WallpaperPolicyEngine`, which this only feeds.
+    private func setMemoryPressure(_ level: SystemMemoryPressureLevel) {
+        guard memoryPressureLevel != level else { return }
+        memoryPressureLevel = level
+        Logger.notice("Memory pressure level: \(level.rawValue)", category: .memory)
         refreshPerformancePolicyForAllScreens()
     }
 }

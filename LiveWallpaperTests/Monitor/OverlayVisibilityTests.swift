@@ -308,7 +308,13 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
             monitor,
             from: "private func mutateMonitorOverlays("
         )
+        // The side effects moved into the shared applier so revalidation can
+        // clear a reason from inside a policy refresh without recursing.
         let absence = try sourceBlock(
+            observers,
+            from: "private func applyUserAbsenceChange("
+        )
+        let absenceEntryPoint = try sourceBlock(
             observers,
             from: "private func setUserAbsence("
         )
@@ -360,6 +366,8 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         #expect(overlayLevel.contains("mutateMonitorOverlays("))
         #expect(overlayWriter.contains("scheduleMonitorOverlayReconcile()"))
         #expect(overlayWriter.contains("SettingsManager.shared.saveMonitorOverlays("))
+        #expect(absenceEntryPoint.contains("applyUserAbsenceChange(reason, present: present)"))
+        #expect(absenceEntryPoint.contains("refreshPerformancePolicyForAllScreens()"))
         #expect(absence.contains("refreshMonitorOverlayVisibility()"))
         #expect(absence.contains("automationOrchestrator.suspendForUserAbsence()"))
         #expect(absence.contains("automationOrchestrator.resumeAfterUserAbsence()"))

@@ -162,6 +162,9 @@ final class WallpaperVideoPlayer {
     /// from "not hibernated".
     private var hibernation = HibernationPhase()
     var isHibernated: Bool { hibernation.phase == .hibernated }
+    /// Rebuilding behind the still frame after a wake. Callers report this
+    /// instead of a pause: the wallpaper is coming back, not being held down.
+    var isRestoringFromHibernation: Bool { hibernation.phase == .restoring }
     private var isHibernationEligible = false
     private let hibernationDelay: Duration
     private let hibernationDwell = AbsenceDwell()

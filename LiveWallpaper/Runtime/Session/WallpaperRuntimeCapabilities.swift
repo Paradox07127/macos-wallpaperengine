@@ -20,6 +20,13 @@ protocol WallpaperAudioConfigurable: AnyObject {
     func setAudioVolume(_ volume: Double)
 }
 
+/// Runtimes that own a deep-hibernate teardown behind their own dwell, so the
+/// session can drive eligibility without casting to a concrete view type.
+@MainActor
+protocol WallpaperHibernationEligible: AnyObject {
+    func setHibernationEligible(_ eligible: Bool)
+}
+
 @MainActor
 protocol WallpaperResourceCleanable: AnyObject {
     func cleanup()

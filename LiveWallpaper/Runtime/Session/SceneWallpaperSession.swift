@@ -97,6 +97,11 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// reusing the absence constant. Wake is a normal reload; seconds of latency
     /// on unpause are accepted.
     private let userPauseHibernationDelay: Duration
+    /// Wake is the one load the user never triggered, so a failure there has no
+    /// one to press retry: it looks like the wallpaper just died on unlock.
+    /// Video (`stillFrameWakeDeadlineSeconds`) and HTML (`restoreCoverDeadline`)
+    /// both force themselves back to live on a deadline; this is Scene's.
+    private let wakeRetryDelay: Duration
     private let absenceDwell = AbsenceDwell()
     private let pauseDwell = AbsenceDwell()
     private let pressureDwell = AbsenceDwell()
@@ -154,7 +159,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         surface: WPERenderSurface,
         audioCaptureDemandController: any SystemAudioCaptureDemandControlling = SystemAudioCaptureManager.shared,
         hibernationDelay: Duration = .seconds(20),
-        userPauseHibernationDelay: Duration = .seconds(300)
+        userPauseHibernationDelay: Duration = .seconds(300),
+        wakeRetryDelay: Duration = .seconds(10)
     ) {
         self.window = window
         self.renderActor = renderActor
@@ -163,6 +169,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         self.audioCaptureDemandController = audioCaptureDemandController
         self.hibernationDelay = hibernationDelay
         self.userPauseHibernationDelay = userPauseHibernationDelay
+        self.wakeRetryDelay = wakeRetryDelay
     }
 
     private var effectivePerformanceProfile: WallpaperPerformanceProfile {
@@ -179,7 +186,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         if loadError != nil {
             activity = .error
         } else if effectivePerformanceProfile == .suspended {
-            activity = .paused
+            // Still intending to play means something else is holding it down.
+            activity = userIntendsToPlay ? .policySuspended : .paused
         } else {
             activity = .active
         }
@@ -360,11 +368,36 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             // Rebuild everything hibernate dropped; the profile command above
             // (or the load tail's re-apply) restores pacing once loaded.
             wakeTask = Task { [weak self] in
-                await self?.reload()
+                await self?.reloadForWake()
             }
         }
         reconcileManualPauseHibernation()
         reconcileSystemAudioCaptureDemand()
+    }
+
+    /// Wake reload plus one delayed retry. Bounded at two attempts: a scene that
+    /// fails twice is failing for a reason waiting cannot fix, and the inspector's
+    /// manual retry stays the escape hatch.
+    private func reloadForWake() async {
+        await reload()
+        guard loadError != nil else { return }
+        do {
+            try await Task.sleep(for: wakeRetryDelay)
+        } catch {
+            return
+        }
+        // Give up if the wallpaper stopped being wanted while we waited (paused
+        // again, policy re-suspended, session torn down) — or if a manual retry
+        // already healed it. Giving up while still broken has to restore the
+        // hibernated flag: the wake path is gated on it, so leaving it false
+        // would make every later play a no-op and strand the scene in
+        // `loadError` with no automatic way back.
+        guard hasRenderer, effectivePerformanceProfile == .quality, loadError != nil else {
+            if hasRenderer, loadError != nil { isHibernated = true }
+            return
+        }
+        await reload()
+        if loadError != nil { isHibernated = true }
     }
 
     // MARK: - Deep hibernate (resource depth of the suspend path, not a profile)

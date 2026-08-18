@@ -16,11 +16,23 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         }
     }
     var onRuntimeErrorChange: (@MainActor () -> Void)?
+    /// Manual pause is not an absence: the user may unpause any moment, so it
+    /// gets its own much longer dwell instead of reusing the view's absence
+    /// constant. Matches `SceneWallpaperSession.userPauseHibernationDelay`.
+    private let userPauseHibernationDelay: Duration
+    /// Own slot: the view has a single dwell slot fed by absence pushes, so the
+    /// manual-pause countdown has to live where `userIntendsToPlay` is known.
+    private let pauseDwell = AbsenceDwell()
+    /// The two eligibility inputs are folded before reaching the view, so an
+    /// absence `false` push cannot cancel a manual-pause hibernation.
+    private var absenceHibernationEligible = false
+    private var manualPauseHibernationRequested = false
 
     init(
         window: NSWindow,
         wallpaperType: WallpaperType,
-        performanceTarget: (any WallpaperPerformanceConfigurable)?
+        performanceTarget: (any WallpaperPerformanceConfigurable)?,
+        userPauseHibernationDelay: Duration = .seconds(300)
     ) {
         precondition(wallpaperType != .video, "AmbientWallpaperSession only supports non-video wallpapers")
         // Avoid NSWindow default isReleasedWhenClosed over-release on cleanup close.
@@ -28,14 +40,17 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         self.window = window
         self.wallpaperType = wallpaperType
         self.performanceTarget = performanceTarget
+        self.userPauseHibernationDelay = userPauseHibernationDelay
     }
 
     var summary: WallpaperSessionSummary {
         let activity: WallpaperSessionActivity
         if runtimeError != nil {
             activity = .error
-        } else if currentProfile == .suspended || !userIntendsToPlay {
+        } else if !userIntendsToPlay {
             activity = .paused
+        } else if currentProfile == .suspended {
+            activity = .policySuspended
         } else {
             activity = .active
         }
@@ -85,12 +100,43 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         let effective: WallpaperPerformanceProfile =
             (userIntendsToPlay && profile == .quality) ? .quality : .suspended
         performanceTarget?.applyPerformanceProfile(effective)
+        reconcileManualPauseHibernation()
     }
 
     /// Absence-dwell teardown for HTML wallpapers; the view owns the countdown,
     /// the snapshot cover, and the `about:blank` swap.
     func setHibernationEligible(_ eligible: Bool) {
-        (performanceTarget as? HTMLWallpaperView)?.setHibernationEligible(eligible)
+        absenceHibernationEligible = eligible
+        pushHibernationEligibility()
+    }
+
+    private func pushHibernationEligibility() {
+        (performanceTarget as? any WallpaperHibernationEligible)?
+            .setHibernationEligible(absenceHibernationEligible || manualPauseHibernationRequested)
+    }
+
+    /// Second hibernatable class: the view only ever sees the folded
+    /// `.suspended` profile and cannot tell a manual pause from a policy
+    /// suspend, so the countdown belongs here, next to `userIntendsToPlay`.
+    private func reconcileManualPauseHibernation() {
+        guard !userIntendsToPlay else {
+            pauseDwell.cancel()
+            guard manualPauseHibernationRequested else { return }
+            manualPauseHibernationRequested = false
+            pushHibernationEligibility()
+            return
+        }
+        // Called from every profile fold; the dwell's single slot makes the
+        // repeats idempotent instead of restarting the countdown.
+        pauseDwell.arm(
+            initial: userPauseHibernationDelay,
+            retry: userPauseHibernationDelay
+        ) { [weak self] in
+            guard let self, !userIntendsToPlay else { return true }
+            manualPauseHibernationRequested = true
+            pushHibernationEligibility()
+            return true
+        }
     }
 
     func retry() async {
@@ -135,6 +181,7 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     }
 
     func cleanup() {
+        pauseDwell.cancel()
         performanceTarget?.applyPerformanceProfile(.suspended)
         (performanceTarget as? any WallpaperResourceCleanable)?.cleanup()
         window?.close()

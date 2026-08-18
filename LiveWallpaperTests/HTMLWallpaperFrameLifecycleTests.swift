@@ -454,3 +454,150 @@ struct HTMLWallpaperHibernationStateTests {
         #expect(state.coverDidPresent(true, generation: staleGeneration) == nil)
     }
 }
+
+// MARK: - Manual-pause deep hibernation (parity with the scene session)
+
+/// Records what the session pushes down to the HTML runtime. The view's own
+/// dwell/cover/teardown are exercised by `HTMLWallpaperHibernationStateTests`;
+/// what is under test here is which eligibility the session folds and when.
+@MainActor
+private final class RecordingHibernationTarget:
+    WallpaperPerformanceConfigurable,
+    WallpaperHibernationEligible
+{
+    private(set) var appliedProfiles: [WallpaperPerformanceProfile] = []
+    private(set) var eligibilityPushes: [Bool] = []
+
+    var lastEligibility: Bool? { eligibilityPushes.last }
+
+    func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
+        appliedProfiles.append(profile)
+    }
+
+    func setHibernationEligible(_ eligible: Bool) {
+        eligibilityPushes.append(eligible)
+    }
+}
+
+@MainActor
+private struct ManualPauseHarness {
+    let target: RecordingHibernationTarget
+    let session: AmbientWallpaperSession
+
+    init(userPauseHibernationDelay: Duration) {
+        let target = RecordingHibernationTarget()
+        self.target = target
+        session = AmbientWallpaperSession(
+            window: NSWindow(),
+            wallpaperType: .html,
+            performanceTarget: target,
+            userPauseHibernationDelay: userPauseHibernationDelay
+        )
+    }
+
+    static func poll(
+        _ what: String,
+        timeout: Duration = .seconds(3),
+        _ condition: @MainActor () -> Bool
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("timed out waiting for \(what)")
+    }
+}
+
+@MainActor
+@Suite("HTML manual-pause hibernation")
+struct HTMLManualPauseHibernationTests {
+
+    @Test("A manual pause makes the HTML runtime hibernation-eligible after its own dwell")
+    func manualPauseBecomesEligibleAfterDwell() async throws {
+        let harness = ManualPauseHarness(userPauseHibernationDelay: .milliseconds(60))
+        defer { harness.session.cleanup() }
+
+        harness.session.pause()
+
+        #expect(harness.target.appliedProfiles.last == .suspended)
+        #expect(harness.target.lastEligibility == nil, "the dwell has not elapsed yet")
+        try await ManualPauseHarness.poll("eligibility after the pause dwell") {
+            harness.target.lastEligibility == true
+        }
+    }
+
+    @Test("Routine absence-ineligibility pushes cannot cancel the manual-pause hibernation")
+    func absenceIneligibilityDoesNotCancelManualPause() async throws {
+        let harness = ManualPauseHarness(userPauseHibernationDelay: .milliseconds(60))
+        defer { harness.session.cleanup() }
+
+        harness.session.pause()
+        // Every policy refresh pushes absence ineligibility for a non-absent
+        // manual pause; the view has one dwell slot, so the fold happens here.
+        harness.session.setHibernationEligible(false)
+        try await ManualPauseHarness.poll("eligibility after the pause dwell") {
+            harness.target.lastEligibility == true
+        }
+
+        harness.session.setHibernationEligible(false)
+
+        #expect(harness.target.lastEligibility == true)
+    }
+
+    @Test("Unpausing before the dwell elapses cancels it")
+    func unpauseBeforeDwellCancels() async throws {
+        let harness = ManualPauseHarness(userPauseHibernationDelay: .milliseconds(60))
+        defer { harness.session.cleanup() }
+
+        harness.session.pause()
+        harness.session.play()
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(!harness.target.eligibilityPushes.contains(true))
+        #expect(harness.target.appliedProfiles.last == .quality)
+    }
+
+    @Test("Unpausing a hibernated wallpaper drops the eligibility and resumes it")
+    func unpauseAfterHibernationRestores() async throws {
+        let harness = ManualPauseHarness(userPauseHibernationDelay: .milliseconds(60))
+        defer { harness.session.cleanup() }
+
+        harness.session.pause()
+        try await ManualPauseHarness.poll("eligibility after the pause dwell") {
+            harness.target.lastEligibility == true
+        }
+
+        harness.session.play()
+
+        #expect(harness.target.lastEligibility == false)
+        // Resume is the view's normal restore path (reload + cover deadline).
+        #expect(harness.target.appliedProfiles.last == .quality)
+        #expect(harness.session.isPlaying)
+    }
+
+    @Test("A pause still inside its dwell stays resident")
+    func pauseWithinDwellStaysResident() async throws {
+        // Control for the short-dwell tests: they would also pass if the
+        // countdown fired immediately.
+        let harness = ManualPauseHarness(userPauseHibernationDelay: .seconds(3600))
+        defer { harness.session.cleanup() }
+
+        harness.session.pause()
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(!harness.target.eligibilityPushes.contains(true))
+    }
+
+    @Test("A policy suspend with play intent never arms the pause dwell")
+    func policySuspendDoesNotArmPauseDwell() async throws {
+        let harness = ManualPauseHarness(userPauseHibernationDelay: .milliseconds(60))
+        defer { harness.session.cleanup() }
+
+        harness.session.applyPerformanceProfile(.suspended)
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(harness.session.userIntendsToPlay)
+        #expect(!harness.target.eligibilityPushes.contains(true))
+    }
+}

@@ -57,9 +57,17 @@ final class ScreenManager {
     }
     /// Reasons the user is not watching the desktop.
     @ObservationIgnored var userAbsenceReasons: Set<UserAbsenceReason> = []
+    @ObservationIgnored let userPresenceProbe: any UserPresenceProbing
+    @ObservationIgnored let absenceRevalidationGrace: Duration
+    /// When each reason was recorded, for the revalidation grace period.
+    @ObservationIgnored var absenceMarkedAt: [UserAbsenceReason: ContinuousClock.Instant] = [:]
     var isUserAbsent: Bool { !userAbsenceReasons.isEmpty }
     /// Feeds memory pressure into the performance policy without changing user playback intent.
-    @ObservationIgnored var isUnderMemoryPressure = false
+    @ObservationIgnored var memoryPressureLevel = SystemMemoryPressureLevel.normal
+    /// Why each screen is suspended, for the UI to explain itself.
+    var suspendReasonsByScreen: [CGDirectDisplayID: Set<WallpaperSuspendReason>] = [:]
+    /// Kept as the coarse "not normal" question several call sites still ask.
+    var isUnderMemoryPressure: Bool { memoryPressureLevel != .normal }
     /// Coordinates per-screen playback configuration mutations + transition tokens.
     @ObservationIgnored lazy var playbackCoordinator = PlaybackCoordinator(
         configurationStore: configurationStore,
@@ -313,6 +321,8 @@ final class ScreenManager {
         fullScreenDetector = startupOptions.fullScreenDetector ?? FullScreenDetector()
         playableVideoLoader = startupOptions.playableVideoLoader ?? PlayableVideoLoader()
         memoryPressureWatcher = startupOptions.memoryPressureWatcher
+        userPresenceProbe = startupOptions.userPresenceProbe
+        absenceRevalidationGrace = startupOptions.absenceRevalidationGrace
         restoresSavedWallpapersOnScreenRefresh = startupOptions.restoreSavedWallpapers
 
         Logger.notice("ScreenManager initializing", category: .screenManager)

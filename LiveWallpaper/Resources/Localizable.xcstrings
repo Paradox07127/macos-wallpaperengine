@@ -29426,6 +29426,156 @@
         }
       }
     },
+    "Paused by a per-app rule" : {
+      "comment" : "Suspension caused by a user-configured application rule; user can change it in settings",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused by a per-app rule"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリ別ルールにより一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已按应用规则暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已依應用程式規則暫停"
+          }
+        }
+      }
+    },
+    "Paused by system" : {
+      "comment" : "Wallpaper status: stopped by system policy (heat, memory, a rule) rather than by the user",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused by system"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムにより一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统已暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統已暫停"
+          }
+        }
+      }
+    },
+    "Paused in Low Power Mode" : {
+      "comment" : "Suspension caused by the pause-in-low-power-mode setting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused in Low Power Mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低電力モードでは一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低电量模式下已暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低耗電模式下已暫停"
+          }
+        }
+      }
+    },
+    "Paused on battery" : {
+      "comment" : "Suspension caused by the pause-on-battery setting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused on battery"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッテリー駆動中は一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用电池时已暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用電池時已暫停"
+          }
+        }
+      }
+    },
+    "Paused while covered" : {
+      "comment" : "Suspension caused by the full-screen or window-occlusion settings",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused while covered"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覆われている間は一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "被遮挡时已暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "被遮擋時已暫停"
+          }
+        }
+      }
+    },
     "Pauses video playback" : {
       "comment" : "A11y hint for playback toggle when playing.",
       "localizations" : {
@@ -34296,6 +34446,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將 %@ 上的播放、色彩、粒子、音訊與版面設定恢復為預設。桌布本身、播放清單書籤與媒體庫項目保留。"
+          }
+        }
+      }
+    },
+    "Restoring" : {
+      "comment" : "Wallpaper status: rebuilding resources released by a deep hibernate; it is coming back, not paused",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restoring"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復元中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在恢复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在恢復"
           }
         }
       }
@@ -42175,6 +42355,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統位置"
+          }
+        }
+      }
+    },
+    "System resources are tight — playback resumes automatically" : {
+      "comment" : "Explains a heat or memory suspension the user cannot turn off",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System resources are tight — playback resumes automatically"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムリソースが逼迫しています。回復後に自動で再開します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统资源紧张，恢复后将自动继续播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統資源緊張，恢復後將自動繼續播放"
           }
         }
       }

@@ -44,6 +44,14 @@ struct ScreenManagerStartupOptions: Equatable {
     /// Tests/previews remain inert unless they explicitly inject a watcher. The
     /// production app startup plan supplies the single app-lifetime authority.
     var memoryPressureWatcher: any MemoryPressureWatching = InactiveMemoryPressureWatcher.shared
+    /// Second opinion used to clear a stale absence when an OS wake/unlock
+    /// notification never arrives. Injectable so tests can drive lock state.
+    var userPresenceProbe: any UserPresenceProbing = SystemUserPresenceProbe.shared
+    /// How long a freshly recorded absence is left alone before the probe is
+    /// allowed to second-guess it. OS notifications can beat the CoreGraphics
+    /// state they describe, so revalidating immediately would clear the very
+    /// absence the notification just established.
+    var absenceRevalidationGrace: Duration = .seconds(10)
     /// SKU-driven feature toggles. Every production, test, and preview caller
     /// must explicitly choose Lite, Pro, or the fail-closed unconfigured state.
     var featureCatalog: FeatureCatalog
