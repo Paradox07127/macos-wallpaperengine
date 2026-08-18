@@ -52,11 +52,17 @@ is separate and only appears when you open the Workshop page
 
 ## Updates
 
-Both editions check the GitHub Releases API once per launch, throttled to 12
-hours — no background polling. When a newer version exists you'll see a banner in
-**Settings → About**, where you can also **Check Now** or **Skip this version**.
-Lite and Pro ship in the same release, so the banner opens that release page and
-you pick the DMG you're running.
+Both editions check the GitHub Releases API at launch and whenever you open the
+menu bar popover, throttled to 12 hours — no background polling. When a newer
+version exists, two places say so and both open the same release page:
+
+- an **Update** button in the menu bar popover, left of the on/off switch;
+- a banner in **Settings → About**, where you can also **Check Now** or
+  **Skip this version**.
+
+Skipping a version there hides it in both places — they read the same check.
+Lite and Pro ship in the same release, so the page you land on carries both DMGs
+and you pick the one you're running.
 
 Updating is a manual download-and-replace: drag the new **Loomscreen.app** into
 `/Applications` and repeat the `xattr` step once. No build auto-installs updates.

@@ -11,6 +11,7 @@
 
 - **菜单栏**（`LiveWallpaper/Views/MenuBarContent.swift`）
   - 快速添加壁纸、总开关。
+  - 总开关左边的 **Update** 按钮，只在有新版本时出现。
   - 每台显示器一行：状态、播放/暂停、上一张/下一张（播放列表模式）、音量。
   - 实时占用条（CPU / GPU / 内存 / 温度压力）。
   - 管理、通用设置、全部重新加载、退出。
@@ -119,10 +120,12 @@ Retina 物理像素布局、临时存储（创意工坊导入强制开启）、C
 
 ## 7）更新（两个版本）
 
-`LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` —— 启动时查一次 GitHub
-Releases，12 小时节流，失败后退避 1 小时，支持跳过某个版本。已做加固：仅限受信主机、
+`LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` —— 启动时以及打开菜单栏
+弹窗时查一次 GitHub Releases，12 小时节流，失败后退避 1 小时，支持跳过某个版本。已做加固：仅限受信主机、
 响应体上限 512 KB、发布说明截断、URL 白名单。它只会打开 Releases 页面——不会自动安装
-任何东西。
+任何东西。两处界面读的是同一个共享 checker —— **设置 → 关于**的横幅和菜单栏的
+**Update** 按钮 —— 所以跳过某个版本在两处一起生效；`UpdateSurfaceOwnershipTests`
+钉住了"两边都不许自己造一个 checker"。
 
 这个检查刻意与 SKU 无关：它拿 `CFBundleShortVersionString` 与最新 release 的 **tag**
 比较，从不看 asset，所以同一个挂着两个 DMG 的 release 能同时服务两个版本。也正因为要

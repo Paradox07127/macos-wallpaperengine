@@ -14,9 +14,35 @@ struct BugReport: Identifiable, Sendable {
 enum BugReporter {
     /// Hardcoded rather than read from a build setting because the issue URL
     /// must survive even if `Bundle` lookups fail.
-    private static let issueTemplateURL = URL(
-        string: "https://github.com/Paradox07127/macos-wallpaperengine/issues/new?template=bug_report.yml"
-    ) ?? URL(fileURLWithPath: "/")
+    private static let newIssueURLString = "https://github.com/Paradox07127/macos-wallpaperengine/issues/new"
+
+    /// File names under `.github/ISSUE_TEMPLATE/`. `BugReporterTemplateTests`
+    /// checks both still exist, because a renamed template fails as a GitHub
+    /// 404 long after the rename, with nothing on this side to notice.
+    static let englishTemplateName = "bug_report.yml"
+    static let simplifiedChineseTemplateName = "bug_report_zh.yml"
+
+    /// Which template the in-app report opens.
+    ///
+    /// Simplified Chinese is the only language with a form of its own, so it is
+    /// the only one that gets it; Traditional Chinese and Japanese readers land
+    /// on the English form because that is the only other one that exists.
+    /// Following the app's own language rather than the system's matters when
+    /// someone has overridden it — the form should match the UI they are
+    /// describing.
+    static func issueTemplateName(
+        preference: AppLanguagePreference = .current,
+        systemLocalizations: [String] = Bundle.main.preferredLocalizations
+    ) -> String {
+        let language = preference == .system ? systemLocalizations.first : preference.rawValue
+        return language == AppLanguagePreference.simplifiedChinese.rawValue
+            ? simplifiedChineseTemplateName
+            : englishTemplateName
+    }
+
+    private static func issueTemplateURL(named template: String) -> URL {
+        URL(string: "\(newIssueURLString)?template=\(template)") ?? URL(fileURLWithPath: "/")
+    }
 
     /// How many recent warning/error lines we lift from the runtime log into the markdown preview.
     private static let recentLogLineCount = 5
@@ -34,7 +60,7 @@ enum BugReporter {
         )
         return BugReport(
             diagnosticMarkdown: markdown,
-            issueURL: makeIssueURL(prefilledBody: markdown),
+            issueURL: makeIssueURL(prefilledBody: markdown, template: issueTemplateName()),
             logFileURL: Logger.persistentLogFileURL,
             logFileExists: logFileExists()
         )
@@ -120,13 +146,14 @@ enum BugReporter {
 
     // MARK: - GitHub URL
 
-    private static func makeIssueURL(prefilledBody: String) -> URL {
-        var components = URLComponents(url: issueTemplateURL, resolvingAgainstBaseURL: false)
+    private static func makeIssueURL(prefilledBody: String, template: String) -> URL {
+        let templateURL = issueTemplateURL(named: template)
+        var components = URLComponents(url: templateURL, resolvingAgainstBaseURL: false)
             ?? URLComponents()
         var items = components.queryItems ?? []
         items.append(URLQueryItem(name: "body", value: prefilledBody))
         components.queryItems = items
-        return components.url ?? issueTemplateURL
+        return components.url ?? templateURL
     }
 
     // MARK: - Runtime log scan

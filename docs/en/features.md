@@ -11,6 +11,7 @@ Authoritative capability gate: [`ProductCapabilities.swift`](../../Packages/Live
 
 - **Menu bar** (`LiveWallpaper/Views/MenuBarContent.swift`)
   - Quick-add wallpaper, global on/off toggle.
+  - **Update** button, left of the toggle, only while a newer release is available.
   - Per-display rows: status, play/pause, prev/next (playlist mode), volume.
   - Live usage strip (CPU / GPU / RAM / thermal pressure).
   - Manage, General Settings, reload-all, quit.
@@ -143,10 +144,12 @@ occlusion, battery, Low Power Mode, per-app rules).
 ## 7) Updates (both editions)
 
 `LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` — GitHub Releases
-check at launch, 12-hour throttle, 1-hour failure backoff, skip-a-version
-support. Hardened: trusted host only, 512 KB response cap, release-notes
+check at launch and on opening the menu bar popover, 12-hour throttle, 1-hour
+failure backoff, skip-a-version support. Hardened: trusted host only, 512 KB response cap, release-notes
 truncation, URL allowlisting. It only opens the Releases page — nothing
-auto-installs.
+auto-installs. Two surfaces read the one shared checker — the **Settings →
+About** banner and the menu bar **Update** button — so a skipped version is
+skipped in both; `UpdateSurfaceOwnershipTests` pins that neither builds its own.
 
 The check is deliberately SKU-agnostic: it compares `CFBundleShortVersionString`
 against the newest release **tag** and never looks at assets, so one release

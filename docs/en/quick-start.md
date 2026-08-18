@@ -65,10 +65,12 @@ toggle mouse interaction, show/hide all wallpapers, reload all wallpapers.
 
 The Steam Workshop page needs one-time setup, guided in-app:
 
-1. Open **Steam Workshop** in the sidebar — the **Steam connection** page lists each prerequisite and offers auto-configuration.
+1. Open **Settings → Workshop**. A status bar across the top of the page shows where each of the three prerequisites stands, and the **Steam connection** section below lists them step by step and offers auto-configuration.
 2. **SteamCMD** — downloads run through Valve's command-line tool using your own
    Steam account; accounts with a cached login are discovered and offered
-   automatically. Three ways to get the tool, all on the Steam connection page:
+   automatically. Three ways to get the tool, all on the **SteamCMD** row —
+   the button is the common one for your current state, the `⋯` menu beside it
+   holds the rest:
    - **Install SteamCMD…** — Loomscreen installs a managed copy. It fetches
      Valve's package manifest, checks every download against the manifest's
      SHA-256, unpacks it, and keeps the result only if the binary's code

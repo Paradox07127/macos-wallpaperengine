@@ -1,0 +1,86 @@
+name: 问题反馈（简体中文）
+description: 反馈 Loomscreen / Loomscreen Pro 的问题。For English, use the "Bug report (English)" template.
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你花时间反馈问题！提交之前请先：
+        - 搜一下[已有 issue](https://github.com/Paradox07127/macos-wallpaperengine/issues?q=is%3Aissue)——你遇到的问题可能已经在跟进了。
+        - 如果你是从应用内的**报告问题…**（设置 → 关于，或设置 → 高级）打开这个模板的，诊断信息已经自动贴在正文里了。请再补上**发生了什么**和**复现步骤**再提交。
+
+        用中文写就行，维护者看得懂。
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我搜过已有 issue，没有找到重复的。
+          required: true
+        - label: 我用的是最新发布版本（或者是我愿意在下面说明版本号的开发构建）。
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么？
+      description: 清楚、简短地描述这个问题。
+      placeholder: 描述一下——你看到了什么？你本来期待看到什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 每一步都编上号，让别人能照着走一遍。
+      placeholder: |
+        1. 打开 设置 → 创意工坊
+        2. 点 SteamCMD 那一行的「自动查找」
+        3. ……
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: 应用版本
+      description: 从诊断信息里看，或者 设置 → 关于（例如 `0.5.4 (1)`）。
+      placeholder: "0.5.4 (1)"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS 版本
+      description: 从诊断信息里看，或者  → 关于本机。
+      placeholder: "15.2 (24C101)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sku
+    attributes:
+      label: 版本（SKU）
+      options:
+        - Pro
+        - Lite
+        - 不确定
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        **说明：** 从应用内的**报告问题…**打开这个模板时，正文顶部会预填一段 `<details>` 诊断信息和复现步骤大纲。你可以原样保留、自行编辑，也可以删掉——文件路径和 `/Users/<用户名>` 这类片段已经做过脱敏，但提交前还是请自己再看一眼。
+
+  - type: textarea
+    id: log-file
+    attributes:
+      label: 运行日志
+      description: 可选，但很有帮助。应用内的报告问题界面里有「在访达中显示」可以找到 `runtime.log`，把文件拖进这个输入框就能附上。
+      placeholder: 把 runtime.log 拖到这里。

@@ -1,5 +1,5 @@
-name: Bug report
-description: Report a problem with Loomscreen (or Loomscreen Pro)
+name: Bug report (English)
+description: Report a problem with Loomscreen (or Loomscreen Pro). 中文请用「问题反馈（简体中文）」模板。
 title: "[Bug] "
 labels: ["bug", "triage"]
 body:
@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for taking the time to file a bug! Before submitting:
         - Search [existing issues](https://github.com/Paradox07127/macos-wallpaperengine/issues?q=is%3Aissue) — your bug may already be tracked.
-        - If you opened this template from the in-app **Report a Bug…** sheet, the diagnostic snapshot is already pasted below. Please add **What happened?** and **Steps to reproduce** before posting.
+        - If you opened this template from the in-app **Report a Bug…** sheet (Settings → About, or Settings → Advanced), the diagnostic snapshot is already pasted below. Please add **What happened?** and **Steps to reproduce** before posting.
 
   - type: checkboxes
     id: prerequisites
@@ -35,8 +35,8 @@ body:
       label: Steps to reproduce
       description: Number each step so someone else can follow.
       placeholder: |
-        1. Open Settings → General → Troubleshooting
-        2. Click "Report a Bug"
+        1. Open Settings → Workshop
+        2. Click "Locate automatically" on the SteamCMD row
         3. ...
     validations:
       required: true
@@ -45,8 +45,8 @@ body:
     id: app-version
     attributes:
       label: App version
-      description: From the diagnostic snapshot or About menu (e.g. `0.1.0 (1)`).
-      placeholder: "0.1.0 (1)"
+      description: From the diagnostic snapshot, or Settings → About (e.g. `0.5.4 (1)`).
+      placeholder: "0.5.4 (1)"
     validations:
       required: true
 
