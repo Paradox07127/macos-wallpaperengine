@@ -10,10 +10,7 @@ struct ModuleImportBoundaryTests {
 
         var actual: Set<String> = []
         for file in sources {
-            let relativePath = file.path.replacingOccurrences(
-                of: RepositoryRoot.url.path + "/",
-                with: ""
-            )
+            let relativePath = RepositoryRoot.relativePath(of: file)
             let source = try String(contentsOf: file, encoding: .utf8)
             for rawLine in source.split(separator: "\n", omittingEmptySubsequences: false) {
                 let line = rawLine.trimmingCharacters(in: .whitespaces)
