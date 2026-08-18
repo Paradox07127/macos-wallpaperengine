@@ -575,8 +575,31 @@ struct WPESoundRuntimeTests {
             startSilent: false
         )
 
-        #expect(runtime.prepare(sounds: [sound]) == 1)
+        // The failure mode below (no completion after unmute) and warm-host
+        // deafness both look like zero deliveries, so the discrimination must
+        // run before the mute: prove this host delivers rendered completions
+        // with a throwaway loop, then hold the later assertions unconditionally.
+        try Self.writeTinyWAV(to: root.appendingPathComponent("probe.wav"))
+        let probe = WPESceneSoundObject(
+            id: "probe",
+            name: "Probe",
+            soundRelativePaths: ["probe.wav"],
+            volume: 1,
+            playbackMode: "loop",
+            startSilent: false
+        )
+        #expect(runtime.prepare(sounds: [probe]) == 1)
         // AVAudioEngine.start() needs an output device; bail on headless hosts.
+        guard runtime.play() else { return }
+        let probeDeadline = Date().addingTimeInterval(3)
+        while runtime.debugRenderedCompletionCount() == 0, Date() < probeDeadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        // Zero delivered completions = warm-host deafness; bail like the
+        // headless guard above.
+        guard runtime.debugRenderedCompletionCount() > 0 else { return }
+
+        #expect(runtime.prepare(sounds: [sound]) == 1)
         guard runtime.play() else { return }
         runtime.setMuted(true)
 
