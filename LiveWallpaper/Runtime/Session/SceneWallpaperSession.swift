@@ -52,7 +52,7 @@ final class WPERendererConfigAdapter: WallpaperPerformanceConfigurable, Wallpape
 /// `WallpaperRuntimeSession` adapter over a per-display render actor (not the bare renderer).
 /// Frame-config is fire-and-forget; present/diagnostics are polled for the inspector.
 @MainActor
-final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable {
+final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
     let wallpaperType: WallpaperType = .scene
 
     private var window: NSWindow?
@@ -113,8 +113,12 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// working" so the App Nap gate errs on holding.
     private(set) var rendererRuntimeActivity: WPESceneRuntimeActivity?
     var onRuntimeActivityChange: (@MainActor () -> Void)?
-    /// Durable user play intent; effective = `userIntendsToPlay && profile == .quality`.
-    private(set) var userIntendsToPlay = true
+    /// Single source of truth for durable user play intent; effective =
+    /// `userIntendsToPlay && profile == .quality`. Self-built so an
+    /// independently constructed session stands alone; `ScreenManager` swaps in
+    /// the screen's shared machine via `adoptPlaybackStateMachine` on install.
+    private var playbackMachine = WallpaperPlaybackStateMachine()
+    var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
     private var didStartLoad = false
     private var loadTask: Task<Void, Never>?
     /// The controlled startup task (renderer adopt → initial load). Session-owned
@@ -204,13 +208,24 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func play() {
-        userIntendsToPlay = true
+        playbackMachine.userPlay()
         applyEffectivePerformanceProfile()
     }
 
     func pause() {
-        userIntendsToPlay = false
+        playbackMachine.userPause()
         applyEffectivePerformanceProfile()
+    }
+
+    func adoptPlaybackStateMachine(_ machine: WallpaperPlaybackStateMachine) {
+        if machine.userIntendsToPlay != playbackMachine.userIntendsToPlay {
+            if playbackMachine.userIntendsToPlay {
+                machine.userPlay()
+            } else {
+                machine.userPause()
+            }
+        }
+        playbackMachine = machine
     }
 
     var videoPlayer: WallpaperVideoPlayer? { nil }

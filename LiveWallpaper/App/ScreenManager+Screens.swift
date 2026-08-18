@@ -155,6 +155,7 @@ extension ScreenManager {
         transitionRegistry.cancelAssetReadiness(for: screen.id)
         setTransientRuntimeError(nil, for: screen.id)
         screen.resetRuntimeSession()
+        resetPlaybackStateMachine(for: screen)
         playbackCoordinator.refreshVideoAudioLeadership()
         // Refresh HTML audio leadership after tearing down a leader session.
         htmlCoordinator.refreshAudioLeadership()

@@ -442,6 +442,7 @@ extension PlaybackCoordinator {
                         )
                     }
                     self.reportRuntimeError(screenID, nil)
+                    self.resetPlaybackStateMachine(liveScreen)
                     self.applyPolicy(liveScreen)
                     self.syncVideoAudioLeadership()
                     self.refreshOtherAudioLeadership()

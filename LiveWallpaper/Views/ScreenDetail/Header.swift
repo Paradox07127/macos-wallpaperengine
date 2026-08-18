@@ -41,7 +41,7 @@ struct Header: View {
                                     options: .continuouslyRepeating,
                                     isActive: !reduceMotion && wallpaperSessionSummary.activity == .active
                                 )
-                            Text(sessionStatusText)
+                            sessionStatusText
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -119,15 +119,26 @@ struct Header: View {
         }
     }
 
-    private var sessionStatusText: LocalizedStringKey {
+    private var sessionStatusText: Text {
         switch wallpaperSessionSummary.activity {
-        case .active:   return "Playing"
-        case .paused:   return "Paused"
-        case .policySuspended: return "Paused by system"
-        case .restoring: return "Restoring"
-        case .off:      return "Off"
-        case .error:    return "Error"
-        case .inactive: return "Not configured"
+        case .active:   return Text("Playing")
+        case .paused:   return Text("Paused")
+        case .policySuspended:
+            // Gate on the wording, not the reason set: a pure-absence set is
+            // non-empty but has no user-visible text (nobody is watching), so
+            // it must fall back rather than render an empty string.
+            if let text = SuspendReasonText.localized(
+                for: screenManager.suspendReasonsByScreen[screen.id] ?? []
+            ) {
+                // Already localized via AppLanguagePreference; verbatim avoids
+                // a second catalog lookup with the translated string as key.
+                return Text(verbatim: text)
+            }
+            return Text("Paused by system")
+        case .restoring: return Text("Restoring")
+        case .off:      return Text("Off")
+        case .error:    return Text("Error")
+        case .inactive: return Text("Not configured")
         }
     }
 

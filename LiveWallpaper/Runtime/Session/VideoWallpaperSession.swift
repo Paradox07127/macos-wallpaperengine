@@ -2,7 +2,7 @@ import AppKit
 import LiveWallpaperCore
 
 @MainActor
-final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable {
+final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
     typealias RetryPlayerFactory = @MainActor (
         URL,
         CGRect,
@@ -24,8 +24,12 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         WallpaperVideoPlayer
     ) -> Bool
     private let retireEffectsWork: @MainActor (WallpaperVideoPlayer) -> Void
-    /// Session-durable user play intent (policy suspend never clears it).
-    private(set) var userIntendsToPlay = true
+    /// Single source of truth for session-durable user play intent (policy
+    /// suspend never clears it). Self-built so an independently constructed
+    /// session stands alone; `ScreenManager` swaps in the screen's shared
+    /// machine via `adoptPlaybackStateMachine` on install.
+    private var playbackMachine = WallpaperPlaybackStateMachine()
+    var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
     /// Last policy profile; manual play re-derives effective state from this + intent.
     private var currentProfile: WallpaperPerformanceProfile = .quality
     /// Manual pause is not an absence: the user may unpause any moment, so it
@@ -158,13 +162,24 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func play() {
-        userIntendsToPlay = true
+        playbackMachine.userPlay()
         applyPerformanceProfile(currentProfile)
     }
 
     func pause() {
-        userIntendsToPlay = false
+        playbackMachine.userPause()
         applyPerformanceProfile(currentProfile)
+    }
+
+    func adoptPlaybackStateMachine(_ machine: WallpaperPlaybackStateMachine) {
+        if machine.userIntendsToPlay != playbackMachine.userIntendsToPlay {
+            if playbackMachine.userIntendsToPlay {
+                machine.userPlay()
+            } else {
+                machine.userPause()
+            }
+        }
+        playbackMachine = machine
     }
 
     func show() {
