@@ -38,7 +38,7 @@
 
 | Problem | Check | Fix |
 |---|---|---|
-| Downloads fail | SteamCMD state, Steam login | Open the **Steam connection** page in the Workshop sidebar — it diagnoses SteamCMD, accounts, and engine assets, and can auto-configure |
+| Downloads fail | SteamCMD state, Steam login | Open **Settings → Workshop** — the **Steam connection** section diagnoses the Steam library, SteamCMD, and your account, and can auto-configure. Expand **Diagnostics** in that section for the individual probes |
 | **Install SteamCMD…** fails | The failure message names the step: manifest fetch, download, checksum, or signature | A rejected checksum or signature means the download wasn't Valve's — retry rather than working around it. Your previous setup is rolled back, not left broken. If it keeps failing, install SteamCMD yourself and use **Locate automatically** |
 | A SteamCMD you picked stops working | It's re-verified on **every** run, not only when you chose it — an upgrade that changed its signature will be rejected | Re-pick it with **Choose SteamCMD…**, or switch to a managed install |
 | Browse shows nothing | Steam Web API key set? | Add one in **Settings → Workshop** (free at steamcommunity.com/dev/apikey) |
