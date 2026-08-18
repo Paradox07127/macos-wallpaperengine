@@ -66,6 +66,34 @@ final class ScreenManager {
     @ObservationIgnored var memoryPressureLevel = SystemMemoryPressureLevel.normal
     /// Why each screen is suspended, for the UI to explain itself.
     var suspendReasonsByScreen: [CGDirectDisplayID: Set<WallpaperSuspendReason>] = [:]
+    /// One machine per screen — the single source of truth for user play
+    /// intent. Installed sessions adopt it via `WallpaperIntentMachineAdopting`
+    /// and write intent through their own `play()/pause()`; policy refreshes
+    /// feed it the decision and take `suspendReasonsByScreen` from its outputs.
+    @ObservationIgnored private var playbackStateMachines: [CGDirectDisplayID: WallpaperPlaybackStateMachine] = [:]
+
+    func playbackStateMachine(for screenID: CGDirectDisplayID) -> WallpaperPlaybackStateMachine {
+        if let machine = playbackStateMachines[screenID] { return machine }
+        let machine = WallpaperPlaybackStateMachine()
+        playbackStateMachines[screenID] = machine
+        return machine
+    }
+
+    /// Session install/replace/release must not leak the previous session's
+    /// intent into the machine: drop the entry (lazy rebuild intends to play,
+    /// matching every fresh session), hand the fresh machine to a session that
+    /// adopts it as its intent source, and re-sync if a non-adopting session
+    /// disagrees.
+    func resetPlaybackStateMachine(for screen: Screen) {
+        playbackStateMachines.removeValue(forKey: screen.id)
+        guard let playback = screen.playbackController else { return }
+        let machine = playbackStateMachine(for: screen.id)
+        if let adopting = playback as? any WallpaperIntentMachineAdopting {
+            adopting.adoptPlaybackStateMachine(machine)
+        } else if !playback.userIntendsToPlay {
+            machine.userPause()
+        }
+    }
     /// Kept as the coarse "not normal" question several call sites still ask.
     var isUnderMemoryPressure: Bool { memoryPressureLevel != .normal }
     /// Coordinates per-screen playback configuration mutations + transition tokens.
@@ -122,6 +150,9 @@ final class ScreenManager {
         },
         releaseRuntimeSession: { [weak self] screen in
             self?.releaseRuntimeSession(screen)
+        },
+        resetPlaybackStateMachine: { [weak self] screen in
+            self?.resetPlaybackStateMachine(for: screen)
         },
         notifyWallpaperSessionChanged: { [weak self] in
             self?.notifyWallpaperSessionChanged()

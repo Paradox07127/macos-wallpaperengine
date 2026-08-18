@@ -42,6 +42,9 @@ final class PlaybackCoordinator {
     let markSessionStateChanged: @MainActor () -> Void
     /// Owned by ScreenManager so the session lifecycle stays single-source.
     let releaseRuntimeSession: @MainActor (Screen) -> Void
+    /// A committed session replacement must reset the per-screen playback
+    /// state machine, or the outgoing session's intent would leak into it.
+    let resetPlaybackStateMachine: @MainActor (Screen) -> Void
     let notifyWallpaperSessionChanged: @MainActor () -> Void
     /// Reconciles non-video audio ownership after a cross-type commit.
     let refreshOtherAudioLeadership: @MainActor () -> Void
@@ -85,6 +88,7 @@ final class PlaybackCoordinator {
         screensProvider: @MainActor @escaping () -> [Screen],
         markSessionStateChanged: @MainActor @escaping () -> Void,
         releaseRuntimeSession: @MainActor @escaping (Screen) -> Void,
+        resetPlaybackStateMachine: @MainActor @escaping (Screen) -> Void = { _ in },
         notifyWallpaperSessionChanged: @MainActor @escaping () -> Void,
         refreshOtherAudioLeadership: @MainActor @escaping () -> Void = {},
         reportRuntimeError: @MainActor @escaping (CGDirectDisplayID, WallpaperRuntimeError?) -> Void = { _, _ in },
@@ -117,6 +121,7 @@ final class PlaybackCoordinator {
         self.screensProvider = screensProvider
         self.markSessionStateChanged = markSessionStateChanged
         self.releaseRuntimeSession = releaseRuntimeSession
+        self.resetPlaybackStateMachine = resetPlaybackStateMachine
         self.notifyWallpaperSessionChanged = notifyWallpaperSessionChanged
         self.refreshOtherAudioLeadership = refreshOtherAudioLeadership
         self.notifyConfigurationChanged = notifyConfigurationChanged

@@ -44,6 +44,15 @@ protocol HTMLWallpaperRetrying: AnyObject {
     func retryCurrentSource(timeout: Duration) async -> WallpaperPreparationResult
 }
 
+/// Sessions that can swap their self-built intent machine for the screen's
+/// shared one at install time. Adoption syncs the incoming machine to the
+/// session's current intent before the reference swap, so an install/replace
+/// never rewrites user intent.
+@MainActor
+protocol WallpaperIntentMachineAdopting: AnyObject {
+    func adoptPlaybackStateMachine(_ machine: WallpaperPlaybackStateMachine)
+}
+
 @MainActor
 protocol WallpaperPlaybackControllable: WallpaperRuntimeSession {
     var isPlaying: Bool { get }

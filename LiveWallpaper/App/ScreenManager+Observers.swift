@@ -316,7 +316,12 @@ extension ScreenManager {
             settings: settings
         )
         let profile = decision.profile
-        suspendReasonsByScreen[screen.id] = decision.suspendReasons
+        // Feed the screen's machine — the same instance the installed session
+        // adopted as its intent source — and take the reasons from its outputs,
+        // so the UI's explanation can never drift from what sessions act on.
+        suspendReasonsByScreen[screen.id] = playbackStateMachine(for: screen.id)
+            .policyChanged(decision)
+            .suspendReasons
         screen.runtimeSession?.applyPerformanceProfile(profile)
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.setEnvironmentOverlaySuspended(profile == .suspended, for: screen)

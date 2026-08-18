@@ -249,12 +249,15 @@ extension ScreenManager {
 
         Logger.info("Toggling global playback: \(wantsPause ? "pausing" : "playing") all videos", category: .videoPlayer)
 
-        for playback in controllers {
+        for screen in screens {
+            guard let playback = screen.playbackController else { continue }
             if wantsPause {
                 // Skip the ones policy is already holding down: pausing them
                 // would clear an intent nothing restores, so they would stay
                 // dead after the suspend lifted.
-                if Self.shouldPauseOnToggle(playback) { playback.pause() }
+                if Self.shouldPauseOnToggle(playback) {
+                    playback.pause()
+                }
             } else {
                 playback.play()
             }

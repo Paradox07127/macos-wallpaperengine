@@ -68,6 +68,7 @@ extension ScreenManager {
                     afterCommit()
                     self.observeRuntimeErrors(for: candidate)
                     self.setTransientRuntimeError(nil, for: screenID)
+                    self.resetPlaybackStateMachine(for: screen)
                     self.applyPerformancePolicy(to: screen)
                     // Any successful cross-type replacement can retire the
                     // previous Video or HTML leader. Recompute both domains.
