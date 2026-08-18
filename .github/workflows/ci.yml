@@ -30,7 +30,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Xcode 27.0 beta (27A5228h) == the toolchain shipping builds use locally.
+  # Xcode 27.0 beta == the toolchain shipping builds use locally. Seeds change
+  # weekly, so this tracks major.minor only — no build number is pinned anywhere.
   # Only the `xcode-27` image label carries it (macOS 26.5 host); that image is
   # marked "preview" upstream, so expect occasional queueing. Pinned through the
   # stable symlink rather than /Applications/Xcode_27_beta_4.app, whose name
