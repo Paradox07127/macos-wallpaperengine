@@ -158,6 +158,7 @@ final class WPESoundRuntime: Sendable {
         var isMuted = false
         var isSuspended = false
         var nextToken: UInt64 = 1
+        var renderedCompletionCount = 0
     }
 
     private struct ResolvedSound {
@@ -387,6 +388,10 @@ final class WPESoundRuntime: Sendable {
     func debugEngineIsRunning() -> Bool {
         state.withLock { $0.engine.isRunning }
     }
+
+    func debugRenderedCompletionCount() -> Int {
+        state.withLock { $0.renderedCompletionCount }
+    }
     #endif
 
     private func reconcileEngineRunState(state: inout State) {
@@ -474,6 +479,10 @@ final class WPESoundRuntime: Sendable {
 
     private func handleScheduledFileCompletion(token: UInt64, epoch: UInt64) {
         state.withLock { state in
+            // Counted before the token/epoch guards: tests use raw delivery to
+            // tell a deaf host audio stack (zero deliveries) from a runtime
+            // regression that ignores deliveries it did receive.
+            state.renderedCompletionCount += 1
             guard let index = state.tracks.firstIndex(where: { $0.token == token }),
                   state.tracks[index].epoch == epoch else { return }
 
