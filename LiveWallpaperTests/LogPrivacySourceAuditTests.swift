@@ -39,10 +39,7 @@ struct LogPrivacySourceAuditTests {
         var violations: [String] = []
         for file in files {
             let source = try String(contentsOf: file, encoding: .utf8)
-            let relativePath = file.path.replacingOccurrences(
-                of: RepositoryRoot.url.path + "/",
-                with: ""
-            )
+            let relativePath = RepositoryRoot.relativePath(of: file)
             let expressions = Self.publicInterpolationExpressions(in: source)
             if Self.containsLegacyPublicFormat(in: source) {
                 violations.append("\(relativePath): legacy %{public} format")

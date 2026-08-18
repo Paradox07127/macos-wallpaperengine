@@ -219,10 +219,7 @@ struct WPEMappedPackageWriteFenceTests {
             for file in RepositoryRoot.swiftFiles(under: root) where !file.path.contains("/Tests/") {
                 sweptFiles += 1
                 let source = try String(contentsOf: file, encoding: .utf8)
-                let relativePath = file.path.replacingOccurrences(
-                    of: RepositoryRoot.url.path + "/",
-                    with: ""
-                )
+                let relativePath = RepositoryRoot.relativePath(of: file)
                 for pattern in Self.writePatterns {
                     let count = source.components(separatedBy: pattern).count - 1
                     if count > 0 {
