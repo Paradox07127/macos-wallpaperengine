@@ -85,6 +85,29 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
         self.windowLength = windowLength
     }
 
+    /// Logical (0..<windowLength) byte range one data request must be served.
+    ///
+    /// AVAssetResourceLoader.h: with `requestsAllDataToEndOfResource` set,
+    /// requestedLength must be disregarded and data fed through EOF — responding
+    /// short and then calling `finishLoading()` makes the media system assume the
+    /// resource ends there. requestedLength is NSIntegerMax only while
+    /// contentLength is unreported, and this delegate reports it on the first
+    /// request, so testing `== Int.max` alone truncated the asset mid-playback
+    /// (issue #131).
+    static func logicalRange(
+        currentOffset: Int64,
+        requestedLength: Int,
+        requestsAllDataToEndOfResource: Bool,
+        windowLength: Int
+    ) -> Range<Int> {
+        let start = min(max(Int(clamping: currentOffset), 0), windowLength)
+        guard !requestsAllDataToEndOfResource, requestedLength != Int.max else {
+            return start..<windowLength
+        }
+        let (end, overflowed) = start.addingReportingOverflow(requestedLength)
+        return start..<(overflowed ? windowLength : min(max(end, start), windowLength))
+    }
+
     // MARK: - AVAssetResourceLoaderDelegate
 
     func resourceLoader(
@@ -95,26 +118,34 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
             info.contentType = mimeType
             info.contentLength = Int64(windowLength)
             info.isByteRangeAccessSupported = true
+            // Without this, AVFoundation treats us as a streaming source it may
+            // not be able to re-reach, so it hoards what we hand over and
+            // re-pulls the whole resource every loop: measured 673 MB delivered
+            // across three loops of a 56 MB clip, with footprint swinging 26 MB.
+            // Declaring on-demand availability (true here — the bytes are an
+            // mmap) drops that to 134 MB and a 5 MB swing, at the cost of many
+            // more, much smaller requests. AVAssetResourceLoader.h names this
+            // exact case: "the custom URL scheme ultimately refers to files on
+            // local storage".
+            info.isEntireLengthAvailableOnDemand = true
         }
 
         if let dataRequest = loadingRequest.dataRequest {
             // Offsets are relative to the logical resource (0..<windowLength);
             // map them into the underlying blob via `windowStart`.
-            let logicalStart = Int(clamping: dataRequest.currentOffset)
-            let requested = dataRequest.requestedLength
-            let logicalEnd: Int
-            if requested == Int.max {
-                logicalEnd = windowLength
-            } else {
-                logicalEnd = min(logicalStart &+ requested, windowLength)
-            }
+            let range = Self.logicalRange(
+                currentOffset: dataRequest.currentOffset,
+                requestedLength: dataRequest.requestedLength,
+                requestsAllDataToEndOfResource: dataRequest.requestsAllDataToEndOfResource,
+                windowLength: windowLength
+            )
             // Respond in bounded chunks so a large requested range can't
             // trigger a single multi-hundred-MB `Data` copy. AVFoundation
             // accepts repeated `respond(with:)` calls before
             // `finishLoading()` and stitches them into one fulfilled range.
-            var offset = logicalStart
-            while offset < logicalEnd {
-                let next = min(offset &+ Self.chunkSize, logicalEnd)
+            var offset = range.lowerBound
+            while offset < range.upperBound {
+                let next = min(offset &+ Self.chunkSize, range.upperBound)
                 let physicalLow = windowStart &+ offset
                 let physicalHigh = windowStart &+ next
                 dataRequest.respond(with: Data(data[physicalLow..<physicalHigh]))

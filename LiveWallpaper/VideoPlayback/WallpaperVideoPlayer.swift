@@ -390,7 +390,7 @@ final class WallpaperVideoPlayer {
                             activeAsset = memAsset
                             loader = result.loader
                             Logger.info(
-                                "Loaded \(fileSize / (1024 * 1024)) MB video into RAM — 0 physical reads expected after warmup",
+                                "Serving \(fileSize / (1024 * 1024)) MB video from a mapping — playback reads go to page cache, not the vnode",
                                 category: .videoPlayer
                             )
                         } catch is CancellationError {
@@ -804,13 +804,24 @@ final class WallpaperVideoPlayer {
     // MARK: - Observers
     private func setupPlaybackObservers() {
         if let player = player {
-            player.publisher(for: \.timeControlStatus)
+            let status = player.publisher(for: \.timeControlStatus)
+                .receive(on: DispatchQueue.main)
+            // Kept mapped-then-deduplicated: `.waitingToPlayAtSpecifiedRate` must
+            // not read as "not playing", or the session summary flips to
+            // policy-suspended for the length of a buffering blip.
+            status
                 .map { $0 == .playing }
                 .removeDuplicates()
-                .receive(on: DispatchQueue.main)
                 .sink { [weak self] isCurrentlyPlaying in
                     guard let self else { return }
                     self.isPlaying = isCurrentlyPlaying
+                }
+                .store(in: &cleanupTasks)
+            status
+                .filter { $0 == .paused }
+                .sink { [weak self, weak player] _ in
+                    guard let self, let player, self.player === player else { return }
+                    self.recoverFromStall(on: player)
                 }
                 .store(in: &cleanupTasks)
         }
@@ -835,6 +846,26 @@ final class WallpaperVideoPlayer {
             }
             .store(in: &cleanupTasks)
     }
+
+    /// AVPlayer clears the desired rate to 0 when the playback buffer empties
+    /// while `automaticallyWaitsToMinimizeStalling` is false (AVPlayer.h). Nobody
+    /// re-issued a rate after that, so one underrun froze the wallpaper for good
+    /// (issue #131).
+    ///
+    /// Only reacts to a pause we did not ask for: `pause()` clears
+    /// `shouldAutoplayWhenReady` first, and the pre-start `.paused` is filtered
+    /// out by the start latch. Deliberately talks to AVFoundation directly rather
+    /// than going through `play()`: clearing `hasRequestedPlaybackStart` to get
+    /// past that latch would leave it cleared whenever this arrives while the
+    /// player is already playing, disarming the next real recovery. Nothing here
+    /// throttles because the source is a status *transition* — one resume per
+    /// stall is exactly the intended rate.
+    private func recoverFromStall(on player: AVQueuePlayer) {
+        guard !isCleanedUp, shouldAutoplayWhenReady, hasRequestedPlaybackStart else { return }
+        Logger.warning("Playback stalled and the rate was cleared — resuming", category: .videoPlayer)
+        player.play()
+    }
+
     // MARK: - Playback Controls
 
     func play() {
