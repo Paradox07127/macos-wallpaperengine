@@ -396,10 +396,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // both so closing destroys the whole hierarchy instead of AppKit
         // double-releasing it.
         window.isReleasedWhenClosed = false
-        window.center()
-        window.contentView = NSHostingView(rootView: contentView)
         window.delegate = self
+        // The saved frame has to land BEFORE the hosting view goes in. With the
+        // old order SwiftUI laid the whole tree out at the 1180pt default and
+        // then again at the restored width, which the user sees as everything
+        // reflowing the moment the window opens. `center()` is only the
+        // first-run fallback — a successful restore replaces it.
         window.setFrameAutosaveName("LiveWallpaperSettingsWindow")
+        if !window.setFrameUsingName("LiveWallpaperSettingsWindow") {
+            window.center()
+        }
+        window.contentView = NSHostingView(rootView: contentView)
 
         return NSWindowController(window: window)
     }
