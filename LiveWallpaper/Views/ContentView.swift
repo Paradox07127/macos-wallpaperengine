@@ -14,9 +14,7 @@ struct ContentView: View {
     @State private var pendingSettingsSearchAnchor: SettingsSearchAnchor?
     @State private var lastAppNavigation: Navigation?
     @State private var didConsumeInitialAddWallpaperPrompt = false
-    /// One-shot sidebar close/open prewarm so the first real toggle doesn't stall mid-animation.
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var didPrewarmSidebar = false
     @State private var isReloading = false
     private let initialAddWallpaperPromptKind: String?
 
@@ -73,7 +71,6 @@ struct ContentView: View {
         .onAppear {
             scheduleDefaultDisplaySelection()
             consumeInitialAddWallpaperPromptIfNeeded()
-            prewarmSidebarIfNeeded()
         }
     }
 
@@ -136,24 +133,6 @@ struct ContentView: View {
                 .accessibilityLabel(Text("Reload display"))
                 .accessibilityHint(Text("Reloads the wallpaper content for this screen"))
                 .disabled(screenManager.screens.isEmpty)
-            }
-        }
-    }
-
-    /// Animation-suppressed close-then-open warmup (no visible flash).
-    private func prewarmSidebarIfNeeded() {
-        guard !didPrewarmSidebar else { return }
-        didPrewarmSidebar = true
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(50))
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                columnVisibility = .detailOnly
-            }
-            try? await Task.sleep(for: .milliseconds(30))
-            withTransaction(transaction) {
-                columnVisibility = .all
             }
         }
     }
