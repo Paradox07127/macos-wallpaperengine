@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Fixed size presets so capsule buttons stay uniform across pages — callers
 /// previously passed ad-hoc font/padding combos and no two pages matched.
-public enum GlassCapsuleButtonPreset: Sendable {
+public enum CapsuleButtonPreset: Sendable {
     case small
     case regular
     case large
@@ -32,11 +32,11 @@ public enum GlassCapsuleButtonPreset: Sendable {
     }
 }
 
-public struct GlassCapsuleButtonStyle: ButtonStyle {
+public struct CapsuleButtonStyle: ButtonStyle {
     public var tint: Color
-    public var preset: GlassCapsuleButtonPreset
+    public var preset: CapsuleButtonPreset
 
-    public init(tint: Color = .accentColor, preset: GlassCapsuleButtonPreset = .regular) {
+    public init(tint: Color = .accentColor, preset: CapsuleButtonPreset = .regular) {
         self.tint = tint
         self.preset = preset
     }
@@ -49,7 +49,7 @@ public struct GlassCapsuleButtonStyle: ButtonStyle {
     private struct StyledLabel: View {
         let configuration: Configuration
         let tint: Color
-        let preset: GlassCapsuleButtonPreset
+        let preset: CapsuleButtonPreset
         @Environment(\.isEnabled) private var isEnabled
 
         var body: some View {
@@ -59,7 +59,9 @@ public struct GlassCapsuleButtonStyle: ButtonStyle {
                 .foregroundStyle(effectiveTint)
                 .padding(.horizontal, preset.horizontalPadding)
                 .padding(.vertical, preset.verticalPadding)
-                .adaptiveGlassSurface(.capsule, tint: effectiveTint, interactive: true)
+                .background(Capsule().fill(effectiveTint.opacity(0.12)))
+                .overlay(Capsule().strokeBorder(effectiveTint.opacity(0.25), lineWidth: 0.5))
+                .contentShape(Capsule())
                 .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1.0) : 0.45)
         }
     }

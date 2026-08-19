@@ -56,6 +56,7 @@ struct HTMLSourceSection: View {
         GlassSegmentedPicker(
             selection: $selectedSegment,
             values: SourceSegment.pickable,
+            shell: .flat,
             title: { $0.labelKey }
         )
     }

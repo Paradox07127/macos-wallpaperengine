@@ -19,22 +19,20 @@ struct OverlaysInspectorPanel: View {
 
     var body: some View {
         ScrollView {
-            AdaptiveGlassContainer(spacing: 12) {
-                VStack(spacing: 12) {
-                    switch kind {
-                    case .weather:
-                        weatherCard
-                    case .monitor:
-                        MonitorOverlaySection(
-                            screen: screen,
-                            screenManager: screenManager,
-                            backdropAvailable: backdropAvailable
-                        )
-                    }
+            VStack(spacing: 12) {
+                switch kind {
+                case .weather:
+                    weatherCard
+                case .monitor:
+                    MonitorOverlaySection(
+                        screen: screen,
+                        screenManager: screenManager,
+                        backdropAvailable: backdropAvailable
+                    )
                 }
-                .padding(.horizontal, DesignTokens.Inspector.horizontalPadding(for: inspectorPanelWidth))
-                .padding(.vertical, 12)
             }
+            .padding(.horizontal, DesignTokens.Inspector.horizontalPadding(for: inspectorPanelWidth))
+            .padding(.vertical, 12)
         }
     }
 

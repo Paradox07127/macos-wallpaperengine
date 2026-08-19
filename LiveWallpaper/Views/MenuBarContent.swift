@@ -674,7 +674,12 @@ private struct MenuBarDisplayRow: View {
         .padding(.horizontal, MenuBarMetrics.rowPaddingHorizontal)
         .padding(.vertical, MenuBarMetrics.rowPaddingVertical)
         .frame(maxWidth: .infinity)
-        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.md))
+        // Flat inside the popover's own glass shell: a second glass layer here
+        // would stack material on material, which the outer shell already provides.
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .fill(.quaternary.opacity(0.5))
+        )
     }
 }
 
@@ -687,7 +692,10 @@ private struct DisplayIconTile: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(state.tint)
             .frame(width: 26, height: 26)
-            .adaptiveGlassSurface(.roundedRectangle(8))
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.quaternary.opacity(0.6))
+            )
             .accessibilityHidden(true)
     }
 }

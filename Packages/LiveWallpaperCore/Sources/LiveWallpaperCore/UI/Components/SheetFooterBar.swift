@@ -62,7 +62,7 @@ public struct SheetFooterBar<Leading: View>: View {
                         Button(action: cancelAction) {
                             Text(cancelTitle, bundle: .main)
                         }
-                        .adaptiveGlassButton(.regular)
+                        .buttonStyle(.bordered)
                         .keyboardShortcut(.cancelAction),
                         cancelHelp
                     )
@@ -72,7 +72,7 @@ public struct SheetFooterBar<Leading: View>: View {
                     Button(action: primaryAction) {
                         Text(primaryTitle, bundle: .main)
                     }
-                    .adaptiveGlassButton(.prominent)
+                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(primaryDisabled),
                     primaryHelp

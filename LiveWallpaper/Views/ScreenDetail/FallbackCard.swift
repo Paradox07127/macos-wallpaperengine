@@ -89,7 +89,14 @@ struct FallbackCard: View {
         }
         .padding(32)
         .frame(maxWidth: 480)
-        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
+                .fill(DesignTokens.Colors.surfaceRaised)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
+                .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
+        )
     }
 
     @ViewBuilder
@@ -140,7 +147,7 @@ struct FallbackCard: View {
                 } label: {
                     Label("Copy all IDs", systemImage: "doc.on.doc")
                 }
-                .adaptiveGlassButton(.regular)
+                .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .accessibilityHint(Text("Copies every missing workshop ID to your clipboard so you can subscribe in Steam"))
 
@@ -149,7 +156,7 @@ struct FallbackCard: View {
                 } label: {
                     Label("Open this project", systemImage: "safari")
                 }
-                .adaptiveGlassButton(.regular)
+                .buttonStyle(.bordered)
                 .controlSize(.regular)
             }
 
@@ -159,7 +166,7 @@ struct FallbackCard: View {
             } label: {
                 Label("View in Workshop", systemImage: "safari")
             }
-            .adaptiveGlassButton(.regular)
+            .buttonStyle(.bordered)
             .controlSize(.regular)
             .accessibilityHint(Text("Opens this wallpaper's Steam Workshop page in your browser"))
         }

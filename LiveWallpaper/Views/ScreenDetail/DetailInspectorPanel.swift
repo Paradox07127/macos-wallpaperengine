@@ -22,85 +22,83 @@ struct DetailInspectorPanel: View {
 
     var body: some View {
         ScrollView {
-            AdaptiveGlassContainer(spacing: 12) {
-                VStack(spacing: 12) {
-                    if draft.selectedWallpaperType == .video,
-                       featureCatalog.capabilities.selectableWallpaperModes.count > 1 {
-                        wallpaperModeCard
-                    }
+            VStack(spacing: 12) {
+                if draft.selectedWallpaperType == .video,
+                   featureCatalog.capabilities.selectableWallpaperModes.count > 1 {
+                    wallpaperModeCard
+                }
 
-                    PlaybackInspector(
+                PlaybackInspector(
+                    screen: screen,
+                    wallpaperType: draft.selectedWallpaperType,
+                    muted: $draft.videoMuted,
+                    videoVolume: $draft.videoVolume,
+                    videoDisplayMode: $draft.selectedVideoDisplayMode,
+                    frameRateLimit: $draft.selectedFrameRateLimit,
+                    syncToLockScreen: $draft.setAsLockScreen,
+                    sceneMouseInteractionEnabled: $draft.sceneMouseInteractionEnabled,
+                    sceneClickCaptureEnabled: $draft.sceneClickCaptureEnabled,
+                    sceneFitMode: $draft.selectedFitMode,
+                    htmlConfig: draft.selectedWallpaperType == .html ? $draft.htmlConfig : nil,
+                    videoColorSpace: draft.videoColorSpace,
+                    showsResetPlayback: showsResetPlayback,
+                    onResetPlayback: onResetPlaybackSettings
+                )
+
+                if draft.selectedWallpaperType == .html {
+                    SecurityInspector(
                         screen: screen,
-                        wallpaperType: draft.selectedWallpaperType,
-                        muted: $draft.videoMuted,
-                        videoVolume: $draft.videoVolume,
-                        videoDisplayMode: $draft.selectedVideoDisplayMode,
-                        frameRateLimit: $draft.selectedFrameRateLimit,
-                        syncToLockScreen: $draft.setAsLockScreen,
-                        sceneMouseInteractionEnabled: $draft.sceneMouseInteractionEnabled,
-                        sceneClickCaptureEnabled: $draft.sceneClickCaptureEnabled,
-                        sceneFitMode: $draft.selectedFitMode,
-                        htmlConfig: draft.selectedWallpaperType == .html ? $draft.htmlConfig : nil,
-                        videoColorSpace: draft.videoColorSpace,
-                        showsResetPlayback: showsResetPlayback,
-                        onResetPlayback: onResetPlaybackSettings
+                        source: draft.htmlSource,
+                        htmlConfig: $draft.htmlConfig
                     )
 
-                    if draft.selectedWallpaperType == .html {
-                        SecurityInspector(
-                            screen: screen,
-                            source: draft.htmlSource,
-                            htmlConfig: $draft.htmlConfig
-                        )
-
-                        HTMLOptionsInspector(
-                            screen: screen,
-                            config: $draft.htmlConfig
-                        )
-
-                        #if !LITE_BUILD
-                        if let wpeProjectCustomSettingsSchema,
-                           wpeProjectCustomSettingsSchema.hasMeaningfulSettings {
-                            WPEProjectCustomSettingsCard(
-                                screen: screen,
-                                schema: wpeProjectCustomSettingsSchema,
-                                projectKey: wpeProjectCustomSettingsProjectKey,
-                                config: $draft.htmlConfig
-                            )
-                        }
-                        #endif
-
-                        HTMLTransformInspector(
-                            screen: screen,
-                            config: $draft.htmlConfig
-                        )
-                    }
-
-                    if draft.selectedWallpaperType == .video,
-                       featureCatalog.isEnabled(.videoEffects) {
-                        colorGroup
-                    }
+                    HTMLOptionsInspector(
+                        screen: screen,
+                        config: $draft.htmlConfig
+                    )
 
                     #if !LITE_BUILD
-                    if draft.selectedWallpaperType == .scene,
-                       let schema = wpeSceneCustomSettingsSchema,
-                       schema.properties.contains(where: WPESceneCustomSettingsCard.isSceneSettingCandidate),
-                       draft.sceneDescriptor != nil {
-                        WPESceneCustomSettingsCard(
+                    if let wpeProjectCustomSettingsSchema,
+                       wpeProjectCustomSettingsSchema.hasMeaningfulSettings {
+                        WPEProjectCustomSettingsCard(
                             screen: screen,
-                            schema: schema,
-                            descriptor: sceneDescriptorBinding
+                            schema: wpeProjectCustomSettingsSchema,
+                            projectKey: wpeProjectCustomSettingsProjectKey,
+                            config: $draft.htmlConfig
                         )
                     }
                     #endif
 
-                    if showsResetDisplaySettings {
-                        resetDisplayButton
-                    }
+                    HTMLTransformInspector(
+                        screen: screen,
+                        config: $draft.htmlConfig
+                    )
                 }
-                .padding(.horizontal, DesignTokens.Inspector.horizontalPadding(for: inspectorPanelWidth))
-                .padding(.vertical, 12)
+
+                if draft.selectedWallpaperType == .video,
+                   featureCatalog.isEnabled(.videoEffects) {
+                    colorGroup
+                }
+
+                #if !LITE_BUILD
+                if draft.selectedWallpaperType == .scene,
+                   let schema = wpeSceneCustomSettingsSchema,
+                   schema.properties.contains(where: WPESceneCustomSettingsCard.isSceneSettingCandidate),
+                   draft.sceneDescriptor != nil {
+                    WPESceneCustomSettingsCard(
+                        screen: screen,
+                        schema: schema,
+                        descriptor: sceneDescriptorBinding
+                    )
+                }
+                #endif
+
+                if showsResetDisplaySettings {
+                    resetDisplayButton
+                }
             }
+            .padding(.horizontal, DesignTokens.Inspector.horizontalPadding(for: inspectorPanelWidth))
+            .padding(.vertical, 12)
         }
         .frame(width: inspectorPanelWidth)
         .fixedSize(horizontal: true, vertical: false)
@@ -229,7 +227,8 @@ struct DetailInspectorPanel: View {
             Button(action: onResetDisplaySettings) {
                 Label("Reset Current Display", systemImage: "arrow.counterclockwise.circle")
             }
-            .adaptiveGlassButton(.regular, size: .small)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
             .tint(DesignTokens.Colors.Status.danger)
             .help(Text("Reset all playback, color, particle, audio, and layout settings on this display — wallpaper, playlist, and bookmarks stay"))
             Spacer()
@@ -285,7 +284,8 @@ struct DetailInspectorPanel: View {
                     onWallpaperModeChange(mode)
                 }
             ),
-            values: featureCatalog.capabilities.selectableWallpaperModes
+            values: featureCatalog.capabilities.selectableWallpaperModes,
+            shell: .flat
         ) { mode, isSelected in
             Text(mode.labelKey)
                 .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)

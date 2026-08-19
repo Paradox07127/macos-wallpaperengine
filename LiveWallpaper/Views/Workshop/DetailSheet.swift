@@ -462,7 +462,7 @@ struct WorkshopInspectorContent: View {
     private func tagChip(_ tag: String) -> some View {
         if let onSelectTag {
             Button { onSelectTag(tag) } label: {
-                StatusChip(verbatim: tag, tint: .accentColor, interactive: true)
+                StatusChip(verbatim: tag, tint: .accentColor)
             }
             .buttonStyle(.plain)
             .help(Text("Browse items tagged \(tag)"))

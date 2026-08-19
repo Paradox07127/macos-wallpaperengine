@@ -80,7 +80,9 @@ public struct LibraryFilterBar<Filters: View>: View {
             idealWidth: DesignTokens.LibraryFilterBar.searchIdealWidth,
             maxWidth: DesignTokens.LibraryFilterBar.searchMaxWidth
         )
-        .adaptiveGlassSurface(.capsule, interactive: true)
+        .background(Capsule().fill(Color.primary.opacity(0.04)))
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+        .contentShape(Capsule())
     }
 
     // MARK: - Result counter

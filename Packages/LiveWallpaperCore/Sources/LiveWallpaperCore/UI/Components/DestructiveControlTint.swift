@@ -5,13 +5,12 @@ struct DestructiveControlTint: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // Destructive cue lives in the red label + glyph. The surface stays
-            // NEUTRAL — a red-tinted plate behind red text is same-hue on
-            // same-hue and reads as low-contrast (worst under Reduce
-            // Transparency, where the tint wash is opaque).
+            // Destructive cue lives in the red label + glyph, with no plate behind
+            // it: a red-tinted plate behind red text is same-hue on same-hue and
+            // reads as low-contrast. Every caller sits on an opaque form or popover
+            // background, so there is nothing for a translucent surface to refract.
             .foregroundStyle(DesignTokens.Colors.Status.danger)
             .tint(DesignTokens.Colors.Status.danger)
-            .adaptiveGlassSurface(.roundedRectangle(8), interactive: true)
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
