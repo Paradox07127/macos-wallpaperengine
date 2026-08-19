@@ -13,7 +13,8 @@ extension WallpaperPolicyInputs {
         isUserAbsent: Bool = false,
         memoryPressureLevel: SystemMemoryPressureLevel = .normal,
         isLowPowerMode: Bool = false,
-        isFrontmostExcludedByRule: Bool = false
+        isFrontmostExcludedByRule: Bool = false,
+        respondsToThermalThrottle: Bool = true
     ) -> WallpaperPolicyInputs {
         WallpaperPolicyInputs(
             powerSource: powerSource,
@@ -24,7 +25,8 @@ extension WallpaperPolicyInputs {
             isUserAbsent: isUserAbsent,
             memoryPressureLevel: memoryPressureLevel,
             isLowPowerMode: isLowPowerMode,
-            isFrontmostExcludedByRule: isFrontmostExcludedByRule
+            isFrontmostExcludedByRule: isFrontmostExcludedByRule,
+            respondsToThermalThrottle: respondsToThermalThrottle
         )
     }
 }
@@ -129,5 +131,27 @@ struct WallpaperPolicyEngineThermalTests {
 
         #expect(decision.profile == .suspended)
         #expect(decision.suspendReasons == [.userAbsent, .battery, .fullScreen])
+    }
+
+    @Test("Serious heat suspends a session with no throttle knob instead of no-oping")
+    func seriousThermalEscalatesWhenThrottleHasNoConsumer() {
+        let settings = GlobalSettings()
+
+        // Video: nothing consumes the throttle tier, so it must suspend — the
+        // pre-throttle behaviour, not silence.
+        let video = WallpaperPolicyEngine.decision(
+            inputs: .test(thermalState: .serious, respondsToThermalThrottle: false),
+            settings: settings
+        )
+        #expect(video.profile == .suspended)
+        #expect(video.suspendReasons == [.thermal])
+
+        // Scene/HTML: they shed load themselves, so serious stays a throttle.
+        let scene = WallpaperPolicyEngine.decision(
+            inputs: .test(thermalState: .serious, respondsToThermalThrottle: true),
+            settings: settings
+        )
+        #expect(scene.profile == .quality)
+        #expect(scene.throttleReasons == [.thermal])
     }
 }

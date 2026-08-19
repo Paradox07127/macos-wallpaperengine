@@ -758,7 +758,7 @@ final class WallpaperVideoPlayer {
             // not read as "not playing", or the session summary flips to
             // policy-suspended for the length of a buffering blip.
             status
-                .map { $0 == .playing }
+                .map { $0 != .paused }
                 .removeDuplicates()
                 .sink { [weak self] isCurrentlyPlaying in
                     guard let self else { return }

@@ -61,6 +61,9 @@ final class ScreenManager {
     @ObservationIgnored let absenceRevalidationGrace: Duration
     /// When each reason was recorded, for the revalidation grace period.
     @ObservationIgnored var absenceMarkedAt: [UserAbsenceReason: ContinuousClock.Instant] = [:]
+    /// Slow poll that re-runs revalidation while absent — the safety net for a
+    /// lost wake/unlock notification with no later policy events.
+    @ObservationIgnored var absenceRevalidationTimer: Task<Void, Never>?
     var isUserAbsent: Bool { !userAbsenceReasons.isEmpty }
     /// Feeds memory pressure into the performance policy without changing user playback intent.
     @ObservationIgnored var memoryPressureLevel = SystemMemoryPressureLevel.normal
