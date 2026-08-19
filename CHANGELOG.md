@@ -13,6 +13,52 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.5.4] — 2026-08-19
+
+Videos no longer need Loomscreen running: a system wallpaper extension hands
+them to macOS itself, so they keep playing with the app closed and the lock
+screen changes with them. The rest of the release is playback and policy
+correctness — most of it found by reviewing everything that landed since
+0.5.3 rather than by reports.
+
+### Added
+
+- **System Wallpaper.** Hand a video to macOS as a native wallpaper source.
+  It plays with Loomscreen closed, on the desktop and on the lock screen,
+  and appears in System Settings alongside Apple's own wallpapers. Videos
+  come from a file, a library bookmark, or a Workshop package. A switch
+  chooses between playing continuously and easing to a still once you are
+  back at the desktop, the way Apple's own video wallpapers behave. Needs
+  macOS 26 or later; on earlier versions Loomscreen plays wallpapers itself,
+  which requires the app to be running.
+
+### Fixed
+
+- The play button could strand a suspended wallpaper instead of resuming it.
+- Video playback did not resume after a buffer underrun.
+- Videos on volumes Foundation will not memory-map — external drives, network
+  shares — failed to play. They are streamed now instead of being read whole.
+- Opening the settings window reflowed every component in it. The saved
+  window size was restored only after the view hierarchy had already been
+  laid out at the default size, so everything was placed twice.
+- A buffering video was reported as "paused by the system", which also
+  reversed what the play button did while the stall lasted.
+- Serious thermal pressure and memory warnings stopped affecting video
+  wallpapers. The throttle tier introduced for scenes has no consumer for
+  video, which has no frame-rate control to shed load with, so video
+  suspends under that pressure again.
+- A dropped display-wake or unlock notification could leave every wallpaper
+  suspended for the rest of the session, unreachable by the play button.
+
+### Changed
+
+- User play intent is held in one state machine per screen instead of a copy
+  inside each wallpaper runtime.
+- Chip-sized controls — status chips, type badges, filter chips — render a
+  flat fill instead of Liquid Glass. The material is now reserved for
+  surfaces that genuinely float above content, such as badges layered over a
+  thumbnail.
+
 ## [0.5.3] — 2026-08-17
 
 Follow-up to the hibernation work in 0.5.2. Each of the three wallpaper
