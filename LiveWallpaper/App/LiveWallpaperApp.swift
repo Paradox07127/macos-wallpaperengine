@@ -86,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservationIgnored nonisolated(unsafe) private var showOnboardingObserver: NSObjectProtocol?
     @ObservationIgnored private var globalShortcutManager: GlobalShortcutManager?
     @ObservationIgnored private let lifecycle = ApplicationLifecycleController()
+    /// Not private: the menu-bar scene lives in the App struct and injects it too.
+    @ObservationIgnored let wallpaperExportService = WallpaperExportService()
     #if !LITE_BUILD
     /// Pro only: lives for the lifetime of the app so the Doctor's probe state survives Settings-window close / re-open and the Workshop tab can read it without re-running probes.
     @ObservationIgnored private let workshopDoctorService = SteamCMDDoctorService()
@@ -366,6 +368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
             .environment(manager)
             .environment(\.featureCatalog, manager.featureCatalog)
+            .environment(wallpaperExportService)
 
         #if !LITE_BUILD
         let contentView = baseContentView
@@ -523,6 +526,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let base = flow
                 .environment(manager)
                 .environment(\.featureCatalog, manager.featureCatalog)
+                .environment(wallpaperExportService)
             #if !LITE_BUILD
             window.contentView = NSHostingView(
                 rootView: base
@@ -631,6 +635,7 @@ struct LiveWallpaperApp: App {
             )
             .environment(screenManager)
             .environment(\.featureCatalog, screenManager.featureCatalog)
+            .environment(appDelegate.wallpaperExportService)
             .appLanguageScoped(defaults: .appScoped())
         } else {
             Text("Initializing…")

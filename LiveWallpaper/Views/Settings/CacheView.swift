@@ -29,6 +29,9 @@ struct WPECacheManagementView: View {
     @Environment(WorkshopServices.self) var workshopServices
     /// Steam library sizes need the Doctor security-scoped bookmark.
     @Environment(SteamCMDDoctorService.self) var doctorService
+    /// System Wallpaper keeps its own copy of every published video, which is
+    /// the largest thing the app writes outside Workshop content.
+    @Environment(WallpaperExportService.self) var exportService
     @State var workshopCacheBytes: Int64 = 0
 
     let dashboardColumns = [
@@ -57,7 +60,12 @@ struct WPECacheManagementView: View {
                 .storageCaches
             ]
         )
-        .onAppear { Task { await refreshStats() } }
+        .onAppear {
+            // Sizes are read from disk on demand; without this the System
+            // Wallpaper tile would show whatever the last publish left behind.
+            exportService.refresh()
+            Task { await refreshStats() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             Task { await refreshStats() }
         }

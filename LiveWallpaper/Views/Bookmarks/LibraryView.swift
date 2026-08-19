@@ -190,6 +190,7 @@ private struct BookmarkTile: View {
     @State private var isHovering = false
     @State private var thumbnail: NSImage?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(WallpaperExportService.self) private var exportService
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -422,5 +423,23 @@ private struct BookmarkTile: View {
         }
         Button("Rename", action: onStartRename)
         Button("Delete", role: .destructive, action: onDelete)
+        if #available(macOS 26.0, *) {
+            if case .video = bookmark.content {
+                Divider()
+                if exportService.isPublished(bookmarkID: bookmark.id) {
+                    // Not disabled while in use: the System Wallpaper page
+                    // deliberately allows removing the playing video (macOS
+                    // 27.0's own Remove crashes, so ours must work), and the
+                    // two entry points must agree.
+                    Button("Remove from System Wallpaper") {
+                        try? exportService.remove(itemID: bookmark.id.uuidString)
+                    }
+                } else {
+                    Button("Add to System Wallpaper") {
+                        Task { try? await exportService.publish(bookmark: bookmark) }
+                    }
+                }
+            }
+        }
     }
 }

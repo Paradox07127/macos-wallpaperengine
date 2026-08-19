@@ -205,6 +205,15 @@ struct WPEMappedPackageWriteFenceTests {
             "FileHandle(forWritingTo": 1,
         ],
         "LiveWallpaper/Infrastructure/Assets/WPEVideoTextureDiskCache.swift": [".write(to": 1],
+        // Audited 2026-08-18: extraction streams into a fresh dot-prefixed
+        // staging file in the app's own Videos/ dir (never the mapped pkg,
+        // which stays open read-only); the two `.write(to` are the thumbnail
+        // JPEG and the manifest, both `.atomic`.
+        "LiveWallpaper/Infrastructure/Services/WallpaperExportService.swift": [
+            "createFile(": 1,
+            "FileHandle(forWritingTo": 1,
+            ".write(to": 2,
+        ],
         "LiveWallpaper/VideoPlayback/OggAudioTranscoder.swift": ["forWriting:": 1],
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Debug.swift": [".write(to": 2],
         "LiveWallpaper/Runtime/Metal/WPEMetalPassGPUProfiler.swift": [".write(to": 1],
