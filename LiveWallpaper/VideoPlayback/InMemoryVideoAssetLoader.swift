@@ -67,20 +67,60 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
                 NSLocalizedDescriptionKey: "Video entry \(entryName) not found in package"
             ])
         }
-        let data = try Data(contentsOf: packageURL, options: .mappedIfSafe)
-        let absoluteStart = package.dataStart + entry.dataOffset
-        guard let start = Int(exactly: absoluteStart),
-              let length = Int(exactly: entry.dataSize),
-              start >= 0, length >= 0, start &+ length <= data.count else {
-            throw NSError(domain: "InMemoryVideoAssetLoader", code: 422, userInfo: [
-                NSLocalizedDescriptionKey: "Video entry \(entryName) is out of package bounds"
-            ])
+        // Same trap as `load`: on a removable or network volume `.mappedIfSafe`
+        // degrades to a whole-file heap read — of the entire multi-GB package,
+        // not just this entry. There is no file-URL fallback for an embedded
+        // entry, so read only the entry's byte range instead; that bounds the
+        // heap cost at the video's own size.
+        let data: Data
+        let start: Int
+        let windowLength: Int
+        if isVolumeMappable(packageURL) {
+            data = try Data(contentsOf: packageURL, options: .mappedIfSafe)
+            let absoluteStart = package.dataStart + entry.dataOffset
+            guard let mappedStart = Int(exactly: absoluteStart),
+                  let length = Int(exactly: entry.dataSize),
+                  mappedStart >= 0, length >= 0, mappedStart &+ length <= data.count else {
+                throw NSError(domain: "InMemoryVideoAssetLoader", code: 422, userInfo: [
+                    NSLocalizedDescriptionKey: "Video entry \(entryName) is out of package bounds"
+                ])
+            }
+            start = mappedStart
+            windowLength = length
+        } else {
+            let handle = try FileHandle(forReadingFrom: packageURL)
+            defer { try? handle.close() }
+            let fileSize = try handle.seekToEnd()
+            guard let offset = UInt64(exactly: package.dataStart + entry.dataOffset),
+                  let length = UInt64(exactly: entry.dataSize),
+                  offset <= fileSize, length <= fileSize - offset,
+                  let count = Int(exactly: length) else {
+                throw NSError(domain: "InMemoryVideoAssetLoader", code: 422, userInfo: [
+                    NSLocalizedDescriptionKey: "Video entry \(entryName) is out of package bounds"
+                ])
+            }
+            try handle.seek(toOffset: offset)
+            // Short reads are legal on network volumes — loop until the range
+            // is complete; only a genuine EOF is a truncated package.
+            var collected = Data(capacity: count)
+            while collected.count < count {
+                guard let chunk = try handle.read(upToCount: min(8 << 20, count - collected.count)),
+                      !chunk.isEmpty else {
+                    throw NSError(domain: "InMemoryVideoAssetLoader", code: 422, userInfo: [
+                        NSLocalizedDescriptionKey: "Video entry \(entryName) could not be read in full"
+                    ])
+                }
+                collected.append(chunk)
+            }
+            data = collected
+            start = 0
+            windowLength = count
         }
         let loader = InMemoryVideoAssetLoader(
             data: data,
             mimeType: mimeType(forPathExtension: (entryName as NSString).pathExtension),
             windowStart: start,
-            windowLength: length
+            windowLength: windowLength
         )
         return (loader, customURL(forLastComponent: (entryName as NSString).lastPathComponent))
     }

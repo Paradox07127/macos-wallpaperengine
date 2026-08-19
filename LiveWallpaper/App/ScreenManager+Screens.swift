@@ -147,6 +147,7 @@ extension ScreenManager {
     func releaseRuntimeSession(_ screen: Screen) {
         adaptiveFrameRateOcclusionThrottled[screen.id] = nil
         suspendedScreenIDs.remove(screen.id)
+        suspendReasonsByScreen[screen.id] = nil
         bumpTransition(for: screen.id)
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.retireAllWork(for: screen.id)

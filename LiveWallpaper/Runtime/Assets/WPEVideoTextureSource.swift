@@ -647,7 +647,6 @@ final class WPEVideoTextureSource {
         publish(pixelBuffer: pixelBuffer)
     }
 
-    /// 2s forward buffer (RAM-resident asset; longer buffers only cost decoder state).
     /// Decoder-native NV12 first (video then full range) with a 32BGRA tail:
     /// AVFoundation picks the closest match to the source, so 8-bit SDR lands
     /// on the biplanar path and sources NV12 cannot represent (alpha video)

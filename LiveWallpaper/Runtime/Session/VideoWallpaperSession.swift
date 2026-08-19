@@ -194,6 +194,11 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         // suspend depth below is recomputed.
         if userIntendsToPlay {
             isManualPauseHibernating = false
+        } else if player?.isHibernated == true {
+            // An absence hibernate that completed while the user had this
+            // paused stays down on wake: rebuilding a paused pipeline only for
+            // the manual-pause dwell to tear it down again is wasted decode.
+            isManualPauseHibernating = true
         }
         // Particles ride the policy profile only; a manual pause leaves them running.
         player?.setParticleEffectsSuspended(profile == .suspended)

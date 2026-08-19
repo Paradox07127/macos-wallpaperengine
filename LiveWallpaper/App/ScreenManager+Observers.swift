@@ -147,6 +147,39 @@ extension ScreenManager {
     private func setUserAbsence(_ reason: UserAbsenceReason, present: Bool) {
         guard applyUserAbsenceChange(reason, present: present) else { return }
         refreshPerformancePolicyForAllScreens()
+        reconcileAbsenceRevalidationTimer()
+    }
+
+    /// `revalidateUserAbsence` only runs inside a policy refresh, and every
+    /// refresh is event-driven — so a lost wake/unlock notification with no
+    /// later events pins every wallpaper suspended forever (the exact hole the
+    /// revalidation was built to close). While absent, poll it on a slow
+    /// clock; the wallpapers are suspended then, so this is nearly free.
+    private func reconcileAbsenceRevalidationTimer() {
+        if isUserAbsent {
+            guard absenceRevalidationTimer == nil else { return }
+            absenceRevalidationTimer = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(30))
+                    guard let self, !Task.isCancelled, !self.isTerminating else { return }
+                    // Revalidation can clear the absence from inside the
+                    // refresh (it bypasses `setUserAbsence`), so the timer must
+                    // clean up after itself or it can never restart.
+                    guard self.isUserAbsent else {
+                        self.absenceRevalidationTimer = nil
+                        return
+                    }
+                    self.refreshPerformancePolicyForAllScreens()
+                    if !self.isUserAbsent {
+                        self.absenceRevalidationTimer = nil
+                        return
+                    }
+                }
+            }
+        } else {
+            absenceRevalidationTimer?.cancel()
+            absenceRevalidationTimer = nil
+        }
     }
 
     /// Everything `setUserAbsence` does except the policy refresh, so the
@@ -421,7 +454,10 @@ extension ScreenManager {
             isUserAbsent: isUserAbsent,
             memoryPressureLevel: memoryPressureLevel,
             isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
-            isFrontmostExcludedByRule: frontmostExcluded
+            isFrontmostExcludedByRule: frontmostExcluded,
+            // Video is the one session type with no load-shedding knob — for it
+            // the throttle tier must fall back to the pre-throttle suspend.
+            respondsToThermalThrottle: !(screen.runtimeSession is VideoWallpaperSession)
         )
     }
 

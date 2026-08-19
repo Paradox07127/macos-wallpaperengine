@@ -15,6 +15,11 @@ struct WallpaperPolicyInputs {
     var isLowPowerMode: Bool = false
     /// Vetoes discretionary suspension without overriding safety suspension.
     var isFrontmostExcludedByRule: Bool = false
+    /// Whether this screen's session can shed load without stopping (scene:
+    /// frame-rate controller; HTML: RAF ratio). Video has no such knob, so for
+    /// it a thermal "throttle" would be a no-op — the engine escalates it back
+    /// to the suspend that shipped before the throttle tier existed.
+    var respondsToThermalThrottle: Bool = true
 }
 
 enum WallpaperPolicyEngine {
@@ -36,7 +41,10 @@ enum WallpaperPolicyEngine {
         var safety: Set<WallpaperSuspendReason> = []
         if inputs.isUserAbsent { safety.insert(.userAbsent) }
         if shouldSuspendForMemory(inputs.memoryPressureLevel) { safety.insert(.memoryPressure) }
-        if shouldSuspendForThermal(inputs.thermalState) { safety.insert(.thermal) }
+        if shouldSuspendForThermal(inputs.thermalState)
+            || (!inputs.respondsToThermalThrottle && shouldThrottleForThermal(inputs.thermalState)) {
+            safety.insert(.thermal)
+        }
 
         // Discretionary suspends yield the GPU for full-screen / battery / Low
         // Power Mode / app rules. A `.neverPause` exception on the frontmost app
