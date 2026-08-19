@@ -15,9 +15,18 @@ struct MacOSCompatibilityPolicyTests {
             .matches(of: /MACOSX_DEPLOYMENT_TARGET = ([^;]+);/)
             .map { String($0.output.1) }
         #expect(!projectTargets.isEmpty)
+        // 14.6 is the app floor. The SystemWallpaperProvider appexes are the
+        // one sanctioned exception: the com.apple.wallpaper extension point
+        // does not exist before macOS 26, so their two targets (Pro + Lite,
+        // Debug + Release each) pin 26.0 — exactly four occurrences. A fifth
+        // means an app target drifted.
         #expect(
-            Set(projectTargets) == ["14.6"],
-            Comment(rawValue: "pbxproj has non-14.6 deployment targets: \(Set(projectTargets).sorted())")
+            Set(projectTargets) == ["14.6", "26.0"],
+            Comment(rawValue: "pbxproj has unexpected deployment targets: \(Set(projectTargets).sorted())")
+        )
+        #expect(
+            projectTargets.filter { $0 == "26.0" }.count == 4,
+            Comment(rawValue: "26.0 is reserved for the two wallpaper appex targets (×2 configs)")
         )
 
         // SPM has no `.v14_6` case, so the floor is spelled as a version string.

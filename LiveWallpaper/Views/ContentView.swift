@@ -375,6 +375,7 @@ enum Navigation: Hashable {
     case appleAerials
     case bookmarks
     case workshop
+    case systemWallpaper
 }
 
 // MARK: - Sidebar View
@@ -427,6 +428,12 @@ struct Sidebar: View {
                     .accessibilityHint(Text("Browse installed and online Workshop wallpapers"))
                 }
                 #endif
+                if #available(macOS 26.0, *) {
+                    NavigationLink(value: Navigation.systemWallpaper) {
+                        Label("System Wallpaper", systemImage: "macwindow.on.rectangle")
+                    }
+                    .accessibilityHint(Text("Hand videos to macOS so they play without Loomscreen running"))
+                }
             } header: {
                 SidebarSectionHeader(title: "Library")
             }
@@ -648,6 +655,16 @@ struct DetailContent: View {
                 #else
                 EmptyView()
                 #endif
+
+            case .systemWallpaper:
+                if #available(macOS 26.0, *) {
+                    SystemWallpaperLibraryView()
+                } else {
+                    EmptyStateView(
+                        icon: "macwindow.on.rectangle",
+                        message: "System Wallpaper requires macOS 26 or later."
+                    )
+                }
 
             case .none:
                 EmptyStateView(

@@ -21,6 +21,20 @@
                ReferencedContainer = "container:LiveWallpaper.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "F5C1C0DB30351DA700FF0A00"
+               BuildableName = "SystemWallpaperProvider.appex"
+               BlueprintName = "SystemWallpaperProvider"
+               ReferencedContainer = "container:LiveWallpaper.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

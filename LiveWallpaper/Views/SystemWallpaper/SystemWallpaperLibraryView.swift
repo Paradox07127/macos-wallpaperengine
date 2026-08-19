@@ -1,0 +1,433 @@
+import LiveWallpaperCore
+import SwiftUI
+
+/// Library › System Wallpaper. Lists the videos handed to macOS, which keep
+/// playing with Loomscreen closed.
+///
+/// The status vocabulary is deliberately narrow: only what our own files prove
+/// (the manifest we write, the heartbeat the appex writes back). The page never
+/// claims a system-side state it cannot observe (plan §5.4).
+@available(macOS 26.0, *)
+struct SystemWallpaperLibraryView: View {
+    @Environment(WallpaperExportService.self) private var service
+    @State private var pendingDestructive: PendingDestructive?
+
+    var body: some View {
+        DetailPageScaffold(
+            header: { header },
+            content: { content }
+        )
+        .confirmDestructive($pendingDestructive)
+        .onAppear { service.refresh() }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        DetailHeaderBar(
+            systemImage: "macwindow.on.rectangle",
+            title: { Text("System Wallpaper") },
+            metadata: { headerMetadata },
+            actions: {
+                if isFunctional {
+                    HStack(spacing: DesignTokens.Spacing.sm) {
+                        SystemWallpaperAddMenu()
+                        Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
+                            .adaptiveGlassButton(.regular, size: .small)
+                            .fixedSize()
+                    }
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var headerMetadata: some View {
+        switch service.status {
+        case .unsupported:
+            Text("Requires macOS 26 or later")
+        case .systemIncompatible:
+            Text("Not available on this version of macOS")
+        case .empty:
+            Text("Nothing handed to the system yet")
+        case .failed, .publishedNotSelected, .inUse:
+            Text("\(Int64(service.items.count)) videos handed to the system")
+        }
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var content: some View {
+        if !isFunctional {
+            unavailableState
+        } else if service.items.isEmpty {
+            emptyState
+        } else {
+            gallery
+        }
+    }
+
+    private var gallery: some View {
+        ScrollView {
+            LazyVStack(spacing: DesignTokens.Spacing.lg) {
+                notice
+                LazyVGrid(
+                    columns: DesignTokens.LibraryGrid.columns,
+                    spacing: DesignTokens.LibraryGrid.spacing
+                ) {
+                    ForEach(service.items) { item in
+                        SystemWallpaperTile(
+                            item: item,
+                            thumbnailURL: service.thumbnailURL(for: item),
+                            isInUse: service.isItemInUse(item.id),
+                            onRemove: {
+                                pendingDestructive = PendingDestructive(
+                                    .removeSystemWallpaper(
+                                        title: item.title,
+                                        isInUse: service.isItemInUse(item.id)
+                                    )
+                                ) { try? service.remove(itemID: item.id) }
+                            }
+                        )
+                        .transition(.opacity)
+                    }
+                }
+                playbackModeRow
+                footnote
+            }
+            .padding(DesignTokens.Spacing.lg)
+            .animation(.easeOut(duration: 0.2), value: service.items)
+        }
+    }
+
+    /// Flat and in-flow: this is page content, and the app reserves glass for
+    /// floating chrome. Only states that need something from the reader get a
+    /// row — "playing right now" is already legible on the tile itself.
+    @ViewBuilder
+    private var notice: some View {
+        switch service.status {
+        case .failed(let message):
+            noticeRow(
+                icon: "exclamationmark.triangle.fill",
+                tint: DesignTokens.Colors.Status.warning,
+                title: Text("Couldn't update System Wallpaper"),
+                detail: Text(verbatim: message)
+            ) {
+                Button("Dismiss") { service.clearLastError() }
+                    .adaptiveGlassButton(.regular, size: .small)
+                    .fixedSize()
+            }
+        case .publishedNotSelected:
+            noticeRow(
+                icon: "arrow.right.circle.fill",
+                tint: .accentColor,
+                title: Text("Ready — pick one in System Settings"),
+                detail: Text("macOS decides which wallpaper is on screen; Loomscreen only supplies them.")
+            ) {
+                Button("Open…") { service.openWallpaperSettings() }
+                    .adaptiveGlassButton(.regular, size: .small)
+                    .fixedSize()
+            }
+        case .inUse, .empty, .unsupported, .systemIncompatible:
+            EmptyView()
+        }
+    }
+
+    private func noticeRow<Action: View>(
+        icon: String,
+        tint: Color,
+        title: Text,
+        detail: Text,
+        @ViewBuilder action: () -> Action
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 2) {
+                title.font(.callout.weight(.medium))
+                detail
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: DesignTokens.Spacing.sm)
+            action()
+        }
+        .padding(DesignTokens.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .transition(.opacity)
+        .animation(.easeOut(duration: 0.2), value: service.status)
+    }
+
+    /// One switch for the whole feature rather than per video: the system shows
+    /// one wallpaper at a time, and Apple's own videos behave one way for all.
+    private var playbackModeRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("On the desktop")
+                    .font(.callout.weight(.medium))
+                Text("The lock screen always plays. This is what happens after you unlock.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: DesignTokens.Spacing.sm)
+            Picker("On the desktop", selection: Binding(
+                get: { service.playbackMode },
+                set: { service.setPlaybackMode($0) }
+            )) {
+                Text("Keep playing").tag(SystemWallpaperPlaybackMode.always)
+                Text("Ease to a still").tag(SystemWallpaperPlaybackMode.stillOnDesktop)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+        }
+        .padding(DesignTokens.Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+    }
+
+    private var footnote: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if service.diskUsageBytes > 0 {
+                Text("Uses \(ByteCountFormatter.string(fromByteCount: service.diskUsageBytes, countStyle: .file)) on disk — the system needs its own copy of each video.")
+            }
+            // Not "deleting the app removes them" — trashing an app does not
+            // delete its container, so that claim was simply false.
+            Text("Removing a video here also deletes the system's copy from disk.")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Empty / unavailable
+
+    private var emptyState: some View {
+        IllustratedEmptyState(
+            symbol: "macwindow.on.rectangle",
+            title: "Let macOS play your wallpaper",
+            message: "Videos you hand to the system keep playing with Loomscreen closed, and the lock screen changes too."
+        ) {
+            SystemWallpaperAddMenu()
+        }
+    }
+
+    @ViewBuilder
+    private var unavailableState: some View {
+        switch service.status {
+        case .systemIncompatible:
+            IllustratedEmptyState(
+                symbol: "exclamationmark.triangle",
+                title: "Not available on this version of macOS",
+                message: "Your other Loomscreen wallpapers are unaffected."
+            )
+        default:
+            IllustratedEmptyState(
+                symbol: "macwindow.on.rectangle",
+                title: "Requires macOS 26 or later",
+                message: "On earlier versions Loomscreen plays wallpapers itself, which needs the app running."
+            )
+        }
+    }
+
+    /// False for the two states where nothing on this page can work, so the
+    /// page shows one explanation instead of dead controls.
+    private var isFunctional: Bool {
+        switch service.status {
+        case .unsupported, .systemIncompatible: return false
+        default: return true
+        }
+    }
+}
+
+// MARK: - Add menu
+
+/// Adding is a menu, not a picker sheet: a sheet would stack a second list of
+/// videos on top of the grid already on screen. Import comes first because it
+/// is the only source that works on a fresh install.
+@available(macOS 26.0, *)
+struct SystemWallpaperAddMenu: View {
+    @Environment(WallpaperExportService.self) private var service
+    @State private var store = BookmarkStore.shared
+
+    /// Already-published entries are dropped rather than shown disabled: a menu
+    /// is a list of things you can do, not a status display.
+    private var libraryVideos: [WallpaperBookmark] {
+        store.bookmarks.filter {
+            guard case .video = $0.content else { return false }
+            return !service.isPublished(bookmarkID: $0.id)
+        }
+    }
+
+    var body: some View {
+        Menu {
+            Button("Import from Files…", systemImage: "folder.badge.plus") { importFromFiles() }
+            if !libraryVideos.isEmpty {
+                Section("In your library") {
+                    ForEach(libraryVideos) { bookmark in
+                        Button {
+                            Task { try? await service.publish(bookmark: bookmark) }
+                        } label: {
+                            Text(verbatim: bookmark.label)
+                        }
+                    }
+                }
+            }
+            workshopSection
+        } label: {
+            Image(systemName: "plus")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(Text("Add a video to System Wallpaper"))
+        .accessibilityLabel(Text("Add Video"))
+    }
+
+    private func importFromFiles() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = ResourceUtilities.supportedVideoContentTypes
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.prompt = L10n.Panel.addVideos
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
+        Task {
+            for url in urls {
+                try? await service.publish(fileURL: url)
+            }
+        }
+    }
+}
+
+// MARK: - Workshop source
+
+#if LITE_BUILD
+@available(macOS 26.0, *)
+extension SystemWallpaperAddMenu {
+    @ViewBuilder fileprivate var workshopSection: some View { EmptyView() }
+}
+#else
+@available(macOS 26.0, *)
+extension SystemWallpaperAddMenu {
+    /// Installed Workshop wallpapers keep their own list, so they are
+    /// publishable without being added to Bookmarks first.
+    private var workshopVideos: [WPEHistoryEntry] {
+        SettingsManager.shared.loadGlobalSettings().recentWPEImports.filter {
+            $0.origin.originalType == .video && !(($0.origin.entryFile ?? "").isEmpty)
+        }
+    }
+
+    @ViewBuilder fileprivate var workshopSection: some View {
+        if !workshopVideos.isEmpty {
+            Section("Installed from Workshop") {
+                ForEach(workshopVideos, id: \.origin.workshopID) { entry in
+                    Button {
+                        guard let content = WPECachedContentResolver().content(for: entry.origin) else { return }
+                        Task { try? await service.publish(content: content, title: entry.origin.title) }
+                    } label: {
+                        Text(verbatim: entry.origin.title)
+                    }
+                }
+            }
+        }
+    }
+}
+#endif
+
+// MARK: - Tile
+
+@available(macOS 26.0, *)
+private struct SystemWallpaperTile: View {
+    let item: SystemWallpaperManifest.Item
+    let thumbnailURL: URL?
+    let isInUse: Bool
+    let onRemove: () -> Void
+
+    @State private var isHovering = false
+    @State private var thumbnail: NSImage?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            preview
+            metadata
+                .padding(DesignTokens.Spacing.md)
+        }
+        .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button("Remove from System Wallpaper", role: .destructive, action: onRemove)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: Text {
+        isInUse
+            ? Text("\(item.title), on screen now")
+            : Text("\(item.title), ready in System Settings")
+    }
+
+    private var preview: some View {
+        ZStack {
+            if let thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "film")
+                    .font(.title)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .clipped()
+        .overlay(alignment: .topTrailing) {
+            if isHovering {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.semibold))
+                        .padding(6)
+                }
+                .buttonStyle(.plain)
+                .floatingGlyphGlass(hovered: isHovering)
+                .padding(DesignTokens.Spacing.sm)
+                .accessibilityLabel(Text("Remove from System Wallpaper"))
+            }
+        }
+        .task(id: thumbnailURL) {
+            guard let thumbnailURL else { return }
+            // Data crosses the actor hop; NSImage (non-Sendable) stays on main.
+            let data = await Task.detached { try? Data(contentsOf: thumbnailURL) }.value
+            if let data { thumbnail = NSImage(data: data) }
+        }
+    }
+
+    /// The in-use state is stated once, under the title — a badge over the
+    /// thumbnail *and* a caption below it said the same thing twice.
+    private var metadata: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: item.title)
+                .lineLimit(1)
+                .font(.callout.weight(.medium))
+            if isInUse {
+                StatusChip("On screen", tint: DesignTokens.Colors.Status.active, systemImage: "play.fill")
+            } else {
+                Text("Ready in System Settings")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}

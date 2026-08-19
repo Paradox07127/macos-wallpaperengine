@@ -15,6 +15,7 @@ public enum DestructiveAction: Identifiable, Equatable {
     case applyConfigurationToAllDisplays(otherCount: Int)
     case clearCurrentWallpaper(displayName: String)
     case resetDisplaySettings(displayName: String)
+    case removeSystemWallpaper(title: String, isInUse: Bool)
     case disconnectAerialsLibrary
     #if DEBUG
     /// Storage tab's debug-only cleanup of test-run scratch dirs. Gated so a
@@ -26,6 +27,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         switch self {
         case .removePlaylistItem(let isLast, let name): return "removePlaylistItem-\(isLast)-\(name)"
         case .removeSceneHistory(let s): return "removeSceneHistory-\(s)"
+        case .removeSystemWallpaper(let t, let u): return "removeSystemWallpaper-\(t)-\(u)"
         case .deleteBookmark(let n): return "deleteBookmark-\(n)"
         case .removeScheduleSlot(let l): return "removeScheduleSlot-\(l)"
         case .disableSchedule(let c): return "disableSchedule-\(c)"
@@ -54,6 +56,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .applyConfigurationToAllDisplays: return "Apply this wallpaper to every other display?"
         case .clearCurrentWallpaper:     return "Clear current wallpaper?"
         case .resetDisplaySettings:      return "Reset this display's settings?"
+        case .removeSystemWallpaper:     return "Remove this video from System Wallpaper?"
         case .disconnectAerialsLibrary:  return "Disconnect Apple Aerials library?"
         #if DEBUG
         case .clearTestTempArtifacts:    return "Delete leftover test artifacts?"
@@ -72,6 +75,16 @@ public enum DestructiveAction: Identifiable, Equatable {
                 : String(
                     localized: "The item will be removed from the playlist. Other displays using this video keep their copy.",
                     comment: "Destructive confirm message for removing a non-last playlist item."
+                )
+        case .removeSystemWallpaper(let title, let isInUse):
+            return isInUse
+                ? String(
+                    localized: "“\(title)” is on screen right now. Its file is deleted immediately, but macOS keeps showing it until you pick another wallpaper in System Settings.",
+                    comment: "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title."
+                )
+                : String(
+                    localized: "“\(title)” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched.",
+                    comment: "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title."
                 )
         case .removeSceneHistory(let sceneName):
             return String(
@@ -146,6 +159,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .applyConfigurationToAllDisplays: return "Apply to All Displays"
         case .clearCurrentWallpaper:     return "Clear Wallpaper"
         case .resetDisplaySettings:      return "Reset Settings"
+        case .removeSystemWallpaper:     return "Remove"
         case .disconnectAerialsLibrary:  return "Disconnect"
         #if DEBUG
         case .clearTestTempArtifacts(let itemCount, _): return "Delete \(itemCount) Items"

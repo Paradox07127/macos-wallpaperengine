@@ -16,8 +16,12 @@ extension WPECacheManagementView {
         inventory?.engineAssetsBytes ?? 0
     }
 
+    private var systemWallpaperBytes: UInt64 {
+        UInt64(max(0, exportService.diskUsageBytes))
+    }
+
     private var storageFootprintBytes: UInt64 {
-        engineAssetBytes + totalBytes + (inventory?.projectsTotalBytes ?? 0)
+        engineAssetBytes + totalBytes + (inventory?.projectsTotalBytes ?? 0) + systemWallpaperBytes
     }
 
     private var isStorageOverviewLoading: Bool {
@@ -42,6 +46,13 @@ extension WPECacheManagementView {
                 valueText: byteFormatter.string(fromByteCount: Int64(engineAssetBytes))
             ),
             StorageOverviewSegment(
+                id: "systemWallpaper",
+                title: "System Wallpaper",
+                color: DesignTokens.Colors.Gauge.high,
+                bytes: systemWallpaperBytes,
+                valueText: byteFormatter.string(fromByteCount: Int64(systemWallpaperBytes))
+            ),
+            StorageOverviewSegment(
                 id: "caches",
                 title: "Caches",
                 color: DesignTokens.Colors.Gauge.medium,
@@ -49,6 +60,13 @@ extension WPECacheManagementView {
                 valueText: byteFormatter.string(fromByteCount: Int64(totalBytes))
             )
         ].filter { $0.bytes > 0 }
+    }
+
+    private var systemWallpaperSubtitle: Text {
+        let count = exportService.items.count
+        return count == 1
+            ? Text("1 video copied for macOS to play")
+            : Text("\(count) videos copied for macOS to play")
     }
 
     private var isAnyLoading: Bool {
@@ -106,6 +124,22 @@ extension WPECacheManagementView {
                     }
                     StorageInfoButton {
                         infoNote("Materials, models, and shaders shared by every scene — downloaded once and required by scenes that reference built-in files. Not a cache.")
+                    }
+                }
+
+                if #available(macOS 26.0, *), systemWallpaperBytes > 0 {
+                    StorageDashboardTile(
+                        title: "System Wallpaper",
+                        systemImage: "macwindow.on.rectangle",
+                        accent: DesignTokens.Colors.Gauge.high,
+                        subtitle: systemWallpaperSubtitle
+                    ) {
+                        storageValue(bytes: systemWallpaperBytes, isLoading: false)
+                    } actions: {
+                        openFolderIconButton(exportService.videosDirectory)
+                        StorageInfoButton {
+                            infoNote("macOS plays these copies itself, so it needs its own file for each one. Remove a video in Library › System Wallpaper to free its space.")
+                        }
                     }
                 }
 
