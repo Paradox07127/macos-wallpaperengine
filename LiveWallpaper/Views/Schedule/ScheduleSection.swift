@@ -156,7 +156,7 @@ struct ScheduleSection: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .buttonStyle(GlassCapsuleButtonStyle())
+            .buttonStyle(CapsuleButtonStyle())
             .accessibilityLabel(Text("Add schedule slot"))
 
             Spacer()
@@ -164,7 +164,7 @@ struct ScheduleSection: View {
             Button(role: .destructive, action: disableSchedule) {
                 Text("Disable Schedule")
             }
-            .buttonStyle(GlassCapsuleButtonStyle(tint: DesignTokens.Colors.Status.danger))
+            .buttonStyle(CapsuleButtonStyle(tint: DesignTokens.Colors.Status.danger))
             .accessibilityLabel(Text("Disable schedule"))
             .accessibilityHint(Text("Removes all schedule slots and returns to normal playback"))
         }

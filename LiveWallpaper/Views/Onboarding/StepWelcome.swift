@@ -52,7 +52,7 @@ struct StepWelcome: View {
                 Text("Continue")
                     .frame(minWidth: 140)
             }
-            .buttonStyle(GlassCapsuleButtonStyle(preset: .large))
+            .buttonStyle(CapsuleButtonStyle(preset: .large))
             .keyboardShortcut(.defaultAction)
             .accessibilityHint(Text("Proceed to choose your first wallpaper"))
 

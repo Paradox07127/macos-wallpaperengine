@@ -10,6 +10,13 @@ public struct ContainerGroupBoxStyle: GroupBoxStyle {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
-        .adaptiveGlassSurface(.roundedRectangle(12))
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DesignTokens.Colors.surfaceRaised)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
+        )
     }
 }

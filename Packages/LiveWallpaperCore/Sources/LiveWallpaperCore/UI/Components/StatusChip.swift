@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Small tinted status/tag capsule — the one recipe for footer badges, status
 /// pills, and tag chips that are NOT floating over a thumbnail (those use
-/// `ThumbnailBadge`). Same glass family and `.badge` type as `TypeBadge`, so
-/// every chip-sized label in the app reads as one system.
+/// `ThumbnailBadge`). Because it never floats, the fill stays flat; it shares the
+/// `.badge` type with `TypeBadge`, so every chip-sized label reads as one system.
 ///
 /// Before this existed the recipe was written out longhand four ways
 /// (fonts 11pt/12pt, Capsule/RoundedRect, glass/flat, stroke/none).
@@ -11,18 +11,15 @@ public struct StatusChip: View {
     private let title: Text
     private let tint: Color
     private let systemImage: String?
-    private let interactive: Bool
 
     public init(
         _ title: LocalizedStringKey,
         tint: Color = .accentColor,
-        systemImage: String? = nil,
-        interactive: Bool = false
+        systemImage: String? = nil
     ) {
         self.title = Text(title, bundle: .main)
         self.tint = tint
         self.systemImage = systemImage
-        self.interactive = interactive
     }
 
     /// Pre-built `Text` variant for interpolated/composed labels the other
@@ -30,13 +27,11 @@ public struct StatusChip: View {
     public init(
         text: Text,
         tint: Color = .accentColor,
-        systemImage: String? = nil,
-        interactive: Bool = false
+        systemImage: String? = nil
     ) {
         self.title = text
         self.tint = tint
         self.systemImage = systemImage
-        self.interactive = interactive
     }
 
     /// Verbatim variant for already-resolved runtime strings (statuses,
@@ -44,13 +39,11 @@ public struct StatusChip: View {
     public init(
         verbatim: String,
         tint: Color = .accentColor,
-        systemImage: String? = nil,
-        interactive: Bool = false
+        systemImage: String? = nil
     ) {
         self.title = Text(verbatim: verbatim)
         self.tint = tint
         self.systemImage = systemImage
-        self.interactive = interactive
     }
 
     public var body: some View {
@@ -66,7 +59,7 @@ public struct StatusChip: View {
         .foregroundStyle(tint)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .adaptiveGlassSurface(.capsule, tint: tint, interactive: interactive)
+        .background(Capsule().fill(tint.opacity(0.12)))
         .fixedSize()
     }
 }

@@ -45,8 +45,6 @@ struct ScenePreviewLifecycleState: Equatable {
 @MainActor
 struct SceneDetailView: View {
     private let screenAspectRatio: CGFloat = 16 / 9
-    private let infoBarReservedHeight: CGFloat = 44
-    private let errorBannerReservedHeight: CGFloat = 76
     private let stackSpacing: CGFloat = 16
 
     let origin: WPEOrigin
@@ -94,22 +92,10 @@ struct SceneDetailView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let previewSize = screenPreviewSize(
-                in: geo.size,
-                reservedHeight: previewReservedHeight
-            )
-            VStack(spacing: stackSpacing) {
-                previewCard
-                    .frame(width: previewSize.width, height: previewSize.height)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .layoutPriority(1)
-                infoBar
-                // Above the error banner: the error names the symptom, this
-                // names the one cause the user can act on from here.
-                engineAssetsBanner
-                errorBanner
-            }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+            let previewSize = screenPreviewSize(in: geo.size)
+            previewCard
+                .frame(width: previewSize.width, height: previewSize.height)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $showLogSheet) {
@@ -174,6 +160,16 @@ struct SceneDetailView: View {
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.2), value: stateKey)
+        .overlay(alignment: .bottom) {
+            VStack(spacing: stackSpacing) {
+                // Above the error banner: the error names the symptom, this
+                // names the one cause the user can act on from here.
+                engineAssetsBanner
+                errorBanner
+                infoBar
+            }
+            .padding(16)
+        }
     }
 
     @ViewBuilder
@@ -316,7 +312,8 @@ struct SceneDetailView: View {
                         Label("Retry", systemImage: "arrow.clockwise")
                             .font(.caption.weight(.semibold))
                     }
-                    .adaptiveGlassButton(.prominent, size: .small)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                     .accessibilityHint(Text("Re-decodes the scene with the current cache state"))
                 }
                 Button {
@@ -325,7 +322,8 @@ struct SceneDetailView: View {
                     Label("Log", systemImage: "terminal")
                         .font(.caption.weight(.semibold))
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .help(Text("Open the full diagnostic log"))
                 .accessibilityLabel(Text("Open the full diagnostic log"))
             }
@@ -434,7 +432,8 @@ struct SceneDetailView: View {
                     Label("Get Assets", systemImage: "arrow.right")
                         .font(.caption.weight(.semibold))
                 }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .accessibilityHint(Text("Opens the Workshop settings page to download or link Wallpaper Engine assets"))
             }
             .padding(12)
@@ -525,21 +524,9 @@ struct SceneDetailView: View {
         .overlay(Color.black.opacity(state.isLoading ? 0.35 : 0.0))
     }
 
-    private var previewReservedHeight: CGFloat {
-        var height = infoBarReservedHeight + stackSpacing
-        if case .error = state {
-            height += errorBannerReservedHeight + stackSpacing
-        }
-        if showsEngineAssetsWarning {
-            height += errorBannerReservedHeight + stackSpacing
-        }
-        return height
-    }
-
-    private func screenPreviewSize(in available: CGSize, reservedHeight: CGFloat) -> CGSize {
-        let maxHeight = max(0, available.height - reservedHeight)
+    private func screenPreviewSize(in available: CGSize) -> CGSize {
         let heightForAvailableWidth = available.width / screenAspectRatio
-        let height = min(maxHeight, heightForAvailableWidth)
+        let height = min(available.height, heightForAvailableWidth)
         return CGSize(width: height * screenAspectRatio, height: height)
     }
 

@@ -459,7 +459,8 @@ struct BrowsePane: View {
                 .accessibilityLabel(Text("Steam is rate-limiting. Retry in \(Self.countdown(rateLimitRemaining))."))
 
                 Button("Retry") { Task { await viewModel.reload() } }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .disabled(rateLimitRemaining > 0)
             }
             .padding(.horizontal, DesignTokens.Spacing.md)

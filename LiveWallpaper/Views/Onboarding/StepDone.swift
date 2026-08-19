@@ -65,7 +65,7 @@ struct StepDone: View {
                 Text(completionButtonTitle)
                     .frame(minWidth: 140)
             }
-            .buttonStyle(GlassCapsuleButtonStyle(preset: .large))
+            .buttonStyle(CapsuleButtonStyle(preset: .large))
             .keyboardShortcut(.defaultAction)
             .accessibilityHint(Text("Close onboarding and open \(BundleIdentity.productDisplayName)"))
 

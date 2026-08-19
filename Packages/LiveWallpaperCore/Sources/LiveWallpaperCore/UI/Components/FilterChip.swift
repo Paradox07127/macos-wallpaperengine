@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Shared capsule backing for filter chips: selected chips get a tinted Liquid
-/// Glass capsule with an accent ring (selection stays unmistakable), deselected
-/// chips keep a quiet flat fill. The single source of truth for chip chrome —
-/// bespoke twins of this recipe drifted (0.07 vs 0.04 fills) before it existed.
+/// Shared capsule backing for filter chips: selected chips get a tinted fill with
+/// an accent ring (selection stays unmistakable), deselected chips keep a quieter
+/// flat fill. The single source of truth for chip chrome — bespoke twins of this
+/// recipe drifted (0.07 vs 0.04 fills) before it existed.
 public struct FilterChipBackground: ViewModifier {
     let isSelected: Bool
 
@@ -14,7 +14,7 @@ public struct FilterChipBackground: ViewModifier {
     public func body(content: Content) -> some View {
         if isSelected {
             content
-                .adaptiveGlassSurface(.capsule, tint: .accentColor, interactive: true)
+                .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                 .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1))
         } else {
             content

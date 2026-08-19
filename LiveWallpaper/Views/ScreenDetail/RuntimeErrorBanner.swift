@@ -38,17 +38,22 @@ struct RuntimeErrorBanner: View {
 
             if error.canRetry {
                 Button("Retry", action: onRetry)
-                    .adaptiveGlassButton(.prominent, size: .small)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                     .accessibilityHint(Text("Retry loading the current wallpaper source"))
             }
             if canRePick {
                 Button("Re-pick", action: onRePick)
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .accessibilityHint(Text("Pick a different wallpaper source"))
             }
         }
         .padding(12)
-        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.md), tint: severityTint)
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .fill(severityTint.opacity(0.10))
+        )
         .overlay(
             RoundedRectangle(cornerRadius: DesignTokens.Corner.md)
                 .stroke(severityTint.opacity(0.4), lineWidth: 0.5)

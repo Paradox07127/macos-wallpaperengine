@@ -283,7 +283,7 @@ private struct OnboardingWorkshopSetupView: View {
                     Text("Continue")
                         .frame(minWidth: 140)
                 }
-                .buttonStyle(GlassCapsuleButtonStyle(preset: .large))
+                .buttonStyle(CapsuleButtonStyle(preset: .large))
                 .keyboardShortcut(.defaultAction)
 
                 // Same action as Continue — it exists to say out loud that

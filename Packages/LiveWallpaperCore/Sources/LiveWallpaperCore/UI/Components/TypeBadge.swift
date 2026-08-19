@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Liquid-glass uppercase type pill ("SCENE" / "VIDEO" / "WEB").
+/// Flat uppercase type pill ("SCENE" / "VIDEO" / "WEB"). In-flow page content,
+/// so it stays flat — badges that float over a thumbnail use `ThumbnailBadge`.
 public struct TypeBadge: View {
     private let title: String
     private let systemImage: String?
@@ -26,7 +27,7 @@ public struct TypeBadge: View {
         .foregroundStyle(foreground)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .adaptiveGlassSurface(.capsule, tint: tint)
+        .background(Capsule().fill((tint ?? Color.secondary).opacity(0.12)))
         // Keep intrinsic width so a crowded row never wraps or compresses it.
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .ignore)
