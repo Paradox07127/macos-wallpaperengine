@@ -20,23 +20,6 @@ struct WPEDependencyMountResolver {
         let appSupportRoot = (applicationSupportRootURL ?? WPEPathSafety.defaultApplicationSupportRoot(fileManager: fileManager))?
             .standardizedFileURL
             .resolvingSymlinksInPath()
-        // Resolve and start accessing the library root bookmark if available.
-        // TODO: nothing writes `WPELibrary.RootBookmark.v1` — grep finds only this
-        // read and the `cleanAllSettings` removal — so this branch is inert until a
-        // "grant a Workshop library folder" flow stores one. Wire it or delete it.
-        var libraryRootURL: URL?
-        var didStartLibraryAccess = false
-        if let rootData = UserDefaults.standard.data(forKey: "WPELibrary.RootBookmark.v1") {
-            if case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(rootData, target: .transient) {
-                libraryRootURL = resolved.url
-                didStartLibraryAccess = resolved.url.startAccessingSecurityScopedResource()
-            }
-        }
-        defer {
-            if didStartLibraryAccess, let libraryRootURL {
-                libraryRootURL.stopAccessingSecurityScopedResource()
-            }
-        }
 
         // Resolve and start accessing the source folder bookmark if available
         var sourceFolderURL: URL?
@@ -53,7 +36,7 @@ struct WPEDependencyMountResolver {
             }
         }
 
-        let workshopRoot = (libraryRootURL ?? sourceFolderURL?.deletingLastPathComponent())?
+        let workshopRoot = sourceFolderURL?.deletingLastPathComponent()
             .standardizedFileURL
             .resolvingSymlinksInPath()
 
