@@ -36,7 +36,7 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         window: NSWindow,
         wallpaperType: WallpaperType,
         performanceTarget: (any WallpaperPerformanceConfigurable)?,
-        userPauseHibernationDelay: Duration = .seconds(300)
+        userPauseHibernationDelay: Duration = ManualPauseHibernation.delay
     ) {
         precondition(wallpaperType != .video, "AmbientWallpaperSession only supports non-video wallpapers")
         // Avoid NSWindow default isReleasedWhenClosed over-release on cleanup close.
@@ -125,9 +125,12 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         pushHibernationEligibility()
     }
 
-    private func pushHibernationEligibility() {
+    private func pushHibernationEligibility(immediate: Bool = false) {
         (performanceTarget as? any WallpaperHibernationEligible)?
-            .setHibernationEligible(absenceHibernationEligible || manualPauseHibernationRequested)
+            .setHibernationEligible(
+                absenceHibernationEligible || manualPauseHibernationRequested,
+                immediately: immediate
+            )
     }
 
     /// Second hibernatable class: the view only ever sees the folded
@@ -149,7 +152,8 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         ) { [weak self] in
             guard let self, !userIntendsToPlay else { return true }
             manualPauseHibernationRequested = true
-            pushHibernationEligibility()
+            // The 300s wait happened here; the view must not dwell again on top.
+            pushHibernationEligibility(immediate: true)
             return true
         }
     }

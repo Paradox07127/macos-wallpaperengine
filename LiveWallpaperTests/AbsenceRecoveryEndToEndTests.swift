@@ -42,13 +42,13 @@ struct AbsenceRecoveryEndToEndTests {
 
         // Display slept: absence suspends without touching intent.
         manager.userAbsenceReasons.insert(.displaySleep)
-        probe.displayAsleep = true
+        probe.allDisplaysAsleep = true
         manager.refreshPerformancePolicyForAllScreens()
         #expect(playback.lastProfile == .suspended)
         #expect(playback.userIntendsToPlay, "Absence must never rewrite the user's intent")
 
         // The wake notification never arrives; the probe is the only way back.
-        probe.displayAsleep = false
+        probe.allDisplaysAsleep = false
         manager.refreshPerformancePolicyForAllScreens()
 
         #expect(!manager.isUserAbsent)
@@ -109,11 +109,11 @@ struct AbsenceRecoveryEndToEndTests {
 
 private final class FakeRecoveryPresenceProbe: UserPresenceProbing, @unchecked Sendable {
     // Written only from the @MainActor test body between reads.
-    var displayAsleep = false
+    var allDisplaysAsleep = false
     var mainDisplayActive = true
     var lockState = ScreenLockState.unlocked
 
-    func isAnyDisplayAsleep() -> Bool { displayAsleep }
+    func areAllDisplaysAsleep() -> Bool { allDisplaysAsleep }
     func isMainDisplayActive() -> Bool { mainDisplayActive }
     func screenLockState() -> ScreenLockState { lockState }
 }

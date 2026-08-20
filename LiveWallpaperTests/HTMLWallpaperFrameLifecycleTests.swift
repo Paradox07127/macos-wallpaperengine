@@ -467,15 +467,18 @@ private final class RecordingHibernationTarget:
 {
     private(set) var appliedProfiles: [WallpaperPerformanceProfile] = []
     private(set) var eligibilityPushes: [Bool] = []
+    private(set) var immediatePushes: [Bool] = []
 
     var lastEligibility: Bool? { eligibilityPushes.last }
+    var lastPushWasImmediate: Bool? { immediatePushes.last }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         appliedProfiles.append(profile)
     }
 
-    func setHibernationEligible(_ eligible: Bool) {
+    func setHibernationEligible(_ eligible: Bool, immediately: Bool) {
         eligibilityPushes.append(eligible)
+        immediatePushes.append(immediately)
     }
 }
 
@@ -525,6 +528,10 @@ struct HTMLManualPauseHibernationTests {
         try await ManualPauseHarness.poll("eligibility after the pause dwell") {
             harness.target.lastEligibility == true
         }
+        #expect(
+            harness.target.lastPushWasImmediate == true,
+            "the pause dwell is the whole wait; the view must not dwell again on top of it"
+        )
     }
 
     @Test("Routine absence-ineligibility pushes cannot cancel the manual-pause hibernation")
@@ -587,6 +594,31 @@ struct HTMLManualPauseHibernationTests {
         try await Task.sleep(for: .milliseconds(400))
 
         #expect(!harness.target.eligibilityPushes.contains(true))
+    }
+
+    /// D3 parity, driven through a real view rather than the recording target:
+    /// the session's 300s dwell used to be followed by the view's own 20s
+    /// absence dwell, making the true figure 320s while the scene released at
+    /// 300s. The view keeps its production dwell here, so only an immediate
+    /// handover can flip the phase inside this test's budget.
+    @Test("A manual pause hibernates the HTML view without also waiting its absence dwell")
+    func manualPauseReleaseDoesNotStackTheViewDwell() async throws {
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 64, height: 64))
+        defer { view.cleanup() }
+        view.loadSource(.inline("<html><body></body></html>"))
+        let session = AmbientWallpaperSession(
+            window: NSWindow(),
+            wallpaperType: .html,
+            performanceTarget: view,
+            userPauseHibernationDelay: .milliseconds(120)
+        )
+        defer { session.cleanup() }
+
+        session.pause()
+
+        try await ManualPauseHarness.poll("the view leaves .live without its own dwell") {
+            view.hibernationState.phase != .live
+        }
     }
 
     @Test("A policy suspend with play intent never arms the pause dwell")

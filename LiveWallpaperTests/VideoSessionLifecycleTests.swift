@@ -1502,18 +1502,21 @@ struct VideoSessionLifecycleTests {
 
     /// The absence signal and the manual pause share the player's single dwell
     /// slot, so the session has to hold eligibility and suspend depth true across
-    /// both an absence-false push and a `.quality` policy refresh.
+    /// both an absence-false push and a `.quality` policy refresh — every policy
+    /// refresh pushes absence ineligibility for a pause that is not an absence.
+    /// The pushes land during the manual-pause countdown: since the handover to
+    /// the player became immediate (D3), that is the only window left.
     @Test("Neither an absence-false push nor a quality refresh cancels a manual-pause hibernation")
     func manualPauseHibernationSurvivesAbsenceAndPolicyPushes() async throws {
         let url = try await ManualPauseVideoFixture.writeMP4()
         let player = WallpaperVideoPlayer(
             url: url,
             frame: CGRect(x: 0, y: 0, width: 128, height: 128),
-            hibernationDelay: .milliseconds(600)
+            hibernationDelay: .seconds(30)
         )
         let session = VideoWallpaperSession(
             player: player,
-            userPauseHibernationDelay: .milliseconds(60)
+            userPauseHibernationDelay: .milliseconds(300)
         )
         defer {
             session.cleanup()
@@ -1524,13 +1527,7 @@ struct VideoSessionLifecycleTests {
         }
 
         session.pause()
-        // Synchronise on the suspend rather than on the clock: it flips exactly
-        // when the manual-pause dwell hands the player over, which leaves the
-        // player's own (long) dwell still counting down underneath.
-        try await Self.waitForCondition("manual pause suspends the player") {
-            player.isSuspended
-        }
-        #expect(!player.isHibernated)
+        #expect(!player.isHibernated, "the manual-pause dwell has not elapsed yet")
 
         // `ScreenManager.resolveAndApplyPerformanceState` order: the profile
         // first, the absence push last — so the eligibility fold is the one that
@@ -1538,12 +1535,50 @@ struct VideoSessionLifecycleTests {
         session.applyPerformanceProfile(.quality)
         session.setHibernationEligible(false)
 
-        #expect(player.isSuspended)
         try await Self.waitForCondition("the player still hibernates") {
             player.isHibernated
         }
+        #expect(player.isSuspended)
         #expect(player.player == nil)
         #expect(!session.userIntendsToPlay)
+    }
+
+    /// D3: the wall clock from a manual pause to the resources actually going
+    /// away must be the same for all three wallpaper kinds. The scene session
+    /// releases the moment its own 300s dwell elapses; video used to hand the
+    /// player over and then wait out the player's *absence* dwell on top of it,
+    /// so the real figure was 320s. The player's dwell is left at a value this
+    /// test could never wait for, so only the handover being immediate can pass.
+    @Test("A manual pause releases the video without also waiting the absence dwell")
+    func manualPauseReleaseDoesNotStackTheAbsenceDwell() async throws {
+        let url = try await ManualPauseVideoFixture.writeMP4()
+        let player = WallpaperVideoPlayer(
+            url: url,
+            frame: CGRect(x: 0, y: 0, width: 128, height: 128),
+            hibernationDelay: .seconds(30)
+        )
+        let session = VideoWallpaperSession(
+            player: player,
+            userPauseHibernationDelay: .milliseconds(120)
+        )
+        defer {
+            session.cleanup()
+            try? FileManager.default.removeItem(at: url)
+        }
+        try await Self.waitForCondition("player enqueues its first item") {
+            player.player?.currentItem != nil
+        }
+
+        session.pause()
+
+        try await Self.waitForCondition(
+            "the manual-pause dwell releases the player without the absence dwell",
+            timeout: .seconds(4)
+        ) {
+            player.isHibernated
+        }
+        #expect(player.player == nil)
+        #expect(player.isShowingHibernationStillFrameForTesting)
     }
 
     private static func waitForCondition(

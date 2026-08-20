@@ -1295,7 +1295,13 @@ final class WallpaperVideoPlayer {
     /// After `hibernationDelay` of uninterrupted eligibility the player, looper
     /// items, decode pool and `lwmem://` mapping are released behind a captured
     /// still frame; any flip back cancels the countdown.
-    func setHibernationEligible(_ eligible: Bool) {
+    ///
+    /// `immediately` arms with no countdown at all: the manual-pause dwell in
+    /// `VideoWallpaperSession` has already waited its full term, and stacking
+    /// this one on top of it made a paused video outlive a paused scene by the
+    /// length of this dwell. The attempt re-checks every guard either way, so
+    /// the zero start skips only the debounce, never a correctness check.
+    func setHibernationEligible(_ eligible: Bool, immediately: Bool = false) {
         isHibernationEligible = eligible
         // Deliberately not gated on `player != nil`: a wake rebuilds the player
         // asynchronously, so an absence that returns during that window would
@@ -1306,7 +1312,7 @@ final class WallpaperVideoPlayer {
             cancelHibernationDwell()
             return
         }
-        hibernationDwell.arm(initial: hibernationDelay, retry: hibernationDelay) {
+        hibernationDwell.arm(initial: immediately ? .zero : hibernationDelay, retry: hibernationDelay) {
             [weak self] in
             guard let self else { return true }
             return await hibernateNow()
