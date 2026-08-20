@@ -299,40 +299,38 @@ struct WorkshopPaneHeader: View {
         }
     }
 
-    /// Icon, not the Steam avatar: the app never learns the signed-in user's
-    /// SteamID64, so fetching a portrait would mean a new profile lookup for a
-    /// picture that distinguishes nothing — there is only ever one account here.
+    /// An icon, not the Steam avatar: the app never learns the signed-in user's
+    /// SteamID64, so a portrait would cost a profile lookup to distinguish one
+    /// account from no others.
     @ViewBuilder
     private var accountControl: some View {
         if doctor.username == nil {
-            Button { showingSignIn = true } label: {
-                headerGlyph("person.crop.circle.badge.plus")
-            }
-            .adaptiveGlassButton(.regular, shape: .circle)
-            .controlSize(.large)
-            .help(Text("Sign In…"))
-            .accessibilityLabel(Text("Steam sign-in"))
+            headerAction("person.crop.circle.badge.plus") { showingSignIn = true }
+                .help(Text("Sign In…"))
+                .accessibilityLabel(Text("Steam sign-in"))
         } else {
-            Menu {
-                steamAccountMenuItems(
-                    accounts: discoveredAccounts,
-                    current: doctor.username,
-                    onSelect: selectAccount,
-                    onSignIn: { showingSignIn = true },
-                    onRescan: { Task { await loadAccounts() } }
-                )
-            } label: {
-                headerGlyph("person.crop.circle.fill")
-            }
-            // `.button`, not the `.borderlessButton` used in settings rows: this
-            // one stands beside the paste button and has to read as its twin, so
-            // it takes the ambient glass button style instead of a quieter one.
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
-            .adaptiveGlassButton(.regular, shape: .circle)
-            .controlSize(.large)
-            .help(Text(verbatim: accountError ?? doctor.username ?? ""))
-            .accessibilityLabel(Text("Steam account"))
+            // `Menu` ignores `buttonStyle`, so the glass is a real button with the
+            // menu laid over it to take the click.
+            headerAction("person.crop.circle.fill") {}
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .overlay {
+                    Menu {
+                        steamAccountMenuItems(
+                            accounts: discoveredAccounts,
+                            current: doctor.username,
+                            onSelect: selectAccount,
+                            onSignIn: { showingSignIn = true },
+                            onRescan: { Task { await loadAccounts() } }
+                        )
+                    } label: {
+                        Color.clear.contentShape(Circle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .help(Text(verbatim: accountError ?? doctor.username ?? ""))
+                    .accessibilityLabel(Text("Steam account"))
+                }
         }
     }
 
@@ -384,24 +382,23 @@ struct WorkshopPaneHeader: View {
     // Folder import moved to the toolbar's single add button, which routes any
     // picked file or folder — including a Workshop library root — by what it is.
     // Circle glass at `.large`, matching the other pages' header actions.
-    /// Both header actions put their glyph in the same square. `buttonBorderShape`
-    /// sizes the circle to its label, and `link.badge.plus` is wider than
-    /// `person.crop.circle.fill` — left alone the two circles come out different
-    /// diameters no matter how the menu is styled.
-    private func headerGlyph(_ systemImage: String) -> some View {
-        Image(systemName: systemImage)
-            .frame(width: 18, height: 18)
+    /// One recipe for every header action. The fixed glyph square matters:
+    /// `buttonBorderShape(.circle)` sizes the circle to its label, so symbols of
+    /// different widths would otherwise give the row circles of different sizes.
+    private func headerAction(_ systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .frame(width: 18, height: 18)
+        }
+        .adaptiveGlassButton(.regular, shape: .circle)
+        .controlSize(.large)
     }
 
     private var headerActions: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            Button(action: onPaste) {
-                headerGlyph("link.badge.plus")
-            }
-            .adaptiveGlassButton(.regular, shape: .circle)
-            .controlSize(.large)
-            .help(Text("Add a Steam Workshop item by URL or ID"))
-            .accessibilityLabel(Text("Add from Workshop URL or ID"))
+            headerAction("link.badge.plus", action: onPaste)
+                .help(Text("Add a Steam Workshop item by URL or ID"))
+                .accessibilityLabel(Text("Add from Workshop URL or ID"))
 
             accountControl
         }
