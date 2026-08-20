@@ -59,8 +59,14 @@ enum RepositoryRoot {
     }
 
     static func swiftFiles(underURL root: URL) -> [URL] {
+        // `enumerator(at:)` does not follow a symlink used as the *root*: it yields
+        // zero entries and reports no error, so a sweep-based test would pass on an
+        // empty set instead of failing. (A symlink in a middle path component
+        // enumerates fine — only the root is affected.) Resolving first is what
+        // keeps a symlinked root scanning the same files as the directory it names.
+        let resolvedRoot = root.resolvingSymlinksInPath()
         guard let enumerator = FileManager.default.enumerator(
-            at: root,
+            at: resolvedRoot,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
@@ -125,6 +131,41 @@ struct RepositoryRootTests {
             keyed == "Nested/Probe.swift",
             Comment(rawValue: "Swept path is keyed in a different symlink space than its root: \(keyed)")
         )
+    }
+
+    /// Distinct from `relativePathSurvivesSymlinkedRoot` above: there the symlink is a
+    /// *middle* path component and the root itself is a real directory, which enumerates
+    /// fine. Here the root *is* the symlink, which `enumerator(at:)` refuses to follow —
+    /// silently, yielding zero entries, so a sweep-based test passes on an empty set.
+    @Test("A symlink used as the sweep root scans the directory it points at")
+    func symlinkUsedAsSweepRootIsFollowed() throws {
+        let manager = FileManager.default
+        let base = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("RepositoryRootSymlinkRoot-\(UUID().uuidString)")
+        defer { try? manager.removeItem(at: base) }
+        let real = base.appendingPathComponent("real")
+        try manager.createDirectory(at: real.appendingPathComponent("Nested"), withIntermediateDirectories: true)
+        try "// probe\n".write(to: real.appendingPathComponent("Top.swift"), atomically: true, encoding: .utf8)
+        try "// probe\n".write(to: real.appendingPathComponent("Nested/Probe.swift"), atomically: true, encoding: .utf8)
+        let link = base.appendingPathComponent("link")
+        try manager.createSymbolicLink(at: link, withDestinationURL: real)
+
+        // Fixture guard: if the root were not actually a symlink this test would
+        // degenerate into the plain-directory case and could never catch the defect.
+        let rootIsSymlink = try link.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink
+        #expect(rootIsSymlink == true, "Fixture root is not a symlink; this test proves nothing")
+
+        let throughReal = RepositoryRoot.swiftFiles(underURL: real)
+        let throughLink = RepositoryRoot.swiftFiles(underURL: link)
+        // Non-vacuity: the target really does hold files, so an empty sweep through the
+        // symlink means the sweep was dropped, not that there was nothing to find.
+        #expect(throughReal.count == 2)
+        #expect(
+            throughLink.count == throughReal.count,
+            Comment(rawValue: "Symlinked root swept \(throughLink.count) files where its target holds \(throughReal.count)")
+        )
+        let keyed = Set(throughLink.map { RepositoryRoot.relativePath(of: $0, under: link) })
+        #expect(keyed == ["Top.swift", "Nested/Probe.swift"])
     }
 
     @Test("A missing directory sweeps to empty rather than resolving somewhere else")
