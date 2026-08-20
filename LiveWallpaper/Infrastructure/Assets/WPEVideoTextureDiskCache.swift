@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import AVFoundation
 import Foundation
 import CryptoKit
 import LiveWallpaperCore
@@ -22,6 +23,10 @@ actor WPEVideoTextureDiskCache {
     /// Live lease refcounts (content-addressing can share one file across sources).
     private var leaseCounts: [String: Int] = [:]
 
+    /// Keys whose audio strip failed this launch — don't re-attempt a multi-second
+    /// export on every load of the same scene.
+    private var audioStripFailedKeys: Set<String> = []
+
     init(rootURL: URL? = nil, maxBytes: UInt64 = WPEVideoTextureDiskCache.defaultMaxBytes) {
         self.fileManager = .default
         self.rootURL = (rootURL ?? Self.defaultRootURL).standardizedFileURL
@@ -35,22 +40,84 @@ actor WPEVideoTextureDiskCache {
 
     // MARK: - Store / lease
 
-    /// Store/reuse by SHA-256; returns a leased URL and refreshes LRU mtime.
-    func store(_ data: Data, workshopID: String) throws -> URL {
+    /// Store/reuse by SHA-256 of the ORIGINAL bytes; returns a leased URL and
+    /// refreshes LRU mtime. The stored file may be smaller than `data`: the
+    /// audio track is stripped at write time (see `stripAudioTrackIfNeeded`),
+    /// which is also why the hit check cannot compare sizes.
+    func store(_ data: Data, workshopID: String) async throws -> URL {
         let bucketURL = rootURL.appendingPathComponent(bucketName(for: workshopID), isDirectory: true)
         try fileManager.createDirectory(at: bucketURL, withIntermediateDirectories: true)
 
         let hex = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let target = bucketURL.appendingPathComponent("\(hex).mp4").standardizedFileURL
 
-        if fileExists(target, withSize: UInt64(data.count)) {
+        if fileExists(target) {
             touch(target)
         } else {
             try data.write(to: target, options: [.atomic])
         }
+        // Lease BEFORE the strip: the export suspends this actor, and a
+        // concurrently running orphan GC or LRU pass would otherwise see an
+        // unleased file and delete it mid-export (guaranteed for the
+        // `_unattributed` bucket, which GC never keeps by reference).
         leaseCounts[target.path, default: 0] += 1
+        await stripAudioTrackIfNeeded(at: target, cacheKey: hex)
         enforceSizeLimit()
         return target
+    }
+
+    /// Scene playback is permanently muted, but a muted-but-PRESENT audio track
+    /// still makes AVPlayerLooper's item rotation non-gapless: audio priming of
+    /// the next item held frame publication ~100 ms at every 20 s wrap of scene
+    /// 3660962877's clip vs 14-21 ms with the track removed (loop-seam probe
+    /// A/B, 2026-08-20). Stripping once at write time keeps playback (lwmem
+    /// mapping included) completely unchanged. Idempotent: an audio-free file —
+    /// including every previously stripped one — returns after one track load.
+    /// Any failure keeps the original file: worse seams, never broken playback.
+    private func stripAudioTrackIfNeeded(at target: URL, cacheKey: String) async {
+        guard !audioStripFailedKeys.contains(cacheKey) else { return }
+        do {
+            let asset = AVURLAsset(url: target)
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            guard !audioTracks.isEmpty else { return }
+            guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { return }
+            let composition = AVMutableComposition()
+            guard let compositionTrack = composition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+            ), let export = AVAssetExportSession(
+                asset: composition, presetName: AVAssetExportPresetPassthrough
+            ) else {
+                audioStripFailedKeys.insert(cacheKey)
+                return
+            }
+            let (range, transform) = try await videoTrack.load(.timeRange, .preferredTransform)
+            try compositionTrack.insertTimeRange(range, of: videoTrack, at: .zero)
+            compositionTrack.preferredTransform = transform
+            // Dot-prefixed sibling: same volume as `target` (replaceItemAt is
+            // only atomic same-volume) and invisible to stats/GC/LRU, whose
+            // enumerations all skip hidden files.
+            let tempURL = target.deletingLastPathComponent()
+                .appendingPathComponent(".strip-\(UUID().uuidString).mp4")
+            defer { try? fileManager.removeItem(at: tempURL) }
+            try await export.export(to: tempURL, as: .mp4)
+            // Atomic swap; an already-mapped old inode stays valid for its holders.
+            _ = try fileManager.replaceItemAt(target, withItemAt: tempURL)
+            Logger.info(
+                "[WPE.video] stripped audio track from cached video \(cacheKey.prefix(8))…",
+                category: .wpeRender
+            )
+        } catch {
+            // A cancelled scene load (wallpaper switched away) can surface as
+            // CancellationError or an AVFoundation cancel code. The file is
+            // fine — leave the key unlatched so the next load strips it.
+            if error is CancellationError || Task.isCancelled { return }
+            audioStripFailedKeys.insert(cacheKey)
+            Logger.warning(
+                "[WPE.video] audio-track strip failed — keeping original: \(error.localizedDescription)",
+                category: .wpeRender
+            )
+        }
     }
 
     /// Drop one lease; file stays for reuse until no holders remain.
@@ -178,13 +245,16 @@ actor WPEVideoTextureDiskCache {
         WPEPathSafety.isSafeWorkshopID(workshopID) ? workshopID : Self.unattributedBucket
     }
 
-    private func fileExists(_ url: URL, withSize expected: UInt64) -> Bool {
+    /// No size comparison: stored files are audio-stripped, so their size
+    /// legitimately differs from the original payload's. `.atomic` writes mean
+    /// a present file is never partial.
+    private func fileExists(_ url: URL) -> Bool {
         guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
               values.isRegularFile == true,
-              let size = values.fileSize, size >= 0 else {
+              let size = values.fileSize else {
             return false
         }
-        return UInt64(size) == expected
+        return size > 0
     }
 
     private func touch(_ url: URL) {
