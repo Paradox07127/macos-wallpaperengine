@@ -61,7 +61,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     init(
         player: WallpaperVideoPlayer,
-        userPauseHibernationDelay: Duration = .seconds(300),
+        userPauseHibernationDelay: Duration = ManualPauseHibernation.delay,
         effectsWorkRevisionProvider: @MainActor @escaping (
             WallpaperVideoPlayer
         ) -> UInt64? = { _ in nil },
@@ -244,13 +244,15 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     }
 
-    /// Hands the paused player into the deep-hibernation path it already owns;
-    /// the player's own dwell then captures the still frame and releases.
+    /// Hands the paused player into the deep-hibernation path it already owns.
+    /// Immediate, not dwelled: `userPauseHibernationDelay` is the whole wait,
+    /// and letting the player's absence dwell run again on top of it released a
+    /// paused video that much later than a paused scene.
     private func hibernateForManualPause() -> Bool {
         guard !userIntendsToPlay, let player else { return true }
         isManualPauseHibernating = true
         player.setSuspended(true)
-        player.setHibernationEligible(true)
+        player.setHibernationEligible(true, immediately: true)
         return true
     }
 

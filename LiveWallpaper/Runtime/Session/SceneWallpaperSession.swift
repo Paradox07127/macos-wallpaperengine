@@ -163,7 +163,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         surface: WPERenderSurface,
         audioCaptureDemandController: any SystemAudioCaptureDemandControlling = SystemAudioCaptureManager.shared,
         hibernationDelay: Duration = .seconds(20),
-        userPauseHibernationDelay: Duration = .seconds(300),
+        userPauseHibernationDelay: Duration = ManualPauseHibernation.delay,
         wakeRetryDelay: Duration = .seconds(10)
     ) {
         self.window = window
@@ -380,6 +380,12 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
         if effective == .quality, isHibernated {
             isHibernated = false
+            // This wake supersedes any earlier one still waiting out its retry:
+            // left alive, that one would reload on top of this wake and — when
+            // its reload failed — restore `isHibernated` behind this wake's
+            // back. The replacement below inherits the give-up restore, so
+            // cancelling here does not drop it.
+            wakeTask?.cancel()
             // Rebuild everything hibernate dropped; the profile command above
             // (or the load tail's re-apply) restores pacing once loaded.
             wakeTask = Task { [weak self] in

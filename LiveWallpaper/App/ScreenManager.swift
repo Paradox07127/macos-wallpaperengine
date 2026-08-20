@@ -59,6 +59,7 @@ final class ScreenManager {
     @ObservationIgnored var userAbsenceReasons: Set<UserAbsenceReason> = []
     @ObservationIgnored let userPresenceProbe: any UserPresenceProbing
     @ObservationIgnored let absenceRevalidationGrace: Duration
+    @ObservationIgnored let absenceRevalidationPollInterval: Duration
     /// When each reason was recorded, for the revalidation grace period.
     @ObservationIgnored var absenceMarkedAt: [UserAbsenceReason: ContinuousClock.Instant] = [:]
     /// Slow poll that re-runs revalidation while absent — the safety net for a
@@ -357,6 +358,7 @@ final class ScreenManager {
         memoryPressureWatcher = startupOptions.memoryPressureWatcher
         userPresenceProbe = startupOptions.userPresenceProbe
         absenceRevalidationGrace = startupOptions.absenceRevalidationGrace
+        absenceRevalidationPollInterval = startupOptions.absenceRevalidationPollInterval
         restoresSavedWallpapersOnScreenRefresh = startupOptions.restoreSavedWallpapers
 
         Logger.notice("ScreenManager initializing", category: .screenManager)

@@ -1,6 +1,14 @@
 import Foundation
 import os
 
+/// How long a manually paused wallpaper stays warm before its resources are
+/// released. One constant for all three wallpaper kinds because the wall clock
+/// from pause to release has to match across them (D3); a per-kind copy is how
+/// video and HTML drifted to 320s while the scene released at 300s.
+enum ManualPauseHibernation {
+    static let delay: Duration = .seconds(300)
+}
+
 /// One uninterrupted-absence countdown, owned by whichever runtime is deciding
 /// to tear itself down (video player, HTML view, scene session).
 ///
