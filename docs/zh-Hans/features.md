@@ -96,12 +96,19 @@ Retina 物理像素布局、临时存储（创意工坊导入强制开启）、C
 
 ## 4）性能模型
 
-`LiveWallpaper/Policies/WallpaperPolicyEngine.swift` 把**安全挂起**（用户不在、内存压力、
-过热保护——不可覆盖）与**可选挂起**（全屏、窗口遮挡 ≥85%、电池、低电量模式、按 App 规则）
-分开。
+`LiveWallpaper/Policies/WallpaperPolicyEngine.swift` 把**安全挂起**（用户不在、内存压力
+达到 critical、过热达到 critical——不可覆盖）与**可选挂起**（全屏、窗口遮挡 ≥85%、电池、
+低电量模式、按 App 规则）分开。中度发热（serious）对场景与网页壁纸只会**降低帧率**
+而不是停掉,内存 warning 则只降场景的帧率——繁忙场景在正常使用时本来就常年停在这些
+档位附近。视频没有可降的帧率旋钮,降档等于空操作,所以中度发热仍会挂起视频。
 
 - **App 例外**（`Schema/ApplicationPerformanceRule.swift`）—— 每个 App 三种触发方式：位于最前时暂停、运行期间暂停，或**从不暂停**（只否决可选挂起）。游戏也走这条路：全屏检测能抓住大多数，剩下的用一条显式规则覆盖。
-- 内存压力导致的挂起从不改变你的播放意图——压力解除后壁纸会恢复（`LiveWallpaper/App/ScreenManager+MemoryPressure.swift`）。
+- **任何挂起都不会改写你的播放意图**——意图由每屏一台的状态机统一持有
+  （`LiveWallpaperCore … WallpaperPlaybackStateMachine.swift`），只有播放/暂停操作能写入。
+  条件解除后壁纸一定自行恢复，播放键也不可能把壁纸卡死。
+- 系统规则压住壁纸时，菜单栏和该屏详情页会写明**是哪条规则**（电池、全屏、过热……）。
+- 手动暂停会保留最后一帧画面，5 分钟后释放解码器与缓存——视频、网页、场景三类壁纸
+  的时刻一致。
 - Pro 另有遮挡时的自适应帧率与每显示器渲染线程。
 
 ## 5）多显示器
