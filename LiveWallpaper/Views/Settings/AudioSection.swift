@@ -24,7 +24,6 @@ extension GeneralSettingsView {
                         Button("Re-grant Access") {
                             regrantAudioAccess()
                         }
-                        .adaptiveGlassButton(.regular, size: .small)
                         .fixedSize()
                         .accessibilityLabel(Text("Re-grant audio access"))
                     }

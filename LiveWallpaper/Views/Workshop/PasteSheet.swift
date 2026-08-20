@@ -81,7 +81,8 @@ struct PasteSheet: View {
                         Label("Download all", systemImage: "arrow.down.circle.fill")
                             .font(DesignTokens.Typography.caption)
                     }
-                    .adaptiveGlassButton(.prominent, size: .small)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                     .help(Text("Download every queued item with SteamCMD"))
                 }
 
@@ -148,7 +149,7 @@ struct PasteSheet: View {
                     Label("Add to queue", systemImage: "plus.circle.fill")
                         .font(DesignTokens.Typography.bodyEmphasized)
                 }
-                .adaptiveGlassButton(.prominent)
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(model.rawInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

@@ -137,7 +137,8 @@ struct SteamCMDSheet: View {
                         NSPasteboard.general.setString(Self.command, forType: .string)
                         didCopy = true
                     }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
                 .padding(DesignTokens.Spacing.md)
                 .background(

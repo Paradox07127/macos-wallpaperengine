@@ -28,9 +28,34 @@ struct SettingsWindowLayoutTests {
         let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
 
         #expect(source.contains("GeometryReader"))
-        #expect(source.contains("cappedPreviewHeight"))
-        #expect(source.contains("videoPreviewReservedHeight"))
-        #expect(source.contains("htmlSourceReservedHeight"))
+        #expect(source.contains("cappedPreviewHeight(in: geo.size.height"))
+        // The command bar and the source picker float inside the preview card, so
+        // nothing is reserved below it — the preview gets the whole viewport.
+        #expect(!source.contains("ReservedHeight"))
+        #expect(source.contains(".overlay(alignment: .bottom) {"))
+    }
+
+    @Test("Floating preview controls are clipped to the picture, not the page")
+    func floatingPreviewControlsAreClippedToPicture() throws {
+        let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
+        let htmlPreview = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLPreviewSection.swift")
+
+        // The expanding frame is the whole column; the aspect-fit box is the picture.
+        // An overlay attached *after* the frame drifts past the picture's edges —
+        // video and web both did, while scene (overlay inside previewCard) did not.
+        let blocks = [
+            ("private var videoContent", "private var htmlContent"),
+            ("private var htmlContent", "/// A Wallpaper Engine web project's shipped preview asset")
+        ]
+        for (start, end) in blocks {
+            let block = try #require(Self.slice(previewArea, from: start, to: end))
+            let overlay = try #require(block.range(of: ".overlay(alignment: .bottom)"))
+            let frame = try #require(block.range(of: ".frame(maxWidth: .infinity, maxHeight: previewHeight)"))
+            #expect(overlay.lowerBound < frame.lowerBound, "\(start): overlay must precede the expanding frame")
+        }
+
+        // Same reason on the other side: this view must report the drawn box.
+        #expect(!htmlPreview.contains(".frame(maxWidth: .infinity)\n        .onChange"))
     }
 
     @Test("HTML preview area uses the same non-scrolling left layout as video and scene")
@@ -60,7 +85,15 @@ struct SettingsWindowLayoutTests {
         // HTMLInformationOverlay happens to share the file with.
         #expect(previewSection.contains(".thumbnailBadgeGlass(opacity: 0.7, in: .roundedRectangle("))
         #expect(previewSection.contains("alignment: .topLeading"))
-        #expect(previewSection.contains("alignment: .bottom)"))
+        // Info and refresh share the top-right corner; the source capsule owns the
+        // bottom edge. They overlapped when the diagnostics sat bottom-left.
+        #expect(previewSection.contains("alignment: .topTrailing"))
+        // Collapsed until asked: expanded, the grid covers the frame it measures.
+        #expect(previewSection.contains("@State private var isExpanded = false"))
+        // The collapsed ⓘ and the refresh button are one pair — same glyph frame,
+        // same backing — so both must come from the single shared recipe.
+        #expect(previewSection.contains("previewCornerGlyph(\"info.circle\")"))
+        #expect(previewSection.contains("previewCornerGlyph(\"arrow.clockwise\")"))
         #expect(previewSection.contains("diagnosticCell(\"Measurement\""))
         #expect(previewSection.contains("diagnosticCell(\"Points\""))
         #expect(previewSection.contains("diagnosticCell(\"Backing\""))
@@ -70,16 +103,18 @@ struct SettingsWindowLayoutTests {
         #expect(previewSection.contains("diagnosticCell(\"Mode\""))
     }
 
-    @Test("HTML source controls use a compact row below preview")
-    func htmlSourceControlsUseCompactRowBelowPreview() throws {
+    @Test("HTML source controls float inside the web preview")
+    func htmlSourceControlsFloatInsidePreview() throws {
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
         let sourceSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLSourceSection.swift")
 
-        #expect(previewArea.contains("private let htmlSourceReservedHeight: CGFloat = 88"))
+        #expect(previewArea.contains("floating: true"))
         #expect(previewArea.contains("VStack(spacing: 8)"))
         #expect(sourceSection.contains("HStack(alignment: .center, spacing: 10)"))
         #expect(sourceSection.contains(".frame(width: 108)"))
-        #expect(sourceSection.contains(".padding(.vertical, 6)"))
+        // Glass only while floating: in page flow the picker has nothing to refract.
+        #expect(sourceSection.contains("struct HTMLSourceChrome"))
+        #expect(sourceSection.contains("content.adaptiveGlassSurface("))
     }
 
     @Test("HTML preview area uses uniform outer padding")

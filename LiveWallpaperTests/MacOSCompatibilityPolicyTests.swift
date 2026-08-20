@@ -74,6 +74,45 @@ struct MacOSCompatibilityPolicyTests {
         #expect(offenders.isEmpty, Comment(rawValue: offenders.joined(separator: "\n")))
     }
 
+    /// Availability is guarded above; this guards *placement*. Apple's own words:
+    /// "Limit these effects to the most important functional elements in your app",
+    /// and the section on lists / tables / forms never mentions the material at all.
+    /// Both families below sit on opaque backgrounds by construction, so glass
+    /// there buys a highlight with nothing behind it to refract.
+    @Test("Liquid Glass stays off opaque surfaces")
+    func liquidGlassStaysOffOpaqueSurfaces() throws {
+        let entryPoints = [".adaptiveGlassButton(", ".adaptiveGlassSurface("]
+
+        // Settings is a grouped Form that draws its own section plate.
+        let settingsPrefix = "LiveWallpaper/Views/Settings/"
+
+        // Every caller renders these in page flow, so the choice cannot be pushed
+        // to the caller — the component itself has to stay flat.
+        let flatOnlyComponents: Set<String> = [
+            "ContainerGroupBoxStyle.swift",
+            "SheetFooterBar.swift",
+            "IllustratedEmptyState.swift",
+            "StatusChip.swift",
+            "TypeBadge.swift",
+            "FilterChip.swift",
+            "LibraryFilterBar.swift",
+            "DestructiveControlTint.swift",
+            "CapsuleButtonStyle.swift",
+        ]
+
+        let offenders = try swiftFiles().flatMap { file -> [String] in
+            let relativePath = file.path.replacingOccurrences(of: repoRoot.path + "/", with: "")
+            guard relativePath.hasPrefix(settingsPrefix)
+                    || flatOnlyComponents.contains(file.lastPathComponent) else { return [] }
+            let stripped = stripLineComments(try String(contentsOf: file, encoding: .utf8))
+            return entryPoints
+                .filter { stripped.contains($0) }
+                .map { "\(relativePath) contains \($0)" }
+        }
+
+        #expect(offenders.isEmpty, Comment(rawValue: offenders.joined(separator: "\n")))
+    }
+
     private func stripLineComments(_ source: String) -> String {
         source
             .split(separator: "\n", omittingEmptySubsequences: false)

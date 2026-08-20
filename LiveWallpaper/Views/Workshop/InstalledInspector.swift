@@ -210,7 +210,8 @@ struct WPEInstalledInspectorContent: View {
                     Label(isUpdateRetry ? "Retry Update" : "Update", systemImage: "arrow.down.circle")
                         .frame(maxWidth: .infinity)
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(!state.canUpdate)
                 .help(state.canUpdate
                       ? Text("Re-download the latest version from Steam")
@@ -290,7 +291,7 @@ struct WPEInstalledInspectorContent: View {
             Button {} label: {
                 Label("Apply", systemImage: "play.fill").frame(maxWidth: .infinity)
             }
-            .adaptiveGlassButton(.prominent)
+            .buttonStyle(.borderedProminent)
             .controlSize(.regular)
             .disabled(true)
             .help(Text("Open a display first, then apply"))
@@ -299,13 +300,13 @@ struct WPEInstalledInspectorContent: View {
                 Label("Apply to \(only.name)", systemImage: "play.fill")
                     .frame(maxWidth: .infinity)
             }
-            .adaptiveGlassButton(.prominent)
+            .buttonStyle(.borderedProminent)
             .controlSize(.regular)
         } else {
             Button { showingApplyPopover = true } label: {
                 Label("Apply", systemImage: "play.fill").frame(maxWidth: .infinity)
             }
-            .adaptiveGlassButton(.prominent)
+            .buttonStyle(.borderedProminent)
             .controlSize(.regular)
             .popover(isPresented: $showingApplyPopover, arrowEdge: .bottom) {
                 WorkshopApplyTargetPicker(

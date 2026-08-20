@@ -111,7 +111,7 @@ struct ReportBugSheet: View {
                 } label: {
                     Label("Show Log in Finder", systemImage: "folder")
                 }
-                .adaptiveGlassButton(.regular)
+                .buttonStyle(.bordered)
                 .help(Text("Open Finder and highlight the sanitized log file"))
                 .accessibilityLabel(Text("Show sanitized log in Finder"))
             }

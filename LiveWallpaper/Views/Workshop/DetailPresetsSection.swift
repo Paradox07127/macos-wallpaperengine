@@ -82,11 +82,13 @@ struct DetailPresetsSection: View {
             }
             if hidden > 0 {
                 Button("Show \(hidden) more") { isExpanded = true }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .fixedSize()
             } else if isExpanded, matches.count > Self.collapsedLimit {
                 Button("Show fewer") { isExpanded = false }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .fixedSize()
             }
         }
@@ -147,7 +149,8 @@ struct DetailPresetsSection: View {
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
             Button("Clear") { searchText = "" }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .fixedSize()
             Spacer(minLength: 0)
         }
@@ -173,7 +176,8 @@ struct DetailPresetsSection: View {
                 .font(DesignTokens.Typography.caption)
 
                 Button("Retry") { Task { await load(force: true) } }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             }
         }
     }
@@ -324,7 +328,7 @@ private struct WorkshopPresetRow: View {
             } label: {
                 Image(systemName: phase == .idle ? "arrow.down.circle" : "arrow.clockwise")
             }
-            .adaptiveGlassButton(.regular, size: .small)
+            .buttonStyle(.borderless)
             .disabled(!doctor.hasBoundBinary)
             .help(doctor.hasBoundBinary
                   ? Text("Download this preset")

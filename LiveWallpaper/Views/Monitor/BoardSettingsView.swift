@@ -187,14 +187,17 @@ struct BoardSettingsView: View {
             }
             HStack(spacing: 6) {
                 Button("Reset", action: resetLayout)
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .fixedSize()
                     .disabled(isDefaultLayout)
                 Button("Import…", action: importLayout)
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .fixedSize()
                 Button("Export…", action: exportLayout)
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .fixedSize()
                     .disabled(draft.widgets.isEmpty)
             }
@@ -275,17 +278,18 @@ struct BoardSettingsView: View {
             ) {
                 if !isAuthorized {
                     Button("Authorize…", action: authorize)
-                        .adaptiveGlassButton(.regular, size: .small)
                         .fixedSize()
                 }
             }
             if isAuthorized {
                 HStack(spacing: 6) {
                     Button("Revoke", action: revoke)
-                        .adaptiveGlassButton(.regular, size: .small)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                         .fixedSize()
                     Button("Re-authorize…", action: authorize)
-                        .adaptiveGlassButton(.regular, size: .small)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                         .fixedSize()
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)

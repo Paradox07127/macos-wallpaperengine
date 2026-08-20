@@ -48,6 +48,10 @@ struct VideoPreviewSection: View {
                 .screenPreviewChrome()
 
             playbackControls
+                // PreviewArea floats the fit/speed command bar over this same
+                // bottom edge; without the clearance it draws on top of the
+                // scrubber and swallows its hits.
+                .padding(.bottom, 64)
         }
     }
 
@@ -136,7 +140,8 @@ struct VideoPreviewSection: View {
             Button(action: startPreview) {
                 if errorMessage == nil { Text("Load Preview") } else { Text("Retry Preview") }
             }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .accessibilityLabel(errorMessage == nil ? Text("Load preview") : Text("Retry preview"))
                 .accessibilityHint(Text("Starts a temporary video preview for this settings panel"))
         }

@@ -272,6 +272,11 @@ struct WorkshopPaneHeader: View {
     let onPaste: () -> Void
 
     @Environment(WorkshopServices.self) private var services
+    @Environment(SteamCMDDoctorService.self) private var doctor
+
+    @State private var discoveredAccounts: [SteamAccountSummary] = []
+    @State private var showingSignIn = false
+    @State private var accountError: String?
 
     /// Same `DetailHeaderBar` as Bookmarks and Apple Aerials — this pane used to
     /// hand-roll an identical icon/title/metadata/actions row, so the three
@@ -283,6 +288,66 @@ struct WorkshopPaneHeader: View {
             metadata: { headerStatView },
             actions: { headerActions }
         )
+        .task { await loadAccounts() }
+        .sheet(isPresented: $showingSignIn) {
+            SteamSignInSheet { accountName in
+                doctor.username = accountName
+                Task {
+                    await loadAccounts()
+                    await doctor.runProbe(.cachedLogin)
+                }
+            }
+        }
+    }
+
+    /// Icon, not the Steam avatar: the app never learns the signed-in user's
+    /// SteamID64, so fetching a portrait would mean a new profile lookup for a
+    /// picture that distinguishes nothing — there is only ever one account here.
+    @ViewBuilder
+    private var accountControl: some View {
+        if doctor.username == nil {
+            Button { showingSignIn = true } label: {
+                headerGlyph("person.crop.circle.badge.plus")
+            }
+            .adaptiveGlassButton(.regular, shape: .circle)
+            .controlSize(.large)
+            .help(Text("Sign In…"))
+            .accessibilityLabel(Text("Steam sign-in"))
+        } else {
+            Menu {
+                steamAccountMenuItems(
+                    accounts: discoveredAccounts,
+                    current: doctor.username,
+                    onSelect: selectAccount,
+                    onSignIn: { showingSignIn = true },
+                    onRescan: { Task { await loadAccounts() } }
+                )
+            } label: {
+                headerGlyph("person.crop.circle.fill")
+            }
+            // `.button`, not the `.borderlessButton` used in settings rows: this
+            // one stands beside the paste button and has to read as its twin, so
+            // it takes the ambient glass button style instead of a quieter one.
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .adaptiveGlassButton(.regular, shape: .circle)
+            .controlSize(.large)
+            .help(Text(verbatim: accountError ?? doctor.username ?? ""))
+            .accessibilityLabel(Text("Steam account"))
+        }
+    }
+
+    private func selectAccount(_ account: SteamAccountSummary) {
+        accountError = nil
+        do {
+            try doctor.adoptAccount(account)
+        } catch {
+            accountError = error.localizedDescription
+        }
+    }
+
+    private func loadAccounts() async {
+        discoveredAccounts = await SteamConnectorClient.discoverAccounts()
     }
 
     /// On Workshop, prefixes the request count with the API-key status seal so
@@ -320,14 +385,27 @@ struct WorkshopPaneHeader: View {
     // Folder import moved to the toolbar's single add button, which routes any
     // picked file or folder — including a Workshop library root — by what it is.
     // Circle glass at `.large`, matching the other pages' header actions.
+    /// Both header actions put their glyph in the same square. `buttonBorderShape`
+    /// sizes the circle to its label, and `link.badge.plus` is wider than
+    /// `person.crop.circle.fill` — left alone the two circles come out different
+    /// diameters no matter how the menu is styled.
+    private func headerGlyph(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .frame(width: 18, height: 18)
+    }
+
     private var headerActions: some View {
-        Button(action: onPaste) {
-            Image(systemName: "link.badge.plus")
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            Button(action: onPaste) {
+                headerGlyph("link.badge.plus")
+            }
+            .adaptiveGlassButton(.regular, shape: .circle)
+            .controlSize(.large)
+            .help(Text("Add a Steam Workshop item by URL or ID"))
+            .accessibilityLabel(Text("Add from Workshop URL or ID"))
+
+            accountControl
         }
-        .adaptiveGlassButton(.regular, shape: .circle)
-        .controlSize(.large)
-        .help(Text("Add a Steam Workshop item by URL or ID"))
-        .accessibilityLabel(Text("Add from Workshop URL or ID"))
     }
 }
 #endif

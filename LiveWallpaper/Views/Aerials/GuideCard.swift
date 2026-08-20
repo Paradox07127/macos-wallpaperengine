@@ -74,9 +74,10 @@ struct LibraryGuideCard: View {
                     featureRow(feature)
                 }
             }
+            // No plate: this is a read-only feature list on a flat page, so a
+            // container would only draw a box around text nobody can act on.
             .padding(.horizontal, 18)
             .padding(.vertical, DesignTokens.Spacing.cardInset)
-            .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.lg))
             .frame(maxWidth: DesignTokens.GuidedLibrary.featureWidth)
 
             HStack(spacing: 10) {
