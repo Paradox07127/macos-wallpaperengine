@@ -13,6 +13,20 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [Unreleased]
+
+### Fixed
+
+- On a Mac with one display permanently asleep — a closed lid, a switched-off
+  external panel — the away-detection safety net never engaged, so a dropped
+  wake or unlock notification could still leave wallpapers suspended. Presence
+  now clears as soon as any display is awake.
+- Waking a scene twice in quick succession could cancel the load still in
+  flight and strand the scene on its still frame until the next manual play.
+- A manually paused video or web wallpaper released its resources about
+  20 seconds later than a paused scene did. All three now release at the same
+  five-minute mark.
+
 ## [0.5.4] — 2026-08-19
 
 Videos no longer need Loomscreen running: a system wallpaper extension hands
