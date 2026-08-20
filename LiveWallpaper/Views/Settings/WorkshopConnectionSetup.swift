@@ -128,10 +128,9 @@ struct WorkshopConnectionSetup<Header: View>: View {
     private var libraryControl: some View {
         if service.isLibraryReady {
             Button("Change…") { pickSteamLibrary() }
-                .adaptiveGlassButton(.regular, size: .small)
         } else {
             Button("Choose…") { pickSteamLibrary() }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
         }
     }
 
@@ -148,10 +147,9 @@ struct WorkshopConnectionSetup<Header: View>: View {
             HStack(spacing: DesignTokens.Spacing.xs) {
                 if service.isBinaryPresumedReady {
                     Button("Change…") { pickBinaryManually() }
-                        .adaptiveGlassButton(.regular, size: .small)
                 } else {
                     Button("Install SteamCMD…") { showingInstallConsent = true }
-                        .adaptiveGlassButton(.prominent, size: .small)
+                        .buttonStyle(.borderedProminent)
                 }
 
                 Menu {
@@ -214,23 +212,16 @@ struct WorkshopConnectionSetup<Header: View>: View {
             // One verb, not two side by side. Rescan is the rarer of the pair
             // and moves into the menu once there is a menu to hold it.
             Button("Sign In…") { showingSignIn = true }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
         } else {
             Menu {
-                ForEach(discoveredAccounts) { account in
-                    Button {
-                        selectAccount(account)
-                    } label: {
-                        if account.accountName == service.username {
-                            Label(account.accountName, systemImage: "checkmark")
-                        } else {
-                            Text(account.accountName)
-                        }
-                    }
-                }
-                Divider()
-                Button("Sign in to another account…") { showingSignIn = true }
-                Button("Rescan") { Task { await loadAccounts() } }
+                steamAccountMenuItems(
+                    accounts: discoveredAccounts,
+                    current: service.username,
+                    onSelect: selectAccount,
+                    onSignIn: { showingSignIn = true },
+                    onRescan: { Task { await loadAccounts() } }
+                )
             } label: {
                 Text(service.username == nil ? "Choose" : "Switch", bundle: .main)
             }
@@ -251,12 +242,10 @@ struct WorkshopConnectionSetup<Header: View>: View {
     private func selectAccount(_ account: SteamAccountSummary) {
         setupError = nil
         do {
-            try service.setUsername(account.accountName)
+            try service.adoptAccount(account)
         } catch {
             setupError = error.localizedDescription
-            return
         }
-        Task { await service.runProbe(.cachedLogin) }
     }
 
     private func loadAccounts() async {
@@ -440,7 +429,8 @@ struct WorkshopConnectionSetup<Header: View>: View {
                         Text("Run all checks")
                     }
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(service.state == .probing)
 
                 // A button, not a link: this copies a payload to the
@@ -448,7 +438,8 @@ struct WorkshopConnectionSetup<Header: View>: View {
                 Button(action: exportDiagnostics) {
                     Text("Export…", bundle: .main)
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .help(Text("Copy all probe reports as redacted JSON to clipboard"))
 
                 Spacer(minLength: 0)

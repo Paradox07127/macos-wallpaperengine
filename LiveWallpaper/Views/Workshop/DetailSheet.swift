@@ -250,7 +250,7 @@ struct WorkshopInspectorContent: View {
             Label(downloadButtonTitle, systemImage: "arrow.down.circle")
                 .frame(maxWidth: .infinity)
         }
-        .adaptiveGlassButton(.prominent)
+        .buttonStyle(.borderedProminent)
         .controlSize(.regular)
         .disabled(!doctor.isDownloadReady || item.isBanned)
         .help(Text(doctor.isDownloadReady
@@ -263,7 +263,7 @@ struct WorkshopInspectorContent: View {
         let screens = screenManager.screens
         if screens.isEmpty {
             Button {} label: { applyLabel }
-                .adaptiveGlassButton(.prominent)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .disabled(true)
                 .help(Text("Open a display first, then apply"))
@@ -272,11 +272,11 @@ struct WorkshopInspectorContent: View {
                 Label("Apply to \(only.name)", systemImage: "play.fill")
                     .frame(maxWidth: .infinity)
             }
-            .adaptiveGlassButton(.prominent)
+            .buttonStyle(.borderedProminent)
             .controlSize(.regular)
         } else {
             Button { showingApplyPopover = true } label: { applyLabel }
-                .adaptiveGlassButton(.prominent)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .popover(isPresented: $showingApplyPopover, arrowEdge: .bottom) {
                     WorkshopApplyTargetPicker(

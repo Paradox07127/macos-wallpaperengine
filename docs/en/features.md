@@ -119,12 +119,24 @@ wallpapers alike.
 ## 4) Performance model
 
 `LiveWallpaper/Policies/WallpaperPolicyEngine.swift` separates **safety
-suspends** (user absent, memory pressure, thermal protection — cannot be
-overridden) from **discretionary suspends** (full-screen, ≥85 % window
-occlusion, battery, Low Power Mode, per-app rules).
+suspends** (user absent, critical memory pressure, critical thermal state —
+cannot be overridden) from **discretionary suspends** (full-screen, ≥85 % window
+occlusion, battery, Low Power Mode, per-app rules). Moderate heat (`serious`)
+**throttles** the frame rate of scene and web wallpapers instead of stopping
+them, and a memory `warning` throttles scenes — a busy scene idles near those
+levels in normal use. Video has no frame-rate knob to shed load with, so
+moderate heat still suspends it.
 
 - **App exceptions** (`Schema/ApplicationPerformanceRule.swift`) — three triggers per app: pause when frontmost, pause while running, or **never pause** (vetoes discretionary suspends only). This is also the way to handle games: full-screen detection catches most, and an explicit rule covers the rest.
-- Memory-pressure suspends never change your play intent — wallpapers resume when pressure clears (`LiveWallpaper/App/ScreenManager+MemoryPressure.swift`).
+- **No suspend ever changes your play intent** — intent lives in one per-screen
+  state machine (`LiveWallpaperCore … WallpaperPlaybackStateMachine.swift`) that
+  only the play/pause controls can write, so wallpapers always resume on their
+  own once the condition clears, and the play button can never strand one.
+- When a system rule is holding a wallpaper down, the menu bar and the screen's
+  detail header say **which** rule (battery, full-screen, heat, …).
+- A manual pause keeps the last frame on screen and releases the decoder and
+  caches after 5 minutes — the same wall clock for video, web and scene
+  wallpapers alike.
 - Pro adds adaptive frame rate under occlusion and per-display render threads.
 
 ## 5) Multi-display

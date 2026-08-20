@@ -17,7 +17,6 @@ struct WPERenderFlagRegistryTests {
         "WPEDumpScenePasses": "dump/trace toggle; prints the scene pass structure only",
         "WPEHoverCursorDebug": "log-only toggle; never changes what renders",
         "WPEImageUniformDebugLog": "log-only toggle; never changes what renders",
-        "WPELibrary.RootBookmark.v1": "persisted security-scoped bookmark blob, not a flag",
         "WPEMemoryAuditLog": "log-only toggle; prints the texture/JSContext census after a load",
         "WPEMetalCaptureScene": "dump/trace toggle; records canonical oracle traces only",
         "WPEOracleEnabled": "DEBUG-only render-oracle master toggle; inert in Release (seeds RNG + freezes the clock only for trace determinism)",

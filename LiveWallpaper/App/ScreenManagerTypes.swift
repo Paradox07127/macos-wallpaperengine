@@ -52,6 +52,11 @@ struct ScreenManagerStartupOptions: Equatable {
     /// state they describe, so revalidating immediately would clear the very
     /// absence the notification just established.
     var absenceRevalidationGrace: Duration = .seconds(10)
+    /// Cadence of the slow poll that re-runs revalidation while absent. The
+    /// safety net for an absence whose only policy refresh landed inside the
+    /// grace window and was skipped there; injectable so tests do not have to
+    /// wait out the production cadence.
+    var absenceRevalidationPollInterval: Duration = .seconds(30)
     /// SKU-driven feature toggles. Every production, test, and preview caller
     /// must explicitly choose Lite, Pro, or the fail-closed unconfigured state.
     var featureCatalog: FeatureCatalog

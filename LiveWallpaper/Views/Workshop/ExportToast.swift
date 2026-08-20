@@ -30,7 +30,14 @@ struct ExportToast: View {
                 }
                 .padding(.horizontal, DesignTokens.Spacing.cardInset)
                 .padding(.vertical, 10)
-                .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
+                .background(
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
+                        .fill(DesignTokens.Colors.surfaceRaised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
+                        .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
+                )
                 .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: isPresented) {

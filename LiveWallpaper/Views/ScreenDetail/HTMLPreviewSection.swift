@@ -78,19 +78,19 @@ struct HTMLPreviewSection: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(false)
 
-                HTMLRenderingDiagnosticsOverlay(screen: screen, source: source, config: config)
-                    .padding(DesignTokens.Spacing.cardInset)
-                    // Clears the refresh button parked in the same corner.
-                    .padding(.trailing, 44)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .allowsHitTesting(false)
-
-                refreshButton
-                    .padding(10)
+                // Both live in the top-right corner so the source capsule owns the
+                // bottom edge of the preview outright — they used to collide there.
+                HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
+                    HTMLRenderingDiagnosticsOverlay(screen: screen, source: source, config: config)
+                    refreshButton
+                }
+                .padding(DesignTokens.Spacing.cardInset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
         }
+        // Reports the drawn 16:9 box, not the column width — an overlay hung on
+        // this view has to be clipped to the picture, not to the page.
         .aspectRatio(16/9, contentMode: .fit)
-        .frame(maxWidth: .infinity)
         .onChange(of: cacheKey) { _, _ in
             cancelPreviewLoad()
             snapshot = nil
@@ -160,10 +160,9 @@ struct HTMLPreviewSection: View {
             loadFailed = false
             startLoadIfNeeded(force: true)
         } label: {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 11, weight: .semibold))
+            previewCornerGlyph("arrow.clockwise")
         }
-        .adaptiveGlassButton(.regular, shape: .circle)
+        .buttonStyle(.plain)
         .help(Text("Refresh web snapshot"))
         .accessibilityLabel(Text("Refresh web preview"))
     }
@@ -417,28 +416,60 @@ struct HTMLInformationOverlay: View {
 }
 
 /// Render-geometry badges on the web preview (not the inspector list).
+/// The preview's two corner controls sit side by side, so their glyph frame and
+/// backing live in one place — spelled twice, they drift the first time one moves.
+@MainActor
+private func previewCornerGlyph(_ systemImage: String) -> some View {
+    Image(systemName: systemImage)
+        .imageScale(.medium)
+        .foregroundStyle(DesignTokens.Colors.overlayForeground)
+        .frame(width: 26, height: 26)
+        .thumbnailBadgeGlass(opacity: 0.7, in: .circle)
+}
+
 struct HTMLRenderingDiagnosticsOverlay: View {
     let screen: Screen
     let source: HTMLSource?
     let config: HTMLConfig
 
+    /// Collapsed by default. Expanded, this is seven rows of numbers sitting on
+    /// top of the frame those numbers describe — useful on demand, noise otherwise.
+    @State private var isExpanded = false
+
     @ViewBuilder
     var body: some View {
         if source != nil {
-            let diagnostics = HTMLRenderingDiagnostics(screen: screen, source: source, config: config)
-            content(diagnostics: diagnostics)
-                .foregroundStyle(DesignTokens.Colors.overlayForeground)
-                .padding(.horizontal, DesignTokens.Spacing.md)
-                .padding(.vertical, DesignTokens.Spacing.sm)
-                // A panel of label/value rows, not a badge: the capsule's end caps
-                // wasted its corners and read as one oversized pill.
-                .thumbnailBadgeGlass(opacity: 0.7, in: .roundedRectangle(DesignTokens.Corner.md))
-                .accessibilityElement(children: .combine)
+            if isExpanded {
+                let diagnostics = HTMLRenderingDiagnostics(screen: screen, source: source, config: config)
+                content(diagnostics: diagnostics)
+                    .foregroundStyle(DesignTokens.Colors.overlayForeground)
+                    .padding(.horizontal, DesignTokens.Spacing.md)
+                    .padding(.vertical, DesignTokens.Spacing.sm)
+                    // A panel of label/value rows, not a badge: the capsule's end caps
+                    // wasted its corners and read as one oversized pill.
+                    .thumbnailBadgeGlass(opacity: 0.7, in: .roundedRectangle(DesignTokens.Corner.md))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(Text("Hide details"))
+                    .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
+                    .onTapGesture { toggle() }
+            } else {
+                Button(action: toggle) {
+                    previewCornerGlyph("info.circle")
+                }
+                .buttonStyle(.plain)
+                .help(Text("Web Rendering"))
+                .accessibilityLabel(Text("Web Rendering"))
+            }
         }
     }
 
-    /// One short bar across the bottom of the preview rather than a tall block in
-    /// its corner: seven stacked rows covered a third of the frame being measured.
+    private func toggle() {
+        withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
+    }
+
+    /// Two columns rather than one: seven stacked rows in the corner covered a
+    /// third of the frame being measured, which is what collapsing it fixed.
     private let columns = [
         GridItem(.adaptive(minimum: 172), spacing: DesignTokens.Spacing.md, alignment: .leading)
     ]
@@ -462,7 +493,7 @@ struct HTMLRenderingDiagnosticsOverlay: View {
                 diagnosticCell("Mode", diagnostics.modeText)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: 360, alignment: .leading)
     }
 
     private func diagnosticCell(_ label: String, _ value: String) -> some View {

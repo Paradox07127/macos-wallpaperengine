@@ -449,6 +449,90 @@ struct WPESceneHibernateTests {
         #expect(!session.isHibernated)
     }
 
+    @Test("A newer wake supersedes the retry still pending from the wake it replaced")
+    func newerWakeSupersedesPendingRetry() async throws {
+        let retryDelay = Duration.milliseconds(1500)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let actor = WPEDisplayRenderActor(backing: .main)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            projectManifestRootURL: fixture.root,
+            dependencyMounts: [],
+            surfaceControl: surface,
+            mailbox: surface.mailbox,
+            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
+            drawableSize: surface.metalLayer.drawableSize,
+            device: device,
+            pointerSampler: .fixed(SIMD2<Double>(0.5, 0.5))
+        )
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: true
+        )
+        window.isReleasedWhenClosed = false
+        let session = SceneWallpaperSession(
+            window: window,
+            renderActor: actor,
+            surface: surface,
+            audioCaptureDemandController: HibernateStubAudioDemand(),
+            hibernationDelay: .milliseconds(50),
+            wakeRetryDelay: retryDelay
+        )
+        defer { session.cleanup() }
+        session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
+        try await Self.poll("initial load") {
+            await actor.rendererStateSnapshot()?.isLoaded == true
+        }
+
+        let entry = fixture.root.appendingPathComponent("scene.json")
+        let stash = fixture.root.appendingPathComponent("scene.json.stashed")
+
+        // Wake #1 fails and starts counting down to its retry.
+        session.applyPerformanceProfile(.suspended)
+        session.setHibernationEligible(true)
+        try await Self.poll("first hibernate") { session.isHibernated }
+        try FileManager.default.moveItem(at: entry, to: stash)
+        session.applyPerformanceProfile(.quality)
+        try await Self.poll("first wake fails") { session.loadError != nil }
+        let firstRetryDeadline = ContinuousClock.now + retryDelay
+
+        // Heal and hibernate again *inside* that countdown, so wake #2 starts
+        // from a loaded renderer while wake #1 is still asleep. The extra hold
+        // keeps the two retry deadlines far enough apart to tell them apart.
+        try FileManager.default.moveItem(at: stash, to: entry)
+        await session.retry()
+        #expect(session.loadError == nil)
+        try await Task.sleep(for: .milliseconds(900))
+        session.applyPerformanceProfile(.suspended)
+        session.setHibernationEligible(true)
+        try await Self.poll("second hibernate") { session.isHibernated }
+        try FileManager.default.moveItem(at: entry, to: stash)
+        session.applyPerformanceProfile(.quality)
+        try await Self.poll("second wake fails") { session.loadError != nil }
+        let secondRetryDeadline = ContinuousClock.now + retryDelay
+
+        // Between the two deadlines only wake #2 may still be alive. A stale
+        // wake #1 reloads here on top of the live one and, when that fails,
+        // flips `isHibernated` behind its back — the live wake then heals the
+        // scene and leaves the flag set on a loaded session, which can never
+        // hibernate again.
+        try await Task.sleep(until: firstRetryDeadline + .milliseconds(400), clock: .continuous)
+        #expect(
+            ContinuousClock.now < secondRetryDeadline,
+            "rig broken: the two retry windows overlapped, so this proves nothing"
+        )
+        #expect(!session.isHibernated, "a superseded wake acted after a newer wake replaced it")
+
+        // M4 unchanged: the live wake's own give-up still restores the gate.
+        try await Self.poll("live wake restores the hibernated gate") { session.isHibernated }
+    }
+
     // MARK: - Helpers
 
     private static func poll(

@@ -105,7 +105,8 @@ struct WorkshopEngineAssetsSection: View {
                 Spacer(minLength: DesignTokens.Spacing.sm)
 
                 Button("Cancel") { engineInstaller.cancel() }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .fixedSize()
             }
         }
@@ -159,7 +160,7 @@ struct WorkshopEngineAssetsSection: View {
                     ProgressView().controlSize(.small)
                     Text("Starting…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
                     Button("Cancel") { engineInstaller.cancel() }
-                        .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                        .fixedSize()
                 }
             case .pruning:
                 ProgressView().controlSize(.small)
@@ -178,22 +179,23 @@ struct WorkshopEngineAssetsSection: View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             if engineInstaller.updateAvailable {
                 Button("Update") { preflightThen { engineInstaller.download(using: doctorService) } }
-                    .adaptiveGlassButton(.prominent, size: .small).fixedSize()
+                    .buttonStyle(.borderedProminent)
+                    .fixedSize()
             } else {
                 Button("Check for updates") { preflightThen { engineInstaller.checkForUpdate(using: doctorService) } }
-                    .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                    .fixedSize()
             }
             Button {
                 revealEngineAssetsInFinder()
             } label: {
                 Image(systemName: "folder")
             }
-            .adaptiveGlassButton(.regular, size: .small).fixedSize()
+            .fixedSize()
             .help(Text("Show the Wallpaper Engine assets folder in Finder"))
             .accessibilityLabel(Text("Show assets in Finder"))
 
             Button("Remove", role: .destructive) { showingRemoveConfirm = true }
-                .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                .fixedSize()
                 .tint(DesignTokens.Colors.Status.danger)
                 .help(Text("Delete the downloaded Wallpaper Engine assets and unlink"))
                 .confirmationDialog(
@@ -213,13 +215,13 @@ struct WorkshopEngineAssetsSection: View {
     private var engineAssetsManualControl: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Button("Change") { Task { await requestManualEngineAssetsAccess() } }
-                .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                .fixedSize()
                 .help(Text("Pick a different Wallpaper Engine install folder"))
             Button("Forget", role: .destructive) {
                 engineAssets.clearAccess()
                 engineInstaller.clearTransientStatus()
             }
-                .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                .fixedSize()
                 .tint(DesignTokens.Colors.Status.danger)
                 .help(Text("Remove access to the Wallpaper Engine install folder"))
         }
@@ -231,10 +233,10 @@ struct WorkshopEngineAssetsSection: View {
             Button("Download from Steam") {
                 preflightThen { engineInstaller.download(using: doctorService) }
             }
-            .adaptiveGlassButton(.regular, size: .small).fixedSize()
+            .fixedSize()
             .help(Text("Download the copy of Wallpaper Engine you own for extra scene coverage"))
             Button("Link folder…") { Task { await requestManualEngineAssetsAccess() } }
-                .adaptiveGlassButton(.regular, size: .small).fixedSize()
+                .fixedSize()
                 .help(Text("Grant read-only access to a Wallpaper Engine install for extra scene coverage"))
         }
     }

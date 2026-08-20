@@ -580,7 +580,12 @@ final class SettingsManager {
         defaults.removeObject(forKey: Keys.configMigrationVersion)
         defaults.removeObject(forKey: Keys.blobSchemaVersion)
         // Keys owned by other components; literals on purpose (see their owners).
-        defaults.removeObject(forKey: "WPELibrary.RootBookmark.v1")          // WPEDependencyMountResolver
+        // `WPELibrary.RootBookmark.v1` has no owner: no version ever wrote it, so its
+        // only reader was deleted from WPEDependencyMountResolver. This line stays
+        // because `sharedManagerIsIsolatedFromStandardDefaults` plants that key in the
+        // real domain to prove the wipe cannot reach it — delete it and that guard
+        // passes for the wrong reason.
+        defaults.removeObject(forKey: "WPELibrary.RootBookmark.v1")
         defaults.removeObject(forKey: "loomscreen.sidebar.displayOrder.v1")  // SidebarDisplayOrder.preferencesKey
         defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // SourceAuthorization
         defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // SourceAuthorization

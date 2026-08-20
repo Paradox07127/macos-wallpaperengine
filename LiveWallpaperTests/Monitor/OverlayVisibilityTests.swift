@@ -314,9 +314,11 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
             observers,
             from: "private func applyUserAbsenceChange("
         )
+        // Internal, not private: the absence safety-net tests drive this real
+        // entry point rather than reconstructing its steps.
         let absenceEntryPoint = try sourceBlock(
             observers,
-            from: "private func setUserAbsence("
+            from: "func setUserAbsence("
         )
         let fallbackPolling = try sourceBlock(
             observers,

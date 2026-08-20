@@ -120,7 +120,7 @@ struct PlaybackStateMachineRoutingTests {
         }
 
         rig.manager.userAbsenceReasons.insert(.displaySleep)
-        probe.displayAsleep = true
+        probe.allDisplaysAsleep = true
         rig.manager.refreshPerformancePolicyForAllScreens()
 
         let machine = rig.manager.playbackStateMachine(for: rig.screen.id)
@@ -131,7 +131,7 @@ struct PlaybackStateMachineRoutingTests {
         )
         #expect(machine.userIntendsToPlay, "Policy must never rewrite machine intent")
 
-        probe.displayAsleep = false
+        probe.allDisplaysAsleep = false
         rig.manager.refreshPerformancePolicyForAllScreens()
 
         #expect(rig.manager.suspendReasonsByScreen[rig.screen.id] == [])
@@ -184,9 +184,9 @@ struct PlaybackStateMachineRoutingTests {
 
 private final class RoutingPresenceProbe: UserPresenceProbing, @unchecked Sendable {
     // Written only from the @MainActor test body between reads.
-    var displayAsleep = false
+    var allDisplaysAsleep = false
 
-    func isAnyDisplayAsleep() -> Bool { displayAsleep }
+    func areAllDisplaysAsleep() -> Bool { allDisplaysAsleep }
     func isMainDisplayActive() -> Bool { true }
     func screenLockState() -> ScreenLockState { .unlocked }
 }

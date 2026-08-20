@@ -65,8 +65,7 @@ struct WorkshopProbeRow: View {
                     Text(resultText)
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .marqueeOnHover(truncationMode: .tail)
                 }
 
                 if hasDetail {
@@ -112,7 +111,8 @@ struct WorkshopProbeRow: View {
                     Label("Re-run", systemImage: "arrow.clockwise")
                         .font(DesignTokens.Typography.caption)
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .help(Text("Re-run this probe"))
             }
         }
@@ -127,7 +127,8 @@ struct WorkshopProbeRow: View {
             Button("Locate automatically") {
                 Task { await service.autoDetectBinary() }
             }
-            .adaptiveGlassButton(.regular, size: .small)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
     }
 

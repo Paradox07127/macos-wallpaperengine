@@ -144,7 +144,7 @@ extension ScreenManager {
     }
 
     /// Lock screen and display sleep both mean "user is not watching".
-    private func setUserAbsence(_ reason: UserAbsenceReason, present: Bool) {
+    func setUserAbsence(_ reason: UserAbsenceReason, present: Bool) {
         guard applyUserAbsenceChange(reason, present: present) else { return }
         refreshPerformancePolicyForAllScreens()
         reconcileAbsenceRevalidationTimer()
@@ -158,9 +158,10 @@ extension ScreenManager {
     private func reconcileAbsenceRevalidationTimer() {
         if isUserAbsent {
             guard absenceRevalidationTimer == nil else { return }
+            let interval = absenceRevalidationPollInterval
             absenceRevalidationTimer = Task { [weak self] in
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(30))
+                    try? await Task.sleep(for: interval)
                     guard let self, !Task.isCancelled, !self.isTerminating else { return }
                     // Revalidation can clear the absence from inside the
                     // refresh (it bypasses `setUserAbsence`), so the timer must
@@ -231,8 +232,8 @@ extension ScreenManager {
         }
 
         if userAbsenceReasons.contains(.displaySleep), isSettled(.displaySleep),
-           !userPresenceProbe.isAnyDisplayAsleep() {
-            Logger.notice("Display is awake but absence persisted — clearing stale display-sleep absence", category: .lifecycle)
+           !userPresenceProbe.areAllDisplaysAsleep() {
+            Logger.notice("A display is awake but absence persisted — clearing stale display-sleep absence", category: .lifecycle)
             applyUserAbsenceChange(.displaySleep, present: false)
         }
 

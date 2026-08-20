@@ -65,7 +65,8 @@ struct WPEProjectCustomSettingsCard: View {
                     next.allowMouseInteraction = true
                     apply(next)
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .fixedSize()
             }
             Divider()

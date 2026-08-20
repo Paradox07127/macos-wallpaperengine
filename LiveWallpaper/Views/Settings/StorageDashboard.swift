@@ -97,13 +97,13 @@ private struct StorageSegmentedBar: View {
             let usableWidth = max(0, proxy.size.width - spacing * CGFloat(max(nonZeroSegments.count - 1, 0)))
 
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.StatusBar.corner, style: .continuous)
                     .fill(Color.secondary.opacity(0.12))
 
                 if totalBytes > 0 {
                     HStack(spacing: spacing) {
                         ForEach(nonZeroSegments) { segment in
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            RoundedRectangle(cornerRadius: DesignTokens.StatusBar.corner, style: .continuous)
                                 .fill(segment.color)
                                 .frame(width: max(3, usableWidth * CGFloat(Double(segment.bytes) / Double(totalBytes))))
                         }
@@ -111,8 +111,8 @@ private struct StorageSegmentedBar: View {
                 }
             }
         }
-        .frame(height: 9)
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .frame(height: DesignTokens.StatusBar.height)
+        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.StatusBar.corner, style: .continuous))
         .accessibilityHidden(true)
     }
 }

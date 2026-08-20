@@ -81,8 +81,7 @@ struct DisplayDefaultsView: View {
                 VStack(spacing: 2) {
                     Text(verbatim: screen.name)
                         .font(DesignTokens.Typography.caption)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .marqueeOnHover(truncationMode: .tail)
                     // Only the taller tiles have room for a second line.
                     if size.height >= 46 {
                         Text(verbatim: "\(Int(screen.frame.width))×\(Int(screen.frame.height))")

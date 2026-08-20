@@ -96,7 +96,6 @@ extension GeneralSettingsView {
                     : "Active for \(applicationRules.count) app\(applicationRules.count == 1 ? "" : "s")"
             ) {
                 Button("Edit…") { showAppExceptions = true }
-                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .accessibilityLabel(Text("Edit application exceptions"))
             }

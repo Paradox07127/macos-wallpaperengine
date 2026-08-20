@@ -74,7 +74,7 @@ struct SceneSection: View {
                 } label: {
                     Label("Apply Project Folder…", systemImage: "folder.badge.plus")
                 }
-                .adaptiveGlassButton(.prominent)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .accessibilityHint(Text("Opens a folder chooser to link and apply a local project in place"))
 
@@ -109,7 +109,7 @@ struct SceneSection: View {
                     } label: {
                         Label("Apply Project…", systemImage: "plus")
                     }
-                    .adaptiveGlassButton(.regular)
+                    .buttonStyle(.bordered)
                     .controlSize(.regular)
                 }
 
@@ -142,7 +142,8 @@ struct SceneSection: View {
                     } label: {
                         Image(systemName: "chevron.left")
                     }
-                    .adaptiveGlassButton(.regular, shape: .circle)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.circle)
                     .controlSize(.regular)
                     .help(Text("Back to library"))
                     .accessibilityLabel(Text("Back to library"))

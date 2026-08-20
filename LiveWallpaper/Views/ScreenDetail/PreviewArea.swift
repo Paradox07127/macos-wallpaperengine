@@ -3,8 +3,6 @@ import SwiftUI
 
 struct PreviewArea: View {
     private let previewAspectRatio: CGFloat = 16 / 9
-    private let videoPreviewReservedHeight: CGFloat = 56
-    private let htmlSourceReservedHeight: CGFloat = 88
 
     let screen: Screen
     @Binding var draft: DraftState
@@ -61,11 +59,7 @@ struct PreviewArea: View {
             DetailLoadingView()
         } else if draft.hasPreviewSource || previewController.hasPreviewContent {
             GeometryReader { geo in
-                let previewHeight = cappedPreviewHeight(
-                    in: geo.size.height,
-                    verticalPadding: 18,
-                    reservedHeight: videoPreviewReservedHeight
-                )
+                let previewHeight = cappedPreviewHeight(in: geo.size.height, verticalPadding: 18)
                 VStack(spacing: 16) {
                     if featureCatalog.isEnabled(.inspectorPreview) {
                         VideoPreviewSection(
@@ -75,6 +69,12 @@ struct PreviewArea: View {
                             startPreview: onStartPreview
                         )
                         .aspectRatio(previewAspectRatio, contentMode: .fit)
+                        // Before the expanding frame: the frame is the whole column,
+                        // the aspect-fit box is the picture. The bar belongs to the picture.
+                        .overlay(alignment: .bottom) {
+                            videoCommandBar
+                                .padding(DesignTokens.Spacing.lg)
+                        }
                         .frame(maxWidth: .infinity, maxHeight: previewHeight)
                         .shadow(
                             color: Color.black.opacity(DesignTokens.Card.shadowOpacity),
@@ -82,9 +82,10 @@ struct PreviewArea: View {
                             x: 0,
                             y: DesignTokens.Card.shadowYOffset
                         )
+                    } else {
+                        // No preview to float over — the bar is the only content here.
+                        videoCommandBar
                     }
-
-                    videoCommandBar
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 18)
@@ -106,12 +107,7 @@ struct PreviewArea: View {
 
     private var htmlContent: some View {
         GeometryReader { geo in
-            let previewHeight = cappedPreviewHeight(
-                in: geo.size.height,
-                verticalPadding: 24,
-                reservedHeight: htmlSourceReservedHeight,
-                interItemSpacing: 8
-            )
+            let previewHeight = cappedPreviewHeight(in: geo.size.height, verticalPadding: 24)
             VStack(spacing: 8) {
                 if featureCatalog.isEnabled(.inspectorPreview), draft.htmlSource != nil {
                     HTMLPreviewSection(
@@ -121,14 +117,25 @@ struct PreviewArea: View {
                         wpePreviewURL: wpeWebPreviewURL,
                         wpePreviewBookmark: draft.wpeOrigin?.sourceFolderBookmark
                     )
+                    .overlay(alignment: .bottom) {
+                        HTMLSourceSection(
+                            screen: screen,
+                            source: $draft.htmlSource,
+                            config: $draft.htmlConfig,
+                            floating: true
+                        )
+                        .padding(DesignTokens.Spacing.lg)
+                    }
                     .frame(maxWidth: .infinity, maxHeight: previewHeight)
                     .layoutPriority(1)
+                } else {
+                    // Nothing picked yet: the picker is the page, not an overlay.
+                    HTMLSourceSection(
+                        screen: screen,
+                        source: $draft.htmlSource,
+                        config: $draft.htmlConfig
+                    )
                 }
-                HTMLSourceSection(
-                    screen: screen,
-                    source: $draft.htmlSource,
-                    config: $draft.htmlConfig
-                )
             }
             .padding(24)
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
@@ -137,14 +144,8 @@ struct PreviewArea: View {
     }
 
 
-    private func cappedPreviewHeight(
-        in containerHeight: CGFloat,
-        verticalPadding: CGFloat,
-        reservedHeight: CGFloat,
-        interItemSpacing: CGFloat = 16
-    ) -> CGFloat {
-        let available = containerHeight - (verticalPadding * 2) - reservedHeight - interItemSpacing
-        return max(0, available)
+    private func cappedPreviewHeight(in containerHeight: CGFloat, verticalPadding: CGFloat) -> CGFloat {
+        max(0, containerHeight - verticalPadding * 2)
     }
 
     /// A Wallpaper Engine web project's shipped preview asset, when the selected HTML wallpaper came from one.

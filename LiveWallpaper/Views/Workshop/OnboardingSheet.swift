@@ -42,7 +42,7 @@ struct OnboardingSheet: View {
                         .frame(maxWidth: 220)
                         .padding(.vertical, 4)
                 }
-                .adaptiveGlassButton(.prominent)
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
 
                 Button {
