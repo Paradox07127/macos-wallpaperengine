@@ -80,7 +80,7 @@ struct BrowseFilterRibbon: View {
             get: { viewModel.preferredSort },
             set: { viewModel.updateSort($0) }
         )) {
-            ForEach(Self.sortOptions) { option in
+            ForEach(sortOptions) { option in
                 Text(Self.sortTitle(option)).tag(option)
             }
         }
@@ -284,9 +284,18 @@ struct BrowseFilterRibbon: View {
 
     // MARK: - Sort / time frame options
 
-    private static let sortOptions: [WorkshopSortMode] = [
+    private static let browseSortOptions: [WorkshopSortMode] = [
         .mostPopular, .topRated, .newest, .lastUpdated, .mostSubscribed
     ]
+
+    /// Relevance only ranks against a search text, so it appears while one is
+    /// typed. Trimmed, because the request layer also trims: offering it for
+    /// whitespace-only input would show "Relevance" over a Top Rated query.
+    private var sortOptions: [WorkshopSortMode] {
+        viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.browseSortOptions
+            : Self.browseSortOptions + [.search]
+    }
 
     private static func sortTitle(_ sort: WorkshopSortMode) -> LocalizedStringKey {
         switch sort {
@@ -295,7 +304,7 @@ struct BrowseFilterRibbon: View {
         case .newest: return "Most Recent"
         case .lastUpdated: return "Last Updated"
         case .mostSubscribed: return "Total Unique Subscribers"
-        case .search: return "Search"
+        case .search: return "Relevance"
         }
     }
 

@@ -45,7 +45,15 @@ final class WorkshopPasteQueueModel {
     }
 
     private let metadataService: SteamWorkshopMetadataService
+    /// Single-row tasks (retry path), keyed by row id so `remove(rowID:)` can
+    /// cancel exactly one. Ingestion batches live in `batchFetchTasks` because
+    /// one task serves many rows.
     private var inflightFetches: [UUID: Task<Void, Never>] = [:]
+    private var batchFetchTasks: [UUID: Task<Void, Never>] = [:]
+
+    /// GetPublishedFileDetails takes arbitrary `itemcount`; 50 per POST keeps
+    /// request bodies and responses small without one-request-per-row fan-out.
+    private static let metadataFetchBatchSize = 50
 
     init(metadataService: SteamWorkshopMetadataService = SteamWorkshopMetadataService()) {
         self.metadataService = metadataService
@@ -70,6 +78,7 @@ final class WorkshopPasteQueueModel {
         var invalid = 0
 
         let existingIDs = Set(rows.compactMap(\.publishedFileID))
+        var pendingFetches: [(rowID: UUID, publishedFileID: UInt64)] = []
 
         for item in parsed {
             switch item {
@@ -88,7 +97,7 @@ final class WorkshopPasteQueueModel {
                 )
                 rows.append(row)
                 added += 1
-                scheduleMetadataFetch(rowID: row.id, publishedFileID: id)
+                pendingFetches.append((rowID: row.id, publishedFileID: id))
             case .invalid(let reason, let original):
                 let row = QueueRow(
                     id: UUID(),
@@ -104,6 +113,9 @@ final class WorkshopPasteQueueModel {
         }
         rawInput = ""
         lastIngestionSummary = IngestionSummary(added: added, duplicates: duplicates, invalid: invalid)
+        if !pendingFetches.isEmpty {
+            scheduleBatchMetadataFetch(pendingFetches)
+        }
     }
 
     /// Idempotent: cancels any existing in-flight task for the same row first.
@@ -123,6 +135,8 @@ final class WorkshopPasteQueueModel {
     func removeAll() {
         for task in inflightFetches.values { task.cancel() }
         inflightFetches.removeAll()
+        for task in batchFetchTasks.values { task.cancel() }
+        batchFetchTasks.removeAll()
         rows.removeAll()
     }
 
@@ -183,6 +197,36 @@ final class WorkshopPasteQueueModel {
     }
 
     // MARK: - Private
+
+    /// One task per ingestion: chunks of ≤`metadataFetchBatchSize` ids run
+    /// sequentially, so a 200-link paste costs 4 POSTs instead of 200
+    /// concurrent ones. Row removal is tolerated mid-flight: `applyFetchResult`
+    /// drops results whose row is gone.
+    private func scheduleBatchMetadataFetch(_ entries: [(rowID: UUID, publishedFileID: UInt64)]) {
+        let batchTaskID = UUID()
+        let task = Task { @MainActor [weak self] in
+            var start = 0
+            while start < entries.count, !Task.isCancelled {
+                guard let self else { return }
+                let end = min(start + Self.metadataFetchBatchSize, entries.count)
+                let chunk = Array(entries[start..<end])
+                start = end
+                let results = await self.metadataService.fetch(publishedFileIDs: chunk.map { $0.publishedFileID })
+                if Task.isCancelled { break }
+                for entry in chunk {
+                    // A retry() issued mid-flight owns the row now; don't
+                    // clobber its result with this batch's.
+                    guard self.inflightFetches[entry.rowID] == nil else { continue }
+                    self.applyFetchResult(
+                        rowID: entry.rowID,
+                        result: results[entry.publishedFileID] ?? .failure(.responseParseFailure)
+                    )
+                }
+            }
+            self?.batchFetchTasks.removeValue(forKey: batchTaskID)
+        }
+        batchFetchTasks[batchTaskID] = task
+    }
 
     private func scheduleMetadataFetch(rowID: UUID, publishedFileID id: UInt64) {
         inflightFetches.removeValue(forKey: rowID)?.cancel()

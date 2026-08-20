@@ -55,7 +55,8 @@ enum SteamWorkshopMetadataError: Error, Equatable, Sendable {
     case unknown(String)
 }
 
-/// GetPublishedFileDetails client (no key today; 401/403 → degrade). One id per POST.
+/// GetPublishedFileDetails client (no key today; 401/403 → degrade). One POST
+/// carries every requested id; callers chunk.
 @MainActor
 final class SteamWorkshopMetadataService {
 
@@ -65,8 +66,8 @@ final class SteamWorkshopMetadataService {
     private let now: @Sendable () -> Date
 
     static let endpoint = URL(string: "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/")!
-        /// Single-item lookup; real payloads are a few KB. Bounds a hostile response
-        /// without risking a false reject on a legitimate one.
+        /// Payloads are a few KB per item and callers batch ≤50 ids. Bounds a
+        /// hostile response without risking a false reject on a legitimate one.
         static let maxResponseBytes = 8 * 1024 * 1024
 
     init(session: URLSession = SteamWorkshopMetadataService.defaultSession(),
@@ -78,84 +79,124 @@ final class SteamWorkshopMetadataService {
     /// Errors are pre-mapped onto `SteamWorkshopMetadataError` — no raw
     /// URLError / decoding errors leak to the UI.
     func fetch(publishedFileID id: UInt64) async -> Result<SteamWorkshopMetadata, SteamWorkshopMetadataError> {
+        let results = await fetch(publishedFileIDs: [id])
+        return results[id] ?? .failure(.responseParseFailure)
+    }
+
+    /// One POST for the whole array — the caller chunks. Transport and HTTP
+    /// failures fan out to every requested id; per-item outcomes come from
+    /// `decodeBatch`.
+    func fetch(publishedFileIDs ids: [UInt64]) async -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] {
+        guard !ids.isEmpty else { return [:] }
+
         var request = URLRequest(url: Self.endpoint)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 30
-
-        // Form-encoded request body matches every shipping third-party
-        // Workshop tool. `itemcount=1` + `publishedfileids[0]=<id>`.
-        let body = "itemcount=1&publishedfileids%5B0%5D=\(id)"
-        request.httpBody = body.data(using: .utf8)
+        request.httpBody = Self.formBody(publishedFileIDs: ids).data(using: .utf8)
 
         let data: Data
         let response: URLResponse
         do {
-                (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
+            (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
         } catch let urlError as URLError {
             switch urlError.code {
             case .timedOut:
-                return .failure(.timeout)
+                return Self.uniformFailure(.timeout, ids: ids)
             case .cancelled:
-                return .failure(.cancelled)
+                return Self.uniformFailure(.cancelled, ids: ids)
             case .notConnectedToInternet, .networkConnectionLost, .dnsLookupFailed:
-                return .failure(.networkUnreachable)
+                return Self.uniformFailure(.networkUnreachable, ids: ids)
             default:
-                return .failure(.unknown(urlError.localizedDescription))
+                return Self.uniformFailure(.unknown(urlError.localizedDescription), ids: ids)
             }
-            } catch is BoundedNetworkFetch.ResponseTooLarge {
-                return .failure(.responseParseFailure)
+        } catch is BoundedNetworkFetch.ResponseTooLarge {
+            return Self.uniformFailure(.responseParseFailure, ids: ids)
         } catch {
-            return .failure(.unknown(error.localizedDescription))
+            return Self.uniformFailure(.unknown(error.localizedDescription), ids: ids)
         }
 
         guard let http = response as? HTTPURLResponse else {
-            return .failure(.responseParseFailure)
+            return Self.uniformFailure(.responseParseFailure, ids: ids)
         }
 
         switch http.statusCode {
         case 200:
-            return Self.decode(data: data, publishedFileID: id)
+            return Self.decodeBatch(data: data, requestedIDs: ids)
         case 429:
             let retryAfter = (http.value(forHTTPHeaderField: "Retry-After")).flatMap(TimeInterval.init)
-            return .failure(.rateLimited(retryAfter: retryAfter))
+            return Self.uniformFailure(.rateLimited(retryAfter: retryAfter), ids: ids)
         case 401, 403:
-            return .failure(.unauthorized)
+            return Self.uniformFailure(.unauthorized, ids: ids)
         case 404:
-            return .failure(.itemNotFound)
+            return Self.uniformFailure(.itemNotFound, ids: ids)
         default:
-            return .failure(.http(status: http.statusCode))
+            return Self.uniformFailure(.http(status: http.statusCode), ids: ids)
         }
+    }
+
+    /// Form-encoded request body matches every shipping third-party Workshop
+    /// tool: `itemcount=N` + `publishedfileids[i]=<id>`, brackets pre-escaped.
+    nonisolated static func formBody(publishedFileIDs ids: [UInt64]) -> String {
+        var parts = ["itemcount=\(ids.count)"]
+        for (index, id) in ids.enumerated() {
+            parts.append("publishedfileids%5B\(index)%5D=\(id)")
+        }
+        return parts.joined(separator: "&")
+    }
+
+    private nonisolated static func uniformFailure(
+        _ error: SteamWorkshopMetadataError,
+        ids: [UInt64]
+    ) -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] {
+        var results: [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] = [:]
+        for id in ids {
+            results[id] = .failure(error)
+        }
+        return results
     }
 
     // MARK: - Decoding
 
-    private static func decode(data: Data, publishedFileID requested: UInt64) -> Result<SteamWorkshopMetadata, SteamWorkshopMetadataError> {
+    nonisolated static func decodeBatch(
+        data: Data,
+        requestedIDs: [UInt64]
+    ) -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] {
         let envelope: GetPublishedFileDetailsEnvelope
         do {
             envelope = try JSONDecoder().decode(GetPublishedFileDetailsEnvelope.self, from: data)
         } catch {
-            return .failure(.responseParseFailure)
+            return uniformFailure(.responseParseFailure, ids: requestedIDs)
         }
-        guard let payload = envelope.response.publishedfiledetails.first else {
-            return .failure(.itemNotFound)
+        // Steam encodes `publishedfileid` as a string in JSON. First payload
+        // wins on a duplicated id, matching the single-item path's `.first` —
+        // otherwise a trailing failure entry could flip an earlier success.
+        var payloadsByID: [UInt64: GetPublishedFileDetailsEnvelope.Payload] = [:]
+        for payload in envelope.response.publishedfiledetails {
+            guard let id = UInt64(payload.publishedfileid), payloadsByID[id] == nil else { continue }
+            payloadsByID[id] = payload
         }
-        // Steam encodes `publishedfileid` as a string in JSON.
-        guard let id = UInt64(payload.publishedfileid), id == requested else {
-            return .failure(.schemaMismatch)
-        }
-            // GetPublishedFileDetails is looked up by id alone — it will happily return
-            // an item that belongs to a different Steam app. `UInt32(exactly:)` (not the
-            // trapping `UInt32(_:)`) also rejects negative/overflowing values instead of
-            // crashing on a hostile response.
-            guard let consumerAppID = payload.consumer_app_id,
-                  let appID = UInt32(exactly: consumerAppID),
-                  appID == UInt32(WorkshopQueryService.wallpaperEngineAppID)
-            else {
-                return .failure(.schemaMismatch)
+        var results: [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] = [:]
+        for id in requestedIDs {
+            guard let payload = payloadsByID[id] else {
+                // Steam drops unknown ids from the response entirely — same
+                // signal as an explicit result code 9.
+                results[id] = .failure(.itemNotFound)
+                continue
             }
+            results[id] = decode(payload: payload, publishedFileID: id)
+        }
+        return results
+    }
+
+    private nonisolated static func decode(
+        payload: GetPublishedFileDetailsEnvelope.Payload,
+        publishedFileID id: UInt64
+    ) -> Result<SteamWorkshopMetadata, SteamWorkshopMetadataError> {
         // Steam result code: 1 = OK, 9 = not found, 15 = access denied.
+        // Checked before the app-id guard: non-OK payloads legitimately omit
+        // `consumer_app_id` and must not surface as schema mismatches.
         switch payload.result {
         case 1:
             break
@@ -165,6 +206,16 @@ final class SteamWorkshopMetadataService {
             return .failure(.itemPrivate)
         default:
             return .failure(.itemNotFound)
+        }
+        // GetPublishedFileDetails is looked up by id alone — it will happily return
+        // an item that belongs to a different Steam app. `UInt32(exactly:)` (not the
+        // trapping `UInt32(_:)`) also rejects negative/overflowing values instead of
+        // crashing on a hostile response.
+        guard let consumerAppID = payload.consumer_app_id,
+              let appID = UInt32(exactly: consumerAppID),
+              appID == UInt32(WorkshopQueryService.wallpaperEngineAppID)
+        else {
+            return .failure(.schemaMismatch)
         }
         if let bannedInt = payload.banned, bannedInt != 0 {
             return .failure(.itemBanned)

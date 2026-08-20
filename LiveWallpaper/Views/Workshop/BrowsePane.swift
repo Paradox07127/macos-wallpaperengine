@@ -286,7 +286,12 @@ struct BrowsePane: View {
             pageJumpText = String(viewModel.pageIndex)
             return
         }
-        Task { await viewModel.goToPage(page) }
+        Task {
+            await viewModel.goToPage(page)
+            // A clamped or same-page target leaves pageIndex unchanged, so
+            // .onChange never fires — reset the field unconditionally.
+            pageJumpText = String(viewModel.pageIndex)
+        }
     }
 
     private var loadingSkeleton: some View {
