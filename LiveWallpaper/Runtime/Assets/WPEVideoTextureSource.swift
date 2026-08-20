@@ -14,8 +14,6 @@ final class WPEVideoTextureSource {
     private let device: MTLDevice
     private let textureCache: CVMetalTextureCache
     private let player: AVQueuePlayer
-    /// `var`: the HDR fallback replaces it with a BGRA-pinned output.
-    private var videoOutput: AVPlayerItemVideoOutput
     /// Retained for source lifetime — looper drops item rotation if released.
     private let playerLooper: AVPlayerLooper
     /// Resource-loader delegate is weak — hold the loader so in-memory bytes survive.
@@ -24,8 +22,18 @@ final class WPEVideoTextureSource {
     private let cleanupURL: URL?
     /// Disk-cache reclaim hook on invalidate; nil unlinks the temp file (tests).
     private let onInvalidate: (@Sendable (URL) -> Void)?
-    /// Rebind item-level videoOutput across looper item rotations.
-    private weak var attachedOutputItem: AVPlayerItem?
+    /// Item-level outputs (macOS 14 / legacy path), one per queue item, attached
+    /// BEFORE the looper rotates to it: a freshly attached output only starts
+    /// delivering once the decoder feeds it, so attaching after the rotation
+    /// froze the last frame ~150 ms at every wrap (loop-seam probe, 2026-08-20).
+    private var itemOutputs: [(item: AVPlayerItem, output: AVPlayerItemVideoOutput)] = []
+    /// Outputs whose item left the looper queue. Releasing one tears down its
+    /// pixel-buffer pool, and `latest`/`pendingRetirements` wrappers may still
+    /// reference buffers from it (same crash as documented in `invalidate()`),
+    /// so retirement is deferred: entries release two rotations later — by then
+    /// the continuous publish stream has replaced and fence-swept every wrapper
+    /// the old pool backed — or in `invalidate()` after the frame teardown.
+    private var retiredItemOutputs: [(item: AVPlayerItem, output: AVPlayerItemVideoOutput)] = []
     /// macOS 15+ player-level output (AnyObject for 14 floor); spans looper item rotations.
     private var playerLevelOutput: AnyObject?
     /// Last player-level frame PTS — avoid re-wrapping the same buffer every tick.
@@ -57,6 +65,8 @@ final class WPEVideoTextureSource {
     /// Last publish branch taken — observation seam for the NV12 tests.
     private(set) var lastPublishPathForTesting: PublishPath?
     var didForceBGRAOutputForTesting: Bool { forcedBGRAOutput }
+    /// Frames handed to `publish` — the loop-seam probe measures the gaps between increments.
+    private(set) var publishedFrameCountForTesting = 0
     #endif
 
     private struct PublishedFrame {
@@ -159,10 +169,6 @@ final class WPEVideoTextureSource {
         queuePlayer.volume = 0
         self.player = queuePlayer
 
-        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: Self.outputPixelBufferAttributes)
-        output.suppressesPlayerRendering = true
-        self.videoOutput = output
-
         // macOS 15+: attach player-level output BEFORE looper enqueues items.
         if #available(macOS 15.0, *), !forceLegacyItemLevelOutput {
             self.playerLevelOutput = WPEPlayerLevelVideoOutput(
@@ -173,11 +179,12 @@ final class WPEVideoTextureSource {
 
         self.playerLooper = AVPlayerLooper(player: queuePlayer, templateItem: playerItem)
 
-        // macOS 14 (or forced legacy): item-level output; stay paused until
+        // macOS 14 (or forced legacy): item-level outputs; stay paused until
         // performance profile. `texture(at:)` falls through to this path
-        // whenever `playerLevelOutput` is nil.
+        // whenever `playerLevelOutput` is nil. The looper may not have enqueued
+        // its replicas yet — every texture tick re-runs the attachment.
         if playerLevelOutput == nil {
-            attachOutputIfNeeded(to: queuePlayer.currentItem ?? playerItem)
+            ensureItemOutputs()
         }
     }
 
@@ -206,7 +213,8 @@ final class WPEVideoTextureSource {
             return latest?.texture
         }
 
-        attachOutputIfNeeded(to: player.currentItem)
+        ensureItemOutputs()
+        guard let videoOutput = currentItemOutput else { return latest?.texture }
 
         let host = CACurrentMediaTime()
         let itemTime = videoOutput.itemTime(forHostTime: host)
@@ -322,8 +330,8 @@ final class WPEVideoTextureSource {
         drainRetiredFrames()
         // Drop the published frame BEFORE the player goes away. Its
         // `CVMetalTexture` backing references a pixel buffer owned by the video
-        // output's pool, so releasing it after `remove(videoOutput)` /
-        // `removeAllItems()` have torn that pool down dereferences a dead
+        // output's pool, so releasing it after the outputs are removed /
+        // `removeAllItems()` has torn that pool down dereferences a dead
         // backing — EXC_BAD_ACCESS at 0x0 inside `CVBufferBacking::releaseUser`,
         // reached from `WPEDisplayRenderActor` teardown on a scene swap.
         latest = nil
@@ -340,10 +348,10 @@ final class WPEVideoTextureSource {
         lastPlayerLevelPresentationTime = nil
         playerLooper.disableLooping()
         player.pause()
-        if let item = attachedOutputItem {
-            item.remove(videoOutput)
-            attachedOutputItem = nil
-        }
+        for entry in itemOutputs { entry.item.remove(entry.output) }
+        itemOutputs.removeAll()
+        for entry in retiredItemOutputs { entry.item.remove(entry.output) }
+        retiredItemOutputs.removeAll()
         player.removeAllItems()
         if let cleanupURL {
             if let onInvalidate {
@@ -356,16 +364,40 @@ final class WPEVideoTextureSource {
 
     // MARK: - Internals
 
-    private func attachOutputIfNeeded(to item: AVPlayerItem?) {
-        guard let item, item !== attachedOutputItem else { return }
-        if let previous = attachedOutputItem {
-            previous.remove(videoOutput)
+    /// Attach an output to every item the looper has enqueued (current + the
+    /// pre-rolled next), and move entries whose item left the queue into the
+    /// deferred-release list (see `retiredItemOutputs`).
+    private func ensureItemOutputs() {
+        let items = player.items()
+        itemOutputs.removeAll { entry in
+            guard !items.contains(where: { $0 === entry.item }) else { return false }
+            retiredItemOutputs.append(entry)
+            return true
         }
-        item.add(videoOutput)
-        attachedOutputItem = item
+        while retiredItemOutputs.count > 2 {
+            let entry = retiredItemOutputs.removeFirst()
+            entry.item.remove(entry.output)
+        }
+        for item in items where !itemOutputs.contains(where: { $0.item === item }) {
+            let attributes = forcedBGRAOutput
+                ? Self.bgraFallbackPixelBufferAttributes
+                : Self.outputPixelBufferAttributes
+            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: attributes)
+            output.suppressesPlayerRendering = true
+            item.add(output)
+            itemOutputs.append((item, output))
+        }
+    }
+
+    private var currentItemOutput: AVPlayerItemVideoOutput? {
+        guard let current = player.currentItem else { return nil }
+        return itemOutputs.first { $0.item === current }?.output
     }
 
     private func publish(pixelBuffer: CVPixelBuffer) {
+        #if DEBUG
+        publishedFrameCountForTesting += 1
+        #endif
         sweepRetiredFrames()
         switch CVPixelBufferGetPixelFormatType(pixelBuffer) {
         case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
@@ -563,13 +595,9 @@ final class WPEVideoTextureSource {
             "[WPE.video] \(reason) — pinning video output to 32BGRA",
             category: .wpeRender
         )
-        if let item = attachedOutputItem {
-            item.remove(videoOutput)
-            attachedOutputItem = nil
-        }
-        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: Self.bgraFallbackPixelBufferAttributes)
-        output.suppressesPlayerRendering = true
-        videoOutput = output
+        // Deferred, not released: `latest` may still be backed by these pools.
+        retiredItemOutputs.append(contentsOf: itemOutputs)
+        itemOutputs.removeAll()
         if #available(macOS 15.0, *), !forceLegacyItemLevelOutput {
             (playerLevelOutput as? WPEPlayerLevelVideoOutput)?.detach()
             playerLevelOutput = WPEPlayerLevelVideoOutput(
@@ -578,7 +606,9 @@ final class WPEVideoTextureSource {
             )
             lastPlayerLevelPresentationTime = nil
         } else {
-            attachOutputIfNeeded(to: player.currentItem)
+            // `forcedBGRAOutput` is latched above, so this recreates every
+            // item's output with the BGRA-pinned attributes.
+            ensureItemOutputs()
         }
     }
 

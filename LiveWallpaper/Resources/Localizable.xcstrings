@@ -65,6 +65,7 @@
     },
     "“%@” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched." : {
       "comment" : "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -123,6 +124,7 @@
     },
     "“%@” is on screen right now. Its file is deleted immediately, but macOS keeps showing it until you pick another wallpaper in System Settings." : {
       "comment" : "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -33498,6 +33500,35 @@
         }
       }
     },
+    "Relevance" : {
+      "comment" : "Workshop sort option available while searching: Steam's text-relevance ranking.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relevance"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "関連度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相关性"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相關性"
+          }
+        }
+      }
+    },
     "relinked %lld" : {
       "comment" : "Library-sync summary fragment. Placeholder is the number of wallpapers whose broken folder access was restored.",
       "extractionState" : "manual",
@@ -33524,35 +33555,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新連結 %lld 個"
-          }
-        }
-      }
-    },
-    "Relevance" : {
-      "comment" : "Workshop sort option available while searching: Steam's text-relevance ranking.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Relevance"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "関連度"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "相关性"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "相關性"
           }
         }
       }
@@ -34180,6 +34182,7 @@
     },
     "Remove this video from System Wallpaper?" : {
       "comment" : "Destructive confirm title for removing a published system wallpaper.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
