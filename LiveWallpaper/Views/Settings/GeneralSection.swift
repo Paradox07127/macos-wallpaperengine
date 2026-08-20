@@ -26,7 +26,6 @@ extension GeneralSettingsView {
                         Button("Open") {
                             SMAppService.openSystemSettingsLoginItems()
                         }
-                        .adaptiveGlassButton(.regular, size: .small)
                         .fixedSize()
                         .accessibilityLabel(Text("Open Login Items settings"))
                     }

@@ -172,6 +172,14 @@ public enum DesignTokens {
         public static let preview: CGFloat = 16
     }
 
+    /// Page-top status bars (storage breakdown, Workshop setup). Shared because the
+    /// two panels already drifted once — 9pt/r4 against 6pt/r3 — while agreeing on
+    /// every constant of the card around them.
+    public enum StatusBar {
+        public static let height: CGFloat = 6
+        public static let corner: CGFloat = 3
+    }
+
     public enum Inspector {
         public static let minWidth: CGFloat = 268
         public static let idealWidth: CGFloat = 292

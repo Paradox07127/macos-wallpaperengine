@@ -71,7 +71,8 @@ struct SteamWebAPIKeyEntrySheet: View {
                 } label: {
                     Label("Revoke on Steam", systemImage: "arrow.uturn.backward")
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
 
                 Spacer(minLength: 0)
 
@@ -80,7 +81,8 @@ struct SteamWebAPIKeyEntrySheet: View {
                 } label: {
                     Label("Get a key", systemImage: "key.fill")
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
         }
         .padding(DesignTokens.Spacing.sm)
@@ -99,14 +101,16 @@ struct SteamWebAPIKeyEntrySheet: View {
                 } label: {
                     Label("Steam Web API TOU", systemImage: "doc.text")
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
 
                 Button {
                     NSWorkspace.shared.open(SteamWebAPIKeyLinks.limitedAccounts)
                 } label: {
                     Label("About Limited Accounts", systemImage: "questionmark.circle")
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
 
             SteamWebAPIKeyField(model: model, onSubmit: save)

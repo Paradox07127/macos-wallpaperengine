@@ -33,7 +33,10 @@ struct WidgetSettingsPopover: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: 34, height: 34)
-                .adaptiveGlassSurface(.roundedRectangle(10))
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.quaternary.opacity(0.6))
+                )
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: WidgetFactory.displayName(placement.kind))
                     .font(.headline)

@@ -151,14 +151,13 @@ private struct SettingsSidebarRow: View {
 
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
                 Text(LocalizedStringKey(result.title))
-                    .lineLimit(1)
+                    .marqueeOnHover(truncationMode: .tail)
 
                 if let matchHint {
                     Text("Matched: \(matchHint)")
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .marqueeOnHover(truncationMode: .tail)
                 }
             }
         }

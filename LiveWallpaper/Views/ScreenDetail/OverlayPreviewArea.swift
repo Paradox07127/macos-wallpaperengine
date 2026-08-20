@@ -39,10 +39,9 @@ struct OverlayPreviewArea: View {
                 .foregroundStyle(.white.opacity(0.8))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.black.opacity(0.45))
-                )
+                // Same recipe as the active badge, dialled down: this is the
+                // "nothing is running" state, not a live readout.
+                .thumbnailBadgeGlass(opacity: 0.45)
         } else {
             weatherBadge
                 .padding(18)
@@ -71,14 +70,7 @@ struct OverlayPreviewArea: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(
-            Capsule(style: .continuous)
-                .fill(Color.black.opacity(0.55))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
-                )
-        )
+        .thumbnailBadgeGlass()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Weather overlay active"))
         .accessibilityValue(Text(draft.selectedParticleEffect.titleKey))

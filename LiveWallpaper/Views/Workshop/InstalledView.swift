@@ -440,7 +440,9 @@ struct InstalledView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, DesignTokens.Spacing.lg)
         .padding(.vertical, DesignTokens.Spacing.md)
-        .background(.regularMaterial)
+        // Floats over the thumbnail grid for the length of a drag — the one
+        // moment this page has live content under a control strip.
+        .adaptiveGlassSurface(.roundedRectangle(0), stroked: false)
         .overlay(alignment: .topTrailing) {
             Button { model.endEntryDrag() } label: {
                 Image(systemName: "xmark.circle.fill")

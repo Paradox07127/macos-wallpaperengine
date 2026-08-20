@@ -168,7 +168,7 @@ struct SceneDetailView: View {
                 errorBanner
                 infoBar
             }
-            .padding(16)
+            .padding(DesignTokens.Spacing.lg)
         }
     }
 
@@ -860,10 +860,12 @@ private struct DiagnosticLogSheet: View {
                 Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
                     .animation(.snappy, value: didCopy)
             }
-            .adaptiveGlassButton(.regular, size: .small)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
             .tint(didCopy ? DesignTokens.Colors.Status.active : tint)
             Button("Done") { dismiss() }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .keyboardShortcut(.defaultAction)
         }
         .padding(DesignTokens.Spacing.cardInset)

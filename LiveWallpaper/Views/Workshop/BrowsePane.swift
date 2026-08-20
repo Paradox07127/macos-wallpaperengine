@@ -239,7 +239,8 @@ struct BrowsePane: View {
                         Text("Previous")
                     }
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(!viewModel.canGoPrevPage)
 
                 HStack(spacing: 4) {
@@ -252,7 +253,9 @@ struct BrowsePane: View {
                         .multilineTextAlignment(.center)
                         .textFieldStyle(.plain)
                         .padding(.vertical, 3)
-                        .adaptiveGlassSurface(.capsule, interactive: true)
+                        .background(Capsule().fill(Color.primary.opacity(0.04)))
+                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+                        .contentShape(Capsule())
                         .monospacedDigit()
                         .disabled(viewModel.isPaging || viewModel.isLoading)
                         .onSubmit { jumpToTypedPage() }
@@ -271,7 +274,8 @@ struct BrowsePane: View {
                         Image(systemName: "chevron.right")
                     }
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(!viewModel.canGoNextPage)
             }
             .padding(.vertical, DesignTokens.Spacing.lg)
@@ -325,7 +329,8 @@ struct BrowsePane: View {
                         Button(action: onDownloadByLink) {
                             Label("Or download by link", systemImage: "link")
                         }
-                        .adaptiveGlassButton(.regular, size: .small)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                         Text("Paste a Workshop URL to install it without a key. Searching is what needs one.")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -413,7 +418,8 @@ struct BrowsePane: View {
             } label: {
                 Label("Back to Browse", systemImage: "chevron.left")
             }
-            .adaptiveGlassButton(.regular, size: .small)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
             .disabled(viewModel.isLoading || viewModel.isPaging)
 
             Spacer(minLength: 0)

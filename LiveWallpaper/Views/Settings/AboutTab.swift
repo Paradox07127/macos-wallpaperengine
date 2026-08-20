@@ -135,7 +135,7 @@ extension GeneralSettingsView {
                 Text(title)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .marqueeOnHover(truncationMode: .tail)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)

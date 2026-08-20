@@ -138,8 +138,7 @@ public struct SettingRow<Content: View>: View {
                 HStack(spacing: 4) {
                     title
                         .font(.body.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .marqueeOnHover(truncationMode: .tail)
                     if let titleBadge {
                         Image(systemName: titleBadge.systemImage)
                             .font(.caption)
@@ -155,8 +154,7 @@ public struct SettingRow<Content: View>: View {
                         subtitle
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            .marqueeOnHover()
                             .help(Text(verbatim: subtitleHelp ?? ""))
                     } else {
                         subtitle

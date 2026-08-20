@@ -94,7 +94,8 @@ struct WPEPreviewView: View {
         .font(.system(size: 10, weight: .semibold))
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
-        .adaptiveGlassSurface(.capsule, interactive: true)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
         .contentShape(Capsule())
         .onTapGesture {
             retryLoad()
