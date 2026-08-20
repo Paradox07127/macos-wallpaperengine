@@ -23,6 +23,9 @@ struct DetailPresetsSection: View {
     @State private var state: LoadState = .idle
     @State private var searchText = ""
     @State private var isExpanded = false
+    /// Steam's `total` for the reference query. We fetch a single 50-item page,
+    /// so this can exceed the loaded count — that's the truncation signal.
+    @State private var totalAvailable: Int?
     /// Which wallpaper `state` describes. `.task(id:)` re-runs on a new id but
     /// `@State` survives, so without this the early-return below kept showing
     /// the previous wallpaper's presets after switching items.
@@ -90,7 +93,19 @@ struct DetailPresetsSection: View {
                     .fixedSize()
             }
         }
+        if totalCount(loaded: presets.count) > presets.count {
+            Text("Showing the top \(presets.count) of \(totalCount(loaded: presets.count)) presets.", bundle: .main)
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
         communityFallbackLink
+    }
+
+    /// Header/truncation count: Steam's total when known, never below what we
+    /// actually loaded.
+    private func totalCount(loaded: Int) -> Int {
+        max(totalAvailable ?? loaded, loaded)
     }
 
     private var header: some View {
@@ -98,7 +113,7 @@ struct DetailPresetsSection: View {
             Text("Presets", bundle: .main)
                 .font(DesignTokens.Typography.bodyEmphasized)
             if case .loaded(let presets) = state, !presets.isEmpty {
-                Text(verbatim: "\(presets.count)")
+                Text(verbatim: "\(totalCount(loaded: presets.count))")
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -232,6 +247,7 @@ struct DetailPresetsSection: View {
         searchText = ""
         isExpanded = false
         state = .loading
+        totalAvailable = nil
         do {
             let page = try await services.queryService.fetch(
                 WorkshopQueryRequest(
@@ -242,7 +258,11 @@ struct DetailPresetsSection: View {
             )
             guard !Task.isCancelled, requested == wallpaperID else { return }
             // The wallpaper itself can come back in its own reference list.
-            state = .loaded(page.items.filter { $0.id != requested })
+            let presets = page.items.filter { $0.id != requested }
+            state = .loaded(presets)
+            // Deduct whatever we filtered out locally so the header total
+            // matches what the list could ever show.
+            totalAvailable = page.totalAvailable.map { max(0, $0 - (page.items.count - presets.count)) }
             loadedFor = requested
         } catch let error as WorkshopQueryError {
             guard error != .cancelled, !Task.isCancelled, requested == wallpaperID else { return }

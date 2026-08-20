@@ -66,7 +66,9 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
     let searchText: String
     /// 1-based page index. Steam's QueryFiles supports BOTH cursor and `page`;
     /// using `page` lets us jump to an arbitrary page and show "Page N of M"
-    /// (cursor can only walk forward).
+    /// (cursor can only walk forward). Steam's docs cap `page` at 1000 —
+    /// beyond that it returns empty pages; deeper pagination needs the cursor,
+    /// which we don't wire up.
     let page: Int
     let numPerPage: Int
     let language: String?
@@ -80,8 +82,9 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
     let returnShortDescription: Bool
     /// When set, the query lists this creator's published files via
     /// `IPublishedFileService/GetUserFiles` instead of the global `QueryFiles`
-    /// browse. Sort / search / tag filters don't apply in this mode (GetUserFiles
-    /// ignores them); only `page` + `numperpage` matter.
+    /// browse. GetUserFiles has `sortmethod`/`requiredtags`/`excludedtags`
+    /// fields (we don't wire them up beyond the default sort) but no text
+    /// search, so `searchText` can't apply in this mode.
     let creatorSteamID: String?
     /// When set, restricts the query to published files that reference this
     /// item. Steam's own wording for `child_publishedfileid` is "Find all items
@@ -107,7 +110,11 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         childPublishedFileID: UInt64? = nil
     ) {
         let normalizedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveSort: WorkshopSortMode = normalizedSearch.isEmpty ? sort : .search
+        // Steam's query_type and search_text are independent, so a search keeps
+        // the caller's sort. Only relevance (query_type=12) needs text to rank
+        // against; without it (the pinned-tag path reuses the browse sort but
+        // drops the search text) fall back to Top Rated.
+        let effectiveSort: WorkshopSortMode = (sort == .search && normalizedSearch.isEmpty) ? .topRated : sort
         let requestedTimeFrame = timeFrame ?? WorkshopTimeFrame.canonical(days: days)
         let effectiveTimeFrame: WorkshopTimeFrame = effectiveSort == .mostPopular ? requestedTimeFrame : .allTime
 
@@ -535,9 +542,10 @@ actor WorkshopQueryService {
     }
 
     private func buildQueryURL(for request: WorkshopQueryRequest, apiKey: String) throws -> URL {
-        // Creator-scoped browse uses GetUserFiles; sort/search/tag filters don't apply there.
+        // Creator-scoped browse uses GetUserFiles, which has sortmethod/tag
+        // fields (unwired here beyond the default sort) but no text search.
         if let creatorSteamID = request.creatorSteamID {
-            return try buildUserFilesURL(for: request, steamID: creatorSteamID, apiKey: apiKey)
+            return try Self.buildUserFilesURL(for: request, steamID: creatorSteamID, apiKey: apiKey)
         }
         var components = URLComponents(url: Self.queryFilesEndpoint, resolvingAgainstBaseURL: false)!
         components.queryItems = request.apiQueryItems(apiKey: apiKey, appID: Self.wallpaperEngineAppID)
@@ -547,12 +555,16 @@ actor WorkshopQueryService {
 
     /// Response shape matches `QueryFiles` (`response.publishedfiledetails` +
     /// `total`), so `decodeQueryPage` handles both.
-    private func buildUserFilesURL(for request: WorkshopQueryRequest, steamID: String, apiKey: String) throws -> URL {
+    /// Static (nonisolated) so tests can assert the URL without the actor.
+    static func buildUserFilesURL(for request: WorkshopQueryRequest, steamID: String, apiKey: String) throws -> URL {
         var components = URLComponents(url: Self.getUserFilesEndpoint, resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "key", value: apiKey),
             URLQueryItem(name: "steamid", value: steamID),
             URLQueryItem(name: "appid", value: String(Self.wallpaperEngineAppID)),
+            // The protobuf default for CPublishedFile_GetUserFiles_Request —
+            // stated explicitly so the URL says what order the page is in.
+            URLQueryItem(name: "sortmethod", value: "lastupdated"),
             URLQueryItem(name: "numperpage", value: String(request.numPerPage)),
             URLQueryItem(name: "page", value: String(request.page)),
             URLQueryItem(name: "return_previews", value: Self.steamBool(request.returnPreviews)),

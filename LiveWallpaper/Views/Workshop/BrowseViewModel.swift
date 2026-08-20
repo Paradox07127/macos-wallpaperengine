@@ -154,6 +154,12 @@ final class BrowseViewModel {
     var searchInput: String = "" {
         didSet {
             guard searchInput != oldValue else { return }
+            // Relevance ranks against the search text, so it only exists while
+            // searching; clearing the text drops back to the browse default.
+            if preferredSort == .search,
+               searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                preferredSort = .topRated
+            }
             scheduleAutoApply()
         }
     }
@@ -201,9 +207,17 @@ final class BrowseViewModel {
         return items.filter { !installedWorkshopIDs.contains(String($0.id)) }
     }
 
+    /// Steam's QueryFiles `page` parameter is hard-capped at 1000; higher pages
+    /// return empty results, so never advertise pages we can't fetch.
+    nonisolated static let maxQueryPage = 1000
+
+    nonisolated static func pageCount(totalAvailable: Int, perPage: Int) -> Int {
+        min(maxQueryPage, max(1, (totalAvailable + perPage - 1) / perPage))
+    }
+
     var totalPages: Int? {
         guard let total = totalAvailable, total > 0 else { return nil }
-        return max(1, (total + Self.perPage - 1) / Self.perPage)
+        return Self.pageCount(totalAvailable: total, perPage: Self.perPage)
     }
 
     var canGoNextPage: Bool {
@@ -296,6 +310,22 @@ final class BrowseViewModel {
         await reload()
     }
 
+    /// Deep-link search: clears any creator/tag scope inline (no per-clear
+    /// reload) so `makeRequest` doesn't drop the query, then applies it in one
+    /// reload. The `searchInput` didSet's debounced auto-apply is cancelled by
+    /// `reload()` on the same actor turn, so no double fetch.
+    ///
+    /// Rate-limit check comes first, like every other entry point: `reload()`
+    /// would bail out on its own, leaving the scope cleared and the search box
+    /// rewritten over a grid that still shows the old scoped results.
+    func searchFromDeepLink(_ query: String) async {
+        guard !isRateLimited else { return }
+        pinnedTag = nil
+        creatorFilter = nil
+        searchInput = query
+        await reload()
+    }
+
     func clearSearch() async {
         guard !isRateLimited, !searchInput.isEmpty else { return }
         searchInput = ""
@@ -346,27 +376,26 @@ final class BrowseViewModel {
         scheduleAutoApply()
     }
 
-    // NOTE: each toggle mutates its property directly (no `inout` helper).
     func toggleType(_ type: WorkshopContentTypeFilter) {
-        if selectedTypes.contains(type) { selectedTypes.remove(type) } else { selectedTypes.insert(type) }
+        selectedTypes = Self.toggled(type, in: selectedTypes, all: WorkshopContentTypeFilter.selectableCases)
         persistFilters()
         scheduleAutoApply()
     }
 
     func toggleAgeRating(_ rating: WorkshopAgeRatingFilter) {
-        if selectedAgeRatings.contains(rating) { selectedAgeRatings.remove(rating) } else { selectedAgeRatings.insert(rating) }
+        selectedAgeRatings = Self.toggled(rating, in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases)
         persistFilters()
         scheduleAutoApply()
     }
 
     func toggleResolution(_ resolution: WorkshopResolutionFilter) {
-        if selectedResolutions.contains(resolution) { selectedResolutions.remove(resolution) } else { selectedResolutions.insert(resolution) }
+        selectedResolutions = Self.toggled(resolution, in: selectedResolutions, all: WorkshopResolutionFilter.selectableCases)
         persistFilters()
         scheduleAutoApply()
     }
 
     func toggleGenre(_ tag: String) {
-        if selectedGenres.contains(tag) { selectedGenres.remove(tag) } else { selectedGenres.insert(tag) }
+        selectedGenres = Self.toggled(tag, in: selectedGenres, all: WorkshopGenre.allTags)
         persistFilters()
         scheduleAutoApply()
     }
@@ -400,6 +429,15 @@ final class BrowseViewModel {
         return [option]
     }
 
+    /// Deselecting the last chip snaps back to all-selected: an empty set means
+    /// "no filter" at the request layer, but every chip struck through reads as
+    /// "exclude everything" in the UI — same snap-back idiom as `isolated()`.
+    nonisolated static func toggled<T: Hashable>(_ option: T, in current: Set<T>, all: [T]) -> Set<T> {
+        var next = current
+        if next.contains(option) { next.remove(option) } else { next.insert(option) }
+        return next.isEmpty ? Set(all) : next
+    }
+
     /// Reset every filter (not search/sort) to all-selected (= no filter).
     func resetFilters() {
         selectedTypes = Set(WorkshopContentTypeFilter.selectableCases)
@@ -426,20 +464,47 @@ final class BrowseViewModel {
         defaults.set(Array(selectedGenres), forKey: FilterKey.genres)
     }
 
+    /// Restores one persisted category. An empty result — written by a build
+    /// before `toggled()` snapped back, or raw values that no longer decode —
+    /// would render every chip struck through while the request filters
+    /// nothing, so it snaps back to all-selected the same way `toggled()` does.
+    nonisolated static func restoredSelection<T: Hashable>(
+        raw: [String],
+        all: [T],
+        decode: (String) -> T?
+    ) -> Set<T> {
+        let decoded = Set(raw.compactMap(decode)).intersection(Set(all))
+        return decoded.isEmpty ? Set(all) : decoded
+    }
+
     private func loadPersistedFilters() {
         if let raw = defaults.array(forKey: FilterKey.types) as? [String] {
-            selectedTypes = Set(raw.compactMap(WorkshopContentTypeFilter.init(rawValue:)))
-                .intersection(Set(WorkshopContentTypeFilter.selectableCases))
+            selectedTypes = Self.restoredSelection(
+                raw: raw,
+                all: WorkshopContentTypeFilter.selectableCases,
+                decode: WorkshopContentTypeFilter.init(rawValue:)
+            )
         }
         if let raw = defaults.array(forKey: FilterKey.ages) as? [String] {
-            selectedAgeRatings = Set(raw.compactMap(WorkshopAgeRatingFilter.init(rawValue:)))
+            selectedAgeRatings = Self.restoredSelection(
+                raw: raw,
+                all: WorkshopAgeRatingFilter.allCases,
+                decode: WorkshopAgeRatingFilter.init(rawValue:)
+            )
         }
         if let raw = defaults.array(forKey: FilterKey.resolutions) as? [String] {
-            selectedResolutions = Set(raw.compactMap(WorkshopResolutionFilter.init(rawValue:)))
-                .intersection(Set(WorkshopResolutionFilter.selectableCases))
+            selectedResolutions = Self.restoredSelection(
+                raw: raw,
+                all: WorkshopResolutionFilter.selectableCases,
+                decode: WorkshopResolutionFilter.init(rawValue:)
+            )
         }
         if let raw = defaults.array(forKey: FilterKey.genres) as? [String] {
-            selectedGenres = Set(raw).intersection(Set(WorkshopGenre.allTags))
+            selectedGenres = Self.restoredSelection(
+                raw: raw,
+                all: WorkshopGenre.allTags,
+                decode: { $0 }
+            )
         }
     }
 
@@ -496,8 +561,10 @@ final class BrowseViewModel {
 
     private func makeRequest(page: Int) -> WorkshopQueryRequest {
         if let creatorFilter {
+            // GetUserFiles ignores this field (protobuf default sorts by
+            // lastupdated); it only feeds the cache key, so name the truth.
             return WorkshopQueryRequest(
-                sort: .newest,
+                sort: .lastUpdated,
                 page: page,
                 numPerPage: Self.perPage,
                 creatorSteamID: creatorFilter.steamID

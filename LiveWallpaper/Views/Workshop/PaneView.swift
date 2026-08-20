@@ -170,10 +170,9 @@ struct PaneView: View {
         guard let query = WorkshopDeepLink.takePendingSearch() else { return }
         let viewModel = resolveBrowseViewModel()
         selectedTab = .browseOnline
-        Task {
-            viewModel.searchInput = query
-            await viewModel.submitSearch()
-        }
+        // Not plain searchInput+submit: a leftover creator/tag scope would make
+        // makeRequest drop the query, so the VM clears the scope first.
+        Task { await viewModel.searchFromDeepLink(query) }
     }
 
     /// Browse Online is useless without a Web API key and SteamCMD, and neither

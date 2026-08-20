@@ -33528,6 +33528,35 @@
         }
       }
     },
+    "Relevance" : {
+      "comment" : "Workshop sort option available while searching: Steam's text-relevance ranking.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relevance"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "関連度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相关性"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相關性"
+          }
+        }
+      }
+    },
     "Reload" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -39279,6 +39308,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示中"
+          }
+        }
+      }
+    },
+    "Showing the top %lld of %lld presets." : {
+      "comment" : "Workshop preset list truncation notice; first number is how many presets are shown, second is the total published.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing the top %lld of %lld presets."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上位 %lld 件を表示中（全 %lld 件のプリセット）。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅显示前 %lld 个预设，共 %lld 个。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅顯示前 %lld 個預設，共 %lld 個。"
           }
         }
       }

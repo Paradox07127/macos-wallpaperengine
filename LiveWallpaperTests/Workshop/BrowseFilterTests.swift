@@ -45,6 +45,61 @@ struct BrowseFilterTests {
         #expect(request.days == nil)
     }
 
+    @Test("Search keeps the user-selected sort as query_type")
+    func searchKeepsUserSelectedSort() {
+        let request = WorkshopQueryRequest(sort: .mostSubscribed, searchText: "cyberpunk")
+
+        #expect(request.sort == .mostSubscribed)
+
+        let values = Dictionary(
+            uniqueKeysWithValues: request.apiQueryItems(apiKey: "FAKEKEY", appID: 431960).map { ($0.name, $0.value ?? "") }
+        )
+        #expect(values["query_type"] == "9")
+        #expect(values["search_text"] == "cyberpunk")
+    }
+
+    @Test("Relevance sort combines with search text")
+    func relevanceSortCombinesWithSearchText() {
+        let request = WorkshopQueryRequest(sort: .search, searchText: "city")
+
+        #expect(request.sort == .search)
+    }
+
+    @Test("Relevance sort without search text falls back to top rated")
+    func relevanceWithoutSearchTextFallsBack() {
+        let request = WorkshopQueryRequest(sort: .search)
+
+        #expect(request.sort == .topRated)
+    }
+
+    @Test("Search with Most Popular keeps the time frame days")
+    func searchWithMostPopularKeepsTimeFrameDays() {
+        let request = WorkshopQueryRequest(sort: .mostPopular, searchText: "city", timeFrame: .oneWeek)
+
+        #expect(request.sort == .mostPopular)
+        #expect(request.days == 7)
+    }
+
+    @Test("A persisted all-deselected category restores to all-selected")
+    func persistedEmptyCategoryRestoresToAllSelected() {
+        func restoreTypes(_ raw: [String]) -> Set<WorkshopContentTypeFilter> {
+            BrowseViewModel.restoredSelection(
+                raw: raw,
+                all: WorkshopContentTypeFilter.selectableCases,
+                decode: WorkshopContentTypeFilter.init(rawValue:)
+            )
+        }
+        let everything = Set(WorkshopContentTypeFilter.selectableCases)
+
+        // Written by a pre-snap-back build that let the user deselect them all.
+        #expect(restoreTypes([]) == everything)
+        // Every raw value stopped decoding (renamed cases).
+        #expect(restoreTypes(["gone", "obsolete"]) == everything)
+        // A genuine narrowing survives untouched.
+        #expect(restoreTypes(["scene"]) == [.scene])
+        #expect(restoreTypes(["scene", "bogus"]) == [.scene])
+    }
+
     @Test("Query request emits sort and time frame as API query items")
     func queryRequestAPIQueryItemsIncludeSortAndTimeFrame() {
         let request = WorkshopQueryRequest(
@@ -140,6 +195,27 @@ struct BrowseFilterTests {
         )
         #expect(request.requiredTags.isEmpty)
         #expect(request.excludedTags == ["Anime", "Application", "Mature", "Memes"])
+    }
+
+    @Test("Page count is ceil(total/perPage) capped at Steam's page limit of 1000")
+    func pageCountCappedAtSteamLimit() {
+        #expect(BrowseViewModel.pageCount(totalAvailable: 600_000, perPage: 50) == 1000)
+        #expect(BrowseViewModel.pageCount(totalAvailable: 120, perPage: 50) == 3)
+        #expect(BrowseViewModel.pageCount(totalAvailable: 50_000, perPage: 50) == 1000)
+        #expect(BrowseViewModel.pageCount(totalAvailable: 50_001, perPage: 50) == 1000)
+        #expect(BrowseViewModel.pageCount(totalAvailable: 1, perPage: 50) == 1)
+    }
+
+    @Test("Toggling the last selected chip snaps back to all-selected")
+    func toggleSnapBackOnEmpty() {
+        let all = WorkshopContentTypeFilter.selectableCases
+
+        // Deselecting the only member would leave an empty set → snap back to full.
+        #expect(BrowseViewModel.toggled(.scene, in: [.scene], all: all) == Set(all))
+
+        // Normal toggle semantics unchanged.
+        #expect(BrowseViewModel.toggled(.scene, in: Set(all), all: all) == [.video, .web])
+        #expect(BrowseViewModel.toggled(.scene, in: [.video], all: all) == [.scene, .video])
     }
 
     @Test("Every filter case is identifiable + has a display name")

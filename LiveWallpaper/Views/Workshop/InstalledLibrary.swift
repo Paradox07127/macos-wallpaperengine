@@ -205,9 +205,16 @@
             pendingDelete = nil
         }
 
+        // Deselecting a category's last chip snaps it back to all-selected:
+        // an empty set already matched everything, but the chips all rendered
+        // as struck-through, contradicting the full grid below (same rule as
+        // the Browse filters).
         func toggleType(_ kind: WPELibraryTypeKind) {
             if selectedTypes.contains(kind) {
                 selectedTypes.remove(kind)
+                if selectedTypes.isEmpty {
+                    selectedTypes = Set(WPELibraryTypeKind.allCases)
+                }
             } else {
                 selectedTypes.insert(kind)
             }
@@ -220,6 +227,9 @@
         func toggleSource(_ source: InstalledSource) {
             if selectedSources.contains(source) {
                 selectedSources.remove(source)
+                if selectedSources.isEmpty {
+                    selectedSources = Set(InstalledSource.allCases)
+                }
             } else {
                 selectedSources.insert(source)
             }
@@ -232,6 +242,9 @@
         func toggleStorage(_ storage: InstalledStorageKind) {
             if selectedStorage.contains(storage) {
                 selectedStorage.remove(storage)
+                if selectedStorage.isEmpty {
+                    selectedStorage = Set(InstalledStorageKind.allCases)
+                }
             } else {
                 selectedStorage.insert(storage)
             }
