@@ -2,11 +2,38 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
+/// Chrome for `HTMLSourceSection`: glass when it floats over the live web preview,
+/// a flat card when it sits in page flow with nothing behind it to refract.
+private struct HTMLSourceChrome: ViewModifier {
+    let floating: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if floating {
+            // Capsule, matching the scene preview's info bar — same role, same shape.
+            content.adaptiveGlassSurface(.capsule)
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(DesignTokens.Colors.surfaceRaised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
+                )
+        }
+    }
+}
+
 /// Picker and options for URL- or locally-backed HTML wallpapers.
 struct HTMLSourceSection: View {
     var screen: Screen
     @Binding var source: HTMLSource?
     @Binding var config: HTMLConfig
+    /// `true` when the picker floats over the web preview instead of sitting in
+    /// page flow — the one case where glass has live content to refract.
+    var floating: Bool = false
 
     @Environment(ScreenManager.self) private var screenManager
     @State private var trustStore = TrustedHostStore.shared
@@ -15,19 +42,17 @@ struct HTMLSourceSection: View {
     @State private var urlInput: String = ""
 
     var body: some View {
-        GroupBox {
-            HStack(alignment: .center, spacing: 10) {
-                sourceSegmentPicker
-                    .frame(width: 108)
+        HStack(alignment: .center, spacing: 10) {
+            sourceSegmentPicker
+                .frame(width: 108)
 
-                sourcePane
-                    .frame(maxWidth: .infinity)
-                    .animation(.snappy(duration: 0.18), value: selectedSegment)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            sourcePane
+                .frame(maxWidth: .infinity)
+                .animation(.snappy(duration: 0.18), value: selectedSegment)
         }
-        .groupBoxStyle(ContainerGroupBoxStyle())
+        .padding(.horizontal, floating ? 16 : 20)
+        .padding(.vertical, floating ? 6 : 16)
+        .modifier(HTMLSourceChrome(floating: floating))
         .onAppear { scheduleBindingSync() }
         .onChange(of: source) { _, _ in
             scheduleBindingSync()
@@ -96,12 +121,14 @@ struct HTMLSourceSection: View {
             Button(action: pasteFromClipboard) {
                 Image(systemName: "doc.on.clipboard")
             }
-            .adaptiveGlassButton(.regular, shape: .circle, size: .small)
+            .buttonStyle(.borderless)
+            .controlSize(.small)
             .help(Text("Paste URL from clipboard"))
             .accessibilityLabel(Text("Paste URL from clipboard"))
 
             Button("Use") { commitURL() }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .disabled(urlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
             urlChipsRow
@@ -132,7 +159,8 @@ struct HTMLSourceSection: View {
             Spacer(minLength: 0)
 
             Button("Choose…") { pickLocal() }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
         }
     }
 

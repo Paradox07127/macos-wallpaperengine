@@ -133,7 +133,8 @@ struct UpdateBannerView: View {
             Button("Open") {
                 NSWorkspace.shared.open(release.releasePageURL)
             }
-            .adaptiveGlassButton(.regular, size: .small)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         case .checking:
             EmptyView()
         default:

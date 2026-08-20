@@ -61,7 +61,7 @@ struct AppExceptionsSheet: View {
                 .resizable()
                 .frame(width: 24, height: 24)
             Text(verbatim: rule.wrappedValue.displayName)
-                .lineLimit(1)
+                .marqueeOnHover(truncationMode: .tail)
             Spacer(minLength: 8)
             Picker("", selection: Binding(
                 get: { rule.wrappedValue.trigger },
@@ -88,7 +88,8 @@ struct AppExceptionsSheet: View {
             } label: {
                 Image(systemName: "plus")
             }
-            .adaptiveGlassButton(.regular, shape: .circle)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
             .help(Text("Add an application"))
             .accessibilityLabel(Text("Add an application"))
         }

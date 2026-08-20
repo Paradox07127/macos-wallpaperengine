@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Shell behind the segments. `.flat` exists for hosts that already sit on a
-/// glass surface (e.g. monitor pills) — glass-on-glass reads as a double edge.
+/// Shell behind the segments. `.flat` is the default because every current host
+/// is in-content — an inspector card or a settings panel on an opaque background,
+/// where glass has nothing to refract and only adds an edge. `.glass` is for a
+/// picker that genuinely floats over a preview.
 public enum GlassSegmentedShell: Sendable {
     case glass
     case flat
@@ -20,7 +22,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     public init(
         selection: Binding<Value>,
         values: [Value],
-        shell: GlassSegmentedShell = .glass,
+        shell: GlassSegmentedShell = .flat,
         @ViewBuilder label: @escaping (Value, _ isSelected: Bool) -> SegmentLabel
     ) {
         self._selection = selection
@@ -71,7 +73,7 @@ public extension GlassSegmentedPicker where SegmentLabel == Text {
     init(
         selection: Binding<Value>,
         values: [Value],
-        shell: GlassSegmentedShell = .glass,
+        shell: GlassSegmentedShell = .flat,
         title: @escaping (Value) -> LocalizedStringKey
     ) {
         self.init(selection: selection, values: values, shell: shell) { value, isSelected in

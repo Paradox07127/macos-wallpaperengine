@@ -15,7 +15,7 @@
 | Problem | Check | Fix |
 |---|---|---|
 | Nothing renders / black wallpaper | Is a source assigned in **Settings → Displays**? Is the global toggle on? | Assign a source; toggle the menu bar master switch off/on |
-| Wallpaper keeps pausing | Pause rules: full-screen, ≥85 % occlusion, battery, Low Power Mode, app exceptions | Intended behavior — relax rules in **Settings → Performance**, or add a **never pause** app exception |
+| Wallpaper keeps pausing | Pause rules: full-screen, ≥85 % occlusion, battery, Low Power Mode, app exceptions | The menu bar and the screen's detail header name the rule that is holding it. Relax that rule in **Settings → Performance**, or add a **never pause** app exception |
 | Second display stays blank | Does the source's file permission cover that display's config? | Re-open the display's detail panel and re-assign the source explicitly |
 | Large video stutters | 4K+ source, high frame cap, active overlays? | Lower the frame cap and RAM preload budget; disable particle/weather overlays to isolate |
 | Desktop clicks feel blocked (scenes) | Scene **click interaction** captures mouse clicks | Disable click interaction for that display and reload |

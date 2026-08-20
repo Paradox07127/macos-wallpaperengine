@@ -49,7 +49,7 @@ struct WorkshopSetupRow<Control: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
             Image(systemName: icon)
-                .font(.system(size: 15))
+                .font(.title3)
                 .foregroundStyle(state.tint)
                 .frame(width: 18)
                 .accessibilityHidden(true)
@@ -65,8 +65,7 @@ struct WorkshopSetupRow<Control: View>: View {
                     Text(detail)
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .marqueeOnHover()
                         .textSelection(.enabled)
                 }
             }
@@ -112,7 +111,8 @@ struct WorkshopPrivacyLink: View {
                 Image(systemName: "hand.raised")
             }
         }
-        .adaptiveGlassButton(.regular, size: .small)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
         .sheet(isPresented: $isPresented) {
             WorkshopPrivacySheet()
         }

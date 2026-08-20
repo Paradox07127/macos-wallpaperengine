@@ -63,24 +63,21 @@ struct WorkshopAPIKeySection: View {
         if isEditing {
             if services.hasWebAPIKey {
                 Button("Cancel") { isEditing = false }
-                    .adaptiveGlassButton(.regular, size: .small)
                     .help(Text("Keep the key you already have"))
             }
         } else if services.hasWebAPIKey {
             HStack(spacing: DesignTokens.Spacing.xs) {
                 Button("Replace") { isEditing = true }
-                    .adaptiveGlassButton(.regular, size: .small)
                     .help(Text("Set a new Steam Web API key"))
                 Button("Forget", role: .destructive) {
                     Task { await model.forget() }
                 }
-                .adaptiveGlassButton(.regular, size: .small)
                 .tint(DesignTokens.Colors.Status.danger)
                 .help(Text(verbatim: WorkshopAPIKeyOwnershipInfo.forgetTooltip))
             }
         } else {
             Button("Set key") { isEditing = true }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
                 .help(Text("Paste your Steam Web API key"))
         }
     }
@@ -126,7 +123,8 @@ struct WorkshopAPIKeySection: View {
             .fixedSize()
 
             Button("Save") { save() }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .disabled(!model.canSave)
                 .fixedSize()
         }

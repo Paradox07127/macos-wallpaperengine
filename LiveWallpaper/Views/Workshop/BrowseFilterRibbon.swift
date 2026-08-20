@@ -248,7 +248,9 @@ struct BrowseFilterRibbon: View {
             idealWidth: DesignTokens.LibraryFilterBar.searchIdealWidth,
             maxWidth: DesignTokens.LibraryFilterBar.searchMaxWidth
         )
-        .adaptiveGlassSurface(.capsule, interactive: true)
+        .background(Capsule().fill(Color.primary.opacity(0.04)))
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+        .contentShape(Capsule())
         .overlay {
             if isSearchFocused {
                 Capsule().strokeBorder(Color.accentColor, lineWidth: 1.5)

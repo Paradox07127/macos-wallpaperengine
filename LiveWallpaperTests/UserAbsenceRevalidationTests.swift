@@ -7,11 +7,11 @@ import Testing
 
 private final class FakeUserPresenceProbe: UserPresenceProbing, @unchecked Sendable {
     // Mutated only from the @MainActor test body before each read; no concurrent access.
-    var displayAsleep = false
+    var allDisplaysAsleep = false
     var mainDisplayActive = true
     var lockState = ScreenLockState.unlocked
 
-    func isAnyDisplayAsleep() -> Bool { displayAsleep }
+    func areAllDisplaysAsleep() -> Bool { allDisplaysAsleep }
     func isMainDisplayActive() -> Bool { mainDisplayActive }
     func screenLockState() -> ScreenLockState { lockState }
 }
@@ -38,7 +38,7 @@ struct UserAbsenceRevalidationTests {
         // The wake notification never arrived, so the reason is still set while
         // the display is in fact awake.
         manager.userAbsenceReasons.insert(.displaySleep)
-        probe.displayAsleep = false
+        probe.allDisplaysAsleep = false
 
         manager.revalidateUserAbsence()
 
@@ -108,7 +108,7 @@ struct UserAbsenceRevalidationTests {
         // which revalidates in the same call stack.
         manager.userAbsenceReasons.insert(.displaySleep)
         manager.absenceMarkedAt[.displaySleep] = ContinuousClock.now
-        probe.displayAsleep = false  // CoreGraphics has not caught up yet
+        probe.allDisplaysAsleep = false  // CoreGraphics has not caught up yet
 
         manager.revalidateUserAbsence()
 
@@ -125,11 +125,42 @@ struct UserAbsenceRevalidationTests {
 
         manager.userAbsenceReasons.insert(.displaySleep)
         manager.absenceMarkedAt[.displaySleep] = ContinuousClock.now
-        probe.displayAsleep = false
+        probe.allDisplaysAsleep = false
 
         manager.revalidateUserAbsence()
 
         #expect(!manager.isUserAbsent, "Past the grace period the probe is authoritative")
+    }
+
+    @Test("An absence whose only policy refresh fell inside the grace window is still cleared")
+    func absenceSkippedInsideGraceIsRecheckedWithoutFurtherEvents() async throws {
+        let probe = FakeUserPresenceProbe()
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            fullScreenDetector: FakeFullScreenDetector(),
+            userPresenceProbe: probe,
+            absenceRevalidationGrace: .milliseconds(200),
+            absenceRevalidationPollInterval: .milliseconds(50),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        // The display never actually slept — or its wake notification was lost.
+        probe.allDisplaysAsleep = false
+
+        // The production entry point, and the only event in this test: it runs
+        // exactly one policy refresh, which lands inside the grace window and
+        // therefore skips revalidation. Nothing else ever pokes the manager.
+        manager.setUserAbsence(.displaySleep, present: true)
+        #expect(manager.isUserAbsent, "the grace window has to protect a just-recorded absence")
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline, manager.isUserAbsent {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(
+            !manager.isUserAbsent,
+            "an absence skipped inside the grace window was never re-checked, so it pinned every wallpaper suspended"
+        )
     }
 
     /// Source-pinned rather than behavioural: a partially-asleep multi-display
@@ -146,6 +177,22 @@ struct UserAbsenceRevalidationTests {
         #expect(
             !source.contains("CGGetActiveDisplayList("),
             "Active displays are awake by definition; that list can never contain a sleeping display"
+        )
+    }
+
+    /// Also source-pinned, and for the same reason: absence means "the user is
+    /// not watching", so one awake display is enough to end it. Folding with
+    /// `contains` instead made a permanently dark second display — an unplugged
+    /// TV, a closed-lid external — hold the safety net off forever.
+    @Test("The sleep probe demands that every online display be asleep")
+    func sleepProbeRequiresEveryDisplayAsleep() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Infrastructure/Platform/UserPresenceProbe.swift"
+        )
+        #expect(source.contains("allSatisfy { CGDisplayIsAsleep($0) != 0 }"))
+        #expect(
+            !source.contains("contains { CGDisplayIsAsleep"),
+            "One sleeping display among awake ones is not an absence, and that display may never wake"
         )
     }
 }

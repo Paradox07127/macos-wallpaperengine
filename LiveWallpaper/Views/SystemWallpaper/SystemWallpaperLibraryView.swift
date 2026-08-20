@@ -115,7 +115,8 @@ struct SystemWallpaperLibraryView: View {
                 detail: Text(verbatim: message)
             ) {
                 Button("Dismiss") { service.clearLastError() }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .fixedSize()
             }
         case .publishedNotSelected:
@@ -126,7 +127,8 @@ struct SystemWallpaperLibraryView: View {
                 detail: Text("macOS decides which wallpaper is on screen; Loomscreen only supplies them.")
             ) {
                 Button("Open…") { service.openWallpaperSettings() }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .fixedSize()
             }
         case .inUse, .empty, .unsupported, .systemIncompatible:

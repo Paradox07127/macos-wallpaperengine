@@ -14,7 +14,6 @@ extension GeneralSettingsView {
                 info: "The bundle includes global preferences, display defaults, wallpaper library bookmarks, and per-display playback / effect setup. Wallpaper files themselves are not copied — only references to them."
             ) {
                 Button("Export…") { beginExport() }
-                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .accessibilityHint(Text("Save the current settings, display defaults, bookmarks, and per-display setup to a backup file"))
             }
@@ -27,7 +26,6 @@ extension GeneralSettingsView {
                 info: "Importing replaces the current global preferences, display defaults, and per-display setup. Bookmarks from the backup are merged into your library — existing entries with the same source are kept."
             ) {
                 Button("Import…") { beginImport() }
-                    .adaptiveGlassButton(.regular, size: .small)
                     .fixedSize()
                     .accessibilityHint(Text("Restore settings, display defaults, bookmarks, and per-display setup from a backup file"))
             }

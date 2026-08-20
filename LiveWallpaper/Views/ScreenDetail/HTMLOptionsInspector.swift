@@ -126,7 +126,6 @@ struct HTMLOptionsInspector: View {
             } label: {
                 Text("Edit…")
             }
-            .adaptiveGlassButton(.regular, size: .small)
             .fixedSize()
             .popover(isPresented: $customCSSPresented, arrowEdge: .leading) {
                 customCSSEditor
@@ -153,13 +152,15 @@ struct HTMLOptionsInspector: View {
                 Button("Reset") {
                     draftCustomCSS = config.customCSS ?? ""
                 }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(draftCustomCSS == (config.customCSS ?? ""))
 
                 Spacer()
 
                 Button("Close") { customCSSPresented = false }
-                    .adaptiveGlassButton(.regular, size: .small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .keyboardShortcut(.cancelAction)
 
                 Button("Apply") {
@@ -170,7 +171,8 @@ struct HTMLOptionsInspector: View {
                     }
                     customCSSPresented = false
                 }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .keyboardShortcut(.defaultAction)
                 .disabled(draftCustomCSS == (config.customCSS ?? ""))
             }

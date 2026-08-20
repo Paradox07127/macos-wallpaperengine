@@ -231,10 +231,17 @@ private struct OnboardingWorkshopSetupView: View {
                     state: services.hasWebAPIKey ? .ready : .notStarted,
                     info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Get one free at steamcommunity.com/dev/apikey."
                 ) {
-                    Button(services.hasWebAPIKey ? "Replace" : "Set key") {
-                        showingKeyEntry = true
+                    // Prominent only while the key is still missing: this is the
+                    // one step onboarding is asking the reader to complete.
+                    if services.hasWebAPIKey {
+                        Button("Replace") { showingKeyEntry = true }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    } else {
+                        Button("Set key") { showingKeyEntry = true }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                     }
-                    .adaptiveGlassButton(services.hasWebAPIKey ? .regular : .prominent, size: .small)
                 }
 
                 Divider()
@@ -260,7 +267,8 @@ private struct OnboardingWorkshopSetupView: View {
                     info: "Loomscreen reads installed Workshop items directly from the official Steam library after one folder authorization. Authenticated SteamCMD downloads are a separate capability and require Loomscreen's background Steam connector."
                 ) {
                     Button("Configure") { showingConnection = true }
-                        .adaptiveGlassButton(.regular, size: .small)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                 }
             }
             .padding(.horizontal, DesignTokens.Spacing.md)
@@ -322,10 +330,12 @@ private struct OnboardingWorkshopSetupView: View {
             ProgressView().controlSize(.small)
         } else if isSteamCMDReady {
             Button("Configure") { showingConnection = true }
-                .adaptiveGlassButton(.regular, size: .small)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
         } else {
             Button("Install SteamCMD…") { showingInstallConsent = true }
-                .adaptiveGlassButton(.prominent, size: .small)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
         }
     }
 

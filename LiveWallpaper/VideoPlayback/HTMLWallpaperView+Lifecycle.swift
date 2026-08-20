@@ -311,7 +311,10 @@ extension HTMLWallpaperView {
     /// absence-like reason (lock, display sleep, full-screen cover/occlusion) —
     /// the same signal `SceneWallpaperSession.setHibernationEligible` takes. An
     /// app-rule or battery pause stays a warm suspend.
-    func setHibernationEligible(_ eligible: Bool) {
+    /// `immediately` is the manual-pause handover: that countdown has already
+    /// run its full term in the session, and re-running this one after it made
+    /// a paused HTML wallpaper hold its resources longer than a paused scene.
+    func setHibernationEligible(_ eligible: Bool, immediately: Bool = false) {
         guard eligible,
               !isCleaningUp,
               mediaPlaybackSuspended,
@@ -321,7 +324,7 @@ extension HTMLWallpaperView {
             return
         }
         hibernationDwell.arm(
-            initial: HTMLWallpaperView.hibernationDwell,
+            initial: immediately ? .zero : HTMLWallpaperView.hibernationDwell,
             retry: HTMLWallpaperView.hibernationDwell
         ) { [weak self] in
             guard let self else { return true }

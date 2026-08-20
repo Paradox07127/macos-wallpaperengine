@@ -22,9 +22,20 @@ protocol WallpaperAudioConfigurable: AnyObject {
 
 /// Runtimes that own a deep-hibernate teardown behind their own dwell, so the
 /// session can drive eligibility without casting to a concrete view type.
+///
+/// `immediately` skips that dwell for a caller that has already served an
+/// equivalent (or longer) wait of its own — today only the manual-pause
+/// countdown, which must release at the same wall-clock mark for every
+/// wallpaper kind instead of stacking the two delays.
 @MainActor
 protocol WallpaperHibernationEligible: AnyObject {
-    func setHibernationEligible(_ eligible: Bool)
+    func setHibernationEligible(_ eligible: Bool, immediately: Bool)
+}
+
+extension WallpaperHibernationEligible {
+    func setHibernationEligible(_ eligible: Bool) {
+        setHibernationEligible(eligible, immediately: false)
+    }
 }
 
 @MainActor

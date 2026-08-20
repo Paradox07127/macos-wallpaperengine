@@ -20,8 +20,7 @@ struct ManualLocationPicker: View {
                         .foregroundStyle(DesignTokens.Colors.Status.active)
                     Text(verbatim: current.name)
                         .font(DesignTokens.Typography.body)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .marqueeOnHover()
                     Spacer(minLength: 8)
                     Button("Clear") {
                         onCommit(nil)

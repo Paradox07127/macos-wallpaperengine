@@ -57,12 +57,12 @@ struct WorkshopSetupOverview: View {
     private var track: some View {
         HStack(spacing: 2) {
             ForEach(facets) { facet in
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.StatusBar.corner, style: .continuous)
                     .fill(segmentTint(facet.state))
                     .frame(maxWidth: .infinity)
             }
         }
-        .frame(height: 6)
+        .frame(height: DesignTokens.StatusBar.height)
         .animation(.easeInOut(duration: 0.2), value: facets.map(\.state))
         .accessibilityHidden(true)
     }
@@ -82,7 +82,7 @@ struct WorkshopSetupOverview: View {
                         Text(facet.title, bundle: .main)
                             .font(DesignTokens.Typography.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .marqueeOnHover(truncationMode: .tail)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())

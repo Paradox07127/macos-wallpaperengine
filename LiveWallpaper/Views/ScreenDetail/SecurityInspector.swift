@@ -153,14 +153,13 @@ struct SecurityInspector: View {
                     for: screen
                 )
             }
-            .adaptiveGlassButton(.regular, size: .small)
             .tint(DesignTokens.Colors.Status.danger)
             .fixedSize()
         } else if origin.isSecure {
             Button("Trust…") {
                 pendingTrustOrigin = origin
             }
-            .adaptiveGlassButton(.prominent, size: .small)
+            .buttonStyle(.borderedProminent)
             .fixedSize()
             .confirmationDialog(
                 Text("Trust \(origin.displayName) for JavaScript?"),

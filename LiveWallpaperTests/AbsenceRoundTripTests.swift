@@ -55,12 +55,12 @@ struct AbsenceRoundTripTests {
     /// thing keeping the absence alive.
     private func beginAbsence(_ rig: Rig) {
         rig.manager.userAbsenceReasons.insert(.displaySleep)
-        rig.probe.displayAsleep = true
+        rig.probe.allDisplaysAsleep = true
         rig.manager.refreshPerformancePolicyForAllScreens()
     }
 
     private func endAbsence(_ rig: Rig) {
-        rig.probe.displayAsleep = false
+        rig.probe.allDisplaysAsleep = false
         rig.manager.refreshPerformancePolicyForAllScreens()
     }
 
@@ -145,11 +145,11 @@ struct AbsenceRoundTripTests {
 
 private final class AbsencePresenceProbe: UserPresenceProbing, @unchecked Sendable {
     // Written only from the @MainActor test body between reads.
-    var displayAsleep = false
+    var allDisplaysAsleep = false
     var mainDisplayActive = true
     var lockState = ScreenLockState.unlocked
 
-    func isAnyDisplayAsleep() -> Bool { displayAsleep }
+    func areAllDisplaysAsleep() -> Bool { allDisplaysAsleep }
     func isMainDisplayActive() -> Bool { mainDisplayActive }
     func screenLockState() -> ScreenLockState { lockState }
 }
