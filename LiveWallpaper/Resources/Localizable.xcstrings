@@ -4,36 +4,6 @@
     "" : {
 
     },
-    "%lld video(s) and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
-      "comment" : "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld video(s) and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS が読み取るフォルダから %lld 本の動画（%@）を削除します。Loomscreen 内の元ファイルはそのまま残ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将从 macOS 读取的文件夹中删除 %lld 个视频（%@）。Loomscreen 里的原始文件不受影响。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將從 macOS 讀取的檔案夾中刪除 %lld 部影片（%@）。Loomscreen 裡的原始檔案不受影響。"
-          }
-        }
-      }
-    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -1680,6 +1650,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "測試執行在容器中殘留了 %lld 個暫存項目。"
+          }
+        }
+      }
+    },
+    "%lld video(s) and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
+      "comment" : "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld video(s) and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS が読み取るフォルダから %lld 本の動画（%@）を削除します。Loomscreen 内の元ファイルはそのまま残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将从 macOS 读取的文件夹中删除 %lld 个视频（%@）。Loomscreen 里的原始文件不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將從 macOS 讀取的檔案夾中刪除 %lld 部影片（%@）。Loomscreen 裡的原始檔案不受影響。"
           }
         }
       }
@@ -42181,6 +42181,36 @@
         }
       }
     },
+    "Some files could not be deleted: %@" : {
+      "comment" : "Error after clearing the System Wallpaper library. Placeholder is a file name list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some files could not be deleted: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一部のファイルを削除できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有些文件无法删除：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有些檔案無法刪除：%@"
+          }
+        }
+      }
+    },
     "Some of this scene's references didn't resolve. Download Wallpaper Engine's shared assets from Steam, or link an install you already have." : {
       "comment" : "Scene page warning body when the renderer named unresolved references.",
       "extractionState" : "manual",
@@ -42236,36 +42266,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "缺少部分場景資源"
-          }
-        }
-      }
-    },
-    "Some files could not be deleted: %@" : {
-      "comment" : "Error after clearing the System Wallpaper library. Placeholder is a file name list.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Some files could not be deleted: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一部のファイルを削除できませんでした: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "有些文件无法删除：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "有些檔案無法刪除：%@"
           }
         }
       }
