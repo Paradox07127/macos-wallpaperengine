@@ -1068,9 +1068,13 @@ struct WallpaperVideoPlayerStartupPolicyTests {
     @Test("Scene preview keeps abnormal poster ratios inside the screen frame")
     func scenePreviewFitsAbnormalPosterRatiosInsideScreenFrame() throws {
         let detail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
+        let stage = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WallpaperPreviewStage.swift")
 
-        #expect(detail.contains("GeometryReader"))
-        #expect(detail.contains("screenPreviewSize"))
+        // The screen-shaped frame is the stage's, shared with video and web; scene
+        // used to compute the same 16:9 fit by hand in a GeometryReader.
+        #expect(detail.contains("WallpaperPreviewStage {"))
+        #expect(stage.contains(".aspectRatio(WallpaperPreviewMetrics.aspectRatio, contentMode: .fit)"))
+        // The poster still fits inside that frame rather than filling past it.
         #expect(detail.contains(".aspectRatio(contentMode: .fit)"))
         #expect(!detail.contains(".aspectRatio(contentMode: .fill)"))
     }

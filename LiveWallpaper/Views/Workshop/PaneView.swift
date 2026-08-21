@@ -305,32 +305,30 @@ struct WorkshopPaneHeader: View {
     @ViewBuilder
     private var accountControl: some View {
         if doctor.username == nil {
-            headerAction("person.crop.circle.badge.plus") { showingSignIn = true }
-                .help(Text("Sign In…"))
-                .accessibilityLabel(Text("Steam sign-in"))
+            Button { showingSignIn = true } label: {
+                headerGlyph("person.crop.circle.badge.plus")
+            }
+            .buttonStyle(.plain)
+            .adaptiveGlassSurface(.circle, interactive: true)
+            .help(Text("Sign In…"))
+            .accessibilityLabel(Text("Steam sign-in"))
         } else {
-            // `Menu` ignores `buttonStyle`, so the glass is a real button with the
-            // menu laid over it to take the click.
-            headerAction("person.crop.circle.fill") {}
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-                .overlay {
-                    Menu {
-                        steamAccountMenuItems(
-                            accounts: discoveredAccounts,
-                            current: doctor.username,
-                            onSelect: selectAccount,
-                            onSignIn: { showingSignIn = true },
-                            onRescan: { Task { await loadAccounts() } }
-                        )
-                    } label: {
-                        Color.clear.contentShape(Circle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .help(Text(verbatim: accountError ?? doctor.username ?? ""))
-                    .accessibilityLabel(Text("Steam account"))
-                }
+            Menu {
+                steamAccountMenuItems(
+                    accounts: discoveredAccounts,
+                    current: doctor.username,
+                    onSelect: selectAccount,
+                    onSignIn: { showingSignIn = true },
+                    onRescan: { Task { await loadAccounts() } }
+                )
+            } label: {
+                headerGlyph("person.crop.circle.fill")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .adaptiveGlassSurface(.circle, interactive: true)
+            .help(Text(verbatim: accountError ?? doctor.username ?? ""))
+            .accessibilityLabel(Text("Steam account"))
         }
     }
 
@@ -382,23 +380,27 @@ struct WorkshopPaneHeader: View {
     // Folder import moved to the toolbar's single add button, which routes any
     // picked file or folder — including a Workshop library root — by what it is.
     // Circle glass at `.large`, matching the other pages' header actions.
-    /// One recipe for every header action. The fixed glyph square matters:
-    /// `buttonBorderShape(.circle)` sizes the circle to its label, so symbols of
-    /// different widths would otherwise give the row circles of different sizes.
-    private func headerAction(_ systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .frame(width: 18, height: 18)
-        }
-        .adaptiveGlassButton(.regular, shape: .circle)
-        .controlSize(.large)
+    /// One glyph box for every header action, same as the menu bar's icon
+    /// controls. The glass is drawn here rather than left to `buttonStyle` so a
+    /// `Menu` can wear it too — `Menu` ignores `buttonStyle` and would otherwise
+    /// come out as a plain circle beside its glass twin.
+    private func headerGlyph(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(Color.primary)
+            .frame(width: 30, height: 30)
+            .contentShape(Circle())
     }
 
     private var headerActions: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            headerAction("link.badge.plus", action: onPaste)
-                .help(Text("Add a Steam Workshop item by URL or ID"))
-                .accessibilityLabel(Text("Add from Workshop URL or ID"))
+            Button(action: onPaste) {
+                headerGlyph("link.badge.plus")
+            }
+            .buttonStyle(.plain)
+            .adaptiveGlassSurface(.circle, interactive: true)
+            .help(Text("Add a Steam Workshop item by URL or ID"))
+            .accessibilityLabel(Text("Add from Workshop URL or ID"))
 
             accountControl
         }

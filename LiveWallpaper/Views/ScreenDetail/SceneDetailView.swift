@@ -44,7 +44,6 @@ struct ScenePreviewLifecycleState: Equatable {
 /// Scene detail card for Wallpaper Engine projects.
 @MainActor
 struct SceneDetailView: View {
-    private let screenAspectRatio: CGFloat = 16 / 9
     private let stackSpacing: CGFloat = 16
 
     let origin: WPEOrigin
@@ -91,13 +90,17 @@ struct SceneDetailView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            let previewSize = screenPreviewSize(in: geo.size)
+        WallpaperPreviewStage {
             previewCard
-                .frame(width: previewSize.width, height: previewSize.height)
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+        } controls: {
+            VStack(spacing: stackSpacing) {
+                // Above the error banner: the error names the symptom, this
+                // names the one cause the user can act on from here.
+                engineAssetsBanner
+                errorBanner
+                infoBar
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $showLogSheet) {
             DiagnosticLogSheet(title: origin.title, log: fullDiagnosticText, tint: currentSeverityTint)
         }
@@ -160,16 +163,6 @@ struct SceneDetailView: View {
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.2), value: stateKey)
-        .overlay(alignment: .bottom) {
-            VStack(spacing: stackSpacing) {
-                // Above the error banner: the error names the symptom, this
-                // names the one cause the user can act on from here.
-                engineAssetsBanner
-                errorBanner
-                infoBar
-            }
-            .padding(DesignTokens.Spacing.lg)
-        }
     }
 
     @ViewBuilder
@@ -522,12 +515,6 @@ struct SceneDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .blur(radius: state.isLoading ? 6 : 0)
         .overlay(Color.black.opacity(state.isLoading ? 0.35 : 0.0))
-    }
-
-    private func screenPreviewSize(in available: CGSize) -> CGSize {
-        let heightForAvailableWidth = available.width / screenAspectRatio
-        let height = min(available.height, heightForAvailableWidth)
-        return CGSize(width: height * screenAspectRatio, height: height)
     }
 
     /// Floating glass info bar under the preview — the scene-type analog of the video command bar.
