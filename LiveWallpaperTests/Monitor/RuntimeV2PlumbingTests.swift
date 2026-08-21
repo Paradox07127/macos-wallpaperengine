@@ -86,6 +86,23 @@ struct RuntimeV2PlumbingTests {
         #expect(demand.sensors == true)
     }
 
+    /// The tap and its FFT are the most expensive thing a Now Playing layer can
+    /// ask for, and turning the effects off used to leave both running.
+    @Test("The audio tap follows the Now Playing layer's reactive switch")
+    func nowPlayingDemandsAudioOnlyWhenReactive() {
+        #expect(MonitorSampleDemand.of([widget(.nowPlaying)]).audioSpectrum == true)
+        #expect(
+            MonitorSampleDemand.of([widget(.nowPlaying, ["audioReactive": .bool(false)])]).audioSpectrum == false
+        )
+        // One layer still wanting it keeps the tap on for the whole board.
+        #expect(MonitorSampleDemand.of([
+            widget(.nowPlaying, ["audioReactive": .bool(false)]),
+            widget(.nowPlaying),
+        ]).audioSpectrum == true)
+        // No music layer at all means nobody is asking.
+        #expect(MonitorSampleDemand.of([widget(.cpu)]).audioSpectrum == false)
+    }
+
     @Test("Power has no options popover, so its sensor row is never narrowed away")
     func powerAlwaysDemandsSensors() {
         #expect(MonitorSampleDemand.of([widget(.power)]).sensors == true)

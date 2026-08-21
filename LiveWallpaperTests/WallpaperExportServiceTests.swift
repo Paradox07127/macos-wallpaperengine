@@ -299,6 +299,73 @@ struct WallpaperExportServiceTests {
         )
     }
 
+    /// `chmod 000`: present, and `Data(contentsOf:)` fails with a read error
+    /// rather than "no such file" — the case that used to be read as an empty
+    /// library. An atomic write would still succeed here, so the manifest is
+    /// checked afterwards rather than assuming the write must fail.
+    private func denyReads(_ url: URL) throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
+    }
+
+    private func allowReads(_ url: URL) throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+    }
+
+    @Test("A manifest that exists but cannot be read fails the publish like a corrupt one")
+    func unreadableManifestFailsPublish() async throws {
+        let rig = try makeRig()
+        let first = try rig.makeVideoBookmark(named: "first.mp4", label: "First")
+        try await rig.service.publish(bookmark: first)
+        try denyReads(rig.manifestURL)
+
+        let second = try rig.makeVideoBookmark(named: "second.mp4", label: "Second")
+        await #expect(throws: (any Error).self) {
+            try await rig.service.publish(bookmark: second)
+        }
+
+        try allowReads(rig.manifestURL)
+        let manifest = try rig.manifestOnDisk()
+        #expect(
+            manifest.items.map(\.id) == [first.id.uuidString],
+            "an unreadable manifest must not be rewritten from scratch: \(manifest.items.map(\.title))"
+        )
+    }
+
+    @Test("A republish that fails after the swap restores the video it displaced")
+    func failedRepublishRestoresPreviousFiles() async throws {
+        let rig = try makeRig()
+        let original = Data("original-payload".utf8)
+        let first = try rig.makeVideoBookmark(named: "first.mp4", bytes: original, label: "First")
+        try await rig.service.publish(bookmark: first)
+        let published = rig.videosDirectory.appendingPathComponent("\(first.id.uuidString).mp4")
+        let thumbnail = rig.videosDirectory.appendingPathComponent("\(first.id.uuidString).jpg")
+
+        // Same bookmark ID → republish. The manifest read is the step that
+        // fails, which lands after the live copy has already been swapped.
+        let replacement = WallpaperBookmark(
+            label: "First",
+            content: try rig.makeVideoBookmark(
+                named: "second.mp4", bytes: Data("replacement-payload".utf8), label: "First"
+            ).content,
+            id: first.id
+        )
+        try denyReads(rig.manifestURL)
+        await #expect(throws: (any Error).self) {
+            try await rig.service.publish(bookmark: replacement)
+        }
+        try allowReads(rig.manifestURL)
+
+        #expect(
+            try Data(contentsOf: published) == original,
+            "a failed republish must leave the copy the manifest still points at"
+        )
+        #expect(FileManager.default.fileExists(atPath: thumbnail.path))
+        let leftovers = try FileManager.default
+            .contentsOfDirectory(atPath: rig.videosDirectory.path)
+            .filter { $0.contains("backup-") }
+        #expect(leftovers.isEmpty, "the restore must not leave its backup behind: \(leftovers)")
+    }
+
     @Test("A manifest entry whose file name escapes Videos/ is dropped at decode")
     func manifestDropsTraversalFileNames() throws {
         let json = """

@@ -14,7 +14,9 @@ enum SourceRegistration {
     /// exist whenever its widget is placed, with or without agent widgets.
     static let nowPlayingFactory: Runtime.SourceFactory = { options in
         guard options.activeWidgetKinds?.contains(.nowPlaying) == true else { return [] }
-        return [NowPlayingSource()]
+        // Nil demand = no per-widget information, so fail open rather than
+        // starve the effects.
+        return [NowPlayingSource(audioReactive: options.sampleDemand?.audioSpectrum ?? true)]
     }
 
     /// Idempotent; MainActor before first `Runtime.acquire`.

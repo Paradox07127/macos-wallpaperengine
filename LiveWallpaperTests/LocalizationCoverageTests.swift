@@ -43,6 +43,28 @@ struct LocalizationCoverageTests {
         )
     }
 
+    // The scan above drops any literal containing a backslash, which silently
+    // exempts every interpolated `String(localized:)` — and those are exactly
+    // the ones whose catalog key differs from the source text (`%@`/`%lld` in
+    // place of each interpolation). 2026-08-20: a new
+    // "Some files could not be deleted: \(names)" shipped with no catalog entry
+    // at all and all 3153 tests stayed green.
+    @Test("Interpolated localized literals resolve to a catalog key")
+    func interpolatedLocalizationKeysExistInCatalog() throws {
+        let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
+        let sites = try InterpolatedLiteralScan.scanRepository(["LiveWallpaper", "Packages"])
+
+        #expect(sites.count > 30, "Only \(sites.count) interpolated sites matched — the scan stopped matching")
+        let keys = Array(catalog.strings.keys)
+        let missing = sites
+            .filter { site in !keys.contains(where: site.matchesKey) }
+            .map { "\($0.literal) (\($0.location))" }
+        #expect(
+            missing.isEmpty,
+            "Localizable.xcstrings has no key for: \(missing.prefix(10).joined(separator: "; "))"
+        )
+    }
+
     // Every skipped form is followed by a scanned one, so a scanner that bails out
     // early (rather than skipping just that form) fails this test instead of
     // passing it by finding less.
@@ -346,7 +368,7 @@ private enum LocalizedLiteralScan {
     /// reported line numbers still point at the real call site. A preview is
     /// skipped up to its closing column-zero `}` rather than to end of file —
     /// truncating would silently drop every declaration written below it.
-    private static func scannableText(in source: String) -> String {
+    static func scannableText(in source: String) -> String {
         var lines: [String] = []
         var blockCommentDepth = 0
         var insidePreview = false
@@ -523,5 +545,107 @@ private struct StringCatalog: Decodable {
     struct StringUnit: Decodable {
         let state: String?
         let value: String
+    }
+}
+
+/// Interpolated `String(localized:)` call sites, matched against catalog keys by
+/// their static text: the key writes `%@`/`%lld` where the source writes an
+/// interpolation, so only the text between them can be compared.
+private enum InterpolatedLiteralScan {
+    struct Site {
+        let literal: String
+        let location: String
+        /// The static segments, in order. Two adjacent segments are separated
+        /// by exactly one placeholder in the catalog key.
+        let segments: [String]
+
+        func matchesKey(_ key: String) -> Bool {
+            var remainder = Substring(key)
+            for (index, segment) in segments.enumerated() {
+                if index == 0 {
+                    guard remainder.hasPrefix(segment) else { return false }
+                    remainder = remainder.dropFirst(segment.count)
+                    continue
+                }
+                if segment.isEmpty {
+                    // Trailing interpolation: whatever is left is the placeholder.
+                    guard index == segments.count - 1 else { continue }
+                    return !remainder.isEmpty
+                }
+                guard let found = remainder.range(of: segment) else { return false }
+                // A placeholder stands between the segments, so it cannot be empty.
+                guard found.lowerBound > remainder.startIndex else { return false }
+                remainder = remainder[found.upperBound...]
+            }
+            return segments.last?.isEmpty == true || remainder.isEmpty
+        }
+    }
+
+    static func scanRepository(_ relativePaths: [String]) throws -> [Site] {
+        var sites: [Site] = []
+        for relativePath in relativePaths {
+            for url in RepositoryRoot.swiftFiles(under: relativePath) where !url.path.contains("/Tests/") {
+                let source = LocalizedLiteralScan.scannableText(in: try String(contentsOf: url, encoding: .utf8))
+                sites.append(contentsOf: parse(source, path: RepositoryRoot.relativePath(of: url)))
+            }
+        }
+        return sites
+    }
+
+    private static let pattern = try? NSRegularExpression(
+        // `String(` and `localized:` are routinely split across lines.
+        pattern: #"String\(\s*localized:\s*"((?:[^"\\\n]|\\.)*)""#
+    )
+
+    private static func parse(_ source: String, path: String) -> [Site] {
+        guard let pattern else { return [] }
+        let range = NSRange(source.startIndex..<source.endIndex, in: source)
+        return pattern.matches(in: source, range: range).compactMap { match -> Site? in
+            guard let literalRange = Range(match.range(at: 1), in: source) else { return nil }
+            let literal = String(source[literalRange])
+            guard literal.contains("\\(") else { return nil }
+            let line = source[source.startIndex..<literalRange.lowerBound].filter { $0 == "\n" }.count + 1
+            return Site(
+                literal: literal,
+                location: "\(path):\(line)",
+                segments: staticSegments(of: literal)
+            )
+        }
+    }
+
+    /// Splits on `\(…)`, counting parentheses so a call inside the
+    /// interpolation does not end it early, and unescaping the text between.
+    private static func staticSegments(of literal: String) -> [String] {
+        var segments: [String] = []
+        var current = ""
+        var index = literal.startIndex
+        while index < literal.endIndex {
+            if literal[index] == "\\", literal.index(after: index) < literal.endIndex {
+                let next = literal[literal.index(after: index)]
+                if next == "(" {
+                    var depth = 0
+                    var cursor = literal.index(after: index)
+                    while cursor < literal.endIndex {
+                        if literal[cursor] == "(" { depth += 1 }
+                        if literal[cursor] == ")" {
+                            depth -= 1
+                            if depth == 0 { break }
+                        }
+                        cursor = literal.index(after: cursor)
+                    }
+                    segments.append(current)
+                    current = ""
+                    index = cursor < literal.endIndex ? literal.index(after: cursor) : literal.endIndex
+                    continue
+                }
+                current.append(next == "n" ? "\n" : next)
+                index = literal.index(index, offsetBy: 2)
+                continue
+            }
+            current.append(literal[index])
+            index = literal.index(after: index)
+        }
+        segments.append(current)
+        return segments
     }
 }

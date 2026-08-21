@@ -16,6 +16,12 @@ actor WPEVideoTextureDiskCache {
     /// Local-import bucket; always reclaimed by launch GC.
     static let unattributedBucket = "_unattributed"
 
+    /// Audio-strip export scratch file. Hidden, so it is not LRU-evictable
+    /// while the export writes it; swept by age instead.
+    static let stripPrefix = ".strip-"
+    /// An export that has not finished in this long lost its process.
+    static let stripTemporaryMaxAge: TimeInterval = 60 * 60
+
     private let rootURL: URL
     private let fileManager: FileManager
     private let maxBytes: UInt64
@@ -94,11 +100,13 @@ actor WPEVideoTextureDiskCache {
             let (range, transform) = try await videoTrack.load(.timeRange, .preferredTransform)
             try compositionTrack.insertTimeRange(range, of: videoTrack, at: .zero)
             compositionTrack.preferredTransform = transform
-            // Dot-prefixed sibling: same volume as `target` (replaceItemAt is
-            // only atomic same-volume) and invisible to stats/GC/LRU, whose
-            // enumerations all skip hidden files.
+            // Dot-prefixed sibling: same volume as `target`, since
+            // `replaceItemAt` is only atomic within a volume. Hidden keeps it
+            // out of the LRU (evicting a half-written export would break it),
+            // so `stats()` counts it and `collectOrphans` sweeps stale ones —
+            // a force-quit mid-export used to strand it forever.
             let tempURL = target.deletingLastPathComponent()
-                .appendingPathComponent(".strip-\(UUID().uuidString).mp4")
+                .appendingPathComponent("\(Self.stripPrefix)\(UUID().uuidString).mp4")
             defer { try? fileManager.removeItem(at: tempURL) }
             try await export.export(to: tempURL, as: .mp4)
             // Atomic swap; an already-mapped old inode stays valid for its holders.
@@ -163,6 +171,7 @@ actor WPEVideoTextureDiskCache {
             }
         }
 
+        freed += sweepStripTemporaries()
         if freed > 0 {
             Logger.info("WPE video cache GC reclaimed \(freed) bytes from orphaned scenes", category: .wpeRender)
         }
@@ -200,11 +209,54 @@ actor WPEVideoTextureDiskCache {
 
     /// On-disk allocated size + file count (Settings `du`-equivalent).
     func stats() -> WPEVideoCacheStats {
-        let files = allFiles()
+        let files = allFiles() + stripTemporaries()
         return WPEVideoCacheStats(
             totalBytes: files.reduce(0) { $0 + $1.size },
             fileCount: files.count
         )
+    }
+
+    /// Hidden scratch files, which `allFiles()` deliberately skips.
+    private func stripTemporaries() -> [FileRecord] {
+        guard let enumerator = fileManager.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [
+                .isRegularFileKey,
+                .totalFileAllocatedSizeKey,
+                .fileAllocatedSizeKey,
+                .contentModificationDateKey
+            ]
+        ) else { return [] }
+        var records: [FileRecord] = []
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent.hasPrefix(Self.stripPrefix),
+                  let values = try? url.resourceValues(forKeys: [
+                      .isRegularFileKey,
+                      .totalFileAllocatedSizeKey,
+                      .fileAllocatedSizeKey,
+                      .contentModificationDateKey
+                  ]), values.isRegularFile == true
+            else { continue }
+            records.append(FileRecord(
+                url: url.standardizedFileURL,
+                size: UInt64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0),
+                modified: values.contentModificationDate ?? .distantPast
+            ))
+        }
+        return records
+    }
+
+    /// Deletes scratch files whose export can no longer be running. Age, not
+    /// existence, is the test: a live export is writing one right now.
+    @discardableResult
+    private func sweepStripTemporaries(now: Date = Date()) -> UInt64 {
+        var freed: UInt64 = 0
+        for record in stripTemporaries()
+        where now.timeIntervalSince(record.modified) > Self.stripTemporaryMaxAge {
+            guard (try? fileManager.removeItem(at: record.url)) != nil else { continue }
+            freed += record.size
+        }
+        return freed
     }
 
     // MARK: - LRU eviction

@@ -261,7 +261,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     func selectedChoicesDidChange(for id: Any?, reply: @escaping @Sendable (Error?) -> Void) {
         // Deliberately no renderer work: the callback carries no display, and
         // the system follows it with invalidate + acquire (contract §9 坑 7).
-        store.writeHeartbeat(activeChoiceID: MirrorProbe.identifierFromDescription(id), runtimeHealthy: true)
+        // The whole active set goes out, not just the notified choice: with two
+        // displays on two videos the single-value form marks the other one idle
+        // until the following acquire, and the app will delete an idle item.
+        Self.writeActiveHeartbeat(
+            registry: registry,
+            store: store,
+            including: MirrorProbe.identifierFromDescription(id)
+        )
         reply(nil)
     }
 
@@ -436,11 +443,19 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// two videos, both count as "on screen" (the single-value field would
     /// mark the second one removable-and-idle in the app). Static so the
     /// deferred teardown can publish it after its handler is gone.
-    static func writeActiveHeartbeat(registry: SurfaceRegistry, store: SharedLibraryStore) {
+    static func writeActiveHeartbeat(
+        registry: SurfaceRegistry,
+        store: SharedLibraryStore,
+        including extraChoiceID: String? = nil
+    ) {
         var seen = Set<String>()
-        let active = registry.all.compactMap { surface -> String? in
-            guard !surface.isPreview, let id = surface.choiceID, seen.insert(id).inserted else { return nil }
-            return id
+        var active: [String] = []
+        // A just-selected choice may have no surface yet; counting it in errs
+        // toward "in use", which is the safe side of a delete decision.
+        if let extraChoiceID, seen.insert(extraChoiceID).inserted { active.append(extraChoiceID) }
+        for surface in registry.all where !surface.isPreview {
+            guard let id = surface.choiceID, seen.insert(id).inserted else { continue }
+            active.append(id)
         }
         store.writeHeartbeat(activeChoiceID: active.first, activeChoiceIDs: active, runtimeHealthy: true)
     }

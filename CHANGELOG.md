@@ -13,7 +13,7 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
-## [Unreleased]
+## [0.5.5] — 2026-08-20
 
 ### Added
 
@@ -33,7 +33,17 @@ not covered by this file.
   appearing on hover. Controlling a player asks for macOS Automation access the
   first time; declining just leaves the buttons inert.
 - Optional synced lyrics on the Now Playing layer, fetched from the public
-  LRCLIB service and highlighted line by line as the track plays.
+  LRCLIB service. Spotify reports a playback position, so its lyrics follow the
+  song line by line; Apple Music broadcasts no position, so its lyrics are shown
+  from the top without a moving highlight.
+- Every wallpaper type previews on one stage: video, web and scene now share the
+  same centered, correctly proportioned card and the same control placement.
+- Searching the Workshop keeps the sort you picked instead of forcing Relevance,
+  and clearing the search returns to the sort you were on.
+- Remove All in the System Wallpaper library, for taking every published copy
+  back in one step.
+- An opt-out for the launch-time update check, in Settings → General. It was
+  always on before; the About page's manual check is unaffected.
 
 ### Fixed
 
@@ -46,6 +56,17 @@ not covered by this file.
 - A manually paused video or web wallpaper released its resources about
   20 seconds later than a paused scene did. All three now release at the same
   five-minute mark.
+- Scene videos stuttered at the loop point on the legacy playback path, and a
+  silent audio track in a cached video delayed every loop.
+- Republishing a system wallpaper that then failed left the old video replaced
+  and the library inconsistent with the error it reported; the previous copy is
+  now restored. A library index that exists but cannot be read is refused
+  instead of being rewritten from scratch, and clearing the library no longer
+  reports success when a file could not be deleted.
+- With two displays on two system wallpapers, the second one could be treated as
+  idle and offered for deletion while it was still on screen.
+- Audio-strip scratch files left behind by a force-quit were invisible to the
+  video cache's size accounting and never reclaimed.
 
 ## [0.5.4] — 2026-08-19
 

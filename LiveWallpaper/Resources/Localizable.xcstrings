@@ -4,6 +4,36 @@
     "" : {
 
     },
+    "%lld video(s) and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
+      "comment" : "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld video(s) and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS が読み取るフォルダから %lld 本の動画（%@）を削除します。Loomscreen 内の元ファイルはそのまま残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将从 macOS 读取的文件夹中删除 %lld 个视频（%@）。Loomscreen 里的原始文件不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將從 macOS 讀取的檔案夾中刪除 %lld 部影片（%@）。Loomscreen 裡的原始檔案不受影響。"
+          }
+        }
+      }
+    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -118,6 +148,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「%@」是預設，不是桌布。已加入你的預設——請選擇一張桌布以繼續。"
+          }
+        }
+      }
+    },
+    "“%@” is on screen right now. It stops playing and its file is deleted immediately; the desktop keeps the last frame until you pick another wallpaper in System Settings." : {
+      "comment" : "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” is on screen right now. It stops playing and its file is deleted immediately; the desktop keeps the last frame until you pick another wallpaper in System Settings."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」は現在画面に表示されています。再生を停止してファイルを直ちに削除しますが、システム設定で別の壁紙を選ぶまでデスクトップには最後のフレームが残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”正显示在屏幕上。它会停止播放，文件立即删除；在你于系统设置里选择另一张壁纸之前，桌面会保留最后一帧。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」正顯示在螢幕上。它會停止播放，檔案立即刪除；在你於系統設定裡選擇另一張桌布之前，桌面會保留最後一幀。"
           }
         }
       }
@@ -7585,6 +7645,34 @@
         }
       }
     },
+    "Check for updates at launch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check for updates at launch"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "起動時にアップデートを確認"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动时检查更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動時檢查更新"
+          }
+        }
+      }
+    },
     "Check for updates now" : {
       "comment" : "Tooltip for manual update check button.",
       "localizations" : {
@@ -11181,6 +11269,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法匯出版面"
+          }
+        }
+      }
+    },
+    "Couldn't get exclusive access to the System Wallpaper library." : {
+      "comment" : "Error shown when the cross-process manifest lock cannot be taken.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't get exclusive access to the System Wallpaper library."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙ライブラリへの排他アクセスを取得できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获得系统壁纸库的独占访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得系統桌布資料庫的獨佔存取權限。"
           }
         }
       }
@@ -23713,6 +23830,35 @@
         }
       }
     },
+    "Look for a newer version on GitHub when the app starts" : {
+      "comment" : "Text displayed in a setting row that describes the purpose of the setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Look for a newer version on GitHub when the app starts"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリの起動時に GitHub で新しいバージョンを確認します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 启动时在 GitHub 上查找更新的版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 啟動時在 GitHub 上尋找更新的版本"
+          }
+        }
+      }
+    },
     "Look for a newer Wallpaper Engine build when Loomscreen starts" : {
       "comment" : "Setting subtitle for the launch-time version check.",
       "extractionState" : "manual",
@@ -23768,6 +23914,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Steam 上找更多"
+          }
+        }
+      }
+    },
+    "Looks for a newer version on GitHub when the app starts" : {
+      "comment" : "A description of the check for updates at launch setting.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Looks for a newer version on GitHub when the app starts"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリの起動時に GitHub で新しいバージョンを確認します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 启动时在 GitHub 上查找更新的版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 啟動時在 GitHub 上尋找更新的版本"
           }
         }
       }
@@ -35525,6 +35700,35 @@
         }
       }
     },
+    "Remove All from System Wallpaper" : {
+      "comment" : "A button that removes all videos from the system wallpaper library.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove All from System Wallpaper"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙からすべて削除"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从系统壁纸移除全部"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從系統桌布移除全部"
+          }
+        }
+      }
+    },
     "Remove Bookmark" : {
       "localizations" : {
         "en" : {
@@ -37996,6 +38200,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行中…"
+          }
+        }
+      }
+    },
+    "Runs the same check as the About page, at most once every 12 hours. It only reads the latest release tag — nothing is downloaded until you choose to update." : {
+      "comment" : "Text displayed in a setting row that describes the behavior of the update check when the app starts.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runs the same check as the About page, at most once every 12 hours. It only reads the latest release tag — nothing is downloaded until you choose to update."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「情報」ページと同じ確認を、最大で 12 時間に 1 回実行します。最新のリリースタグを読み取るだけで、更新を選ぶまで何もダウンロードされません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "执行与“关于”页面相同的检查，最多每 12 小时一次。它只读取最新的发布标签——在你选择更新之前不会下载任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "執行與「關於」頁面相同的檢查，最多每 12 小時一次。它只讀取最新的發佈標籤——在你選擇更新之前不會下載任何內容。"
           }
         }
       }
@@ -42003,6 +42236,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "缺少部分場景資源"
+          }
+        }
+      }
+    },
+    "Some files could not be deleted: %@" : {
+      "comment" : "Error after clearing the System Wallpaper library. Placeholder is a file name list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some files could not be deleted: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一部のファイルを削除できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有些文件无法删除：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有些檔案無法刪除：%@"
           }
         }
       }
@@ -46671,6 +46934,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法解開 SteamCMD 壓縮檔。"
+          }
+        }
+      }
+    },
+    "The System Wallpaper library index is damaged, so it wasn't changed." : {
+      "comment" : "Error shown when the system wallpaper manifest cannot be decoded and the operation is refused.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The System Wallpaper library index is damaged, so it wasn't changed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙ライブラリの索引が壊れているため、変更されませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸库的索引已损坏，因此未做更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布資料庫的索引已損毀，因此未做變更。"
           }
         }
       }

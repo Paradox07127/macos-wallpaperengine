@@ -53,8 +53,19 @@ private actor RecordingNowPlayingSink: MonitorSnapshotSink {
     func updateNowPlaying(_ state: MonitorNowPlayingState?) async { box.append(state) }
 }
 
-private func ok(_ request: URLRequest, _ data: Data) -> (Data, URLResponse) {
-    (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+/// Real endpoints answer with a content type, and the fetcher now requires one:
+/// a 200 carrying HTML is not an oEmbed document and not a cover.
+private func ok(
+    _ request: URLRequest, _ data: Data, contentType: String = "application/json"
+) -> (Data, URLResponse) {
+    (data, HTTPURLResponse(
+        url: request.url!, statusCode: 200, httpVersion: nil,
+        headerFields: ["Content-Type": contentType]
+    )!)
+}
+
+private func okImage(_ request: URLRequest, _ data: Data) -> (Data, URLResponse) {
+    ok(request, data, contentType: "image/jpeg")
 }
 
 private func status(_ request: URLRequest, _ code: Int) -> (Data, URLResponse) {
@@ -186,10 +197,10 @@ struct NowPlayingArtworkFetcherTests {
             if url.contains("oembed") {
                 counter.bump("oembed")
                 await gate.wait()
-                return ok(request, oembedJSON(thumbnail: "https://img.example/thumb"))
+                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
             }
             counter.bump("image")
-            return ok(request, image)
+            return okImage(request, image)
         })
 
         async let first = fetcher.artwork(for: spotifyState())
@@ -235,10 +246,10 @@ struct NowPlayingArtworkFetcherTests {
             let url = request.url!.absoluteString
             if url.contains("oembed") {
                 counter.bump("oembed")
-                return ok(request, oembedJSON(thumbnail: "https://img.example/big"))
+                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/big"))
             }
             counter.bump("image")
-            return ok(request, oversize)
+            return okImage(request, oversize)
         })
 
         #expect(await fetcher.artwork(for: spotifyState()) == nil)
@@ -254,17 +265,17 @@ struct NowPlayingArtworkFetcherTests {
         let art100 = Data(repeating: 1, count: 16)
         let row = [
             "artistName": "Yoohei Kawakami", "trackName": "ENDROLL",
-            "collectionName": "ENDROLL", "artworkUrl100": "https://img.example/a/100x100bb.jpg",
+            "collectionName": "ENDROLL", "artworkUrl100": "https://is1-ssl.mzstatic.com/image/a/100x100bb.jpg",
         ]
         let upgrading = NowPlayingArtworkFetcher(transport: { request in
             let url = request.url!.absoluteString
             if url.contains("itunes.apple.com") { return ok(request, itunesJSON([row])) }
             if url.contains("600x600bb") {
                 counter.bump("600")
-                return ok(request, art600)
+                return okImage(request, art600)
             }
             counter.bump("100")
-            return ok(request, art100)
+            return okImage(request, art100)
         })
         #expect(await upgrading.artwork(for: musicState()) == art600)
         #expect(counter.count("100") == 0)
@@ -273,7 +284,7 @@ struct NowPlayingArtworkFetcherTests {
             let url = request.url!.absoluteString
             if url.contains("itunes.apple.com") { return ok(request, itunesJSON([row])) }
             if url.contains("600x600bb") { return status(request, 404) }
-            return ok(request, art100)
+            return okImage(request, art100)
         })
         #expect(await fallingBack.artwork(for: musicState()) == art100)
     }
@@ -293,11 +304,11 @@ struct NowPlayingArtworkFetcherTests {
             if url.contains("oembed") {
                 if url.contains("AAAAAAAAAAAAAAAAAAAAAA") {
                     await gate.wait()
-                    return ok(request, oembedJSON(thumbnail: "https://img.example/A"))
+                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/A"))
                 }
-                return ok(request, oembedJSON(thumbnail: "https://img.example/B"))
+                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/B"))
             }
-            return ok(request, url.hasSuffix("/A") ? artA : artB)
+            return okImage(request, url.hasSuffix("/A") ? artA : artB)
         })
 
         let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] })
@@ -332,9 +343,9 @@ struct NowPlayingArtworkFetcherTests {
             let url = request.url!.absoluteString
             if url.contains("oembed") {
                 await gate.wait()
-                return ok(request, oembedJSON(thumbnail: "https://img.example/thumb"))
+                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
             }
-            return ok(request, Data(repeating: 9, count: 8))
+            return okImage(request, Data(repeating: 9, count: 8))
         })
 
         let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] })
@@ -356,5 +367,83 @@ struct NowPlayingArtworkFetcherTests {
         _ = await waitUntil(timeout: 0.3) { false } // settle
         #expect(sink.box.count == countAtStop)
         #expect(!sink.box.states.contains { $0.artwork != nil })
+    }
+
+    // MARK: - Origin policy
+
+    @Test("Only the named endpoints and their cover CDNs are reachable")
+    func originAllowList() {
+        func url(_ string: String) -> URL? { URL(string: string) }
+        #expect(NowPlayingNetwork.isAllowed(url("https://open.spotify.com/oembed?url=x"), for: .api))
+        #expect(NowPlayingNetwork.isAllowed(url("https://itunes.apple.com/search?term=x"), for: .api))
+        #expect(NowPlayingNetwork.isAllowed(url("https://lrclib.net/api/get"), for: .api))
+        #expect(!NowPlayingNetwork.isAllowed(url("https://open.spotify.com/oembed"), for: .artwork))
+        #expect(NowPlayingNetwork.isAllowed(url("https://i.scdn.co/image/a"), for: .artwork))
+        #expect(NowPlayingNetwork.isAllowed(url("https://is1-ssl.mzstatic.com/image/a"), for: .artwork))
+
+        // A suffix match, not a substring one.
+        #expect(!NowPlayingNetwork.isAllowed(url("https://evil-scdn.co/image/a"), for: .artwork))
+        #expect(!NowPlayingNetwork.isAllowed(url("https://scdn.co.evil.example/a"), for: .artwork))
+        #expect(!NowPlayingNetwork.isAllowed(url("https://attacker.example/a"), for: .artwork))
+
+        // Shapes that make a "trusted host" string lie.
+        #expect(!NowPlayingNetwork.isAllowed(url("http://i.scdn.co/image/a"), for: .artwork))
+        #expect(!NowPlayingNetwork.isAllowed(url("file:///etc/passwd"), for: .artwork))
+        #expect(!NowPlayingNetwork.isAllowed(url("https://127.0.0.1/a"), for: .artwork))
+        #expect(!NowPlayingNetwork.isAllowed(url("https://i.scdn.co:8080/a"), for: .artwork))
+        #expect(!NowPlayingNetwork.isAllowed(url("https://i.scdn.co@attacker.example/a"), for: .artwork))
+        #expect(!NowPlayingNetwork.isAllowed(nil, for: .api))
+    }
+
+    @Test("A thumbnail URL pointing off the CDN list is never requested")
+    func offListThumbnailIsNotDownloaded() async {
+        let counter = RequestCounter()
+        let fetcher = NowPlayingArtworkFetcher(transport: { request in
+            let url = request.url!.absoluteString
+            if url.contains("oembed") {
+                counter.bump("oembed")
+                return ok(request, oembedJSON(thumbnail: "https://attacker.example/cover.jpg"))
+            }
+            counter.bump("image")
+            return okImage(request, Data([1, 2, 3]))
+        })
+
+        #expect(await fetcher.artwork(for: spotifyState()) == nil)
+        #expect(counter.count("oembed") == 1)
+        #expect(counter.count("image") == 0, "the fetcher must not follow an arbitrary URL from the API")
+    }
+
+    @Test("A 200 that is not an image is not cached as a cover")
+    func nonImageContentTypeIsRejected() async {
+        let fetcher = NowPlayingArtworkFetcher(transport: { request in
+            let url = request.url!.absoluteString
+            if url.contains("oembed") {
+                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
+            }
+            return ok(request, Data("<html>login</html>".utf8), contentType: "text/html")
+        })
+        #expect(await fetcher.artwork(for: spotifyState()) == nil)
+    }
+
+    @Test("A response that ended up off the allow-list is not read as the endpoint's answer")
+    func redirectedResponseIsRejected() async {
+        let fetcher = NowPlayingArtworkFetcher(transport: { request in
+            // What a followed redirect looks like: the body arrives, but the
+            // URL the response reports is somewhere else entirely.
+            let response = HTTPURLResponse(
+                url: URL(string: "https://attacker.example/oembed")!,
+                statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            return (oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"), response)
+        })
+        #expect(await fetcher.artwork(for: spotifyState()) == nil)
+    }
+
+    @Test("Metadata bodies are bounded too, not just images")
+    func oversizeMetadataIsRefused() async {
+        let bloated = Data(repeating: 0x20, count: NowPlayingArtworkFetcher.maxMetadataBytes + 1)
+        let fetcher = NowPlayingArtworkFetcher(transport: { request in ok(request, bloated) })
+        #expect(await fetcher.artwork(for: spotifyState()) == nil)
     }
 }

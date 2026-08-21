@@ -223,7 +223,7 @@ actor NowPlayingLyricsFetcher {
     private var inFlight: [String: Task<[LyricLine]?, Never>] = [:]
 
     init(
-        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        transport: @escaping Transport = NowPlayingNetwork.boundedTransport(byteCap: maxBodyBytes),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.transport = transport
@@ -242,7 +242,10 @@ actor NowPlayingLyricsFetcher {
         if let artist, !artist.isEmpty { items.append(URLQueryItem(name: "artist_name", value: artist)) }
         items.append(URLQueryItem(name: "track_name", value: title))
         if let album, !album.isEmpty { items.append(URLQueryItem(name: "album_name", value: album)) }
-        if let duration, duration.isFinite, duration > 0 {
+        // The value arrives as an unvalidated NSNumber from a distributed
+        // notification, so the upper bound is what keeps `Int(_:)` from
+        // trapping on something like 1e300 — 24 h is already absurd for a track.
+        if let duration, duration.isFinite, duration > 0, duration <= 86_400 {
             items.append(URLQueryItem(name: "duration", value: String(Int(duration.rounded()))))
         }
         components?.queryItems = items
@@ -325,6 +328,15 @@ actor NowPlayingLyricsFetcher {
         return await task.value
     }
 
+    /// Drops every merged fetch except the one the caller still wants — see
+    /// `NowPlayingArtworkFetcher.cancelInFlight(except:)` for why.
+    func cancelInFlight(except key: String?) {
+        for (running, task) in inFlight where running != key {
+            task.cancel()
+            inFlight.removeValue(forKey: running)
+        }
+    }
+
     private func finish(key: String, result: [LyricLine]?) {
         inFlight.removeValue(forKey: key)
         if let result, !result.isEmpty {
@@ -351,6 +363,7 @@ actor NowPlayingLyricsFetcher {
         do {
             return try await attempt(state: state)
         } catch {
+            guard !Task.isCancelled else { return nil }
             return (try? await attempt(state: state)) ?? nil
         }
     }
@@ -389,12 +402,17 @@ actor NowPlayingLyricsFetcher {
 
     /// nil = no usable body (404, or past the size cap); throws = transient.
     private func load(_ url: URL) async throws -> Data? {
+        guard NowPlayingNetwork.isAllowed(url, for: .api) else { return nil }
         var request = URLRequest(url: url)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         let (data, response) = try await transport(request)
         if let http = response as? HTTPURLResponse {
             if http.statusCode == 404 { return nil }
             if http.statusCode != 200 { throw URLError(.badServerResponse) }
+            // A redirect off the allow-list must not be read as LRCLIB's answer.
+            guard NowPlayingNetwork.isAllowed(http.url, for: .api),
+                  (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("json")
+            else { return nil }
             if http.expectedContentLength > Int64(Self.maxBodyBytes) { return nil }
         }
         if data.count > Self.maxBodyBytes { return nil }
@@ -412,6 +430,10 @@ final class NowPlayingLyricsStore {
     static let shared = NowPlayingLyricsStore()
 
     private let load: @Sendable (MonitorNowPlayingState) async -> [LyricLine]?
+    /// Retires the fetcher's merged work for every other track before starting
+    /// a new one, so skipping through a playlist does not leave one live
+    /// request per skipped track.
+    private let cancelOthers: @Sendable (String?) async -> Void
     private let now: @Sendable () -> Date
     /// Positive results only — a permanent empty entry here would outlive and
     /// mask the fetcher's own TTL'd negative cache, so a track that failed once
@@ -430,9 +452,13 @@ final class NowPlayingLyricsStore {
         load: @escaping @Sendable (MonitorNowPlayingState) async -> [LyricLine]? = {
             await NowPlayingLyricsFetcher.shared.lyrics(for: $0)
         },
+        cancelOthers: @escaping @Sendable (String?) async -> Void = {
+            await NowPlayingLyricsFetcher.shared.cancelInFlight(except: $0)
+        },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.load = load
+        self.cancelOthers = cancelOthers
         self.now = now
     }
 
@@ -447,7 +473,10 @@ final class NowPlayingLyricsStore {
         loadCount += 1
         let load = self.load
         let task = Task<[LyricLine], Never> { await load(state) ?? [] }
+        // Registered before the first suspension, or two concurrent asks for
+        // one track both miss `inFlight` and start their own load.
         inFlight[key] = task
+        await cancelOthers(key)
         let value = await task.value
         inFlight[key] = nil
         if value.isEmpty {
