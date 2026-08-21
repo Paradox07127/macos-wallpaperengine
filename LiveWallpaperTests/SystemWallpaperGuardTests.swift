@@ -151,6 +151,37 @@ struct SystemWallpaperGuardTests {
         }
     }
 
+    /// `connection.remoteObjectProxy` hands back an autoreleased proxy that
+    /// nothing else owns, so storing it in a `weak` property observes nil the
+    /// moment the pool drains — measured 2026-08-20, which made
+    /// `invalidateAgentSnapshots()` a permanent no-op and left removed tiles
+    /// on the wallpaper panel. Making the property strong is not the fix
+    /// either: the connection already owns the handler via `exportedObject`,
+    /// so a strong proxy closes a retain cycle. The proxy has to be derived
+    /// per call from a weakly captured connection.
+    @Test("The agent proxy is derived per call, never stored")
+    func agentProxyIsNotStored() throws {
+        let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
+        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
+
+        #expect(
+            !handler.contains("weak var agentProxy"),
+            "A weakly stored proxy is nil by the time anything reads it."
+        )
+        #expect(
+            !bridge.contains("handler.agentProxy = connection.remoteObjectProxy"),
+            "Assigning the autoreleased proxy into a stored property is the bug."
+        )
+        #expect(
+            handler.contains("agentProxyProvider"),
+            "The handler must reach the agent through a provider it calls per use."
+        )
+        #expect(
+            bridge.contains("[weak connection]"),
+            "The provider must capture the connection weakly or it retains a cycle."
+        )
+    }
+
     @Test("Appexes are embedded into Contents/Extensions, not Contents/PlugIns")
     func appexesEmbedIntoExtensionsFolder() throws {
         let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")

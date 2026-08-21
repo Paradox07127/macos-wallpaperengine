@@ -180,32 +180,68 @@ enum SystemWallpaperLibrary {
     /// still-consistent library, and a failed delete leaves an orphan the
     /// sweep below reclaims — never a manifest entry pointing at nothing.
     /// Returns the new manifest, or nil when the id was not present.
+    /// `onFileRemovalFailure` sees anything that could not be unlinked. The
+    /// manifest is already persisted by then, so a failure here is not fatal —
+    /// but swallowing it silently left files on disk that nothing ever
+    /// mentioned again. The sweep reclaims them; the callback is what lets a
+    /// caller say so.
     static func remove(
         id: String,
         from manifest: SystemWallpaperManifest,
         videosDirectory: URL,
-        persist: (SystemWallpaperManifest) throws -> Void
+        persist: (SystemWallpaperManifest) throws -> Void,
+        onFileRemovalFailure: ((String, any Error) -> Void)? = nil
     ) rethrows -> SystemWallpaperManifest? {
         guard let item = manifest.items.first(where: { $0.id == id }) else { return nil }
         var updated = manifest
         updated.items.removeAll { $0.id == id }
         try persist(updated)
         let manager = FileManager.default
-        try? manager.removeItem(at: videosDirectory.appendingPathComponent(item.fileName))
-        if let thumbnailFileName = item.thumbnailFileName {
-            try? manager.removeItem(at: videosDirectory.appendingPathComponent(thumbnailFileName))
+        for name in [item.fileName, item.thumbnailFileName].compactMap({ $0 }) {
+            let url = videosDirectory.appendingPathComponent(name)
+            guard manager.fileExists(atPath: url.path) else { continue }
+            do {
+                try manager.removeItem(at: url)
+            } catch {
+                onFileRemovalFailure?(name, error)
+            }
         }
         return updated
     }
 
+    /// Name for a publish's staging copy. The creation time is *in the name*
+    /// because `copyItem` carries the source file's mtime over: a year-old
+    /// source produced a staging file that read as ancient for the whole copy,
+    /// and a concurrent sweep deleted it mid-publish. A dot prefix does not
+    /// help either — `contentsOfDirectory` returns hidden files unless asked
+    /// not to.
+    static func stagingFileName(itemID: String, ext: String, now: Date) -> String {
+        ".stage-\(Int(now.timeIntervalSince1970))-\(itemID)-\(UUID().uuidString).\(ext).partial"
+    }
+
+    /// Creation time encoded by `stagingFileName`, or nil for anything that is
+    /// not one of ours.
+    static func stagingCreation(fileName: String) -> Date? {
+        let prefix = ".stage-"
+        guard fileName.hasPrefix(prefix), fileName.hasSuffix(".partial") else { return nil }
+        let rest = fileName.dropFirst(prefix.count)
+        guard let dash = rest.firstIndex(of: "-"),
+              let seconds = TimeInterval(rest[rest.startIndex..<dash])
+        else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
     /// Files in Videos/ that no manifest entry references — left behind by a
     /// crash between copy and manifest write, or by a lost manifest update.
-    /// The age guard keeps a publish-in-progress (copied, not yet listed)
-    /// safe from a concurrent sweep.
+    ///
+    /// Two clocks, because a staging file's mtime is the *source's*:
+    /// ordinary orphans go by mtime, staging files by the timestamp in their
+    /// own name, with a much longer grace so a slow 4K copy is never touched.
     static func sweepOrphans(
         manifest: SystemWallpaperManifest,
         videosDirectory: URL,
         olderThan age: TimeInterval = 3600,
+        stagingGrace: TimeInterval = 24 * 3600,
         now: Date = Date()
     ) {
         var referenced = Set<String>()
@@ -216,12 +252,24 @@ enum SystemWallpaperLibrary {
         let manager = FileManager.default
         let files = (try? manager.contentsOfDirectory(
             at: videosDirectory,
-            includingPropertiesForKeys: [.contentModificationDateKey]
+            includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey]
         )) ?? []
         for file in files where !referenced.contains(file.lastPathComponent) {
-            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate) ?? now
-            guard now.timeIntervalSince(modified) > age else { continue }
+            let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .isDirectoryKey])
+            // Never recurse into or delete a directory: the sweep reclaims
+            // stray files, and removing a directory here would take a whole
+            // subtree with it.
+            if values?.isDirectory == true { continue }
+            let cutoff: TimeInterval
+            let reference: Date
+            if let created = stagingCreation(fileName: file.lastPathComponent) {
+                cutoff = stagingGrace
+                reference = created
+            } else {
+                cutoff = age
+                reference = values?.contentModificationDate ?? now
+            }
+            guard now.timeIntervalSince(reference) > cutoff else { continue }
             try? manager.removeItem(at: file)
         }
     }
@@ -232,13 +280,26 @@ enum SystemWallpaperLibrary {
 /// mutating concurrently means the later writer silently drops the earlier
 /// writer's change (lost update, not "no-op loser").
 enum SystemWallpaperLock {
+    enum LockError: LocalizedError {
+        case unavailable(Int32)
+
+        var errorDescription: String? {
+            String(
+                localized: "Couldn't get exclusive access to the System Wallpaper library.",
+                comment: "Error shown when the cross-process manifest lock cannot be taken."
+            )
+        }
+    }
+
     static func withExclusiveLock<T>(root: URL, _ body: () throws -> T) throws -> T {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let lockURL = root.appendingPathComponent("manifest.lock")
         let fd = open(lockURL.path, O_CREAT | O_WRONLY, 0o644)
         guard fd >= 0 else {
-            // Can't lock — better to run unserialized than to drop the mutation.
-            return try body()
+            // Fail closed. Running the mutation unserialized is precisely the
+            // lost update this lock exists to prevent, and the app and appex
+            // can both be writing.
+            throw LockError.unavailable(errno)
         }
         defer { close(fd) }
         // A signal can interrupt the blocking flock (EINTR); giving up there
@@ -252,6 +313,7 @@ enum SystemWallpaperLock {
             }
         } while errno == EINTR
         defer { if locked { flock(fd, LOCK_UN) } }
+        guard locked else { throw LockError.unavailable(errno) }
         return try body()
     }
 }

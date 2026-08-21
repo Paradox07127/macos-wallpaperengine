@@ -25,6 +25,7 @@ struct GeneralSettingsView: View {
 
     @Environment(ScreenManager.self) var screenManager
     @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) var appLanguageRawValue = AppLanguagePreference.system.rawValue
+    @AppStorage(UpdateChecker.checkAtLaunchKey, store: .appScoped()) var checksUpdatesAtLaunch = true
     @State var globalPauseOnBattery: Bool
     @State var startOnLogin: Bool
     @State var loginItemStatus: SMAppService.Status

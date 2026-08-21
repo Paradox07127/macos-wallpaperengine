@@ -7,14 +7,24 @@ import os.log
 /// lifecycle work hops onto a process-wide serial queue so an invalidate can
 /// never interleave with the two halves of an acquire (contract §3).
 ///
-/// `@unchecked Sendable`: every stored property except `agentProxy` is a `let`,
-/// and `agentProxy` is assigned once in `accept(connection:)` before the
-/// connection is resumed, so no incoming call can observe it mid-write.
+/// `@unchecked Sendable`: every stored property except `agentProxyProvider` is
+/// a `let`, and the provider is assigned once in `accept(connection:)` before
+/// the connection is resumed, so no incoming call can observe it mid-write.
 final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unchecked Sendable {
     private let store: SharedLibraryStore
     private let registry: SurfaceRegistry
     private let settings: SettingsProvider
-    weak var agentProxy: AnyObject?
+    /// Derives the agent proxy per call rather than storing one.
+    /// `connection.remoteObjectProxy` returns an autoreleased object that
+    /// nothing else owns, so a stored `weak` reference reads back nil (measured
+    /// 2026-08-20) and every call through it silently did nothing. Storing it
+    /// strongly is not an option either — the connection already owns this
+    /// handler via `exportedObject`, so that closes a cycle.
+    /// Not `@Sendable`: it captures the `NSXPCConnection`, which Apple does
+    /// not mark Sendable. Safe because `NSXPCConnection` is documented as
+    /// thread-safe (NSXPCConnection.h) and the only caller,
+    /// `invalidateAgentSnapshots()`, runs on `Self.queue`.
+    nonisolated(unsafe) var agentProxyProvider: (() -> WallpaperExtensionProxyXPCProtocol?)?
 
     private static let queue = DispatchQueue(label: "com.loomscreen.wallpaper.lifecycle")
     /// Long enough to ride out a sleep/wake blink, short enough to stop
@@ -84,6 +94,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 }
                 surface.choiceID = choiceID
                 writeActiveHeartbeat()
+                // The choice is gone from the library: stop, but keep the
+                // hosted context. The last frame is a better answer than the
+                // black one a fresh empty context would give.
+                if playableURL(for: choiceID) == nil {
+                    surface.renderer.stop()
+                    reply(context, nil)
+                    return
+                }
                 // Switching between two of our own wallpapers: the Agent keeps
                 // compositing the OLD context until we reply, so holding the
                 // reply until the new video's first frame is out replaces the
@@ -98,6 +116,16 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 startPlayback(surface: surface, choiceID: choiceID, size: size) { once.fire() }
                 // A video that never produces a frame must not wedge the panel.
                 Self.queue.asyncAfter(deadline: .now() + Self.firstFrameReplyTimeout) { once.fire() }
+                return
+            }
+
+            // Refuse before building anything. A context we cannot fill shows
+            // as a black desktop, which is strictly worse than the Agent
+            // keeping whatever it had (the panel can offer a stale tile long
+            // after the app deleted the video behind it).
+            if let choiceID, playableURL(for: choiceID) == nil {
+                registry.remove(uuid)
+                reply(nil, NSError(domain: "com.loomscreen.wallpaper", code: 3))
                 return
             }
 
@@ -207,7 +235,15 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         nonisolated(unsafe) let id = id
         Self.queue.async { [self] in
             let uuid = MirrorProbe.firstUUID(in: id)
-            let choiceID = uuid.flatMap { registry.surface(for: $0)?.choiceID } ?? activeChoiceID()
+            // Only fall back to "whatever is playing" when the request named no
+            // surface. With two displays, answering for the wrong one puts
+            // display B's poster on display A.
+            let choiceID: String?
+            if let uuid {
+                choiceID = registry.surface(for: uuid)?.choiceID
+            } else {
+                choiceID = activeChoiceID()
+            }
             guard let posterURL = posterURL(for: choiceID),
                   let surface = SnapshotFactory.makeIOSurface(imageURL: posterURL),
                   let object = PrivateClassFactory.snapshot(surface: surface) else {
@@ -247,7 +283,10 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                         id: choiceID,
                         from: store.loadManifest(),
                         videosDirectory: store.videosDirectory(),
-                        persist: { try store.writeManifest($0) }
+                        persist: { try store.writeManifest($0) },
+                        onFileRemovalFailure: { name, error in
+                            wpxLog.error("could not delete \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+                        }
                     )
                 }
             } catch {
@@ -268,6 +307,13 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 surface.renderer.stop()
                 surface.choiceID = nil
             }
+            // Reclaim whatever the delete could not unlink; the app-side path
+            // already sweeps and the two must not disagree about leftovers.
+            SystemWallpaperLibrary.sweepOrphans(
+                manifest: updated, videosDirectory: store.videosDirectory()
+            )
+            // The app polls this to decide whether a wallpaper is in use.
+            writeActiveHeartbeat()
             wpxLog.info("removed choice \(choiceID, privacy: .public) — \(updated.items.count) left, stopped \(stopped.count) renderer(s)")
             // Without this the panel keeps showing the tile it just removed.
             invalidateAgentSnapshots()
@@ -276,7 +322,10 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     }
 
     private func invalidateAgentSnapshots() {
-        guard let proxy = agentProxy as? WallpaperExtensionProxyXPCProtocol else { return }
+        guard let proxy = agentProxyProvider?() else {
+            wpxLog.error("invalidateSnapshots skipped — no agent proxy")
+            return
+        }
         proxy.invalidateSnapshots { error in
             if let error {
                 wpxLog.error("invalidateSnapshots failed: \(String(describing: error), privacy: .public)")
@@ -309,18 +358,30 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
 
     // MARK: - Helpers
 
-    private func startPlayback(surface: WallpaperSurface, choiceID: String, size: CGSize,
-                               replyOnFirstFrame: (@Sendable () -> Void)?) {
-        let manifest = store.loadManifest()
+    /// The file this choice would play, or nil when the library cannot serve
+    /// it — damaged manifest, entry gone, or asset deleted. Acquire consults
+    /// this *before* building a context: handing the Agent a context we cannot
+    /// fill is what turns a stale panel tile into a black desktop.
+    private func playableURL(for choiceID: String) -> URL? {
+        guard let manifest = store.loadManifestIfReadable() else {
+            wpxLog.error("manifest unreadable — refusing to serve \(choiceID, privacy: .public)")
+            return nil
+        }
         guard let item = manifest.items.first(where: { $0.id == choiceID }) else {
             wpxLog.error("choice \(choiceID, privacy: .public) not in manifest")
-            return
+            return nil
         }
         let url = store.videoURL(for: item)
         guard FileManager.default.fileExists(atPath: url.path) else {
             wpxLog.error("video missing: \(url.lastPathComponent, privacy: .public)")
-            return
+            return nil
         }
+        return url
+    }
+
+    private func startPlayback(surface: WallpaperSurface, choiceID: String, size: CGSize,
+                               replyOnFirstFrame: (@Sendable () -> Void)?) {
+        guard let url = playableURL(for: choiceID) else { return }
         surface.renderer.start(url: url, onFirstFrame: replyOnFirstFrame)
     }
 
@@ -413,12 +474,38 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         // only thing the Darwin callback does with it.
         nonisolated(unsafe) let registry = registry
         queue.async {
-            let playbackMode = store.loadManifest().playbackMode
-            for surface in registry.all where !surface.isPreview {
-                surface.renderer.rampRate(to: rate(for: surface, playbackMode: playbackMode))
+            guard let manifest = store.loadManifestIfReadable() else {
+                // Damaged index: touch nothing. Treating it as an empty library
+                // would stop every running wallpaper.
+                wpxLog.error("library changed — manifest unreadable, left surfaces alone")
+                return
             }
-            wpxLog.info("library changed — reapplied policy to \(registry.all.count) surface(s)")
+            let live = Set(manifest.items.map(\.id))
+            var dropped = 0
+            for surface in registry.all {
+                if let choiceID = surface.choiceID, !live.contains(choiceID) {
+                    // The user deleted this one in the app. Stop now: the app's
+                    // delete path never reaches the Agent, so without this the
+                    // desktop keeps playing a video the library no longer has.
+                    surface.renderer.stop()
+                    surface.choiceID = nil
+                    dropped += 1
+                    continue
+                }
+                guard !surface.isPreview else { continue }
+                surface.renderer.rampRate(to: rate(for: surface, playbackMode: manifest.playbackMode))
+            }
+            if dropped > 0 { writeActiveHeartbeat(registry: registry, store: store) }
+            wpxLog.info("library changed — \(registry.all.count) surface(s), dropped \(dropped)")
         }
+    }
+
+    /// Called on every live connection after a library change so the wallpaper
+    /// panel drops tiles for choices the app just deleted. `removeChoiceRequest`
+    /// cannot cover this: the panel's own Remove is disabled for our provider,
+    /// so the app is the only delete path users have.
+    func libraryDidChange() {
+        Self.queue.async { [self] in invalidateAgentSnapshots() }
     }
 
     /// The panel and Agent normally send sane values; these guards are about

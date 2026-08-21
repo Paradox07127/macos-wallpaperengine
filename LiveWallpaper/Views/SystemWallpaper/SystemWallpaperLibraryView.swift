@@ -62,7 +62,15 @@ struct SystemWallpaperLibraryView: View {
         if !isFunctional {
             unavailableState
         } else if service.items.isEmpty {
-            emptyState
+            // The notice belongs here too: a first import that fails leaves an
+            // empty library, and without this the only thing on screen is the
+            // "nothing here yet" illustration — the reason it failed never
+            // reaches the user.
+            VStack(spacing: DesignTokens.Spacing.lg) {
+                notice
+                emptyState
+            }
+            .padding(DesignTokens.Spacing.lg)
         } else {
             gallery
         }
@@ -204,6 +212,20 @@ struct SystemWallpaperLibraryView: View {
             // Not "deleting the app removes them" — trashing an app does not
             // delete its container, so that claim was simply false.
             Text("Removing a video here also deletes the system's copy from disk.")
+            if !service.items.isEmpty {
+                Button("Remove All from System Wallpaper") {
+                    pendingDestructive = PendingDestructive(
+                        .clearSystemWallpaperLibrary(
+                            itemCount: service.items.count,
+                            formattedSize: ByteCountFormatter.string(
+                                fromByteCount: service.diskUsageBytes, countStyle: .file
+                            )
+                        )
+                    ) { try? service.clearLibrary() }
+                }
+                .buttonStyle(.link)
+                .padding(.top, DesignTokens.Spacing.xs)
+            }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
