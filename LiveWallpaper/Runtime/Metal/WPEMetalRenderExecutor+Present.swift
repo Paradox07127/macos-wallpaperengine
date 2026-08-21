@@ -87,6 +87,58 @@ extension WPEMetalRenderExecutor {
             return false
         }
 
+        // MetalFX render-scale experiment: hand the drawable to the spatial
+        // scaler instead of the fullscreen blit when eligible; any rejection
+        // falls through to the existing present pass. The present/tracker tail
+        // below is shared by both branches.
+        var encodedByUpscaler = false
+        if let upscaler = metalFXUpscaler {
+            encodedByUpscaler = upscaler.encodeIfEligible(
+                source: source,
+                drawableTexture: drawable.texture,
+                fitMode: fitMode,
+                commandBuffer: commandBuffer
+            )
+        }
+        if !encodedByUpscaler {
+            try encodePresentPass(
+                source: source, drawable: drawable, fitMode: fitMode, into: commandBuffer
+            )
+        }
+
+        commandBuffer.present(drawable)
+        // The present buffer reads `source` asynchronously; refcount it so the
+        // output ring doesn't hand the texture to the next frame's render
+        // while this GPU read is still in flight.
+        let sourceID = ObjectIdentifier(source)
+        let completionSource = PresentCompletionTexture(texture: source)
+        let tracker = presentTracker
+        let sink = gpuErrorSink
+        tracker.increment(sourceID)
+        commandBuffer.addCompletedHandler { cb in
+            let releaseSource: @Sendable () -> Void = {
+                tracker.decrement(sourceID)
+            }
+            if cb.status == .error {
+                sink.record("present: \(cb.error?.localizedDescription ?? "unknown")")
+            }
+            if let presentCompletion {
+                presentCompletion(completionSource.texture, cb, releaseSource)
+            } else {
+                releaseSource()
+            }
+        }
+        return true
+    }
+
+    /// The classic fullscreen-sample present pass (also the fallback whenever
+    /// the MetalFX experiment declines a frame).
+    private func encodePresentPass(
+        source: MTLTexture,
+        drawable: CAMetalDrawable,
+        fitMode: WPEPresentFitMode,
+        into commandBuffer: MTLCommandBuffer
+    ) throws {
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = drawable.texture
         descriptor.colorAttachments[0].loadAction = .clear
@@ -122,30 +174,6 @@ extension WPEMetalRenderExecutor {
         encoder.setVertexBytes(&presentUniforms, length: MemoryLayout<WPEPresentUniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
-
-        commandBuffer.present(drawable)
-        // The present buffer reads `source` asynchronously; refcount it so the
-        // output ring doesn't hand the texture to the next frame's render
-        // while this GPU read is still in flight.
-        let sourceID = ObjectIdentifier(source)
-        let completionSource = PresentCompletionTexture(texture: source)
-        let tracker = presentTracker
-        let sink = gpuErrorSink
-        tracker.increment(sourceID)
-        commandBuffer.addCompletedHandler { cb in
-            let releaseSource: @Sendable () -> Void = {
-                tracker.decrement(sourceID)
-            }
-            if cb.status == .error {
-                sink.record("present: \(cb.error?.localizedDescription ?? "unknown")")
-            }
-            if let presentCompletion {
-                presentCompletion(completionSource.texture, cb, releaseSource)
-            } else {
-                releaseSource()
-            }
-        }
-        return true
     }
 
     func clearColor(for targetID: WPEMetalTargetID) -> MTLClearColor {

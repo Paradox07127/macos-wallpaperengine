@@ -88,6 +88,9 @@ final class WPEMetalRenderExecutor {
     /// re-loads the library bundle on every call, so per-pipeline fetches were pure waste.
     let defaultLibrary: MTLLibrary
     lazy var gpuPassProfiler = WPEMetalPassGPUProfiler.makeIfEnabled(device: device)
+    /// nil unless the MetalFX render-scale experiment is on, so the default
+    /// present path never constructs a MetalFX object.
+    lazy var metalFXUpscaler = WPEMetalFXSpatialUpscaler.makeIfEnabled(device: device)
     let targetPool: WPEMetalRenderTargetPool
     let depthCache: WPEMetalDepthStateCache
     private let pipelineCache: WPEMetalPipelineCache
