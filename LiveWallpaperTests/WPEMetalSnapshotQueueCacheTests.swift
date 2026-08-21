@@ -75,7 +75,7 @@ struct WPEMetalSnapshotQueueCacheTests {
         )
         // Verbatim from WPEMetalRenderExecutor.makeOutputTexture.
         descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .shared
+        descriptor.storageMode = .private
         let texture = try #require(device.makeTexture(descriptor: descriptor))
 
         let snapshotter = WPEMetalTextureSnapshotter(label: "test.queue-cache.srgb")

@@ -58,11 +58,12 @@ struct WPEEffectDispatchDescriptor: Sendable {
     /// Shared bind for effects that sample exactly one texture (the
     /// `textureBindings[0] ?? textures[0] ?? source` chain) and fill one
     /// uniform struct from the pass (+ optionally the resolved texture,
-    /// e.g. blur's texel size).
+    /// e.g. blur's texel size, + the frame context for frame-global names
+    /// like `g_Time`).
     static func singleTexture<U: BitwiseCopyable>(
-        _ uniforms: @escaping @Sendable (WPEPreparedRenderPass, MTLTexture) -> U
+        _ uniforms: @escaping @Sendable (WPEPreparedRenderPass, MTLTexture, WPEFrameUniformContext) -> U
     ) -> Bind {
-        { _, pass, textures, frameState, destination, encoder in
+        { executor, pass, textures, frameState, destination, encoder in
             let reference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
             let texture = try WPEMetalShaderInputs.resolve(
                 reference: reference,
@@ -71,7 +72,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 currentTargetID: destination.id
             )
             encoder.setFragmentTexture(texture, index: 0)
-            var value = uniforms(pass, texture)
+            var value = uniforms(pass, texture, executor.frameUniformContext)
             encoder.setFragmentBytes(&value, length: MemoryLayout<U>.stride, index: 0)
             return texture
         }
@@ -178,7 +179,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectColorBalance,
                 fragmentName: "wpe_effect_colorbalance_fragment",
                 supportsObjectQuad: false,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, _ in
                     WPEColorBalanceUniforms(
                         brightness: WPEMetalShaderInputs.floatScalar(
                             named: ["u_Brightness", "brightness", "g_BrightnessOffset"],
@@ -202,7 +203,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectBlur,
                 fragmentName: "wpe_effect_blur_fragment",
                 supportsObjectQuad: false,
-                bind: singleTexture { pass, texture in
+                bind: singleTexture { pass, texture, _ in
                     WPEBlurUniforms(
                         texelSize: SIMD2<Float>(
                             1 / Float(max(texture.width, 1)),
@@ -220,7 +221,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectWater,
                 fragmentName: "wpe_effect_water_fragment",
                 supportsObjectQuad: false,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPEWaterUniforms(
                         amplitude: WPEMetalShaderInputs.floatScalar(
                             named: ["u_Amplitude", "amplitude", "amount", "strength"],
@@ -240,6 +241,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                         time: WPEMetalShaderInputs.floatScalar(
                             named: "g_Time",
                             in: pass,
+                            frame: frame,
                             default: 0
                         )
                     )
@@ -249,11 +251,11 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectPulse,
                 fragmentName: "wpe_effect_pulse_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPEPulseUniforms(
                         frequency: WPEMetalShaderInputs.floatScalar(named: ["g_PulseSpeed", "u_Frequency", "frequency", "speed"], in: pass, default: 1),
                         amplitude: WPEMetalShaderInputs.floatScalar(named: ["g_PulseAmount", "u_Amplitude", "amplitude", "amount", "strength"], in: pass, default: 0.25),
-                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, default: 0)
+                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: frame, default: 0)
                     )
                 }
             ),
@@ -261,7 +263,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectIris,
                 fragmentName: "wpe_effect_iris_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, _ in
                     WPEIrisUniforms(
                         radius: WPEMetalShaderInputs.floatScalar(named: ["u_Radius", "radius", "size"], in: pass, default: 0.6),
                         softness: WPEMetalShaderInputs.floatScalar(named: ["u_Softness", "softness", "feather"], in: pass, default: 0.1)
@@ -272,10 +274,10 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectSpin,
                 fragmentName: "wpe_effect_spin_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPESpinUniforms(
                         angularSpeed: WPEMetalShaderInputs.floatScalar(named: ["u_AngularSpeed", "u_Speed", "speed", "angularSpeed"], in: pass, default: 0.5),
-                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, default: 0)
+                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: frame, default: 0)
                     )
                 }
             ),
@@ -283,7 +285,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectTint,
                 fragmentName: "wpe_effect_tint_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, _ in
                     WPETintUniforms(
                         color: WPEMetalShaderInputs.colorVector(for: pass),
                         intensity: WPEMetalShaderInputs.floatScalar(named: ["u_Intensity", "intensity", "amount", "strength"], in: pass, default: 1)
@@ -294,12 +296,12 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectFoliageSway,
                 fragmentName: "wpe_effect_foliagesway_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPEFoliageSwayUniforms(
                         amplitude: WPEMetalShaderInputs.floatScalar(named: ["u_Amplitude", "amplitude", "amount", "strength"], in: pass, default: 0.02),
                         frequency: WPEMetalShaderInputs.floatScalar(named: ["u_Frequency", "frequency", "scale"], in: pass, default: 4),
                         speed: WPEMetalShaderInputs.floatScalar(named: ["u_Speed", "speed"], in: pass, default: 1.5),
-                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, default: 0)
+                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: frame, default: 0)
                     )
                 }
             ),
@@ -307,12 +309,12 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectWaterRipple,
                 fragmentName: "wpe_effect_waterripple_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPEWaterRippleUniforms(
                         amplitude: WPEMetalShaderInputs.floatScalar(named: ["u_Amplitude", "amplitude", "amount", "strength"], in: pass, default: 0.005),
                         frequency: WPEMetalShaderInputs.floatScalar(named: ["u_Frequency", "frequency", "scale"], in: pass, default: 60),
                         speed: WPEMetalShaderInputs.floatScalar(named: ["u_Speed", "speed"], in: pass, default: 1.0),
-                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, default: 0)
+                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: frame, default: 0)
                     )
                 }
             ),
@@ -320,7 +322,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectBlend,
                 fragmentName: "wpe_effect_blend_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, _ in
                     WPEBlendUniforms(
                         color: WPEMetalShaderInputs.colorVector(for: pass),
                         opacity: WPEMetalShaderInputs.floatScalar(named: ["u_Opacity", "opacity", "amount", "strength"], in: pass, default: 1)
@@ -331,7 +333,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectColorGrading,
                 fragmentName: "wpe_effect_color_grading_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, _ in
                     colorGradingUniforms(for: pass)
                 }
             ),
@@ -367,7 +369,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
 
                     let maskResolution = WPEMetalTextureMetadataRegistry.shared.resolution(for: maskTexture)
                     var uniforms = WPEWaterWavesUniforms(
-                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, default: 0),
+                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: executor.frameUniformContext, default: 0),
                         speed: speed,
                         scale: scale,
                         strength: strength,
@@ -416,10 +418,10 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectScroll,
                 fragmentName: "wpe_effect_scroll_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPEScrollUniforms(
                         speed: scrollSpeed(for: pass),
-                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, default: 0)
+                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: frame, default: 0)
                     )
                 }
             ),
@@ -427,11 +429,11 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectWaterFlow,
                 fragmentName: "wpe_effect_waterflow_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPEWaterFlowUniforms(
                         direction: waterFlowDirection(for: pass),
                         speed: WPEMetalShaderInputs.floatScalar(named: ["u_Speed", "speed"], in: pass, default: 1),
-                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, default: 0)
+                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: frame, default: 0)
                     )
                 }
             ),
@@ -439,7 +441,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectVignette,
                 fragmentName: "wpe_effect_vignette_fragment",
                 supportsObjectQuad: false,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, _ in
                     WPEVignetteUniforms(
                         innerRadius: WPEMetalShaderInputs.floatScalar(
                             named: ["u_InnerRadius", "innerRadius", "inner"],
@@ -463,11 +465,11 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectShimmer,
                 fragmentName: "wpe_effect_shimmer_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPEShimmerUniforms(
                         speed: WPEMetalShaderInputs.floatScalar(named: ["u_Speed", "speed"], in: pass, default: 4),
                         intensity: WPEMetalShaderInputs.floatScalar(named: ["u_Intensity", "intensity", "amount", "strength"], in: pass, default: 0.2),
-                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, default: 0)
+                        time: WPEMetalShaderInputs.floatScalar(named: "g_Time", in: pass, frame: frame, default: 0)
                     )
                 }
             ),
@@ -475,7 +477,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                 kind: .effectShake,
                 fragmentName: "wpe_effect_shake_fragment",
                 supportsObjectQuad: true,
-                bind: singleTexture { pass, _ in
+                bind: singleTexture { pass, _, frame in
                     WPEShakeUniforms(
                         magnitude: WPEMetalShaderInputs.floatScalar(
                             named: ["u_Magnitude", "magnitude", "amount", "strength"],
@@ -485,6 +487,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
                         time: WPEMetalShaderInputs.floatScalar(
                             named: "g_Time",
                             in: pass,
+                            frame: frame,
                             default: 0
                         ),
                         frequency: WPEMetalShaderInputs.floatScalar(
@@ -519,7 +522,10 @@ extension WPEMetalShaderDispatcher {
         let cameraParallax = descriptor.appliesCameraParallax ? frameState.cameraParallax : .neutral
         let usesObjectQuad = descriptor.supportsObjectQuad
             && executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: cameraParallax)
-        encoder.setRenderPipelineState(try executor.renderPipeline(
+        encoder.setRenderPipelineState(try executor.passPipelineState(
+            passID: pass.pass.id,
+            variant: .effect,
+            objectQuad: usesObjectQuad,
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: descriptor.fragmentName,
             blendMode: pass.pass.blending,

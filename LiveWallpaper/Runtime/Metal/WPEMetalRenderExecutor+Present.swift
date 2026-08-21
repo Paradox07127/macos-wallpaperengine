@@ -14,13 +14,56 @@ import simd
 private let presentDrawableMissCount = OSAllocatedUnfairLock(initialState: 0)
 
 extension WPEMetalRenderExecutor {
+    /// Encodes the blit-and-present into the continuous path's scene command
+    /// buffer, per frame. See `WPEMetalRenderExecutor.render(deferredPresent:)`.
+    typealias DeferredPresentEncoder = (MTLTexture, MTLCommandBuffer) throws -> Bool
+
     // Not `@MainActor`: the present path runs on the renderer's
     // `WPEDisplayRenderActor`. `CAMetalLayer.nextDrawable()` is safe off-main.
+    /// Static re-present path (and sync/readback frames): a present in its own
+    /// command buffer. The continuous path encodes into the scene buffer via
+    /// `encodePresent(into:)` instead.
     func present(
         texture source: MTLTexture,
         layer: CAMetalLayer,
         fitMode: WPEPresentFitMode = .stretch,
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)? = nil
+    ) throws -> Bool {
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+            throw WPEMetalRenderExecutorError.commandBufferFailed
+        }
+        guard try encodePresent(
+            texture: source,
+            layer: layer,
+            fitMode: fitMode,
+            presentCompletion: presentCompletion,
+            into: commandBuffer
+        ) else {
+            // Drawable miss: the un-committed buffer is simply dropped.
+            return false
+        }
+        // Present-CB timing lives here, not in `encodePresent`: on the merged
+        // continuous path the present is part of the scene buffer, whose timing
+        // `recordScene` already covers — recording it as "present" too would
+        // double-count the frame and corrupt the scene→present gap stats.
+        if WPEFrameGPUTimingProbe.isEnabled {
+            let executorID = ObjectIdentifier(self)
+            commandBuffer.addCompletedHandler { cb in
+                WPEFrameGPUTimingProbe.recordPresent(
+                    executor: executorID, gpuStart: cb.gpuStartTime, gpuEnd: cb.gpuEndTime
+                )
+            }
+        }
+        commandBuffer.commit()
+        return true
+    }
+
+    func encodePresent(
+        texture source: MTLTexture,
+        layer: CAMetalLayer,
+        fitMode: WPEPresentFitMode,
+        presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)?,
+        into commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
         // Pull the drawable straight from the layer. `MTKView.currentDrawable`
         // is exactly a cached `layer.nextDrawable()`, so this is equivalent while
@@ -42,9 +85,6 @@ extension WPEMetalRenderExecutor {
                 )
             }
             return false
-        }
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else {
-            throw WPEMetalRenderExecutorError.commandBufferFailed
         }
 
         let descriptor = MTLRenderPassDescriptor()
@@ -105,7 +145,6 @@ extension WPEMetalRenderExecutor {
                 releaseSource()
             }
         }
-        commandBuffer.commit()
         return true
     }
 

@@ -150,6 +150,40 @@ enum WPEMetalShaderInputs {
         return defaultValue
     }
 
+    /// Frame-global-aware variants: for names in the frame-global set
+    /// (`g_Time`, `g_Brightness`, …) the old per-pass merge always won because
+    /// those values were inserted last, so the frame context is consulted
+    /// before the pass dictionary, name by name.
+    static func floatScalar(
+        named name: String,
+        in pass: WPEPreparedRenderPass,
+        frame: WPEFrameUniformContext,
+        default defaultValue: Float
+    ) -> Float {
+        scalarFloat(frame.frameValue(named: name) ?? pass.uniformValues[name])
+            ?? scalarFloat(pass.pass.constants[name])
+            ?? defaultValue
+    }
+
+    static func floatScalar(
+        named names: [String],
+        in pass: WPEPreparedRenderPass,
+        frame: WPEFrameUniformContext,
+        default defaultValue: Float
+    ) -> Float {
+        for name in names {
+            if let value = scalarFloat(frame.frameValue(named: name) ?? pass.uniformValues[name]) {
+                return value
+            }
+        }
+        for name in names {
+            if let value = scalarFloat(pass.pass.constants[name]) {
+                return value
+            }
+        }
+        return defaultValue
+    }
+
     /// Authored layer tint (WPE folds it into g_Color4 for every image
     /// material) converted to the linear space our pipeline blends in.
     static func linearLayerTint(_ rgb: SIMD3<Double>) -> SIMD3<Float> {

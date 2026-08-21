@@ -1115,11 +1115,9 @@ final class WPESceneScriptInstance {
         let getTimeOfDay: @convention(block) () -> Double = {
             // Oracle freezes wall-clock so `engine.getTimeOfDay()` (day-fraction
             // clock scripts) can't drift the trace across a minute boundary.
-            let date = WPEOracleMode.isEnabled ? WPEOracleMode.frozenWallClock : Date()
-            let cal = Calendar.current
-            let comps = cal.dateComponents([.hour, .minute, .second], from: date)
-            let secs = Double((comps.hour ?? 0) * 3600 + (comps.minute ?? 0) * 60 + (comps.second ?? 0))
-            return secs / 86_400.0
+            // Deliberately NOT `wpeDayFraction()`: that one also consults the
+            // oracle frame override, which this legacy API never did.
+            wpeDayFraction(of: WPEOracleMode.isEnabled ? WPEOracleMode.frozenWallClock : Date())
         }
         engine.setObject(getTimeOfDay, forKeyedSubscript: "getTimeOfDay" as NSString)
         // engine.timeOfDay property form (legacy getTimeOfDay exists); refreshed each tick.
@@ -1519,10 +1517,24 @@ private func wpeDayFraction() -> Double {
     return wpeDayFraction(of: Date())
 }
 
+/// One `Calendar.dateComponents` per wall-clock second instead of per
+/// context-tick (hundreds of JSContexts refresh `engine.timeOfDay` every frame).
+/// Bit-identical: `timeOfDay` is h/m/s only and UTC offsets are whole minutes,
+/// so one epoch second maps to one set of components. Locked — script worker
+/// queues tick concurrently.
+private let wpeDayFractionCache = OSAllocatedUnfairLock(
+    initialState: (second: Int.min, value: 0.0)
+)
+
 private func wpeDayFraction(of date: Date) -> Double {
-    let parts = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
-    let seconds = Double((parts.hour ?? 0) * 3600 + (parts.minute ?? 0) * 60 + (parts.second ?? 0))
-    return seconds / 86_400.0
+    let second = Int(date.timeIntervalSinceReferenceDate.rounded(.down))
+    return wpeDayFractionCache.withLock { cache in
+        if cache.second == second { return cache.value }
+        let parts = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
+        let seconds = Double((parts.hour ?? 0) * 3600 + (parts.minute ?? 0) * 60 + (parts.second ?? 0))
+        cache = (second: second, value: seconds / 86_400.0)
+        return cache.value
+    }
 }
 
 /// Per-tick engine clock, shared by all script families so `runtime` /

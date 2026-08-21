@@ -91,12 +91,14 @@ struct WPEMetalShaderDispatcher {
         case .solidColor:
             try dispatchSolid(
                 fragmentName: "wpe_solidcolor_fragment",
+                variant: .solidColor,
                 pass: pass, layer: layer, destination: destination,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
         case .solidLayer:
             try dispatchSolid(
                 fragmentName: "wpe_solidlayer_fragment",
+                variant: .solidLayer,
                 pass: pass, layer: layer, destination: destination,
                 frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
             )
@@ -170,6 +172,7 @@ struct WPEMetalShaderDispatcher {
     // MARK: - Compose family
     private func dispatchSolid(
         fragmentName: String,
+        variant: WPEMetalRenderExecutor.PassPSOVariant,
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
@@ -178,7 +181,10 @@ struct WPEMetalShaderDispatcher {
         depthPixelFormat: MTLPixelFormat
     ) throws {
         let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.renderPipeline(
+        encoder.setRenderPipelineState(try executor.passPipelineState(
+            passID: pass.pass.id,
+            variant: variant,
+            objectQuad: usesObjectQuad,
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: fragmentName,
             blendMode: pass.pass.blending,
@@ -210,7 +216,10 @@ struct WPEMetalShaderDispatcher {
         depthPixelFormat: MTLPixelFormat
     ) throws {
         let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.renderPipeline(
+        encoder.setRenderPipelineState(try executor.passPipelineState(
+            passID: pass.pass.id,
+            variant: .blendComposite,
+            objectQuad: usesObjectQuad,
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: "wpe_blend_composite_fragment",
             blendMode: pass.pass.blending,
@@ -270,7 +279,10 @@ struct WPEMetalShaderDispatcher {
             ? "wpe_copy_fragment"
             : "wpe_util_copy_fragment"
         let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.renderPipeline(
+        encoder.setRenderPipelineState(try executor.passPipelineState(
+            passID: pass.pass.id,
+            variant: .copy,
+            objectQuad: usesObjectQuad,
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: fragmentName,
             blendMode: pass.pass.blending,
@@ -315,7 +327,9 @@ struct WPEMetalShaderDispatcher {
             && isSceneAliasReference(firstReference)
             && executor.sceneCaptureUtilityOutputGeometry(for: layer) == .subregion
         if isLocalSceneCaptureComposeLayer {
-            encoder.setRenderPipelineState(try executor.renderPipeline(
+            encoder.setRenderPipelineState(try executor.passPipelineState(
+                passID: pass.pass.id,
+                variant: .localSceneCapture,
                 fragmentName: "wpe_local_scene_capture_fragment",
                 blendMode: pass.pass.blending,
                 alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
@@ -346,7 +360,9 @@ struct WPEMetalShaderDispatcher {
             // WPE passthrough utility parity: draw a fullscreen quad and copy
             // the captured full-frame buffer 1:1 at screen UV (+ CLEARALPHA),
             // ignoring the layer transform (which positions downstream effects).
-            encoder.setRenderPipelineState(try executor.renderPipeline(
+            encoder.setRenderPipelineState(try executor.passPipelineState(
+                passID: pass.pass.id,
+                variant: .composeLayer,
                 fragmentName: "wpe_composelayer_fragment",
                 blendMode: pass.pass.blending,
                 alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
@@ -384,7 +400,10 @@ struct WPEMetalShaderDispatcher {
                 currentTargetID: destination.id
             )
             let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-            encoder.setRenderPipelineState(try executor.renderPipeline(
+            encoder.setRenderPipelineState(try executor.passPipelineState(
+                passID: pass.pass.id,
+                variant: .compose,
+                objectQuad: usesObjectQuad,
                 vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
                 fragmentName: "wpe_compose_fragment",
                 blendMode: pass.pass.blending,
@@ -418,7 +437,10 @@ struct WPEMetalShaderDispatcher {
         depthPixelFormat: MTLPixelFormat
     ) throws {
         let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.renderPipeline(
+        encoder.setRenderPipelineState(try executor.passPipelineState(
+            passID: pass.pass.id,
+            variant: .genericImage2,
+            objectQuad: usesObjectQuad,
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: "wpe_genericimage2_fragment",
             blendMode: pass.pass.blending,
@@ -462,7 +484,10 @@ struct WPEMetalShaderDispatcher {
         let primarySlot = 0
         let maskSlot = 1
         let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        encoder.setRenderPipelineState(try executor.renderPipeline(
+        encoder.setRenderPipelineState(try executor.passPipelineState(
+            passID: pass.pass.id,
+            variant: .genericImage4,
+            objectQuad: usesObjectQuad,
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: "wpe_genericimage4_fragment",
             blendMode: pass.pass.blending,
@@ -582,12 +607,12 @@ struct WPEMetalShaderDispatcher {
         let usesShapeQuad = executor.usesShapeQuadGeometry(for: pass, layer: layer, frameState: frameState)
         let usesObjectQuad = !usesShapeQuad
             && executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        let isWaveLikePass = Self.isWaveLikePass(pass)
         // The transpiler is fragment-only: it always uses wpe_fullscreen_vertex and
         // synthesizes v_TexCoord / v_Direction in the fragment (it does NOT run the scene .vert).
-        // isEnabled checked here so the interpolated log line (and the slot scan
-        // feeding it) isn't built every frame just for appendLog to discard it.
-        if isWaveLikePass, WPESceneDebugArtifacts.shared.isEnabled {
+        // isEnabled checked FIRST: `isWaveLikePass` lowercases the shader path and
+        // only feeds this log, so the string work must not run every frame just
+        // for appendLog to discard it.
+        if WPESceneDebugArtifacts.shared.isEnabled, Self.isWaveLikePass(pass) {
             let maskLive = Self.hasExplicitTextureSlot(1, in: pass)
             WPESceneDebugArtifacts.shared.appendLog(
                 "🌊 [WPE.fx.vtx] \(pass.pass.shader) target=\(pass.pass.target) "
@@ -598,7 +623,8 @@ struct WPEMetalShaderDispatcher {
         }
 
         var primary: MTLTexture? = nil
-        var resolvedTexturesBySlot: [Int: MTLTexture] = [:]
+        let resolvedTexturesBySlot = executor.customTextureSlotScratch
+        resolvedTexturesBySlot.reset()
         #if !LITE_BUILD && DEBUG
         var canonicalTextureBindings: [WPECanonicalTraceRecorder.TextureBindingInput] = []
         #endif
@@ -679,9 +705,7 @@ struct WPEMetalShaderDispatcher {
                 executor.customShaderSamplerState(for: texture),
                 index: slot
             )
-            if let texture {
-                resolvedTexturesBySlot[slot] = texture
-            }
+            resolvedTexturesBySlot[slot] = texture
             #if !LITE_BUILD && DEBUG
             canonicalTextureBindings.append(WPECanonicalTraceRecorder.TextureBindingInput(
                 slot: slot,
@@ -789,7 +813,10 @@ struct WPEMetalShaderDispatcher {
             layer: layer,
             cameraParallax: frameState.cameraParallax
         )
-        encoder.setRenderPipelineState(try executor.renderPipeline(
+        encoder.setRenderPipelineState(try executor.passPipelineState(
+            passID: pass.pass.id,
+            variant: .godraysCombine,
+            objectQuad: usesObjectQuad,
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentName: "wpe_effect_godrays_combine_fragment",
             blendMode: pass.pass.blending,
@@ -924,7 +951,7 @@ struct WPEMetalShaderDispatcher {
     }
 
     func isSceneCaptureUtilityLayer(_ layer: WPERenderLayer) -> Bool {
-        WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath(layer.imagePath)
+        layer.isUtilityModelLayer
     }
 
     func isLayerCompositeTarget(_ target: WPERenderTarget) -> Bool {

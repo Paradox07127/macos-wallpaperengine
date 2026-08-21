@@ -104,6 +104,215 @@ final class WPEMetalRenderExecutor {
     /// scenes, so this is cleared on reload (via `releaseTransientResources`).
     var compiledShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
 
+    /// Frame-global uniforms (runtime/camera/object) for the frame currently
+    /// being encoded. Lifetime = one `render` call: assigned right after the
+    /// pipeline is prepared, reset to `.empty` on exit. A stored property is
+    /// race-free here because each executor instance is driven by a single
+    /// render thread — `render` never runs concurrently on one instance.
+    var frameUniformContext: WPEFrameUniformContext = .empty
+
+    /// Case-insensitive uniform-key index, keyed by pass id: replaces the
+    /// per-frame `key.lowercased()` scans that dominated CPU samples. Key sets
+    /// are load-stable even though values are re-resolved per frame, and a dict
+    /// count change (e.g. a scripted constant appearing later) rebuilds the
+    /// entry. Pass ids recur across scenes, so `releaseTransientResources`
+    /// clears it.
+    struct UniformKeyIndex {
+        let uniformCount: Int
+        let constantsCount: Int
+        /// lowercased key → canonical key. On case-variant collisions the winner
+        /// is arbitrary-but-frozen; the scan it replaces used `first(where:)`
+        /// over unordered Dictionary iteration, which was arbitrary per call.
+        let uniformKeys: [String: String]
+        let constantsKeys: [String: String]
+    }
+
+    private var uniformKeyIndexByPassID: [String: UniformKeyIndex] = [:]
+
+    func uniformKeyIndex(for pass: WPEPreparedRenderPass) -> UniformKeyIndex {
+        if let cached = uniformKeyIndexByPassID[pass.id],
+           cached.uniformCount == pass.uniformValues.count,
+           cached.constantsCount == pass.pass.constants.count {
+            return cached
+        }
+        let index = UniformKeyIndex(
+            uniformCount: pass.uniformValues.count,
+            constantsCount: pass.pass.constants.count,
+            uniformKeys: Self.lowercasedKeyMap(pass.uniformValues),
+            constantsKeys: Self.lowercasedKeyMap(pass.pass.constants)
+        )
+        uniformKeyIndexByPassID[pass.id] = index
+        return index
+    }
+
+    func invalidateUniformKeyIndexes() {
+        uniformKeyIndexByPassID.removeAll()
+    }
+
+    /// Compiled per-slot uniform SOURCE plans, keyed by pass id. Built by
+    /// `uniformPlans(for:layout:)` in +UniformPlan; see that file for what a
+    /// plan is and why each entry is revalidated against the pass's dict counts
+    /// and its layout. Pass-id keyed like the caches above, so it is dropped by
+    /// `releaseTransientResources`.
+    var uniformPlansByPassID: [String: PassUniformPlans] = [:]
+
+    /// Test seam: separates a plan cache hit from a silent per-frame recompile.
+    var uniformPlanCompileCount = 0
+
+    func invalidateUniformPlans() {
+        uniformPlansByPassID.removeAll()
+        uniformPlanCompileCount = 0
+    }
+
+    private static func lowercasedKeyMap(
+        _ values: [String: WPESceneShaderConstantValue]
+    ) -> [String: String] {
+        var map = [String: String](minimumCapacity: values.count)
+        for key in values.keys {
+            let lowered = key.lowercased()
+            if map[lowered] == nil { map[lowered] = key }
+        }
+        return map
+    }
+
+    /// Pure string-derived blend facts, memoized per raw blending spelling — a
+    /// scene carries only a handful of distinct ones, but the normalization
+    /// (`lowercased` + 3× `replacingOccurrences`) ran per pass per frame.
+    /// Content-keyed pure function, so it never needs invalidation.
+    private struct BlendStringFacts {
+        let lowercased: String
+        let requiresExistingDestination: Bool
+    }
+
+    private var blendStringFactsCache: [String: BlendStringFacts] = [:]
+
+    /// See `isSkewShaderPath` — content-keyed pure memo.
+    private var skewShaderPathCache: [String: Bool] = [:]
+
+    /// Reusable scratch collections for the per-frame half of
+    /// `fboAliasIntervals` (+Targets): the size mapping rebuilt same-capacity
+    /// dictionaries/sets every frame. Contents are valid only within one
+    /// `fboAliasIntervals` call; a stored property is race-free for the same
+    /// reason as `frameUniformContext` — each executor instance is driven by a
+    /// single render thread.
+    final class FBOAliasIntervalScratch {
+        var keys: [WPEMetalRenderTargetKey?] = []
+        var firstPassByKey: [WPEMetalRenderTargetKey: Int] = [:]
+        var lastPassByKey: [WPEMetalRenderTargetKey: Int] = [:]
+        var secondaryKeys: Set<WPEMetalRenderTargetKey> = []
+        var nonAliasKeys: Set<WPEMetalRenderTargetKey> = []
+
+        func removeAll(keepingCapacity: Bool) {
+            keys.removeAll(keepingCapacity: keepingCapacity)
+            firstPassByKey.removeAll(keepingCapacity: keepingCapacity)
+            lastPassByKey.removeAll(keepingCapacity: keepingCapacity)
+            secondaryKeys.removeAll(keepingCapacity: keepingCapacity)
+            nonAliasKeys.removeAll(keepingCapacity: keepingCapacity)
+        }
+    }
+
+    let fboAliasIntervalScratch = FBOAliasIntervalScratch()
+
+    /// Structural half of the alias-interval scan (see `fboAliasIntervals` in
+    /// +Targets), cached across frames and revalidated per frame against the
+    /// pipeline's structural signature. Same single-render-thread invariant as
+    /// the scratch above.
+    var cachedFBOAliasTopology: FBOAliasTopology?
+    /// Rebuild counter for the topology cache — lets tests distinguish a cache
+    /// hit from a silent per-frame rebuild.
+    var fboAliasTopologyRebuildCount = 0
+
+    /// Which built-in dispatch produced a draw. One prepared pass can drive
+    /// several pipeline states (compose picks between three fragments; effect
+    /// and godrays-combine are separate draws), so a pass id alone does not
+    /// name a pipeline — but (variant, pass id) does within a load.
+    enum PassPSOVariant: UInt8 {
+        case solidColor, solidLayer, blendComposite, copy
+        case localSceneCapture, composeLayer, compose
+        case genericImage2, genericImage4, godraysCombine, effect
+    }
+
+    /// First-level PSO cache keyed by pass identity, so the hot path stops
+    /// hashing/retaining the pipeline cache's three String key fields every
+    /// pass. That cache stays the source of truth — a miss here still goes
+    /// through it, so the two can never disagree.
+    struct PassPSOKey: Hashable {
+        let passID: String
+        let variant: PassPSOVariant
+        /// The vertex function flips between the object-quad and fullscreen
+        /// variants with the live camera parallax — per frame, not per load.
+        let objectQuad: Bool
+        /// `WPERenderPass.replacingBlending` can re-blend a pass id, so the
+        /// spelling is never assumed to be a function of the id.
+        let blending: String
+        let alphaWritePolicy: WPEMetalAlphaWritePolicy
+        /// Varies with HDR promotion and with which target the pass lands on.
+        let colorPixelFormat: MTLPixelFormat
+        let depthPixelFormat: MTLPixelFormat
+    }
+
+    private var passPipelineStates: [PassPSOKey: MTLRenderPipelineState] = [:]
+
+    /// Test seam: distinguishes a first-level hit from a silent per-frame
+    /// re-resolve through `WPEMetalPipelineCache`.
+    private(set) var passPipelineResolveCount = 0
+
+    func passPipelineState(
+        passID: String,
+        variant: PassPSOVariant,
+        objectQuad: Bool = false,
+        vertexName: String = "wpe_fullscreen_vertex",
+        fragmentName: String,
+        blendMode: String,
+        alphaWritePolicy: WPEMetalAlphaWritePolicy,
+        colorPixelFormat: MTLPixelFormat,
+        depthPixelFormat: MTLPixelFormat
+    ) throws -> MTLRenderPipelineState {
+        let key = PassPSOKey(
+            passID: passID,
+            variant: variant,
+            objectQuad: objectQuad,
+            blending: blendMode,
+            alphaWritePolicy: alphaWritePolicy,
+            colorPixelFormat: colorPixelFormat,
+            depthPixelFormat: depthPixelFormat
+        )
+        if let cached = passPipelineStates[key] {
+            return cached
+        }
+        passPipelineResolveCount += 1
+        let state = try renderPipeline(
+            vertexName: vertexName,
+            fragmentName: fragmentName,
+            blendMode: blendMode,
+            alphaWritePolicy: alphaWritePolicy,
+            colorPixelFormat: colorPixelFormat,
+            depthPixelFormat: depthPixelFormat
+        )
+        passPipelineStates[key] = state
+        return state
+    }
+
+    func invalidatePassPipelineStates() {
+        passPipelineStates.removeAll()
+    }
+
+    /// Reusable fragment-texture slot table, replacing a per-pass
+    /// `[Int: MTLTexture]` allocation. Sized to the transpiler's hard slot
+    /// ceiling. Contents live for one dispatch only; race-free for the same
+    /// reason as `frameUniformContext` — one render thread per executor.
+    let customTextureSlotScratch = WPEMetalTextureSlotTable()
+
+    private func blendFacts(_ blendMode: String) -> BlendStringFacts {
+        if let cached = blendStringFactsCache[blendMode] { return cached }
+        let facts = BlendStringFacts(
+            lowercased: blendMode.lowercased(),
+            requiresExistingDestination: Self.blendModeRequiresExistingDestination(blendMode)
+        )
+        blendStringFactsCache[blendMode] = facts
+        return facts
+    }
+
     /// Sampler states for transpiled shaders' per-slot `wpeSampler<slot>` bindings,
     /// keyed by (clampUVs, noInterpolation). Only four combinations exist, so this
     /// stays tiny; created lazily on first use.
@@ -380,7 +589,7 @@ final class WPEMetalRenderExecutor {
     /// scene-capture utility layer's footprint without threading `sceneSize`
     /// through its dozen call sites. Safe because the render loop encodes one
     /// frame at a time.
-    private var currentSceneSize: CGSize = .zero
+    private(set) var currentSceneSize: CGSize = .zero
 
     // Object IDs that are parents of at least one other layer. A `composelayer`
     // that hosts children is a WPE "layer group" (transform/opacity container),
@@ -456,7 +665,13 @@ final class WPEMetalRenderExecutor {
         frameProduction: WPEMetalFrameProductionCompletion? = nil,
         /// Wallpaper Engine's per-wallpaper colour grade, from the applied preset.
         /// Defaulted so the many call sites that never carry one stay unchanged.
-        colorCorrection: WPEEngineColorCorrection = .neutral
+        colorCorrection: WPEEngineColorCorrection = .neutral,
+        /// Continuous-path present merge: invoked with the frame's final (graded)
+        /// texture and this scene command buffer after all encoding, so the
+        /// present blit rides the same submission (no CB1→CB2 GPU bubble).
+        /// Only honoured on the async submission path; sync (debug/readback)
+        /// callers pass nil and keep the separate present buffer.
+        deferredPresent: DeferredPresentEncoder? = nil
     ) throws -> MTLTexture {
         // Async submission: take a permit up front so the CPU blocks here (rather
         // than queuing another frame) once `maxFramesInFlight` are outstanding.
@@ -495,11 +710,13 @@ final class WPEMetalRenderExecutor {
             || WPEOracleMode.perPassHashesEnabled
         dumpLayerPassesID = dumpLayerPassesDefaultID
         #endif
-        let preparedPipeline = pipeline.addingMetalRuntimeUniforms(
+        let (preparedPipeline, frameUniforms) = pipeline.addingMetalRuntimeUniforms(
             runtimeUniforms,
             camera: cameraUniforms,
             scriptedConstants: scriptedConstants
         )
+        frameUniformContext = frameUniforms
+        defer { frameUniformContext = .empty }
         currentOutputPixelFormat = cameraUniforms.sceneHDR
             ? .rgba16Float
             : Self.outputPixelFormat
@@ -534,7 +751,7 @@ final class WPEMetalRenderExecutor {
         let aliasIntervals = fboAliasIntervals(pipeline: preparedPipeline, sceneSize: size)
         targetPool.prepare(pipeline: preparedPipeline, aliasIntervals: aliasIntervals)
         targetPool.beginAliasFrame()
-        // The per-frame output texture is freshly allocated and `.shared`; its
+        // The per-frame output texture is freshly allocated (`.private`); its
         // backing store is NOT zeroed by Metal. A scene-alias read of
         // `_rt_FullFrameBuffer` before any scene-target pass writes (e.g.
         // shine_combine's COPYBG, which samples the full-frame buffer while
@@ -861,7 +1078,21 @@ final class WPEMetalRenderExecutor {
             colorCorrection, output: output, commandBuffer: commandBuffer
         )
 
+        // Late drawable acquire by design: every scene pass is encoded before the
+        // caller's closure asks the layer for a drawable. A throw here drops the
+        // whole un-committed buffer — no completed handler is attached yet, so no
+        // lease/semaphore is registered against it either.
+        if asyncSubmission, let deferredPresent {
+            _ = try deferredPresent(graded, commandBuffer)
+        }
+
         recyclePaletteBuffersOnCompletion(of: commandBuffer)
+        if WPEFrameGPUTimingProbe.isEnabled {
+            let executorID = ObjectIdentifier(self)
+            commandBuffer.addCompletedHandler { cb in
+                WPEFrameGPUTimingProbe.recordScene(executor: executorID, gpuStart: cb.gpuStartTime, gpuEnd: cb.gpuEndTime)
+            }
+        }
         let frameSubmissionCompletion = frameSubmission?.registerSubmission()
         if let frameSubmissionCompletion {
             commandBuffer.addCompletedHandler { _ in
@@ -952,7 +1183,7 @@ final class WPEMetalRenderExecutor {
     func packTranslatedUniforms(
         values: [String: WPESceneShaderConstantValue],
         layout: [WPEUniformSlot],
-        texturesBySlot: [Int: MTLTexture] = [:]
+        texturesBySlot: WPEMetalTextureSlotTable? = nil
     ) -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
         for u in layout {
@@ -1021,7 +1252,7 @@ final class WPEMetalRenderExecutor {
            WPERenderTargetNames.LayerGroup.matches(name) {
             return true
         }
-        return Self.blendModeRequiresExistingDestination(pass.pass.blending)
+        return blendFacts(pass.pass.blending).requiresExistingDestination
     }
 
     static func blendModeRequiresExistingDestination(_ blendMode: String) -> Bool {
@@ -1743,10 +1974,7 @@ final class WPEMetalRenderExecutor {
     /// untouched in MODE=1, so a fragment-only transpile drops the effect
     /// entirely). MODE=0 (UV) is handled by the ordinary transpiled fragment.
     func isVertexSkewPass(_ pass: WPEPreparedRenderPass) -> Bool {
-        let shader = pass.pass.shader
-            .replacingOccurrences(of: "\\", with: "/")
-            .lowercased()
-        guard shader == "effects/skew" || shader.hasSuffix("/effects/skew") else {
+        guard isSkewShaderPath(pass.pass.shader) else {
             return false
         }
         let mode = pass.comboValues["MODE"] ?? pass.pass.combos["MODE"] ?? 0
@@ -1756,6 +1984,18 @@ final class WPEMetalRenderExecutor {
         return params.topBottomLeftRight != SIMD4<Float>(repeating: 0)
     }
 
+    /// Memoized per raw shader spelling: the normalize-and-compare ran per pass
+    /// per frame. Content-keyed pure function, so it never needs invalidation.
+    private func isSkewShaderPath(_ rawShader: String) -> Bool {
+        if let cached = skewShaderPathCache[rawShader] { return cached }
+        let shader = rawShader
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        let isSkew = shader == "effects/skew" || shader.hasSuffix("/effects/skew")
+        skewShaderPathCache[rawShader] = isSkew
+        return isSkew
+    }
+
     /// The MODE=1 skew corner-displacement params (top/bottom/left/right) as
     /// fractions of the quad extent, read from the pass material values. WPE's
     /// `skew.vert` multiplies the displacement by `g_TextureReductionScale`
@@ -1763,16 +2003,30 @@ final class WPEMetalRenderExecutor {
     /// is folded in here — it defaults to 1.0 (full resolution), which is the case
     /// for the FBO-composite textures skew effects sample.
     func vertexSkewParams(for pass: WPEPreparedRenderPass) -> WPESkewParams {
+        // Only the NAME resolution is cached (via the key index): the values
+        // themselves are frame-variable (animated constants are re-resolved and
+        // scripted constants re-merged every frame by `addingMetalRuntimeUniforms`),
+        // so every read below still goes through the live dictionaries.
+        let keyIndex = uniformKeyIndex(for: pass)
         func value(_ names: [String], default fallback: Float = 0) -> Float {
             for name in names {
                 if let v = pass.uniformValues[name] ?? pass.pass.constants[name] {
                     return Self.scalarValue(v, default: fallback)
                 }
             }
-            let lowered = Set(names.map { $0.lowercased() })
-            if let match = pass.uniformValues.first(where: { lowered.contains($0.key.lowercased()) })
-                ?? pass.pass.constants.first(where: { lowered.contains($0.key.lowercased()) }) {
-                return Self.scalarValue(match.value, default: fallback)
+            // Same precedence as the scan this replaces: any uniformValues
+            // case-variant match wins over any constants one.
+            for name in names {
+                if let canonical = keyIndex.uniformKeys[name.lowercased()],
+                   let v = pass.uniformValues[canonical] {
+                    return Self.scalarValue(v, default: fallback)
+                }
+            }
+            for name in names {
+                if let canonical = keyIndex.constantsKeys[name.lowercased()],
+                   let v = pass.pass.constants[canonical] {
+                    return Self.scalarValue(v, default: fallback)
+                }
             }
             return fallback
         }
@@ -1812,7 +2066,7 @@ final class WPEMetalRenderExecutor {
         // `composelayer.json` authored into a safe sub-rect captures the
         // matching scene area into its layer composite, then its final scene
         // output is confined to that box via the object quad.
-        if WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath(layer.imagePath) {
+        if layer.isUtilityModelLayer {
             if layer.groupCompositeSource != nil { return true }
             return sceneCaptureUtilityOutputGeometry(for: layer) == .subregion
         }
@@ -1822,7 +2076,7 @@ final class WPEMetalRenderExecutor {
     func sceneCaptureUtilityOutputGeometry(
         for layer: WPERenderLayer
     ) -> WPEMetalSceneCaptureUtilityModels.OutputGeometry {
-        guard WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath(layer.imagePath) else {
+        guard layer.isUtilityModelLayer else {
             return .fullscreen
         }
         // A compose layer that parents children is a layer-group container, not
@@ -1830,8 +2084,8 @@ final class WPEMetalRenderExecutor {
         // passthrough to the authored box would paint a scene-copy PiP. Keep it
         // fullscreen (identity passthrough = invisible).
         if groupingContainerObjectIDs.contains(layer.objectID) { return .fullscreen }
-        return WPEMetalSceneCaptureUtilityModels.outputGeometry(
-            path: layer.imagePath,
+        return targetPool.sceneCaptureGeometryMemo.outputGeometry(
+            layer: layer,
             geometry: layer.geometry,
             sceneSize: currentSceneSize
         )
@@ -2268,10 +2522,21 @@ final class WPEMetalRenderExecutor {
     /// sampling it through a fullscreen copy, so the PNG dumper can visualize
     /// compressed character/scene textures that the raw byte dumper skips.
     func debugDecodeToRGBA(_ source: MTLTexture) -> MTLTexture? {
-        guard let output = try? makeOutputTexture(size: CGSize(width: source.width, height: source.height)),
+        // Dedicated `.shared` target: the caller reads it back with `getBytes`,
+        // and the output ring is `.private` (and must not vend debug scratch).
+        let outputDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: max(source.width, 1),
+            height: max(source.height, 1),
+            mipmapped: false
+        )
+        outputDescriptor.usage = [.renderTarget]
+        outputDescriptor.storageMode = .shared
+        guard let output = device.makeTexture(descriptor: outputDescriptor),
               let commandBuffer = commandQueue.makeCommandBuffer() else {
             return nil
         }
+        output.label = "WPE Metal debug decode"
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = output
         descriptor.colorAttachments[0].loadAction = .clear
@@ -2321,7 +2586,13 @@ final class WPEMetalRenderExecutor {
             materialColor.w
         )
         let gAlpha = WPEMetalShaderInputs.floatScalar(named: ["g_Alpha", "u_Alpha", "alpha"], in: pass, default: 1)
-        let gBrightness = WPEMetalShaderInputs.floatScalar(named: ["g_Brightness", "u_Brightness", "brightness"], in: pass, default: 1)
+        // `g_Brightness` is frame-global (runtime), so the frame context wins.
+        let gBrightness = WPEMetalShaderInputs.floatScalar(
+            named: ["g_Brightness", "u_Brightness", "brightness"],
+            in: pass,
+            frame: frameUniformContext,
+            default: 1
+        )
         let alpha = gAlpha * Float(layer.geometry.alpha)
         let brightness = gBrightness * Float(layer.geometry.brightness)
         let sourceUVScale = Self.logicalUVScale(for: sourceTexture)
@@ -2389,8 +2660,11 @@ final class WPEMetalRenderExecutor {
             }
             return def
         }
+        // Camera-provided names: the old per-pass merge always overwrote any
+        // authored value, so the frame context is consulted first.
         func mergedVector3(_ name: String, default def: SIMD3<Float>) -> SIMD3<Float> {
-            guard let v = pass.uniformValues[name]?.vectorValue, v.count >= 3 else { return def }
+            let merged = frameUniformContext.frameValue(named: name) ?? pass.uniformValues[name]
+            guard let v = merged?.vectorValue, v.count >= 3 else { return def }
             return SIMD3<Float>(Float(v[0]), Float(v[1]), Float(v[2]))
         }
 
@@ -2404,7 +2678,9 @@ final class WPEMetalRenderExecutor {
         let ambient = mergedVector3("g_LightAmbientColor", default: SIMD3<Float>(1, 1, 1))
         let skylight = mergedVector3("g_LightSkylightColor", default: SIMD3<Float>(1, 1, 1))
         let lightingEnabled = (pass.pass.combos["LIGHTING"] ?? 1) != 0
-        let hdr = (pass.uniformValues["g_SceneHDREnabled"]?.numberValue ?? 0) > 0.5
+        let hdrValue = frameUniformContext.frameValue(named: "g_SceneHDREnabled")
+            ?? pass.uniformValues["g_SceneHDREnabled"]
+        let hdr = (hdrValue?.numberValue ?? 0) > 0.5
         let emissiveAuthored = pass.pass.constants["emissivecolor"] != nil
             || pass.pass.constants["emissivebrightness"] != nil
         let emissiveMapActive = hasComponentMap && emissiveAuthored
@@ -2492,11 +2768,14 @@ final class WPEMetalRenderExecutor {
         depthPixelFormat: MTLPixelFormat
     ) throws -> MTLRenderPipelineState {
         let resolvedVertexName = vertexName ?? result.vertexFunctionName
+        // Memoized lowercase: this key is rebuilt per pass per frame, and the
+        // hit path must not pay a fresh `.lowercased()` allocation each time.
+        let loweredBlendMode = blendFacts(blendMode).lowercased
         let key = TranslatedPipelineKey(
             libraryID: ObjectIdentifier(result.library),
             vertexName: resolvedVertexName,
             fragmentName: result.fragmentFunctionName,
-            blendMode: blendMode.lowercased(),
+            blendMode: loweredBlendMode,
             alphaWritePolicy: alphaWritePolicy,
             colorPixelFormat: colorPixelFormat.rawValue,
             depthPixelFormat: depthPixelFormat.rawValue
@@ -2517,7 +2796,7 @@ final class WPEMetalRenderExecutor {
         }
         colorAttachment.pixelFormat = colorPixelFormat
         descriptor.depthAttachmentPixelFormat = depthPixelFormat
-        WPEMetalPipelineCache.applyBlendMode(blendMode.lowercased(), to: colorAttachment)
+        WPEMetalPipelineCache.applyBlendMode(loweredBlendMode, to: colorAttachment)
         WPEMetalPipelineCache.applyAlphaWritePolicy(alphaWritePolicy, to: colorAttachment)
         let state: MTLRenderPipelineState
         do {
@@ -2608,15 +2887,18 @@ final class WPEMetalRenderExecutor {
     func packTranslatedUniforms(
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
-        texturesBySlot: [Int: MTLTexture] = [:]
+        texturesBySlot: WPEMetalTextureSlotTable? = nil
     ) -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
-        for u in layout {
-            let value = Self.texelSizeValue(named: u.name, sceneSize: currentSceneSize)
-            ?? Self.textureResolutionValue(
-                named: u.name,
+        let plans = uniformPlans(for: pass, layout: layout)
+        let frame = frameUniformContext
+        for (index, u) in layout.enumerated() {
+            let value = resolvedUniformValue(
+                plan: plans[index],
+                pass: pass,
+                frame: frame,
                 texturesBySlot: texturesBySlot
-            ) ?? Self.translatedUniformValue(for: u, in: pass)
+            )
             if let length = u.arrayLength {
                 Self.packArrayUniform(value, glslType: u.glslType, length: length, slot: u.slot, into: &slots)
                 continue
@@ -2655,18 +2937,26 @@ final class WPEMetalRenderExecutor {
         return slots
     }
 
-    private static func translatedUniformValue(
-        for uniform: WPEUniformSlot,
-        in pass: WPEPreparedRenderPass
-    ) -> WPESceneShaderConstantValue? {
-        let candidates = translatedUniformNameCandidates(for: uniform)
-        if let value = firstValue(in: pass.uniformValues, matching: candidates) {
-            return value
-        }
-        if let value = firstValue(in: pass.pass.constants, matching: candidates) {
-            return value
-        }
-        return uniform.defaultValue
+    struct UniformNameCandidates {
+        let names: [String]
+        let lowercasedNames: [String]
+    }
+
+    /// `translatedUniformNameCandidates` is a pure function of
+    /// (`uniform.name`, `uniform.materialName`) but built fresh arrays + a Set
+    /// per uniform slot per pass per frame; memoize by that identity.
+    private var uniformNameCandidatesCache: [String: UniformNameCandidates] = [:]
+
+    func memoizedUniformNameCandidates(for uniform: WPEUniformSlot) -> UniformNameCandidates {
+        let key = uniform.name + "\u{0}" + (uniform.materialName ?? "")
+        if let cached = uniformNameCandidatesCache[key] { return cached }
+        let names = Self.translatedUniformNameCandidates(for: uniform)
+        let candidates = UniformNameCandidates(
+            names: names,
+            lowercasedNames: names.map { $0.lowercased() }
+        )
+        uniformNameCandidatesCache[key] = candidates
+        return candidates
     }
 
     private static func translatedUniformNameCandidates(for uniform: WPEUniformSlot) -> [String] {
@@ -2716,8 +3006,10 @@ final class WPEMetalRenderExecutor {
     /// Nothing fed this before, so it packed as 0 and the transpiler substituted
     /// `1/g_Texture0Resolution.xy` (per-pass) in `v_SizeMultiplier` — a fixed
     /// TEXEL count instead, diverging from WPE by 2x/4x/8x/16x down the chain.
+    static let texelSizeUniformName = "g_TexelSize"
+
     static func texelSizeValue(named name: String, sceneSize: CGSize) -> WPESceneShaderConstantValue? {
-        guard name == "g_TexelSize" else { return nil }
+        guard name == texelSizeUniformName else { return nil }
         let width = Double(sceneSize.width)
         let height = Double(sceneSize.height)
         guard width > 0, height > 0 else { return nil }
@@ -2726,16 +3018,16 @@ final class WPEMetalRenderExecutor {
 
     private static func textureResolutionValue(
         named name: String,
-        texturesBySlot: [Int: MTLTexture]
+        texturesBySlot: WPEMetalTextureSlotTable?
     ) -> WPESceneShaderConstantValue? {
         guard let slot = textureResolutionSlotIndex(for: name),
-              let texture = texturesBySlot[slot] else {
+              let texture = texturesBySlot?[slot] else {
             return nil
         }
         return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).shaderValue
     }
 
-    private static func textureResolutionSlotIndex(for name: String) -> Int? {
+    static func textureResolutionSlotIndex(for name: String) -> Int? {
         let prefix = "g_Texture"
         let suffix = "Resolution"
         guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return nil }

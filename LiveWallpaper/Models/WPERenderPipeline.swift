@@ -43,6 +43,11 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     /// `// {"material":"…"}` annotations. `uniformValues` is keyed by the SHADER
     /// name, while scene JSON and SceneScript both speak the authored name.
     let materialUniformNames: [String: String]
+    /// Whether any value is `.animated` — the only case where
+    /// `resolved(at:)` is not the identity. Computed once at construction so
+    /// the per-frame prepare can reuse a fully static pass without cloning
+    /// its dictionaries.
+    let hasAnimatedUniformValues: Bool
 
     init(
         pass: WPERenderPass,
@@ -58,6 +63,10 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         self.comboValues = comboValues
         self.uniformValues = uniformValues
         self.materialUniformNames = materialUniformNames
+        hasAnimatedUniformValues = uniformValues.values.contains {
+            if case .animated = $0 { return true }
+            return false
+        }
     }
 }
 
@@ -338,73 +347,81 @@ extension WPEPreparedRenderPipeline {
         _ runtimeUniforms: WPEMetalRuntimeUniforms,
         camera: WPEMetalCameraUniforms,
         scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:]
-    ) -> WPEPreparedRenderPipeline {
+    ) -> (pipeline: WPEPreparedRenderPipeline, frameUniforms: WPEFrameUniformContext) {
         // Both are COMPUTED properties — each access rebuilds the dict (the runtime
         // one also slices audio spectra). Resolve once per frame, not per pass.
+        // Frame-global (runtime/camera) and object (per-layer) uniforms are NOT
+        // merged into the pass dictionaries any more — consumers read them from
+        // the returned `WPEFrameUniformContext`, which preserves the old merge
+        // precedence (frame/object values were inserted last, so they win).
         let runtimeUniformValues = runtimeUniforms.uniformValues
         let cameraUniformValues = camera.uniformValues
-        let frameExtraCount = runtimeUniformValues.count + cameraUniformValues.count
-        return WPEPreparedRenderPipeline(
-            layers: layers.map { layer in
-                let resolvedGraphLayer = layer.graphLayer.resolved(at: runtimeUniforms.time)
-                // Derive g_ModelMatrix once per layer (object-scoped, not per pass).
-                let geometry = resolvedGraphLayer.geometry
-                let objectUniforms = WPEMetalObjectUniforms.uniformValues(
-                    origin: geometry.origin,
-                    scale: geometry.scale,
-                    angles: geometry.angles
-                )
-                // Frame/object-global entries merged into every pass; reserve once so
-                // the per-pass inserts don't trigger incremental dictionary resizes.
-                let mergedExtraCount = frameExtraCount + objectUniforms.count
-                return WPEPreparedRenderLayer(
-                    graphLayer: resolvedGraphLayer,
-                    puppetModel: layer.puppetModel,
-                    passes: layer.passes.map { pass in
-                        var values = pass.uniformValues.mapValues {
-                            $0.resolved(at: runtimeUniforms.time)
-                        }
-                        values.reserveCapacity(values.count + mergedExtraCount)
-                        // Script constants override seed; cannot bind g_* frame uniforms.
-                        if let scripted = scriptedConstants[pass.pass.id] {
-                            for (key, value) in scripted {
-                                    // Scripts address a constant by its AUTHORED name
-                                    // (`multiply1`); the pass is keyed by the SHADER name
-                                    // (`g_Multiply`), same translation the static
-                                    // `pass.constants` seed already does. Without it the
-                                    // value lands in a slot no shader reads.
-                                    let uniformName = pass.materialUniformNames[key] ?? key
-                                    values[uniformName] = value
-                            }
-                        }
-                        // Resolve animated tints each frame; otherwise the graph-build seed
-                        // freezes the layer while Wallpaper Engine advances its color animation.
-                        if geometry.colorAnimation != nil,
-                           pass.pass.constants["g_Color"] != nil,
-                           Self.consumesLayerColor(pass.pass.shader) {
-                            let tint = geometry.color * geometry.brightness
-                            values["g_Color"] = .vector([tint.x, tint.y, tint.z, geometry.alpha])
-                        }
-                        for (key, value) in runtimeUniformValues {
-                            values[key] = value
-                        }
-                        for (key, value) in cameraUniformValues {
-                            values[key] = value
-                        }
-                        for (key, value) in objectUniforms {
-                            values[key] = value
-                        }
-                        return WPEPreparedRenderPass(
-                            pass: pass.pass,
-                            shader: pass.shader,
-                            textureBindings: pass.textureBindings,
-                            comboValues: pass.comboValues,
-                                uniformValues: values,
-                                materialUniformNames: pass.materialUniformNames
-                        )
+        var objectUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
+        let preparedLayers = layers.map { layer -> WPEPreparedRenderLayer in
+            let resolvedGraphLayer = layer.graphLayer.resolved(at: runtimeUniforms.time)
+            // Derive g_ModelMatrix once per layer (object-scoped, not per pass).
+            let geometry = resolvedGraphLayer.geometry
+            let objectUniforms = WPEMetalObjectUniforms.uniformValues(
+                origin: geometry.origin,
+                scale: geometry.scale,
+                angles: geometry.angles
+            )
+            return WPEPreparedRenderLayer(
+                graphLayer: resolvedGraphLayer,
+                puppetModel: layer.puppetModel,
+                passes: layer.passes.map { pass in
+                    objectUniformValuesByPassID[pass.pass.id] = objectUniforms
+                    let scripted = scriptedConstants[pass.pass.id]
+                    // Resolve animated tints each frame; otherwise the graph-build seed
+                    // freezes the layer while Wallpaper Engine advances its color animation.
+                    let overridesLayerColor = geometry.colorAnimation != nil
+                        && pass.pass.constants["g_Color"] != nil
+                        && Self.consumesLayerColor(pass.pass.shader)
+                    // Fully static pass: `resolved(at:)` is the identity for every
+                    // case except `.animated`, and there is no per-frame override,
+                    // so the load-time pass is reused as-is (struct copy shares the
+                    // CoW dictionaries — zero mutation, zero new dictionaries).
+                    if !pass.hasAnimatedUniformValues, scripted == nil, !overridesLayerColor {
+                        return pass
                     }
-                )
-            }
+                    var values = pass.uniformValues.mapValues {
+                        $0.resolved(at: runtimeUniforms.time)
+                    }
+                    // Script constants override seed; cannot bind g_* frame uniforms
+                    // (the frame context wins for frame-global names at read time).
+                    if let scripted {
+                        for (key, value) in scripted {
+                            // Scripts address a constant by its AUTHORED name
+                            // (`multiply1`); the pass is keyed by the SHADER name
+                            // (`g_Multiply`), same translation the static
+                            // `pass.constants` seed already does. Without it the
+                            // value lands in a slot no shader reads.
+                            let uniformName = pass.materialUniformNames[key] ?? key
+                            values[uniformName] = value
+                        }
+                    }
+                    if overridesLayerColor {
+                        let tint = geometry.color * geometry.brightness
+                        values["g_Color"] = .vector([tint.x, tint.y, tint.z, geometry.alpha])
+                    }
+                    return WPEPreparedRenderPass(
+                        pass: pass.pass,
+                        shader: pass.shader,
+                        textureBindings: pass.textureBindings,
+                        comboValues: pass.comboValues,
+                        uniformValues: values,
+                        materialUniformNames: pass.materialUniformNames
+                    )
+                }
+            )
+        }
+        return (
+            WPEPreparedRenderPipeline(layers: preparedLayers),
+            WPEFrameUniformContext(
+                runtimeUniformValues: runtimeUniformValues,
+                cameraUniformValues: cameraUniformValues,
+                objectUniformValuesByPassID: objectUniformValuesByPassID
+            )
         )
     }
 }

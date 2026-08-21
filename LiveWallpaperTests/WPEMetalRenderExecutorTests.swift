@@ -7,6 +7,15 @@ import Testing
 
 @Suite("WPE Metal render executor")
 struct WPEMetalRenderExecutorTests {
+    @Test("Reload clears the untranslatable-shader verdict along with the compiled result")
+    func reloadClearsUntranslatableShaderVerdict() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        // Both halves are keyed by pass id, which a different scene can reuse.
+        executor.untranslatableShaderReasonByPassID["layer0.0"] = "no translator"
+        executor.releaseTransientResources()
+        #expect(executor.untranslatableShaderReasonByPassID.isEmpty)
+    }
 
     @Test("Shader-readable scene and FBO targets retain complete premultiplied RGBA")
     func alphaWritePolicyKeepsRenderGraphTargetsRGBA() {
@@ -1573,7 +1582,11 @@ struct WPEMetalRenderExecutorTests {
                     slotCount: 1
                 )
             ],
-            texturesBySlot: [1: mask]
+            texturesBySlot: {
+                let table = WPEMetalTextureSlotTable()
+                table[1] = mask
+                return table
+            }()
         )
 
         #expect(slots[0] == SIMD4<Float>(8, 4, 8, 4))
@@ -1640,7 +1653,11 @@ struct WPEMetalRenderExecutorTests {
                     slotCount: 1
                 )
             ],
-            texturesBySlot: [0: texture]
+            texturesBySlot: {
+                let table = WPEMetalTextureSlotTable()
+                table[0] = texture
+                return table
+            }()
         )
 
         #expect(slots[0] == SIMD4<Float>(8, 4, 7, 3))
@@ -3755,6 +3772,8 @@ private struct PixelBounds: Equatable, CustomStringConvertible {
 }
 
 private func readPixel(_ texture: MTLTexture, x: Int, y: Int) throws -> Pixel {
+    // Executor outputs are `.private`; stage into CPU-visible storage first.
+    let texture = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(texture))
     var bytes = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
     texture.getBytes(
         &bytes,
@@ -3767,6 +3786,8 @@ private func readPixel(_ texture: MTLTexture, x: Int, y: Int) throws -> Pixel {
 }
 
 private func nonBlackBounds(_ texture: MTLTexture) -> PixelBounds? {
+    // Executor outputs are `.private`; stage into CPU-visible storage first.
+    guard let texture = WPEMetalTextureSnapshotter.stagedForCPURead(texture) else { return nil }
     var bytes = [UInt8](repeating: 0, count: texture.width * texture.height * 4)
     texture.getBytes(
         &bytes,

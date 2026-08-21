@@ -792,8 +792,49 @@ extension WPEMetalSceneRenderer {
         guard didLoad else { return }
         do {
             let textureToPresent: MTLTexture?
+            // Set by the merged-present closure below; nil means the present
+            // still needs its own command buffer (static re-present, or a
+            // sync/readback frame where `render` skips the closure).
+            var mergedPresentResult: Bool?
             if needsContinuousFrames {
-                let frame = try renderCurrentFrame(inputs: makeFrameInputs())
+                let deferredPresent: WPEMetalRenderExecutor.DeferredPresentEncoder?
+                if executor.synchronizeFrameCompletion {
+                    deferredPresent = nil
+                } else {
+                    let layer = metalLayer.layer
+                    let fitMode = presentFitMode
+                    deferredPresent = { [self] texture, commandBuffer in
+                        // Poster captures drain here, not before the render: a
+                        // frame that throws earlier leaves them pending for the
+                        // next attempt, exactly as the two-buffer path did.
+                        let livePosterCaptures = takePendingLivePosterCaptures()
+                        let presentCompletion = makeReadinessPresentCompletion(
+                            livePosterCaptures: livePosterCaptures,
+                            frameProduction: latestFrameProduction
+                        )
+                        do {
+                            let presented = try executor.encodePresent(
+                                texture: texture,
+                                layer: layer,
+                                fitMode: fitMode,
+                                presentCompletion: presentCompletion,
+                                into: commandBuffer
+                            )
+                            if !presented {
+                                Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
+                            }
+                            mergedPresentResult = presented
+                            return presented
+                        } catch {
+                            Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
+                            throw error
+                        }
+                    }
+                }
+                let frame = try renderCurrentFrame(
+                    inputs: makeFrameInputs(),
+                    deferredPresent: deferredPresent
+                )
                 outputTexture = frame
                 outputFrameProduction = latestFrameProduction
                 textureToPresent = frame
@@ -801,24 +842,27 @@ extension WPEMetalSceneRenderer {
                 textureToPresent = outputTexture
             }
             guard let texture = textureToPresent else { return }
-            let livePosterCaptures = takePendingLivePosterCaptures()
-            let presentCompletion = makeReadinessPresentCompletion(
-                livePosterCaptures: livePosterCaptures
-            )
-            var presented = false
-            do {
-                presented = try executor.present(
-                    texture: texture,
-                    layer: metalLayer.layer,
-                    fitMode: presentFitMode,
-                    presentCompletion: presentCompletion
+            if mergedPresentResult == nil {
+                let livePosterCaptures = takePendingLivePosterCaptures()
+                let presentCompletion = makeReadinessPresentCompletion(
+                    livePosterCaptures: livePosterCaptures,
+                    frameProduction: outputFrameProduction
                 )
-                if !presented {
+                var presented = false
+                do {
+                    presented = try executor.present(
+                        texture: texture,
+                        layer: metalLayer.layer,
+                        fitMode: presentFitMode,
+                        presentCompletion: presentCompletion
+                    )
+                    if !presented {
+                        Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
+                    }
+                } catch {
                     Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
+                    throw error
                 }
-            } catch {
-                Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
-                throw error
             }
             didLogFrameFailure = false
             // A frame can retire the last demand source (a one-shot emitter's
