@@ -2,6 +2,22 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
+/// How much of the board's window frame may swallow a pointer event.
+///
+/// AppKit dispatches by window frame, so a window made hit-testable for one
+/// tile would eat every desktop click across the whole display. SwiftUI's
+/// `allowsHitTesting(false)` does not hand the event back to the window below —
+/// it only declines it inside this window — so the widget-only case has to be
+/// filtered here, in `hitTest`, before AppKit ever consults the hosting view.
+enum PointerScope: Equatable, Sendable {
+    /// Click-through everywhere (the board behaves as plain wallpaper).
+    case none
+    /// Only the rectangles of widgets that asked for the pointer are live.
+    case widgetsOnly
+    /// The whole board takes the pointer (edit mode, or Mouse Interaction on).
+    case wholeBoard
+}
+
 /// AppKit host that embeds the SwiftUI monitor board and connects it to the runtime.
 @MainActor
 final class HostView: NSView {
@@ -10,7 +26,7 @@ final class HostView: NSView {
     private let interactionModel: InteractionModel
     private let hostingView: NSHostingView<MonitorBoardRootContainer>
 
-    private var allowMouseInteraction: Bool
+    private(set) var pointerScope: PointerScope
     private var reduceMotion: Bool
     private(set) var isSuspended = false
     /// Inspector preview: name-only tiles so arranging never pumps live data.
@@ -34,10 +50,11 @@ final class HostView: NSView {
         configuration: MonitorBoardConfiguration,
         nameOnlyTiles: Bool = false,
         topInsetFraction: CGFloat = 0,
-        referenceWidth: CGFloat = 0
+        referenceWidth: CGFloat = 0,
+        allowedKinds: [MonitorWidgetKind] = MonitorWidgetKind.allCases
     ) {
         let reduceMotion = Self.effectiveReduceMotion(configuration)
-        self.allowMouseInteraction = configuration.mouseInteractionEnabled
+        self.pointerScope = Self.pointerScope(for: configuration, isEditing: false)
         self.nameOnlyTiles = nameOnlyTiles
         self.reduceMotion = reduceMotion
         self.dataModel = DataModel()
@@ -55,6 +72,7 @@ final class HostView: NSView {
 
         interactionModel.topInsetFraction = topInsetFraction
         interactionModel.referenceWidth = referenceWidth
+        interactionModel.allowedKinds = allowedKinds
 
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -101,7 +119,7 @@ final class HostView: NSView {
         pendingPersistConfig = nil
         if let topInsetFraction { interactionModel.topInsetFraction = topInsetFraction }
         interactionModel.apply(configuration: configuration)
-        allowMouseInteraction = configuration.mouseInteractionEnabled
+        pointerScope = Self.pointerScope(for: configuration, isEditing: interactionModel.isEditing)
         reduceMotion = Self.effectiveReduceMotion(configuration)
         rebuildRootView()
     }
@@ -143,13 +161,77 @@ final class HostView: NSView {
 
     // MARK: - Click-through
 
+    /// The scope a board should run at, given its config and edit state. Shared
+    /// with `OverlayController` so the window's `ignoresMouseEvents` and this
+    /// view's filter can never disagree.
+    static func pointerScope(
+        for configuration: MonitorBoardConfiguration,
+        isEditing: Bool
+    ) -> PointerScope {
+        if isEditing || configuration.mouseInteractionEnabled { return .wholeBoard }
+        return configuration.widgets.contains(where: WidgetFactory.wantsPointerInteraction)
+            ? .widgetsOnly
+            : .none
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard allowMouseInteraction else { return nil }
+        // `point` arrives in the superview's coordinates (AppKit's hitTest
+        // contract), so convert before comparing against board geometry.
+        let local = superview.map { convert(point, from: $0) } ?? point
+        guard acceptsPointer(atLocalPoint: local) else { return nil }
         return super.hitTest(point)
     }
 
-    func setMouseInteractionEnabled(_ enabled: Bool) {
-        allowMouseInteraction = enabled
+    /// Gate for one event, in this view's own coordinates. Split out of
+    /// `hitTest` so it can be exercised without an NSHostingView underneath.
+    func acceptsPointer(atLocalPoint local: NSPoint) -> Bool {
+        switch pointerScope {
+        case .none:
+            return false
+        case .wholeBoard:
+            return true
+        case .widgetsOnly:
+            let rects = pointerWidgetRects()
+            guard !rects.isEmpty else { return false }
+            return rects.contains { $0.contains(boardPoint(fromLocal: local)) }
+        }
+    }
+
+    func setPointerScope(_ scope: PointerScope) {
+        pointerScope = scope
+    }
+
+    /// SwiftUI lays the board out y-down from the top edge; this view is not
+    /// flipped, so an unflipped local point has to be mirrored before it can be
+    /// compared with a render rect. Read rather than assumed: a future
+    /// `isFlipped` override must not silently invert every hit region.
+    private func boardPoint(fromLocal local: NSPoint) -> CGPoint {
+        isFlipped ? local : CGPoint(x: local.x, y: bounds.height - local.y)
+    }
+
+    /// Render rects (board coordinates) of the widgets that asked for the
+    /// pointer, built from the same geometry calls `RootView` draws with.
+    private func pointerWidgetRects() -> [CGRect] {
+        let geometry = MonitorBoardGeometry(
+            boardSize: bounds.size,
+            referenceWidth: interactionModel.referenceWidth,
+            topInsetFraction: interactionModel.topInsetFraction
+        )
+        guard !geometry.isDegenerate else { return [] }
+        return interactionModel.placements
+            .filter(WidgetFactory.wantsPointerInteraction)
+            .map { placement in
+                let footprint = geometry.pixelSize(for: placement.kind, size: placement.size)
+                let origin = LayoutEngine.pixelOrigin(
+                    normalized: CGPoint(x: placement.x, y: placement.y),
+                    boardSize: geometry.boardSize
+                )
+                let raw = CGRect(
+                    origin: geometry.clampOrigin(origin, footprint: footprint),
+                    size: footprint
+                )
+                return geometry.renderRect(forRawRect: raw)
+            }
     }
 
     override func layout() {

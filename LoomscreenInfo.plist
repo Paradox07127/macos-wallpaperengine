@@ -30,6 +30,8 @@
 	<true/>
 	<key>NSAccentColorName</key>
 	<string>AccentColor</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Play, pause, skip and seek buttons on the Now Playing wallpaper layer use this to control the music player you are listening to.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Audio response analyzes the audio currently playing on your Mac, on-device, to make wallpapers move with the music. No audio is recorded, saved, or sent anywhere.</string>
 	<key>NSDesktopFolderUsageDescription</key>

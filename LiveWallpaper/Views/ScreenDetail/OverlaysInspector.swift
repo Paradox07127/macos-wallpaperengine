@@ -29,6 +29,11 @@ struct OverlaysInspectorPanel: View {
                         screenManager: screenManager,
                         backdropAvailable: backdropAvailable
                     )
+                case .music:
+                    MusicOverlaySection(
+                        screen: screen,
+                        screenManager: screenManager
+                    )
                 }
             }
             .padding(.horizontal, DesignTokens.Inspector.horizontalPadding(for: inspectorPanelWidth))

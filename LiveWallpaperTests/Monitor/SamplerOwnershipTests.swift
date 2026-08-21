@@ -262,8 +262,8 @@
             #expect(options.system)
             #expect(options.agents)
 
-            let agentKinds: Set<MonitorWidgetKind> = [.fleet]
-            for kind in Set(MonitorWidgetKind.allCases).subtracting(agentKinds) {
+            let nonSystemKinds: Set<MonitorWidgetKind> = [.fleet, .nowPlaying]
+            for kind in Set(MonitorWidgetKind.allCases).subtracting(nonSystemKinds) {
                 #expect(MonitorRuntimeOptions.requiresSystemMetrics(for: [kind]))
             }
         }
@@ -275,10 +275,12 @@
             )
             let overlayOptions = try slice(
                 overlay,
-                from: "private func makeOptions(visibleHostIDs:",
+                from: "private func makeOptions(visibleHostKeys:",
                 until: "private func scheduleRuntimeReconciliation()"
             )
-            #expect(overlayOptions.contains("where visibleHostIDs.contains(screenID)"))
+            // Hosts are keyed per (display, module) since Music got its own
+            // window; demand still comes from the visible hosts' own widgets.
+            #expect(overlayOptions.contains("where visibleHostKeys.contains(key)"))
             #expect(overlayOptions.contains("kinds.formUnion"))
             #expect(
                 overlayOptions.contains(

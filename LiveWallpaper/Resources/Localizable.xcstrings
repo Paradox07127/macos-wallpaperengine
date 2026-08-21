@@ -65,6 +65,7 @@
     },
     "“%@” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched." : {
       "comment" : "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -123,6 +124,7 @@
     },
     "“%@” is on screen right now. Its file is deleted immediately, but macOS keeps showing it until you pick another wallpaper in System Settings." : {
       "comment" : "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1915,6 +1917,36 @@
         }
       }
     },
+    "1 line" : {
+      "comment" : "Now Playing lyric row count: a single line.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 line"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1行"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 行"
+          }
+        }
+      }
+    },
     "1 video copied for macOS to play" : {
       "comment" : "Storage tile subtitle when exactly one video is published to System Wallpaper.",
       "localizations" : {
@@ -1999,6 +2031,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1.0"
+          }
+        }
+      }
+    },
+    "3 lines" : {
+      "comment" : "Now Playing lyric row count: the current line plus its neighbours.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3 lines"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3行"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3 行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3 行"
           }
         }
       }
@@ -2411,6 +2473,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "交流電源"
+          }
+        }
+      }
+    },
+    "Accent" : {
+      "comment" : "Now Playing DIY row: where the layer's accent color comes from.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アクセント"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "强调色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "強調色"
           }
         }
       }
@@ -3514,6 +3606,96 @@
         }
       }
     },
+    "Album" : {
+      "comment" : "Now Playing DIY switch: show the album line.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Album"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アルバム"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "专辑"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "專輯"
+          }
+        }
+      }
+    },
+    "Album art" : {
+      "comment" : "Now Playing accent source: take the color from the cover.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Album art"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アルバムアート"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "专辑封面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "專輯封面"
+          }
+        }
+      }
+    },
+    "Alignment" : {
+      "comment" : "Now Playing DIY row: horizontal text alignment.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alignment"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对齐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "對齊"
+          }
+        }
+      }
+    },
     "All" : {
       "comment" : "Workshop resolution filter: no restriction.",
       "localizations" : {
@@ -3765,6 +3947,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請在定位服務中允許取用"
+          }
+        }
+      }
+    },
+    "Allow control in System Settings → Privacy & Security → Automation." : {
+      "comment" : "Now Playing layer notice shown once when a transport button is pressed without Automation permission.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow control in System Settings → Privacy & Security → Automation."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「システム設定」→「プライバシーとセキュリティ」→「オートメーション」で操作を許可してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在系统设置 → 隐私与安全性 → 自动化中允许控制。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在「系統設定」→「隱私權與安全性」→「自動化」中允許控制。"
           }
         }
       }
@@ -4035,6 +4247,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "App 例外"
+          }
+        }
+      }
+    },
+    "Appearance" : {
+      "comment" : "Title of the Now Playing appearance card (accent, opacity, brightness).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appearance"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外観"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外观"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外觀"
           }
         }
       }
@@ -4545,6 +4787,156 @@
         }
       }
     },
+    "Artist" : {
+      "comment" : "Now Playing DIY switch: show the artist line.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artist"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アーティスト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "艺人"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "演出者"
+          }
+        }
+      }
+    },
+    "Artwork" : {
+      "comment" : "Now Playing DIY switch: show the cover image.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artwork"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アートワーク"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封面"
+          }
+        }
+      }
+    },
+    "Artwork shadow" : {
+      "comment" : "Now Playing DIY slider: drop-shadow strength under the cover.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artwork shadow"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アートワークの影"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封面阴影"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封面陰影"
+          }
+        }
+      }
+    },
+    "Artwork shape" : {
+      "comment" : "Now Playing DIY row: how the cover image is clipped.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artwork shape"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アートワークの形"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封面形状"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封面形狀"
+          }
+        }
+      }
+    },
+    "Artwork size" : {
+      "comment" : "Now Playing DIY slider: cover image scale.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artwork size"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アートワークのサイズ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封面大小"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封面大小"
+          }
+        }
+      }
+    },
     "Asking GitHub for the latest release tag…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4657,6 +5049,36 @@
         }
       }
     },
+    "Audio reactive" : {
+      "comment" : "Now Playing effects switch: master toggle for the audio-driven visuals.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio reactive"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーディオ反応"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音频响应"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音訊反應"
+          }
+        }
+      }
+    },
     "Audio Response" : {
       "comment" : "Toggle title for the audio-response toggle in General settings.",
       "isCommentAutoGenerated" : true,
@@ -4706,6 +5128,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "音訊回應已關閉"
+          }
+        }
+      }
+    },
+    "Audio-reactive visuals need Audio Response turned on in Settings." : {
+      "comment" : "Shown on the Music overlay page when the global Audio Response switch is off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio-reactive visuals need Audio Response turned on in Settings."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サウンドに反応するビジュアルを表示するには、設定で「オーディオ反応」をオンにしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要显示随声音律动的视觉效果，请在“设置”中开启“音频响应”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要顯示隨聲音律動的視覺效果，請在「設定」中開啟「音訊反應」。"
           }
         }
       }
@@ -5458,6 +5910,36 @@
         }
       }
     },
+    "Beat sensitivity" : {
+      "comment" : "Now Playing effects slider: how easily a frame counts as a beat.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beat sensitivity"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビート感度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "节拍灵敏度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "節拍靈敏度"
+          }
+        }
+      }
+    },
     "Block trackers" : {
       "localizations" : {
         "en" : {
@@ -5758,6 +6240,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "書籤"
+          }
+        }
+      }
+    },
+    "Bottom center" : {
+      "comment" : "Now Playing position anchor: bottom edge, horizontally centered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom center"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下中央"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "底部居中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "底部置中"
+          }
+        }
+      }
+    },
+    "Bottom left" : {
+      "comment" : "Now Playing position anchor: bottom-left corner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom left"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左下"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左下"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左下"
+          }
+        }
+      }
+    },
+    "Bottom right" : {
+      "comment" : "Now Playing position anchor: bottom-right corner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom right"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右下"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右下"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右下"
           }
         }
       }
@@ -8016,6 +8588,36 @@
         }
       }
     },
+    "Circle" : {
+      "comment" : "Now Playing artwork shape: clipped to a circle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Circle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "円"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圆形"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圓形"
+          }
+        }
+      }
+    },
     "City, region, or place" : {
       "comment" : "Placeholder text for the Manual weather location TextField.",
       "extractionState" : "manual",
@@ -8932,6 +9534,36 @@
         }
       }
     },
+    "Color" : {
+      "comment" : "Now Playing DIY row holding the custom accent color well.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カラー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "颜色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顏色"
+          }
+        }
+      }
+    },
     "Color & Filters" : {
       "localizations" : {
         "en" : {
@@ -9042,6 +9674,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "色彩空間"
+          }
+        }
+      }
+    },
+    "Color split" : {
+      "comment" : "Now Playing effects switch: RGB channel offset driven by the treble.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color split"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "色ずれ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "色彩分离"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "色彩分離"
           }
         }
       }
@@ -9671,6 +10333,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在瀏覽器中繼續"
+          }
+        }
+      }
+    },
+    "Control was denied. Turn it back on in System Settings → Privacy & Security → Automation." : {
+      "comment" : "Music page caption when the player has refused Automation permission.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Control was denied. Turn it back on in System Settings → Privacy & Security → Automation."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操作が拒否されています。「システム設定」→「プライバシーとセキュリティ」→「オートメーション」で再度許可してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制已被拒绝。请在系统设置 → 隐私与安全性 → 自动化中重新开启。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制已被拒絕。請在「系統設定」→「隱私權與安全性」→「自動化」中重新開啟。"
+          }
+        }
+      }
+    },
+    "Controls fade in when the pointer is over the layer. They need Mouse Interaction on for this display, plus a one-time permission the first time you use them." : {
+      "comment" : "Music page caption explaining what the playback switches require.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controls fade in when the pointer is over the layer. They need Mouse Interaction on for this display, plus a one-time permission the first time you use them."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コントロールはポインタをレイヤーに重ねると表示されます。この画面で「マウス操作」をオンにし、初回に一度だけ許可が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指针移到图层上时控制按钮会淡入显示。需要为此显示器打开“鼠标交互”,并在首次使用时授权一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指標移到圖層上時控制按鈕會淡入顯示。需要為此顯示器開啟「滑鼠互動」,並在首次使用時授權一次。"
+          }
+        }
+      }
+    },
+    "Controls fade in when the pointer is over the layer. They only take clicks inside the layer itself — the rest of the desktop keeps working — and need a one-time permission the first time you use them." : {
+      "comment" : "Music page caption explaining how the playback controls take clicks.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controls fade in when the pointer is over the layer. They only take clicks inside the layer itself — the rest of the desktop keeps working — and need a one-time permission the first time you use them."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コントロールはポインタをレイヤーに重ねると表示されます。クリックを受け取るのはレイヤーの内側だけで、デスクトップの他の部分はこれまでどおり使えます。初回のみ一度だけ許可が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指针移到图层上时控制按钮会淡入显示。只有图层自身的区域会接收点击，桌面其余部分照常使用；首次使用时需要授权一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指標移到圖層上時控制按鈕會淡入顯示。只有圖層本身的區域會接收點擊，桌面其餘部分照常使用；首次使用時需要授權一次。"
           }
         }
       }
@@ -11113,6 +11865,36 @@
         }
       }
     },
+    "Custom color" : {
+      "comment" : "Now Playing DIY row holding the accent color well.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom color"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カスタムカラー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义颜色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自訂顏色"
+          }
+        }
+      }
+    },
     "Custom CSS" : {
       "localizations" : {
         "en" : {
@@ -12054,6 +12836,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「桌面」把儀表板放在視窗下方，「置頂」則浮在所有內容之上"
+          }
+        }
+      }
+    },
+    "Desktop keeps the layer under your windows; On Top floats it above everything" : {
+      "comment" : "Explains the two Music overlay layers.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desktop keeps the layer under your windows; On Top floats it above everything"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「デスクトップ」はレイヤーをウインドウの下に、「最前面」はすべての上に表示します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“桌面”把浮层放在窗口下方，“置顶”则浮在所有内容之上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「桌面」把浮層放在視窗下方，「置頂」則浮在所有內容之上"
           }
         }
       }
@@ -13694,6 +14506,66 @@
         }
       }
     },
+    "Drag progress to seek" : {
+      "comment" : "Now Playing DIY switch: drag the progress line to move the playhead.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag progress to seek"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進行状況バーをドラッグして移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖动进度条跳转"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖曳進度列跳轉"
+          }
+        }
+      }
+    },
+    "Drag to move the Music layer" : {
+      "comment" : "Accessibility label for the draggable Now Playing layer in the preview.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to move the Music layer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドラッグしてミュージックのレイヤーを移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖动以移动音乐浮层"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖曳以移動音樂浮層"
+          }
+        }
+      }
+    },
     "Drag to reorder" : {
       "comment" : "Tooltip on the playlist row drag handle.",
       "localizations" : {
@@ -14173,6 +15045,36 @@
         }
       }
     },
+    "Effects" : {
+      "comment" : "Title of the Now Playing effects card (audio-driven visuals).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effects"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エフェクト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "特效"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "特效"
+          }
+        }
+      }
+    },
     "Elapsed" : {
       "comment" : "Developer tools table column title.",
       "extractionState" : "manual",
@@ -14199,6 +15101,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "經過時間"
+          }
+        }
+      }
+    },
+    "Elements" : {
+      "comment" : "Title of the Now Playing elements card (which lines and the cover show).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elements"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表示要素"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示元素"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示元素"
           }
         }
       }
@@ -20571,6 +21503,36 @@
         }
       }
     },
+    "Intensity" : {
+      "comment" : "Now Playing effects slider: one multiplier over every effect's amplitude.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intensity"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "強度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "强度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "強度"
+          }
+        }
+      }
+    },
     "Interaction" : {
       "localizations" : {
         "en" : {
@@ -21302,6 +22264,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "落葉"
+          }
+        }
+      }
+    },
+    "Left" : {
+      "comment" : "Now Playing text alignment: flush left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Left"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左揃え"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左对齐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "靠左"
           }
         }
       }
@@ -23141,6 +24133,96 @@
         }
       }
     },
+    "Lyric lines" : {
+      "comment" : "Now Playing DIY control: how many lyric rows the large layer draws.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lyric lines"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌詞の行数"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌词行数"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌詞行數"
+          }
+        }
+      }
+    },
+    "Lyrics" : {
+      "comment" : "Now Playing settings card: synced lyrics.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lyrics"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌詞"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌词"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌詞"
+          }
+        }
+      }
+    },
+    "Lyrics come from LRCLIB, a public lyrics service, and need an internet connection." : {
+      "comment" : "Now Playing lyrics caption: where the words come from.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lyrics come from LRCLIB, a public lyrics service, and need an internet connection."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌詞は公開歌詞サービス LRCLIB から取得するため、インターネット接続が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌词来自公共歌词服务 LRCLIB，需要联网。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌詞來自公共歌詞服務 LRCLIB，需要連接網路。"
+          }
+        }
+      }
+    },
     "macOS can't load Windows native plugins." : {
       "localizations" : {
         "en" : {
@@ -23746,6 +24828,36 @@
         }
       }
     },
+    "Marquee" : {
+      "comment" : "Now Playing DIY switch: scroll long titles sideways.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marquee"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクロール"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "滚动标题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "滾動標題"
+          }
+        }
+      }
+    },
     "Master Audio is muted; project volume options still update the wallpaper." : {
       "comment" : "Gate notice shown when master audio is muted but the wallpaper still receives volume property updates.",
       "extractionState" : "manual",
@@ -24105,6 +25217,66 @@
         }
       }
     },
+    "Middle left" : {
+      "comment" : "Now Playing position anchor: left edge, vertically centered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Middle left"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左中央"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左侧居中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左側置中"
+          }
+        }
+      }
+    },
+    "Middle right" : {
+      "comment" : "Now Playing position anchor: right edge, vertically centered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Middle right"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右中央"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右侧居中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右側置中"
+          }
+        }
+      }
+    },
     "min" : {
       "comment" : "Minute unit suffix next to the rotate interval input.",
       "localizations" : {
@@ -24374,6 +25546,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "監控浮層"
+          }
+        }
+      }
+    },
+    "Mono" : {
+      "comment" : "Now Playing title typeface: monospaced.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mono"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等幅"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等宽"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等寬"
           }
         }
       }
@@ -24807,6 +26009,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "多執行緒算繪"
+          }
+        }
+      }
+    },
+    "Music" : {
+      "comment" : "Title of the Music overlay page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Music"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ミュージック"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音乐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音樂"
+          }
+        }
+      }
+    },
+    "Music is off for this display" : {
+      "comment" : "Music overlay preview placeholder when the layer is switched off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Music is off for this display"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイではミュージックがオフです"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此显示器未开启音乐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此顯示器未開啟音樂"
+          }
+        }
+      }
+    },
+    "Music layer" : {
+      "comment" : "Accessibility label for the Music overlay z-plane picker.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Music layer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ミュージックのレイヤー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音乐层级"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音樂層級"
           }
         }
       }
@@ -25388,6 +26680,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隔日"
+          }
+        }
+      }
+    },
+    "Next track" : {
+      "comment" : "Now Playing transport button: skip to the next track.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next track"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次の曲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一首"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下一首"
           }
         }
       }
@@ -27169,6 +28491,36 @@
         }
       }
     },
+    "Nothing is playing" : {
+      "comment" : "Music status badge: no player is running.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing is playing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "何も再生されていません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前没有播放内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前沒有播放內容"
+          }
+        }
+      }
+    },
     "Now playing" : {
       "comment" : "VoiceOver tag for the currently playing playlist entry.",
       "localizations" : {
@@ -27194,6 +28546,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在播放"
+          }
+        }
+      }
+    },
+    "Now Playing" : {
+      "comment" : "Name of the Now Playing widget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now Playing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在播放"
+          }
+        }
+      }
+    },
+    "Now Playing art floats over whatever wallpaper this display is playing" : {
+      "comment" : "Explains the Music overlay switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now Playing art floats over whatever wallpaper this display is playing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生中のアートは、このディスプレイで再生中の壁紙の上に浮かびます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放中的音乐画面会浮在此显示器正在播放的壁纸之上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放中的音樂畫面會浮在此顯示器正在播放的桌布之上"
           }
         }
       }
@@ -27811,6 +29223,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只有影片桌布可以加入系統桌布。"
+          }
+        }
+      }
+    },
+    "Opacity" : {
+      "comment" : "Now Playing DIY slider: opacity of the whole layer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opacity"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不透明度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不透明度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不透明度"
           }
         }
       }
@@ -30646,6 +32088,36 @@
         }
       }
     },
+    "Pick a spot, or drag the layer around in the preview" : {
+      "comment" : "Explains the Now Playing position grid.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a spot, or drag the layer around in the preview"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置を選ぶか、プレビューでレイヤーをドラッグします"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选一个位置，或在预览中拖动浮层"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選一個位置，或在預覽中拖曳浮層"
+          }
+        }
+      }
+    },
     "Pick a video, web page, or scene for the selected display" : {
       "comment" : "Accessibility hint for the toolbar's unified add-wallpaper button.",
       "extractionState" : "manual",
@@ -30931,6 +32403,36 @@
         }
       }
     },
+    "Play or pause" : {
+      "comment" : "Now Playing transport button: toggle playback.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play or pause"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生/一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放或暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放或暫停"
+          }
+        }
+      }
+    },
     "Play preview" : {
       "localizations" : {
         "en" : {
@@ -31180,6 +32682,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "直向"
+          }
+        }
+      }
+    },
+    "Position" : {
+      "comment" : "Title of the Now Playing position setting row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位置"
+          }
+        }
+      }
+    },
+    "Poster" : {
+      "comment" : "Now Playing widget style.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poster"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポスター"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "海报"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "海報"
           }
         }
       }
@@ -31741,6 +33303,36 @@
         }
       }
     },
+    "Previous track" : {
+      "comment" : "Now Playing transport button: skip to the previous track.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous track"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前の曲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一首"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一首"
+          }
+        }
+      }
+    },
     "Previous wallpaper" : {
       "comment" : "Menu bar playback control accessibility label.",
       "localizations" : {
@@ -32006,6 +33598,36 @@
         }
       }
     },
+    "Progress" : {
+      "comment" : "Now Playing DIY switch: show the playback progress line.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Progress"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進行状況"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "进度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進度"
+          }
+        }
+      }
+    },
     "Project Custom Settings" : {
       "comment" : "Inspector card title — mirrors Wallpaper Engine's right-hand property panel for an imported web project.",
       "extractionState" : "manual",
@@ -32056,6 +33678,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服務商"
+          }
+        }
+      }
+    },
+    "Pulse" : {
+      "comment" : "Now Playing effects switch: brightness breathing driven by the bass.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pulse"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パルス"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "脉冲"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "脈衝"
           }
         }
       }
@@ -33498,6 +35150,35 @@
         }
       }
     },
+    "Relevance" : {
+      "comment" : "Workshop sort option available while searching: Steam's text-relevance ranking.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relevance"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "関連度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相关性"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相關性"
+          }
+        }
+      }
+    },
     "relinked %lld" : {
       "comment" : "Library-sync summary fragment. Placeholder is the number of wallpapers whose broken folder access was restored.",
       "extractionState" : "manual",
@@ -33524,35 +35205,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新連結 %lld 個"
-          }
-        }
-      }
-    },
-    "Relevance" : {
-      "comment" : "Workshop sort option available while searching: Steam's text-relevance ranking.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Relevance"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "関連度"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "相关性"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "相關性"
           }
         }
       }
@@ -34180,6 +35832,7 @@
     },
     "Remove this video from System Wallpaper?" : {
       "comment" : "Destructive confirm title for removing a published system wallpaper.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -35943,6 +37596,66 @@
         }
       }
     },
+    "Right" : {
+      "comment" : "Now Playing text alignment: flush right.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右揃え"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右对齐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "靠右"
+          }
+        }
+      }
+    },
+    "Ripples" : {
+      "comment" : "Now Playing effects switch: concentric rings fired on each beat.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripples"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "波紋"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "涟漪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "漣漪"
+          }
+        }
+      }
+    },
     "Rotate" : {
       "localizations" : {
         "en" : {
@@ -36081,6 +37794,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輪播間隔（分鐘）"
+          }
+        }
+      }
+    },
+    "Rounded" : {
+      "comment" : "Now Playing title typeface: the rounded system face.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rounded"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "丸ゴシック"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圆体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圓體"
+          }
+        }
+      }
+    },
+    "Rounded corners" : {
+      "comment" : "Now Playing artwork shape: a square with rounded corners.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rounded corners"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "角丸"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圆角"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圓角"
           }
         }
       }
@@ -37753,6 +39526,36 @@
         }
       }
     },
+    "Serif" : {
+      "comment" : "Now Playing title typeface: serif.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serif"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セリフ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "衬线"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "襯線"
+          }
+        }
+      }
+    },
     "serious" : {
       "comment" : "Thermal severity: serious.",
       "extractionState" : "manual",
@@ -38313,6 +40116,36 @@
         }
       }
     },
+    "Shake" : {
+      "comment" : "Now Playing effects switch: small kick-driven jolt of the layer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shake"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シェイク"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "抖动"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "抖動"
+          }
+        }
+      }
+    },
     "Shared Wallpaper Engine runtime assets" : {
       "comment" : "Storage settings.",
       "extractionState" : "manual",
@@ -38844,6 +40677,36 @@
         }
       }
     },
+    "Show lyrics" : {
+      "comment" : "Now Playing DIY switch: draw synced lyrics under the title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show lyrics"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歌詞を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示歌词"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示歌詞"
+          }
+        }
+      }
+    },
     "Show mature content?" : {
       "comment" : "A confirmation dialog for showing mature content.",
       "isCommentAutoGenerated" : true,
@@ -38940,6 +40803,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示 %@ 的更多桌布"
+          }
+        }
+      }
+    },
+    "Show Music on this display" : {
+      "comment" : "Accessibility label for the Music overlay switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Music on this display"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイにミュージックを表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在此显示器上显示音乐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在此顯示器上顯示音樂"
           }
         }
       }
@@ -40490,6 +42383,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "預設跨顯示器顯示影片"
+          }
+        }
+      }
+    },
+    "Spectrum, glow and particles follow whatever is playing out loud" : {
+      "comment" : "Explains the Now Playing audio-reactive switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spectrum, glow and particles follow whatever is playing out loud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スペクトラム、グロー、パーティクルが再生中の音に合わせて動きます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "频谱、光晕和粒子会跟随正在外放的声音起伏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頻譜、光暈與粒子會跟隨正在外放的聲音起伏"
+          }
+        }
+      }
+    },
+    "Square" : {
+      "comment" : "Now Playing artwork shape: a hard-cornered square.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Square"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "四角"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方形"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方形"
           }
         }
       }
@@ -43025,6 +44978,36 @@
         }
       }
     },
+    "Style" : {
+      "comment" : "Title of the Now Playing widget style row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Style"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スタイル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "风格"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "風格"
+          }
+        }
+      }
+    },
     "Style overrides active" : {
       "comment" : "Subtitle on the Custom CSS row when a stylesheet override is in effect.",
       "extractionState" : "manual",
@@ -43806,6 +45789,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字"
+          }
+        }
+      }
+    },
+    "Text brightness" : {
+      "comment" : "Now Playing DIY slider: how bright the layer's text is.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text brightness"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字の明るさ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字亮度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字亮度"
           }
         }
       }
@@ -45729,6 +47742,36 @@
         }
       }
     },
+    "Three lines put the previous and next line around the current one, on large layers" : {
+      "comment" : "Now Playing lyric row count help text.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Three lines put the previous and next line around the current one, on large layers"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3行にすると、大きいレイヤーでは現在の行の前後も表示されます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 3 行时，大尺寸图层会在当前行上下各显示一行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇 3 行時，大尺寸圖層會在目前行上下各顯示一行"
+          }
+        }
+      }
+    },
     "Three Months" : {
       "localizations" : {
         "en" : {
@@ -45961,6 +48004,36 @@
         }
       }
     },
+    "Tint the progress line and glow from the cover, or pick your own color" : {
+      "comment" : "Explains the Now Playing accent source row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tint the progress line and glow from the cover, or pick your own color"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進行バーやグローの色をカバーから取り込むか、自分で選びます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "进度条与光晕的颜色取自封面，也可以自己指定"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進度條與光暈的顏色取自封面，也可以自己指定"
+          }
+        }
+      }
+    },
     "Tip: many creators publish a video version of the same wallpaper." : {
       "localizations" : {
         "en" : {
@@ -46015,6 +48088,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "標題"
+          }
+        }
+      }
+    },
+    "Title font" : {
+      "comment" : "Now Playing DIY row: typeface used for the track title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title font"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイトルの書体"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题字体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標題字體"
+          }
+        }
+      }
+    },
+    "Title size" : {
+      "comment" : "Now Playing DIY slider: scales the computed title size.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title size"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイトルのサイズ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题大小"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標題大小"
+          }
+        }
+      }
+    },
+    "Titles too long for the layer scroll sideways instead of being trimmed" : {
+      "comment" : "Explains the Now Playing marquee switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Titles too long for the layer scroll sideways instead of being trimmed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レイヤーに収まらないタイトルは、省略せずに横へスクロールします"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超出浮层宽度的标题会横向滚动，而不是被截断"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超出浮層寬度的標題會橫向捲動，而不是被截斷"
           }
         }
       }
@@ -46390,6 +48553,66 @@
         }
       }
     },
+    "Top center" : {
+      "comment" : "Now Playing position anchor: top edge, horizontally centered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top center"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上中央"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顶部居中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頂部置中"
+          }
+        }
+      }
+    },
+    "Top left" : {
+      "comment" : "Now Playing position anchor: top-left corner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top left"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左上"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左上"
+          }
+        }
+      }
+    },
     "Top processes show on the large size only." : {
       "comment" : "Memory widget settings: note that the top-process list is large-size only.",
       "extractionState" : "manual",
@@ -46438,6 +48661,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部時間最高評分"
+          }
+        }
+      }
+    },
+    "Top right" : {
+      "comment" : "Now Playing position anchor: top-right corner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top right"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右上"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右上"
           }
         }
       }
@@ -46637,6 +48890,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Y 平移"
+          }
+        }
+      }
+    },
+    "Transport controls" : {
+      "comment" : "Now Playing DIY switch: show play/pause and skip buttons on hover.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transport controls"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生コントロール"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放控制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放控制"
           }
         }
       }
@@ -46991,6 +49274,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "類型標籤樣式"
+          }
+        }
+      }
+    },
+    "Typography" : {
+      "comment" : "Title of the Now Playing typography card (font, alignment, size).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Typography"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイポグラフィ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排版"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排版"
           }
         }
       }
@@ -48694,6 +51007,36 @@
         }
       }
     },
+    "Vinyl" : {
+      "comment" : "Now Playing widget style.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vinyl"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レコード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "黑胶"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "黑膠"
+          }
+        }
+      }
+    },
     "Volume" : {
       "comment" : "Label for the volume slider in the display defaults settings view.",
       "isCommentAutoGenerated" : true,
@@ -48854,6 +51197,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在等待 macOS 更新登入項目狀態"
+          }
+        }
+      }
+    },
+    "Waiting for the player to update" : {
+      "comment" : "Music status badge: a player is linked but has not reported a track yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the player to update"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレーヤーの更新を待っています"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待播放器更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待播放器更新"
           }
         }
       }
