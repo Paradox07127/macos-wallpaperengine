@@ -189,7 +189,6 @@ struct SceneSection: View {
                 session: session,
                 hasSceneRenderingError: isSceneRenderingFailure
             )
-            .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             EmptyView()

@@ -2,7 +2,6 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct PreviewArea: View {
-    private let previewAspectRatio: CGFloat = 16 / 9
 
     let screen: Screen
     @Binding var draft: DraftState
@@ -58,40 +57,29 @@ struct PreviewArea: View {
         if isLoading {
             DetailLoadingView()
         } else if draft.hasPreviewSource || previewController.hasPreviewContent {
-            GeometryReader { geo in
-                let previewHeight = cappedPreviewHeight(in: geo.size.height, verticalPadding: 18)
-                VStack(spacing: 16) {
-                    if featureCatalog.isEnabled(.inspectorPreview) {
-                        VideoPreviewSection(
-                            previewController: previewController,
-                            hasPreviewSource: draft.hasPreviewSource,
-                            selectedFitMode: draft.selectedFitMode,
-                            startPreview: onStartPreview
-                        )
-                        .aspectRatio(previewAspectRatio, contentMode: .fit)
-                        // Before the expanding frame: the frame is the whole column,
-                        // the aspect-fit box is the picture. The bar belongs to the picture.
-                        .overlay(alignment: .bottom) {
-                            videoCommandBar
-                                .padding(DesignTokens.Spacing.lg)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: previewHeight)
-                        .shadow(
-                            color: Color.black.opacity(DesignTokens.Card.shadowOpacity),
-                            radius: DesignTokens.Card.shadowRadius,
-                            x: 0,
-                            y: DesignTokens.Card.shadowYOffset
-                        )
-                    } else {
-                        // No preview to float over — the bar is the only content here.
-                        videoCommandBar
-                    }
+            if featureCatalog.isEnabled(.inspectorPreview) {
+                WallpaperPreviewStage {
+                    VideoPreviewSection(
+                        previewController: previewController,
+                        hasPreviewSource: draft.hasPreviewSource,
+                        selectedFitMode: draft.selectedFitMode,
+                        startPreview: onStartPreview
+                    )
+                    .shadow(
+                        color: Color.black.opacity(DesignTokens.Card.shadowOpacity),
+                        radius: DesignTokens.Card.shadowRadius,
+                        x: 0,
+                        y: DesignTokens.Card.shadowYOffset
+                    )
+                } controls: {
+                    videoCommandBar
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 18)
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+            } else {
+                // No preview to float over — the bar is the only content here.
+                videoCommandBar
+                    .padding(DesignTokens.Spacing.lg)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             IllustratedEmptyState(
                 symbol: "film",
@@ -105,48 +93,37 @@ struct PreviewArea: View {
         }
     }
 
+    @ViewBuilder
     private var htmlContent: some View {
-        GeometryReader { geo in
-            let previewHeight = cappedPreviewHeight(in: geo.size.height, verticalPadding: 24)
-            VStack(spacing: 8) {
-                if featureCatalog.isEnabled(.inspectorPreview), draft.htmlSource != nil {
-                    HTMLPreviewSection(
-                        screen: screen,
-                        source: draft.htmlSource,
-                        config: draft.htmlConfig,
-                        wpePreviewURL: wpeWebPreviewURL,
-                        wpePreviewBookmark: draft.wpeOrigin?.sourceFolderBookmark
-                    )
-                    .overlay(alignment: .bottom) {
-                        HTMLSourceSection(
-                            screen: screen,
-                            source: $draft.htmlSource,
-                            config: $draft.htmlConfig,
-                            floating: true
-                        )
-                        .padding(DesignTokens.Spacing.lg)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: previewHeight)
-                    .layoutPriority(1)
-                } else {
-                    // Nothing picked yet: the picker is the page, not an overlay.
-                    HTMLSourceSection(
-                        screen: screen,
-                        source: $draft.htmlSource,
-                        config: $draft.htmlConfig
-                    )
-                }
+        if featureCatalog.isEnabled(.inspectorPreview), draft.htmlSource != nil {
+            WallpaperPreviewStage {
+                HTMLPreviewSection(
+                    screen: screen,
+                    source: draft.htmlSource,
+                    config: draft.htmlConfig,
+                    wpePreviewURL: wpeWebPreviewURL,
+                    wpePreviewBookmark: draft.wpeOrigin?.sourceFolderBookmark
+                )
+            } controls: {
+                HTMLSourceSection(
+                    screen: screen,
+                    source: $draft.htmlSource,
+                    config: $draft.htmlConfig,
+                    floating: true
+                )
             }
-            .padding(24)
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+        } else {
+            // Nothing picked yet: the picker is the page, not an overlay.
+            HTMLSourceSection(
+                screen: screen,
+                source: $draft.htmlSource,
+                config: $draft.htmlConfig
+            )
+            .padding(DesignTokens.Spacing.lg)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-
-    private func cappedPreviewHeight(in containerHeight: CGFloat, verticalPadding: CGFloat) -> CGFloat {
-        max(0, containerHeight - verticalPadding * 2)
-    }
 
     /// A Wallpaper Engine web project's shipped preview asset, when the selected HTML wallpaper came from one.
     private var wpeWebPreviewURL: URL? {

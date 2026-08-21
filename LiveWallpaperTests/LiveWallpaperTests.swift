@@ -25,34 +25,37 @@ struct SettingsWindowLayoutTests {
 
     @Test("Preview area caps media previews to the available low-height viewport")
     func previewAreaCapsMediaPreviewsToAvailableHeight() throws {
+        let stage = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WallpaperPreviewStage.swift")
         let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
 
-        #expect(source.contains("GeometryReader"))
-        #expect(source.contains("cappedPreviewHeight(in: geo.size.height"))
-        // The command bar and the source picker float inside the preview card, so
-        // nothing is reserved below it — the preview gets the whole viewport.
+        // Aspect-fit inside the pane is what stops a preview overflowing a short
+        // window. PreviewArea used to compute that by hand, once per wallpaper type.
+        #expect(stage.contains(".aspectRatio(WallpaperPreviewMetrics.aspectRatio, contentMode: .fit)"))
+        #expect(stage.contains(".frame(maxWidth: .infinity, maxHeight: .infinity)"))
+        // Controls float inside the card, so nothing is reserved below it.
         #expect(!source.contains("ReservedHeight"))
-        #expect(source.contains(".overlay(alignment: .bottom) {"))
     }
 
-    @Test("Floating preview controls are clipped to the picture, not the page")
-    func floatingPreviewControlsAreClippedToPicture() throws {
+    @Test("Every wallpaper preview goes through the one stage")
+    func wallpaperPreviewsShareOneStage() throws {
+        let stage = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WallpaperPreviewStage.swift")
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
+        let scene = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
         let htmlPreview = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLPreviewSection.swift")
 
-        // The expanding frame is the whole column; the aspect-fit box is the picture.
-        // An overlay attached *after* the frame drifts past the picture's edges —
-        // video and web both did, while scene (overlay inside previewCard) did not.
-        let blocks = [
-            ("private var videoContent", "private var htmlContent"),
-            ("private var htmlContent", "/// A Wallpaper Engine web project's shipped preview asset")
-        ]
-        for (start, end) in blocks {
-            let block = try #require(Self.slice(previewArea, from: start, to: end))
-            let overlay = try #require(block.range(of: ".overlay(alignment: .bottom)"))
-            let frame = try #require(block.range(of: ".frame(maxWidth: .infinity, maxHeight: previewHeight)"))
-            #expect(overlay.lowerBound < frame.lowerBound, "\(start): overlay must precede the expanding frame")
-        }
+        // The expanding frame is the whole pane; the aspect-fit box is the picture.
+        // Controls overlaid *after* the frame drift past the picture's edges, so the
+        // stage fixes the order once instead of trusting three call sites with it.
+        let overlay = try #require(stage.range(of: ".overlay(alignment: .bottom)"))
+        let frame = try #require(stage.range(of: ".frame(maxWidth: .infinity, maxHeight: .infinity)"))
+        #expect(overlay.lowerBound < frame.lowerBound, "controls must be overlaid before the expanding frame")
+
+        // Video and web from one file, scene from the other — three call sites, and
+        // no hand-rolled fit left over. Scene used to pin its card to the top.
+        #expect(previewArea.components(separatedBy: "WallpaperPreviewStage {").count - 1 == 2)
+        #expect(scene.contains("WallpaperPreviewStage {"))
+        #expect(!previewArea.contains("cappedPreviewHeight"))
+        #expect(!scene.contains("screenPreviewSize"))
 
         // Same reason on the other side: this view must report the drawn box.
         #expect(!htmlPreview.contains(".frame(maxWidth: .infinity)\n        .onChange"))
@@ -109,7 +112,6 @@ struct SettingsWindowLayoutTests {
         let sourceSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLSourceSection.swift")
 
         #expect(previewArea.contains("floating: true"))
-        #expect(previewArea.contains("VStack(spacing: 8)"))
         #expect(sourceSection.contains("HStack(alignment: .center, spacing: 10)"))
         #expect(sourceSection.contains(".frame(width: 108)"))
         // Glass only while floating: in page flow the picker has nothing to refract.
@@ -117,18 +119,22 @@ struct SettingsWindowLayoutTests {
         #expect(sourceSection.contains("content.adaptiveGlassSurface("))
     }
 
-    @Test("HTML preview area uses uniform outer padding")
-    func htmlPreviewAreaUsesUniformOuterPadding() throws {
+    @Test("Preview outer padding has one source")
+    func previewOuterPaddingHasOneSource() throws {
+        let stage = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WallpaperPreviewStage.swift")
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
-        let htmlContent = try #require(Self.slice(
-            previewArea,
-            from: "private var htmlContent",
-            to: "private func cappedPreviewHeight"
-        ))
 
-        #expect(htmlContent.contains("verticalPadding: 24"))
-        #expect(htmlContent.contains(".padding(24)"))
-        #expect(!htmlContent.contains(".padding(.vertical, 14)"))
+        // The three panes used to disagree — 24/18, 24, and none at all. The empty
+        // state keeps its own full-pane inset; this is about the preview stage.
+        #expect(stage.contains(".padding(DesignTokens.Spacing.lg)"))
+        #expect(!previewArea.contains(".padding(.vertical, 18)"))
+        #expect(!previewArea.contains(".padding(.horizontal, 24)"))
+
+        // The call site counts too: scene kept a 24pt inset of its own on top of
+        // the stage's, so it sat 40pt in while video and web sat 16pt in.
+        let sceneSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneSection.swift")
+        let hero = try #require(Self.slice(sceneSection, from: "SceneDetailView(", to: "} else {"))
+        #expect(!hero.contains(".padding(24)"))
     }
 
     @Test("HTML preview prefers live web snapshots before static fallbacks")
