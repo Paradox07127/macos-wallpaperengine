@@ -35,14 +35,22 @@ struct WPEMetalFXUpscalerTests {
 
     // MARK: - Eligibility (pure)
 
-    @Test("Non-stretch fit modes are rejected")
-    func eligibilityRejectsFitMode() {
-        let rejection = WPEMetalFXSpatialUpscaler.preScalerRejection(
+    @Test("Non-stretch fit modes pass with matching aspect, reject on mismatch")
+    func eligibilityFitModeNeedsMatchingAspect() {
+        // 16:9 -> 16:9: contain/cover degenerate to the stretch mapping.
+        let matching = WPEMetalFXSpatialUpscaler.preScalerRejection(
             fitMode: .contain,
             sourceWidth: 2880, sourceHeight: 1620,
             drawableWidth: 3840, drawableHeight: 2160
         )
-        #expect(rejection == .fitMode)
+        #expect(matching == nil)
+        // 16:10 -> 16:9: contain would letterbox, which the scaler cannot do.
+        let mismatched = WPEMetalFXSpatialUpscaler.preScalerRejection(
+            fitMode: .contain,
+            sourceWidth: 2880, sourceHeight: 1800,
+            drawableWidth: 3840, drawableHeight: 2160
+        )
+        #expect(mismatched == .fitMode)
     }
 
     @Test("Source larger than the drawable is rejected (spatial only upscales)")

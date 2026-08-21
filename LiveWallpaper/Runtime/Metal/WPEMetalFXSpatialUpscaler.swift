@@ -70,19 +70,23 @@ final class WPEMetalFXSpatialUpscaler {
         drawableWidth: Int,
         drawableHeight: Int
     ) -> FallbackReason? {
-        // The scaler is a fixed rect→rect scale with no aspect transform, so only
-        // stretch (and matching aspects) reproduce the present pass's mapping.
-        guard fitMode == .stretch else { return .fitMode }
         // Strictly smaller: an equal-size "upscale" would replace the cheap
         // fullscreen blit with a pointless scaler pass.
         guard sourceWidth <= drawableWidth, sourceHeight <= drawableHeight,
               sourceWidth < drawableWidth || sourceHeight < drawableHeight,
               sourceWidth > 0, sourceHeight > 0, drawableWidth > 0, drawableHeight > 0
         else { return .sourceExceedsDrawable }
+        // The scaler is a fixed rect→rect scale with no aspect transform.
+        // Stretch always maps full-bleed; fit/fill degenerate to the same
+        // mapping only when the aspects already match, so they get a tighter
+        // tolerance (0.1% ≈ ≤2px letterbox/crop deviation at 4K vs stretch's
+        // invisible 0.5% distortion).
         let sourceAspect = Double(sourceWidth) / Double(sourceHeight)
         let drawableAspect = Double(drawableWidth) / Double(drawableHeight)
-        guard abs(sourceAspect - drawableAspect) / drawableAspect < 0.005 else {
-            return .aspectMismatch
+        let aspectError = abs(sourceAspect - drawableAspect) / drawableAspect
+        let tolerance = fitMode == .stretch ? 0.005 : 0.001
+        guard aspectError < tolerance else {
+            return fitMode == .stretch ? .aspectMismatch : .fitMode
         }
         return nil
     }
