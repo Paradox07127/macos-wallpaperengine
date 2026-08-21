@@ -25,18 +25,21 @@ enum DisplayDetailTab: Hashable, CaseIterable {
 enum OverlayKind: Hashable, CaseIterable {
     case weather
     case monitor
+    case music
 
     var title: LocalizedStringKey {
         switch self {
         case .weather: return "Weather"
         case .monitor: return "Monitor"
+        case .music:   return "Music"
         }
     }
 
     var feature: ProductFeature {
         switch self {
         case .weather: return .videoEffects
-        case .monitor: return .monitorOverlay
+        // Music rides on the monitor board, so it ships wherever Monitor does.
+        case .monitor, .music: return .monitorOverlay
         }
     }
 }

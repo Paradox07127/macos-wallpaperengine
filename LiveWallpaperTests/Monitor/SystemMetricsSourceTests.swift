@@ -16,6 +16,7 @@ struct SystemMetricsSourceTests {
         }
         func updateAgents(sourceID: String, sessions: [MonitorAgentSessionState]) async {}
         func updateHealth(_ health: MonitorSourceHealth) async { lastHealth = health }
+        func updateNowPlaying(_ state: MonitorNowPlayingState?) async {}
 
         func system() -> MonitorSystemSnapshot? { lastSystem }
         func health() -> MonitorSourceHealth? { lastHealth }

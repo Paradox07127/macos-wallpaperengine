@@ -75,12 +75,23 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.board = board }
     }
 
+    func setMusicOverlayEnabled(_ enabled: Bool, for screen: Screen) {
+        mutateMonitorOverlays(of: [screen]) { $0.musicEnabled = enabled }
+    }
+
+    func setMusicOverlayLevel(_ level: MonitorOverlayLevel, for screen: Screen) {
+        mutateMonitorOverlays(of: [screen]) { $0.musicLevel = level }
+    }
+
     /// Pure configuration query used to keep FullScreenDetector's fallback poll
     /// alive whenever a desktop-level overlay depends on its occlusion cache.
+    /// Either module counts: a desktop-level Music layer needs the same
+    /// occlusion cache even with the Monitor board switched off.
     var hasEnabledDesktopMonitorOverlay: Bool {
         screens.contains {
             let overlay = monitorOverlay(for: $0)
-            return overlay.enabled && overlay.level == .desktop
+            return (overlay.enabled && overlay.level == .desktop)
+                || (overlay.musicEnabled && overlay.musicLevel == .desktop)
         }
     }
 
