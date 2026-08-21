@@ -38,7 +38,11 @@ struct SharedLibraryStore {
     /// from "empty library" — `loadManifest()` collapses both to empty.
     func loadManifestIfReadable() -> SystemWallpaperManifest? {
         let url = SystemWallpaperPaths.manifestURL(hostBundleID: hostBundleID)
-        guard let data = try? Data(contentsOf: url) else { return .empty }
+        // Only absence means "empty library". A present file we cannot read is
+        // damaged as far as callers are concerned — reporting it empty stops
+        // every running choice as if the user had deleted them.
+        guard FileManager.default.fileExists(atPath: url.path) else { return .empty }
+        guard let data = try? Data(contentsOf: url) else { return nil }
         return try? SystemWallpaperCoding.decoder.decode(SystemWallpaperManifest.self, from: data)
     }
 

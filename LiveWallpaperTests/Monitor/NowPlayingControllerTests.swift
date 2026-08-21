@@ -240,6 +240,24 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(recorder.scripts.count, 2, "\(recorder.scripts)")
     }
 
+    /// A script that will not compile is our bug, not the user refusing
+    /// consent: latching it as a denial made the buttons dead until relaunch.
+    func testScriptCompileFailureDoesNotLatchAsDenial() async {
+        let recorder = Recorder()
+        recorder.fail(status: NowPlayingController.Status.scriptCompileFailed, message: nil)
+        let controller = makeController(recorder)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let first = await controller.send(.playPause, to: Self.spotify, now: start)
+        XCTAssertEqual(failure(first), .scriptFailed(NowPlayingController.Status.scriptCompileFailed))
+        XCTAssertNotEqual(controller.authorization(for: Self.spotify), .denied)
+
+        recorder.succeed()
+        let second = await controller.send(.next, to: Self.spotify, now: start.addingTimeInterval(60))
+        XCTAssertNil(failure(second), "a compile failure must not stop later commands")
+        XCTAssertEqual(recorder.scripts.count, 2)
+    }
+
     func testOtherScriptErrorsDoNotLatchAsDenial() async {
         let recorder = Recorder()
         recorder.fail(status: -1728, message: "no track")

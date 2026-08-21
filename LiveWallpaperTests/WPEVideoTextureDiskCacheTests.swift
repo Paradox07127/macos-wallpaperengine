@@ -111,6 +111,41 @@ struct WPEVideoTextureDiskCacheTests {
         #expect(FileManager.default.fileExists(atPath: unattributed.path) == false)
     }
 
+    @Test("A stranded audio-strip scratch file is counted and swept, a live one is not")
+    func sweepsStaleStripScratchFiles() async throws {
+        let (cache, root) = makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let stored = try await cache.store(Data(repeating: 3, count: 1024), workshopID: "111")
+        await cache.release(stored)
+        let bucket = stored.deletingLastPathComponent()
+
+        // Force-quitting mid-export leaves one of these behind; the export that
+        // is running right now is writing the other.
+        let stale = bucket.appendingPathComponent("\(WPEVideoTextureDiskCache.stripPrefix)stale.mp4")
+        let live = bucket.appendingPathComponent("\(WPEVideoTextureDiskCache.stripPrefix)live.mp4")
+        try Data(repeating: 1, count: 2048).write(to: stale)
+        try Data(repeating: 1, count: 2048).write(to: live)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-WPEVideoTextureDiskCache.stripTemporaryMaxAge - 60)],
+            ofItemAtPath: stale.path
+        )
+
+        let before = await cache.stats()
+        #expect(
+            before.fileCount == 3,
+            "scratch files are hidden, but Settings must still account for the bytes they hold"
+        )
+
+        _ = await cache.collectOrphans(referencedWorkshopIDs: ["111"])
+
+        #expect(!FileManager.default.fileExists(atPath: stale.path))
+        #expect(
+            FileManager.default.fileExists(atPath: live.path),
+            "a scratch file young enough to still be written must survive the sweep"
+        )
+    }
+
     @Test("Orphan GC never reclaims a leased (live) file")
     func collectOrphansSparesLeased() async throws {
         let (cache, root) = makeCache()

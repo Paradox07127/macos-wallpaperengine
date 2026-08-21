@@ -59,12 +59,7 @@ struct NowPlayingWidgetLayout: Equatable {
         hovering: Bool = false,
         hasLyrics: Bool = false
     ) -> NowPlayingWidgetLayout {
-        let hasTrack: Bool
-        switch state?.phase {
-        case .playing, .paused: hasTrack = true
-        case .awaitingFirstEvent, .noPlayer, nil: hasTrack = false
-        }
-        guard hasTrack, let state else {
+        guard state?.phase.hasTrack == true, let state else {
             // Invisible off-duty; edit mode still needs a drag target.
             return NowPlayingWidgetLayout(
                 renders: isEditing,

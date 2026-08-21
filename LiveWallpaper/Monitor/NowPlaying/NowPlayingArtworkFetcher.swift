@@ -31,6 +31,8 @@ actor NowPlayingArtworkFetcher {
     static let shared = NowPlayingArtworkFetcher()
 
     static let maxImageBytes = 2 * 1024 * 1024
+    /// oEmbed and an iTunes page of 10 rows are a few KB; anything near this is junk.
+    static let maxMetadataBytes = 256 * 1024
     static let negativeTTL: TimeInterval = 600
     static let positiveCacheLimit = 32
 
@@ -45,7 +47,7 @@ actor NowPlayingArtworkFetcher {
     private var inFlight: [String: Task<Data?, Never>] = [:]
 
     init(
-        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        transport: @escaping Transport = NowPlayingNetwork.boundedTransport(byteCap: maxImageBytes),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.transport = transport
@@ -162,6 +164,16 @@ actor NowPlayingArtworkFetcher {
         return await task.value
     }
 
+    /// Drops every merged fetch except the one the caller still wants. Without
+    /// this, skipping through a playlist leaves one live download per skipped
+    /// track: the callers go away, but the merged task they shared does not.
+    func cancelInFlight(except key: String?) {
+        for (running, task) in inFlight where running != key {
+            task.cancel()
+            inFlight.removeValue(forKey: running)
+        }
+    }
+
     private func finish(key: String, result: Data?) {
         inFlight.removeValue(forKey: key)
         if let result {
@@ -192,6 +204,7 @@ actor NowPlayingArtworkFetcher {
         do {
             return try await attempt(strategy: strategy, state: state)
         } catch {
+            guard !Task.isCancelled else { return nil }
             return (try? await attempt(strategy: strategy, state: state)) ?? nil
         }
     }
@@ -200,7 +213,7 @@ actor NowPlayingArtworkFetcher {
         switch strategy {
         case .spotifyOEmbed:
             guard let trackID = state.trackID, let url = Self.spotifyOEmbedURL(trackID: trackID) else { return nil }
-            let body = try await fetch(url)
+            guard let body = try await fetch(url) else { return nil }
             guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
                   let thumbnail = object["thumbnail_url"] as? String,
                   let thumbnailURL = URL(string: thumbnail)
@@ -209,7 +222,7 @@ actor NowPlayingArtworkFetcher {
 
         case .itunesSearch:
             guard let url = Self.itunesSearchURL(artist: state.artist, title: state.title) else { return nil }
-            let body = try await fetch(url)
+            guard let body = try await fetch(url) else { return nil }
             struct SearchResponse: Decodable { var results: [ITunesCandidate] }
             guard let response = try? JSONDecoder().decode(SearchResponse.self, from: body),
                   let best = Self.bestMatch(
@@ -229,19 +242,32 @@ actor NowPlayingArtworkFetcher {
         }
     }
 
-    private func fetch(_ url: URL) async throws -> Data {
-        let (data, response) = try await transport(URLRequest(url: url))
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw URLError(.badServerResponse)
-        }
-        return data
-    }
-
-    /// nil = deliberately abandoned (over the size cap for a wallpaper snapshot).
-    private func downloadImage(_ url: URL) async throws -> Data? {
+    /// nil = refused (off-list origin, wrong content type, oversize); those are
+    /// final, while a thrown transport/HTTP error is transient and gets a retry.
+    private func fetch(_ url: URL) async throws -> Data? {
+        guard NowPlayingNetwork.isAllowed(url, for: .api) else { return nil }
         let (data, response) = try await transport(URLRequest(url: url))
         if let http = response as? HTTPURLResponse {
             if http.statusCode != 200 { throw URLError(.badServerResponse) }
+            // Re-check the URL we actually ended on: a redirect off the list
+            // must not be read as if the named endpoint had answered.
+            guard NowPlayingNetwork.isAllowed(http.url, for: .api),
+                  (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("json")
+            else { return nil }
+        }
+        return data.count > Self.maxMetadataBytes ? nil : data
+    }
+
+    /// nil = deliberately abandoned (off-list CDN, not an image, or over the
+    /// size cap for a wallpaper snapshot).
+    private func downloadImage(_ url: URL) async throws -> Data? {
+        guard NowPlayingNetwork.isAllowed(url, for: .artwork) else { return nil }
+        let (data, response) = try await transport(URLRequest(url: url))
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode != 200 { throw URLError(.badServerResponse) }
+            guard NowPlayingNetwork.isAllowed(http.url, for: .artwork),
+                  (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().hasPrefix("image/")
+            else { return nil }
             if http.expectedContentLength > Int64(Self.maxImageBytes) { return nil }
         }
         if data.count > Self.maxImageBytes { return nil }

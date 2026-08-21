@@ -277,7 +277,16 @@ final class WallpaperExportService {
         }
 
         let destination = videosDirectory.appendingPathComponent("\(itemID).\(staged.ext)")
+        let thumbnailURL = videosDirectory.appendingPathComponent("\(itemID).jpg")
+        let thumbnailFileName = thumbnailURL.lastPathComponent
         let manager = FileManager.default
+        // A republish overwrites files the manifest still points at, so the old
+        // copies are renamed aside (cheap, no second copy of a 4K video) and
+        // only dropped once the manifest write lands. A leftover backup from a
+        // crash is unreferenced, so the orphan sweep reclaims it within the hour.
+        let backupTag = "backup-\(UUID().uuidString)"
+        let videoBackupURL = videosDirectory.appendingPathComponent("\(itemID).\(backupTag).\(staged.ext)")
+        let thumbnailBackupURL = videosDirectory.appendingPathComponent("\(itemID).\(backupTag).jpg")
         // A republish has an older copy the manifest still points at, so a
         // later failure must leave it alone. A first publish owns everything it
         // just created and has to take it back.
@@ -285,8 +294,17 @@ final class WallpaperExportService {
         do {
             if isRepublish {
                 // Atomic swap — no window where the old copy is gone and the
-                // new one is not yet in place.
-                _ = try manager.replaceItemAt(destination, withItemAt: staged.url)
+                // new one is not yet in place. The displaced original stays
+                // behind under `backupItemName` until this publish commits.
+                _ = try manager.replaceItemAt(
+                    destination,
+                    withItemAt: staged.url,
+                    backupItemName: videoBackupURL.lastPathComponent,
+                    options: [.withoutDeletingBackupItem]
+                )
+                if manager.fileExists(atPath: thumbnailURL.path) {
+                    try? manager.moveItem(at: thumbnailURL, to: thumbnailBackupURL)
+                }
             } else {
                 try manager.moveItem(at: staged.url, to: destination)
             }
@@ -294,22 +312,36 @@ final class WallpaperExportService {
             try? manager.removeItem(at: staged.url)
             throw error
         }
-        let thumbnailURL = videosDirectory.appendingPathComponent("\(itemID).jpg")
-        let thumbnailFileName = thumbnailURL.lastPathComponent
 
-        /// Undoes a first publish's files. Without it a failed thumbnail write
-        /// or an unreadable manifest leaves a video nothing references, visible
-        /// only as disk usage until the sweep gets to it an hour later.
-        func rollbackFirstPublish() {
-            guard !isRepublish else { return }
-            try? manager.removeItem(at: destination)
-            try? manager.removeItem(at: thumbnailURL)
+        /// Puts the library back exactly as it was. A first publish owns
+        /// everything it just created and takes it back; a republish restores
+        /// the copies it displaced — without this a failed thumbnail write or
+        /// an unreadable manifest reported failure while the old video was
+        /// already gone.
+        func rollbackPublish() {
+            guard isRepublish else {
+                try? manager.removeItem(at: destination)
+                try? manager.removeItem(at: thumbnailURL)
+                return
+            }
+            if manager.fileExists(atPath: videoBackupURL.path) {
+                _ = try? manager.replaceItemAt(destination, withItemAt: videoBackupURL)
+            }
+            if manager.fileExists(atPath: thumbnailBackupURL.path) {
+                try? manager.removeItem(at: thumbnailURL)
+                try? manager.moveItem(at: thumbnailBackupURL, to: thumbnailURL)
+            }
+        }
+
+        func discardPublishBackups() {
+            try? manager.removeItem(at: videoBackupURL)
+            try? manager.removeItem(at: thumbnailBackupURL)
         }
 
         do {
             try jpeg.write(to: thumbnailURL, options: .atomic)
         } catch {
-            rollbackFirstPublish()
+            rollbackPublish()
             throw error
         }
 
@@ -329,9 +361,10 @@ final class WallpaperExportService {
                 return manifest
             }
         } catch {
-            rollbackFirstPublish()
+            rollbackPublish()
             throw error
         }
+        discardPublishBackups()
         items = manifest.items
         refreshDiskUsage()
         postLibraryChanged()
@@ -381,6 +414,7 @@ final class WallpaperExportService {
     /// app does not remove its container, so without this the system's copies
     /// survive an uninstall with no way to reach them.
     func clearLibrary() throws {
+        nonisolated(unsafe) var survivors: [String] = []
         do {
             try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
                 let manifest = try loadManifestForMutation()
@@ -397,8 +431,11 @@ final class WallpaperExportService {
                     stagingGrace: -1,
                     now: dependencies.now()
                 )
+                survivors = Self.remainingFileNames(in: videosDirectory)
             }
-            lastError = nil
+            // Emptying the index while the files are still there would report a
+            // clean library and leave the bytes unreachable, so say what stayed.
+            lastError = survivors.isEmpty ? nil : Self.undeletedMessage(survivors)
         } catch {
             lastError = error.localizedDescription
             throw error
@@ -410,6 +447,25 @@ final class WallpaperExportService {
 
     func clearLastError() {
         lastError = nil
+    }
+
+    /// Regular files left in the videos directory — after a full sweep these
+    /// are files the delete could not remove.
+    private static func remainingFileNames(in directory: URL) -> [String] {
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.isDirectoryKey]
+        )) ?? []
+        return contents.compactMap { url in
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            return isDirectory ? nil : url.lastPathComponent
+        }.sorted()
+    }
+
+    private static func undeletedMessage(_ names: [String]) -> String {
+        String(
+            localized: "Some files could not be deleted: \(names.joined(separator: ", "))",
+            comment: "Error after clearing the System Wallpaper library. Placeholder is a file name list."
+        )
     }
 
     // MARK: - Refresh
@@ -522,7 +578,11 @@ final class WallpaperExportService {
     /// rewrite the file with only the newest item, which turned every already
     /// published video into an unreferenced file the orphan sweep then deleted.
     private func loadManifestForMutation() throws -> SystemWallpaperManifest {
-        guard let data = try? Data(contentsOf: manifestURL) else { return .empty }
+        // Absent is the only read outcome that means "empty library"; an
+        // unreadable-but-present file (permissions, IO) has to refuse for the
+        // same reason a corrupt one does.
+        guard FileManager.default.fileExists(atPath: manifestURL.path) else { return .empty }
+        guard let data = try? Data(contentsOf: manifestURL) else { throw ServiceError.manifestUnreadable }
         guard let manifest = try? SystemWallpaperCoding.decoder
             .decode(SystemWallpaperManifest.self, from: data)
         else { throw ServiceError.manifestUnreadable }

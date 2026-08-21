@@ -182,6 +182,23 @@ struct SystemWallpaperGuardTests {
         )
     }
 
+    /// Two displays on two videos: a heartbeat carrying one ID marks the other
+    /// item idle, and the app deletes idle items.
+    @Test("Every choice-change heartbeat publishes the whole active set")
+    func choiceChangeHeartbeatCarriesEveryActiveChoice() throws {
+        let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
+        let selected = try #require(
+            handler.range(of: "func selectedChoicesDidChange")
+                .map { String(handler[$0.lowerBound...].prefix(900)) }
+        )
+        #expect(
+            selected.contains("Self.writeActiveHeartbeat("),
+            "selectedChoicesDidChange must publish the active set, not a single choice"
+        )
+        #expect(!selected.contains("store.writeHeartbeat(activeChoiceID:"))
+        #expect(handler.contains("including extraChoiceID: String?"))
+    }
+
     @Test("Appexes are embedded into Contents/Extensions, not Contents/PlugIns")
     func appexesEmbedIntoExtensionsFolder() throws {
         let project = try RepositoryRoot.source("LiveWallpaper.xcodeproj/project.pbxproj")

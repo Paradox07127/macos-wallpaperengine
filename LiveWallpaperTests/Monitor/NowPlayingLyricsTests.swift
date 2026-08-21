@@ -37,8 +37,13 @@ private final class ClockBox: Sendable {
     func advance(_ seconds: TimeInterval) { lock.withLock { $0 = $0.addingTimeInterval(seconds) } }
 }
 
+/// LRCLIB answers `application/json`, and the fetcher now requires it: a 200
+/// carrying anything else is not a catalogue row.
 private func ok(_ request: URLRequest, _ data: Data) -> (Data, URLResponse) {
-    (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    (data, HTTPURLResponse(
+        url: request.url!, statusCode: 200, httpVersion: nil,
+        headerFields: ["Content-Type": "application/json"]
+    )!)
 }
 
 private func status(_ request: URLRequest, _ code: Int) -> (Data, URLResponse) {
@@ -220,6 +225,16 @@ struct NowPlayingLyricsTests {
                 .absoluteString == "https://lrclib.net/api/get?track_name=Creep"
         )
         #expect(NowPlayingLyricsFetcher.getURL(artist: "x", title: "", album: nil, duration: nil) == nil)
+        // The player's duration is an unvalidated number off a distributed
+        // notification, so a finite-but-absurd one must be dropped rather than
+        // converted — `Int(1e300)` traps.
+        for absurd in [1e300, .greatestFiniteMagnitude, -5, 0] as [Double] {
+            #expect(
+                NowPlayingLyricsFetcher.getURL(artist: nil, title: "Creep", album: nil, duration: absurd)?
+                    .absoluteString == "https://lrclib.net/api/get?track_name=Creep",
+                "duration \(absurd) must not reach the query"
+            )
+        }
         #expect(
             NowPlayingLyricsFetcher.searchURL(artist: "Radiohead", title: "Creep")?.absoluteString ==
                 "https://lrclib.net/api/search?track_name=Creep&artist_name=Radiohead"

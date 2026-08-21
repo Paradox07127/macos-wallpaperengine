@@ -14,12 +14,15 @@ struct MonitorSampleDemand: Sendable, Equatable {
     var topProcesses = false
     /// Per-process disk I/O attribution (rusage deltas inside that walk).
     var processIO = false
+    /// System-audio tap + FFT for the Now Playing layer's reactive effects.
+    var audioSpectrum = false
 
     func union(_ other: Self) -> Self {
         Self(
             sensors: sensors || other.sensors,
             topProcesses: topProcesses || other.topProcesses,
-            processIO: processIO || other.processIO
+            processIO: processIO || other.processIO,
+            audioSpectrum: audioSpectrum || other.audioSpectrum
         )
     }
 
@@ -48,7 +51,11 @@ struct MonitorSampleDemand: Sendable, Equatable {
                 demand.topProcesses = demand.topProcesses || shows(widget, "showTopProcesses")
             case .disk:
                 demand.processIO = demand.processIO || shows(widget, "showTopProcesses")
-            case .network, .fleet, .aiEngine, .nowPlaying:
+            case .nowPlaying:
+                // Without the reactive effects the layer never reads the
+                // spectrum, and the tap plus its FFT are pure battery cost.
+                demand.audioSpectrum = demand.audioSpectrum || shows(widget, "audioReactive")
+            case .network, .fleet, .aiEngine:
                 break
             }
         }

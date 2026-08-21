@@ -33,12 +33,25 @@ private enum PointerBoard {
         NSPoint(x: boardPoint.x, y: size.height - boardPoint.y)
     }
 
+    /// Hit regions follow what is actually drawn, so a host with no pushed
+    /// track has no Now Playing tile to hit.
     @MainActor
-    static func makeHost(mouseInteractionEnabled: Bool = false) -> HostView {
+    static func makeHost(
+        mouseInteractionEnabled: Bool = false,
+        phase: MonitorNowPlayingPhase? = .playing
+    ) -> HostView {
         let host = HostView(
             frame: NSRect(origin: .zero, size: size),
             configuration: configuration(mouseInteractionEnabled: mouseInteractionEnabled)
         )
+        if let phase {
+            var snapshot = MonitorSnapshot()
+            snapshot.nowPlaying = MonitorNowPlayingState(
+                phase: phase,
+                title: phase.hasTrack ? "Weightless Horizon" : ""
+            )
+            host.push(snapshot)
+        }
         // A superview so `hitTest` exercises its real coordinate conversion.
         let container = NSView(frame: NSRect(origin: .zero, size: size))
         container.addSubview(host)
@@ -63,6 +76,31 @@ struct BoardPointerScopeTests {
         #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.emptySpot)))
         // CPU never asks for the pointer, so its rect is not a hit region.
         #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.cpuRenderCenter)))
+    }
+
+    /// An invisible layer that still eats desktop clicks reads as the desktop
+    /// being broken, and there is nothing on screen to explain it.
+    @MainActor
+    @Test("A Now Playing tile with nothing to draw holds no hit region")
+    func noTrackReleasesThePointer() {
+        for phase in [MonitorNowPlayingPhase.noPlayer, .awaitingFirstEvent] {
+            let host = PointerBoard.makeHost(phase: phase)
+            host.setPointerScope(.widgetsOnly)
+            #expect(
+                !host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.nowPlayingRenderCenter)),
+                "\(phase) draws nothing, so its rect must fall through to the desktop"
+            )
+        }
+
+        // Never pushed a snapshot at all: same answer, no crash.
+        let silent = PointerBoard.makeHost(phase: nil)
+        silent.setPointerScope(.widgetsOnly)
+        #expect(!silent.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.nowPlayingRenderCenter)))
+
+        // A paused track is still on screen and still controllable.
+        let paused = PointerBoard.makeHost(phase: .paused)
+        paused.setPointerScope(.widgetsOnly)
+        #expect(paused.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.nowPlayingRenderCenter)))
     }
 
     @MainActor

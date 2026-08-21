@@ -711,4 +711,28 @@ struct NowPlayingAudioDemandTests {
         await source.stop()
         #expect(await waitUntil { counter.held == 0 })
     }
+
+    /// The layer can show the track without reacting to the audio, and in that
+    /// mode the tap and its FFT are pure battery cost with no reader.
+    @MainActor
+    @Test("a layer with the reactive effects off never retains the capture tap")
+    func noDemandWhenEffectsAreOff() async {
+        let counter = DemandCounter()
+        let monitor = makeMonitor()
+        let sink = RecordingNowPlayingSink()
+        let source = NowPlayingSource(
+            monitor: monitor,
+            artworkFetcher: offlineFetcher(),
+            audioReactive: false,
+            audioDemand: { counter.apply($0) }
+        )
+        await source.start(sink: sink)
+
+        monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPlaying)
+        #expect(await waitUntil { sink.box.count > 0 }, "the track itself must still publish")
+        #expect(counter.transitions == 0, "capture was retained for effects nobody draws")
+
+        await source.stop()
+        #expect(counter.held == 0)
+    }
 }

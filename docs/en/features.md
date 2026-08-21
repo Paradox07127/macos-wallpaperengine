@@ -115,6 +115,11 @@ wallpapers alike.
 - **Particles** (`Schema/ParticleEffect.swift`) — Snow, Rain, Bokeh, Fireflies, Dust, Stars, Leaves, Sakura.
 - **Weather-reactive** (`LiveWallpaper/Runtime/WeatherReactiveService.swift`) — hourly Open-Meteo conditions map to particle effects and video adjustments (saturation, brightness, temperature…). Location: off / system / manual.
 - **Monitor board** (`LiveWallpaper/Monitor/`) — per-display, desktop layer (click-through) or always-on-top. Widgets: CPU, Memory, GPU, Network, Disk, Power, Processes, Agent Session (tracks local Claude Code / Codex CLI sessions), ANE Memory. Suspends automatically when fully occluded or the user is away.
+- **Now Playing** (`LiveWallpaper/Monitor/NowPlaying/`, `LiveWallpaper/Monitor/Widgets/NowPlaying*`) — the current Spotify or Apple Music track, in Poster, Vinyl, or Aurora style, with cover-derived accent colors and five audio-reactive effects when Audio Response is on. It is its own overlay layer, switched on and positioned independently of the Monitor board (nine-point anchors or dragging it in the preview), and it disappears entirely while nothing is playing.
+  - **How it reads the track:** the players' own `DistributedNotificationCenter` broadcasts. No polling, no helper process, no Media Remote private API.
+  - **Transport controls** appear on hover and drive the player over Apple Events, which macOS gates behind an Automation prompt on first use; declining leaves the buttons inert and changes nothing else.
+  - **Lyrics** (optional) come from the public LRCLIB service, matched on artist/title/album. Spotify reports a playback position, so its lyrics follow the song line by line; Apple Music broadcasts no position, so its lyrics stand still at the top.
+  - **Network discipline:** cover art and lyrics are fetched from a fixed allow-list of hosts (`open.spotify.com`, `itunes.apple.com`, `lrclib.net`, and the Spotify/Apple cover CDNs) over HTTPS only, with streamed size caps, redirects off the list refused, and both a positive LRU cache and a TTL'd negative cache (`NowPlayingNetwork.swift`).
 
 ## 4) Performance model
 
@@ -156,7 +161,8 @@ moderate heat still suspends it.
 ## 7) Updates (both editions)
 
 `LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` — GitHub Releases
-check at launch and on opening the menu bar popover, 12-hour throttle, 1-hour
+check at launch (opt-out in **Settings → General**) and on opening the menu bar
+popover, 12-hour throttle, 1-hour
 failure backoff, skip-a-version support. Hardened: trusted host only, 512 KB response cap, release-notes
 truncation, URL allowlisting. It only opens the Releases page — nothing
 auto-installs. Two surfaces read the one shared checker — the **Settings →

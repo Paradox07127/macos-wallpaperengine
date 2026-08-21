@@ -220,6 +220,16 @@ enum MonitorNowPlayingPhase: String, Codable, Sendable {
     case awaitingFirstEvent
     /// No event received and no known player is running.
     case noPlayer
+
+    /// Whether there is a track to draw. Outside edit mode the layer renders
+    /// nothing in the other two phases, so this also decides whether it may
+    /// hold on to the pointer.
+    var hasTrack: Bool {
+        switch self {
+        case .playing, .paused: true
+        case .awaitingFirstEvent, .noPlayer: false
+        }
+    }
 }
 
 /// Everything except `title`/`phase` is Optional on purpose: the rendering

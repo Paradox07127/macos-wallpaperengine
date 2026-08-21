@@ -24,12 +24,18 @@ final actor NowPlayingSource: MonitorDataSource {
     init(
         monitor: NowPlayingMonitor? = nil,
         artworkFetcher: NowPlayingArtworkFetcher? = nil,
+        audioReactive: Bool = true,
         audioDemand: (@MainActor @Sendable (Bool) -> Void)? = nil
     ) {
         monitorOverride = monitor
         fetcher = artworkFetcher ?? .shared
+        self.audioReactive = audioReactive
         self.audioDemand = audioDemand ?? Self.defaultAudioDemand
     }
+
+    /// Whether any placed layer still draws the reactive effects. Retaining the
+    /// capture tap regardless would run the FFT for nobody.
+    private let audioReactive: Bool
 
     /// The capture manager only runs the tap while a consumer retain is held;
     /// without this the widget's audio-reactive layer never sees `.capturing`
@@ -65,6 +71,7 @@ final actor NowPlayingSource: MonitorDataSource {
         generation &+= 1
         sink = nil
         artworkTask?.cancel()
+        await fetcher.cancelInFlight(except: nil)
         artworkTask = nil
         artworkTaskKey = nil
         currentTrackKey = nil
@@ -107,6 +114,10 @@ final actor NowPlayingSource: MonitorDataSource {
             artworkTask?.cancel()
             artworkTask = nil
             artworkTaskKey = nil
+            // Cancelling our own task only drops the result; the merged fetch
+            // inside the actor keeps downloading until it is told to stop.
+            await fetcher.cancelInFlight(except: key)
+            guard stillCurrent() else { return }
         }
         if let key, state.artwork == nil {
             let cached = await fetcher.cachedArtwork(forKey: key)
@@ -118,8 +129,11 @@ final actor NowPlayingSource: MonitorDataSource {
                 // image; the fetch re-publishes an enriched state on landing.
                 artworkTaskKey = key
                 let fetcher = fetcher
+                // Copy: capturing the mutable `state` would hand the escaping
+                // task the variable itself, which this scope keeps using below.
+                let pending = state
                 artworkTask = Task { [weak self] in
-                    let data = await fetcher.artwork(for: state)
+                    let data = await fetcher.artwork(for: pending)
                     await self?.finishArtworkFetch(data, key: key)
                 }
             }
@@ -128,7 +142,7 @@ final actor NowPlayingSource: MonitorDataSource {
         lastPublishedState = state
         await sink.updateNowPlaying(state)
         guard stillCurrent() else { return }
-        await setAudioDemand(state.phase == .playing)
+        await setAudioDemand(audioReactive && state.phase == .playing)
     }
 
     /// Bumped by stop(); an in-flight push must never publish or flip audio

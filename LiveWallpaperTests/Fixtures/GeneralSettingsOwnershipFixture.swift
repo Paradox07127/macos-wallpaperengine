@@ -25,6 +25,7 @@ enum OwnershipFixture {
     static let fieldsByDomain: [Domain: Set<String>] = [
         .behavior: [
             "appLanguageRawValue",
+            "checksUpdatesAtLaunch",
             "startOnLogin",
             "loginItemStatus",
             "loginItemStatusRefreshPending",

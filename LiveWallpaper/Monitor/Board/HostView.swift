@@ -209,6 +209,14 @@ final class HostView: NSView {
         isFlipped ? local : CGPoint(x: local.x, y: bounds.height - local.y)
     }
 
+    /// A tile that draws nothing must not keep its rect: with no track the Now
+    /// Playing layer is invisible, and an invisible layer swallowing desktop
+    /// clicks reads as the desktop being broken.
+    private func isRenderingPointerTile(_ placement: MonitorWidgetPlacement) -> Bool {
+        guard placement.kind == .nowPlaying else { return true }
+        return dataModel.snapshot.nowPlaying?.phase.hasTrack == true
+    }
+
     /// Render rects (board coordinates) of the widgets that asked for the
     /// pointer, built from the same geometry calls `RootView` draws with.
     private func pointerWidgetRects() -> [CGRect] {
@@ -219,7 +227,7 @@ final class HostView: NSView {
         )
         guard !geometry.isDegenerate else { return [] }
         return interactionModel.placements
-            .filter(WidgetFactory.wantsPointerInteraction)
+            .filter { WidgetFactory.wantsPointerInteraction($0) && isRenderingPointerTile($0) }
             .map { placement in
                 let footprint = geometry.pixelSize(for: placement.kind, size: placement.size)
                 let origin = LayoutEngine.pixelOrigin(

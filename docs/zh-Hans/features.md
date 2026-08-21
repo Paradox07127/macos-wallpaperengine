@@ -93,6 +93,11 @@ Retina 物理像素布局、临时存储（创意工坊导入强制开启）、C
 - **粒子**（`Schema/ParticleEffect.swift`）—— 雪、雨、散景、萤火虫、尘埃、星星、落叶、樱花。
 - **天气联动**（`LiveWallpaper/Runtime/WeatherReactiveService.swift`）—— 每小时的 Open-Meteo 天气状况映射到粒子特效与视频调整（饱和度、亮度、色温……）。位置来源：关闭 / 系统 / 手动。
 - **监控面板**（`LiveWallpaper/Monitor/`）—— 按显示器独立，可置于桌面层（点击穿透）或始终置顶。组件：CPU、内存、GPU、网络、磁盘、电源、进程、Agent 会话（跟踪本机的 Claude Code / Codex CLI 会话）、ANE 内存。完全被遮挡或用户离开时自动挂起。
+- **音乐播放**（`LiveWallpaper/Monitor/NowPlaying/`、`LiveWallpaper/Monitor/Widgets/NowPlaying*`）—— 显示 Spotify 或 Apple Music 正在播放的曲目，提供海报、黑胶、极光三种样式，强调色取自封面；开启音频响应后还有五种随音乐起伏的特效。它是独立的叠加层，开关与位置都与监控面板分开（九宫格锚点，或在预览里直接拖动），没有音乐播放时整层消失。
+  - **曲目信息来源：**播放器自己广播的 `DistributedNotificationCenter` 通知。不轮询、不装辅助进程、不用 Media Remote 私有 API。
+  - **播放控件**在悬停时出现，通过 Apple Events 控制播放器；macOS 会在首次使用时弹出「自动化」授权，拒绝授权只会让按钮失效，不影响其他功能。
+  - **歌词**（可选）来自公开的 LRCLIB 服务，按艺人／标题／专辑匹配。Spotify 会广播播放位置，所以歌词逐行跟随；Apple Music 不广播位置，歌词固定停在开头。
+  - **网络约束：**封面与歌词只走固定白名单主机（`open.spotify.com`、`itunes.apple.com`、`lrclib.net` 以及 Spotify／Apple 的封面 CDN）的 HTTPS，边下边计字节上限，跳转到白名单之外一律拒绝；命中与未命中分别有 LRU 缓存和带 TTL 的负缓存（`NowPlayingNetwork.swift`）。
 
 ## 4）性能模型
 
@@ -127,8 +132,8 @@ Retina 物理像素布局、临时存储（创意工坊导入强制开启）、C
 
 ## 7）更新（两个版本）
 
-`LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` —— 启动时以及打开菜单栏
-弹窗时查一次 GitHub Releases，12 小时节流，失败后退避 1 小时，支持跳过某个版本。已做加固：仅限受信主机、
+`LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` —— 启动时（可在**设置 →
+通用**里关掉）以及打开菜单栏弹窗时查一次 GitHub Releases，12 小时节流，失败后退避 1 小时，支持跳过某个版本。已做加固：仅限受信主机、
 响应体上限 512 KB、发布说明截断、URL 白名单。它只会打开 Releases 页面——不会自动安装
 任何东西。两处界面读的是同一个共享 checker —— **设置 → 关于**的横幅和菜单栏的
 **Update** 按钮 —— 所以跳过某个版本在两处一起生效；`UpdateSurfaceOwnershipTests`

@@ -102,6 +102,10 @@ final class NowPlayingController: ObservableObject {
         static let wouldRequireUserConsent: OSStatus = -1744
         /// The target app is not running — says nothing about permission.
         static let procNotFound: OSStatus = -600
+        /// `errOSASyntaxError`: our own script text failed to compile. Reporting
+        /// this as `notPermitted` used to latch the player as denied for the
+        /// rest of the launch over a bug that has nothing to do with consent.
+        static let scriptCompileFailed: OSStatus = -2740
     }
 
     /// Long enough to swallow a double-click on a transport button, short
@@ -260,7 +264,7 @@ extension NowPlayingController {
     /// across threads, and these scripts are one line each.
     nonisolated static let runAppleScript: Executor = { source in
         guard let script = NSAppleScript(source: source) else {
-            return .failure(NowPlayingScriptError(status: Status.notPermitted, message: nil))
+            return .failure(NowPlayingScriptError(status: Status.scriptCompileFailed, message: nil))
         }
         var errorInfo: NSDictionary?
         script.executeAndReturnError(&errorInfo)
