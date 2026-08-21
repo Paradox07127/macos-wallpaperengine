@@ -2,203 +2,12 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-// MARK: - Pure board edits (unit-tested)
-
-/// Board mutations the Music page performs. All persistence still flows through
-/// `ScreenManager.setMonitorOverlayBoard`; these only compute the next board.
-enum MusicOverlayBoardEditor {
-    /// Mirrors the schema's reference cell pitch (194×206 on a 1512×982 board);
-    /// those constants are internal to LiveWallpaperCore, so footprint math on
-    /// the normalized board restates them here.
-    private static let cellWidth = 194.0 / 1512.0
-    private static let cellHeight = 206.0 / 982.0
-
-    static let defaultSize: MonitorWidgetSize = .medium
-
-    static func hasNowPlaying(_ board: MonitorBoardConfiguration) -> Bool {
-        board.widgets.contains { $0.kind == .nowPlaying }
-    }
-
-    static func nowPlayingPlacement(in board: MonitorBoardConfiguration) -> MonitorWidgetPlacement? {
-        board.widgets.first { $0.kind == .nowPlaying }
-    }
-
-    /// Normalized width/height the widget covers on the reference board.
-    static func normalizedFootprint(for kind: MonitorWidgetKind, size: MonitorWidgetSize) -> CGSize {
-        let cells = kind.cellSize(for: size)
-        return CGSize(
-            width: Double(cells.columns) * cellWidth,
-            height: Double(cells.rows) * cellHeight
-        )
-    }
-
-    static func normalizedRect(of placement: MonitorWidgetPlacement) -> CGRect {
-        let footprint = normalizedFootprint(for: placement.kind, size: placement.size)
-        return CGRect(x: placement.x, y: placement.y, width: footprint.width, height: footprint.height)
-    }
-
-    static func addingNowPlaying(
-        to board: MonitorBoardConfiguration,
-        size: MonitorWidgetSize = defaultSize,
-        options: [String: MonitorWidgetOptionValue] = [:]
-    ) -> MonitorBoardConfiguration {
-        guard !hasNowPlaying(board) else { return board }
-        let footprint = normalizedFootprint(for: .nowPlaying, size: size)
-        let origin = firstFreeOrigin(footprint: footprint, avoiding: board.widgets)
-        var next = board
-        next.widgets.append(MonitorWidgetPlacement(
-            kind: .nowPlaying, size: size, x: origin.x, y: origin.y, options: options
-        ))
-        return next
-    }
-
-    // MARK: Nine-up anchors
-
-    /// The nine grid positions the Position control offers. Anything else is a
-    /// custom spot the user dragged to, which no button claims.
-    enum Anchor: String, CaseIterable, Hashable {
-        case topLeading, top, topTrailing
-        case leading, center, trailing
-        case bottomLeading, bottom, bottomTrailing
-    }
-
-    /// Wide enough to survive the rounding a drag leaves behind, far narrower
-    /// than the gap between two neighbouring anchors at any allowed size.
-    static let anchorTolerance = 0.02
-
-    /// Normalized origin of `anchor` for a Now Playing layer of `size`. A layer
-    /// wider than the board would otherwise produce a negative origin.
-    static func anchorOrigin(_ anchor: Anchor, size: MonitorWidgetSize) -> CGPoint {
-        let footprint = normalizedFootprint(for: .nowPlaying, size: size)
-        let freeX = max(0, 1 - footprint.width)
-        let freeY = max(0, 1 - footprint.height)
-        let x: Double = switch anchor {
-        case .topLeading, .leading, .bottomLeading: 0
-        case .top, .center, .bottom: freeX / 2
-        case .topTrailing, .trailing, .bottomTrailing: freeX
-        }
-        let y: Double = switch anchor {
-        case .topLeading, .top, .topTrailing: 0
-        case .leading, .center, .trailing: freeY / 2
-        case .bottomLeading, .bottom, .bottomTrailing: freeY
-        }
-        return CGPoint(x: x, y: y)
-    }
-
-    /// Which anchor this placement sits on, or nil for a dragged position.
-    static func anchor(of placement: MonitorWidgetPlacement) -> Anchor? {
-        Anchor.allCases.first { candidate in
-            let origin = anchorOrigin(candidate, size: placement.size)
-            return abs(origin.x - placement.x) <= anchorTolerance
-                && abs(origin.y - placement.y) <= anchorTolerance
-        }
-    }
-
-    static func settingAnchor(
-        _ anchor: Anchor, on board: MonitorBoardConfiguration
-    ) -> MonitorBoardConfiguration {
-        mutatingNowPlaying(board) { placement in
-            var next = placement
-            let origin = anchorOrigin(anchor, size: placement.size)
-            next.x = origin.x
-            next.y = origin.y
-            return next
-        }
-    }
-
-    /// Drag landing spot from the inspector preview; already clamped by the caller.
-    static func settingOrigin(
-        x: Double, y: Double, on board: MonitorBoardConfiguration
-    ) -> MonitorBoardConfiguration {
-        mutatingNowPlaying(board) { placement in
-            var next = placement
-            next.x = x
-            next.y = y
-            return next
-        }
-    }
-
-    static func settingStyle(
-        _ style: NowPlayingWidgetView.Style, on board: MonitorBoardConfiguration
-    ) -> MonitorBoardConfiguration {
-        settingOptions(on: board) { $0.style = style }
-    }
-
-    /// Every DIY control funnels through here, so the drop-on-default rule and
-    /// the clamping live in exactly one place.
-    static func settingOptions(
-        on board: MonitorBoardConfiguration,
-        _ transform: (inout NowPlayingOptions) -> Void
-    ) -> MonitorBoardConfiguration {
-        mutatingNowPlaying(board) { MonitorWidgetDraft.settingNowPlayingOptions(on: $0, transform) }
-    }
-
-    /// Growing a widget can push it off the board or onto a neighbour, so the
-    /// new footprint is clamped and, if it still collides, re-placed by
-    /// first-fit — the drag-time editor refits for the same reason.
-    static func settingSize(
-        _ size: MonitorWidgetSize, on board: MonitorBoardConfiguration
-    ) -> MonitorBoardConfiguration {
-        let others = board.widgets.filter { $0.kind != .nowPlaying }.map(normalizedRect(of:))
-        return mutatingNowPlaying(board) { placement in
-            var next = placement
-            next.size = size
-            let footprint = normalizedFootprint(for: next.kind, size: size)
-            next.x = min(max(next.x, 0), max(0, 1 - footprint.width))
-            next.y = min(max(next.y, 0), max(0, 1 - footprint.height))
-            let rect = CGRect(x: next.x, y: next.y, width: footprint.width, height: footprint.height)
-                .insetBy(dx: 1e-6, dy: 1e-6)
-            if others.contains(where: { $0.intersects(rect) }) {
-                let origin = firstFreeOrigin(footprint: footprint, avoiding: board.widgets.filter {
-                    $0.kind != .nowPlaying
-                })
-                next.x = origin.x
-                next.y = origin.y
-            }
-            return next
-        }
-    }
-
-    private static func mutatingNowPlaying(
-        _ board: MonitorBoardConfiguration,
-        _ mutate: (MonitorWidgetPlacement) -> MonitorWidgetPlacement
-    ) -> MonitorBoardConfiguration {
-        guard let index = board.widgets.firstIndex(where: { $0.kind == .nowPlaying }) else { return board }
-        var next = board
-        next.widgets[index] = mutate(next.widgets[index])
-        return next
-    }
-
-    /// First-fit scan on the reference grid, left→right then top→bottom. The
-    /// default system widgets pack the bottom rows, so a new Music layer
-    /// normally lands in the empty upper board. Full board falls back to (0, 0).
-    private static func firstFreeOrigin(
-        footprint: CGSize, avoiding widgets: [MonitorWidgetPlacement]
-    ) -> (x: Double, y: Double) {
-        let occupied = widgets.map(normalizedRect(of:))
-        var y = 0.0
-        while y + footprint.height <= 1.0 + 1e-9 {
-            var x = 0.0
-            while x + footprint.width <= 1.0 + 1e-9 {
-                // Inset so rects that merely share an edge don't count as overlap.
-                let candidate = CGRect(x: x, y: y, width: footprint.width, height: footprint.height)
-                    .insetBy(dx: 1e-6, dy: 1e-6)
-                if !occupied.contains(where: { $0.intersects(candidate) }) {
-                    return (x, y)
-                }
-                x += cellWidth
-            }
-            y += cellHeight
-        }
-        return (0, 0)
-    }
-}
-
 // MARK: - Section
 
 /// The Music overlay as one section of the Overlays tab — a sibling of the
-/// Weather and Monitor pages. It edits the Now Playing placement on the same
-/// monitor board the Monitor page manages, through the same ScreenManager API.
+/// Weather and Monitor pages. It edits the display's own
+/// `MusicOverlayConfiguration`; the Monitor board is a separate module and this
+/// page never touches it.
 struct MusicOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
@@ -214,18 +23,16 @@ struct MusicOverlaySection: View {
         screenManager.monitorOverlay(for: screen)
     }
 
-    private var placement: MonitorWidgetPlacement? {
-        MusicOverlayBoardEditor.nowPlayingPlacement(in: overlay.board)
-    }
+    private var music: MusicOverlayConfiguration { overlay.music }
 
-    private var isOn: Bool { overlay.musicEnabled }
+    private var isOn: Bool { music.enabled }
 
-    /// Every DIY control is dead while the layer is off or absent, exactly as
-    /// the Style / Size / Position rows above them.
-    private var isEditable: Bool { isOn && placement != nil }
+    /// Every DIY control is dead while the layer is off, exactly as the
+    /// Style / Size / Position rows above them.
+    private var isEditable: Bool { isOn }
 
     private var options: NowPlayingOptions {
-        NowPlayingOptions(placement?.options ?? [:])
+        NowPlayingOptions(music.options)
     }
 
     var body: some View {
@@ -242,12 +49,15 @@ struct MusicOverlaySection: View {
 
     // MARK: Option plumbing
 
+    private func update(_ transform: (MusicOverlayConfiguration) -> MusicOverlayConfiguration) {
+        let current = screenManager.monitorOverlay(for: screen).music
+        let next = transform(current)
+        guard next != current else { return }
+        screenManager.setMusicOverlay(next, for: screen)
+    }
+
     private func updateOptions(_ transform: @escaping (inout NowPlayingOptions) -> Void) {
-        let board = screenManager.monitorOverlay(for: screen).board
-        let next = MusicOverlayBoardEditor.settingOptions(on: board, transform)
-        if next != board {
-            screenManager.setMonitorOverlayBoard(next, for: screen)
-        }
+        update { MusicOverlayLayout.settingOptions(on: $0, transform) }
     }
 
     private func optionBinding<Value>(
@@ -303,21 +113,12 @@ struct MusicOverlaySection: View {
     }
 
     /// The Music module's own switch — it never touches `enabled`, which is the
-    /// Monitor board's. Turning off keeps the placement, so style, size and
+    /// Monitor board's. Turning off keeps the configuration, so style, size and
     /// position all survive a round trip through off.
     private var showBinding: Binding<Bool> {
         Binding(
             get: { isOn },
-            set: { on in
-                if on {
-                    let board = screenManager.monitorOverlay(for: screen).board
-                    let next = MusicOverlayBoardEditor.addingNowPlaying(to: board)
-                    if next != board {
-                        screenManager.setMonitorOverlayBoard(next, for: screen)
-                    }
-                }
-                screenManager.setMusicOverlayEnabled(on, for: screen)
-            }
+            set: { screenManager.setMusicOverlayEnabled($0, for: screen) }
         )
     }
 
@@ -329,7 +130,7 @@ struct MusicOverlaySection: View {
             info: "Desktop keeps the layer under your windows; On Top floats it above everything"
         ) {
             Picker("", selection: Binding(
-                get: { overlay.musicLevel },
+                get: { music.level },
                 set: { screenManager.setMusicOverlayLevel($0, for: screen) }
             )) {
                 Text("Desktop").tag(MonitorOverlayLevel.desktop)
@@ -357,21 +158,15 @@ struct MusicOverlaySection: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .disabled(!isOn || placement == nil)
+            .disabled(!isOn)
             .accessibilityLabel(Text("Style"))
         }
     }
 
     private var styleBinding: Binding<NowPlayingWidgetView.Style> {
         Binding(
-            get: { placement.map { NowPlayingWidgetView.style($0.options) } ?? .poster },
-            set: { style in
-                let board = screenManager.monitorOverlay(for: screen).board
-                let next = MusicOverlayBoardEditor.settingStyle(style, on: board)
-                if next != board {
-                    screenManager.setMonitorOverlayBoard(next, for: screen)
-                }
-            }
+            get: { NowPlayingWidgetView.style(music.options) },
+            set: { style in updateOptions { $0.style = style } }
         )
     }
 
@@ -382,29 +177,31 @@ struct MusicOverlaySection: View {
             title: "Size"
         ) {
             Picker("", selection: sizeBinding) {
-                ForEach(MonitorWidgetKind.nowPlaying.allowedSizes, id: \.self) { size in
-                    Text(WidgetSettingsPopover.sizeLabel(size)).tag(size)
+                ForEach(MusicOverlaySize.allCases, id: \.self) { size in
+                    Text(Self.sizeLabel(size)).tag(size)
                 }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .disabled(!isOn || placement == nil)
+            .disabled(!isOn)
             .accessibilityLabel(Text("Widget size"))
         }
     }
 
-    private var sizeBinding: Binding<MonitorWidgetSize> {
+    private var sizeBinding: Binding<MusicOverlaySize> {
         Binding(
-            get: { placement?.size ?? MusicOverlayBoardEditor.defaultSize },
-            set: { size in
-                let board = screenManager.monitorOverlay(for: screen).board
-                let next = MusicOverlayBoardEditor.settingSize(size, on: board)
-                if next != board {
-                    screenManager.setMonitorOverlayBoard(next, for: screen)
-                }
-            }
+            get: { music.size },
+            set: { size in update { MusicOverlayLayout.setting(size: size, on: $0) } }
         )
+    }
+
+    private static func sizeLabel(_ size: MusicOverlaySize) -> LocalizedStringKey {
+        switch size {
+        case .small: "Small"
+        case .medium: "Medium"
+        case .large: "Large"
+        }
     }
 
     // MARK: Position
@@ -417,11 +214,11 @@ struct MusicOverlaySection: View {
             info: "Pick a spot, or drag the layer around in the preview"
         ) {
             anchorGrid
-                .disabled(!isOn || placement == nil)
+                .disabled(!isOn)
         }
     }
 
-    private static let anchorRows: [[MusicOverlayBoardEditor.Anchor]] = [
+    private static let anchorRows: [[MusicOverlayLayout.Anchor]] = [
         [.topLeading, .top, .topTrailing],
         [.leading, .center, .trailing],
         [.bottomLeading, .bottom, .bottomTrailing],
@@ -430,7 +227,7 @@ struct MusicOverlaySection: View {
     /// No button is lit once the layer has been dragged off the nine spots —
     /// lighting the nearest one would misreport where the layer actually is.
     private var anchorGrid: some View {
-        let current = placement.flatMap(MusicOverlayBoardEditor.anchor(of:))
+        let current = MusicOverlayLayout.anchor(of: music)
         return VStack(spacing: 3) {
             ForEach(Self.anchorRows, id: \.self) { row in
                 HStack(spacing: 3) {
@@ -444,14 +241,10 @@ struct MusicOverlaySection: View {
     }
 
     private func anchorButton(
-        _ anchor: MusicOverlayBoardEditor.Anchor, isCurrent: Bool
+        _ anchor: MusicOverlayLayout.Anchor, isCurrent: Bool
     ) -> some View {
         Button {
-            let board = screenManager.monitorOverlay(for: screen).board
-            let next = MusicOverlayBoardEditor.settingAnchor(anchor, on: board)
-            if next != board {
-                screenManager.setMonitorOverlayBoard(next, for: screen)
-            }
+            update { MusicOverlayLayout.setting(anchor: anchor, on: $0) }
         } label: {
             RoundedRectangle(cornerRadius: 2)
                 .fill(isCurrent ? Color.accentColor : Color.secondary.opacity(0.25))
@@ -464,7 +257,7 @@ struct MusicOverlaySection: View {
     }
 
     private static func anchorLabel(
-        _ anchor: MusicOverlayBoardEditor.Anchor
+        _ anchor: MusicOverlayLayout.Anchor
     ) -> LocalizedStringKey {
         switch anchor {
         case .topLeading: "Top left"

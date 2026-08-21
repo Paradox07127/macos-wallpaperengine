@@ -16,7 +16,6 @@ enum WidgetFactory {
         case .processes: return String(localized: "Processes", comment: "Monitor widget name: top-processes instrument.")
         case .fleet: return String(localized: "Agent Session", comment: "Monitor widget name: AI agent session instrument.")
         case .aiEngine: return String(localized: "ANE Memory", comment: "Monitor widget name for process-attributed Neural Engine memory footprint; not activity or utilization.")
-        case .nowPlaying: return String(localized: "Now Playing", comment: "Monitor widget name: now-playing music instrument.")
         }
     }
 
@@ -31,22 +30,7 @@ enum WidgetFactory {
         case .processes: return "list.bullet"
         case .fleet: return "point.3.filled.connected.trianglepath.dotted"
         case .aiEngine: return "brain"
-        case .nowPlaying: return "music.note"
         }
-    }
-
-    /// Whether a tile asks for the pointer outside edit mode. Only the Now
-    /// Playing layer does, and only for its transport controls — every other
-    /// tile stays click-through so the board keeps behaving as wallpaper.
-    ///
-    /// This is what `HostView.hitTest` builds its `.widgetsOnly` hit regions
-    /// from: the window stops ignoring mouse events display-wide, but only this
-    /// tile's own rect actually consumes a click. Mouse Interaction is a
-    /// separate, wider opt-in and is not required for these controls.
-    static func wantsPointerInteraction(_ placement: MonitorWidgetPlacement) -> Bool {
-        guard placement.kind == .nowPlaying else { return false }
-        let options = NowPlayingOptions(placement.options)
-        return options.showControls || options.seekOnProgressDrag
     }
 
     @MainActor @ViewBuilder
@@ -70,8 +54,6 @@ enum WidgetFactory {
             AgentSessionWidgetView(context: context)
         case .aiEngine:
             AIEngineWidgetView(context: context)
-        case .nowPlaying:
-            NowPlayingWidgetView(context: context)
         }
     }
 }

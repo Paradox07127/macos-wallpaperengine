@@ -51,7 +51,7 @@ struct NowPlayingWidgetLayout: Equatable {
     /// sent still never becomes a placeholder just because its switch is on.
     nonisolated static func resolve(
         state: MonitorNowPlayingState?,
-        size: MonitorWidgetSize,
+        size: MusicOverlaySize,
         options: NowPlayingOptions,
         isEditing: Bool,
         reduceMotion: Bool,
@@ -133,14 +133,14 @@ struct NowPlayingWidgetLayout: Equatable {
     }
 
     /// A small tile has room for one button; anything larger gets all three.
-    nonisolated static func controlButtons(for size: MonitorWidgetSize) -> [ControlButton] {
+    nonisolated static func controlButtons(for size: MusicOverlaySize) -> [ControlButton] {
         size == .small ? [.playPause] : [.previous, .playPause, .next]
     }
 
     /// Lyric rows a tile of this size draws. Only the large tile has the height
     /// for the surrounding pair, so the row-count option applies there alone.
     nonisolated static func lyricsLineCount(
-        for size: MonitorWidgetSize, options: NowPlayingOptions
+        for size: MusicOverlaySize, options: NowPlayingOptions
     ) -> Int {
         switch size {
         case .large: options.lyricsLines
@@ -218,7 +218,7 @@ struct NowPlayingWidgetLayout: Equatable {
 // MARK: - View (borderless art layer — no container, no header, no panel)
 
 struct NowPlayingWidgetView: View {
-    let context: MonitorWidgetContext
+    let context: MusicOverlayContext
 
     @Environment(\.monitorSuspended) private var suspended
     @State private var accent: NowPlayingAccentColor?
@@ -261,12 +261,12 @@ struct NowPlayingWidgetView: View {
     // MARK: Derived
 
     private var state: MonitorNowPlayingState? { context.snapshot.nowPlaying }
-    private var options: NowPlayingOptions { NowPlayingOptions(context.placement.options) }
+    private var options: NowPlayingOptions { NowPlayingOptions(context.options) }
     private var style: Style { options.style }
     private var layout: NowPlayingWidgetLayout {
         NowPlayingWidgetLayout.resolve(
             state: state,
-            size: context.placement.size,
+            size: context.size,
             options: options,
             isEditing: context.isEditing,
             reduceMotion: context.reduceMotion,
@@ -483,7 +483,7 @@ struct NowPlayingWidgetView: View {
             NowPlayingLyricsView(
                 lines: lyrics,
                 lineCount: NowPlayingWidgetLayout.lyricsLineCount(
-                    for: context.placement.size, options: options
+                    for: context.size, options: options
                 ),
                 playhead: lyricsPlayhead,
                 accent: accentColor,
@@ -542,7 +542,7 @@ struct NowPlayingWidgetView: View {
             let shown = layout.visible.contains(.controls)
             let side = min(max(min(size.width, size.height) * 0.19, 22), 46)
             HStack(spacing: side * 0.4) {
-                ForEach(NowPlayingWidgetLayout.controlButtons(for: context.placement.size), id: \.self) { button in
+                ForEach(NowPlayingWidgetLayout.controlButtons(for: context.size), id: \.self) { button in
                     controlButton(button, state: state, side: side)
                 }
             }
@@ -721,7 +721,7 @@ struct NowPlayingWidgetView: View {
 
     @ViewBuilder
     private func posterBody(state: MonitorNowPlayingState, in size: CGSize) -> some View {
-        let titleSize = min(52, max(17, size.height * (context.placement.size == .large ? 0.16 : 0.30)))
+        let titleSize = min(52, max(17, size.height * (context.size == .large ? 0.16 : 0.30)))
             * options.titleScale
         let eyebrowSize = max(10, titleSize * 0.28)
         let inset = max(10, size.height * 0.07)
@@ -748,7 +748,7 @@ struct NowPlayingWidgetView: View {
                     state.title,
                     size: titleSize,
                     weight: .bold,
-                    lineLimit: context.placement.size == .small ? 1 : 2,
+                    lineLimit: context.size == .small ? 1 : 2,
                     minimumScale: 0.7
                 )
                 .nowPlayingTextShadow()
@@ -821,7 +821,7 @@ struct NowPlayingWidgetView: View {
     private func vinylBody(state: MonitorNowPlayingState, in size: CGSize) -> some View {
         let inset = max(8, size.height * 0.06)
         let discSide = min(size.height - inset * 2, size.width * 0.42)
-        let titleSize = min(30, max(14, size.height * (context.placement.size == .large ? 0.10 : 0.20)))
+        let titleSize = min(30, max(14, size.height * (context.size == .large ? 0.10 : 0.20)))
             * options.titleScale
         let smallSize = max(10, titleSize * 0.55)
 
@@ -957,7 +957,7 @@ struct NowPlayingWidgetView: View {
 
     @ViewBuilder
     private func auroraBody(state: MonitorNowPlayingState, in size: CGSize) -> some View {
-        let titleSize = min(30, max(14, size.height * (context.placement.size == .large ? 0.11 : 0.22)))
+        let titleSize = min(30, max(14, size.height * (context.size == .large ? 0.11 : 0.22)))
             * options.titleScale
         let smallSize = max(10, titleSize * 0.55)
 
@@ -1219,30 +1219,27 @@ struct NowPlayingArtworkView: View {
 // MARK: - Previews
 
 #if DEBUG
-private extension MonitorWidgetContext {
+private extension MusicOverlayContext {
     static func nowPlayingSample(
-        size: MonitorWidgetSize,
+        size: MusicOverlaySize,
         state: MonitorNowPlayingState?,
         style: NowPlayingWidgetView.Style = .poster,
         isEditing: Bool = false
-    ) -> MonitorWidgetContext {
+    ) -> MusicOverlayContext {
         var snapshot = MonitorSnapshot()
         snapshot.timestamp = Date().timeIntervalSince1970
         snapshot.nowPlaying = state
-        return MonitorWidgetContext(
+        return MusicOverlayContext(
             snapshot: snapshot,
-            history: MonitorHistorySnapshot(),
-            placement: MonitorWidgetPlacement(
-                kind: .nowPlaying, size: size,
-                options: style == .poster ? [:] : [NowPlayingOptions.Key.style: .string(style.rawValue)]
-            ),
+            size: size,
+            options: style == .poster ? [:] : [NowPlayingOptions.Key.style: .string(style.rawValue)],
             isEditing: isEditing,
             reduceMotion: false,
             now: Date()
         )
     }
 
-    static func nowPlayingFull(size: MonitorWidgetSize, style: NowPlayingWidgetView.Style) -> MonitorWidgetContext {
+    static func nowPlayingFull(size: MusicOverlaySize, style: NowPlayingWidgetView.Style) -> MusicOverlayContext {
         var state = MonitorNowPlayingState(phase: .playing, title: "Weightless Horizon")
         state.artist = "Aurora Fields"
         state.album = "Slow Light"

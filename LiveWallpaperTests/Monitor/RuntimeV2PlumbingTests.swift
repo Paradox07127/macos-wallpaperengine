@@ -87,20 +87,26 @@ struct RuntimeV2PlumbingTests {
     }
 
     /// The tap and its FFT are the most expensive thing a Now Playing layer can
-    /// ask for, and turning the effects off used to leave both running.
+    /// ask for, and turning the effects off used to leave both running. The
+    /// layer is not a widget, so the demand rides the runtime options.
     @Test("The audio tap follows the Now Playing layer's reactive switch")
-    func nowPlayingDemandsAudioOnlyWhenReactive() {
-        #expect(MonitorSampleDemand.of([widget(.nowPlaying)]).audioSpectrum == true)
-        #expect(
-            MonitorSampleDemand.of([widget(.nowPlaying, ["audioReactive": .bool(false)])]).audioSpectrum == false
-        )
-        // One layer still wanting it keeps the tap on for the whole board.
-        #expect(MonitorSampleDemand.of([
-            widget(.nowPlaying, ["audioReactive": .bool(false)]),
-            widget(.nowPlaying),
-        ]).audioSpectrum == true)
-        // No music layer at all means nobody is asking.
-        #expect(MonitorSampleDemand.of([widget(.cpu)]).audioSpectrum == false)
+    func musicOptionsCarryTheAudioDemand() {
+        var reactive = NowPlayingOptions()
+        reactive.audioReactive = true
+        var off = NowPlayingOptions()
+        off.audioReactive = false
+
+        #expect(NowPlayingOptions(reactive.applied(to: [:])).audioReactive)
+        #expect(!NowPlayingOptions(off.applied(to: [:])).audioReactive)
+        // Absent key means on, so an untouched layer still gets its effects.
+        #expect(NowPlayingOptions([:]).audioReactive)
+
+        // The factory is the consumer: no music, no source; music without the
+        // effects, no tap.
+        #expect(SourceRegistration.nowPlayingFactory(MonitorRuntimeOptions()).isEmpty)
+        #expect(!SourceRegistration.nowPlayingFactory(
+            MonitorRuntimeOptions(music: true, musicAudioReactive: false)
+        ).isEmpty)
     }
 
     @Test("Power has no options popover, so its sensor row is never narrowed away")

@@ -262,7 +262,7 @@
             #expect(options.system)
             #expect(options.agents)
 
-            let nonSystemKinds: Set<MonitorWidgetKind> = [.fleet, .nowPlaying]
+            let nonSystemKinds: Set<MonitorWidgetKind> = [.fleet]
             for kind in Set(MonitorWidgetKind.allCases).subtracting(nonSystemKinds) {
                 #expect(MonitorRuntimeOptions.requiresSystemMetrics(for: [kind]))
             }

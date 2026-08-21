@@ -2,78 +2,63 @@ import XCTest
 @testable import LiveWallpaper
 import LiveWallpaperCore
 
+/// The Now Playing layer's own placement math. Everything here used to be board
+/// surgery — first-fit around Monitor tiles, "leaves other widgets untouched",
+/// no-ops when the board carried no layer. The layer has its own configuration
+/// now, so those cases stopped existing rather than being deleted.
 final class MusicOverlaySectionTests: XCTestCase {
-    private typealias Editor = MusicOverlayBoardEditor
+    private typealias Layout = MusicOverlayLayout
 
-    // MARK: Adding
-
-    func testAddingNowPlayingAppendsMediumWithoutOverlap() throws {
-        let base = MonitorBoardConfiguration()   // default cpu/memory/gpu row
-        let next = Editor.addingNowPlaying(to: base)
-
-        XCTAssertEqual(next.widgets.count, base.widgets.count + 1)
-        let added = try XCTUnwrap(Editor.nowPlayingPlacement(in: next))
-        XCTAssertEqual(added.kind, .nowPlaying)
-        XCTAssertEqual(added.size, .medium)
-
-        let addedRect = Editor.normalizedRect(of: added).insetBy(dx: 1e-6, dy: 1e-6)
-        for other in base.widgets {
-            XCTAssertFalse(
-                Editor.normalizedRect(of: other).intersects(addedRect),
-                "New Now Playing placement overlaps existing \(other.kind)"
-            )
-        }
+    private func layer(
+        size: MusicOverlaySize = .medium,
+        x: Double = 0,
+        y: Double = 0,
+        options: [String: MonitorWidgetOptionValue] = [:]
+    ) -> MusicOverlayConfiguration {
+        MusicOverlayConfiguration(enabled: true, size: size, x: x, y: y, options: options)
     }
 
-    func testAddingNowPlayingAvoidsAnOccupiedTopLeft() throws {
-        let blocker = MonitorWidgetPlacement(kind: .cpu, size: .medium, x: 0, y: 0)
-        let base = MonitorBoardConfiguration(widgets: [blocker])
-        let next = Editor.addingNowPlaying(to: base)
+    // MARK: Independence from the Monitor board
 
-        let added = try XCTUnwrap(Editor.nowPlayingPlacement(in: next))
-        let addedRect = Editor.normalizedRect(of: added).insetBy(dx: 1e-6, dy: 1e-6)
-        XCTAssertFalse(Editor.normalizedRect(of: blocker).intersects(addedRect))
+    /// The split's whole point: a Music edit and a board edit cannot reach each
+    /// other, because they no longer share a container.
+    func testMusicAndBoardAreSeparatelyStored() {
+        var overlay = MonitorOverlayConfiguration()
+        let board = overlay.board
+        overlay.music = Layout.setting(anchor: .bottomTrailing, on: layer())
+        XCTAssertEqual(overlay.board, board, "a Music edit must not be able to touch the board")
+
+        var withWidgets = overlay
+        withWidgets.board.widgets = [MonitorWidgetPlacement(kind: .cpu, size: .small)]
+        XCTAssertEqual(withWidgets.music, overlay.music, "a board edit must not be able to touch Music")
     }
 
-    func testAddingNowPlayingToEmptyBoardLandsAtOrigin() throws {
-        let base = MonitorBoardConfiguration(widgets: [])
-        let next = Editor.addingNowPlaying(to: base)
-
-        let added = try XCTUnwrap(Editor.nowPlayingPlacement(in: next))
-        XCTAssertEqual(added.x, 0)
-        XCTAssertEqual(added.y, 0)
-        XCTAssertEqual(next.widgets.count, 1)
-    }
-
-    func testAddingNowPlayingIsIdempotent() {
-        let once = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let twice = Editor.addingNowPlaying(to: once)
-        XCTAssertEqual(twice, once)
-        XCTAssertEqual(twice.widgets.filter { $0.kind == .nowPlaying }.count, 1)
-    }
-
-    func testAddingPreservesBoardLevelSettings() {
-        var base = MonitorBoardConfiguration()
-        base.mouseInteractionEnabled = true
-        base.refreshHz = 0.5
-        base.reduceMotionOverride = true
-
-        let next = Editor.addingNowPlaying(to: base)
-        XCTAssertTrue(next.mouseInteractionEnabled)
-        XCTAssertEqual(next.refreshHz, 0.5)
-        XCTAssertEqual(next.reduceMotionOverride, true)
+    /// A config written while the layer was a widget still decodes; the stray
+    /// placement is dropped with every other unknown kind, and Music comes back
+    /// on its own defaults rather than inheriting a board position.
+    func testLegacyBoardWidgetDoesNotDecodeIntoTheBoard() throws {
+        let json = """
+        {"enabled":true,"level":"desktop","board":{"schemaVersion":4,"widgets":[
+        {"kind":"cpu","size":"s","x":0,"y":0},
+        {"kind":"nowPlaying","size":"m","x":0.5,"y":0.5}
+        ],"refreshHz":1,"mouseInteractionEnabled":false}}
+        """
+        let overlay = try JSONDecoder().decode(
+            MonitorOverlayConfiguration.self, from: Data(json.utf8)
+        )
+        XCTAssertEqual(overlay.board.widgets.map(\.kind), [.cpu])
+        XCTAssertEqual(overlay.music, .default)
     }
 
     // MARK: Anchors
 
-    func testEveryAnchorRoundTrips() throws {
-        for size in MonitorWidgetKind.nowPlaying.allowedSizes {
-            var board = Editor.addingNowPlaying(to: MonitorBoardConfiguration(), size: size)
-            for anchor in Editor.Anchor.allCases {
-                board = Editor.settingAnchor(anchor, on: board)
-                let placement = try XCTUnwrap(Editor.nowPlayingPlacement(in: board))
+    func testEveryAnchorRoundTrips() {
+        for size in MusicOverlaySize.allCases {
+            var configuration = layer(size: size)
+            for anchor in Layout.Anchor.allCases {
+                configuration = Layout.setting(anchor: anchor, on: configuration)
                 XCTAssertEqual(
-                    Editor.anchor(of: placement), anchor,
+                    Layout.anchor(of: configuration), anchor,
                     "\(anchor) at \(size) did not read back as itself"
                 )
             }
@@ -81,10 +66,10 @@ final class MusicOverlaySectionTests: XCTestCase {
     }
 
     func testAnchorOriginsStayOnTheBoardAtEverySize() {
-        for size in MonitorWidgetKind.nowPlaying.allowedSizes {
-            let footprint = Editor.normalizedFootprint(for: .nowPlaying, size: size)
-            for anchor in Editor.Anchor.allCases {
-                let origin = Editor.anchorOrigin(anchor, size: size)
+        for size in MusicOverlaySize.allCases {
+            let footprint = Layout.normalizedFootprint(for: size)
+            for anchor in Layout.Anchor.allCases {
+                let origin = Layout.anchorOrigin(anchor, size: size)
                 XCTAssertGreaterThanOrEqual(origin.x, 0, "\(anchor) at \(size)")
                 XCTAssertGreaterThanOrEqual(origin.y, 0, "\(anchor) at \(size)")
                 XCTAssertLessThanOrEqual(origin.x + footprint.width, 1 + 1e-9, "\(anchor) at \(size)")
@@ -96,229 +81,115 @@ final class MusicOverlaySectionTests: XCTestCase {
     /// Large is the widest layer, so its three columns sit closest together —
     /// if the tolerance ever swallows a neighbour it happens here first.
     func testLargeAnchorsAreDistinctAndInBounds() {
-        let footprint = Editor.normalizedFootprint(for: .nowPlaying, size: .large)
-        let leading = Editor.anchorOrigin(.leading, size: .large)
-        let center = Editor.anchorOrigin(.center, size: .large)
-        let trailing = Editor.anchorOrigin(.trailing, size: .large)
+        let footprint = Layout.normalizedFootprint(for: .large)
+        let leading = Layout.anchorOrigin(.leading, size: .large)
+        let center = Layout.anchorOrigin(.center, size: .large)
+        let trailing = Layout.anchorOrigin(.trailing, size: .large)
 
         XCTAssertEqual(leading.x, 0)
         XCTAssertEqual(trailing.x, 1 - footprint.width, accuracy: 1e-9)
         XCTAssertEqual(center.x, (1 - footprint.width) / 2, accuracy: 1e-9)
-        XCTAssertGreaterThan(center.x - leading.x, 2 * Editor.anchorTolerance)
-        XCTAssertGreaterThan(trailing.x - center.x, 2 * Editor.anchorTolerance)
+        XCTAssertGreaterThan(center.x - leading.x, 2 * Layout.anchorTolerance)
+        XCTAssertGreaterThan(trailing.x - center.x, 2 * Layout.anchorTolerance)
     }
 
-    func testAnchorMatchesWithinToleranceAndNotOutside() throws {
-        let board = Editor.settingAnchor(
-            .center, on: Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        )
-        var placement = try XCTUnwrap(Editor.nowPlayingPlacement(in: board))
+    func testAnchorMatchesWithinToleranceAndNotOutside() {
+        var configuration = Layout.setting(anchor: .center, on: layer())
+        let exact = Layout.anchorOrigin(.center, size: configuration.size)
 
-        let exact = Editor.anchorOrigin(.center, size: placement.size)
-        placement.x = exact.x + Editor.anchorTolerance * 0.9
-        XCTAssertEqual(Editor.anchor(of: placement), .center)
+        configuration.x = exact.x + Layout.anchorTolerance * 0.9
+        XCTAssertEqual(Layout.anchor(of: configuration), .center)
 
-        placement.x = exact.x + Editor.anchorTolerance * 1.1
-        XCTAssertNil(Editor.anchor(of: placement), "a dragged position must claim no anchor")
+        configuration.x = exact.x + Layout.anchorTolerance * 1.1
+        XCTAssertNil(Layout.anchor(of: configuration), "a dragged position must claim no anchor")
     }
 
-    func testSettingAnchorLeavesOtherWidgetsAndSizeUntouched() throws {
-        let base = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let next = Editor.settingAnchor(.bottomTrailing, on: base)
-
-        XCTAssertEqual(
-            next.widgets.filter { $0.kind != .nowPlaying },
-            base.widgets.filter { $0.kind != .nowPlaying }
-        )
-        let placement = try XCTUnwrap(Editor.nowPlayingPlacement(in: next))
-        XCTAssertEqual(placement.size, try XCTUnwrap(Editor.nowPlayingPlacement(in: base)).size)
+    func testSettingAnchorLeavesSizeAndOptionsUntouched() {
+        let base = layer(size: .large, options: ["style": .string("vinyl")])
+        let next = Layout.setting(anchor: .bottomTrailing, on: base)
+        XCTAssertEqual(next.size, base.size)
+        XCTAssertEqual(next.options, base.options)
+        XCTAssertEqual(next.enabled, base.enabled)
     }
 
-    func testSettingAnchorWithoutNowPlayingIsANoOp() {
-        let base = MonitorBoardConfiguration(widgets: [])
-        XCTAssertEqual(Editor.settingAnchor(.center, on: base), base)
+    func testSettingOriginClampsToTheBoard() {
+        let next = Layout.setting(x: 0.31, y: 0.42, on: layer())
+        XCTAssertEqual(next.x, 0.31)
+        XCTAssertEqual(next.y, 0.42)
+
+        let clamped = Layout.setting(x: 2, y: -1, on: layer())
+        XCTAssertEqual(clamped.x, 1)
+        XCTAssertEqual(clamped.y, 0)
     }
 
-    func testSettingOriginMovesOnlyTheLayer() throws {
-        let base = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let next = Editor.settingOrigin(x: 0.31, y: 0.42, on: base)
+    // MARK: Style and options
 
-        let placement = try XCTUnwrap(Editor.nowPlayingPlacement(in: next))
-        XCTAssertEqual(placement.x, 0.31)
-        XCTAssertEqual(placement.y, 0.42)
-        XCTAssertEqual(
-            next.widgets.filter { $0.kind != .nowPlaying },
-            base.widgets.filter { $0.kind != .nowPlaying }
-        )
-    }
-
-    // MARK: Style
-
-    func testStyleRoundtrip() throws {
-        let base = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-
-        let vinyl = Editor.settingStyle(.vinyl, on: base)
-        let vinylPlacement = try XCTUnwrap(Editor.nowPlayingPlacement(in: vinyl))
-        XCTAssertEqual(NowPlayingWidgetView.style(vinylPlacement.options), .vinyl)
+    func testStyleRoundtrip() {
+        let vinyl = Layout.settingOptions(on: layer()) { $0.style = .vinyl }
+        XCTAssertEqual(NowPlayingWidgetView.style(vinyl.options), .vinyl)
 
         // Poster is the default, so setting it back drops the option key.
-        let poster = Editor.settingStyle(.poster, on: vinyl)
-        let posterPlacement = try XCTUnwrap(Editor.nowPlayingPlacement(in: poster))
-        XCTAssertEqual(NowPlayingWidgetView.style(posterPlacement.options), .poster)
-        XCTAssertNil(posterPlacement.options[NowPlayingOptions.Key.style])
+        let poster = Layout.settingOptions(on: vinyl) { $0.style = .poster }
+        XCTAssertEqual(NowPlayingWidgetView.style(poster.options), .poster)
+        XCTAssertNil(poster.options[NowPlayingOptions.Key.style])
     }
 
-    // MARK: DIY options
-
-    func testSettingOptionsWritesOnlyTheNowPlayingLayer() throws {
-        let base = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let original = try XCTUnwrap(Editor.nowPlayingPlacement(in: base))
-
-        let next = Editor.settingOptions(on: base) {
+    func testSettingOptionsKeepsPositionSizeAndUnknownKeys() {
+        let base = layer(size: .large, x: 0.2, y: 0.3, options: ["lyricsMode": .string("karaoke")])
+        let next = Layout.settingOptions(on: base) {
             $0.opacity = 0.5
             $0.marquee = true
             $0.showAlbum = false
+            $0.artworkShape = .circle
         }
 
-        XCTAssertEqual(
-            next.widgets.filter { $0.kind != .nowPlaying },
-            base.widgets.filter { $0.kind != .nowPlaying },
-            "a Music option edit touched another widget"
-        )
-        let placement = try XCTUnwrap(Editor.nowPlayingPlacement(in: next))
-        XCTAssertEqual(placement.id, original.id)
-        XCTAssertEqual(placement.size, original.size)
-        XCTAssertEqual(placement.x, original.x)
-        XCTAssertEqual(placement.y, original.y)
+        XCTAssertEqual(next.size, base.size)
+        XCTAssertEqual(next.x, base.x)
+        XCTAssertEqual(next.y, base.y)
+        XCTAssertEqual(next.options["lyricsMode"]?.stringValue, "karaoke")
+        XCTAssertEqual(next.options[NowPlayingOptions.Key.artworkShape]?.stringValue, "circle")
 
-        let options = NowPlayingOptions(placement.options)
+        let options = NowPlayingOptions(next.options)
         XCTAssertEqual(options.opacity, 0.5)
         XCTAssertTrue(options.marquee)
         XCTAssertFalse(options.showAlbum)
     }
 
-    /// Options carried by other widget kinds share the same dictionary shape;
-    /// a Music edit must not reach into them.
-    func testSettingOptionsLeavesOtherWidgetOptionsIntact() throws {
-        let neighbour = MonitorWidgetPlacement(
-            kind: .processes, size: .medium, x: 0, y: 0, options: ["rows": .number(7)]
-        )
-        let base = Editor.addingNowPlaying(to: MonitorBoardConfiguration(widgets: [neighbour]))
-        let next = Editor.settingOptions(on: base) { $0.titleScale = 1.2 }
-
-        let after = try XCTUnwrap(next.widgets.first { $0.kind == .processes })
-        XCTAssertEqual(after.options["rows"]?.numberValue, 7)
-    }
-
-    /// Unrelated keys already on the Music placement (a later option, a hand
-    /// edit) survive a DIY change.
-    func testSettingOptionsKeepsUnknownKeysOnTheLayer() throws {
-        var board = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let index = try XCTUnwrap(board.widgets.firstIndex { $0.kind == .nowPlaying })
-        board.widgets[index].options["lyricsMode"] = .string("karaoke")
-
-        let next = Editor.settingOptions(on: board) { $0.artworkShape = .circle }
-        let placement = try XCTUnwrap(Editor.nowPlayingPlacement(in: next))
-        XCTAssertEqual(placement.options["lyricsMode"]?.stringValue, "karaoke")
-        XCTAssertEqual(placement.options[NowPlayingOptions.Key.artworkShape]?.stringValue, "circle")
-    }
-
-    func testSettingOptionsWithoutNowPlayingIsANoOp() {
-        let base = MonitorBoardConfiguration(widgets: [])
-        XCTAssertEqual(Editor.settingOptions(on: base) { $0.opacity = 0.3 }, base)
-    }
-
     /// Switching style must not pin the previous style's implicit alignment —
     /// aurora is centered, and it stays centered after a poster → aurora hop.
-    func testStyleChangeDoesNotPinTheOldStylesAlignment() throws {
-        let base = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let aurora = Editor.settingStyle(.aurora, on: base)
-        let placement = try XCTUnwrap(Editor.nowPlayingPlacement(in: aurora))
+    func testStyleChangeDoesNotPinTheOldStylesAlignment() {
+        let aurora = Layout.settingOptions(on: layer()) { $0.style = .aurora }
 
-        XCTAssertNil(placement.options[NowPlayingOptions.Key.alignment])
-        XCTAssertNil(placement.options[NowPlayingOptions.Key.titleFont])
-        XCTAssertEqual(NowPlayingOptions(placement.options).resolvedAlignment, .center)
-        XCTAssertEqual(NowPlayingOptions(placement.options).resolvedTitleFont, .rounded)
-    }
-
-    func testSettingStyleWithoutNowPlayingIsANoOp() {
-        let base = MonitorBoardConfiguration(widgets: [])
-        XCTAssertEqual(Editor.settingStyle(.aurora, on: base), base)
+        XCTAssertNil(aurora.options[NowPlayingOptions.Key.alignment])
+        XCTAssertNil(aurora.options[NowPlayingOptions.Key.titleFont])
+        XCTAssertEqual(NowPlayingOptions(aurora.options).resolvedAlignment, .center)
+        XCTAssertEqual(NowPlayingOptions(aurora.options).resolvedTitleFont, .rounded)
     }
 
     // MARK: Size
 
-    func testSizeRoundtripKeepsIdentityAndPosition() throws {
-        let base = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let original = try XCTUnwrap(Editor.nowPlayingPlacement(in: base))
-
-        let large = Editor.settingSize(.large, on: base)
-        let largePlacement = try XCTUnwrap(Editor.nowPlayingPlacement(in: large))
-        XCTAssertEqual(largePlacement.size, .large)
-        XCTAssertEqual(largePlacement.id, original.id)
-        XCTAssertEqual(largePlacement.x, original.x)
-        XCTAssertEqual(largePlacement.y, original.y)
-
-        let backToMedium = Editor.settingSize(.medium, on: large)
-        XCTAssertEqual(try XCTUnwrap(Editor.nowPlayingPlacement(in: backToMedium)).size, .medium)
+    func testSizeRoundtripKeepsPosition() {
+        let base = layer(x: 0.1, y: 0.2)
+        let large = Layout.setting(size: .large, on: base)
+        XCTAssertEqual(large.size, .large)
+        XCTAssertEqual(large.x, base.x)
+        XCTAssertEqual(large.y, base.y)
+        XCTAssertEqual(Layout.setting(size: .medium, on: large).size, .medium)
     }
 
-    func testGrowingNearTheRightEdgeStaysOnTheBoard() throws {
-        // Park the layer where a Large footprint would hang off the right edge.
-        var board = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let index = try XCTUnwrap(board.widgets.firstIndex { $0.kind == .nowPlaying })
-        board.widgets[index].x = 0.8
-        board.widgets[index].y = 0.9
-
-        let grown = try XCTUnwrap(Editor.nowPlayingPlacement(in: Editor.settingSize(.large, on: board)))
-        let footprint = Editor.normalizedFootprint(for: .nowPlaying, size: .large)
+    func testGrowingNearTheRightEdgeStaysOnTheBoard() {
+        let grown = Layout.setting(size: .large, on: layer(x: 0.8, y: 0.9))
+        let footprint = Layout.normalizedFootprint(for: .large)
         XCTAssertLessThanOrEqual(grown.x + footprint.width, 1 + 1e-9)
         XCTAssertLessThanOrEqual(grown.y + footprint.height, 1 + 1e-9)
-    }
-
-    func testGrowingOntoANeighbourRelocatesInsteadOfOverlapping() throws {
-        // A CPU tile sits directly right of the layer, in the Large footprint.
-        let neighbour = MonitorWidgetPlacement(
-            kind: .cpu, size: .large,
-            x: Editor.normalizedFootprint(for: .nowPlaying, size: .medium).width, y: 0
-        )
-        let board = Editor.addingNowPlaying(to: MonitorBoardConfiguration(widgets: [neighbour]))
-        let grown = try XCTUnwrap(Editor.nowPlayingPlacement(in: Editor.settingSize(.large, on: board)))
-
-        let grownRect = Editor.normalizedRect(of: grown).insetBy(dx: 1e-6, dy: 1e-6)
-        XCTAssertFalse(Editor.normalizedRect(of: neighbour).intersects(grownRect))
-    }
-
-    func testAddingCanCarryARememberedSizeAndStyle() throws {
-        let options: [String: MonitorWidgetOptionValue] = ["style": .string("vinyl")]
-        let board = Editor.addingNowPlaying(
-            to: MonitorBoardConfiguration(), size: .large, options: options
-        )
-        let placement = try XCTUnwrap(Editor.nowPlayingPlacement(in: board))
-        XCTAssertEqual(placement.size, .large)
-        XCTAssertEqual(placement.options["style"]?.stringValue, "vinyl")
-    }
-
-    func testSettingSizeWithoutNowPlayingIsANoOp() {
-        let base = MonitorBoardConfiguration(widgets: [])
-        XCTAssertEqual(Editor.settingSize(.large, on: base), base)
-    }
-
-    func testSettingSizeLeavesOtherWidgetsUntouched() {
-        let base = Editor.addingNowPlaying(to: MonitorBoardConfiguration())
-        let next = Editor.settingSize(.small, on: base)
-        XCTAssertEqual(
-            next.widgets.filter { $0.kind != .nowPlaying },
-            base.widgets.filter { $0.kind != .nowPlaying }
-        )
     }
 
     // MARK: Footprint
 
     func testNormalizedFootprintTracksCellSize() {
-        let small = Editor.normalizedFootprint(for: .nowPlaying, size: .small)
-        let medium = Editor.normalizedFootprint(for: .nowPlaying, size: .medium)
-        let large = Editor.normalizedFootprint(for: .nowPlaying, size: .large)
+        let small = Layout.normalizedFootprint(for: .small)
+        let medium = Layout.normalizedFootprint(for: .medium)
+        let large = Layout.normalizedFootprint(for: .large)
 
         // S 2×1 / M 3×1 / L 4×2 cells: widths scale 2:3:4, large is double height.
         XCTAssertEqual(medium.width / small.width, 1.5, accuracy: 1e-9)
@@ -326,6 +197,7 @@ final class MusicOverlaySectionTests: XCTestCase {
         XCTAssertEqual(small.height, medium.height, accuracy: 1e-9)
         XCTAssertEqual(large.height, small.height * 2, accuracy: 1e-9)
     }
+
     // MARK: Preview wiring (source contracts)
 
     /// The layer drag is attached to the very view `.position` moves. Reading

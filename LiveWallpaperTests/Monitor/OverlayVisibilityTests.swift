@@ -167,17 +167,27 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         let controller = try RepositoryRoot.source(
             "LiveWallpaper/Monitor/Overlay/OverlayController.swift"
         )
-        // The window's ignoresMouseEvents flag is display-wide, so the narrowing
-        // has to be the same scope the board view filters hits with — one
-        // resolver, never two independent conditions that can drift apart.
+        // The window's ignoresMouseEvents flag is display-wide and no view-level
+        // filter can narrow it: an unhandled click stays inside our window
+        // instead of reaching Finder. So the flag itself has to follow the
+        // pointer, and it must never be derived from the scope alone.
         let interactive = try sourceBlock(controller, from: "private func updateInteractive(")
-        #expect(interactive.contains("HostView.pointerScope(for: host.config"))
-        #expect(interactive.contains("host.window.setInteractive(scope != .none)"))
-        #expect(interactive.contains("host.board.setPointerScope(scope)"))
+        #expect(interactive.contains("HostView.pointerScope(for: config"))
+        #expect(interactive.contains("view.setPointerScope("))
+        #expect(interactive.contains("applyWindowMouseEvents(to: host)"))
+        #expect(
+            !controller.contains("setInteractive(scope != .none)"),
+            "a scope-derived flag froze the whole desktop for one transport control"
+        )
+        #expect(controller.contains("OverlayPointerGate.windowTakesMouseEvents("))
+        #expect(
+            controller.contains("addGlobalMonitorForEvents") && controller.contains("addLocalMonitorForEvents"),
+            "both monitors are needed: the global one stops seeing the pointer once the window owns it"
+        )
 
-        // AppKit dispatches by window frame and SwiftUI cannot hand an event
-        // back to the window below, so the widget-only case must be filtered in
-        // hitTest — behaviour pinned in BoardPointerScopeTests.
+        // Once the window IS interactive, the click still has to be routed to
+        // the right view inside it — that is what hitTest filters, and it is
+        // pinned in BoardPointerScopeTests.
         let host = try RepositoryRoot.source("LiveWallpaper/Monitor/Board/HostView.swift")
         let hitTest = try sourceBlock(host, from: "override func hitTest(")
         #expect(hitTest.contains("acceptsPointer(atLocalPoint:"))
@@ -205,11 +215,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         let hostCreation = try sourceSlice(
             controller,
             from: "let board = HostView(",
-            to: "private func merging("
-        )
-        let merge = try sourceBlock(
-            controller,
-            from: "private func merging("
+            to: "/// Drops every module host on this display."
         )
         let visibilityUpdate = try sourceSlice(
             controller,
@@ -251,16 +257,19 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         #expect(hostState.contains("var isDeliveringSnapshots = false"))
 
         #expect(hostCreation.contains("board.setSuspended(true)"))
+        #expect(hostCreation.contains("music.setSuspended(true)"))
         #expect(hostCreation.contains("reconcileVisibilityAndRuntime()"))
-        // A module host only knows its own widgets, so the edit it reports must
-        // be folded back into the retained full board before it is persisted.
-        #expect(hostCreation.contains("onOverlayEdited?(screenID, merging(edited, from: key))"))
-        #expect(merge.contains("full.widgets.filter { !key.module.owns($0.kind) }"))
-        #expect(merge.contains("boards[key.screenID] = merged"))
+        // The board host owns the whole board now, so its edit is what gets
+        // persisted — there is no other module's slice to fold back in.
+        #expect(hostCreation.contains("onOverlayEdited?(screenID, edited)"))
+        #expect(
+            !controller.contains("private func merging("),
+            "a merge step means the two modules are sharing a container again"
+        )
         #expect(visibilityUpdate.contains("guard self.isUserAbsent != isUserAbsent"))
         #expect(visibilityUpdate.contains("self.occludedScreenIDs != occludedScreenIDs"))
         #expect(visibilityReconcile.contains("MonitorOverlayVisibilityPolicy.resolve"))
-        #expect(visibilityReconcile.contains("host.board.setSuspended(true)"))
+        #expect(visibilityReconcile.contains("host.setSuspended(true)"))
         #expect(visibilityReconcile.contains("stopPump()"))
 
         #expect(
@@ -268,7 +277,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
                 "for (key, host) in hosts where visibleHostKeys.contains(key)"
             )
         )
-        #expect(delivery.contains("host.board.setSuspended(false)"))
+        #expect(delivery.contains("host.setSuspended(false)"))
         #expect(delivery.contains("newlyVisibleHosts.append(host)"))
         #expect(delivery.contains("primeHost(host)"))
         #expect(pump.contains("guard pumpTask == nil"))
@@ -276,7 +285,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
 
         #expect(prime.contains("guard host.isVisible, host.isDeliveringSnapshots"))
         #expect(push.contains("where host.isVisible && host.isDeliveringSnapshots"))
-        #expect(push.contains("host.board.push(update.snapshot)"))
+        #expect(push.contains("host.push(update.snapshot)"))
     }
 
     @Test("one serialized task owns acquire update pause and release ordering")
@@ -436,11 +445,11 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         #expect(desktopOverlayOwner.contains("overlay.enabled && overlay.level == .desktop"))
         // The fallback poll feeds occlusion to desktop-level hosts of EITHER
         // module; missing music here would freeze it behind a full-screen window.
-        #expect(desktopOverlayOwner.contains("overlay.musicEnabled && overlay.musicLevel == .desktop"))
+        #expect(desktopOverlayOwner.contains("overlay.music.enabled && overlay.music.level == .desktop"))
         #expect(overlayEnable.contains("mutateMonitorOverlays("))
         #expect(overlayLevel.contains("mutateMonitorOverlays("))
-        #expect(musicEnable.contains("$0.musicEnabled = enabled"))
-        #expect(musicLevel.contains("$0.musicLevel = level"))
+        #expect(musicEnable.contains("$0.music.enabled = enabled"))
+        #expect(musicLevel.contains("$0.music.level = level"))
         #expect(overlayWriter.contains("scheduleMonitorOverlayReconcile()"))
         #expect(overlayWriter.contains("SettingsManager.shared.saveMonitorOverlays("))
         #expect(absenceEntryPoint.contains("applyUserAbsenceChange(reason, present: present)"))
@@ -492,9 +501,8 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
             overlay: MonitorOverlayConfiguration(
                 enabled: false,
                 level: .desktop,
-                musicEnabled: true,
-                musicLevel: .front,
-                board: MonitorBoardConfiguration(widgets: [Self.cpuWidget, Self.musicWidget])
+                music: MusicOverlayConfiguration(enabled: true, level: .front),
+                board: MonitorBoardConfiguration(widgets: [Self.cpuWidget])
             ),
             screenID: 401,
             screenFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -502,7 +510,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         await controller.waitUntilRuntimeSettled()
 
         #expect(controller.activeHostKeys == [key(401, .music)])
-        #expect(controller.board(screenID: 401, module: .music)?.widgets.map(\.kind) == [.nowPlaying])
+        #expect(controller.music(screenID: 401)?.enabled == true)
         #expect(controller.board(screenID: 401, module: .monitor) == nil)
 
         controller.teardownAll()
@@ -510,86 +518,40 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         await runtime.shutdown()
     }
 
+    /// The board host used to render a filtered copy of a shared array, so its
+    /// write-back had to be merged or it deleted the music layer. There is
+    /// nothing to merge now: what the board reports is the whole board.
     @MainActor
-    @Test("an edit on one module's host never deletes the other module's widgets")
-    func moduleEditPreservesTheOtherModulesWidgets() async throws {
+    @Test("a board edit is reported verbatim and never carries the music layer")
+    func boardEditIsReportedVerbatim() async throws {
         let runtime = makeRuntime()
         let controller = OverlayController(runtime: runtime)
         var reported: MonitorBoardConfiguration?
         controller.onOverlayEdited = { _, board in reported = board }
 
+        let music = MusicOverlayConfiguration(enabled: true, level: .front, x: 0.25)
         controller.apply(
             overlay: MonitorOverlayConfiguration(
                 enabled: true,
                 level: .desktop,
-                musicEnabled: true,
-                musicLevel: .front,
-                board: MonitorBoardConfiguration(widgets: [Self.cpuWidget, Self.musicWidget])
+                music: music,
+                board: MonitorBoardConfiguration(widgets: [Self.cpuWidget])
             ),
             screenID: 402,
             screenFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
         )
         await controller.waitUntilRuntimeSettled()
 
-        // Drag the music layer on its own host, which only ever saw that widget.
-        var musicEdit = try #require(controller.board(screenID: 402, module: .music))
-        musicEdit.widgets[0].x = 0.25
-        let reportMusicEdit = try #require(controller.boardEditCallback(screenID: 402, module: .music))
-        reportMusicEdit(musicEdit)
+        var edit = try #require(controller.board(screenID: 402, module: .monitor))
+        edit.widgets[0].y = 0.75
+        let report = try #require(controller.boardEditCallback(screenID: 402, module: .monitor))
+        report(edit)
 
-        let afterMusicEdit = try #require(reported)
-        #expect(afterMusicEdit.widgets.count == 2)
-        #expect(afterMusicEdit.widgets.contains { $0.id == Self.cpuWidget.id })
-        #expect(afterMusicEdit.widgets.first { $0.kind == .nowPlaying }?.x == 0.25)
-
-        // And the same in the other direction.
-        var monitorEdit = try #require(controller.board(screenID: 402, module: .monitor))
-        monitorEdit.widgets[0].y = 0.75
-        let reportMonitorEdit = try #require(
-            controller.boardEditCallback(screenID: 402, module: .monitor)
-        )
-        reportMonitorEdit(monitorEdit)
-
-        let afterMonitorEdit = try #require(reported)
-        #expect(afterMonitorEdit.widgets.count == 2)
-        #expect(afterMonitorEdit.widgets.first { $0.kind == .cpu }?.y == 0.75)
-        // The music widget keeps the position the earlier edit gave it.
-        #expect(afterMonitorEdit.widgets.first { $0.kind == .nowPlaying }?.x == 0.25)
-
-        controller.teardownAll()
-        await controller.waitUntilRuntimeSettled()
-        await runtime.shutdown()
-    }
-
-    @MainActor
-    @Test("an edit keeps widgets of a module that has no host at all")
-    func moduleEditPreservesWidgetsOfADisabledModule() async throws {
-        let runtime = makeRuntime()
-        let controller = OverlayController(runtime: runtime)
-        var reported: MonitorBoardConfiguration?
-        controller.onOverlayEdited = { _, board in reported = board }
-
-        controller.apply(
-            overlay: MonitorOverlayConfiguration(
-                enabled: false,
-                level: .desktop,
-                musicEnabled: true,
-                musicLevel: .front,
-                board: MonitorBoardConfiguration(widgets: [Self.cpuWidget, Self.musicWidget])
-            ),
-            screenID: 403,
-            screenFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
-        )
-        await controller.waitUntilRuntimeSettled()
-
-        var musicEdit = try #require(controller.board(screenID: 403, module: .music))
-        musicEdit.widgets[0].x = 0.4
-        let reportEdit = try #require(controller.boardEditCallback(screenID: 403, module: .music))
-        reportEdit(musicEdit)
-
-        let merged = try #require(reported)
-        #expect(merged.widgets.map(\.kind) == [.nowPlaying, .cpu])
-        #expect(merged.widgets.contains { $0.id == Self.cpuWidget.id })
+        let after = try #require(reported)
+        #expect(after.widgets.map(\.kind) == [.cpu])
+        #expect(after.widgets.first?.y == 0.75)
+        // The music layer is untouched because it was never in that array.
+        #expect(controller.music(screenID: 402) == music)
 
         controller.teardownAll()
         await controller.waitUntilRuntimeSettled()
@@ -603,12 +565,12 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
             MonitorOverlayConfiguration.self,
             from: Data(#"{ "enabled": true, "level": "front" }"#.utf8)
         )
-        #expect(legacy.musicEnabled == false)
+        #expect(legacy.music == .default)
 
         let runtime = makeRuntime()
         let controller = OverlayController(runtime: runtime)
         var overlay = legacy
-        overlay.board = MonitorBoardConfiguration(widgets: [Self.cpuWidget, Self.musicWidget])
+        overlay.board = MonitorBoardConfiguration(widgets: [Self.cpuWidget])
         controller.apply(
             overlay: overlay,
             screenID: 404,
@@ -625,9 +587,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
     }
 
     private static let cpuWidget = MonitorWidgetPlacement(kind: .cpu, size: .medium, x: 0, y: 0)
-    private static let musicWidget = MonitorWidgetPlacement(
-        kind: .nowPlaying, size: .medium, x: 0, y: 0.5
-    )
+
 
     /// nil factory override → the real MainActor registry, same as production.
     private func makeRuntime() -> Runtime {
@@ -717,16 +677,34 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
     /// the Music layer on must not cost every Monitor tile its sparkline.
     @Test("history resets on a new sampled kind, never on Now Playing")
     func historyResetIgnoresNonSamplingKinds() {
-        #expect(!OverlayController.historyResetRequired(previous: [.cpu], next: [.cpu, .nowPlaying]))
-        #expect(!OverlayController.historyResetRequired(previous: [], next: [.nowPlaying]))
-        // A real sampled arrival still resets, alone or alongside Now Playing.
         #expect(OverlayController.historyResetRequired(previous: [.cpu], next: [.cpu, .gpu]))
-        #expect(
-            OverlayController.historyResetRequired(previous: [.cpu], next: [.cpu, .gpu, .nowPlaying])
-        )
         // Losing a kind is not a gain.
         #expect(!OverlayController.historyResetRequired(previous: [.cpu, .gpu], next: [.cpu]))
         #expect(!OverlayController.historyResetRequired(previous: [.cpu], next: [.cpu]))
+    }
+
+    /// A full-screen overlay that keeps mouse events for one small control
+    /// takes every desktop click with it: `hitTest` returning nil leaves the
+    /// click unhandled inside our window, it does not pass it to Finder. Only
+    /// `ignoresMouseEvents` does that, and it is per-window.
+    @Test("A widgets-only overlay takes mouse events only while the pointer is over a control")
+    func windowGateFollowsThePointer() {
+        #expect(!OverlayPointerGate.windowTakesMouseEvents(scope: .widgetsOnly, pointerIsOverLiveArea: false))
+        #expect(OverlayPointerGate.windowTakesMouseEvents(scope: .widgetsOnly, pointerIsOverLiveArea: true))
+        // The other two scopes are position-independent by definition.
+        #expect(!OverlayPointerGate.windowTakesMouseEvents(scope: .none, pointerIsOverLiveArea: true))
+        #expect(OverlayPointerGate.windowTakesMouseEvents(scope: .wholeBoard, pointerIsOverLiveArea: false))
+    }
+
+    @Test("The overlay window is click-through unless it is made interactive")
+    @MainActor
+    func windowStartsClickThrough() {
+        let window = OverlayWindow(screenFrame: NSRect(x: 0, y: 0, width: 400, height: 300), level: .desktop)
+        #expect(window.ignoresMouseEvents, "a fresh overlay must not eat desktop clicks")
+        window.setInteractive(true)
+        #expect(!window.ignoresMouseEvents)
+        window.setInteractive(false)
+        #expect(window.ignoresMouseEvents)
     }
 
     private func occursBefore(_ first: String, _ second: String, in source: String) -> Bool {

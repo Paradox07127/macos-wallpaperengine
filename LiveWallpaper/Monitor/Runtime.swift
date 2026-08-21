@@ -14,15 +14,12 @@ struct MonitorSampleDemand: Sendable, Equatable {
     var topProcesses = false
     /// Per-process disk I/O attribution (rusage deltas inside that walk).
     var processIO = false
-    /// System-audio tap + FFT for the Now Playing layer's reactive effects.
-    var audioSpectrum = false
 
     func union(_ other: Self) -> Self {
         Self(
             sensors: sensors || other.sensors,
             topProcesses: topProcesses || other.topProcesses,
-            processIO: processIO || other.processIO,
-            audioSpectrum: audioSpectrum || other.audioSpectrum
+            processIO: processIO || other.processIO
         )
     }
 
@@ -51,10 +48,6 @@ struct MonitorSampleDemand: Sendable, Equatable {
                 demand.topProcesses = demand.topProcesses || shows(widget, "showTopProcesses")
             case .disk:
                 demand.processIO = demand.processIO || shows(widget, "showTopProcesses")
-            case .nowPlaying:
-                // Without the reactive effects the layer never reads the
-                // spectrum, and the tap plus its FFT are pure battery cost.
-                demand.audioSpectrum = demand.audioSpectrum || shows(widget, "audioReactive")
             case .network, .fleet, .aiEngine:
                 break
             }
@@ -71,6 +64,12 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
     var codexRoot: URL?
     /// Union of kinds across screens on this lease.
     var activeWidgetKinds: Set<MonitorWidgetKind>?
+    /// A Now Playing layer is visible somewhere. It is not a widget, so it
+    /// cannot be read off `activeWidgetKinds`.
+    var music = false
+    /// That layer draws the audio-reactive effects, which is the only reason to
+    /// run the system-audio tap and its FFT.
+    var musicAudioReactive = false
     var gpuSampleSeconds: Double?
     /// Board-configured seconds between system samples. Nil keeps
     /// `SystemMetricsSource`'s own default.
@@ -84,7 +83,7 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
     static func requiresSystemMetrics(for kinds: Set<MonitorWidgetKind>) -> Bool {
         kinds.contains { kind in
             switch kind {
-            case .fleet, .nowPlaying:
+            case .fleet:
                 false
             case .cpu, .memory, .gpu, .network, .disk, .power, .processes, .aiEngine:
                 true
@@ -452,6 +451,8 @@ actor Runtime {
             if let kinds = entry.activeWidgetKinds {
                 merged.activeWidgetKinds = (merged.activeWidgetKinds ?? []).union(kinds)
             }
+            merged.music = merged.music || entry.music
+            merged.musicAudioReactive = merged.musicAudioReactive || entry.musicAudioReactive
             if let seconds = entry.gpuSampleSeconds {
                 merged.gpuSampleSeconds = min(merged.gpuSampleSeconds ?? seconds, seconds)
             }

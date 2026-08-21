@@ -597,19 +597,15 @@ struct NowPlayingSourceTests {
 @Suite("Now Playing demand graph")
 struct NowPlayingDemandGraphTests {
     @MainActor
-    @Test("A placed nowPlaying widget builds the source via the registered factory")
-    func boardWithNowPlayingBuildsSource() async {
+    @Test("An enabled music layer builds the source via the registered factory")
+    func musicLayerBuildsSource() async {
         let runtime = makeRuntime()
         let controller = OverlayController(runtime: runtime)
-        let board = MonitorBoardConfiguration(
-            widgets: [MonitorWidgetPlacement(kind: .nowPlaying)]
-        )
         controller.apply(
-            // The layer rides the Music switch now, not the Monitor board's.
+            // The source follows the Music switch; the board is off entirely.
             overlay: MonitorOverlayConfiguration(
                 enabled: false, level: .front,
-                musicEnabled: true, musicLevel: .front,
-                board: board
+                music: MusicOverlayConfiguration(enabled: true, level: .front)
             ),
             screenID: 91,
             screenFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -628,8 +624,8 @@ struct NowPlayingDemandGraphTests {
     }
 
     @MainActor
-    @Test("A board without the widget builds no now-playing source")
-    func boardWithoutNowPlayingBuildsNoSource() async {
+    @Test("A board without a music layer builds no now-playing source")
+    func boardWithoutMusicBuildsNoSource() async {
         let runtime = makeRuntime()
         let controller = OverlayController(runtime: runtime)
         controller.apply(

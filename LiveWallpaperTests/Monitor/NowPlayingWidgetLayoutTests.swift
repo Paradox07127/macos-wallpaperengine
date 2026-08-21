@@ -39,7 +39,7 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
     /// still reads as a statement about the fields the player sent.
     private func resolve(
         _ state: MonitorNowPlayingState?,
-        _ size: MonitorWidgetSize,
+        _ size: MusicOverlaySize,
         _ style: Style,
         isEditing: Bool = false,
         reduceMotion: Bool = false,
@@ -82,7 +82,7 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
                     .visible.contains(.lyrics),
                 "\(style): small tiles never carry lyrics"
             )
-            for size in [MonitorWidgetSize.medium, .large] {
+            for size in [MusicOverlaySize.medium, .large] {
                 XCTAssertTrue(
                     resolve(fullState(), size, style, options: wanted, hasLyrics: true)
                         .visible.contains(.lyrics),
@@ -116,7 +116,7 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
 
     func testFullFieldsMatrix() {
         let state = fullState()
-        let expected: [Style: [MonitorWidgetSize: Set<Component>]] = [
+        let expected: [Style: [MusicOverlaySize: Set<Component>]] = [
             .poster: [
                 .small: [.title, .artistLine, .progress, .timeText],
                 .medium: [.title, .artistLine, .albumLine, .artworkThumb, .progress, .timeText],
@@ -147,7 +147,7 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
     /// No position → no progress anywhere; total length only where the style keeps it.
     func testDurationWithoutPositionMatrix() {
         let state = durationOnlyState()
-        let expected: [Style: [MonitorWidgetSize: Set<Component>]] = [
+        let expected: [Style: [MusicOverlaySize: Set<Component>]] = [
             .poster: [
                 .small: [.title, .artistLine],
                 .medium: [.title, .artistLine, .albumLine],
@@ -182,7 +182,7 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
             .aurora: [.title, .glow],
         ]
         for (style, visible) in expected {
-            for size in MonitorWidgetSize.allCases {
+            for size in MusicOverlaySize.allCases {
                 let layout = resolve(state, size, style)
                 XCTAssertEqual(layout.visible, visible, "\(style) \(size)")
             }
@@ -440,27 +440,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         }
     }
 
-    /// The board-level gate that lets any of this reach the tile outside edit
-    /// mode. Every other widget must stay click-through.
-    func testOnlyTheNowPlayingLayerAsksForThePointer() {
-        var options = NowPlayingOptions()
-        options.showControls = false
-        options.seekOnProgressDrag = false
-
-        XCTAssertTrue(WidgetFactory.wantsPointerInteraction(
-            MonitorWidgetPlacement(kind: .nowPlaying)
-        ))
-        XCTAssertFalse(WidgetFactory.wantsPointerInteraction(
-            MonitorWidgetPlacement(kind: .nowPlaying, options: options.applied(to: [:]))
-        ))
-        for kind in MonitorWidgetKind.allCases where kind != .nowPlaying {
-            XCTAssertFalse(
-                WidgetFactory.wantsPointerInteraction(MonitorWidgetPlacement(kind: kind)),
-                "\(kind) started taking clicks off the desktop"
-            )
-        }
-    }
-
     /// While arranging the board a click means "grab this layer"; the board's
     /// drag gesture runs alongside subview gestures, so a live button under the
     /// pointer would fire mid-drag.
@@ -588,10 +567,10 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
     }
 
     func testStyleDraftDropsKeyOnDefault() {
-        let placement = MonitorWidgetPlacement(kind: .nowPlaying)
-        let vinyl = MonitorWidgetDraft.settingNowPlayingStyle(.vinyl, on: placement)
+        let base = MusicOverlayConfiguration()
+        let vinyl = MusicOverlayLayout.settingOptions(on: base) { $0.style = .vinyl }
         XCTAssertEqual(vinyl.options["style"]?.stringValue, "vinyl")
-        let back = MonitorWidgetDraft.settingNowPlayingStyle(.poster, on: vinyl)
+        let back = MusicOverlayLayout.settingOptions(on: vinyl) { $0.style = .poster }
         XCTAssertNil(back.options["style"])
     }
 
