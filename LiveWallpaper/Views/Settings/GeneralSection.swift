@@ -43,6 +43,20 @@ extension GeneralSettingsView {
             }
 
             SettingRow(
+                icon: "arrow.triangle.2.circlepath",
+                iconColor: .purple,
+                title: "Check for updates at launch",
+                subtitle: "Look for a newer version on GitHub when the app starts",
+                info: "Runs the same check as the About page, at most once every 12 hours. It only reads the latest release tag — nothing is downloaded until you choose to update."
+            ) {
+                Toggle("", isOn: $checksUpdatesAtLaunch)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(Text("Check for updates at launch"))
+                    .accessibilityHint(Text("Looks for a newer version on GitHub when the app starts"))
+            }
+
+            SettingRow(
                 icon: "lock.display",
                 iconColor: .blue,
                 title: "Capture video frame when locking",

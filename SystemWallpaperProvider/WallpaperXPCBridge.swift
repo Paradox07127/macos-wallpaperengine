@@ -56,6 +56,8 @@ final class WallpaperXPCBridge: @unchecked Sendable {
     private final class LibraryChangeObserver {
         let registry: SurfaceRegistry
         let store: SharedLibraryStore
+        /// Weak: the bridge owns this observer.
+        weak var owner: WallpaperXPCBridge?
 
         init(registry: SurfaceRegistry, store: SharedLibraryStore) {
             self.registry = registry
@@ -67,6 +69,7 @@ final class WallpaperXPCBridge: @unchecked Sendable {
                     guard let observer else { return }
                     let self_ = Unmanaged<LibraryChangeObserver>.fromOpaque(observer).takeUnretainedValue()
                     WallpaperXPCHandler.reapplyPolicy(registry: self_.registry, store: self_.store)
+                    self_.owner?.libraryDidChange()
                 },
                 SystemWallpaperPaths.darwinLibraryChangedNote as CFString,
                 nil,
@@ -84,6 +87,14 @@ final class WallpaperXPCBridge: @unchecked Sendable {
             providerID: Bundle.main.bundleIdentifier ?? "com.loomscreen.wallpaper"
         )
         self.libraryObserver = LibraryChangeObserver(registry: registry, store: store)
+        self.libraryObserver.owner = self
+    }
+
+    /// Fans a library change out to every live connection. Only a handler holds
+    /// a route to the Agent, and only while its connection is up.
+    fileprivate func libraryDidChange() {
+        let live = handlersLock.withLock { Array(handlers.values) }
+        for handler in live { handler.libraryDidChange() }
     }
 
     static func verifyRuntimeLayout() -> Bool {
@@ -143,6 +154,12 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         handlersLock.withLock { handlers[ObjectIdentifier(connection)] = handler }
 
         let proxyInterface = NSXPCInterface(with: WallpaperExtensionProxyXPCProtocol.self)
+        // The proxy side was never allowlisted. Its `id`-typed arguments and
+        // replies mean NSXPC silently drops any message carrying a class it
+        // was not told about — today only `invalidateSnapshots` is used and it
+        // carries just an NSError, but the next use of
+        // `updateSettingsViewModels` would fail with no error anywhere.
+        Self.applyProxyAllowlist(allowed, to: proxyInterface)
         connection.remoteObjectInterface = proxyInterface
 
         connection.interruptionHandler = {
@@ -155,11 +172,28 @@ final class WallpaperXPCBridge: @unchecked Sendable {
             wpxLog.info("connection invalidated (contexts kept)")
         }
 
-        // Grab the proxy before resuming so an early callback never sees nil.
-        handler.agentProxy = connection.remoteObjectProxy as AnyObject
+        // Wired before resuming so an early callback never sees a nil provider.
+        // The connection is captured weakly: it owns the handler, so a strong
+        // capture here would keep both alive forever.
+        handler.agentProxyProvider = { [weak connection] in
+            connection?.remoteObjectProxy as? WallpaperExtensionProxyXPCProtocol
+        }
         connection.resume()
         wpxLog.info("accept(connection:) — wired")
         return true
+    }
+
+    private static func applyProxyAllowlist(_ classes: Set<AnyHashable>, to interface: NSXPCInterface) {
+        let extra = NSMutableSet()
+        for name in ["NSURL", "NSString", "NSError", "NSData", "NSNumber", "NSDictionary", "NSArray"] {
+            if let cls = NSClassFromString(name) { extra.add(cls) }
+        }
+        let all = classes.union((extra as? Set<AnyHashable>) ?? [])
+        let selector = #selector(WallpaperExtensionProxyXPCProtocol.updateSettingsViewModels(_:reply:))
+        interface.setClasses(all, for: selector, argumentIndex: 0, ofReply: false)
+        let access = #selector(WallpaperExtensionProxyXPCProtocol.requestReadOnlyAccess(to:reply:))
+        interface.setClasses(all, for: access, argumentIndex: 0, ofReply: false)
+        interface.setClasses(all, for: access, argumentIndex: 0, ofReply: true)
     }
 
     private static func applyAllowlist(_ classes: Set<AnyHashable>, to interface: NSXPCInterface) {

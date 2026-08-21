@@ -210,6 +210,95 @@ struct WallpaperExportServiceTests {
                 "a fresh file may be a publish mid-copy — the age guard spares it")
     }
 
+    @Test("A staging file mid-copy survives the sweep even when the source was old")
+    func sweepSparesStagingWithAncientSourceMtime() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("OrphanSweepStaging-\(UUID().uuidString)")
+        let videos = root.appendingPathComponent("Videos")
+        try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+
+        // `copyItem` carries the source's mtime over, so a staging file for a
+        // year-old video reads as ancient the whole time the copy is running.
+        let staging = videos.appendingPathComponent(
+            SystemWallpaperLibrary.stagingFileName(itemID: "pending", ext: "mp4", now: Self.referenceNow)
+        )
+        try Data("partial".utf8).write(to: staging)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Self.referenceNow.addingTimeInterval(-365 * 86400)],
+            ofItemAtPath: staging.path
+        )
+
+        SystemWallpaperLibrary.sweepOrphans(
+            manifest: .empty, videosDirectory: videos, now: Self.referenceNow
+        )
+
+        #expect(FileManager.default.fileExists(atPath: staging.path),
+                "the sweep must key off the staging file's own age, not the copied mtime")
+    }
+
+    @Test("An abandoned staging file is still reclaimed once it is far too old to be live")
+    func sweepReclaimsAbandonedStaging() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("OrphanSweepStale-\(UUID().uuidString)")
+        let videos = root.appendingPathComponent("Videos")
+        try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+        let staging = videos.appendingPathComponent(
+            SystemWallpaperLibrary.stagingFileName(
+                itemID: "crashed", ext: "mp4",
+                now: Self.referenceNow.addingTimeInterval(-48 * 3600)
+            )
+        )
+        try Data("partial".utf8).write(to: staging)
+
+        SystemWallpaperLibrary.sweepOrphans(
+            manifest: .empty, videosDirectory: videos, now: Self.referenceNow
+        )
+
+        #expect(!FileManager.default.fileExists(atPath: staging.path),
+                "a staging file from two days ago cannot still be copying")
+    }
+
+    @Test("The manifest lock fails closed — an unlockable root must not run unserialized")
+    func lockFailsClosedRatherThanRunningUnserialized() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("LockFailClosed-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        // A directory where the lock file belongs makes `open(…, O_WRONLY)`
+        // fail with EISDIR — the stand-in for any environment where the lock
+        // cannot be taken.
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("manifest.lock"), withIntermediateDirectories: true
+        )
+
+        var ran = false
+        #expect(throws: (any Error).self) {
+            try SystemWallpaperLock.withExclusiveLock(root: root) { ran = true }
+        }
+        #expect(!ran, "running the mutation unlocked is the lost update this lock exists to prevent")
+    }
+
+    @Test("A corrupt manifest fails the publish instead of rewriting the library away")
+    func corruptManifestDoesNotSwallowExistingItems() async throws {
+        let rig = try makeRig()
+        let bookmark = try rig.makeVideoBookmark(named: "first.mp4", label: "First")
+        try await rig.service.publish(bookmark: bookmark)
+        let before = try rig.manifestOnDisk()
+        #expect(before.items.count == 1)
+        let survivingFile = before.items[0].fileName
+
+        try Data("{ not json".utf8).write(to: rig.manifestURL)
+
+        let second = try rig.makeVideoBookmark(named: "second.mp4", label: "Second")
+        await #expect(throws: (any Error).self) {
+            try await rig.service.publish(bookmark: second)
+        }
+        #expect(
+            FileManager.default.fileExists(
+                atPath: rig.root.appendingPathComponent("Videos/\(survivingFile)").path),
+            "a corrupt manifest must never turn already-published videos into sweepable orphans"
+        )
+    }
+
     @Test("A manifest entry whose file name escapes Videos/ is dropped at decode")
     func manifestDropsTraversalFileNames() throws {
         let json = """
@@ -523,19 +612,28 @@ struct WallpaperExportServiceTests {
 
     // MARK: - Corruption tolerance
 
-    @Test("A corrupt manifest reads as empty and the next publish rewrites it")
-    func corruptManifestTolerated() async throws {
+    /// Was "a corrupt manifest reads as empty and the next publish rewrites
+    /// it". That behaviour is what silently orphaned every already-published
+    /// video: the rewrite dropped their entries and the sweep deleted the
+    /// files an hour later. Refusing is the only non-destructive answer.
+    @Test("A corrupt manifest is refused, not treated as an empty library")
+    func corruptManifestIsRefused() async throws {
         let rig = try makeRig()
         try FileManager.default.createDirectory(at: rig.root, withIntermediateDirectories: true)
         try Data("{not json]".utf8).write(to: rig.manifestURL)
 
         rig.service.refresh()
         #expect(rig.service.items.isEmpty)
-        #expect(rig.service.status == .empty)
+        #expect(rig.service.lastError != nil, "a damaged index must not look like an empty library")
 
         let bookmark = try rig.makeVideoBookmark()
-        try await rig.service.publish(bookmark: bookmark)
-        #expect(try rig.manifestOnDisk().items.count == 1)
+        await #expect(throws: WallpaperExportService.ServiceError.manifestUnreadable) {
+            try await rig.service.publish(bookmark: bookmark)
+        }
+        #expect(
+            (try? Data(contentsOf: rig.manifestURL)) == Data("{not json]".utf8),
+            "the damaged file is left exactly as found so it can be recovered"
+        )
     }
 
     @Test("Republishing the same bookmark replaces its item instead of duplicating it")

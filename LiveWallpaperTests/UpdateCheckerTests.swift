@@ -592,6 +592,37 @@ struct UpdateSurfaceOwnershipTests {
     }
 }
 
+@Suite("Launch-time update check opt-out")
+struct UpdateCheckAtLaunchTests {
+    private static let suiteName = "LiveWallpaperTests.updateCheckAtLaunch"
+
+    @Test("An absent key keeps the launch check on; an explicit value wins")
+    func defaultsToOnWhenUnset() throws {
+        let defaults = try #require(UserDefaults(suiteName: Self.suiteName))
+        defer { defaults.removePersistentDomain(forName: Self.suiteName) }
+
+        defaults.removeObject(forKey: UpdateChecker.checkAtLaunchKey)
+        #expect(UpdateChecker.checksAtLaunch(defaults: defaults))
+
+        defaults.set(false, forKey: UpdateChecker.checkAtLaunchKey)
+        #expect(!UpdateChecker.checksAtLaunch(defaults: defaults))
+
+        defaults.set(true, forKey: UpdateChecker.checkAtLaunchKey)
+        #expect(UpdateChecker.checksAtLaunch(defaults: defaults))
+    }
+
+    /// A toggle wired only to storage still renders correctly, so the gate has
+    /// to be asserted at the launch call site rather than in the view.
+    @Test("The launch check is gated on the setting the General page writes")
+    func launchPathHonorsTheSetting() throws {
+        let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
+        #expect(app.contains("guard UpdateChecker.checksAtLaunch() else { return }"))
+
+        let settings = try RepositoryRoot.source("LiveWallpaper/Views/Settings/GeneralSettingsView.swift")
+        #expect(settings.contains("@AppStorage(UpdateChecker.checkAtLaunchKey, store: .appScoped())"))
+    }
+}
+
 private final class StubTransport: UpdateCheckerTransport, @unchecked Sendable {
     private let response: Result<[GitHubRelease], Error>
     private(set) var fetchCount = 0

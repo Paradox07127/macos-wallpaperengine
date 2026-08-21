@@ -39,6 +39,9 @@ final class WallpaperExportService {
         /// The wallpaper panel refuses to show a choice without a thumbnail,
         /// so a publish that cannot produce one has not published anything.
         case thumbnailFailed
+        /// The manifest exists but will not decode. Every mutation refuses
+        /// rather than rewriting the library from scratch.
+        case manifestUnreadable
 
         var errorDescription: String? {
             switch self {
@@ -53,6 +56,11 @@ final class WallpaperExportService {
                 return String(
                     localized: "Couldn't create a preview image for this video.",
                     comment: "Error shown when publishing to System Wallpaper fails because no thumbnail could be generated."
+                )
+            case .manifestUnreadable:
+                return String(
+                    localized: "The System Wallpaper library index is damaged, so it wasn't changed.",
+                    comment: "Error shown when the system wallpaper manifest cannot be decoded and the operation is refused."
                 )
             }
         }
@@ -225,10 +233,12 @@ final class WallpaperExportService {
                 ? "mov"
                 : (sourceName as NSString).pathExtension
             // Unique name: two concurrent publishes of the same bookmark must
-            // not fight over one staging path. The dot prefix plus the orphan
-            // sweep's age guard keeps sweeps away from it.
-            let staging = videosDirectory
-                .appendingPathComponent(".\(itemID)-\(UUID().uuidString).\(ext).partial")
+            // not fight over one staging path. The name also carries the
+            // creation time, which is what keeps a concurrent sweep off it —
+            // see `SystemWallpaperLibrary.stagingFileName`.
+            let staging = videosDirectory.appendingPathComponent(
+                SystemWallpaperLibrary.stagingFileName(itemID: itemID, ext: ext, now: Date())
+            )
             let manager = FileManager.default
             try manager.createDirectory(at: videosDirectory, withIntermediateDirectories: true)
             do {
@@ -241,9 +251,10 @@ final class WallpaperExportService {
                         )
                     } else {
                         try manager.copyItem(at: sourceURL, to: staging)
-                        // copyItem preserves the source's mtime; the orphan
-                        // sweep's age guard keys off it, and a year-old source
-                        // would read as sweepable while still mid-publish.
+                        // `copyItem` carries the source's mtime over. Stamp the
+                        // copy with now so the published file's age reflects
+                        // when it entered the library, which is what the orphan
+                        // sweep judges a de-referenced file by.
                         try? manager.setAttributes(
                             [.modificationDate: Date()], ofItemAtPath: staging.path
                         )
@@ -267,8 +278,12 @@ final class WallpaperExportService {
 
         let destination = videosDirectory.appendingPathComponent("\(itemID).\(staged.ext)")
         let manager = FileManager.default
+        // A republish has an older copy the manifest still points at, so a
+        // later failure must leave it alone. A first publish owns everything it
+        // just created and has to take it back.
+        let isRepublish = manager.fileExists(atPath: destination.path)
         do {
-            if manager.fileExists(atPath: destination.path) {
+            if isRepublish {
                 // Atomic swap — no window where the old copy is gone and the
                 // new one is not yet in place.
                 _ = try manager.replaceItemAt(destination, withItemAt: staged.url)
@@ -280,21 +295,42 @@ final class WallpaperExportService {
             throw error
         }
         let thumbnailURL = videosDirectory.appendingPathComponent("\(itemID).jpg")
-        try jpeg.write(to: thumbnailURL, options: .atomic)
         let thumbnailFileName = thumbnailURL.lastPathComponent
 
-        let manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
-            var manifest = loadManifest() ?? .empty
-            manifest.items.removeAll { $0.id == itemID }
-            manifest.items.append(SystemWallpaperManifest.Item(
-                id: itemID,
-                title: title,
-                fileName: destination.lastPathComponent,
-                thumbnailFileName: thumbnailFileName,
-                addedAt: dependencies.now()
-            ))
-            try writeManifest(manifest)
-            return manifest
+        /// Undoes a first publish's files. Without it a failed thumbnail write
+        /// or an unreadable manifest leaves a video nothing references, visible
+        /// only as disk usage until the sweep gets to it an hour later.
+        func rollbackFirstPublish() {
+            guard !isRepublish else { return }
+            try? manager.removeItem(at: destination)
+            try? manager.removeItem(at: thumbnailURL)
+        }
+
+        do {
+            try jpeg.write(to: thumbnailURL, options: .atomic)
+        } catch {
+            rollbackFirstPublish()
+            throw error
+        }
+
+        let manifest: SystemWallpaperManifest
+        do {
+            manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+                var manifest = try loadManifestForMutation()
+                manifest.items.removeAll { $0.id == itemID }
+                manifest.items.append(SystemWallpaperManifest.Item(
+                    id: itemID,
+                    title: title,
+                    fileName: destination.lastPathComponent,
+                    thumbnailFileName: thumbnailFileName,
+                    addedAt: dependencies.now()
+                ))
+                try writeManifest(manifest)
+                return manifest
+            }
+        } catch {
+            rollbackFirstPublish()
+            throw error
         }
         items = manifest.items
         refreshDiskUsage()
@@ -307,13 +343,19 @@ final class WallpaperExportService {
     /// confirmation states what macOS does afterwards.
     func remove(itemID: String) throws {
         let manifest: SystemWallpaperManifest?
+        // Collected inside the lock, reported after: the entry is gone either
+        // way, but leftover bytes on disk should not be silent.
+        nonisolated(unsafe) var undeleted: [String] = []
         do {
             manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
                 let removed = try SystemWallpaperLibrary.remove(
                     id: itemID,
-                    from: loadManifest() ?? .empty,
+                    from: try loadManifestForMutation(),
                     videosDirectory: videosDirectory,
-                    persist: { try writeManifest($0) }
+                    persist: { try writeManifest($0) },
+                    onFileRemovalFailure: { name, error in
+                        undeleted.append("\(name): \(error.localizedDescription)")
+                    }
                 )
                 if let removed {
                     SystemWallpaperLibrary.sweepOrphans(
@@ -324,13 +366,44 @@ final class WallpaperExportService {
                 }
                 return removed
             }
-            lastError = nil
+            lastError = undeleted.isEmpty ? nil : undeleted.joined(separator: "\n")
         } catch {
             lastError = error.localizedDescription
             throw error
         }
         guard let manifest else { return }
         items = manifest.items
+        refreshDiskUsage()
+        postLibraryChanged()
+    }
+
+    /// Deletes every published video and empties the manifest. Trashing the
+    /// app does not remove its container, so without this the system's copies
+    /// survive an uninstall with no way to reach them.
+    func clearLibrary() throws {
+        do {
+            try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
+                let manifest = try loadManifestForMutation()
+                var emptied = manifest
+                emptied.items = []
+                try writeManifest(emptied)
+                // Every file is unreferenced now, so the sweep is the delete —
+                // with no age guard, because nothing here can be mid-publish
+                // once the manifest is empty and the lock is held.
+                SystemWallpaperLibrary.sweepOrphans(
+                    manifest: emptied,
+                    videosDirectory: videosDirectory,
+                    olderThan: -1,
+                    stagingGrace: -1,
+                    now: dependencies.now()
+                )
+            }
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+        items = []
         refreshDiskUsage()
         postLibraryChanged()
     }
@@ -347,7 +420,7 @@ final class WallpaperExportService {
         guard mode != playbackMode else { return }
         do {
             try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
-                var manifest = loadManifest() ?? .empty
+                var manifest = try loadManifestForMutation()
                 manifest.playbackMode = mode
                 try writeManifest(manifest)
             }
@@ -364,6 +437,12 @@ final class WallpaperExportService {
 
     func refresh() {
         let manifest = loadManifest()
+        // Present on disk but undecodable: showing an empty library here would
+        // invite the user to re-add everything, and every mutation is refused
+        // anyway.
+        if manifest == nil, FileManager.default.fileExists(atPath: manifestURL.path) {
+            lastError = ServiceError.manifestUnreadable.localizedDescription
+        }
         playbackMode = manifest?.playbackMode ?? .always
         items = manifest?.items ?? []
         heartbeat = loadHeartbeat()
@@ -435,9 +514,19 @@ final class WallpaperExportService {
 
     private func loadManifest() -> SystemWallpaperManifest? {
         guard let data = try? Data(contentsOf: manifestURL) else { return nil }
-        // A corrupt manifest reads as empty rather than wedging the panel; the
-        // next publish rewrites it whole.
         return try? SystemWallpaperCoding.decoder.decode(SystemWallpaperManifest.self, from: data)
+    }
+
+    /// Absent manifest = empty library, which is a normal first-run state.
+    /// Unreadable manifest = refuse. Treating corruption as "empty" used to
+    /// rewrite the file with only the newest item, which turned every already
+    /// published video into an unreferenced file the orphan sweep then deleted.
+    private func loadManifestForMutation() throws -> SystemWallpaperManifest {
+        guard let data = try? Data(contentsOf: manifestURL) else { return .empty }
+        guard let manifest = try? SystemWallpaperCoding.decoder
+            .decode(SystemWallpaperManifest.self, from: data)
+        else { throw ServiceError.manifestUnreadable }
+        return manifest
     }
 
     private func loadHeartbeat() -> SystemWallpaperHeartbeat? {

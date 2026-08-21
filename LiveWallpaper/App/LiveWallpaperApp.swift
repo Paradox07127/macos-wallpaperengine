@@ -205,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Both SKUs ship ad-hoc signed from the same GitHub release, so we hand-roll a single-shot launch-time update check (no background timer, throttled to 12 h in UpdateChecker itself).
         if !startupPlan.showOnboarding && !runtimeOptions.isTesting {
             lifecycle.schedule(after: .seconds(5)) {
+                guard UpdateChecker.checksAtLaunch() else { return }
                 await UpdateChecker.shared.checkNow(force: false)
             }
         }

@@ -33,6 +33,15 @@ struct SharedLibraryStore {
         }
     }
 
+    /// Nil when the manifest is on disk but will not decode. Callers that
+    /// would otherwise show a black wallpaper need to tell "damaged" apart
+    /// from "empty library" — `loadManifest()` collapses both to empty.
+    func loadManifestIfReadable() -> SystemWallpaperManifest? {
+        let url = SystemWallpaperPaths.manifestURL(hostBundleID: hostBundleID)
+        guard let data = try? Data(contentsOf: url) else { return .empty }
+        return try? SystemWallpaperCoding.decoder.decode(SystemWallpaperManifest.self, from: data)
+    }
+
     func videoURL(for item: SystemWallpaperManifest.Item) -> URL {
         SystemWallpaperPaths.videosDirectory(hostBundleID: hostBundleID)
             .appendingPathComponent(item.fileName)

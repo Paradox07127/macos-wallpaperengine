@@ -16,6 +16,9 @@ public enum DestructiveAction: Identifiable, Equatable {
     case clearCurrentWallpaper(displayName: String)
     case resetDisplaySettings(displayName: String)
     case removeSystemWallpaper(title: String, isInUse: Bool)
+    /// Trashing the app leaves its container behind, so the published copies
+    /// outlive an uninstall unless the user clears them first.
+    case clearSystemWallpaperLibrary(itemCount: Int, formattedSize: String)
     case disconnectAerialsLibrary
     #if DEBUG
     /// Storage tab's debug-only cleanup of test-run scratch dirs. Gated so a
@@ -32,6 +35,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .removeScheduleSlot(let l): return "removeScheduleSlot-\(l)"
         case .disableSchedule(let c): return "disableSchedule-\(c)"
         case .clearAllStorageCaches(let b): return "clearAllStorageCaches-\(b)"
+        case .clearSystemWallpaperLibrary(let n, let b): return "clearSystemWallpaperLibrary-\(n)-\(b)"
         case .clearSceneVideoCache(let b): return "clearSceneVideoCache-\(b)"
         case .applyConfigurationToAllDisplays(let c): return "applyConfigurationToAllDisplays-\(c)"
         case .clearCurrentWallpaper(let n): return "clearCurrentWallpaper-\(n)"
@@ -52,6 +56,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .removeScheduleSlot:        return "Remove this schedule slot?"
         case .disableSchedule:           return "Disable schedule?"
         case .clearAllStorageCaches:      return "Clear all storage caches?"
+        case .clearSystemWallpaperLibrary: return "Remove every System Wallpaper?"
         case .clearSceneVideoCache:       return "Clear scene video texture cache?"
         case .applyConfigurationToAllDisplays: return "Apply this wallpaper to every other display?"
         case .clearCurrentWallpaper:     return "Clear current wallpaper?"
@@ -79,7 +84,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .removeSystemWallpaper(let title, let isInUse):
             return isInUse
                 ? String(
-                    localized: "“\(title)” is on screen right now. Its file is deleted immediately, but macOS keeps showing it until you pick another wallpaper in System Settings.",
+                    localized: "“\(title)” is on screen right now. It stops playing and its file is deleted immediately; the desktop keeps the last frame until you pick another wallpaper in System Settings.",
                     comment: "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title."
                 )
                 : String(
@@ -105,6 +110,11 @@ public enum DestructiveAction: Identifiable, Equatable {
             return String(
                 localized: "All \(count) time-based wallpaper rules will be cleared. The current wallpaper stays applied.",
                 comment: "Destructive confirm message. Placeholder is the number of schedule rules."
+            )
+        case .clearSystemWallpaperLibrary(let itemCount, let formattedSize):
+            return String(
+                localized: "\(itemCount) video(s) and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
+                comment: "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk."
             )
         case .clearAllStorageCaches(let byteSize):
             return String(
@@ -155,6 +165,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .removeScheduleSlot:        return "Remove Slot"
         case .disableSchedule:           return "Disable Schedule"
         case .clearAllStorageCaches:      return "Clear All Caches"
+        case .clearSystemWallpaperLibrary: return "Remove All"
         case .clearSceneVideoCache:       return "Clear Video Cache"
         case .applyConfigurationToAllDisplays: return "Apply to All Displays"
         case .clearCurrentWallpaper:     return "Clear Wallpaper"

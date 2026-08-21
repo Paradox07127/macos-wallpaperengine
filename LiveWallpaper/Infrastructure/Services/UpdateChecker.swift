@@ -53,6 +53,14 @@ final class UpdateChecker {
     static let trustedGitHubHost = "github.com"
     static let trustedReleasesPathPrefix = "/Paradox07127/macos-wallpaperengine/releases/"
 
+    /// Opt-out for the launch-time check; absent key means on, so installs that
+    /// predate the setting keep the behaviour they shipped with.
+    nonisolated static let checkAtLaunchKey = "loomscreen.update.checkAtLaunch.v1"
+
+    nonisolated static func checksAtLaunch(defaults: UserDefaults = .appScoped()) -> Bool {
+        defaults.object(forKey: checkAtLaunchKey) as? Bool ?? true
+    }
+
     private static let lastCheckedKey = "loomscreen.update.lastCheckedAt"
     private static let nextEligibleKey = "loomscreen.update.nextEligibleAt"
     private static let skippedVersionKey = "loomscreen.update.skippedVersion"
