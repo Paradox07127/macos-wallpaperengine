@@ -211,6 +211,38 @@ struct MonitorSystemSnapshot: Codable, Sendable, Equatable {
     var gpuMemUsedBytes: UInt64?
 }
 
+// MARK: Now Playing (distributed-notification push source)
+
+enum MonitorNowPlayingPhase: String, Codable, Sendable {
+    case playing
+    case paused
+    /// No event received yet, but a known player process is running.
+    case awaitingFirstEvent
+    /// No event received and no known player is running.
+    case noPlayer
+}
+
+/// Everything except `title`/`phase` is Optional on purpose: the rendering
+/// contract is "show a field only if the player reported it" (e.g. Apple Music
+/// has no playback position), so absence must reach the view layer instead of
+/// being papered over with defaults.
+struct MonitorNowPlayingState: Codable, Sendable, Equatable {
+    var phase: MonitorNowPlayingPhase
+    /// Empty only in the two no-track phases; track frames without a title are never published.
+    var title: String
+    var artist: String?
+    var album: String?
+    /// Seconds.
+    var duration: Double?
+    /// Seconds at `positionSampledAt`; the view interpolates on its own clock.
+    var position: Double?
+    /// Epoch seconds when `position` was reported.
+    var positionSampledAt: Double?
+    var trackID: String?
+    var playerBundleID: String?
+    var artwork: Data?
+}
+
 /// Per-source health for settings + AI empty states (unauthorized / stale / ok).
 struct MonitorSourceHealth: Codable, Sendable, Equatable {
     var sourceID: String
@@ -226,6 +258,7 @@ struct MonitorSnapshot: Codable, Sendable, Equatable {
     var system: MonitorSystemSnapshot?
     var agents: [MonitorAgentSessionState]?
     var health: [MonitorSourceHealth]?
+    var nowPlaying: MonitorNowPlayingState?
 }
 
 // MARK: - Source plumbing
@@ -235,6 +268,7 @@ protocol MonitorSnapshotSink: Actor {
     func updateSystem(_ snapshot: MonitorSystemSnapshot) async
     func updateAgents(sourceID: String, sessions: [MonitorAgentSessionState]) async
     func updateHealth(_ health: MonitorSourceHealth) async
+    func updateNowPlaying(_ state: MonitorNowPlayingState?) async
 }
 
 protocol MonitorDataSource: Sendable {

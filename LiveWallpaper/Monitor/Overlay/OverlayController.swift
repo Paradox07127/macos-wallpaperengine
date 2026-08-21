@@ -1,8 +1,56 @@
 import AppKit
 import LiveWallpaperCore
 
-struct MonitorOverlayVisibilityInput: Equatable, Sendable {
+/// The two independently switchable overlay modules. Each owns its own window
+/// per display, so Music can float on top while the Monitor board stays on the
+/// desktop — or run with the Monitor board switched off entirely.
+enum MonitorOverlayModule: String, CaseIterable, Hashable, Sendable {
+    case monitor
+    case music
+
+    /// Widget ownership is the split: one board, two renderers.
+    func owns(_ kind: MonitorWidgetKind) -> Bool {
+        switch self {
+        case .monitor: kind != .nowPlaying
+        case .music: kind == .nowPlaying
+        }
+    }
+
+    /// What this module's board may hold — also what its add-widget catalog
+    /// offers, since anything else would be dropped by `merging` on write-back.
+    var ownedKinds: [MonitorWidgetKind] {
+        MonitorWidgetKind.allCases.filter(owns)
+    }
+
+    func widgets(of board: MonitorBoardConfiguration) -> MonitorBoardConfiguration {
+        var next = board
+        next.widgets = board.widgets.filter { owns($0.kind) }
+        return next
+    }
+
+    func isEnabled(in overlay: MonitorOverlayConfiguration) -> Bool {
+        switch self {
+        case .monitor: overlay.enabled
+        case .music: overlay.musicEnabled
+        }
+    }
+
+    func level(in overlay: MonitorOverlayConfiguration) -> MonitorOverlayLevel {
+        switch self {
+        case .monitor: overlay.level
+        case .music: overlay.musicLevel
+        }
+    }
+}
+
+/// Identifies one overlay window: a display plus the module rendering into it.
+struct MonitorOverlayHostKey: Hashable, Sendable {
     var screenID: CGDirectDisplayID
+    var module: MonitorOverlayModule
+}
+
+struct MonitorOverlayVisibilityInput: Equatable, Sendable {
+    var key: MonitorOverlayHostKey
     var level: MonitorOverlayLevel
     var isDesktopOccluded: Bool
 }
@@ -15,11 +63,11 @@ struct MonitorOverlayVisibilityDecision: Equatable, Sendable {
     }
 
     var runtimeDisposition: RuntimeDisposition
-    var visibleHostIDs: Set<CGDirectDisplayID>
-    var suspendedHostIDs: Set<CGDirectDisplayID>
+    var visibleHostKeys: Set<MonitorOverlayHostKey>
+    var suspendedHostKeys: Set<MonitorOverlayHostKey>
 
     var pumpShouldRun: Bool {
-        !visibleHostIDs.isEmpty
+        !visibleHostKeys.isEmpty
     }
 }
 
@@ -32,32 +80,32 @@ enum MonitorOverlayVisibilityPolicy {
         guard !hosts.isEmpty else {
             return MonitorOverlayVisibilityDecision(
                 runtimeDisposition: .released,
-                visibleHostIDs: [],
-                suspendedHostIDs: []
+                visibleHostKeys: [],
+                suspendedHostKeys: []
             )
         }
 
-        let allHostIDs = Set(hosts.map(\.screenID))
+        let allHostKeys = Set(hosts.map(\.key))
         guard !isUserAbsent else {
             return MonitorOverlayVisibilityDecision(
                 runtimeDisposition: .paused,
-                visibleHostIDs: [],
-                suspendedHostIDs: allHostIDs
+                visibleHostKeys: [],
+                suspendedHostKeys: allHostKeys
             )
         }
 
-        let visibleHostIDs = Set(hosts.compactMap { host -> CGDirectDisplayID? in
+        let visibleHostKeys = Set(hosts.compactMap { host -> MonitorOverlayHostKey? in
             switch host.level {
             case .desktop:
-                return host.isDesktopOccluded ? nil : host.screenID
+                return host.isDesktopOccluded ? nil : host.key
             case .front:
-                return host.screenID
+                return host.key
             }
         })
         return MonitorOverlayVisibilityDecision(
-            runtimeDisposition: visibleHostIDs.isEmpty ? .paused : .active,
-            visibleHostIDs: visibleHostIDs,
-            suspendedHostIDs: allHostIDs.subtracting(visibleHostIDs)
+            runtimeDisposition: visibleHostKeys.isEmpty ? .paused : .active,
+            visibleHostKeys: visibleHostKeys,
+            suspendedHostKeys: allHostKeys.subtracting(visibleHostKeys)
         )
     }
 }
@@ -92,7 +140,10 @@ final class OverlayController: NSObject {
         }
     }
 
-    private var hosts: [CGDirectDisplayID: Host] = [:]
+    private var hosts: [MonitorOverlayHostKey: Host] = [:]
+    /// Last full board applied per display. A module host only ever sees its own
+    /// widgets, so this is what its edits are merged back into.
+    private var boards: [CGDirectDisplayID: MonitorBoardConfiguration] = [:]
     private var isUserAbsent = false
     private var occludedScreenIDs: Set<CGDirectDisplayID> = []
     private var visibilityDecision = MonitorOverlayVisibilityPolicy.resolve(
@@ -138,19 +189,38 @@ final class OverlayController: NSObject {
         screenID: CGDirectDisplayID,
         screenFrame: NSRect
     ) {
-        guard let overlay, overlay.enabled else {
+        guard let overlay else {
             teardown(screenID: screenID)
             return
         }
+        boards[screenID] = overlay.board
+        for module in MonitorOverlayModule.allCases {
+            apply(module: module, overlay: overlay, screenID: screenID, screenFrame: screenFrame)
+        }
+    }
 
+    private func apply(
+        module: MonitorOverlayModule,
+        overlay: MonitorOverlayConfiguration,
+        screenID: CGDirectDisplayID,
+        screenFrame: NSRect
+    ) {
+        let key = MonitorOverlayHostKey(screenID: screenID, module: module)
+        guard module.isEnabled(in: overlay) else {
+            teardown(key: key)
+            return
+        }
+
+        let level = module.level(in: overlay)
+        let moduleBoard = module.widgets(of: overlay.board)
         let topInsetFraction = HostView.menuBarTopInsetFraction(forFrame: screenFrame)
 
-        if let host = hosts[screenID] {
-            host.config = overlay.board
-            host.level = overlay.level
+        if let host = hosts[key] {
+            host.config = moduleBoard
+            host.level = level
             host.window.applyFrame(screenFrame)
-            host.window.apply(level: overlay.level)
-            host.board.apply(configuration: overlay.board, topInsetFraction: topInsetFraction)
+            host.window.apply(level: level)
+            host.board.apply(configuration: moduleBoard, topInsetFraction: topInsetFraction)
             updateInteractive(host)
             reconcileVisibilityAndRuntime()
             return
@@ -158,11 +228,12 @@ final class OverlayController: NSObject {
 
         SourceRegistration.registerDefaultFactories()
 
-        let window = OverlayWindow(screenFrame: screenFrame, level: overlay.level)
+        let window = OverlayWindow(screenFrame: screenFrame, level: level)
         let board = HostView(
             frame: NSRect(origin: .zero, size: screenFrame.size),
-            configuration: overlay.board,
-            topInsetFraction: topInsetFraction
+            configuration: moduleBoard,
+            topInsetFraction: topInsetFraction,
+            allowedKinds: module.ownedKinds
         )
         board.autoresizingMask = [.width, .height]
         board.resetHistory()
@@ -172,15 +243,15 @@ final class OverlayController: NSObject {
         let host = Host(
             window: window,
             board: board,
-            config: overlay.board,
-            level: overlay.level
+            config: moduleBoard,
+            level: level
         )
-        hosts[screenID] = host
+        hosts[key] = host
 
         board.onConfigurationEdited = { [weak self, weak host] edited in
             guard let self, let host else { return }
             host.config = edited
-            onOverlayEdited?(screenID, edited)
+            onOverlayEdited?(screenID, merging(edited, from: key))
             reconcileVisibilityAndRuntime()
         }
         board.onEditingChanged = { [weak self, weak host] _ in
@@ -193,8 +264,34 @@ final class OverlayController: NSObject {
         window.orderFrontRegardless()
     }
 
+    /// A host renders only its own module's widgets, so reporting its edit
+    /// verbatim would persist a board with the other module's widgets deleted —
+    /// silently, and for a module that may not even have a window open. Fold the
+    /// edit back into the last full board instead.
+    private func merging(
+        _ edited: MonitorBoardConfiguration,
+        from key: MonitorOverlayHostKey
+    ) -> MonitorBoardConfiguration {
+        let full = boards[key.screenID] ?? edited
+        var merged = edited
+        merged.widgets = edited.widgets.filter { key.module.owns($0.kind) }
+            + full.widgets.filter { !key.module.owns($0.kind) }
+        // The persist path skips the reconcile, so this is the only place the
+        // retained board learns about the edit.
+        boards[key.screenID] = merged
+        return merged
+    }
+
+    /// Drops every module host on this display.
     func teardown(screenID: CGDirectDisplayID) {
-        guard let host = hosts.removeValue(forKey: screenID) else { return }
+        for key in Array(hosts.keys) where key.screenID == screenID {
+            teardown(key: key)
+        }
+        boards[screenID] = nil
+    }
+
+    private func teardown(key: MonitorOverlayHostKey) {
+        guard let host = hosts.removeValue(forKey: key) else { return }
         host.board.flushPendingEdits()
         host.board.onConfigurationEdited = nil
         host.board.onEditingChanged = nil
@@ -205,15 +302,19 @@ final class OverlayController: NSObject {
     /// Drop overlays for displays no longer live (`ScreenManager` pairs with per-screen `apply`).
     func retainOnly(_ liveScreenIDs: Set<CGDirectDisplayID>) {
         // Snapshot keys — teardown mutates `hosts` (can't iterate live key view).
-        for id in Array(hosts.keys) where !liveScreenIDs.contains(id) {
-            teardown(screenID: id)
+        for key in Array(hosts.keys) where !liveScreenIDs.contains(key.screenID) {
+            teardown(key: key)
+        }
+        for screenID in Array(boards.keys) where !liveScreenIDs.contains(screenID) {
+            boards[screenID] = nil
         }
     }
 
     func teardownAll() {
-        for id in Array(hosts.keys) {
-            teardown(screenID: id)
+        for key in Array(hosts.keys) {
+            teardown(key: key)
         }
+        boards.removeAll()
     }
 
     func updateVisibility(
@@ -233,6 +334,23 @@ final class OverlayController: NSObject {
         !hosts.isEmpty
     }
 
+    var activeHostKeys: Set<MonitorOverlayHostKey> {
+        Set(hosts.keys)
+    }
+
+    func board(screenID: CGDirectDisplayID, module: MonitorOverlayModule) -> MonitorBoardConfiguration? {
+        hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.config
+    }
+
+    /// The very callback `apply` installed on that module's board view, so a
+    /// test drives the real write-back path instead of restating it.
+    func boardEditCallback(
+        screenID: CGDirectDisplayID,
+        module: MonitorOverlayModule
+    ) -> ((MonitorBoardConfiguration) -> Void)? {
+        hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.board.onConfigurationEdited
+    }
+
     func waitUntilRuntimeSettled() async {
         let task = runtimeReconciliationTask
         await task?.value
@@ -240,19 +358,24 @@ final class OverlayController: NSObject {
     #endif
 
     private func updateInteractive(_ host: Host) {
-        let interactive = host.board.isEditing || host.config.mouseInteractionEnabled
-        host.window.setInteractive(interactive)
-        host.board.setMouseInteractionEnabled(interactive)
+        // A widget can claim the pointer on its own (Now Playing's transport
+        // controls) without the user opting the whole board in. The window has
+        // to stop ignoring mouse events for that, which is display-wide — so
+        // `HostView.hitTest` narrows it back down to that widget's rect, and
+        // everything else still falls through to the desktop.
+        let scope = HostView.pointerScope(for: host.config, isEditing: host.board.isEditing)
+        host.window.setInteractive(scope != .none)
+        host.board.setPointerScope(scope)
     }
 
     // MARK: - Runtime lease + pump
 
     private func reconcileVisibilityAndRuntime() {
-        let inputs = hosts.map { screenID, host in
+        let inputs = hosts.map { key, host in
             MonitorOverlayVisibilityInput(
-                screenID: screenID,
+                key: key,
                 level: host.level,
-                isDesktopOccluded: occludedScreenIDs.contains(screenID)
+                isDesktopOccluded: occludedScreenIDs.contains(key.screenID)
             )
         }
         let decision = MonitorOverlayVisibilityPolicy.resolve(
@@ -262,8 +385,8 @@ final class OverlayController: NSObject {
         visibilityDecision = decision
 
         // Suspend on MainActor immediately so an occluded board can't animate while lease transition awaits.
-        for (screenID, host) in hosts {
-            host.isVisible = decision.visibleHostIDs.contains(screenID)
+        for (key, host) in hosts {
+            host.isVisible = decision.visibleHostKeys.contains(key)
             if !host.isVisible {
                 host.isDeliveringSnapshots = false
                 host.board.setSuspended(true)
@@ -276,12 +399,30 @@ final class OverlayController: NSObject {
         scheduleRuntimeReconciliation()
     }
 
-    private func makeOptions(visibleHostIDs: Set<CGDirectDisplayID>) -> MonitorRuntimeOptions {
+    /// Kinds that read nothing out of the sampled series, so their arrival adds
+    /// no fabricated-zero window to any history — and must not cost every other
+    /// tile its accumulated sparkline. Now Playing is pushed by notification,
+    /// not sampled.
+    nonisolated static let historylessWidgetKinds: Set<MonitorWidgetKind> = [.nowPlaying]
+
+    /// A metric group no placed widget read was not sampled at all — the source
+    /// still emits a literal 0 for it (`"normal"` for pressure), and those
+    /// placeholders are indistinguishable from a real idle reading once they are
+    /// in the series. A widget added later would therefore draw a fabricated
+    /// flat history, so the series restarts whenever the *sampled* set grows.
+    nonisolated static func historyResetRequired(
+        previous: Set<MonitorWidgetKind>,
+        next: Set<MonitorWidgetKind>
+    ) -> Bool {
+        !next.subtracting(previous).subtracting(historylessWidgetKinds).isEmpty
+    }
+
+    private func makeOptions(visibleHostKeys: Set<MonitorOverlayHostKey>) -> MonitorRuntimeOptions {
         var kinds: Set<MonitorWidgetKind> = []
         var gpuSeconds: Double?
         var sampleSeconds: Double?
         var demand = MonitorSampleDemand()
-        for (screenID, host) in hosts where visibleHostIDs.contains(screenID) {
+        for (key, host) in hosts where visibleHostKeys.contains(key) {
             kinds.formUnion(host.config.widgets.map(\.kind))
             if let s = MonitorWidgetDraft.gpuSampleSeconds(in: host.config.widgets) {
                 gpuSeconds = min(gpuSeconds ?? s, s)
@@ -331,7 +472,7 @@ final class OverlayController: NSObject {
         case .paused:
             .paused
         case .active:
-            .active(makeOptions(visibleHostIDs: visibilityDecision.visibleHostIDs))
+            .active(makeOptions(visibleHostKeys: visibilityDecision.visibleHostKeys))
         }
     }
 
@@ -368,9 +509,10 @@ final class OverlayController: NSObject {
                 // added later would therefore draw a fabricated flat history,
                 // so restart the series whenever the sampled set grows. Both
                 // edit paths (overlay-side and Settings-side) funnel here.
-                let previousKinds = appliedRuntimeState.options?.activeWidgetKinds ?? []
-                let gainedKinds = (options.activeWidgetKinds ?? []).subtracting(previousKinds)
-                if !gainedKinds.isEmpty {
+                if Self.historyResetRequired(
+                    previous: appliedRuntimeState.options?.activeWidgetKinds ?? [],
+                    next: options.activeWidgetKinds ?? []
+                ) {
                     for host in hosts.values { host.board.resetHistory() }
                 }
                 await lease.updateOptions(options).value
