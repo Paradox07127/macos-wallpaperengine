@@ -146,11 +146,9 @@ struct RootView: View {
             ))
             .offset(x: liveRenderRect.minX, y: liveRenderRect.minY)
             .zIndex(isDragging ? 40 : 3)
-            // Outside edit mode only a tile that asks for the pointer takes it
-            // (today: the Now Playing layer's transport controls). The window
-            // above is still click-through unless Mouse Interaction is on, so
-            // this widens nothing on a board the user left passive.
-            .allowsHitTesting(model.isEditing || WidgetFactory.wantsPointerInteraction(placement))
+            // Board tiles are display-only outside edit mode; the window above
+            // is click-through anyway unless Mouse Interaction is on.
+            .allowsHitTesting(model.isEditing)
             .modifier(WidgetDragModifier(
                 model: model,
                 placement: placement,

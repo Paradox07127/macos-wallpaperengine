@@ -50,8 +50,7 @@ final class HostView: NSView {
         configuration: MonitorBoardConfiguration,
         nameOnlyTiles: Bool = false,
         topInsetFraction: CGFloat = 0,
-        referenceWidth: CGFloat = 0,
-        allowedKinds: [MonitorWidgetKind] = MonitorWidgetKind.allCases
+        referenceWidth: CGFloat = 0
     ) {
         let reduceMotion = Self.effectiveReduceMotion(configuration)
         self.pointerScope = Self.pointerScope(for: configuration, isEditing: false)
@@ -72,7 +71,6 @@ final class HostView: NSView {
 
         interactionModel.topInsetFraction = topInsetFraction
         interactionModel.referenceWidth = referenceWidth
-        interactionModel.allowedKinds = allowedKinds
 
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -168,10 +166,9 @@ final class HostView: NSView {
         for configuration: MonitorBoardConfiguration,
         isEditing: Bool
     ) -> PointerScope {
-        if isEditing || configuration.mouseInteractionEnabled { return .wholeBoard }
-        return configuration.widgets.contains(where: WidgetFactory.wantsPointerInteraction)
-            ? .widgetsOnly
-            : .none
+        // No tile asks for the pointer on its own: the board is either being
+        // edited, opted in wholesale, or plain wallpaper.
+        isEditing || configuration.mouseInteractionEnabled ? .wholeBoard : .none
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -191,55 +188,14 @@ final class HostView: NSView {
         case .wholeBoard:
             return true
         case .widgetsOnly:
-            let rects = pointerWidgetRects()
-            guard !rects.isEmpty else { return false }
-            return rects.contains { $0.contains(boardPoint(fromLocal: local)) }
+            // Board tiles never claim the pointer by themselves; the Now Playing
+            // layer, which does, has its own host.
+            return false
         }
     }
 
     func setPointerScope(_ scope: PointerScope) {
         pointerScope = scope
-    }
-
-    /// SwiftUI lays the board out y-down from the top edge; this view is not
-    /// flipped, so an unflipped local point has to be mirrored before it can be
-    /// compared with a render rect. Read rather than assumed: a future
-    /// `isFlipped` override must not silently invert every hit region.
-    private func boardPoint(fromLocal local: NSPoint) -> CGPoint {
-        isFlipped ? local : CGPoint(x: local.x, y: bounds.height - local.y)
-    }
-
-    /// A tile that draws nothing must not keep its rect: with no track the Now
-    /// Playing layer is invisible, and an invisible layer swallowing desktop
-    /// clicks reads as the desktop being broken.
-    private func isRenderingPointerTile(_ placement: MonitorWidgetPlacement) -> Bool {
-        guard placement.kind == .nowPlaying else { return true }
-        return dataModel.snapshot.nowPlaying?.phase.hasTrack == true
-    }
-
-    /// Render rects (board coordinates) of the widgets that asked for the
-    /// pointer, built from the same geometry calls `RootView` draws with.
-    private func pointerWidgetRects() -> [CGRect] {
-        let geometry = MonitorBoardGeometry(
-            boardSize: bounds.size,
-            referenceWidth: interactionModel.referenceWidth,
-            topInsetFraction: interactionModel.topInsetFraction
-        )
-        guard !geometry.isDegenerate else { return [] }
-        return interactionModel.placements
-            .filter { WidgetFactory.wantsPointerInteraction($0) && isRenderingPointerTile($0) }
-            .map { placement in
-                let footprint = geometry.pixelSize(for: placement.kind, size: placement.size)
-                let origin = LayoutEngine.pixelOrigin(
-                    normalized: CGPoint(x: placement.x, y: placement.y),
-                    boardSize: geometry.boardSize
-                )
-                let raw = CGRect(
-                    origin: geometry.clampOrigin(origin, footprint: footprint),
-                    size: footprint
-                )
-                return geometry.renderRect(forRawRect: raw)
-            }
     }
 
     override func layout() {

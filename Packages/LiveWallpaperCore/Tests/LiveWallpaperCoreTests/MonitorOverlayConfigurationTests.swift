@@ -10,8 +10,9 @@ struct MonitorOverlayConfigurationTests {
         let d = MonitorOverlayConfiguration.default
         #expect(d.enabled == false)
         #expect(d.level == .desktop)
-        #expect(d.musicEnabled == false)
-        #expect(d.musicLevel == .desktop)
+        #expect(d.music == .default)
+        #expect(d.music.enabled == false)
+        #expect(d.music.level == .desktop)
         #expect(d.board == MonitorBoardConfiguration.default)
     }
 
@@ -23,30 +24,47 @@ struct MonitorOverlayConfigurationTests {
         )
         #expect(decoded.enabled == true)
         #expect(decoded.level == .front)
-        #expect(decoded.musicEnabled == false)
-        #expect(decoded.musicLevel == .desktop)
+        #expect(decoded.music == .default)
     }
 
     @Test("The two module switches are independent")
     func musicSwitchIsIndependent() throws {
-        let json = #"{ "enabled": false, "musicEnabled": true, "musicLevel": "front" }"#
+        let json = #"{ "enabled": false, "music": { "enabled": true, "level": "front" } }"#
         let decoded = try JSONDecoder().decode(
             MonitorOverlayConfiguration.self, from: Data(json.utf8)
         )
         #expect(decoded.enabled == false)
         #expect(decoded.level == .desktop)
-        #expect(decoded.musicEnabled == true)
-        #expect(decoded.musicLevel == .front)
+        #expect(decoded.music.enabled == true)
+        #expect(decoded.music.level == .front)
     }
 
-    @Test("An unknown music level string falls back to the desktop default")
-    func unknownMusicLevelFallsBack() throws {
-        let json = #"{ "musicEnabled": true, "musicLevel": "middle" }"#
+    @Test("An unknown music level or size falls back to the defaults")
+    func unknownMusicEnumsFallBack() throws {
+        let json = #"{ "music": { "enabled": true, "level": "middle", "size": "xl" } }"#
         let decoded = try JSONDecoder().decode(
             MonitorOverlayConfiguration.self, from: Data(json.utf8)
         )
-        #expect(decoded.musicEnabled == true)
-        #expect(decoded.musicLevel == .desktop)
+        #expect(decoded.music.enabled == true)
+        #expect(decoded.music.level == .desktop)
+        #expect(decoded.music.size == .medium)
+    }
+
+    /// The layer's position is its own now; a board that still carries the old
+    /// widget must not put it back on the grid.
+    @Test("A board written while the layer was a widget drops it at decode")
+    func legacyMusicWidgetIsNotABoardWidget() throws {
+        let json = """
+        {"enabled":true,"board":{"widgets":[
+        {"kind":"gpu","size":"m","x":0,"y":0},
+        {"kind":"nowPlaying","size":"m","x":0.5,"y":0.5}
+        ]}}
+        """
+        let decoded = try JSONDecoder().decode(
+            MonitorOverlayConfiguration.self, from: Data(json.utf8)
+        )
+        #expect(decoded.board.widgets.map(\.kind) == [.gpu])
+        #expect(decoded.music == .default)
     }
 
     @Test("An empty object decodes to the defaults")
@@ -58,7 +76,12 @@ struct MonitorOverlayConfigurationTests {
     @Test("Round-trip preserves both module switches, both levels and the board")
     func roundTrip() throws {
         var overlay = MonitorOverlayConfiguration(
-            enabled: true, level: .front, musicEnabled: true, musicLevel: .desktop
+            enabled: true,
+            level: .front,
+            music: MusicOverlayConfiguration(
+                enabled: true, level: .desktop, size: .large, x: 0.25, y: 0.5,
+                options: ["style": .string("vinyl")]
+            )
         )
         overlay.board.widgets = [MonitorWidgetPlacement(kind: .gpu, size: .medium, x: 0.1, y: 0.2)]
         overlay.board.mouseInteractionEnabled = true
@@ -67,8 +90,9 @@ struct MonitorOverlayConfigurationTests {
         let decoded = try JSONDecoder().decode(MonitorOverlayConfiguration.self, from: data)
         #expect(decoded == overlay)
         #expect(decoded.level == .front)
-        #expect(decoded.musicEnabled == true)
-        #expect(decoded.musicLevel == .desktop)
+        #expect(decoded.music == overlay.music)
+        #expect(decoded.music.size == .large)
+        #expect(decoded.music.options["style"]?.stringValue == "vinyl")
         #expect(decoded.board.widgets.map(\.kind) == [.gpu])
     }
 

@@ -52,17 +52,14 @@ struct OverlayPreviewArea: View {
 
     @ViewBuilder
     private var musicLayer: some View {
-        let overlay = screenManager.monitorOverlay(for: screen)
-        // Same predicate as the page's own switch: a board that still carries
-        // the layer while Music is off must read as off here too.
-        if overlay.musicEnabled,
-           let placement = MusicOverlayBoardEditor.nowPlayingPlacement(in: overlay.board) {
+        let music = screenManager.monitorOverlay(for: screen).music
+        if music.enabled {
             // 1 Hz tick advances `context.now`, which is what drives the
             // widget's own progress interpolation — no .animation needed.
             // Paused while dragging: a rebuild mid-gesture re-runs the layout
             // that the drag is reading from, which reads as a stutter.
             TimelineView(.periodic(from: .now, by: isDraggingMusicLayer ? 3600 : 1)) { timeline in
-                musicWidgetPreview(placement: placement, now: timeline.date)
+                musicWidgetPreview(music: music, now: timeline.date)
                     // The live readout rides the preview rather than the
                     // inspector list: it describes what is on this canvas, and
                     // over there it read as one more setting row.
@@ -106,20 +103,21 @@ struct OverlayPreviewArea: View {
     /// board itself uses (`referenceWidth` = this display's width), so the
     /// preview is WYSIWYG with the Monitor page rather than scaled against a
     /// fixed reference board.
-    private func musicWidgetPreview(placement: MonitorWidgetPlacement, now: Date) -> some View {
+    private func musicWidgetPreview(music: MusicOverlayConfiguration, now: Date) -> some View {
         GeometryReader { geo in
             let geometry = MonitorBoardGeometry(
                 boardSize: geo.size,
                 referenceWidth: max(screen.frame.width, 1)
             )
-            let footprint = geometry.pixelSize(for: .nowPlaying, size: placement.size)
+            let cells = MusicOverlayLayout.cells(for: music.size)
+            let footprint = geometry.pixelSize(columns: cells.columns, rows: cells.rows)
             let raw = CGRect(
-                origin: CGPoint(x: placement.x * geo.size.width, y: placement.y * geo.size.height),
+                origin: CGPoint(x: music.x * geo.size.width, y: music.y * geo.size.height),
                 size: footprint
             )
             let rect = geometry.renderRect(forRawRect: raw)
             ZStack {
-                NowPlayingWidgetView(context: musicPreviewContext(placement: placement, now: now))
+                NowPlayingWidgetView(context: musicPreviewContext(music: music, now: now))
                     // The widget's own layers opt out of hit testing in places,
                     // so the drag rides on a clear sheet over the whole tile.
                     .allowsHitTesting(false)
@@ -133,7 +131,7 @@ struct OverlayPreviewArea: View {
                         .strokeBorder(Color.accentColor, lineWidth: 2)
                 }
             }
-            .gesture(musicDragGesture(placement: placement, footprint: footprint, canvas: geo.size))
+            .gesture(musicDragGesture(music: music, footprint: footprint, canvas: geo.size))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text("Drag to move the Music layer"))
             .position(
@@ -149,7 +147,7 @@ struct OverlayPreviewArea: View {
     }
 
     private func musicDragGesture(
-        placement: MonitorWidgetPlacement,
+        music: MusicOverlayConfiguration,
         footprint: CGSize,
         canvas: CGSize
     ) -> some Gesture {
@@ -167,17 +165,17 @@ struct OverlayPreviewArea: View {
                 guard canvas.width > 0, canvas.height > 0 else { return }
                 let maxX = max(0, 1 - footprint.width / canvas.width)
                 let maxY = max(0, 1 - footprint.height / canvas.height)
-                let x = min(max(placement.x + value.translation.width / canvas.width, 0), maxX)
-                let y = min(max(placement.y + value.translation.height / canvas.height, 0), maxY)
-                let board = screenManager.monitorOverlay(for: screen).board
-                let next = MusicOverlayBoardEditor.settingOrigin(x: x, y: y, on: board)
-                if next != board {
-                    screenManager.setMonitorOverlayBoard(next, for: screen)
+                let x = min(max(music.x + value.translation.width / canvas.width, 0), maxX)
+                let y = min(max(music.y + value.translation.height / canvas.height, 0), maxY)
+                let current = screenManager.monitorOverlay(for: screen).music
+                let next = MusicOverlayLayout.setting(x: x, y: y, on: current)
+                if next != current {
+                    screenManager.setMusicOverlay(next, for: screen)
                 }
             }
     }
 
-    private func musicPreviewContext(placement: MonitorWidgetPlacement, now: Date) -> MonitorWidgetContext {
+    private func musicPreviewContext(music: MusicOverlayConfiguration, now: Date) -> MusicOverlayContext {
         let live = NowPlayingMonitor.shared.currentState
         var state = live.title.isEmpty ? Self.sampleNowPlayingState : live
         // The monitor never carries artwork — that is attached downstream by
@@ -188,10 +186,10 @@ struct OverlayPreviewArea: View {
         }
         var snapshot = MonitorSnapshot()
         snapshot.nowPlaying = state
-        return MonitorWidgetContext(
+        return MusicOverlayContext(
             snapshot: snapshot,
-            history: MonitorHistorySnapshot(),
-            placement: placement,
+            size: music.size,
+            options: music.options,
             isEditing: false,
             reduceMotion: reduceMotion,
             now: now

@@ -8,37 +8,17 @@ enum MonitorOverlayModule: String, CaseIterable, Hashable, Sendable {
     case monitor
     case music
 
-    /// Widget ownership is the split: one board, two renderers.
-    func owns(_ kind: MonitorWidgetKind) -> Bool {
-        switch self {
-        case .monitor: kind != .nowPlaying
-        case .music: kind == .nowPlaying
-        }
-    }
-
-    /// What this module's board may hold — also what its add-widget catalog
-    /// offers, since anything else would be dropped by `merging` on write-back.
-    var ownedKinds: [MonitorWidgetKind] {
-        MonitorWidgetKind.allCases.filter(owns)
-    }
-
-    func widgets(of board: MonitorBoardConfiguration) -> MonitorBoardConfiguration {
-        var next = board
-        next.widgets = board.widgets.filter { owns($0.kind) }
-        return next
-    }
-
     func isEnabled(in overlay: MonitorOverlayConfiguration) -> Bool {
         switch self {
         case .monitor: overlay.enabled
-        case .music: overlay.musicEnabled
+        case .music: overlay.music.enabled
         }
     }
 
     func level(in overlay: MonitorOverlayConfiguration) -> MonitorOverlayLevel {
         switch self {
         case .monitor: overlay.level
-        case .music: overlay.musicLevel
+        case .music: overlay.music.level
         }
     }
 }
@@ -118,32 +98,91 @@ final class OverlayController: NSObject {
     /// ScreenManager stores into the screen's `monitorOverlay.board`.
     var onOverlayEdited: ((CGDirectDisplayID, MonitorBoardConfiguration) -> Void)?
 
+    /// Global + local mouse monitors, live only while a host is `.widgetsOnly`.
+    private var pointerMonitors: [Any] = []
+
+    /// The two modules render different things from different configurations,
+    /// so a host is one or the other — never a board filtered down to half its
+    /// widgets.
+    private enum HostContent {
+        case monitor(HostView, MonitorBoardConfiguration)
+        case music(MusicHostView, MusicOverlayConfiguration)
+    }
+
+    @MainActor
     private final class Host {
         let window: OverlayWindow
-        let board: HostView
-        /// Drives the union sampling options across hosts.
-        var config: MonitorBoardConfiguration
+        var content: HostContent
         var level: MonitorOverlayLevel
         var isVisible = false
         var isDeliveringSnapshots = false
 
-        init(
-            window: OverlayWindow,
-            board: HostView,
-            config: MonitorBoardConfiguration,
-            level: MonitorOverlayLevel
-        ) {
+        init(window: OverlayWindow, content: HostContent, level: MonitorOverlayLevel) {
             self.window = window
-            self.board = board
-            self.config = config
+            self.content = content
             self.level = level
+        }
+
+        var board: HostView? {
+            if case .monitor(let view, _) = content { return view }
+            return nil
+        }
+
+        var boardConfig: MonitorBoardConfiguration? {
+            if case .monitor(_, let config) = content { return config }
+            return nil
+        }
+
+        var musicConfig: MusicOverlayConfiguration? {
+            if case .music(_, let config) = content { return config }
+            return nil
+        }
+
+        var pointerScope: PointerScope {
+            switch content {
+            case .monitor(let view, _): view.pointerScope
+            // The layer has no edit mode of its own: either its controls want
+            // the pointer or the window is click-through.
+            case .music(let view, _): view.wantsPointer ? .widgetsOnly : .none
+            }
+        }
+
+        /// Delivery cadence contribution; the music layer draws on its own 1 Hz
+        /// clock and has no sampler to pace.
+        var refreshIntervalSeconds: Double? {
+            boardConfig?.refreshIntervalSeconds
+        }
+
+        func push(_ snapshot: MonitorSnapshot) {
+            switch content {
+            case .monitor(let view, _): view.push(snapshot)
+            case .music(let view, _): view.push(snapshot)
+            }
+        }
+
+        func setSuspended(_ suspended: Bool) {
+            switch content {
+            case .monitor(let view, _): view.setSuspended(suspended)
+            case .music(let view, _): view.setSuspended(suspended)
+            }
+        }
+
+        func acceptsPointer(atLocalPoint point: NSPoint) -> Bool {
+            switch content {
+            case .monitor(let view, _): view.acceptsPointer(atLocalPoint: point)
+            case .music(let view, _): view.acceptsPointer(atLocalPoint: point)
+            }
+        }
+
+        var view: NSView {
+            switch content {
+            case .monitor(let view, _): view
+            case .music(let view, _): view
+            }
         }
     }
 
     private var hosts: [MonitorOverlayHostKey: Host] = [:]
-    /// Last full board applied per display. A module host only ever sees its own
-    /// widgets, so this is what its edits are merged back into.
-    private var boards: [CGDirectDisplayID: MonitorBoardConfiguration] = [:]
     private var isUserAbsent = false
     private var occludedScreenIDs: Set<CGDirectDisplayID> = []
     private var visibilityDecision = MonitorOverlayVisibilityPolicy.resolve(
@@ -193,7 +232,6 @@ final class OverlayController: NSObject {
             teardown(screenID: screenID)
             return
         }
-        boards[screenID] = overlay.board
         for module in MonitorOverlayModule.allCases {
             apply(module: module, overlay: overlay, screenID: screenID, screenFrame: screenFrame)
         }
@@ -212,15 +250,20 @@ final class OverlayController: NSObject {
         }
 
         let level = module.level(in: overlay)
-        let moduleBoard = module.widgets(of: overlay.board)
         let topInsetFraction = HostView.menuBarTopInsetFraction(forFrame: screenFrame)
 
         if let host = hosts[key] {
-            host.config = moduleBoard
             host.level = level
             host.window.applyFrame(screenFrame)
             host.window.apply(level: level)
-            host.board.apply(configuration: moduleBoard, topInsetFraction: topInsetFraction)
+            switch host.content {
+            case .monitor(let view, _):
+                host.content = .monitor(view, overlay.board)
+                view.apply(configuration: overlay.board, topInsetFraction: topInsetFraction)
+            case .music(let view, _):
+                host.content = .music(view, overlay.music)
+                view.apply(configuration: overlay.music, topInsetFraction: topInsetFraction)
+            }
             updateInteractive(host)
             reconcileVisibilityAndRuntime()
             return
@@ -229,57 +272,48 @@ final class OverlayController: NSObject {
         SourceRegistration.registerDefaultFactories()
 
         let window = OverlayWindow(screenFrame: screenFrame, level: level)
-        let board = HostView(
-            frame: NSRect(origin: .zero, size: screenFrame.size),
-            configuration: moduleBoard,
-            topInsetFraction: topInsetFraction,
-            allowedKinds: module.ownedKinds
-        )
-        board.autoresizingMask = [.width, .height]
-        board.resetHistory()
-        board.setSuspended(true)
-        window.contentView = board
-
-        let host = Host(
-            window: window,
-            board: board,
-            config: moduleBoard,
-            level: level
-        )
+        let frame = NSRect(origin: .zero, size: screenFrame.size)
+        let host: Host
+        switch module {
+        case .monitor:
+            let board = HostView(
+                frame: frame,
+                configuration: overlay.board,
+                topInsetFraction: topInsetFraction
+            )
+            board.autoresizingMask = [.width, .height]
+            board.resetHistory()
+            board.setSuspended(true)
+            window.contentView = board
+            host = Host(window: window, content: .monitor(board, overlay.board), level: level)
+            board.onConfigurationEdited = { [weak self, weak host] edited in
+                guard let self, let host else { return }
+                if case .monitor(let view, _) = host.content {
+                    host.content = .monitor(view, edited)
+                }
+                onOverlayEdited?(screenID, edited)
+                reconcileVisibilityAndRuntime()
+            }
+            board.onEditingChanged = { [weak self, weak host] _ in
+                guard let self, let host else { return }
+                updateInteractive(host)
+            }
+        case .music:
+            let music = MusicHostView(
+                frame: frame,
+                configuration: overlay.music,
+                topInsetFraction: topInsetFraction
+            )
+            music.autoresizingMask = [.width, .height]
+            music.setSuspended(true)
+            window.contentView = music
+            host = Host(window: window, content: .music(music, overlay.music), level: level)
+        }
         hosts[key] = host
-
-        board.onConfigurationEdited = { [weak self, weak host] edited in
-            guard let self, let host else { return }
-            host.config = edited
-            onOverlayEdited?(screenID, merging(edited, from: key))
-            reconcileVisibilityAndRuntime()
-        }
-        board.onEditingChanged = { [weak self, weak host] _ in
-            guard let self, let host else { return }
-            updateInteractive(host)
-        }
 
         updateInteractive(host)
         reconcileVisibilityAndRuntime()
         window.orderFrontRegardless()
-    }
-
-    /// A host renders only its own module's widgets, so reporting its edit
-    /// verbatim would persist a board with the other module's widgets deleted —
-    /// silently, and for a module that may not even have a window open. Fold the
-    /// edit back into the last full board instead.
-    private func merging(
-        _ edited: MonitorBoardConfiguration,
-        from key: MonitorOverlayHostKey
-    ) -> MonitorBoardConfiguration {
-        let full = boards[key.screenID] ?? edited
-        var merged = edited
-        merged.widgets = edited.widgets.filter { key.module.owns($0.kind) }
-            + full.widgets.filter { !key.module.owns($0.kind) }
-        // The persist path skips the reconcile, so this is the only place the
-        // retained board learns about the edit.
-        boards[key.screenID] = merged
-        return merged
     }
 
     /// Drops every module host on this display.
@@ -287,14 +321,16 @@ final class OverlayController: NSObject {
         for key in Array(hosts.keys) where key.screenID == screenID {
             teardown(key: key)
         }
-        boards[screenID] = nil
     }
 
     private func teardown(key: MonitorOverlayHostKey) {
         guard let host = hosts.removeValue(forKey: key) else { return }
-        host.board.flushPendingEdits()
-        host.board.onConfigurationEdited = nil
-        host.board.onEditingChanged = nil
+        defer { refreshPointerTracking() }
+        if let board = host.board {
+            board.flushPendingEdits()
+            board.onConfigurationEdited = nil
+            board.onEditingChanged = nil
+        }
         host.window.orderOut(nil)
         reconcileVisibilityAndRuntime()
     }
@@ -305,16 +341,12 @@ final class OverlayController: NSObject {
         for key in Array(hosts.keys) where !liveScreenIDs.contains(key.screenID) {
             teardown(key: key)
         }
-        for screenID in Array(boards.keys) where !liveScreenIDs.contains(screenID) {
-            boards[screenID] = nil
-        }
     }
 
     func teardownAll() {
         for key in Array(hosts.keys) {
             teardown(key: key)
         }
-        boards.removeAll()
     }
 
     func updateVisibility(
@@ -339,7 +371,11 @@ final class OverlayController: NSObject {
     }
 
     func board(screenID: CGDirectDisplayID, module: MonitorOverlayModule) -> MonitorBoardConfiguration? {
-        hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.config
+        hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.boardConfig
+    }
+
+    func music(screenID: CGDirectDisplayID) -> MusicOverlayConfiguration? {
+        hosts[MonitorOverlayHostKey(screenID: screenID, module: .music)]?.musicConfig
     }
 
     /// The very callback `apply` installed on that module's board view, so a
@@ -348,7 +384,7 @@ final class OverlayController: NSObject {
         screenID: CGDirectDisplayID,
         module: MonitorOverlayModule
     ) -> ((MonitorBoardConfiguration) -> Void)? {
-        hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.board.onConfigurationEdited
+        hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]?.board?.onConfigurationEdited
     }
 
     func waitUntilRuntimeSettled() async {
@@ -359,13 +395,71 @@ final class OverlayController: NSObject {
 
     private func updateInteractive(_ host: Host) {
         // A widget can claim the pointer on its own (Now Playing's transport
-        // controls) without the user opting the whole board in. The window has
-        // to stop ignoring mouse events for that, which is display-wide — so
-        // `HostView.hitTest` narrows it back down to that widget's rect, and
-        // everything else still falls through to the desktop.
-        let scope = HostView.pointerScope(for: host.config, isEditing: host.board.isEditing)
-        host.window.setInteractive(scope != .none)
-        host.board.setPointerScope(scope)
+        // controls) without the user opting the whole board in. The window flag
+        // that allows that is display-wide, and `HostView.hitTest` cannot narrow
+        // it: a view returning nil does not hand the click to the window below,
+        // it only leaves it unhandled — which is why an interactive full-screen
+        // overlay froze the whole desktop. The window therefore stays
+        // click-through until the pointer is actually over a live control.
+        if case .monitor(let view, let config) = host.content {
+            view.setPointerScope(HostView.pointerScope(for: config, isEditing: view.isEditing))
+        }
+        applyWindowMouseEvents(to: host)
+        refreshPointerTracking()
+    }
+
+    /// Sets one window's mouse-event flag from the pointer's current position.
+    private func applyWindowMouseEvents(to host: Host, screenPoint: NSPoint? = nil) {
+        guard !OverlayPointerGate.pointerIsCaptured else { return }
+        let scope = host.pointerScope
+        let point = screenPoint ?? NSEvent.mouseLocation
+        host.window.setInteractive(OverlayPointerGate.windowTakesMouseEvents(
+            scope: scope,
+            pointerIsOverLiveArea: scope == .widgetsOnly && hostAcceptsPointer(host, atScreenPoint: point)
+        ))
+    }
+
+    private func hostAcceptsPointer(_ host: Host, atScreenPoint screenPoint: NSPoint) -> Bool {
+        guard host.window.frame.contains(screenPoint) else { return false }
+        let inWindow = host.window.convertPoint(fromScreen: screenPoint)
+        return host.acceptsPointer(atLocalPoint: host.view.convert(inWindow, from: nil))
+    }
+
+    /// One monitor for every host: only `.widgetsOnly` needs the pointer
+    /// followed, and only while such a host exists. The local monitor covers the
+    /// window we just made interactive — once the pointer is ours, the global
+    /// monitor stops seeing it, and without the local one it could never leave.
+    private func refreshPointerTracking() {
+        let needsTracking = hosts.values.contains { $0.pointerScope == .widgetsOnly }
+        guard needsTracking else {
+            stopPointerTracking()
+            return
+        }
+        guard pointerMonitors.isEmpty else { return }
+        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseUp, .rightMouseUp, .otherMouseUp]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.pointerMoved() }
+        }) {
+            pointerMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.pointerMoved() }
+            return event
+        }) {
+            pointerMonitors.append(local)
+        }
+    }
+
+    private func stopPointerTracking() {
+        for monitor in pointerMonitors { NSEvent.removeMonitor(monitor) }
+        pointerMonitors.removeAll()
+    }
+
+    private func pointerMoved() {
+        let point = NSEvent.mouseLocation
+        for host in hosts.values where host.pointerScope == .widgetsOnly {
+            applyWindowMouseEvents(to: host, screenPoint: point)
+        }
     }
 
     // MARK: - Runtime lease + pump
@@ -389,7 +483,7 @@ final class OverlayController: NSObject {
             host.isVisible = decision.visibleHostKeys.contains(key)
             if !host.isVisible {
                 host.isDeliveringSnapshots = false
-                host.board.setSuspended(true)
+                host.setSuspended(true)
             }
         }
         if !decision.pumpShouldRun {
@@ -398,12 +492,6 @@ final class OverlayController: NSObject {
 
         scheduleRuntimeReconciliation()
     }
-
-    /// Kinds that read nothing out of the sampled series, so their arrival adds
-    /// no fabricated-zero window to any history — and must not cost every other
-    /// tile its accumulated sparkline. Now Playing is pushed by notification,
-    /// not sampled.
-    nonisolated static let historylessWidgetKinds: Set<MonitorWidgetKind> = [.nowPlaying]
 
     /// A metric group no placed widget read was not sampled at all — the source
     /// still emits a literal 0 for it (`"normal"` for pressure), and those
@@ -414,7 +502,7 @@ final class OverlayController: NSObject {
         previous: Set<MonitorWidgetKind>,
         next: Set<MonitorWidgetKind>
     ) -> Bool {
-        !next.subtracting(previous).subtracting(historylessWidgetKinds).isEmpty
+        !next.subtracting(previous).isEmpty
     }
 
     private func makeOptions(visibleHostKeys: Set<MonitorOverlayHostKey>) -> MonitorRuntimeOptions {
@@ -422,20 +510,32 @@ final class OverlayController: NSObject {
         var gpuSeconds: Double?
         var sampleSeconds: Double?
         var demand = MonitorSampleDemand()
+        var music = false
+        var musicWantsAudio = false
         for (key, host) in hosts where visibleHostKeys.contains(key) {
-            kinds.formUnion(host.config.widgets.map(\.kind))
-            if let s = MonitorWidgetDraft.gpuSampleSeconds(in: host.config.widgets) {
-                gpuSeconds = min(gpuSeconds ?? s, s)
+            switch host.content {
+            case .monitor(_, let board):
+                kinds.formUnion(board.widgets.map(\.kind))
+                if let s = MonitorWidgetDraft.gpuSampleSeconds(in: board.widgets) {
+                    gpuSeconds = min(gpuSeconds ?? s, s)
+                }
+                let interval = board.refreshIntervalSeconds
+                sampleSeconds = min(sampleSeconds ?? interval, interval)
+                demand = demand.union(MonitorSampleDemand.of(board.widgets))
+            case .music(_, let configuration):
+                music = true
+                // The tap and its FFT only pay for themselves while a layer
+                // actually draws the reactive effects.
+                musicWantsAudio = musicWantsAudio || NowPlayingOptions(configuration.options).audioReactive
             }
-            let interval = host.config.refreshIntervalSeconds
-            sampleSeconds = min(sampleSeconds ?? interval, interval)
-            demand = demand.union(MonitorSampleDemand.of(host.config.widgets))
         }
         return MonitorRuntimeOptions(
             system: MonitorRuntimeOptions.requiresSystemMetrics(for: kinds),
             agents: kinds.contains(.fleet),
             topProcesses: kinds.contains(.processes),
             activeWidgetKinds: kinds,
+            music: music,
+            musicAudioReactive: musicWantsAudio,
             gpuSampleSeconds: gpuSeconds,
             sampleIntervalSeconds: sampleSeconds,
             sampleDemand: demand
@@ -513,7 +613,7 @@ final class OverlayController: NSObject {
                     previous: appliedRuntimeState.options?.activeWidgetKinds ?? [],
                     next: options.activeWidgetKinds ?? []
                 ) {
-                    for host in hosts.values { host.board.resetHistory() }
+                    for host in hosts.values { host.board?.resetHistory() }
                 }
                 await lease.updateOptions(options).value
                 appliedRuntimeState.options = options
@@ -532,11 +632,11 @@ final class OverlayController: NSObject {
             let shouldDeliver = host.isVisible
             if shouldDeliver, !host.isDeliveringSnapshots {
                 host.isDeliveringSnapshots = true
-                host.board.setSuspended(false)
+                host.setSuspended(false)
                 newlyVisibleHosts.append(host)
             } else if !shouldDeliver {
                 host.isDeliveringSnapshots = false
-                host.board.setSuspended(true)
+                host.setSuspended(true)
             }
         }
 
@@ -555,7 +655,7 @@ final class OverlayController: NSObject {
     private var pumpIntervalSeconds: Double {
         hosts.values
             .filter(\.isDeliveringSnapshots)
-            .map(\.config.refreshIntervalSeconds)
+            .compactMap(\.refreshIntervalSeconds)
             .min() ?? 1
     }
 
@@ -590,7 +690,7 @@ final class OverlayController: NSObject {
     private func primeHost(_ host: Host) {
         guard host.isVisible, host.isDeliveringSnapshots else { return }
         guard let update = runtime.broker.latest(after: 0) else { return }
-        host.board.push(update.snapshot)
+        host.push(update.snapshot)
     }
 
     private func pushLatest() {
@@ -598,7 +698,7 @@ final class OverlayController: NSObject {
         guard let update = broker.latest(after: lastGeneration) else { return }
         lastGeneration = update.generation
         for host in hosts.values where host.isVisible && host.isDeliveringSnapshots {
-            host.board.push(update.snapshot)
+            host.push(update.snapshot)
         }
     }
 }

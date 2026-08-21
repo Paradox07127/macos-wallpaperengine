@@ -176,18 +176,10 @@ struct MonitorBoardConfigurationTests {
 
     @Test("cellSize(for: .large) is 2x2 for every kind except the Now Playing canvas")
     func largeCellSizeIsTwoByTwo() {
-        for kind in MonitorWidgetKind.allCases where kind != .nowPlaying {
+        for kind in MonitorWidgetKind.allCases {
             let cells = kind.cellSize(for: .large)
             #expect(cells.columns == 2 && cells.rows == 2, "\(kind)")
         }
-    }
-
-    @Test("Now Playing gets its wide art canvas at every size")
-    func nowPlayingCanvasCellSizes() {
-        #expect(MonitorWidgetKind.nowPlaying.cellSize(for: .small) == (2, 1))
-        #expect(MonitorWidgetKind.nowPlaying.cellSize(for: .medium) == (3, 1))
-        #expect(MonitorWidgetKind.nowPlaying.cellSize(for: .large) == (4, 2))
-        #expect(MonitorWidgetKind.nowPlaying.allowedSizes == [.small, .medium, .large])
     }
 
     @Test("allowedSizes matrix matches the design mock's per-kind META, minus xl")

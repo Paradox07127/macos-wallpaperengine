@@ -225,7 +225,7 @@ struct MonitorCatalogView: View {
 
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(model.allowedKinds) { kind in
+                    ForEach(MonitorWidgetKind.allCases) { kind in
                         catalogItem(kind)
                     }
                 }

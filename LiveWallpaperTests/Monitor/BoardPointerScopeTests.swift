@@ -3,25 +3,21 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-// MARK: - Fixture board
+// MARK: - Monitor board
 
 /// 800×600 with `referenceWidth` 0, so the geometry scale is exactly 1 and every
 /// rect below is arithmetic on Apple's own cell pitch (194×206, inset 12/18).
 private enum PointerBoard {
     static let size = CGSize(width: 800, height: 600)
 
-    /// Now Playing, small (2×1 cells) at the board origin.
-    /// raw (0, 0, 388, 206) → render (12, 18, 364, 170).
-    static let nowPlayingRenderCenter = CGPoint(x: 194, y: 103)
     /// CPU, small (1×1) at normalized (0.5, 0.5).
     /// raw (400, 300, 194, 206) → render (412, 318, 170, 170).
     static let cpuRenderCenter = CGPoint(x: 497, y: 403)
-    /// Inside the board, inside neither widget.
+    /// Inside the board, outside every widget.
     static let emptySpot = CGPoint(x: 700, y: 550)
 
     static func configuration(mouseInteractionEnabled: Bool = false) -> MonitorBoardConfiguration {
         var board = MonitorBoardConfiguration(widgets: [
-            MonitorWidgetPlacement(kind: .nowPlaying, size: .small, x: 0, y: 0),
             MonitorWidgetPlacement(kind: .cpu, size: .small, x: 0.5, y: 0.5),
         ])
         board.mouseInteractionEnabled = mouseInteractionEnabled
@@ -33,16 +29,86 @@ private enum PointerBoard {
         NSPoint(x: boardPoint.x, y: size.height - boardPoint.y)
     }
 
-    /// Hit regions follow what is actually drawn, so a host with no pushed
-    /// track has no Now Playing tile to hit.
     @MainActor
-    static func makeHost(
-        mouseInteractionEnabled: Bool = false,
-        phase: MonitorNowPlayingPhase? = .playing
-    ) -> HostView {
+    static func makeHost(mouseInteractionEnabled: Bool = false) -> HostView {
         let host = HostView(
             frame: NSRect(origin: .zero, size: size),
             configuration: configuration(mouseInteractionEnabled: mouseInteractionEnabled)
+        )
+        // A superview so `hitTest` exercises its real coordinate conversion.
+        let container = NSView(frame: NSRect(origin: .zero, size: size))
+        container.addSubview(host)
+        return host
+    }
+}
+
+@Suite("Monitor board pointer scope")
+struct BoardPointerScopeTests {
+
+    /// Board tiles are display-only. The Now Playing layer was the only thing
+    /// that ever claimed the pointer on its own, and it has its own host now.
+    @MainActor
+    @Test("a passive board takes no pointer anywhere")
+    func passiveBoardTakesNothing() {
+        let host = PointerBoard.makeHost()
+        #expect(host.pointerScope == .none)
+        for point in [PointerBoard.cpuRenderCenter, PointerBoard.emptySpot] {
+            #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(point)))
+        }
+    }
+
+    @MainActor
+    @Test("wholeBoard accepts every point and widgetsOnly accepts none")
+    func scopeExtremes() {
+        let host = PointerBoard.makeHost()
+
+        host.setPointerScope(.wholeBoard)
+        for point in [PointerBoard.cpuRenderCenter, PointerBoard.emptySpot] {
+            #expect(host.acceptsPointer(atLocalPoint: PointerBoard.local(point)))
+        }
+
+        // The board never resolves to this scope any more; if something forced
+        // it, the board still has to refuse rather than swallow desktop clicks.
+        host.setPointerScope(.widgetsOnly)
+        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.cpuRenderCenter)))
+    }
+
+    @MainActor
+    @Test("editing and Mouse Interaction are the only ways in")
+    func scopeResolution() {
+        let passive = PointerBoard.configuration()
+        #expect(HostView.pointerScope(for: passive, isEditing: false) == .none)
+        #expect(HostView.pointerScope(for: passive, isEditing: true) == .wholeBoard)
+
+        let optedIn = PointerBoard.configuration(mouseInteractionEnabled: true)
+        #expect(HostView.pointerScope(for: optedIn, isEditing: false) == .wholeBoard)
+    }
+}
+
+// MARK: - Music layer
+
+@Suite("Music layer pointer gate")
+struct MusicLayerPointerGateTests {
+    private static let size = CGSize(width: 800, height: 600)
+    /// Medium (3×1 cells) at the origin: raw (0, 0, 582, 206) → render
+    /// (12, 18, 558, 170), so its centre is (291, 103) in board coordinates.
+    private static let layerCenter = CGPoint(x: 291, y: 103)
+    private static let outside = CGPoint(x: 700, y: 550)
+
+    private static func local(_ boardPoint: CGPoint) -> NSPoint {
+        NSPoint(x: boardPoint.x, y: size.height - boardPoint.y)
+    }
+
+    @MainActor
+    private func makeHost(
+        options: NowPlayingOptions = NowPlayingOptions(),
+        phase: MonitorNowPlayingPhase? = .playing
+    ) -> MusicHostView {
+        let host = MusicHostView(
+            frame: NSRect(origin: .zero, size: Self.size),
+            configuration: MusicOverlayConfiguration(
+                enabled: true, size: .medium, x: 0, y: 0, options: options.applied(to: [:])
+            )
         )
         if let phase {
             var snapshot = MonitorSnapshot()
@@ -52,166 +118,63 @@ private enum PointerBoard {
             )
             host.push(snapshot)
         }
-        // A superview so `hitTest` exercises its real coordinate conversion.
-        let container = NSView(frame: NSRect(origin: .zero, size: size))
+        let container = NSView(frame: NSRect(origin: .zero, size: Self.size))
         container.addSubview(host)
         return host
     }
-}
-
-// MARK: - Pointer scope
-
-@Suite("Monitor board pointer scope")
-struct BoardPointerScopeTests {
 
     @MainActor
-    @Test("widgetsOnly accepts the pointer only inside a widget that asked for it")
-    func widgetsOnlyGate() {
-        let host = PointerBoard.makeHost()
-        host.setPointerScope(.widgetsOnly)
-
-        #expect(host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.nowPlayingRenderCenter)))
-        // The desktop below has to keep every click that is not on that tile —
-        // this is the whole point of filtering in AppKit rather than SwiftUI.
-        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.emptySpot)))
-        // CPU never asks for the pointer, so its rect is not a hit region.
-        #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.cpuRenderCenter)))
+    @Test("the transport controls take the pointer, the rest of the display does not")
+    func controlsTakeOnlyTheirOwnRect() {
+        let host = makeHost()
+        #expect(host.wantsPointer)
+        #expect(host.acceptsPointer(atLocalPoint: Self.local(Self.layerCenter)))
+        // Everything else has to fall through to the desktop.
+        #expect(!host.acceptsPointer(atLocalPoint: Self.local(Self.outside)))
     }
 
     /// An invisible layer that still eats desktop clicks reads as the desktop
     /// being broken, and there is nothing on screen to explain it.
     @MainActor
-    @Test("A Now Playing tile with nothing to draw holds no hit region")
+    @Test("a layer with nothing to draw holds no hit region")
     func noTrackReleasesThePointer() {
         for phase in [MonitorNowPlayingPhase.noPlayer, .awaitingFirstEvent] {
-            let host = PointerBoard.makeHost(phase: phase)
-            host.setPointerScope(.widgetsOnly)
-            #expect(
-                !host.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.nowPlayingRenderCenter)),
-                "\(phase) draws nothing, so its rect must fall through to the desktop"
-            )
+            let host = makeHost(phase: phase)
+            #expect(!host.wantsPointer, "\(phase) draws nothing")
+            #expect(!host.acceptsPointer(atLocalPoint: Self.local(Self.layerCenter)))
         }
 
         // Never pushed a snapshot at all: same answer, no crash.
-        let silent = PointerBoard.makeHost(phase: nil)
-        silent.setPointerScope(.widgetsOnly)
-        #expect(!silent.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.nowPlayingRenderCenter)))
+        let silent = makeHost(phase: nil)
+        #expect(!silent.acceptsPointer(atLocalPoint: Self.local(Self.layerCenter)))
 
         // A paused track is still on screen and still controllable.
-        let paused = PointerBoard.makeHost(phase: .paused)
-        paused.setPointerScope(.widgetsOnly)
-        #expect(paused.acceptsPointer(atLocalPoint: PointerBoard.local(PointerBoard.nowPlayingRenderCenter)))
+        let paused = makeHost(phase: .paused)
+        #expect(paused.acceptsPointer(atLocalPoint: Self.local(Self.layerCenter)))
     }
 
     @MainActor
-    @Test("none rejects every point and wholeBoard accepts every point")
-    func scopeExtremes() {
-        let host = PointerBoard.makeHost()
-
-        host.setPointerScope(.none)
-        for point in [PointerBoard.nowPlayingRenderCenter, PointerBoard.cpuRenderCenter, PointerBoard.emptySpot] {
-            #expect(!host.acceptsPointer(atLocalPoint: PointerBoard.local(point)))
-        }
-
-        host.setPointerScope(.wholeBoard)
-        for point in [PointerBoard.nowPlayingRenderCenter, PointerBoard.cpuRenderCenter, PointerBoard.emptySpot] {
-            #expect(host.acceptsPointer(atLocalPoint: PointerBoard.local(point)))
-        }
-    }
-
-    /// The gate above only matters if `hitTest` actually consults it: a nil from
-    /// here is what lets the event reach the window underneath.
-    @MainActor
-    @Test("hitTest returns nil wherever the scope declines the pointer")
-    func hitTestHonoursTheGate() {
-        let host = PointerBoard.makeHost()
-
-        host.setPointerScope(.widgetsOnly)
-        #expect(host.hitTest(PointerBoard.local(PointerBoard.emptySpot)) == nil)
-        #expect(host.hitTest(PointerBoard.local(PointerBoard.cpuRenderCenter)) == nil)
-
-        host.setPointerScope(.none)
-        #expect(host.hitTest(PointerBoard.local(PointerBoard.nowPlayingRenderCenter)) == nil)
-    }
-
-    /// Guards the y-flip: the board's top-left tile must not answer to a point
-    /// mirrored into the bottom-left of the window.
-    @MainActor
-    @Test("the hit region is not vertically mirrored")
-    func hitRegionOrientation() {
-        let host = PointerBoard.makeHost()
-        host.setPointerScope(.widgetsOnly)
-        let center = PointerBoard.nowPlayingRenderCenter
-        let mirrored = NSPoint(x: center.x, y: center.y)
-
-        #expect(host.acceptsPointer(atLocalPoint: PointerBoard.local(center)))
-        #expect(!host.acceptsPointer(atLocalPoint: mirrored))
-    }
-
-    @MainActor
-    @Test("scope resolution: editing and Mouse Interaction widen it to the whole board")
-    func scopeResolution() {
-        let withPointerWidget = PointerBoard.configuration()
-        #expect(HostView.pointerScope(for: withPointerWidget, isEditing: false) == .widgetsOnly)
-        #expect(HostView.pointerScope(for: withPointerWidget, isEditing: true) == .wholeBoard)
-
-        var optedIn = withPointerWidget
-        optedIn.mouseInteractionEnabled = true
-        #expect(HostView.pointerScope(for: optedIn, isEditing: false) == .wholeBoard)
-
-        let monitorOnly = MonitorBoardConfiguration(widgets: [MonitorWidgetPlacement(kind: .cpu)])
-        #expect(HostView.pointerScope(for: monitorOnly, isEditing: false) == .none)
-
-        // Now Playing with both pointer affordances off asks for nothing.
+    @Test("a layer with both pointer affordances off asks for nothing")
+    func inertLayerTakesNothing() {
         var inert = NowPlayingOptions()
         inert.showControls = false
         inert.seekOnProgressDrag = false
-        let inertBoard = MonitorBoardConfiguration(widgets: [
-            MonitorWidgetPlacement(kind: .nowPlaying, options: inert.applied(to: [:])),
-        ])
-        #expect(HostView.pointerScope(for: inertBoard, isEditing: false) == .none)
-    }
-}
+        let host = makeHost(options: inert)
 
-// MARK: - Catalog scope
-
-@Suite("Monitor board catalog scope")
-struct BoardCatalogScopeTests {
-
-    @MainActor
-    @Test("each overlay module offers only the kinds it owns")
-    func moduleOwnedKinds() {
-        let monitor = MonitorOverlayModule.monitor.ownedKinds
-        let music = MonitorOverlayModule.music.ownedKinds
-
-        #expect(!monitor.contains(.nowPlaying))
-        #expect(monitor.contains(.cpu))
-        #expect(music == [.nowPlaying])
-        // Between them they still cover the catalog — no kind becomes unaddable.
-        #expect(Set(monitor + music) == Set(MonitorWidgetKind.allCases))
+        #expect(!host.wantsPointer)
+        #expect(!host.acceptsPointer(atLocalPoint: Self.local(Self.layerCenter)))
     }
 
     @MainActor
-    @Test("a board refuses a kind its module does not own")
-    func addWidgetRespectsAllowedKinds() {
-        let model = InteractionModel(configuration: MonitorBoardConfiguration(widgets: []))
-        model.allowedKinds = MonitorOverlayModule.monitor.ownedKinds
-        model.reflow(boardSize: CGSize(width: 800, height: 600))
-        model.setEditing(true)
+    @Test("moving the layer moves its hit region with it")
+    func hitRegionFollowsTheConfiguration() {
+        let host = makeHost()
+        #expect(host.acceptsPointer(atLocalPoint: Self.local(Self.layerCenter)))
 
-        // Adding Now Playing to a Monitor host used to appear for 250 ms and
-        // then vanish, because the write-back filters it out again.
-        #expect(!model.addWidget(kind: .nowPlaying))
-        #expect(model.placements.isEmpty)
-
-        #expect(model.addWidget(kind: .cpu))
-        #expect(model.placements.map(\.kind) == [.cpu])
-    }
-
-    @MainActor
-    @Test("the inspector preview keeps the whole catalog")
-    func previewKeepsEveryKind() {
-        let model = InteractionModel(configuration: MonitorBoardConfiguration(widgets: []))
-        #expect(model.allowedKinds == MonitorWidgetKind.allCases)
+        host.apply(configuration: MusicOverlayConfiguration(
+            enabled: true, size: .medium, x: 0.5, y: 0.5
+        ))
+        #expect(!host.acceptsPointer(atLocalPoint: Self.local(Self.layerCenter)))
+        #expect(host.acceptsPointer(atLocalPoint: Self.local(CGPoint(x: 400 + 291, y: 300 + 103))))
     }
 }

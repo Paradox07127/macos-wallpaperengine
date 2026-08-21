@@ -11,12 +11,10 @@ enum SourceRegistration {
     }
 
     /// Deliberately not inside the agents factory: the Now Playing source must
-    /// exist whenever its widget is placed, with or without agent widgets.
+    /// exist whenever a music layer is visible, with or without any board.
     static let nowPlayingFactory: Runtime.SourceFactory = { options in
-        guard options.activeWidgetKinds?.contains(.nowPlaying) == true else { return [] }
-        // Nil demand = no per-widget information, so fail open rather than
-        // starve the effects.
-        return [NowPlayingSource(audioReactive: options.sampleDemand?.audioSpectrum ?? true)]
+        guard options.music else { return [] }
+        return [NowPlayingSource(audioReactive: options.musicAudioReactive)]
     }
 
     /// Idempotent; MainActor before first `Runtime.acquire`.

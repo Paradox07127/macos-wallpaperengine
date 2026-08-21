@@ -76,11 +76,16 @@ extension ScreenManager {
     }
 
     func setMusicOverlayEnabled(_ enabled: Bool, for screen: Screen) {
-        mutateMonitorOverlays(of: [screen]) { $0.musicEnabled = enabled }
+        mutateMonitorOverlays(of: [screen]) { $0.music.enabled = enabled }
     }
 
     func setMusicOverlayLevel(_ level: MonitorOverlayLevel, for screen: Screen) {
-        mutateMonitorOverlays(of: [screen]) { $0.musicLevel = level }
+        mutateMonitorOverlays(of: [screen]) { $0.music.level = level }
+    }
+
+    /// Position, size and appearance of the Now Playing layer.
+    func setMusicOverlay(_ music: MusicOverlayConfiguration, for screen: Screen) {
+        mutateMonitorOverlays(of: [screen]) { $0.music = music }
     }
 
     /// Pure configuration query used to keep FullScreenDetector's fallback poll
@@ -91,7 +96,7 @@ extension ScreenManager {
         screens.contains {
             let overlay = monitorOverlay(for: $0)
             return (overlay.enabled && overlay.level == .desktop)
-                || (overlay.musicEnabled && overlay.musicLevel == .desktop)
+                || (overlay.music.enabled && overlay.music.level == .desktop)
         }
     }
 
