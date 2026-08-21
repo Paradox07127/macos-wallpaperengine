@@ -12,11 +12,21 @@ public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifi
     case processes
     case fleet
     case aiEngine
+    case nowPlaying
 
     public var id: String { rawValue }
 
     /// Grid cells matching Apple widget frames (S 1×1 / M 2×1 / L 2×2).
+    /// Now Playing is a borderless art layer, not a panel — it gets a wide
+    /// canvas of its own (S 2×1 / M 3×1 / L 4×2).
     public func cellSize(for size: MonitorWidgetSize) -> (columns: Int, rows: Int) {
+        if self == .nowPlaying {
+            switch size {
+            case .small: return (2, 1)
+            case .medium: return (3, 1)
+            case .large: return (4, 2)
+            }
+        }
         switch size {
         case .small: return (1, 1)
         case .medium: return (2, 1)

@@ -48,7 +48,7 @@ struct MonitorSampleDemand: Sendable, Equatable {
                 demand.topProcesses = demand.topProcesses || shows(widget, "showTopProcesses")
             case .disk:
                 demand.processIO = demand.processIO || shows(widget, "showTopProcesses")
-            case .network, .fleet, .aiEngine:
+            case .network, .fleet, .aiEngine, .nowPlaying:
                 break
             }
         }
@@ -77,7 +77,7 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
     static func requiresSystemMetrics(for kinds: Set<MonitorWidgetKind>) -> Bool {
         kinds.contains { kind in
             switch kind {
-            case .fleet:
+            case .fleet, .nowPlaying:
                 false
             case .cpu, .memory, .gpu, .network, .disk, .power, .processes, .aiEngine:
                 true
@@ -363,6 +363,7 @@ actor Runtime {
     /// exists (no lease, or every lease paused) ⇒ nothing is being sampled.
     var debugActiveOptions: MonitorRuntimeOptions? { activeOptions }
     var debugActiveSourceCount: Int { sources.count }
+    var debugActiveSourceIDs: [String] { sources.map(\.sourceID) }
     var debugIsTerminated: Bool { lifecycle == .terminated }
     /// Total actor-side lease bookkeeping. It is intentionally identical to the
     /// live lease count: completed generations leave no retired-ID state behind.

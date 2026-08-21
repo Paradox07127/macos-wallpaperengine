@@ -19,6 +19,7 @@ struct SampleDemandTests {
         }
         func updateAgents(sourceID: String, sessions: [MonitorAgentSessionState]) async {}
         func updateHealth(_ health: MonitorSourceHealth) async {}
+        func updateNowPlaying(_ state: MonitorNowPlayingState?) async {}
 
         func system() -> MonitorSystemSnapshot? { lastSystem }
         func count() -> Int { systemUpdateCount }

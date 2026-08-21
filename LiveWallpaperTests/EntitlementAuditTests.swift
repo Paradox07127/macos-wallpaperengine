@@ -34,6 +34,15 @@ struct EntitlementAuditTests {
 
     private static let sharedValues: [String: EntitlementValue] = [
         "com.apple.security.app-sandbox": .boolean(true),
+        // Two independent gates on the Now Playing layer's transport buttons:
+        // the sandbox exception names WHICH apps may be addressed, and the
+        // Hardened Runtime key allows this process to send Apple Events at all.
+        // Both SKUs ship the layer, so both are shared grants.
+        "com.apple.security.automation.apple-events": .boolean(true),
+        "com.apple.security.temporary-exception.apple-events": .strings([
+            "com.spotify.client",
+            "com.apple.Music",
+        ]),
         "com.apple.security.automation.startup-items": .boolean(true),
         "com.apple.security.device.power": .boolean(true),
         "com.apple.security.exception.mach-lookup.global-name": .strings(["com.apple.audioanalyticsd"]),

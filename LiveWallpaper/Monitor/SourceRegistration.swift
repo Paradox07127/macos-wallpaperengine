@@ -10,10 +10,22 @@ enum SourceRegistration {
         sharedCursorStore.flush()
     }
 
+    /// Deliberately not inside the agents factory: the Now Playing source must
+    /// exist whenever its widget is placed, with or without agent widgets.
+    static let nowPlayingFactory: Runtime.SourceFactory = { options in
+        guard options.activeWidgetKinds?.contains(.nowPlaying) == true else { return [] }
+        return [NowPlayingSource()]
+    }
+
     /// Idempotent; MainActor before first `Runtime.acquire`.
     @MainActor static func registerDefaultFactories() {
         guard !registered else { return }
         registered = true
+        // Prime the app-lifetime observer now, not on first pipeline build: an
+        // app launched behind the lock screen builds no pipeline until unlock,
+        // and track changes in that window would otherwise be lost.
+        _ = NowPlayingMonitor.shared
+        Runtime.extraSourceFactories.append(nowPlayingFactory)
         Runtime.extraSourceFactories.append { options in
             guard options.agents else { return [] }
             let cursorStore = sharedCursorStore

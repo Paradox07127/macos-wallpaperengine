@@ -8,6 +8,7 @@ actor DataHub: MonitorSnapshotSink {
     private var system: MonitorSystemSnapshot?
     private var agentsBySource: [String: [MonitorAgentSessionState]] = [:]
     private var healthBySource: [String: MonitorSourceHealth] = [:]
+    private var nowPlaying: MonitorNowPlayingState?
 
     private var agentsEnabled = true
 
@@ -35,6 +36,11 @@ actor DataHub: MonitorSnapshotSink {
 
     func updateHealth(_ health: MonitorSourceHealth) async {
         healthBySource[health.sourceID] = health
+        schedulePublish()
+    }
+
+    func updateNowPlaying(_ state: MonitorNowPlayingState?) async {
+        nowPlaying = state
         schedulePublish()
     }
 
@@ -82,7 +88,8 @@ actor DataHub: MonitorSnapshotSink {
             timestamp: date.timeIntervalSince1970,
             system: system,
             agents: composedAgents(),
-            health: composedHealth()
+            health: composedHealth(),
+            nowPlaying: nowPlaying
         )
     }
 

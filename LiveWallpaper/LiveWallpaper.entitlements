@@ -43,6 +43,32 @@
 	    a file check "work" — move the check into the connector instead.
 	-->
 	<!--
+	    Playback control for the Now Playing wallpaper layer. Its transport
+	    buttons and its seek scrubber drive whichever player the layer is already
+	    reading from, by sending that app an AppleScript command
+	    (NowPlayingController). Under the App Sandbox every outgoing Apple Event
+	    is denied with errAEEventNotPermitted unless the target is named here, so
+	    only the two players the layer supports are listed — nothing else in the
+	    system can be scripted through this grant. macOS still asks the user for
+	    Automation consent per target on first use, and a denial just leaves the
+	    buttons inert. Developer ID / direct distribution only (not accepted for a
+	    Mac App Store submission).
+	-->
+	<key>com.apple.security.temporary-exception.apple-events</key>
+	<array>
+		<string>com.spotify.client</string>
+		<string>com.apple.Music</string>
+	</array>
+	<!--
+	    The sandbox exception above governs WHICH targets this process may send
+	    Apple Events to. This key is the Hardened Runtime's separate gate on
+	    WHETHER this process may send Apple Events at all — without it a
+	    hardened build is refused before the target list is ever consulted, so
+	    both are required for the transport buttons to work.
+	-->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<!--
 	    Read-only Apple SMC access for the Monitor widget board's temperature /
 	    power readouts (MonitorSensorSampler). Under the plain App Sandbox
 	    `IOServiceOpen(AppleSMC)` returns kIOReturnNotPermitted; this temporary

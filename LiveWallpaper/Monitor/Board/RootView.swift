@@ -67,9 +67,14 @@ struct RootView: View {
             )
 
             ZStack(alignment: .topLeading) {
+                // Empty space stays click-through unless the user opted the
+                // board into the pointer. A window made hit-testable only for
+                // a Now Playing layer's transport controls must not swallow
+                // desktop clicks everywhere else.
                 Color.clear
                     .contentShape(Rectangle())
                     .modifier(EmptyTapModifier(model: model))
+                    .allowsHitTesting(model.isEditing || model.acceptsBoardWidePointer)
 
                 if !geometry.isDegenerate {
                     if model.placements.isEmpty {
@@ -141,7 +146,11 @@ struct RootView: View {
             ))
             .offset(x: liveRenderRect.minX, y: liveRenderRect.minY)
             .zIndex(isDragging ? 40 : 3)
-            .allowsHitTesting(model.isEditing)
+            // Outside edit mode only a tile that asks for the pointer takes it
+            // (today: the Now Playing layer's transport controls). The window
+            // above is still click-through unless Mouse Interaction is on, so
+            // this widens nothing on a board the user left passive.
+            .allowsHitTesting(model.isEditing || WidgetFactory.wantsPointerInteraction(placement))
             .modifier(WidgetDragModifier(
                 model: model,
                 placement: placement,

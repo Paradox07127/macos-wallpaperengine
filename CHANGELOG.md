@@ -15,6 +15,26 @@ not covered by this file.
 
 ## [Unreleased]
 
+### Added
+
+- A Now Playing layer for the desktop overlay: borderless artwork-and-type
+  rendering of the current Spotify or Apple Music track in three styles
+  (Poster, Vinyl, Aurora), with cover-derived accent colors, a progress line
+  when the player reports one, and audio-reactive visuals when Audio Response
+  is enabled. It listens to the players' own broadcasts and disappears entirely
+  while nothing is playing.
+- Music is its own overlay page, switched on and layered independently of the
+  Monitor board, positioned by nine-point anchors or by dragging it in the
+  preview, and customizable throughout: accent source and opacity, typography
+  and alignment, which fields appear, artwork shape and size, and five
+  audio-reactive effects (pulse, chromatic split, shake, particles, beat
+  ripples) driven by real beat detection.
+- Transport controls and a draggable progress bar on the Now Playing layer,
+  appearing on hover. Controlling a player asks for macOS Automation access the
+  first time; declining just leaves the buttons inert.
+- Optional synced lyrics on the Now Playing layer, fetched from the public
+  LRCLIB service and highlighted line by line as the track plays.
+
 ### Fixed
 
 - On a Mac with one display permanently asleep — a closed lid, a switched-off

@@ -21,6 +21,15 @@
 	<true/>
 	<key>com.apple.security.personal-information.location</key>
 	<true/>
+	<!-- The Now Playing layer's transport buttons script the player it already reads; no other app is listed. -->
+	<key>com.apple.security.temporary-exception.apple-events</key>
+	<array>
+		<string>com.spotify.client</string>
+		<string>com.apple.Music</string>
+	</array>
+	<!-- The sandbox exception above says which targets may be addressed; this Hardened Runtime key says this process may send Apple Events at all. Both are required. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 	<!-- Monitor reads AppleSMC sensors but never writes SMC state. -->
 	<key>com.apple.security.temporary-exception.iokit-user-client-class</key>
 	<array>

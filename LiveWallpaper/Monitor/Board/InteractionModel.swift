@@ -52,6 +52,13 @@ final class InteractionModel: ObservableObject {
 
     var referenceWidth: CGFloat = 0
 
+    /// Kinds this board may hold. An overlay host renders one module's widgets
+    /// and its write-back drops everything else, so offering a foreign kind in
+    /// the catalog would add a tile that silently vanishes on the next
+    /// reconcile. The inspector preview keeps the full set — it edits the whole
+    /// board, not one module's slice.
+    var allowedKinds: [MonitorWidgetKind] = MonitorWidgetKind.allCases
+
     /// Committing edits only (drag-end, add, remove, resize) — never per mouse-move.
     var onConfigurationEdited: ((MonitorBoardConfiguration) -> Void)?
 
@@ -63,6 +70,12 @@ final class InteractionModel: ObservableObject {
         self.baseConfiguration = configuration
         self.placements = configuration.widgets
     }
+
+    /// Whether the user opted the whole board into the pointer. A board can be
+    /// hit-testable without this — a Now Playing layer with transport controls
+    /// claims the pointer for its own tile only — so empty-space chrome keys
+    /// off this rather than off the window being interactive.
+    var acceptsBoardWidePointer: Bool { baseConfiguration.mouseInteractionEnabled }
 
     var geometry: MonitorBoardGeometry {
         MonitorBoardGeometry(
@@ -287,7 +300,7 @@ final class InteractionModel: ObservableObject {
     /// First-fit free position; false if the board is full.
     @discardableResult
     func addWidget(kind: MonitorWidgetKind) -> Bool {
-        guard isEditing else { return false }
+        guard isEditing, allowedKinds.contains(kind) else { return false }
         let size = Self.defaultSize(for: kind)
         let footprintSize = geometry.pixelSize(for: kind, size: size)
         guard let origin = LayoutEngine.firstFit(

@@ -83,6 +83,36 @@
         }
       }
     },
+    "NSAppleEventsUsageDescription" : {
+      "comment" : "Privacy - AppleEvents Sending Usage Description",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play, pause, skip and seek buttons on the Now Playing wallpaper layer use this to control the music player you are listening to."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生中レイヤーの再生・一時停止・スキップ・シーク操作が、この許可を使って再生中の音楽アプリを操作します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸上“正在播放”图层的播放、暂停、切歌和进度控制，通过此权限操作你正在听的音乐播放器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布上「正在播放」圖層的播放、暫停、切歌與進度控制，透過此權限操作你正在聽的音樂播放程式。"
+          }
+        }
+      }
+    },
     "NSDesktopFolderUsageDescription" : {
       "extractionState" : "manual",
       "localizations" : {

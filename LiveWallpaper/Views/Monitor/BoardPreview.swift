@@ -88,7 +88,7 @@ struct BoardPreview: NSViewRepresentable {
         // Defer published state changes until after SwiftUI's view-update transaction.
         Task { @MainActor in
             host.setEditing(true)
-            host.setMouseInteractionEnabled(true)
+            host.setPointerScope(.wholeBoard)
         }
         return host
     }
@@ -105,7 +105,7 @@ struct BoardPreview: NSViewRepresentable {
                 host.apply(configuration: configuration, topInsetFraction: topInsetFraction)
             }
             host.setEditing(true)
-            host.setMouseInteractionEnabled(true)
+            host.setPointerScope(.wholeBoard)
         }
     }
 

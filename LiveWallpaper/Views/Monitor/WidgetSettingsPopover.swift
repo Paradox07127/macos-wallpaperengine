@@ -62,7 +62,7 @@ struct WidgetSettingsPopover: View {
 
     private var hasKindOptions: Bool {
         switch placement.kind {
-        case .processes, .cpu, .gpu, .memory, .disk, .fleet: return true
+        case .processes, .cpu, .gpu, .memory, .disk, .fleet, .nowPlaying: return true
         default: return false
         }
     }
@@ -113,8 +113,43 @@ struct WidgetSettingsPopover: View {
             diskOptions
         case .fleet:
             agentSessionOptions
+        case .nowPlaying:
+            nowPlayingOptions
         default:
             EmptyView()
+        }
+    }
+
+    // MARK: Now Playing
+
+    private var nowPlayingOptions: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Style")
+                .font(.subheadline.weight(.medium))
+            Picker("", selection: Binding(
+                get: { NowPlayingWidgetView.style(placement.options) },
+                set: { onUpdate(MonitorWidgetDraft.settingNowPlayingStyle($0, on: placement)) }
+            )) {
+                Text("Poster").tag(NowPlayingWidgetView.Style.poster)
+                Text("Vinyl").tag(NowPlayingWidgetView.Style.vinyl)
+                Text("Aurora").tag(NowPlayingWidgetView.Style.aurora)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel(Text("Style"))
+
+            #if !LITE_BUILD
+            // Keyed to the switch, not the live tap: demand-driven capture is
+            // legitimately idle while music is paused, and that's not a
+            // condition the user needs to fix in Settings.
+            if !SettingsManager.shared.loadGlobalSettings().audioResponseEnabled {
+                Text("Audio-reactive visuals need Audio Response turned on in Settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            #endif
         }
     }
 
@@ -511,6 +546,26 @@ enum MonitorWidgetDraft {
         } else {
             next.options[AgentSessionWidgetView.Option.maxRows] = .number(Double(clamped))
         }
+        return next
+    }
+
+    // MARK: Now Playing style
+
+    /// Default (poster) drops the key so untouched widgets stay empty.
+    static func settingNowPlayingStyle(
+        _ style: NowPlayingWidgetView.Style, on placement: MonitorWidgetPlacement
+    ) -> MonitorWidgetPlacement {
+        settingNowPlayingOptions(on: placement) { $0.style = style }
+    }
+
+    static func settingNowPlayingOptions(
+        on placement: MonitorWidgetPlacement,
+        _ transform: (inout NowPlayingOptions) -> Void
+    ) -> MonitorWidgetPlacement {
+        var options = NowPlayingOptions(placement.options)
+        transform(&options)
+        var next = placement
+        next.options = options.applied(to: placement.options)
         return next
     }
 
