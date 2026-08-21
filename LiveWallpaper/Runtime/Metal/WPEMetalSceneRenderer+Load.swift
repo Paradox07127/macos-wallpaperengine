@@ -286,6 +286,14 @@ extension WPEMetalSceneRenderer {
                 targetW = max(base.width, (targetW * CGFloat(shrink)).rounded())
                 targetH = max(base.height, (targetH * CGFloat(shrink)).rounded())
             }
+            // MetalFX render-scale experiment: render below the drawable and let
+            // the spatial scaler upscale at present. When the scaled target
+            // drops to (or under) the authored base, the rebuild guard below
+            // keeps renderSize at base — still eligible for scaler upscaling.
+            if WPEMetalFXSpatialUpscaler.isExperimentEnabled {
+                targetW = WPEMetalFXSpatialUpscaler.scaledDimension(targetW)
+                targetH = WPEMetalFXSpatialUpscaler.scaledDimension(targetH)
+            }
             if targetW > base.width + 1 || targetH > base.height + 1 {
                 cameraUniforms = WPEMetalCameraUniforms(
                     orthogonalProjection: WPESceneOrthogonalProjection(

@@ -51,11 +51,12 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         guard let metalLayer = view.layer as? CAMetalLayer else {
             preconditionFailure("MTKView must be backed by a CAMetalLayer")
         }
-        // Both are the macOS defaults, pinned so they can't drift: framebufferOnly
-        // MUST become false if a MetalFX scaler (or anything else) ever samples
-        // the drawable texture.
+        // Both are the macOS defaults, pinned so they can't drift — except that
+        // framebufferOnly MUST be false while the MetalFX render-scale
+        // experiment is on, because the spatial scaler writes the drawable
+        // texture as its output (`WPEMetalFXSpatialUpscaler`).
         metalLayer.maximumDrawableCount = 3
-        metalLayer.framebufferOnly = true
+        metalLayer.framebufferOnly = !WPEMetalFXSpatialUpscaler.isExperimentEnabled
         let mailbox = WPEPointerMailbox()
         self.mtkView = view
         self.mailbox = mailbox
