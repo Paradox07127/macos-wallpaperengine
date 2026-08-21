@@ -290,7 +290,7 @@
             let retire = try sourceBlock(lifecycleSource, from: "func retireRuntimeState(on actor: isolated WPEDisplayRenderActor) async")
             let cleanup = try sourceBlock(lifecycleSource, from: "func cleanup()")
             let releaseDynamic = try sourceBlock(textureSource, from: "func releaseDynamicTextureSources()")
-            let renderFrame = try sourceBlock(frameSource, from: "func renderCurrentFrame(inputs: WPEFrameInputs) throws")
+            let renderFrame = try sourceBlock(frameSource, from: "func renderCurrentFrame(")
             let encodeFrame = try sourceBlock(frameSource, from: "func encodeSceneFrame(")
             let clearScriptRuntime = try sourceBlock(
                 scriptContainmentSource,

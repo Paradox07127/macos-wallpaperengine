@@ -1110,7 +1110,9 @@ private struct WPEShaderSourceLoader: Sendable {
                    let combo = dict["combo"] as? String,
                    !combo.isEmpty,
                    let value = parseInt(dict["default"]) {
-                    comboValues[combo] = value
+                    // JSONSerialization scalars can be lazily-bridged NSStrings;
+                    // these keys are hashed per frame, so localize at load.
+                    comboValues[wpeNativized(combo)] = value
                     continue
                 }
 
@@ -1127,7 +1129,7 @@ private struct WPEShaderSourceLoader: Sendable {
                         // uniform with no parseable default still needs its authored
                         // name translated, or scene/script writes miss the slot.
                     if let material = uniform.metadata["material"] as? String, !material.isEmpty {
-                        materialUniformNames[material] = uniform.name
+                        materialUniformNames[wpeNativized(material)] = uniform.name
                     }
                 }
             }
@@ -1340,9 +1342,11 @@ private struct WPEShaderSourceLoader: Sendable {
             return .previous
         }
         if isImplicitFBOTextureName(name) {
-            return .fbo(name)
+            // Annotation defaults come from JSONSerialization payloads and are
+            // hashed per frame (alias planning / binding lookups); localize.
+            return .fbo(wpeNativized(name))
         }
-        return .asset(name)
+        return .asset(wpeNativized(name))
     }
 
     private func textureIndex(from name: String) -> Int? {

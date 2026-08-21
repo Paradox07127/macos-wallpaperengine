@@ -286,17 +286,21 @@ struct WPEMetalRuntimeUniformsTests {
             sceneCamera: .defaultCamera
         )
 
-        let prepared = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera)
+        let (prepared, frameUniforms) = pipeline.addingMetalRuntimeUniforms(runtime, camera: camera)
         let values = prepared.layers[0].passes[0].uniformValues
 
         #expect(values["g_Color"]?.vectorValue == [1, 0, 0, 1])
-        #expect(values["g_Time"]?.numberValue == 1)
-        #expect(values["g_Daytime"]?.numberValue == 0.25)
-        #expect(values["g_Brightness"]?.numberValue == 1)
-        #expect(values["g_PointerPosition"]?.vectorValue == [0.2, 0.8])
-        #expect(values["g_ViewProjectionMatrix"]?.vectorValue?.count == 16)
-        #expect(values["g_ModelMatrix"]?.vectorValue == [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
-        #expect(values["g_NormalModelMatrix"]?.vectorValue == [1, 0, 0, 0, 1, 0, 0, 0, 1])
+        // Frame-global uniforms live in the frame context now, not the pass dict.
+        func frame(_ name: String) -> WPESceneShaderConstantValue? {
+            frameUniforms.value(named: name, passID: "solid.0")
+        }
+        #expect(frame("g_Time")?.numberValue == 1)
+        #expect(frame("g_Daytime")?.numberValue == 0.25)
+        #expect(frame("g_Brightness")?.numberValue == 1)
+        #expect(frame("g_PointerPosition")?.vectorValue == [0.2, 0.8])
+        #expect(frame("g_ViewProjectionMatrix")?.vectorValue?.count == 16)
+        #expect(frame("g_ModelMatrix")?.vectorValue == [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+        #expect(frame("g_NormalModelMatrix")?.vectorValue == [1, 0, 0, 0, 1, 0, 0, 0, 1])
     }
 
     @Test("Prepared pipeline applies dynamic origin overrides before object uniforms")
@@ -357,7 +361,7 @@ struct WPEMetalRuntimeUniformsTests {
             brightness: 1,
             pointerPosition: SIMD2<Double>(0.25, 0.75)
         )
-        let prepared = pipeline
+        let (_, frameUniforms) = pipeline
             .applyingLayerTransforms(
                 origins: ["154": SIMD3<Double>(960, 1620, 0)],
                 scales: [:],
@@ -371,8 +375,7 @@ struct WPEMetalRuntimeUniformsTests {
                 )
             )
 
-        let values = prepared.layers[0].passes[0].uniformValues
-        let model = values["g_ModelMatrix"]?.vectorValue
+        let model = frameUniforms.value(named: "g_ModelMatrix", passID: "image.0")?.vectorValue
         #expect(model?[12] == 960)
         #expect(model?[13] == 1620)
     }
@@ -399,7 +402,7 @@ struct WPEMetalRuntimeUniformsTests {
                 pointerPosition: SIMD2<Double>(0.5, 0.5)
             ),
             camera: .identity
-        )
+        ).pipeline
 
         #expect(prepared.layers[0].passes[0].uniformValues["alpha"]?.numberValue == 0)
     }
@@ -426,7 +429,7 @@ struct WPEMetalRuntimeUniformsTests {
                 pointerPosition: SIMD2<Double>(0.5, 0.5)
             ),
             camera: .identity
-        )
+        ).pipeline
 
         #expect(prepared.layers[0].passes[0].uniformValues["alpha"]?.numberValue == 1)
     }
@@ -530,7 +533,7 @@ struct WPEMetalRuntimeUniformsTests {
             ),
             camera: .identity,
             scriptedConstants: ["opacity.0": ["multiply1": .number(0.25)]]
-        )
+        ).pipeline
 
         let values = prepared.layers[0].passes[0].uniformValues
         #expect(values["g_Multiply"]?.numberValue == 0.25)
@@ -550,7 +553,7 @@ struct WPEMetalRuntimeUniformsTests {
             ),
             camera: .identity,
             scriptedConstants: ["opacity.0": ["alpha": .number(0.5)]]
-        )
+        ).pipeline
 
         #expect(prepared.layers[0].passes[0].uniformValues["alpha"]?.numberValue == 0.5)
     }

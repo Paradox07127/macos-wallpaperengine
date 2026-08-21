@@ -7,6 +7,37 @@ import MetalKit
 import os
 import simd
 
+/// Fragment-texture slots for one transpiled-shader dispatch, indexed rather
+/// than hashed — the `Dictionary` this replaces was allocated per custom pass
+/// per frame for an 8-entry table. Reads are bounds-checked because uniform
+/// names arrive unvalidated: `g_Texture<N>Resolution` parses N out of an
+/// authored shader.
+final class WPEMetalTextureSlotTable {
+    private var textures: ContiguousArray<MTLTexture?>
+
+    init(slotCount: Int = WPEShaderTranspiler.customTextureSlotCount) {
+        textures = ContiguousArray(repeating: nil, count: max(0, slotCount))
+    }
+
+    var slotCount: Int { textures.count }
+
+    subscript(slot: Int) -> MTLTexture? {
+        get { textures.indices.contains(slot) ? textures[slot] : nil }
+        set {
+            guard textures.indices.contains(slot) else { return }
+            textures[slot] = newValue
+        }
+    }
+
+    /// Clears every slot while keeping the storage — the reuse half of the
+    /// scratch (same intent as `removeAll(keepingCapacity:)` elsewhere).
+    func reset() {
+        for index in textures.indices {
+            textures[index] = nil
+        }
+    }
+}
+
 enum WPEMetalSceneCaptureUtilityModels {
     /// `fullscreenlayer.json` / `projectlayer.json` always render full-frame;
     /// a spatial `composelayer.json` may be `.subregion` (see `outputGeometry`).
@@ -25,7 +56,22 @@ enum WPEMetalSceneCaptureUtilityModels {
         geometry: WPERenderLayerGeometry,
         sceneSize: CGSize
     ) -> OutputGeometry {
-        guard WPEUtilityModelKind.classify(path) == .composeLayer else { return .fullscreen }
+        outputGeometry(
+            kind: WPEUtilityModelKind.classify(path),
+            geometry: geometry,
+            sceneSize: sceneSize
+        )
+    }
+
+    /// Same rule, taking the already-resolved classification carried on the
+    /// layer (`WPERenderLayer.utilityModelKind`) so the render path never
+    /// re-classifies a path it already classified at graph-build time.
+    static func outputGeometry(
+        kind: WPEUtilityModelKind?,
+        geometry: WPERenderLayerGeometry,
+        sceneSize: CGSize
+    ) -> OutputGeometry {
+        guard kind == .composeLayer else { return .fullscreen }
         guard let size = geometry.size else { return .fullscreen }
         let sceneW = max(Float(sceneSize.width), 1)
         let sceneH = max(Float(sceneSize.height), 1)
@@ -50,6 +96,64 @@ enum WPEMetalSceneCaptureUtilityModels {
     private static func normalizedAbsoluteZTurn(_ radians: Float) -> Float {
         guard radians.isFinite else { return .infinity }
         return abs(radians.remainder(dividingBy: 2 * .pi))
+    }
+}
+
+/// Per-layer memo for `WPEMetalSceneCaptureUtilityModels.outputGeometry`, a
+/// pure function of (path, size/scale/angles, scene size) that was re-evaluated
+/// per utility layer per key derivation per frame. Fields the function never
+/// reads (origin, alpha, color…) are excluded from the key so script-driven
+/// layers still hit.
+final class WPESceneCaptureOutputGeometryMemo {
+    private struct Entry {
+        let path: String
+        let size: CGSize?
+        let scale: SIMD3<Double>
+        let angles: SIMD3<Double>
+        let sceneSize: CGSize
+        let result: WPEMetalSceneCaptureUtilityModels.OutputGeometry
+    }
+
+    private var entries: [String: Entry] = [:]
+
+    func outputGeometry(
+        layer: WPERenderLayer,
+        geometry: WPERenderLayerGeometry,
+        sceneSize: CGSize
+    ) -> WPEMetalSceneCaptureUtilityModels.OutputGeometry {
+        let path = layer.imagePath
+        let objectID = layer.objectID
+        if let entry = entries[objectID],
+           entry.sceneSize == sceneSize,
+           entry.size == geometry.size,
+           entry.scale == geometry.scale,
+           entry.angles == geometry.angles,
+           entry.path == path {
+            return entry.result
+        }
+        let result = WPEMetalSceneCaptureUtilityModels.outputGeometry(
+            kind: layer.utilityModelKind,
+            geometry: geometry,
+            sceneSize: sceneSize
+        )
+        // createLayer keys are script-authored and unbounded over a scene's
+        // lifetime; cap the memo so it can never grow without bound.
+        if entries.count >= 512, entries[objectID] == nil {
+            entries.removeAll(keepingCapacity: true)
+        }
+        entries[objectID] = Entry(
+            path: path,
+            size: geometry.size,
+            scale: geometry.scale,
+            angles: geometry.angles,
+            sceneSize: sceneSize,
+            result: result
+        )
+        return result
+    }
+
+    func removeAll() {
+        entries.removeAll(keepingCapacity: false)
     }
 }
 

@@ -56,6 +56,16 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
            let scaled = downsampleOnGPU(texture, maxDimension: maxDimension) {
             texture = scaled
         }
+        // The renderer's output ring is `.private` (GPU-exclusive); every
+        // `getBytes` below needs CPU-visible storage, so stage first.
+        guard let readable = stagedForCPURead(texture) else {
+            Logger.warning(
+                "[snapshot] CPU staging blit failed (\(texture.width)x\(texture.height), storageMode=\(texture.storageMode.rawValue)) — no poster",
+                category: .wpeRender
+            )
+            return nil
+        }
+        texture = readable
 
         let bytes: [UInt8]
         switch texture.pixelFormat {
@@ -217,6 +227,42 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         }
     }
 
+    /// Returns a texture whose bytes `getBytes` may legally read: the input
+    /// itself when already `.shared`, otherwise a same-format staging copy
+    /// (blit + waitUntilCompleted). Diagnostic/read-back paths call this so the
+    /// production render targets can stay `.private`. Internal (not private):
+    /// the trace recorder, the DEBUG PNG dumper, and pixel-reading tests reuse it.
+    static func stagedForCPURead(_ texture: MTLTexture) -> MTLTexture? {
+        if texture.storageMode == .shared { return texture }
+        let device = texture.device
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: texture.pixelFormat,
+            width: texture.width,
+            height: texture.height,
+            mipmapped: false
+        )
+        // `.shaderRead` (not []): the DEBUG PNG dumper samples the staged copy
+        // when decoding compressed formats.
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
+        guard let staging = device.makeTexture(descriptor: descriptor),
+              let commandQueue = commandQueue(for: device),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blit = commandBuffer.makeBlitCommandEncoder() else {
+            return nil
+        }
+        staging.label = "WPE Metal CPU readback staging"
+        blit.copy(from: texture, to: staging)
+        if staging.storageMode == .managed {
+            blit.synchronize(resource: staging)
+        }
+        blit.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        guard commandBuffer.status == .completed else { return nil }
+        return staging
+    }
+
     private static func readRGBA8(_ texture: MTLTexture) -> [UInt8] {
         let bytesPerRow = texture.width * 4
         var bytes = [UInt8](repeating: 0, count: bytesPerRow * texture.height)
@@ -322,6 +368,10 @@ struct WPEMetalTextureVisualStats: Codable, Equatable, Sendable, CustomStringCon
             return nil
         }
         guard texture.pixelFormat == .rgba8Unorm || texture.pixelFormat == .rgba8Unorm_srgb else {
+            return nil
+        }
+        // Scene outputs are `.private`; stage before the CPU scan below.
+        guard let texture = WPEMetalTextureSnapshotter.stagedForCPURead(texture) else {
             return nil
         }
 

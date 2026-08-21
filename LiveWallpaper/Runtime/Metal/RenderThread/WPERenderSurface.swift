@@ -51,6 +51,11 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         guard let metalLayer = view.layer as? CAMetalLayer else {
             preconditionFailure("MTKView must be backed by a CAMetalLayer")
         }
+        // Both are the macOS defaults, pinned so they can't drift: framebufferOnly
+        // MUST become false if a MetalFX scaler (or anything else) ever samples
+        // the drawable texture.
+        metalLayer.maximumDrawableCount = 3
+        metalLayer.framebufferOnly = true
         let mailbox = WPEPointerMailbox()
         self.mtkView = view
         self.mailbox = mailbox

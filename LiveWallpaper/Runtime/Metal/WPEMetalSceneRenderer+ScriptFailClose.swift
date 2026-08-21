@@ -69,14 +69,19 @@
             uniforms: WPEMetalRuntimeUniforms,
             authoredTransforms: LiveScriptTransforms,
             parallaxFrame: WPECameraParallaxFrame,
-            frameSubmission: WPEMetalFrameSubmissionLease
+            frameSubmission: WPEMetalFrameSubmissionLease,
+            /// Non-nil when the merged-present wrapper already ran the commit
+            /// decision before encoding the present (the continuous async path);
+            /// nil on the sync/standalone-present paths, which decide here.
+            videoCommandsOutcome: Bool? = nil,
+            deferredPresent: WPEMetalRenderExecutor.DeferredPresentEncoder? = nil
         ) throws -> MTLTexture {
             if failureBeforeFrame != nil {
                 discardSceneScriptVideoCommands()
                 recordSceneFrameForDebug(time: uniforms.time, composite: speculativeFrame)
                 return speculativeFrame
             }
-            if finishCurrentSceneScriptVideoCommands() {
+            if videoCommandsOutcome ?? finishCurrentSceneScriptVideoCommands() {
                 recordSceneFrameForDebug(time: uniforms.time, composite: speculativeFrame)
                 return speculativeFrame
             }
@@ -103,13 +108,18 @@
             )
             reconcileVideoResidency(stablePipeline)
             updateParticleHostOriginOffsets(using: stableTransforms)
+            // The denied speculative buffer committed WITHOUT a present (the
+            // wrapper skipped it), so the stable re-encode carries the frame's
+            // present — the screen shows the rolled-back content, as the
+            // two-buffer path always did.
             let stableFrame = try encodeSceneFrame(
                 pipeline: stablePipeline,
                 uniforms: uniforms,
                 liveTextByID: publicationBeforeFrame.stableTextByID,
                 transforms: stableTransforms,
                 parallaxFrame: parallaxFrame,
-                frameSubmission: frameSubmission
+                frameSubmission: frameSubmission,
+                deferredPresent: videoCommandsOutcome == false ? deferredPresent : nil
             )
             recordSceneFrameForDebug(time: uniforms.time, composite: stableFrame)
             Logger.warning(

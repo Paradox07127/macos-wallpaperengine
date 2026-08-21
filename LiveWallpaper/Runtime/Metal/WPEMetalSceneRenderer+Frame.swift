@@ -39,7 +39,10 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    func renderCurrentFrame(inputs: WPEFrameInputs) throws -> MTLTexture {
+    func renderCurrentFrame(
+        inputs: WPEFrameInputs,
+        deferredPresent: WPEMetalRenderExecutor.DeferredPresentEncoder? = nil
+    ) throws -> MTLTexture {
         latestFrameProduction = nil
         let signposter = Self.frameSignposter
         let frameState = signposter.beginInterval(
@@ -205,13 +208,34 @@ extension WPEMetalSceneRenderer {
                 frameSlot: frameSubmission.slot
             )
         }
+        // The commit permission is the fail-close linearization point, so it
+        // must be decided BEFORE the present is encoded: a denial rolls the
+        // frame back and the STABLE re-encode below carries the present
+        // instead. Deciding after the merged buffer committed would put the
+        // discarded speculative frame on screen.
+        var videoCommandsOutcome: Bool?
+        let guardedPresent: WPEMetalRenderExecutor.DeferredPresentEncoder?
+        if let deferredPresent {
+            let failureBeforeFrame = scriptFailureBeforeFrame
+            guardedPresent = { [self] texture, commandBuffer in
+                if failureBeforeFrame == nil {
+                    let granted = finishCurrentSceneScriptVideoCommands()
+                    videoCommandsOutcome = granted
+                    guard granted else { return false }
+                }
+                return try deferredPresent(texture, commandBuffer)
+            }
+        } else {
+            guardedPresent = nil
+        }
         let frame = try encodeSceneFrame(
             pipeline: framePipeline,
             uniforms: uniforms,
             liveTextByID: liveTextByID,
             transforms: liveTransforms,
             parallaxFrame: frameContext.parallaxFrame,
-            frameSubmission: frameSubmission
+            frameSubmission: frameSubmission,
+            deferredPresent: guardedPresent
         )
         didFinishSceneScriptVideoCommands = true
         return try finishSceneScriptFrame(
@@ -222,7 +246,9 @@ extension WPEMetalSceneRenderer {
             uniforms: uniforms,
             authoredTransforms: authoredTransforms,
             parallaxFrame: frameContext.parallaxFrame,
-            frameSubmission: frameSubmission
+            frameSubmission: frameSubmission,
+            videoCommandsOutcome: videoCommandsOutcome,
+            deferredPresent: deferredPresent
         )
     }
 
@@ -232,7 +258,8 @@ extension WPEMetalSceneRenderer {
         liveTextByID: [String: String],
         transforms: LiveScriptTransforms,
         parallaxFrame: WPECameraParallaxFrame,
-        frameSubmission: WPEMetalFrameSubmissionLease
+        frameSubmission: WPEMetalFrameSubmissionLease,
+        deferredPresent: WPEMetalRenderExecutor.DeferredPresentEncoder? = nil
     ) throws -> MTLTexture {
         let readinessPlan = WPEFrameReadinessTrackingPlan.make(
             generation: loadGeneration,
@@ -243,6 +270,10 @@ extension WPEMetalSceneRenderer {
             ? WPEMetalFrameProductionCompletion()
             : nil
         defer { frameProduction?.seal() }
+        // Published before `executor.render`, not after: the merged-present
+        // closure runs inside `render` and builds its readiness completion from
+        // `latestFrameProduction`, which must already be this frame's aggregate.
+        latestFrameProduction = frameProduction
         let textFrame = withFrameSignpost("textLayout") {
             prepareTextFrame(
                 pipeline: pipeline,
@@ -286,10 +317,10 @@ extension WPEMetalSceneRenderer {
                 // author's slider drive an engine setting.
                 colorCorrection: WPEEngineColorCorrection.parse(
                     descriptor.presetSnapshot
-                ) ?? .neutral
+                ) ?? .neutral,
+                deferredPresent: deferredPresent
             )
         }
-        latestFrameProduction = frameProduction
         return frame
     }
 

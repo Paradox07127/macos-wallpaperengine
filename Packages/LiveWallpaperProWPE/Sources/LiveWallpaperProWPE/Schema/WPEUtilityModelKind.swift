@@ -12,32 +12,50 @@ public enum WPEUtilityModelKind: String, CaseIterable, Equatable, Sendable {
     /// prefix, `\`-separated Windows paths, and inconsistent case. Tolerates
     /// all three; matches on the trailing `models/util/<name>.json`.
     public static func classify(_ path: String) -> WPEUtilityModelKind? {
-        let stripped = strippedPath(path)
-        for kind in allCases where stripped == "models/util/\(kind.rawValue).json" {
-            return kind
+        // Lock-free reject first: every classified path ends in `layer.json`,
+        // and ordinary `.png`/`.tex` layers (the vast majority) must not pay
+        // the memo's lock and hash. Matched on UTF-8 bytes — no String built
+        // to answer "no".
+        guard hasUtilityModelSuffix(path) else { return nil }
+        return cache.withLock { cache in
+            if let cached = cache[path] { return cached }
+            let result = kindByStrippedPath[computeStrippedPath(path)]
+            if cache.count >= cacheLimit { cache.removeAll(keepingCapacity: true) }
+            cache[path] = result
+            return result
         }
-        return nil
     }
 
     public static func isUtilityModelPath(_ path: String) -> Bool {
         classify(path) != nil
     }
 
-    // MARK: - Normalization (memoized: measured 2.3–2.8% of one core on the
-    // executor's per-pass hot path before caching; paths are load-time
-    // invariant so this is safe to share across both call sites).
+    // MARK: - Classification memo (the stripped-path stage alone measured
+    // 2.3–2.8% of one core on the executor's per-pass hot path; the per-call
+    // `models/util/…` interpolation ×3 showed on top of that. Paths are
+    // load-time invariant, so the FINAL classification is memoized — every
+    // per-frame caller (executor, dispatcher, target pool) shares this).
 
-    private static let cache = OSAllocatedUnfairLock(initialState: [String: String]())
+    private static let kindByStrippedPath: [String: WPEUtilityModelKind] = Dictionary(
+        uniqueKeysWithValues: allCases.map { ("models/util/\($0.rawValue).json", $0) }
+    )
+
+    private static let cache = OSAllocatedUnfairLock(initialState: [String: WPEUtilityModelKind?]())
     private static let cacheLimit = 512
 
-    private static func strippedPath(_ path: String) -> String {
-        cache.withLock { cache in
-            if let cached = cache[path] { return cached }
-            let result = computeStrippedPath(path)
-            if cache.count >= cacheLimit { cache.removeAll(keepingCapacity: true) }
-            cache[path] = result
-            return result
+    /// ASCII-case-insensitive `hasSuffix("layer.json")` over the raw UTF-8.
+    /// `\` never appears inside the suffix, so no separator normalization is
+    /// needed before the compare.
+    private static let utilityModelSuffix = Array("layer.json".utf8)
+
+    private static func hasUtilityModelSuffix(_ path: String) -> Bool {
+        var utf8 = path.utf8[...]
+        guard utf8.count >= utilityModelSuffix.count else { return false }
+        utf8 = utf8.dropFirst(utf8.count - utilityModelSuffix.count)
+        for (byte, expected) in zip(utf8, utilityModelSuffix) where (byte | 0x20) != expected {
+            return false
         }
+        return true
     }
 
     private static func computeStrippedPath(_ path: String) -> String {

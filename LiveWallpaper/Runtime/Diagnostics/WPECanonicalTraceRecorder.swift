@@ -980,6 +980,15 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     // MARK: - Texture metrics (best-effort, post-commit only)
 
     private func textureMetrics(_ texture: MTLTexture) -> (sha256: String, visualStats: [String: Any])? {
+        // The scene output ring is `.private`; stage once here so both the hash
+        // readback and the visual-stats scan read the same CPU-visible copy.
+        guard let texture = WPEMetalTextureSnapshotter.stagedForCPURead(texture) else {
+            WPESceneDebugArtifacts.shared.appendLog(
+                "[canonical-trace] CPU staging blit failed for texture metrics",
+                level: .warning
+            )
+            return nil
+        }
         guard let data = readbackTextureBytes(texture) else { return nil }
         let stats = WPEMetalTextureVisualStats.analyze(texture: texture)
         let pixels = max(texture.width * texture.height, 1)
@@ -1025,10 +1034,12 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         default:
             return nil
         }
-        // getBytes is only valid for CPU-visible storage. Reading a private or
-        // managed texture directly would return stale/garbage bytes on a discrete
-        // GPU, so skip (and log) rather than hashing nonsense.
-        guard texture.storageMode == .shared else {
+        // getBytes is only valid for CPU-visible storage. `.managed` is accepted
+        // because the only caller (`textureMetrics`) stages non-shared inputs via
+        // `stagedForCPURead`, which blit-synchronizes managed staging copies.
+        // A `.private` texture reaching here is a caller bug — skip (and log)
+        // rather than hashing garbage.
+        guard texture.storageMode == .shared || texture.storageMode == .managed else {
             WPESceneDebugArtifacts.shared.appendLog(
                 "[canonical-trace] skipped getBytes for non-shared texture (storageMode=\(texture.storageMode.rawValue))",
                 level: .warning

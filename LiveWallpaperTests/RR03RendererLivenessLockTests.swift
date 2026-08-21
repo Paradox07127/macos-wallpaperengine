@@ -167,6 +167,8 @@ struct RR03RendererLivenessLockTests {
 
     private static func textureSHA256(_ texture: MTLTexture) throws -> String {
         try #require(texture.pixelFormat == .rgba8Unorm || texture.pixelFormat == .rgba8Unorm_srgb)
+        // Renderer outputs are `.private`; stage into CPU-visible storage first.
+        let texture = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(texture))
         let bytesPerRow = texture.width * 4
         var bytes = [UInt8](repeating: 0, count: bytesPerRow * texture.height)
         texture.getBytes(

@@ -89,6 +89,16 @@ extension WPEMetalSceneRenderer {
     }
 
     private func dumpTextureToPNG(_ rawTexture: MTLTexture, basename: String) {
+        // Scene outputs (and the composite) are `.private`; every branch below
+        // reads bytes on the CPU (or samples via debugDecodeToRGBA), so stage
+        // into CPU-visible storage first. Already-shared snapshots pass through.
+        guard let rawTexture = WPEMetalTextureSnapshotter.stagedForCPURead(rawTexture) else {
+            Logger.info(
+                "[gpu-dump] texture dump: CPU staging blit failed for \(basename)",
+                category: .wpeRender
+            )
+            return
+        }
         let texture: MTLTexture
         var overrideBytes: [UInt8]?
         if rawTexture.pixelFormat == .rgba8Unorm || rawTexture.pixelFormat == .rgba8Unorm_srgb {

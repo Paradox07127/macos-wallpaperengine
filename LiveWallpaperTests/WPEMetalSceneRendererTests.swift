@@ -1833,8 +1833,12 @@ private extension MTLTexture {
               y >= 0, y < height else {
             return nil
         }
+        // Renderer outputs are `.private`; stage into CPU-visible storage first.
+        guard let staged = WPEMetalTextureSnapshotter.stagedForCPURead(self) else {
+            return nil
+        }
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        getBytes(
+        staged.getBytes(
             &bytes,
             bytesPerRow: width * 4,
             from: MTLRegionMake2D(0, 0, width, height),

@@ -114,13 +114,20 @@ final class WPEMetalRenderTargetPool {
     static func layerLocalFBOPixelSize(
         fboName: String,
         layer: WPERenderLayer,
-        sceneSize: CGSize
+        sceneSize: CGSize,
+        memo: WPESceneCaptureOutputGeometryMemo? = nil
     ) -> CGSize? {
         let localFBOName = WPERenderTargetNames.PuppetClip.baseName(of: fboName) ?? fboName
         guard !WPETextureReference.isSceneAliasName(fboName),
               layer.localFBOs.contains(where: { $0.name == localFBOName }) else { return nil }
-        return layerCompositeSize(for: layer, sceneSize: sceneSize)
+        return layerCompositeSize(for: layer, sceneSize: sceneSize, memo: memo)
     }
+
+    /// Shared with the executor (`sceneCaptureUtilityOutputGeometry`) so both
+    /// the key derivation here and the fullscreen-copy decision there reuse one
+    /// per-layer classification per set of inputs. Same single-render-thread
+    /// invariant as the rest of this pool.
+    let sceneCaptureGeometryMemo = WPESceneCaptureOutputGeometryMemo()
 
     private let device: MTLDevice
     private let maximumTextureDimension2D: Int
@@ -167,6 +174,9 @@ final class WPEMetalRenderTargetPool {
         slots.removeAll(keepingCapacity: true)
         declaredFBOs.removeAll(keepingCapacity: true)
         zeroPlaceholderTextures.removeAll(keepingCapacity: true)
+        // A reload can reuse an objectID for a different layer; the memo is
+        // keyed by objectID, so it must not survive the pool's scene.
+        sceneCaptureGeometryMemo.removeAll()
         releaseAliasState()
     }
 
@@ -286,32 +296,57 @@ final class WPEMetalRenderTargetPool {
         sceneSize: CGSize,
         declaredFBOs: [String: WPERenderFBO]
     ) -> WPEMetalRenderTargetKey {
-        let spec: WPERenderFBO
+        diagnosticKey(
+            for: target,
+            spec: diagnosticSpec(for: target, layer: layer, declaredFBOs: declaredFBOs),
+            layer: layer,
+            sceneSize: sceneSize
+        )
+    }
+
+    /// Structural half of `diagnosticKey`: the FBO spec a target's key derives
+    /// from. Inputs are pipeline structure only (target name, declared/local
+    /// FBOs) — never per-frame geometry or scene size — so the executor's alias
+    /// topology may cache the result across frames.
+    func diagnosticSpec(
+        for target: WPERenderTarget,
+        layer: WPERenderLayer,
+        declaredFBOs: [String: WPERenderFBO]
+    ) -> WPERenderFBO {
         switch target {
         case .scene:
-            spec = WPERenderFBO(name: "scene", scale: 1, format: "rgba8888")
+            return WPERenderFBO(name: "scene", scale: 1, format: "rgba8888")
         case .layerComposite(let name):
-            spec = WPERenderFBO(name: name, scale: 1, format: "rgba8888")
+            return WPERenderFBO(name: name, scale: 1, format: "rgba8888")
         case .fbo(let name):
             if WPERenderTargetNames.PuppetClip.isDeferredSource(name) {
-                spec = WPERenderFBO(name: name, scale: 2, format: "rgba8888")
-            } else {
-                let lookupName = WPERenderTargetNames.PuppetClip.baseName(of: name) ?? name
-                if let inherited = declaredFBOs[lookupName] ?? layer.localFBOs.first(where: { $0.name == lookupName }) {
-                    spec = WPERenderFBO(
-                        name: name,
-                        scale: inherited.scale,
-                        fit: inherited.fit,
-                        format: inherited.format,
-                        unique: inherited.unique,
-                        pixelSize: inherited.pixelSize
-                    )
-                } else {
-                    spec = WPERenderFBO(name: name, scale: 1, format: "rgba8888")
-                }
+                return WPERenderFBO(name: name, scale: 2, format: "rgba8888")
             }
+            let lookupName = WPERenderTargetNames.PuppetClip.baseName(of: name) ?? name
+            if let inherited = declaredFBOs[lookupName] ?? layer.localFBOs.first(where: { $0.name == lookupName }) {
+                return WPERenderFBO(
+                    name: name,
+                    scale: inherited.scale,
+                    fit: inherited.fit,
+                    format: inherited.format,
+                    unique: inherited.unique,
+                    pixelSize: inherited.pixelSize
+                )
+            }
+            return WPERenderFBO(name: name, scale: 1, format: "rgba8888")
         }
+    }
 
+    /// Per-frame half of `diagnosticKey`: applies the current scene size, layer
+    /// geometry and HDR promotion to a structural spec. `spec` MUST come from
+    /// `diagnosticSpec` for the same target (the composed overload above is the
+    /// contract; a foreign spec would mis-key the alias plan).
+    func diagnosticKey(
+        for target: WPERenderTarget,
+        spec: WPERenderFBO,
+        layer: WPERenderLayer,
+        sceneSize: CGSize
+    ) -> WPEMetalRenderTargetKey {
         let pixelFormat = Self.pixelFormat(forFBOFormat: spec.format, promoteLDRToHDR: promotesLDRFormatsToHDR)
         if let pixelSize = spec.pixelSize {
             return WPEMetalRenderTargetKey(
@@ -323,7 +358,11 @@ final class WPEMetalRenderTargetPool {
             )
         }
         if case .layerComposite = target {
-            let localSize = Self.layerCompositeSize(for: layer, sceneSize: sceneSize)
+            let localSize = Self.layerCompositeSize(
+                for: layer,
+                sceneSize: sceneSize,
+                memo: sceneCaptureGeometryMemo
+            )
             if let fitted = wpeFitRenderTargetExtent(localSize, fit: spec.fit) {
                 return WPEMetalRenderTargetKey(
                     name: spec.name,
@@ -342,7 +381,12 @@ final class WPEMetalRenderTargetPool {
             )
         }
         if case .fbo(let fboName) = target,
-           let localSize = Self.layerLocalFBOPixelSize(fboName: fboName, layer: layer, sceneSize: sceneSize) {
+           let localSize = Self.layerLocalFBOPixelSize(
+               fboName: fboName,
+               layer: layer,
+               sceneSize: sceneSize,
+               memo: sceneCaptureGeometryMemo
+           ) {
             if let fitted = wpeFitRenderTargetExtent(localSize, fit: spec.fit) {
                 return WPEMetalRenderTargetKey(
                     name: spec.name,
@@ -471,7 +515,8 @@ final class WPEMetalRenderTargetPool {
             }
             let localSize = Self.layerCompositeSize(
                 for: layer,
-                sceneSize: sceneSize
+                sceneSize: sceneSize,
+                memo: sceneCaptureGeometryMemo
             )
             if let fitted = wpeFitRenderTargetExtent(localSize, fit: spec.fit) {
                 return WPEMetalRenderTargetKey(
@@ -500,7 +545,12 @@ final class WPEMetalRenderTargetPool {
                 )
             }
             if case .fbo(let fboName) = target,
-               let localSize = Self.layerLocalFBOPixelSize(fboName: fboName, layer: layer, sceneSize: sceneSize) {
+               let localSize = Self.layerLocalFBOPixelSize(
+                   fboName: fboName,
+                   layer: layer,
+                   sceneSize: sceneSize,
+                   memo: sceneCaptureGeometryMemo
+               ) {
                 if let fitted = wpeFitRenderTargetExtent(localSize, fit: spec.fit) {
                     return WPEMetalRenderTargetKey(
                         name: spec.name,
@@ -539,7 +589,8 @@ final class WPEMetalRenderTargetPool {
 
     private static func layerCompositeSize(
         for layer: WPERenderLayer,
-        sceneSize: CGSize
+        sceneSize: CGSize,
+        memo: WPESceneCaptureOutputGeometryMemo? = nil
     ) -> CGSize {
         // Fullscreen WPE compose/project utility layers capture the full frame,
         // so their layer-composite target MUST be scene-sized. Local
@@ -548,11 +599,15 @@ final class WPEMetalRenderTargetPool {
         // effects run in layer-local UV space.
         if isSceneCaptureUtilityLayer(layer),
            layer.groupCompositeSource == nil,
-           WPEMetalSceneCaptureUtilityModels.outputGeometry(
-               path: layer.imagePath,
+           (memo?.outputGeometry(
+               layer: layer,
                geometry: layer.geometry,
                sceneSize: sceneSize
-           ) == .fullscreen {
+           ) ?? WPEMetalSceneCaptureUtilityModels.outputGeometry(
+               kind: layer.utilityModelKind,
+               geometry: layer.geometry,
+               sceneSize: sceneSize
+           )) == .fullscreen {
             return sceneSize
         }
 
@@ -568,7 +623,7 @@ final class WPEMetalRenderTargetPool {
     }
 
     private static func isSceneCaptureUtilityLayer(_ layer: WPERenderLayer) -> Bool {
-        WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath(layer.imagePath)
+        layer.isUtilityModelLayer
     }
 
     private func textureDescriptor(for key: WPEMetalRenderTargetKey) throws -> MTLTextureDescriptor {

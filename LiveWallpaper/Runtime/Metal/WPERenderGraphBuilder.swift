@@ -114,10 +114,12 @@ struct WPERenderGraphBuilder: Sendable {
             hostDepthByObjectID: Self.authoredParallaxDepthByObjectID(document)
         )
         let attachmentAligned = applyAttachmentAnchorOffsets(to: parallaxAligned)
+        // Single choke point where scene-parsed strings enter the per-frame
+        // render path: localize them to contiguous UTF-8 once at load.
         return WPERenderGraph(layers: applyComposelayerGroups(
             to: attachmentAligned,
             objectParentByID: document.objectParentByID
-        ))
+        )).nativized()
     }
 
     private func applyComposelayerGroups(

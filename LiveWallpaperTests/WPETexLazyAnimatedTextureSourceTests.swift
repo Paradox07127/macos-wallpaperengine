@@ -112,7 +112,7 @@ struct WPETexLazyAnimatedTextureSourceTests {
         #expect(readRGBA(slotZeroNextFrame) == readRGBA(slotOne))
     }
 
-    @Test("Two GPU-held frame leases reject 10,000 frames without mutating TEX slots")
+    @Test("GPU-held frame leases at capacity reject 10,000 frames without mutating TEX slots")
     func gpuHeldFrameLeasesRejectTenThousandFramesWithoutMutation() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let queue = try #require(device.makeCommandQueue())
@@ -131,27 +131,27 @@ struct WPETexLazyAnimatedTextureSourceTests {
             }
         }
 
-        let firstHeld = try #require(pool.tryAcquire())
-        let firstHeldTexture = try #require(source.texture(at: 0.001, frameSlot: firstHeld.slot))
-        let firstHeldBytes = readRGBA(firstHeldTexture)
-        let firstCommandBuffer = try #require(queue.makeCommandBuffer())
-        let firstCompletion = firstHeld.registerSubmission()
-        firstCommandBuffer.encodeWaitForEvent(releaseEvent, value: 1)
-        firstCommandBuffer.addCompletedHandler { _ in firstCompletion.complete() }
-        firstHeld.seal()
-        heldCommandBuffers.append(firstCommandBuffer)
-        firstCommandBuffer.commit()
-
-        let secondHeld = try #require(pool.tryAcquire())
-        let secondHeldTexture = try #require(source.texture(at: 0.101, frameSlot: secondHeld.slot))
-        let secondHeldBytes = readRGBA(secondHeldTexture)
-        let secondCommandBuffer = try #require(queue.makeCommandBuffer())
-        let secondCompletion = secondHeld.registerSubmission()
-        secondCommandBuffer.encodeWaitForEvent(releaseEvent, value: 1)
-        secondCommandBuffer.addCompletedHandler { _ in secondCompletion.complete() }
-        secondHeld.seal()
-        heldCommandBuffers.append(secondCommandBuffer)
-        secondCommandBuffer.commit()
+        // Exhaust the pool: hold every in-flight slot on a GPU wait, so the
+        // admission loop below runs against a pool at capacity regardless of
+        // what `maxFramesInFlight` is.
+        var heldTextures: [MTLTexture] = []
+        var heldBytes: [[UInt8]] = []
+        for slotIndex in 0 ..< WPEMetalRenderExecutor.maxFramesInFlight {
+            let held = try #require(pool.tryAcquire())
+            let heldTexture = try #require(
+                source.texture(at: 0.001 + 0.1 * Double(slotIndex), frameSlot: held.slot)
+            )
+            heldTextures.append(heldTexture)
+            heldBytes.append(readRGBA(heldTexture))
+            let commandBuffer = try #require(queue.makeCommandBuffer())
+            let completion = held.registerSubmission()
+            commandBuffer.encodeWaitForEvent(releaseEvent, value: 1)
+            commandBuffer.addCompletedHandler { _ in completion.complete() }
+            held.seal()
+            heldCommandBuffers.append(commandBuffer)
+            commandBuffer.commit()
+        }
+        let firstHeldBytes = heldBytes[0]
 
         var unexpectedAdmissions = 0
         var heldTextureMismatches = 0
@@ -160,10 +160,7 @@ struct WPETexLazyAnimatedTextureSourceTests {
                 unexpectedAdmissions += 1
                 unexpected.seal()
             }
-            if readRGBA(firstHeldTexture) != firstHeldBytes {
-                heldTextureMismatches += 1
-            }
-            if readRGBA(secondHeldTexture) != secondHeldBytes {
+            for (texture, bytes) in zip(heldTextures, heldBytes) where readRGBA(texture) != bytes {
                 heldTextureMismatches += 1
             }
         }
@@ -178,7 +175,7 @@ struct WPETexLazyAnimatedTextureSourceTests {
         }
 
         let recycled = try #require(pool.tryAcquire())
-        let recycledTexture = try #require(source.texture(at: 0.201, frameSlot: recycled.slot))
+        let recycledTexture = try #require(source.texture(at: 0.301, frameSlot: recycled.slot))
         #expect(readRGBA(recycledTexture) != firstHeldBytes)
         recycled.seal()
     }

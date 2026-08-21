@@ -41,6 +41,24 @@ extension WPEMetalRenderExecutor {
         // it here (reload routes through releaseTransientResources). The
         // content-keyed translatedShaderCache is safe to persist and is not cleared.
         compiledShaderResultByPassID.removeAll()
+        // The negative half of the same pass-id keyed pair: without this a new
+        // scene reusing a pass id inherits the old scene's "will never
+        // translate" verdict and its shader is never compiled again.
+        untranslatableShaderReasonByPassID.removeAll()
+        // Pass-id keyed for the same reason.
+        invalidateUniformKeyIndexes()
+        invalidateUniformPlans()
+        // Free (not just clear) the alias-scan scratch: capacity sized for the
+        // old scene has no value for the next one.
+        fboAliasIntervalScratch.removeAll(keepingCapacity: false)
+        // The topology signature is (objectID, imagePath, passCount) per layer —
+        // a reload can reproduce that triple with different pass structure, so
+        // the cache must not survive a graph rebuild.
+        cachedFBOAliasTopology = nil
+        // Pass-id keyed like the two above: a reload can reuse an id for a pass
+        // with a different shader, so a stale entry would bind the old scene's
+        // pipeline state.
+        invalidatePassPipelineStates()
     }
 
     /// Drops every cached static-layer composite. Called on scene reload /
@@ -53,93 +71,214 @@ extension WPEMetalRenderExecutor {
 
     // MARK: - FBO memory diagnostic (read-only)
 
-    private static func fboReportDeclaredFBOs(in pipeline: WPEPreparedRenderPipeline) -> [String: WPERenderFBO] {
-        var declared: [String: WPERenderFBO] = [:]
-        for layer in pipeline.layers {
-            for fbo in layer.graphLayer.localFBOs {
-                declared[fbo.name] = fbo
-            }
-        }
-        return declared
-    }
-
     /// Conservative alias intervals handed to the target pool: per pool-FBO key,
     /// its `[firstPass, lastPass]` over the flattened render order. Reads use the
     /// UNION (`textureReferences`) so a target's last use is never under-counted
     /// — the pool may only make it aliasable AFTER this index, never before
     /// (which would corrupt the frame). Ping-pong secondaries are excluded (they
     /// need two simultaneous textures and stay on the discrete path).
+    ///
+    /// Structure (names, read graph, secondary marks) is cached in
+    /// `FBOAliasTopology`; sizes are re-derived every frame because scripts and
+    /// animations mutate layer geometry. The cache is validated against the
+    /// pipeline itself rather than an external revision counter: a missed
+    /// invalidation corrupts frames (shine white-out precedent).
     func fboAliasIntervals(
         pipeline: WPEPreparedRenderPipeline,
         sceneSize: CGSize
     ) -> [WPEMetalRenderTargetPool.AliasInterval] {
-        let declaredFBOs = Self.fboReportDeclaredFBOs(in: pipeline)
-        var flattened: [(index: Int, layer: WPEPreparedRenderLayer, pass: WPEPreparedRenderPass)] = []
-        var passIndex = 0
+        let topology: FBOAliasTopology
+        if let cached = cachedFBOAliasTopology, cached.matches(pipeline) {
+            topology = cached
+        } else {
+            topology = computeFBOAliasTopology(pipeline: pipeline)
+            cachedFBOAliasTopology = topology
+            fboAliasTopologyRebuildCount += 1
+        }
+        return fboAliasIntervals(topology: topology, pipeline: pipeline, sceneSize: sceneSize)
+    }
+
+    /// Structural (name/index-level) half of the alias-interval scan. Everything
+    /// stored here survives every per-frame pipeline transform; the only
+    /// per-frame structural change is `addingCreatedLayers` adding/removing
+    /// whole layers, which `signature` catches. Reloads clear the cache via
+    /// `releaseTransientResources`.
+    struct FBOAliasTopology {
+        struct Item {
+            let layerIndex: Int
+            let target: WPERenderTarget
+            /// Structural key spec (`diagnosticSpec`); nil for `.scene`, which
+            /// never gets a pool key.
+            let spec: WPERenderFBO?
+            /// Names of `.fbo(...)` texture references this pass reads.
+            let readFBONames: [String]
+            /// Pass reads its own already-written target: its key needs two
+            /// simultaneous textures and must stay on the discrete path.
+            let marksSecondary: Bool
+            /// `requiresDiscreteDestinationForSourceAliasing` (godrays combine).
+            let requiresDiscreteSource: Bool
+        }
+
+        struct PassSignature: Equatable {
+            let id: String
+            let target: WPERenderTarget
+        }
+
+        struct SignatureEntry: Equatable {
+            let objectID: String
+            let imagePath: String
+            let passes: [PassSignature]
+        }
+
+        let items: [Item]
+        /// Flattened item indices per key NAME — the per-frame mapping touches
+        /// every same-named key on a read, exactly like the old `keysByName`.
+        let itemIndicesByKeyName: [String: [Int]]
+        let signature: [SignatureEntry]
+
+        /// True when `pipeline` still has the structure this topology was built
+        /// from: ordered layers (objectID, imagePath) and every pass's
+        /// (id, target), compared in place. Texture-reference sets and
+        /// `localFBOs` are deliberately not re-checked — invariant for a fixed
+        /// (layer, pass id) within a load, and a reload clears the cache.
+        func matches(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
+            guard signature.count == pipeline.layers.count else { return false }
+            for (index, layer) in pipeline.layers.enumerated() {
+                let entry = signature[index]
+                if entry.objectID != layer.graphLayer.objectID
+                    || entry.imagePath != layer.graphLayer.imagePath
+                    || entry.passes.count != layer.passes.count {
+                    return false
+                }
+                for (passIndex, pass) in layer.passes.enumerated() {
+                    let passEntry = entry.passes[passIndex]
+                    if passEntry.id != pass.pass.id || passEntry.target != pass.pass.target {
+                        return false
+                    }
+                }
+            }
+            return true
+        }
+    }
+
+    func computeFBOAliasTopology(pipeline: WPEPreparedRenderPipeline) -> FBOAliasTopology {
+        var declaredFBOs: [String: WPERenderFBO] = [:]
         for layer in pipeline.layers {
+            for fbo in layer.graphLayer.localFBOs {
+                declaredFBOs[fbo.name] = fbo
+            }
+        }
+
+        var items: [FBOAliasTopology.Item] = []
+        var itemIndicesByKeyName: [String: [Int]] = [:]
+        var writtenTargets: Set<WPEMetalTargetID> = []
+        var signature: [FBOAliasTopology.SignatureEntry] = []
+        signature.reserveCapacity(pipeline.layers.count)
+
+        for (layerIndex, layer) in pipeline.layers.enumerated() {
+            signature.append(FBOAliasTopology.SignatureEntry(
+                objectID: layer.graphLayer.objectID,
+                imagePath: layer.graphLayer.imagePath,
+                passes: layer.passes.map {
+                    FBOAliasTopology.PassSignature(id: $0.pass.id, target: $0.pass.target)
+                }
+            ))
             for pass in layer.passes {
-                flattened.append((passIndex, layer, pass))
-                passIndex += 1
+                let targetID = WPEMetalTargetID(target: pass.pass.target)
+                let spec: WPERenderFBO?
+                switch pass.pass.target {
+                case .scene:
+                    spec = nil
+                case .fbo, .layerComposite:
+                    spec = targetPool.diagnosticSpec(
+                        for: pass.pass.target,
+                        layer: layer.graphLayer,
+                        declaredFBOs: declaredFBOs
+                    )
+                }
+                var readFBONames: [String] = []
+                for reference in textureReferences(for: pass) {
+                    if case .fbo(let name) = reference { readFBONames.append(name) }
+                }
+                let index = items.count
+                items.append(FBOAliasTopology.Item(
+                    layerIndex: layerIndex,
+                    target: pass.pass.target,
+                    spec: spec,
+                    readFBONames: readFBONames,
+                    marksSecondary: spec != nil
+                        && writtenTargets.contains(targetID)
+                        && passReadsCurrentTarget(pass, targetID: targetID),
+                    requiresDiscreteSource: Self.requiresDiscreteDestinationForSourceAliasing(pass)
+                ))
+                if let spec {
+                    itemIndicesByKeyName[spec.name, default: []].append(index)
+                }
+                writtenTargets.insert(targetID)
             }
         }
 
-        func poolKey(for target: WPERenderTarget, layer: WPEPreparedRenderLayer) -> WPEMetalRenderTargetKey? {
-            switch target {
-            case .scene:
-                return nil
-            case .fbo, .layerComposite:
-                return targetPool.diagnosticKey(for: target, layer: layer.graphLayer, sceneSize: sceneSize, declaredFBOs: declaredFBOs)
-            }
-        }
+        return FBOAliasTopology(
+            items: items,
+            itemIndicesByKeyName: itemIndicesByKeyName,
+            signature: signature
+        )
+    }
 
-        var keysByName: [String: Set<WPEMetalRenderTargetKey>] = [:]
-        for item in flattened {
-            if let key = poolKey(for: item.pass.pass.target, layer: item.layer) {
-                keysByName[key.name, default: []].insert(key)
-            }
-        }
+    /// Per-frame size mapping: applies the CURRENT pipeline's layer geometry and
+    /// scene size to the cached topology. `topology` must satisfy
+    /// `topology.matches(pipeline)` — the public overload guarantees it; the
+    /// explicit-topology entry point exists so tests can prove a stale topology
+    /// produces wrong intervals (i.e. the `matches` guard is load-bearing).
+    func fboAliasIntervals(
+        topology: FBOAliasTopology,
+        pipeline: WPEPreparedRenderPipeline,
+        sceneSize: CGSize
+    ) -> [WPEMetalRenderTargetPool.AliasInterval] {
+        let scratch = fboAliasIntervalScratch
+        scratch.removeAll(keepingCapacity: true)
 
-        var firstPassByKey: [WPEMetalRenderTargetKey: Int] = [:]
-        var lastPassByKey: [WPEMetalRenderTargetKey: Int] = [:]
-        var secondaryKeys = Set<WPEMetalRenderTargetKey>()
-        var nonAliasKeys = Set<WPEMetalRenderTargetKey>()
-        var writtenTargets = Set<WPEMetalTargetID>()
+        scratch.keys.reserveCapacity(topology.items.count)
+        for item in topology.items {
+            scratch.keys.append(item.spec.map { spec in
+                targetPool.diagnosticKey(
+                    for: item.target,
+                    spec: spec,
+                    layer: pipeline.layers[item.layerIndex].graphLayer,
+                    sceneSize: sceneSize
+                )
+            })
+        }
 
         func touch(_ key: WPEMetalRenderTargetKey, _ index: Int) {
-            if firstPassByKey[key] == nil { firstPassByKey[key] = index }
-            lastPassByKey[key] = max(lastPassByKey[key] ?? index, index)
+            if scratch.firstPassByKey[key] == nil { scratch.firstPassByKey[key] = index }
+            scratch.lastPassByKey[key] = max(scratch.lastPassByKey[key] ?? index, index)
         }
 
-        for item in flattened {
-            let targetID = WPEMetalTargetID(target: item.pass.pass.target)
-            let targetKey = poolKey(for: item.pass.pass.target, layer: item.layer)
-            if let targetKey {
-                touch(targetKey, item.index)
-                if writtenTargets.contains(targetID),
-                   passReadsCurrentTarget(item.pass, targetID: targetID) {
-                    secondaryKeys.insert(targetKey)
-                }
+        for (index, item) in topology.items.enumerated() {
+            if let key = scratch.keys[index] {
+                touch(key, index)
+                if item.marksSecondary { scratch.secondaryKeys.insert(key) }
             }
-            for reference in textureReferences(for: item.pass) {
-                switch reference {
-                case .fbo(let name):
-                    for namedKey in keysByName[name] ?? [] { touch(namedKey, item.index) }
-                    if Self.requiresDiscreteDestinationForSourceAliasing(item.pass) {
-                        for namedKey in keysByName[name] ?? [] { nonAliasKeys.insert(namedKey) }
+            // `.previous` reads touched the pass's own key at this same index in
+            // the old scan — a no-op beyond the initial touch above, so only
+            // `.fbo` references are walked here.
+            for name in item.readFBONames {
+                guard let indices = topology.itemIndicesByKeyName[name] else { continue }
+                for namedIndex in indices {
+                    guard let namedKey = scratch.keys[namedIndex] else { continue }
+                    touch(namedKey, index)
+                    if item.requiresDiscreteSource {
+                        scratch.nonAliasKeys.insert(namedKey)
                     }
-                case .previous:
-                    if let targetKey { touch(targetKey, item.index) }
-                case .image, .asset:
-                    break
                 }
             }
-            writtenTargets.insert(targetID)
         }
 
-        return firstPassByKey.compactMap { key, first in
-            guard !secondaryKeys.contains(key),
-                  !nonAliasKeys.contains(key),
-                  let last = lastPassByKey[key] else { return nil }
+        return scratch.firstPassByKey.compactMap { key, first in
+            guard !scratch.secondaryKeys.contains(key),
+                  !scratch.nonAliasKeys.contains(key),
+                  let last = scratch.lastPassByKey[key] else { return nil }
             return WPEMetalRenderTargetPool.AliasInterval(key: key, firstPass: first, lastPass: last)
         }
     }
@@ -249,7 +388,12 @@ extension WPEMetalRenderExecutor {
             mipmapped: false
         )
         descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .shared
+        // `.private`: GPU-exclusive storage keeps lossless framebuffer
+        // compression on Apple Silicon; `.shared` forced CPU-coherent,
+        // uncompressed stores on the hot path. Every CPU read-back consumer
+        // (snapshotter, visual stats, trace hashes, PNG dumps) blits into its
+        // own CPU-visible staging instead of reading this texture directly.
+        descriptor.storageMode = .private
         guard let texture = device.makeTexture(descriptor: descriptor) else {
             throw WPEMetalTextureLoaderError.textureAllocationFailed
         }
