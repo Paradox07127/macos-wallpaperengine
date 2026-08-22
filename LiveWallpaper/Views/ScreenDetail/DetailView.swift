@@ -600,10 +600,17 @@ struct DetailView: View {
 
     private func loadScreenConfiguration() {
         let config = screenManager.getConfiguration(for: screen)
-        draft = .from(
+        // Guarded: this runs on every `.wallpaperConfigurationDidChange`, which
+        // every settings commit posts. Reassigning an identical draft rebuilt
+        // the entire inspector — playback, security, HTML options, transform and
+        // the custom-settings card, including every visible combo's option list.
+        let next = DraftState.from(
             config: config,
             fallbackHasPreviewSource: screen.videoPlayer?.videoURL != nil
         )
+        if draft != next {
+            draft = next
+        }
 
         if config?.wallpaperType != .video, lastPreviewPosterBookmarkData != nil {
             lastPreviewPosterBookmarkData = nil

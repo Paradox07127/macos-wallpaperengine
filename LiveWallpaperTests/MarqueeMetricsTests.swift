@@ -66,9 +66,18 @@ struct MarqueeMetricsTests {
         #expect(scrollingBranch.contains(".fixedSize(horizontal: true, vertical: false)"))
         #expect(scrollingBranch.contains(".offset(x: offset)"))
 
-        // The invisible base keeps truncating, which is what pins the row width
-        // an overlay is then free to overflow.
-        #expect(source.contains(".truncationMode(truncationMode)\n            .opacity(0)"))
+        // The base keeps truncating, which is what pins the row width an overlay
+        // is then free to overflow, and it goes invisible exactly while the
+        // overlay exists — the overlay and the measuring copies are mounted only
+        // on hover, so at rest the base *is* the visible label.
+        #expect(source.contains(".truncationMode(truncationMode)\n            .opacity(isHovering ? 0 : 1)"))
+        #expect(source.contains("if isHovering { visible(content) }"))
+        // Measurement is `onGeometryChange`, not a GeometryReader publishing into
+        // a PreferenceKey that has to be reduced on every layout pass. Matched on
+        // the declaration forms so the prose explaining the change doesn't trip it.
+        #expect(!source.contains("GeometryReader {"))
+        #expect(!source.contains(": PreferenceKey"))
+        #expect(source.contains(".onGeometryChange(for: CGFloat.self"))
     }
 
     @Test("Longer text takes proportionally longer, with a floor")

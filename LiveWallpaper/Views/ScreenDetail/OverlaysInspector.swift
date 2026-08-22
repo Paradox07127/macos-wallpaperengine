@@ -144,17 +144,22 @@ struct OverlaysInspectorPanel: View {
 
     private var particleDensityRow: some View {
         SettingRow(icon: "circle.hexagongrid", iconColor: .purple, title: "Density") {
-            HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
-                Slider(value: particleDensityBinding, in: 0.2...3.0)
-                    .controlSize(.small)
-                    .frame(minWidth: 56, maxWidth: DesignTokens.Inspector.sliderWidth)
-                    .accessibilityLabel(Text("Particle density"))
-                    .accessibilityValue(String(format: "%.1f×", draft.particleDensity))
-                Text(String(format: "%.1f", draft.particleDensity))
-                    .font(DesignTokens.Typography.metric)
-                    .foregroundStyle(.secondary)
-                    .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
-            }
+            // Coalesced: each sample rebuilt the display's particle overlay.
+            CoalescedSlider(
+                value: draft.particleDensity,
+                in: 0.2...3.0,
+                owner: screen.id,
+                sizing: .flexible(minimum: 56, maximum: DesignTokens.Inspector.sliderWidth),
+                accessibilityLabel: Text("Particle density"),
+                accessibilityValue: { Text(verbatim: String(format: "%.1f×", $0)) },
+                write: { particleDensityBinding.wrappedValue = $0 },
+                readout: { live in
+                    Text(verbatim: String(format: "%.1f", live))
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                        .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+                }
+            )
         }
     }
 

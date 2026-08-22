@@ -35,20 +35,6 @@ public enum MarqueeMetrics {
     }
 }
 
-private struct MarqueeBoxWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct MarqueeContentWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// Horizontal sibling of `MarqueeText`, and it borrows that view's central trick:
 /// an invisible base owns the layout while the copy the reader sees rides in an
 /// `overlay`, which never resizes its base. Hanging `fixedSize` on the label
@@ -91,30 +77,44 @@ private struct MarqueeOnHover: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        // Base: truncated, invisible, and the only thing that owns width here.
+        // At rest this modifier is one truncated `Text`. Every inspector row and
+        // gallery card in the app carries one, so the hidden full-width copy —
+        // a whole second text layout, needed only to decide whether the string
+        // overflows — is mounted while the pointer is here and not before. The
+        // crawl waits `startDelay` before moving, so measuring on hover-in is
+        // in time.
         content
             .lineLimit(1)
             .truncationMode(truncationMode)
-            .opacity(0)
-            .accessibilityHidden(true)
-            .background(measure(MarqueeBoxWidthKey.self))
+            .opacity(isHovering ? 0 : 1)
+            .accessibilityHidden(isHovering)
+            // `onGeometryChange` rather than a `GeometryReader` publishing into a
+            // `PreferenceKey`: it reports a value the view already has, only when
+            // that value actually changes, with no preference tree to reduce
+            // through on every layout pass. macOS 13+, so no availability gate.
+            .onGeometryChange(for: CGFloat.self, of: \.size.width) { boxWidth = $0 }
             .background(alignment: .leading) {
-                // Full-width copy, hidden. `background` never resizes its base,
-                // so measuring the whole string cannot widen the row.
-                content
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .hidden()
-                    .background(measure(MarqueeContentWidthKey.self))
+                if isHovering {
+                    // Full-width copy, hidden. `background` never resizes its
+                    // base, so measuring the whole string cannot widen the row.
+                    content
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .hidden()
+                        .onGeometryChange(for: CGFloat.self, of: \.size.width) { contentWidth = $0 }
+                }
             }
             .overlay(alignment: .leading) {
-                visible(content)
+                if isHovering { visible(content) }
             }
             .clipped()
-            .onPreferenceChange(MarqueeBoxWidthKey.self) { boxWidth = $0 }
-            .onPreferenceChange(MarqueeContentWidthKey.self) { contentWidth = $0 }
             .onChange(of: plan) { _, _ in restart() }
-            .onHover { isHovering = $0 }
+            .onHover { hovering in
+                isHovering = hovering
+                // The full-width copy is unmounted on exit, so its last reported
+                // width would otherwise linger and claim the label still overflows.
+                if !hovering { contentWidth = 0 }
+            }
     }
 
     /// Scrolling shows the whole string at its natural width; at rest the
@@ -130,12 +130,6 @@ private struct MarqueeOnHover: ViewModifier {
             content
                 .lineLimit(1)
                 .truncationMode(truncationMode)
-        }
-    }
-
-    private func measure<K: PreferenceKey>(_ key: K.Type) -> some View where K.Value == CGFloat {
-        GeometryReader { proxy in
-            Color.clear.preference(key: key, value: proxy.size.width)
         }
     }
 
@@ -164,9 +158,10 @@ public extension View {
     ///
     /// The multi-line card-title equivalent is `MarqueeText`.
     ///
-    /// Meant for `Text`: the label is rendered three times — an invisible base
-    /// that owns the width, a hidden full-width copy that measures, and the copy
-    /// the reader sees — so the wrapped view has to be cheap and stateless.
+    /// Meant for `Text`: while hovered the label is rendered three times — an
+    /// invisible base that owns the width, a hidden full-width copy that
+    /// measures, and the copy the reader sees — so the wrapped view has to be
+    /// cheap and stateless. At rest it is a single truncated label.
     func marqueeOnHover(truncationMode: Text.TruncationMode = .middle) -> some View {
         modifier(MarqueeOnHover(truncationMode: truncationMode))
     }

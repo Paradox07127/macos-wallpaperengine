@@ -11,51 +11,94 @@ struct Sparkline: View {
     var guides: [Double] = []
     var lineWidth: CGFloat = 1.6
 
+    /// Paths in one immediate-mode pass instead of a `ZStack` of `Path`s, a
+    /// guide `ForEach` and a gradient — every monitor widget rebuilt that tree on
+    /// its sample tick. `CPUStackChart` in this same folder already draws this way.
+    ///
+    /// The endpoint dot stays a real view: it sits at `x == width`, and its glow
+    /// deliberately spills past the sparkline's own bounds. `Canvas` clips to its
+    /// frame, so drawing it there would shave off half the dot and its shadow.
+    ///
+    /// It reads the size from a `GeometryReader` rather than `onGeometryChange`
+    /// into `@State`: the state round-trip costs a pass, so the dot was missing
+    /// from the first frame the sparkline appeared on.
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
+        Canvas(opaque: false, rendersAsynchronously: false) { context, size in
             let (lo, hi) = resolvedDomain()
             let span = max(hi - lo, .ulpOfOne)
+            // Nothing at all for an empty series — not even the baseline, which
+            // is what the previous `if let pts = points(...)` gate produced.
+            guard let pts = points(in: size, lo: lo, span: span), !pts.isEmpty else { return }
 
-            if let pts = points(in: geo.size, lo: lo, span: span), pts.count >= 1 {
-                ZStack {
-                    baseline(w: w, h: h)
-                    ForEach(Array(guides.enumerated()), id: \.offset) { _, g in
-                        let y = h - CGFloat((g - lo) / span) * h
-                        Path { p in
-                            p.move(to: CGPoint(x: 0, y: y))
-                            p.addLine(to: CGPoint(x: w, y: y))
-                        }
-                        .stroke(Design.hairlineHi.opacity(0.3),
-                                style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    }
+            draw(baselinePath(w: size.width, h: size.height), in: &context)
+            drawGuides(in: &context, w: size.width, h: size.height, lo: lo, span: span)
 
-                    if showArea, pts.count >= 2 {
-                        areaPath(pts, height: h)
-                            .fill(
-                                LinearGradient(
-                                    colors: [areaColor().opacity(0.26), areaColor().opacity(0)],
-                                    startPoint: .top, endPoint: .bottom
-                                )
-                            )
-                    }
+            if showArea, pts.count >= 2 {
+                context.fill(
+                    areaPath(pts, height: size.height),
+                    with: .linearGradient(
+                        Gradient(colors: [areaColor().opacity(0.26), areaColor().opacity(0)]),
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: 0, y: size.height)
+                    )
+                )
+            }
 
-                    if pts.count >= 2 {
-                        linePath(pts).stroke(strokeStyleColor(pts),
-                                             style: StrokeStyle(lineWidth: lineWidth,
-                                                                lineCap: .round, lineJoin: .round))
-                    }
-
-                    if let last = pts.last {
-                        Circle()
-                            .fill(nowColor())
-                            .frame(width: 6, height: 6)
-                            .position(last)
-                            .shadow(color: nowColor().opacity(0.6), radius: 3)
-                    }
-                }
+            if pts.count >= 2 {
+                context.stroke(
+                    linePath(pts),
+                    with: lineShading(width: size.width),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+                )
             }
         }
+        .overlay {
+            GeometryReader { proxy in endpointDot(in: proxy.size) }
+        }
+    }
+
+    @ViewBuilder
+    private func endpointDot(in size: CGSize) -> some View {
+        let (lo, hi) = resolvedDomain()
+        let span = max(hi - lo, .ulpOfOne)
+        if size.width > 0,
+           let last = points(in: size, lo: lo, span: span)?.last {
+            Circle()
+                .fill(nowColor())
+                .frame(width: 6, height: 6)
+                .position(last)
+                .shadow(color: nowColor().opacity(0.6), radius: 3)
+        }
+    }
+
+    private func draw(_ path: Path, in context: inout GraphicsContext) {
+        context.stroke(path, with: .color(Design.hairline.opacity(0.45)), lineWidth: 1)
+    }
+
+    private func drawGuides(
+        in context: inout GraphicsContext,
+        w: CGFloat,
+        h: CGFloat,
+        lo: Double,
+        span: Double
+    ) {
+        guard !guides.isEmpty else { return }
+        let shading = GraphicsContext.Shading.color(Design.hairlineHi.opacity(0.3))
+        let style = StrokeStyle(lineWidth: 1, dash: [3, 3])
+        for guide in guides {
+            let y = h - CGFloat((guide - lo) / span) * h
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: y))
+            path.addLine(to: CGPoint(x: w, y: y))
+            context.stroke(path, with: shading, style: style)
+        }
+    }
+
+    private func baselinePath(w: CGFloat, h: CGFloat) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: h - 1))
+        path.addLine(to: CGPoint(x: w, y: h - 1))
+        return path
     }
 
     // MARK: - Geometry
@@ -113,23 +156,19 @@ struct Sparkline: View {
 
     /// Band-coloured mode uses a horizontal gradient keyed to each sample's band;
     /// otherwise a solid stroke.
-    private func strokeStyleColor(_ pts: [CGPoint]) -> some ShapeStyle {
-        if bandColored, pts.count >= 2 {
-            let stops = values.enumerated().map { i, v -> Gradient.Stop in
-                Gradient.Stop(color: Design.loadBandColor(v),
-                              location: CGFloat(i) / CGFloat(values.count - 1))
-            }
-            return AnyShapeStyle(LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing))
+    private func lineShading(width: CGFloat) -> GraphicsContext.Shading {
+        guard bandColored, values.count >= 2 else { return .color(lineColor) }
+        let stops = values.enumerated().map { index, value -> Gradient.Stop in
+            Gradient.Stop(
+                color: Design.loadBandColor(value),
+                location: CGFloat(index) / CGFloat(values.count - 1)
+            )
         }
-        return AnyShapeStyle(lineColor)
-    }
-
-    private func baseline(w: CGFloat, h: CGFloat) -> some View {
-        Path { p in
-            p.move(to: CGPoint(x: 0, y: h - 1))
-            p.addLine(to: CGPoint(x: w, y: h - 1))
-        }
-        .stroke(Design.hairline.opacity(0.45), lineWidth: 1)
+        return .linearGradient(
+            Gradient(stops: stops),
+            startPoint: CGPoint(x: 0, y: 0),
+            endPoint: CGPoint(x: width, y: 0)
+        )
     }
 }
 
