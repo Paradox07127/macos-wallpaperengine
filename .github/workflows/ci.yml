@@ -64,6 +64,12 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks | grep -i macos
 
+      # Xcode 26+ ships the Metal compiler as a separate downloadable component,
+      # and the xcode-27 image stopped carrying it on 2026-08-17 — every
+      # CompileMetalFile then died with "cannot execute tool 'metal'".
+      - name: Install Metal toolchain
+        run: xcodebuild SWIFT_EMIT_LOC_STRINGS=NO -downloadComponent MetalToolchain
+
       - name: Build ${{ matrix.scheme }}
         run: |
           set -o pipefail
@@ -128,6 +134,9 @@ jobs:
       - name: Verify toolchain
         run: xcodebuild -version
 
+      - name: Install Metal toolchain
+        run: xcodebuild SWIFT_EMIT_LOC_STRINGS=NO -downloadComponent MetalToolchain
+
       - name: Run hardware-free app contract shard
         run: bash scripts/fast_app_contract_tests.sh
 
@@ -166,6 +175,9 @@ jobs:
 
       - name: Verify toolchain
         run: xcodebuild -version
+
+      - name: Install Metal toolchain
+        run: xcodebuild SWIFT_EMIT_LOC_STRINGS=NO -downloadComponent MetalToolchain
 
       - name: Run LiveWallpaperTests
         run: |
