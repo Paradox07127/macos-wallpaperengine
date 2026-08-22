@@ -4,7 +4,7 @@ import LiveWallpaperProWPE
 
 /// Color textures request sRGB-encoded pixel formats; data textures (masks,
 /// normal maps, R8/RG8 channels) must stay linear.
-enum WPEMetalColorSpace: Equatable, Sendable {
+enum WPEMetalColorSpace: Equatable, Hashable, Sendable {
     case sRGB
     case linear
 }

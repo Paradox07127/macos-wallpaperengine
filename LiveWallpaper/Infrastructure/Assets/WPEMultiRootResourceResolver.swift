@@ -84,14 +84,17 @@ struct WPEMultiRootResourceResolver: Sendable {
         }
     }
 
-    func resolveImage(relativePath: String) throws -> CGImage {
+    func resolveImage(
+        relativePath: String,
+        maxSourceEdge: Int? = nil
+    ) throws -> SceneResourceResolver.ResolvedImage {
         if let dependency = dependencyReference(relativePath) {
             return try resolveDependency(relativePath: relativePath, dependency: dependency) { resolver, path in
-                try resolver.resolveImage(relativePath: path)
+                try resolver.resolveImage(relativePath: path, maxSourceEdge: maxSourceEdge)
             }
         }
         return try resolveWithFallbacks(relativePath: relativePath) { resolver, path in
-            try resolver.resolveImage(relativePath: path)
+            try resolver.resolveImage(relativePath: path, maxSourceEdge: maxSourceEdge)
         }
     }
 

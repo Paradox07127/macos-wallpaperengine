@@ -440,8 +440,8 @@ actor WPEDisplayRenderActor {
     /// `isolated` parameter pins them here).
     func load() async throws {
         try await renderer?.load(on: self)
-        // The first post-load frames pay the lazy GLSL→MSL transpile; pin the
-        // P-cores across them so warm-up isn't judged on E-core timing.
+        // Prewarm already compiled custom shaders; first frames can still miss
+        // PSO signatures, so pin P-cores across the warm-up window.
         thread?.boostRenderQoSWarmup()
     }
 

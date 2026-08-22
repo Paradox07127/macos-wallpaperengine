@@ -38,9 +38,8 @@ struct WPEAdaptiveRenderQoS {
     private var writeIndex = 0
     private var sampleCount = 0
 
-    /// Frames still owed a forced `.high` (scene load / reload warm-up: the first
-    /// frames after a load pay the lazy GLSL→MSL transpile and must not be judged
-    /// on E-core timing). Counts down one per recorded frame.
+    /// Frames still owed a forced `.high` after load/reload. Custom shaders are
+    /// prewarmed, but first-frame PSO misses still must not be judged on E-cores.
     private var boostFramesRemaining = 0
 
     /// When false the thread is pinned at `.high` forever (the escape hatch):

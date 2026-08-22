@@ -111,6 +111,13 @@ final class WPEMetalSceneRenderer: NSObject {
     var particleTextures: [ObjectIdentifier: MTLTexture] = [:]
     /// REFRACT `g_Texture1`. Absent ⇒ the system renders as a flat sprite.
     var particleNormalTextures: [ObjectIdentifier: MTLTexture] = [:]
+    /// Load-scoped sprite/normal atlas cache. Sibling systems sharing a path
+    /// keep one `MTLTexture`; keys keep linear normals distinct from sRGB sprites.
+    struct ParticleTextureLoadKey: Hashable {
+        let path: String
+        let colorSpace: WPEMetalColorSpace
+    }
+    var particleTextureLoadCache: [ParticleTextureLoadKey: WPELoadedTextureResource] = [:]
     var textMeshRenderer: WPETextMeshRenderer?
     var textObjects: [WPESceneTextObject] = []
     /// Plain text is Direct; effect/background text uses Offscreen surfaces from the normal target pool.
@@ -293,6 +300,18 @@ final class WPEMetalSceneRenderer: NSObject {
     var completedPresentGeneration: Int?
     /// Terminal present failure for a not-yet-ready load, so session prep fails promptly instead of waiting out its timeout.
     var failedPresentGeneration: Int?
+    /// Consecutive static/on-demand `nextDrawable` misses for the current output.
+    /// Non-zero keeps the paused display link ticking until present succeeds or
+    /// `WPEStaticPresentRetry` fails the generation. Not a `WPEFrameDemand` bit:
+    /// the scene itself is idle; only the first present is outstanding.
+    var pendingPresentRetryCount = 0
+    /// Scene content demand, or a bounded present retry for a cached static frame.
+    var needsPacingLoop: Bool { needsContinuousFrames || pendingPresentRetryCount > 0 }
+    #if DEBUG
+    /// `renderAndPresentFrame` took the re-encode branch. Tests pin that a present
+    /// retry does not increment this.
+    var frameEncodeCountForTesting = 0
+    #endif
     var loadDiagnostics: SceneLoadDiagnostic?
     var renderGraph: WPERenderGraph?
     var renderPipeline: WPEPreparedRenderPipeline?

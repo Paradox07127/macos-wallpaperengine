@@ -36,6 +36,55 @@ struct WPEMetalRenderExecutorTests {
         #expect(partition.missing == [missingRequest])
     }
 
+    @Test("Executor init asks Metal to maximize concurrent shader compilation")
+    func executorEnablesConcurrentCompilation() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        _ = try WPEMetalRenderExecutor(device: device)
+        #expect(device.shouldMaximizeConcurrentCompilation)
+    }
+
+    @Test("Prewarm seeds pass-id compile results without replacing an existing entry")
+    func seedCompiledShaderResultsByPassIDIsIdempotent() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let first = WPEShaderCompileResult(
+            library: executor.defaultLibrary,
+            vertexFunctionName: "first_vertex",
+            fragmentFunctionName: "first_fragment",
+            mslSource: "// first",
+            uniformLayout: [],
+            samplerNames: []
+        )
+        let second = WPEShaderCompileResult(
+            library: executor.defaultLibrary,
+            vertexFunctionName: "second_vertex",
+            fragmentFunctionName: "second_fragment",
+            mslSource: "// second",
+            uniformLayout: [],
+            samplerNames: []
+        )
+        executor.seedCompiledShaderResultsByPassID([
+            (passID: "layer0.0", result: first)
+        ])
+        executor.seedCompiledShaderResultsByPassID([
+            (passID: "layer0.0", result: second),
+            (passID: "layer1.0", result: second)
+        ])
+        #expect(executor.compiledShaderResultByPassID["layer0.0"]?.vertexFunctionName == "first_vertex")
+        #expect(executor.compiledShaderResultByPassID["layer1.0"]?.vertexFunctionName == "second_vertex")
+    }
+
+    @Test("Async GPU error logs the first few then every 300th")
+    func gpuErrorLogThrottleMatchesPresentMissCadence() {
+        #expect(WPEGPUErrorSink.shouldLogOccurrence(1))
+        #expect(WPEGPUErrorSink.shouldLogOccurrence(5))
+        #expect(!WPEGPUErrorSink.shouldLogOccurrence(6))
+        #expect(!WPEGPUErrorSink.shouldLogOccurrence(299))
+        #expect(WPEGPUErrorSink.shouldLogOccurrence(300))
+        #expect(!WPEGPUErrorSink.shouldLogOccurrence(301))
+        #expect(WPEGPUErrorSink.shouldLogOccurrence(600))
+    }
+
     @Test("Reload clears the untranslatable-shader verdict along with the compiled result")
     func reloadClearsUntranslatableShaderVerdict() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

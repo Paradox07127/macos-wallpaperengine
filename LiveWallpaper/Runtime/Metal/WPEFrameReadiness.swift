@@ -68,6 +68,33 @@ enum WPEFrameReadinessCoordinator {
     }
 }
 
+/// Bounded static/on-demand present retry after `nextDrawable()` miss.
+/// Continuous scenes already tick next vsync, so they stay `.idle` here.
+enum WPEStaticPresentRetry {
+    static let maxAttempts = 16
+
+    enum Outcome: Equatable {
+        case idle
+        case retry(count: Int)
+        case failed
+    }
+
+    static func outcome(
+        presented: Bool,
+        sceneHasFrameDemand: Bool,
+        retryCount: Int
+    ) -> Outcome {
+        if presented || sceneHasFrameDemand {
+            return .idle
+        }
+        let next = retryCount + 1
+        if next >= maxAttempts {
+            return .failed
+        }
+        return .retry(count: next)
+    }
+}
+
 /// Calls the executor's source-release closure exactly once, even if a delayed
 /// poster consumer invokes its callback more than once or abandons it.
 final class WPEPresentSourceRelease: @unchecked Sendable { // `lock` protects the one-shot closure.

@@ -260,5 +260,92 @@ struct WPEPointerPublisherTests {
         mailbox.publishMouseLocation(CGPoint(x: 500, y: 500), timestampNanos: 1)
         #expect(mailbox.read().pointerSample.isInsideView)
     }
+
+    @Test("Pointer enter fires once on the outside-to-inside edge")
+    func pointerEnterFiresOnceOnEdge() throws {
+        let mailbox = WPEPointerMailbox()
+        let window = makePointerTestWindow()
+        defer { window.close() }
+        let view = try #require(window.contentView)
+        mailbox.publishGeometry(WPEPointerPublisher.geometry(of: view))
+
+        let publisher = WPEPointerPublisher(mailbox: mailbox, view: view)
+        var enters = 0
+        publisher.onPointerEnteredView = { enters += 1 }
+
+        publisher.ingestPointerLocation(CGPoint(x: 0, y: 0))
+        #expect(enters == 0)
+        publisher.ingestPointerLocation(CGPoint(x: 500, y: 500))
+        #expect(enters == 1)
+        publisher.ingestPointerLocation(CGPoint(x: 510, y: 510))
+        #expect(enters == 1)
+        publisher.ingestPointerLocation(CGPoint(x: 0, y: 0))
+        publisher.ingestPointerLocation(CGPoint(x: 500, y: 500))
+        #expect(enters == 2)
+    }
+
+    @Test("Pointer enter publishes the inside sample before the wake callback")
+    func pointerEnterPublishesMailboxBeforeWake() throws {
+        let mailbox = WPEPointerMailbox()
+        let window = makePointerTestWindow()
+        defer { window.close() }
+        let view = try #require(window.contentView)
+        mailbox.publishGeometry(WPEPointerPublisher.geometry(of: view))
+
+        let publisher = WPEPointerPublisher(mailbox: mailbox, view: view)
+        var insideDuringEnter = false
+        publisher.onPointerEnteredView = {
+            insideDuringEnter = mailbox.read().pointerSample.isInsideView
+        }
+
+        publisher.ingestPointerLocation(CGPoint(x: 0, y: 0))
+        #expect(!mailbox.read().pointerSample.isInsideView)
+        publisher.ingestPointerLocation(CGPoint(x: 500, y: 500))
+        #expect(insideDuringEnter)
+        #expect(mailbox.read().pointerSample.isInsideView)
+    }
+
+    @Test("A throttled enter still publishes so the wake frame does not sample a stale outside location")
+    func throttledPointerEnterStillPublishes() throws {
+        let mailbox = WPEPointerMailbox()
+        let window = makePointerTestWindow()
+        defer { window.close() }
+        let view = try #require(window.contentView)
+        mailbox.publishGeometry(WPEPointerPublisher.geometry(of: view))
+
+        var clock = 0.0
+        let publisher = WPEPointerPublisher(
+            mailbox: mailbox,
+            view: view,
+            throttleFPS: 120,
+            now: { clock }
+        )
+        var insideDuringEnter = false
+        var enters = 0
+        publisher.onPointerEnteredView = {
+            enters += 1
+            insideDuringEnter = mailbox.read().pointerSample.isInsideView
+        }
+
+        publisher.ingestPointerLocation(CGPoint(x: 0, y: 0), at: 0)
+        clock = 0.001
+        publisher.ingestPointerLocation(CGPoint(x: 500, y: 500), at: 0.001)
+        #expect(enters == 1)
+        #expect(insideDuringEnter)
+        #expect(mailbox.read().pointerSample.isInsideView)
+    }
+}
+
+@MainActor
+private func makePointerTestWindow() -> NSWindow {
+    let window = NSWindow(
+        contentRect: CGRect(x: 100, y: 200, width: 800, height: 600),
+        styleMask: .borderless,
+        backing: .buffered,
+        defer: false
+    )
+    window.isReleasedWhenClosed = false
+    window.contentView = NSView(frame: NSRect(origin: .zero, size: window.frame.size))
+    return window
 }
 #endif

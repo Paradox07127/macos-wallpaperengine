@@ -371,6 +371,45 @@ struct WPEMetalSceneRendererTests {
         #expect(!noConsumer.tracksReadiness)
     }
 
+    @Test("Static present retry policy keeps the loop alive then fails closed")
+    func staticPresentRetryPolicyKeepsLoopThenFailsClosed() {
+        #expect(
+            WPEStaticPresentRetry.outcome(
+                presented: true,
+                sceneHasFrameDemand: false,
+                retryCount: 3
+            ) == .idle
+        )
+        #expect(
+            WPEStaticPresentRetry.outcome(
+                presented: false,
+                sceneHasFrameDemand: true,
+                retryCount: 3
+            ) == .idle
+        )
+        #expect(
+            WPEStaticPresentRetry.outcome(
+                presented: false,
+                sceneHasFrameDemand: false,
+                retryCount: 0
+            ) == .retry(count: 1)
+        )
+        #expect(
+            WPEStaticPresentRetry.outcome(
+                presented: false,
+                sceneHasFrameDemand: false,
+                retryCount: WPEStaticPresentRetry.maxAttempts - 2
+            ) == .retry(count: WPEStaticPresentRetry.maxAttempts - 1)
+        )
+        #expect(
+            WPEStaticPresentRetry.outcome(
+                presented: false,
+                sceneHasFrameDemand: false,
+                retryCount: WPEStaticPresentRetry.maxAttempts - 1
+            ) == .failed
+        )
+    }
+
     @Test("Present source release is exact-once with and without a poster consumer")
     func presentSourceReleaseRoutesExactlyOnce() {
         let immediate = WPEPresentReleaseRecorder()
@@ -454,6 +493,102 @@ struct WPEMetalSceneRendererTests {
         #expect(unchanged.completedPresentGeneration == loaded.currentLoadGeneration)
         #expect(unchanged.failedPresentGeneration == nil)
         await renderActor.teardownRenderer()
+    }
+
+    @Test("Static drawable miss retries present without re-encoding the scene")
+    func staticDrawableMissRetriesPresentWithoutReencoding() async throws {
+        let stack = try await StaticPresentRetryFixture.make()
+        defer { stack.cleanup() }
+        let renderer = stack.renderer
+
+        let loadedID = ObjectIdentifier(try #require(renderer.outputTexture))
+        let encodesBefore = renderer.frameEncodeCountForTesting
+        renderer.executor.remainingForcedDrawableMissesForTesting = 1
+
+        renderer.renderAndPresentFrame()
+
+        #expect(ObjectIdentifier(try #require(renderer.outputTexture)) == loadedID)
+        #expect(renderer.frameEncodeCountForTesting == encodesBefore)
+        #expect(renderer.pendingPresentRetryCount == 1)
+        #expect(renderer.failedPresentGeneration == nil)
+        #expect(renderer.completedPresentGeneration == nil)
+        #expect(!renderer.needsContinuousFrames)
+        #expect(renderer.needsPacingLoop)
+    }
+
+    @Test("Forced rerender present miss reuses the new output on the next tick")
+    func forcedRerenderPresentMissDoesNotEncodeAgainOnRetry() async throws {
+        let stack = try await StaticPresentRetryFixture.make()
+        defer { stack.cleanup() }
+        let renderer = stack.renderer
+
+        renderer.pendingForcedRerender = true
+        renderer.executor.remainingForcedDrawableMissesForTesting = 2
+        let encodesBefore = renderer.frameEncodeCountForTesting
+
+        renderer.renderAndPresentFrame()
+        #expect(renderer.frameEncodeCountForTesting == encodesBefore + 1)
+        #expect(!renderer.pendingForcedRerender)
+        #expect(renderer.pendingPresentRetryCount == 1)
+        let afterForcedID = ObjectIdentifier(try #require(renderer.outputTexture))
+
+        renderer.renderAndPresentFrame()
+        #expect(renderer.frameEncodeCountForTesting == encodesBefore + 1)
+        #expect(ObjectIdentifier(try #require(renderer.outputTexture)) == afterForcedID)
+        #expect(renderer.pendingPresentRetryCount == 2)
+        #expect(renderer.failedPresentGeneration == nil)
+    }
+
+    @Test("Repeated static drawable misses fail the load generation without re-encoding")
+    func staticDrawableMissExhaustionFailsGeneration() async throws {
+        let stack = try await StaticPresentRetryFixture.make()
+        defer { stack.cleanup() }
+        let renderer = stack.renderer
+
+        let loadedID = ObjectIdentifier(try #require(renderer.outputTexture))
+        let encodesBefore = renderer.frameEncodeCountForTesting
+        renderer.executor.remainingForcedDrawableMissesForTesting = WPEStaticPresentRetry.maxAttempts
+
+        for _ in 0..<WPEStaticPresentRetry.maxAttempts {
+            renderer.renderAndPresentFrame()
+        }
+
+        #expect(ObjectIdentifier(try #require(renderer.outputTexture)) == loadedID)
+        #expect(renderer.frameEncodeCountForTesting == encodesBefore)
+        #expect(renderer.failedPresentGeneration == renderer.loadGeneration)
+        #expect(renderer.pendingPresentRetryCount == 0)
+        #expect(!renderer.needsPacingLoop)
+        #expect(!renderer.hasPresentedFrame)
+    }
+
+    @Test("A later successful present after one miss becomes ready")
+    func staticPresentSucceedsAfterOneDrawableMiss() async throws {
+        let stack = try await StaticPresentRetryFixture.make()
+        defer { stack.cleanup() }
+        let renderer = stack.renderer
+        let actor = try #require(renderer.displayActor)
+        let generation = renderer.loadGeneration
+        let loadedID = ObjectIdentifier(try #require(renderer.outputTexture))
+
+        renderer.executor.remainingForcedDrawableMissesForTesting = 1
+        renderer.renderAndPresentFrame()
+        #expect(renderer.pendingPresentRetryCount == 1)
+
+        renderer.renderAndPresentFrame()
+        #expect(ObjectIdentifier(try #require(renderer.outputTexture)) == loadedID)
+
+        var completed: Int?
+        for _ in 0..<100 {
+            let snapshot = await actor.rendererStateSnapshot()
+            completed = snapshot?.completedPresentGeneration
+            if completed == generation { break }
+            if snapshot?.failedPresentGeneration == generation { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(completed == generation)
+        #expect(renderer.failedPresentGeneration == nil)
+        #expect(renderer.pendingPresentRetryCount == 0)
+        #expect(renderer.hasPresentedFrame)
     }
 
     @Test("Async scene load failure surfaces session runtimeError and fires the change callback")
@@ -1371,6 +1506,48 @@ struct WPEMetalSceneRendererTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         throw CocoaError(.fileReadNoSuchFile)
+    }
+}
+
+@MainActor
+private struct StaticPresentRetryFixture {
+    let fixture: MetalSceneFixture
+    let renderer: WPEMetalSceneRenderer
+    let window: NSWindow
+
+    static func make() async throws -> Self {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.solidColorScene()
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device
+        )
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 64, height: 64),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = renderer.nsView
+        window.orderBack(nil)
+        if let layer = renderer.nsView.layer as? CAMetalLayer {
+            let size = renderer.nsView.convertToBacking(renderer.nsView.bounds).size
+            if size.width > 0, size.height > 0 {
+                layer.drawableSize = size
+            }
+        }
+        try await renderer.load()
+        return Self(fixture: fixture, renderer: renderer, window: window)
+    }
+
+    func cleanup() {
+        renderer.cleanup()
+        window.close()
+        fixture.cleanup()
     }
 }
 

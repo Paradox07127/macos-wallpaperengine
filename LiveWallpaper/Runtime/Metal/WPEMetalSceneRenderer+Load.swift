@@ -25,6 +25,7 @@ extension WPEMetalSceneRenderer {
         let generation = loadGeneration
         completedPresentGeneration = nil
         failedPresentGeneration = nil
+        pendingPresentRetryCount = 0
         let scriptLoadToken = sceneScriptLoadState.begin(generation: generation)
         invalidateIntroPhaseAlign()
         debugStage("load.begin", descriptorSummary)
