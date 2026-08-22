@@ -65,12 +65,8 @@ struct ThumbnailCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            thumbnailTile
-            metadata
-                .padding(DesignTokens.Spacing.md)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        thumbnailTile
+            .frame(maxWidth: .infinity, alignment: .leading)
         .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
         .onHover { hovering in
             guard !screens.isEmpty else { return }
@@ -109,6 +105,11 @@ struct ThumbnailCard: View {
                 formatBadgeRow
                     .padding(DesignTokens.Spacing.sm)
             }
+            .overlay(alignment: .bottom) {
+                ThumbnailTitleBand(title: asset.displayName, isHovering: isHovering) {
+                    applyControl
+                }
+            }
     }
 
     private var tileBackground: some View {
@@ -141,33 +142,6 @@ struct ThumbnailCard: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: badges.map(\.displayLabel).joined(separator: ", ")))
-        }
-    }
-
-    // MARK: Metadata
-
-    private var metadata: some View {
-        HStack(alignment: .center, spacing: DesignTokens.Spacing.sm) {
-            textBlock
-            Spacer(minLength: DesignTokens.Spacing.xs)
-            applyControl
-        }
-    }
-
-    private var textBlock: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            MarqueeText(asset.displayName, lineLimit: 1, isActive: isHovering)
-                .font(DesignTokens.Typography.bodyEmphasized)
-                .foregroundStyle(.primary)
-
-            // Reserved even when the asset has no category: a row of cards with
-            // mixed one- and two-line footers gets vertically centred by
-            // LazyVGrid, which knocks the thumbnails out of alignment.
-            Text(verbatim: asset.category ?? "")
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1, reservesSpace: true)
-                .truncationMode(.middle)
         }
     }
 

@@ -381,12 +381,8 @@ private struct SystemWallpaperTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            preview
-            metadata
-                .padding(DesignTokens.Spacing.md)
-        }
-        .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
+        preview
+            .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
         .onHover { isHovering = $0 }
         .contextMenu {
             Button("Remove from System Wallpaper", role: .destructive, action: onRemove)
@@ -429,29 +425,23 @@ private struct SystemWallpaperTile: View {
                 .accessibilityLabel(Text("Remove from System Wallpaper"))
             }
         }
+        // The in-use state is still stated once, now inside the band. The
+        // caption that used to carry it is gone with it: its other half was the
+        // resting state of every tile on the page, so per-card it said nothing.
+        // That leaves its catalog key unreferenced — deliberately not deleted.
+        .overlay(alignment: .bottom) {
+            ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
+                if isInUse {
+                    ThumbnailPresenceCheck(tint: DesignTokens.Colors.Status.active)
+                        .accessibilityLabel(Text("On screen"))
+                }
+            }
+        }
         .task(id: thumbnailURL) {
             guard let thumbnailURL else { return }
             // Data crosses the actor hop; NSImage (non-Sendable) stays on main.
             let data = await Task.detached { try? Data(contentsOf: thumbnailURL) }.value
             if let data { thumbnail = NSImage(data: data) }
         }
-    }
-
-    /// The in-use state is stated once, under the title — a badge over the
-    /// thumbnail *and* a caption below it said the same thing twice.
-    private var metadata: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: item.title)
-                .lineLimit(1)
-                .font(.callout.weight(.medium))
-            if isInUse {
-                StatusChip("On screen", tint: DesignTokens.Colors.Status.active, systemImage: "play.fill")
-            } else {
-                Text("Ready in System Settings")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

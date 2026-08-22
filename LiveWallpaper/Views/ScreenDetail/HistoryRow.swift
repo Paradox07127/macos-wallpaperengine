@@ -122,36 +122,29 @@ struct HistoryRow: View {
                 }
                 .padding(DesignTokens.Spacing.sm)
             }
-            .overlay(alignment: .bottomTrailing) {
-                if isActive, showsInUseBadge {
-                    activeBadge
-                        .padding(DesignTokens.Spacing.sm)
-                }
-            }
-
-            // Title and bookmark share one row: the type badge moved onto the
-            // thumbnail, so the row it used to sit in was pure card height.
-            HStack(alignment: .center, spacing: DesignTokens.Spacing.sm) {
-                MarqueeText(entry.origin.title, isActive: isHovering)
-                    .font(DesignTokens.Typography.bodyEmphasized)
-
-                // Without this the bookmark hugs a short title instead of the
-                // card's edge, so its position wanders row to row.
-                Spacer(minLength: 0)
-
-                if let onBookmark {
-                    Button(action: onBookmark) {
-                        Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                            .font(.system(size: 11))
-                            .foregroundStyle(isBookmarked ? DesignTokens.Colors.rating : Color.secondary)
+            // Title, in-use mark and bookmark ride the picture's bottom edge.
+            // The "In use" pill used to sit in this same corner as a separate
+            // overlay and would now be buried under the band.
+            .overlay(alignment: .bottom) {
+                ThumbnailTitleBand(title: entry.origin.title, isHovering: isHovering) {
+                    if isActive, showsInUseBadge {
+                        ThumbnailPresenceCheck()
+                            .accessibilityLabel(Text("In use"))
                     }
-                    .buttonStyle(.plain)
-                    .help(isBookmarked ? Text("Remove Bookmark") : Text("Add Bookmark"))
-                    .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
+                    if let onBookmark {
+                        Button(action: onBookmark) {
+                            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                                .font(.system(size: 11))
+                                .foregroundStyle(isBookmarked
+                                    ? DesignTokens.Colors.rating
+                                    : DesignTokens.Colors.overlayForeground)
+                        }
+                        .buttonStyle(.plain)
+                        .help(isBookmarked ? Text("Remove Bookmark") : Text("Add Bookmark"))
+                        .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
+                    }
                 }
             }
-            .padding(DesignTokens.Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .top)
         }
     }
 
@@ -219,15 +212,6 @@ struct HistoryRow: View {
             systemImage: "arrow.triangle.2.circlepath",
             tint: DesignTokens.Colors.Status.warning,
             opacity: 0.9
-        )
-    }
-
-    private var activeBadge: some View {
-        ThumbnailBadge(
-            "In use",
-            systemImage: "checkmark.circle.fill",
-            tint: DesignTokens.Colors.badgeActive,
-            opacity: 0.85
         )
     }
 

@@ -31,12 +31,8 @@ struct BrowseCard: View {
 
     var body: some View {
         Button(action: { if shouldBlur { requestReveal() } else { onSelect() } }) {
-            VStack(alignment: .leading, spacing: 0) {
-                thumbnailArea
-                textInfo
-                    .padding(DesignTokens.Spacing.md)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            thumbnailArea
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
         .galleryTileChrome(isHovering: isHovered, isSelected: isSelected, cornerRadius: DesignTokens.Corner.lg, reduceMotion: reduceMotion)
@@ -87,6 +83,7 @@ struct BrowseCard: View {
         AnimatedGIFThumbnail(
             url: item.previewImageURL,
             playbackMode: .hoverToPlay,
+            showsPlayingBadge: false,
             isBlurred: shouldBlur,
             isHovered: $isHovered
         )
@@ -111,10 +108,9 @@ struct BrowseCard: View {
                     .padding(DesignTokens.Spacing.sm)
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            if isInLibrary, showsInLibraryBadge {
-                inLibraryBadge
-                    .padding(DesignTokens.Spacing.sm)
+        .overlay(alignment: .bottom) {
+            if !shouldBlur {
+                titleBand
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -122,15 +118,6 @@ struct BrowseCard: View {
 
     private func resolutionPill(_ label: String) -> some View {
         ThumbnailBadge(verbatim: label)
-    }
-
-    private var inLibraryBadge: some View {
-        ThumbnailBadge(
-            "In Library",
-            systemImage: "checkmark.circle.fill",
-            tint: Self.inLibraryGreen,
-            opacity: 0.85
-        )
     }
 
     private func typePill(_ type: WorkshopContentTypeFilter) -> some View {
@@ -156,13 +143,18 @@ struct BrowseCard: View {
     /// the thumbnail and the subscriber count is a detail-sheet fact, so the row
     /// that held them bought a line of card height for something nobody scans a
     /// grid for.
-    private var textInfo: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            MarqueeText(item.title, isActive: isHovered)
-                .font(DesignTokens.Typography.bodyEmphasized)
-                .foregroundStyle(.primary)
-
-            statusBadge
+    private var titleBand: some View {
+        ThumbnailTitleBand(title: item.title, isHovering: isHovered) {
+            if let status = statusInfo {
+                Image(systemName: status.symbol)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(status.tint)
+                    .accessibilityHidden(true)
+            }
+        } trailing: {
+            if isInLibrary, showsInLibraryBadge {
+                ThumbnailPresenceCheck(tint: Self.inLibraryGreen)
+            }
         }
     }
 
@@ -172,13 +164,6 @@ struct BrowseCard: View {
         case .scene: return "cube.transparent.fill"
         case .video: return "play.rectangle.fill"
         case .web: return "globe"
-        }
-    }
-
-    @ViewBuilder
-    private var statusBadge: some View {
-        if let status = statusInfo {
-            StatusChip(verbatim: status.text, tint: status.tint, systemImage: status.symbol)
         }
     }
 
