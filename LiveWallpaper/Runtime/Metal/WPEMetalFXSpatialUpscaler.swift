@@ -4,7 +4,6 @@ import Foundation
 import LiveWallpaperCore
 import Metal
 import MetalFX
-import os
 
 /// Experimental MetalFX spatial upscale at present time: the scene renders at a
 /// reduced resolution (`WPEMetalFXRenderScale` < 1.0) and an `MTLFXSpatialScaler`
@@ -28,7 +27,15 @@ final class WPEMetalFXSpatialUpscaler {
         return 1.0
     }()
 
-    static var isExperimentEnabled: Bool { renderScale < 1.0 }
+    /// Device support folds into the master predicate: on a device MetalFX
+    /// cannot serve, rendering below the drawable would trade resolution for a
+    /// plain bilinear stretch — strictly worse than doing nothing.
+    static let isExperimentEnabled: Bool = {
+        guard renderScale < 1.0 else { return false }
+        guard let device = MTLCreateSystemDefaultDevice(),
+              MTLFXSpatialScalerDescriptor.supportsDevice(device) else { return false }
+        return true
+    }()
 
     /// Pure raw-value → effective-scale mapping, split out so tests can inject
     /// raw values without touching UserDefaults.
@@ -45,9 +52,9 @@ final class WPEMetalFXSpatialUpscaler {
         return max(even, 64)
     }
 
-    static func makeIfEnabled(device: MTLDevice) -> WPEMetalFXSpatialUpscaler? {
+    static func makeIfEnabled(device: MTLDevice, library: MTLLibrary) -> WPEMetalFXSpatialUpscaler? {
         guard isExperimentEnabled else { return nil }
-        return WPEMetalFXSpatialUpscaler(device: device)
+        return WPEMetalFXSpatialUpscaler(device: device, library: library)
     }
 
     // MARK: - Eligibility
@@ -56,10 +63,22 @@ final class WPEMetalFXSpatialUpscaler {
         case fitMode
         case sourceExceedsDrawable
         case aspectMismatch
+        case hdrInput
         case deviceUnsupported
         case scalerCreationFailed
         case usageMismatch
     }
+
+    /// Inputs the scaler is allowed to see under `.perceptual`: Apple's contract
+    /// is tone-mapped 0-1 sRGB, which our 8-bit scene outputs satisfy. HDR
+    /// (`rgba16Float`) scenes carry linear >1 values and need the `.hdr` mode —
+    /// future work, fall back for now.
+    static let perceptualInputFormats: Set<UInt> = [
+        MTLPixelFormat.rgba8Unorm.rawValue,
+        MTLPixelFormat.rgba8Unorm_srgb.rawValue,
+        MTLPixelFormat.bgra8Unorm.rawValue,
+        MTLPixelFormat.bgra8Unorm_srgb.rawValue,
+    ]
 
     /// Rejections decidable before a scaler exists (pure, testable). The usage
     /// checks need the scaler's required-usage properties and happen later.
@@ -76,19 +95,20 @@ final class WPEMetalFXSpatialUpscaler {
               sourceWidth < drawableWidth || sourceHeight < drawableHeight,
               sourceWidth > 0, sourceHeight > 0, drawableWidth > 0, drawableHeight > 0
         else { return .sourceExceedsDrawable }
-        // The scaler is a fixed rect→rect scale with no aspect transform.
-        // Stretch always maps full-bleed; fit/fill degenerate to the same
-        // mapping only when the aspects already match, so they get a tighter
-        // tolerance (0.1% ≈ ≤2px letterbox/crop deviation at 4K vs stretch's
-        // invisible 0.5% distortion).
-        let sourceAspect = Double(sourceWidth) / Double(sourceHeight)
-        let drawableAspect = Double(drawableWidth) / Double(drawableHeight)
-        let aspectError = abs(sourceAspect - drawableAspect) / drawableAspect
-        let tolerance = fitMode == .stretch ? 0.005 : 0.001
-        guard aspectError < tolerance else {
-            return fitMode == .stretch ? .aspectMismatch : .fitMode
+        // The scaler is a full-rect → full-rect map, exactly what stretch does,
+        // at any aspect. contain/cover degenerate to it ONLY at an exactly
+        // equal aspect (cross-multiplied, no tolerance: a 1px letterbox the
+        // scaler stretched away is still wrong). center never matches — it
+        // keeps source pixels 1:1 in the middle of the drawable.
+        switch fitMode {
+        case .stretch:
+            return nil
+        case .contain, .cover:
+            return sourceWidth * drawableHeight == sourceHeight * drawableWidth
+                ? nil : .aspectMismatch
+        case .center:
+            return .fitMode
         }
-        return nil
     }
 
     // MARK: - Scaler cache
@@ -103,16 +123,22 @@ final class WPEMetalFXSpatialUpscaler {
     }
 
     private let device: MTLDevice
+    private let library: MTLLibrary
     private let deviceSupported: Bool
     private var cachedScaler: (key: ScalerKey, scaler: MTLFXSpatialScaler)?
-    /// Keys whose creation already failed; never retried (creation is expensive
-    /// and a failing (size, format) combination stays failing).
-    private var failedKeys: Set<ScalerKey> = []
+    /// Creation attempts per failing key. Capped rather than one-shot: a nil
+    /// from `makeSpatialScaler` can be transient resource pressure, so a key
+    /// gets `maxCreationAttempts` tries before it is written off for the session.
+    private var failedAttempts: [ScalerKey: Int] = [:]
+    private static let maxCreationAttempts = 3
+    /// Alpha-fix pipeline per drawable pixel format (in practice one entry).
+    private var alphaFixPipelines: [UInt: MTLRenderPipelineState] = [:]
     private var didLogActivation = false
     private var didLogFallback = false
 
-    init(device: MTLDevice) {
+    init(device: MTLDevice, library: MTLLibrary) {
         self.device = device
+        self.library = library
         deviceSupported = MTLFXSpatialScalerDescriptor.supportsDevice(device)
     }
 
@@ -141,6 +167,10 @@ final class WPEMetalFXSpatialUpscaler {
             noteFallback(.deviceUnsupported, source: source, drawable: drawableTexture)
             return false
         }
+        guard Self.perceptualInputFormats.contains(source.pixelFormat.rawValue) else {
+            noteFallback(.hdrInput, source: source, drawable: drawableTexture)
+            return false
+        }
         let key = ScalerKey(
             inputWidth: source.width,
             inputHeight: source.height,
@@ -149,7 +179,7 @@ final class WPEMetalFXSpatialUpscaler {
             inputFormat: source.pixelFormat.rawValue,
             outputFormat: drawableTexture.pixelFormat.rawValue
         )
-        guard !failedKeys.contains(key) else { return false }
+        guard failedAttempts[key, default: 0] < Self.maxCreationAttempts else { return false }
         let scaler: MTLFXSpatialScaler
         if let cached = cachedScaler, cached.key == key {
             scaler = cached.scaler
@@ -163,7 +193,7 @@ final class WPEMetalFXSpatialUpscaler {
             descriptor.outputTextureFormat = drawableTexture.pixelFormat
             descriptor.colorProcessingMode = .perceptual
             guard let made = descriptor.makeSpatialScaler(device: device) else {
-                failedKeys.insert(key)
+                failedAttempts[key, default: 0] += 1
                 noteFallback(.scalerCreationFailed, source: source, drawable: drawableTexture)
                 return false
             }
@@ -178,11 +208,21 @@ final class WPEMetalFXSpatialUpscaler {
             noteFallback(.usageMismatch, source: source, drawable: drawableTexture)
             return false
         }
+        // The wallpaper window is transparent; the classic present fragment
+        // writes alpha=1 to keep the drawable terminal-opaque, and the scaler
+        // gives no such guarantee. Resolve the alpha-fix pipeline BEFORE
+        // encoding, so a pipeline failure falls back to the classic path
+        // instead of presenting an un-fixed frame.
+        guard let alphaFix = alphaFixPipeline(for: drawableTexture.pixelFormat) else {
+            noteFallback(.scalerCreationFailed, source: source, drawable: drawableTexture)
+            return false
+        }
         scaler.colorTexture = source
         scaler.inputContentWidth = source.width
         scaler.inputContentHeight = source.height
         scaler.outputTexture = drawableTexture
         scaler.encode(commandBuffer: commandBuffer)
+        encodeAlphaFix(pipeline: alphaFix, drawableTexture: drawableTexture, commandBuffer: commandBuffer)
         // Don't let the idle scaler retain a drawable/RT between frames.
         scaler.colorTexture = nil
         scaler.outputTexture = nil
@@ -196,6 +236,41 @@ final class WPEMetalFXSpatialUpscaler {
             )
         }
         return true
+    }
+
+    /// Fullscreen draw with an alpha-only write mask forcing A=1 across the
+    /// drawable after the scaler pass, restoring the present fragment's
+    /// terminal-opacity contract at negligible bandwidth (RGB lanes masked off).
+    private func alphaFixPipeline(for format: MTLPixelFormat) -> MTLRenderPipelineState? {
+        if let cached = alphaFixPipelines[format.rawValue] { return cached }
+        guard let vertex = library.makeFunction(name: "wpe_fullscreen_vertex"),
+              let fragment = library.makeFunction(name: "wpe_solidcolor_fragment") else { return nil }
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = vertex
+        descriptor.fragmentFunction = fragment
+        descriptor.colorAttachments[0].pixelFormat = format
+        descriptor.colorAttachments[0].isBlendingEnabled = false
+        descriptor.colorAttachments[0].writeMask = .alpha
+        guard let state = try? device.makeRenderPipelineState(descriptor: descriptor) else { return nil }
+        alphaFixPipelines[format.rawValue] = state
+        return state
+    }
+
+    private func encodeAlphaFix(
+        pipeline: MTLRenderPipelineState,
+        drawableTexture: MTLTexture,
+        commandBuffer: MTLCommandBuffer
+    ) {
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = drawableTexture
+        pass.colorAttachments[0].loadAction = .load
+        pass.colorAttachments[0].storeAction = .store
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
+        encoder.setRenderPipelineState(pipeline)
+        var uniforms = WPESolidUniforms(color: SIMD4<Float>(0, 0, 0, 1))
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESolidUniforms>.stride, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
     }
 
     private func noteFallback(_ reason: FallbackReason, source: MTLTexture, drawable: MTLTexture) {
