@@ -103,6 +103,9 @@ struct ColorAdjustmentsView: View {
         )
     }
 
+    /// Coalesced: `effectBinding`'s setter persists the config and rebuilds the
+    /// display's `CIFilter` chain, which is not something to do once per
+    /// gesture sample.
     private func effectSlider(
         title: LocalizedStringKey,
         value: Binding<Double>,
@@ -116,15 +119,21 @@ struct ColorAdjustmentsView: View {
                 .truncationMode(.tail)
                 .frame(width: 90, alignment: .leading)
 
-            Slider(value: value, in: range)
-                .controlSize(.small)
-                .accessibilityLabel(Text(title))
-                .accessibilityValue(Text(verbatim: String(format: format, value.wrappedValue)))
-
-            Text(verbatim: String(format: format, value.wrappedValue))
-                .font(DesignTokens.Typography.metric)
-                .foregroundStyle(.secondary)
-                .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+            CoalescedSlider(
+                value: value.wrappedValue,
+                in: range,
+                owner: screen.id,
+                sizing: .flexible(minimum: 0, maximum: .infinity),
+                accessibilityLabel: Text(title),
+                accessibilityValue: { Text(verbatim: String(format: format, $0)) },
+                write: { value.wrappedValue = $0 },
+                readout: { live in
+                    Text(verbatim: String(format: format, live))
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                        .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+                }
+            )
         }
     }
 }

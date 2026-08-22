@@ -398,24 +398,26 @@ struct HTMLTransformInspector: View {
             title: "Scale",
             info: "Scales the rendered page around its center."
         ) {
-            HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
-                Slider(
-                    value: configDoubleBinding(
-                        \.transformScale,
-                        epsilon: 0.001,
-                        clamp: HTMLConfig.clampedTransformScale
-                    ),
-                    in: HTMLConfig.minTransformScale...HTMLConfig.maxTransformScale
-                )
-                .controlSize(.small)
-                .frame(width: DesignTokens.Inspector.sliderWidth)
-                .accessibilityLabel(Text("Scale"))
-
-                Text(verbatim: String(format: "%.0f%%", config.transformScale * 100))
-                    .font(DesignTokens.Typography.metric)
-                    .foregroundStyle(.secondary)
-                    .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
-            }
+            // Coalesced: `applyConfigChange` persists the config and pushes it to
+            // the live `WKWebView` session on every write.
+            CoalescedSlider(
+                value: config.transformScale,
+                in: HTMLConfig.minTransformScale...HTMLConfig.maxTransformScale,
+                owner: transformOwner,
+                accessibilityLabel: Text("Scale"),
+                accessibilityValue: { Text(verbatim: String(format: "%.0f%%", $0 * 100)) },
+                write: { configDoubleBinding(
+                    \.transformScale,
+                    epsilon: 0.001,
+                    clamp: HTMLConfig.clampedTransformScale
+                ).wrappedValue = $0 },
+                readout: { live in
+                    Text(verbatim: String(format: "%.0f%%", live * 100))
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                        .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+                }
+            )
         }
     }
 
@@ -470,27 +472,31 @@ struct HTMLTransformInspector: View {
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
 
-            Slider(
-                value: sliderValue,
-                in: -HTMLConfig.maxTransformTranslate...HTMLConfig.maxTransformTranslate
+            // The field is the readout here, so it follows the drag from the
+            // slider's own state; typing into it still writes straight through.
+            CoalescedSlider(
+                value: sliderValue.wrappedValue,
+                in: -HTMLConfig.maxTransformTranslate...HTMLConfig.maxTransformTranslate,
+                owner: transformOwner,
+                accessibilityLabel: Text(accessibilityLabel),
+                accessibilityValue: { Text(verbatim: String(format: "%.0f", $0)) },
+                write: { sliderValue.wrappedValue = $0 },
+                readout: { live in
+                    TextField(
+                        "",
+                        value: Binding(get: { live }, set: { fieldValue.wrappedValue = $0 }),
+                        format: .number.precision(.fractionLength(0))
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(DesignTokens.Typography.metric)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.trailing)
+                    .monospacedDigit()
+                    .frame(width: 56)
+                    .accessibilityLabel(Text(accessibilityLabel))
+                    .accessibilityHint(Text("Type a value in CSS pixels."))
+                }
             )
-            .controlSize(.small)
-            .frame(width: DesignTokens.Inspector.sliderWidth)
-            .accessibilityLabel(Text(accessibilityLabel))
-
-            TextField(
-                "",
-                value: fieldValue,
-                format: .number.precision(.fractionLength(0))
-            )
-            .textFieldStyle(.roundedBorder)
-            .font(DesignTokens.Typography.metric)
-            .foregroundStyle(.primary)
-            .multilineTextAlignment(.trailing)
-            .monospacedDigit()
-            .frame(width: 56)
-            .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(Text("Type a value in CSS pixels."))
         }
     }
 
@@ -503,24 +509,24 @@ struct HTMLTransformInspector: View {
             title: "Rotation",
             info: "Rotates the rendered page around its center."
         ) {
-            HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
-                Slider(
-                    value: configDoubleBinding(
-                        \.transformRotationDegrees,
-                        epsilon: 0.1,
-                        clamp: HTMLConfig.clampedTransformRotation
-                    ),
-                    in: -180...180
-                )
-                .controlSize(.small)
-                .frame(width: DesignTokens.Inspector.sliderWidth)
-                .accessibilityLabel(Text("Rotation"))
-
-                Text(verbatim: String(format: "%.0f°", config.transformRotationDegrees))
-                    .font(DesignTokens.Typography.metric)
-                    .foregroundStyle(.secondary)
-                    .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
-            }
+            CoalescedSlider(
+                value: config.transformRotationDegrees,
+                in: -180...180,
+                owner: transformOwner,
+                accessibilityLabel: Text("Rotation"),
+                accessibilityValue: { Text(verbatim: String(format: "%.0f°", $0)) },
+                write: { configDoubleBinding(
+                    \.transformRotationDegrees,
+                    epsilon: 0.1,
+                    clamp: HTMLConfig.clampedTransformRotation
+                ).wrappedValue = $0 },
+                readout: { live in
+                    Text(verbatim: String(format: "%.0f°", live))
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                        .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+                }
+            )
         }
     }
 
@@ -541,6 +547,10 @@ struct HTMLTransformInspector: View {
         config = next
         screenManager.updateHTMLConfig(next, for: screen)
     }
+
+    /// A pending transform commit belongs to one display's config; the section
+    /// is reused when the inspector moves.
+    private var transformOwner: String { "\(screen.id)" }
 
     // MARK: - Bindings
 

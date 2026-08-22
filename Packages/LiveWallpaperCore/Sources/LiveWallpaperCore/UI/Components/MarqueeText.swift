@@ -54,29 +54,25 @@ public struct MarqueeText: View {
             .lineLimit(lineLimit, reservesSpace: true)
             .opacity(0)
             .accessibilityHidden(true)
-            .background(measure(WindowHeightKey.self))
+            // `onGeometryChange` rather than `GeometryReader` + `PreferenceKey`:
+            // a grid page carries one of these per card, and this reports the
+            // height only when it changes instead of reducing a preference on
+            // every layout pass. macOS 13+, so no availability gate.
+            .onGeometryChange(for: CGFloat.self, of: \.size.height) { windowHeight = $0 }
             .overlay(alignment: .top) {
                 Text(verbatim: text)
                     // Wraps at the base's width and grows downward; the base
                     // still owns the layout, so nothing here can widen the card.
                     .fixedSize(horizontal: false, vertical: true)
-                    .background(measure(ContentHeightKey.self))
+                    .onGeometryChange(for: CGFloat.self, of: \.size.height) { contentHeight = $0 }
                     .offset(y: offset)
                     .accessibilityHidden(true)
             }
             .clipped()
-            .onPreferenceChange(WindowHeightKey.self) { windowHeight = $0 }
-            .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
             .onChange(of: plan) { _, _ in restart() }
             .onChange(of: text) { _, _ in offset = 0 }
             .accessibilityElement()
             .accessibilityLabel(Text(verbatim: text))
-    }
-
-    private func measure<K: PreferenceKey>(_ key: K.Type) -> some View where K.Value == CGFloat {
-        GeometryReader { proxy in
-            Color.clear.preference(key: key, value: proxy.size.height)
-        }
     }
 
     private func restart() {
@@ -93,19 +89,5 @@ public struct MarqueeText: View {
         ) {
             offset = -overflow
         }
-    }
-}
-
-private struct WindowHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct ContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }

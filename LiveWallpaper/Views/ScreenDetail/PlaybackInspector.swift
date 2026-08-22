@@ -133,26 +133,42 @@ struct PlaybackInspector: View {
     private static let audioDeadZone: Double = 0.04
 
     private var audioRow: some View {
-        let mutedBinding = audioMutedBinding
-        let isMuted = mutedBinding.wrappedValue
-        let percent = videoVolumePercent
+        // The readout follows the drag; this icon follows the committed value, so
+        // mid-drag it can lag the word next to it by up to one quiet window.
+        // Deliberate: the icon is a parameter of `SettingRow`, so making it live
+        // means re-rendering this row on every gesture sample — which is the
+        // cost the coalescing exists to remove, spent to fix a transient
+        // cosmetic mismatch.
+        let isMuted = audioMutedBinding.wrappedValue
         return SettingRow(
             icon: isMuted ? "speaker.slash" : "speaker.wave.2",
             iconColor: isMuted ? .secondary : .blue,
             title: "Audio"
         ) {
-            HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
-                Slider(value: unifiedAudioBinding, in: 0...1)
-                    .controlSize(.small)
-                    .frame(width: DesignTokens.Inspector.sliderWidth)
-                    .accessibilityLabel(Text("Audio"))
-                    .accessibilityValue(audioAccessibilityValue(isMuted: isMuted, percent: percent))
-
-                audioLevelLabel(isMuted: isMuted, percent: percent)
-                    .font(DesignTokens.Typography.metric)
-                    .foregroundStyle(.secondary)
-                    .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
-            }
+            // Coalesced: the binding writes the draft and, for HTML wallpapers,
+            // reaches the live session on every sample.
+            CoalescedSlider(
+                value: unifiedAudioBinding.wrappedValue,
+                in: 0...1,
+                owner: screen.id,
+                accessibilityLabel: Text("Audio"),
+                accessibilityValue: { live in
+                    audioAccessibilityValue(
+                        isMuted: Self.audioIsMuted(atSliderValue: live),
+                        percent: Self.audioPercent(atSliderValue: live)
+                    )
+                },
+                write: { unifiedAudioBinding.wrappedValue = $0 },
+                readout: { live in
+                    audioLevelLabel(
+                        isMuted: Self.audioIsMuted(atSliderValue: live),
+                        percent: Self.audioPercent(atSliderValue: live)
+                    )
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                        .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+                }
+            )
         }
     }
 
@@ -361,6 +377,20 @@ struct PlaybackInspector: View {
                 screenManager.updateMuted(newValue, for: screen)
             }
         )
+    }
+
+    /// The track is not a plain 0…1 volume: the bottom `audioDeadZone` of it is
+    /// the mute region, and the rest is remapped onto the volume. The readout
+    /// follows the drag from the slider's own state, so it has to undo the same
+    /// mapping `unifiedAudioBinding.set` applies — reading it as a raw
+    /// percentage showed the wrong number and muted at the wrong point.
+    static func audioIsMuted(atSliderValue value: Double) -> Bool {
+        value <= audioDeadZone
+    }
+
+    static func audioPercent(atSliderValue value: Double) -> Int {
+        let normalized = (value - audioDeadZone) / (1 - audioDeadZone)
+        return Int((clampedVolume(normalized) * 100).rounded())
     }
 
     private var unifiedAudioBinding: Binding<Double> {
