@@ -148,11 +148,17 @@ struct InstalledView: View {
         if model.entries.isEmpty {
             emptyState
         } else {
+            // Read once. `visibleEntries` filters and then ICU-sorts the whole
+            // library on every access, and this body used to reach for it three
+            // times — once for the count, once to test emptiness, once for the
+            // grid — so a single keystroke in the search field paid for it three
+            // times over.
+            let visibleEntries = model.visibleEntries
             VStack(spacing: 0) {
                 LibraryFilterBar(
                     searchText: $model.searchText,
                     searchPrompt: "Search library",
-                    resultCount: model.visibleEntries.count,
+                    resultCount: visibleEntries.count,
                     totalCount: model.entries.count
                 ) {
                     HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
@@ -182,14 +188,14 @@ struct InstalledView: View {
                     importingBanner
                 }
 
-                gallery
+                gallery(visibleEntries)
             }
         }
     }
 
     @ViewBuilder
-    private var gallery: some View {
-        if model.visibleEntries.isEmpty {
+    private func gallery(_ visibleEntries: [WPEHistoryEntry]) -> some View {
+        if visibleEntries.isEmpty {
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -203,7 +209,7 @@ struct InstalledView: View {
                         .padding(.top, DesignTokens.Spacing.sm)
                 }
                 LazyVGrid(columns: DesignTokens.LibraryGrid.columns, spacing: DesignTokens.LibraryGrid.spacing) {
-                    ForEach(model.visibleEntries, id: \.id) { entry in
+                    ForEach(visibleEntries, id: \.id) { entry in
                         let bookmarked = bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID)
                         HistoryRow(
                             entry: entry,

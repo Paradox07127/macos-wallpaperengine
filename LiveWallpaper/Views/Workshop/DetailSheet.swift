@@ -15,9 +15,12 @@ struct WorkshopInspectorContent: View {
     @Environment(ScreenManager.self) private var screenManager
     @State private var installedEntry: WPEHistoryEntry?
 
-    @AppStorage("loomscreen.workshop.blurMatureThumbnails.v1", store: .appScoped()) private var blurMatureThumbnails = true
-    /// One-time 18+ confirmation, shared with the grid card via `@AppStorage`.
-    @AppStorage("loomscreen.workshop.matureContentConfirmed.v1", store: .appScoped()) private var matureConfirmed = false
+    /// Named constants, not literals: the grid card reads the same two keys
+    /// through `MatureContentSettings`, and a typo here would silently give the
+    /// detail view its own private spoiler setting.
+    @AppStorage(MatureContentSettings.blursThumbnails, store: .appScoped()) private var blurMatureThumbnails = true
+    /// One-time 18+ confirmation, shared with the grid card.
+    @AppStorage(MatureContentSettings.confirmed, store: .appScoped()) private var matureConfirmed = false
     @State private var matureRevealed = false
     @State private var showingAgeConfirm = false
     @State private var showingApplyPopover = false
@@ -96,7 +99,7 @@ struct WorkshopInspectorContent: View {
     // MARK: - Hero
 
     private var hero: some View {
-        AnimatedGIFThumbnail(url: item.previewImageURL, playbackMode: .autoPlay, isBlurred: shouldBlurHero)
+        AnimatedGIFThumbnail(url: item.previewImageURL, playbackMode: .autoPlay, previewSize: .hero, isBlurred: shouldBlurHero)
             .aspectRatio(1, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
             .overlay {

@@ -15,6 +15,57 @@ public enum CardBadgeSettings {
     public static let typeStyle = "loomscreen.cards.badge.typeStyle.v1"
 }
 
+/// The card-chrome defaults resolved once for a whole grid.
+///
+/// These used to be `@AppStorage` on the card itself. Each one installs a KVO
+/// observation on the defaults suite when its view is installed, so a 50-tile
+/// Workshop page registered — and, as tiles recycled under the scroller,
+/// repeatedly re-registered — hundreds of them. Reading them once per pane and
+/// handing the result down through the environment costs each card nothing.
+public struct GalleryCardPreferences: Equatable, Sendable {
+    public var showsRating: Bool
+    public var showsType: Bool
+    public var showsResolution: Bool
+    public var showsInLibrary: Bool
+    public var showsUpdate: Bool
+    public var showsInUse: Bool
+    public var typeStyle: CardTypeBadgeStyle
+    public var blursMatureThumbnails: Bool
+
+    public init(
+        showsRating: Bool = true,
+        showsType: Bool = true,
+        showsResolution: Bool = true,
+        showsInLibrary: Bool = true,
+        showsUpdate: Bool = true,
+        showsInUse: Bool = true,
+        typeStyle: CardTypeBadgeStyle = .icon,
+        blursMatureThumbnails: Bool = true
+    ) {
+        self.showsRating = showsRating
+        self.showsType = showsType
+        self.showsResolution = showsResolution
+        self.showsInLibrary = showsInLibrary
+        self.showsUpdate = showsUpdate
+        self.showsInUse = showsInUse
+        self.typeStyle = typeStyle
+        self.blursMatureThumbnails = blursMatureThumbnails
+    }
+}
+
+private struct GalleryCardPreferencesKey: EnvironmentKey {
+    /// Matches every `@AppStorage` default these replaced, so a card rendered
+    /// outside a pane that publishes them still looks shipped-correct.
+    static let defaultValue = GalleryCardPreferences()
+}
+
+public extension EnvironmentValues {
+    var galleryCardPreferences: GalleryCardPreferences {
+        get { self[GalleryCardPreferencesKey.self] }
+        set { self[GalleryCardPreferencesKey.self] = newValue }
+    }
+}
+
 /// How the type badge renders. `icon` is the default because a worded pill plus
 /// the rating pill takes most of a thumbnail's top edge at grid widths.
 public enum CardTypeBadgeStyle: String, CaseIterable, Identifiable, Sendable {

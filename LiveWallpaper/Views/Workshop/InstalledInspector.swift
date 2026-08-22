@@ -114,7 +114,8 @@ struct WPEInstalledInspectorContent: View {
         WPEPreviewView(
             imageURL: entry.origin.sourcePreviewURL,
             securityScopedBookmarkData: entry.origin.sourceFolderBookmark,
-            playbackMode: .hoverToPlay
+            playbackMode: .hoverToPlay,
+            previewSize: .tile
         )
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))

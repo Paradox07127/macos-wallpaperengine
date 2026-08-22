@@ -103,12 +103,45 @@ private struct FloatingGlyphGlassModifier: ViewModifier {
     }
 }
 
+/// Whether badges floating over artwork use real Liquid Glass, or the cheap
+/// tinted fill.
+///
+/// Glass samples the content *behind* it every frame. One badge on a detail hero
+/// is exactly what the material is for; forty cards' worth scrolling past is not
+/// — Apple's own guidance is to limit how many glass effects are on screen at
+/// once and to reserve the material for the most important controls rather than
+/// ordinary content metadata. `GalleryTileChrome` therefore switches every card
+/// that scrolls in a gallery to `.opaque`, and the detail and inspector surfaces
+/// keep the default.
+public enum ThumbnailBadgeSurface: Sendable {
+    case glass
+    case opaque
+}
+
+private struct ThumbnailBadgeSurfaceKey: EnvironmentKey {
+    static let defaultValue = ThumbnailBadgeSurface.glass
+}
+
+public extension EnvironmentValues {
+    var thumbnailBadgeSurface: ThumbnailBadgeSurface {
+        get { self[ThumbnailBadgeSurfaceKey.self] }
+        set { self[ThumbnailBadgeSurfaceKey.self] = newValue }
+    }
+}
+
+public extension View {
+    func thumbnailBadgeSurface(_ surface: ThumbnailBadgeSurface) -> some View {
+        environment(\.thumbnailBadgeSurface, surface)
+    }
+}
+
 private struct ThumbnailBadgeGlassModifier: ViewModifier {
     let tint: Color
     let opacity: Double
     var shape: AdaptiveGlassShape = .capsule
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.thumbnailBadgeSurface) private var surface
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -126,11 +159,13 @@ private struct ThumbnailBadgeGlassModifier: ViewModifier {
     private func backing<S: InsettableShape>(_ content: Content, _ shape: S) -> some View {
         if reduceTransparency {
             content.background(shape.fill(tint.opacity(1)))
-        } else if #available(macOS 26.0, *) {
+        } else if #available(macOS 26.0, *), surface == .glass {
             // Native glass already blurs + refracts; a lighter tint than the
             // fallback keeps the badge legible without going muddy.
             content.glassEffect(.regular.tint(tint.opacity(opacity * 0.6)), in: shape)
         } else {
+            // Also the `.opaque` path on macOS 26: a plain tinted fill with a
+            // hairline, which is what every badge already looks like on 14/15.
             content.background {
                 shape
                     .fill(tint.opacity(opacity))

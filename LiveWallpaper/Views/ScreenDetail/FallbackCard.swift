@@ -40,7 +40,8 @@ struct FallbackCard: View {
         VStack(spacing: 24) {
             WPEPreviewView(
                 imageURL: origin.sourcePreviewURL,
-                securityScopedBookmarkData: origin.sourceFolderBookmark
+                securityScopedBookmarkData: origin.sourceFolderBookmark,
+                previewSize: .tile
             )
                 .frame(width: 280)
                 .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous))

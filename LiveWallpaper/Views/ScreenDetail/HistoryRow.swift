@@ -39,11 +39,9 @@ struct HistoryRow: View {
     @State private var isHovering = false
     @State private var resolutionLabel: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsTypeBadge = true
-    @AppStorage(CardBadgeSettings.showsResolution, store: .appScoped()) private var showsResolutionBadge = true
-    @AppStorage(CardBadgeSettings.showsUpdate, store: .appScoped()) private var showsUpdateBadge = true
-    @AppStorage(CardBadgeSettings.showsInUse, store: .appScoped()) private var showsInUseBadge = true
-    @AppStorage(CardBadgeSettings.typeStyle, store: .appScoped()) private var typeBadgeStyle: CardTypeBadgeStyle = .icon
+    /// Read once per pane and handed down, not five `@AppStorage` per tile —
+    /// see `GalleryCardPreferences`.
+    @Environment(\.galleryCardPreferences) private var cardPreferences
 
     var body: some View {
         cardContainer
@@ -93,12 +91,13 @@ struct HistoryRow: View {
             WPEPreviewView(
                 imageURL: entry.origin.sourcePreviewURL,
                 securityScopedBookmarkData: entry.origin.sourceFolderBookmark,
-                playbackMode: .hoverToPlay
+                playbackMode: .hoverToPlay,
+                previewSize: .tile
             )
             .overlay(alignment: .topTrailing) {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
-                        if let resolutionLabel, showsResolutionBadge {
+                        if let resolutionLabel, cardPreferences.showsResolution {
                             resolutionPill(resolutionLabel)
                         }
                         if let badge = compatibilityBadge {
@@ -116,8 +115,8 @@ struct HistoryRow: View {
             .overlay(alignment: .topLeading) {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
-                        if showsTypeBadge { typePill }
-                        if hasUpdate, showsUpdateBadge { updateBadge }
+                        if cardPreferences.showsType { typePill }
+                        if hasUpdate, cardPreferences.showsUpdate { updateBadge }
                     }
                 }
                 .padding(DesignTokens.Spacing.sm)
@@ -127,7 +126,7 @@ struct HistoryRow: View {
             // overlay and would now be buried under the band.
             .overlay(alignment: .bottom) {
                 ThumbnailTitleBand(title: entry.origin.title, isHovering: isHovering) {
-                    if isActive, showsInUseBadge {
+                    if isActive, cardPreferences.showsInUse {
                         ThumbnailPresenceCheck()
                             .accessibilityLabel(Text("In use"))
                     }
@@ -202,7 +201,7 @@ struct HistoryRow: View {
         ThumbnailTypeBadge(
             systemImage: entry.origin.originalType.symbolName,
             title: entry.origin.localizedDisplayTypeName,
-            style: typeBadgeStyle
+            style: cardPreferences.typeStyle
         )
     }
 

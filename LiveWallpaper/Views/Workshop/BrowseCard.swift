@@ -4,29 +4,46 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Grid card for the online browse view.
-struct BrowseCard: View {
+///
+/// `Equatable` so a parent state change that says nothing about this card — the
+/// pager's rate-limit countdown, another card's selection — cannot re-run its
+/// body. Without it SwiftUI had no choice: the parent hands every card a fresh
+/// `onSelect` closure on each pass, and a closure never compares equal.
+///
+/// Ignoring the closures in `==` is what makes that work, and is safe: they read
+/// `@State` through its storage box, not through a snapshot of the parent
+/// struct, so a stale one still sees current values.
+struct BrowseCard: View, Equatable {
+    nonisolated static func == (lhs: BrowseCard, rhs: BrowseCard) -> Bool {
+        lhs.item == rhs.item
+            && lhs.isInLibrary == rhs.isInLibrary
+            && lhs.isSelected == rhs.isSelected
+            && lhs.cardPreferences == rhs.cardPreferences
+            && lhs.reduceMotion == rhs.reduceMotion
+    }
+
     let item: WorkshopQueryItem
     var isInLibrary: Bool = false
     var isSelected: Bool = false
+    /// Read once per pane and handed down, not six `@AppStorage` per tile —
+    /// see `GalleryCardPreferences`.
+    ///
+    /// Passed in rather than read from the environment here: `EquatableView`
+    /// short-circuits `body`, and an environment value read *inside* body would
+    /// then go stale — turning on Reduce Motion with the grid open would leave
+    /// every tile animating until something else happened to change.
+    let cardPreferences: GalleryCardPreferences
+    let reduceMotion: Bool
     var onSelect: () -> Void = {}
 
     @State private var isHovered = false
     /// Ephemeral by design — recreated tiles (paging, filter change, relaunch) blur again.
     @State private var matureRevealed = false
     @State private var showingAgeConfirm = false
-    @AppStorage("loomscreen.workshop.blurMatureThumbnails.v1", store: .appScoped()) private var blurMatureThumbnails = true
-    /// One-time 18+ confirmation, shared with the detail inspector via `@AppStorage`.
-    @AppStorage("loomscreen.workshop.matureContentConfirmed.v1", store: .appScoped()) private var matureConfirmed = false
-    @AppStorage(CardBadgeSettings.showsRating, store: .appScoped()) private var showsRatingBadge = true
-    @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsTypeBadge = true
-    @AppStorage(CardBadgeSettings.showsResolution, store: .appScoped()) private var showsResolutionBadge = true
-    @AppStorage(CardBadgeSettings.showsInLibrary, store: .appScoped()) private var showsInLibraryBadge = true
-    @AppStorage(CardBadgeSettings.typeStyle, store: .appScoped()) private var typeBadgeStyle: CardTypeBadgeStyle = .icon
     @Environment(\.openURL) private var openURL
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var shouldBlur: Bool {
-        blurMatureThumbnails && item.isMatureRated && !matureRevealed
+        cardPreferences.blursMatureThumbnails && item.isMatureRated && !matureRevealed
     }
 
     var body: some View {
@@ -54,7 +71,7 @@ struct BrowseCard: View {
         .alert("Show mature content?", isPresented: $showingAgeConfirm) {
             Button(role: .cancel) {} label: { Text("Cancel") }
             Button(role: .destructive) {
-                matureConfirmed = true
+                MatureContentSettings.confirm()
                 matureRevealed = true
             } label: {
                 Text("I am 18 or older")
@@ -66,7 +83,7 @@ struct BrowseCard: View {
 
     /// Gated by a one-time 18+ confirmation (remembered across the app once accepted).
     private func requestReveal() {
-        if matureConfirmed {
+        if MatureContentSettings.isConfirmed {
             matureRevealed = true
         } else {
             showingAgeConfirm = true
@@ -91,10 +108,10 @@ struct BrowseCard: View {
             if !shouldBlur {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
-                        if let contentType, showsTypeBadge {
+                        if let contentType, cardPreferences.showsType {
                             typePill(contentType)
                         }
-                        if let rating = ratingValue, showsRatingBadge {
+                        if let rating = ratingValue, cardPreferences.showsRating {
                             ratingPill(rating)
                         }
                     }
@@ -103,7 +120,7 @@ struct BrowseCard: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if let resolutionLabel, !shouldBlur, showsResolutionBadge {
+            if let resolutionLabel, !shouldBlur, cardPreferences.showsResolution {
                 resolutionPill(resolutionLabel)
                     .padding(DesignTokens.Spacing.sm)
             }
@@ -124,7 +141,7 @@ struct BrowseCard: View {
         ThumbnailTypeBadge(
             systemImage: Self.typeSymbol(for: type),
             title: type.displayName,
-            style: typeBadgeStyle
+            style: cardPreferences.typeStyle
         )
     }
 
@@ -152,7 +169,7 @@ struct BrowseCard: View {
                     .accessibilityHidden(true)
             }
         } trailing: {
-            if isInLibrary, showsInLibraryBadge {
+            if isInLibrary, cardPreferences.showsInLibrary {
                 ThumbnailPresenceCheck(tint: Self.inLibraryGreen)
             }
         }

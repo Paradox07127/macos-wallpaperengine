@@ -77,16 +77,121 @@ struct WorkshopAnimatedGIFDecodeTests {
         #expect(!WorkshopAnimatedGIF.isWithinPixelBudget(width: Int.max, height: Int.max, frameCount: Int.max))
     }
 
+    @Test("Grid decode is capped at the tile size, frames included")
+    func tileDecodeIsCapped() throws {
+        let data = GIFTestFixtures.gif(width: 1600, height: 900, frameCount: 3, delay: 0.1)
+        let asset = try #require(WorkshopAnimatedGIF.make(from: data, size: .tile))
+        guard case .animatedGIF(let gif) = asset else {
+            Issue.record("Expected .animatedGIF, got \(asset)")
+            return
+        }
+        let cap = WorkshopPreviewSize.tile.maxPixelSize
+        #expect(max(gif.posterFrame.width, gif.posterFrame.height) <= cap)
+        // Playback frames take the same path — a hovered tile must not start
+        // decoding 1600×900 thirty times a second.
+        let frame = try #require(gif.frame(at: 1))
+        #expect(max(frame.width, frame.height) <= cap)
+    }
+
+    @Test("The hero tier decodes larger than the tile tier from the same bytes")
+    func heroDecodesLargerThanTile() throws {
+        let data = GIFTestFixtures.gif(width: 1600, height: 900, frameCount: 2, delay: 0.1)
+        let tile = try #require(WorkshopAnimatedGIF.make(from: data, size: .tile))
+        let hero = try #require(WorkshopAnimatedGIF.make(from: data, size: .hero))
+        #expect(hero.posterFrame.width > tile.posterFrame.width)
+        #expect(max(hero.posterFrame.width, hero.posterFrame.height) <= WorkshopPreviewSize.hero.maxPixelSize)
+    }
+
+    @Test("Installed-side previews decode at the shared pixel cap, frames included")
+    func installedDecodeIsCapped() throws {
+        // Over the cap but inside the decoded-pixel budget, so this exercises
+        // the animated branch rather than the degrade-to-poster one.
+        let data = GIFTestFixtures.gif(width: 2400, height: 1200, frameCount: 3, delay: 0.1)
+        let cap = WPEPreviewSize.tile.maxPixelSize
+        let decoded = try #require(WPEPreviewDecodedImage.decode(data, maxPixelSize: cap))
+        #expect(max(decoded.posterFrame.width, decoded.posterFrame.height) <= cap)
+        #expect(decoded.frameCount == 3)
+        let frame = try #require(decoded.frame(at: 1))
+        #expect(max(frame.width, frame.height) <= cap)
+    }
+
+    @Test("The installed preview path decodes off the main thread, not in updateNSView")
+    func installedPreviewDecodesOffMain() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
+        // The whole point of the decoded cache: a hit must not re-decode.
+        #expect(source.contains("NSCache<NSString, WPEPreviewDecodedImage>"))
+        #expect(!source.contains("func setImage(data:"))
+        #expect(source.contains("kCGImageSourceShouldCacheImmediately: true"))
+    }
+
+    @Test("A preview regenerated at the same path is not served from the cache")
+    func previewCacheKeyCarriesModificationDate() throws {
+        // A Workshop update rewrites `preview.jpg` in place. Keyed by URL alone,
+        // the 256-entry decoded cache hands back the pre-update pixels for the
+        // rest of the session — nothing else on this path invalidates it, and
+        // `loadAttempt` only advances when the reader taps the retry badge.
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
+        #expect(source.contains("contentModificationDateKey"))
+        #expect(!source.contains(#""\(previewSize.maxPixelSize)|\(url.absoluteString)""#))
+        // A URL whose date cannot be read yields no key, and an entry nothing
+        // can invalidate must not be written at all.
+        #expect(source.contains("size: WPEPreviewSize) -> NSString?"))
+        #expect(source.contains("if let cacheKey {"))
+    }
+
+    @Test("The pane tier decodes larger than the tile tier")
+    func paneDecodesLargerThanTile() throws {
+        // The detail pane takes `aspectRatio: nil` and fills the window; capping
+        // it at the tile size would upscale a poster that used to be sharp.
+        let data = GIFTestFixtures.gif(width: 2400, height: 1200, frameCount: 2, delay: 0.1)
+        let tile = try #require(WPEPreviewDecodedImage.decode(data, maxPixelSize: WPEPreviewSize.tile.maxPixelSize))
+        let pane = try #require(WPEPreviewDecodedImage.decode(data, maxPixelSize: WPEPreviewSize.pane.maxPixelSize))
+        #expect(pane.posterFrame.width > tile.posterFrame.width)
+        #expect(WPEPreviewSize.pane.maxPixelSize > WPEPreviewSize.tile.maxPixelSize)
+    }
+
+    @Test("The animation budget is priced against decoded frames, not the source")
+    func animationBudgetFollowsDecodedSize() throws {
+        // 1920×1080 × 20 frames is ~166 MB of source-sized RGBA, over the 96 MB
+        // budget — so this used to fall back to a still even though the frames
+        // playback decodes are capped at 800 px (~23 MB for all twenty).
+        let data = GIFTestFixtures.gif(width: 1920, height: 1080, frameCount: 20, delay: 0.1)
+        #expect(!WPEPreviewImageDecodeBudget.isWithinPixelBudget(width: 1920, height: 1080, frameCount: 20))
+
+        let decoded = try #require(WPEPreviewDecodedImage.decode(data, maxPixelSize: WPEPreviewSize.tile.maxPixelSize))
+        #expect(decoded.frameCount == 20)
+        #expect(try #require(decoded.frame(at: 5)).width <= WPEPreviewSize.tile.maxPixelSize)
+    }
+
+    @Test("A shared preview load is unregistered by identity, not by key")
+    func inflightLoadsAreRetiredByIdentity() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Infrastructure/Workshop/WorkshopPreviewImageLoader.swift"
+        )
+        // A cancelled load finishes after its replacement has been registered.
+        // Removing by key alone unregistered the live one, which then could not
+        // be cancelled and made the next tile re-download the same bytes.
+        #expect(source.contains("guard assetInflight[cacheKey] === load else { return }"))
+        #expect(!source.contains("defer { self?.assetInflight.removeValue(forKey: cacheKey) }"))
+        #expect(source.contains("private func dropWaiter(_ load: InflightLoad, forKey cacheKey: String)"))
+    }
+
     @Test("Workshop preview cache has one count-and-cost bounded owner")
     func previewCacheIsUnifiedAndBounded() throws {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Infrastructure/Workshop/WorkshopPreviewImageLoader.swift"
         )
 
-        #expect(source.contains("NSCache<NSURL, CachedWorkshopPreviewAsset>"))
+        #expect(source.contains("NSCache<NSString, CachedWorkshopPreviewAsset>"))
+        // The key carries the decode size, or the grid's small poster would be
+        // served to the detail hero (and vice versa).
+        #expect(source.contains(#"let cacheKey = "\(size.rawValue)|\(url.absoluteString)""#))
+        // Abandoned tiles must stop their download, not run it to completion.
+        #expect(source.contains("load.task.cancel()"))
+        #expect(source.contains("PreviewWorkGate.shared.run"))
         #expect(source.contains("assetCache.countLimit = Self.cacheCountLimit"))
         #expect(source.contains("assetCache.totalCostLimit = Self.cacheCostLimit"))
-        #expect(source.contains("cost: result.estimatedCacheCost"))
+        #expect(source.contains("cost: cached.estimatedCacheCost"))
         #expect(!source.contains("private var cache: [URL: NSImage]"))
         #expect(!source.contains("private var assetCache: [URL: WorkshopPreviewAsset]"))
     }
