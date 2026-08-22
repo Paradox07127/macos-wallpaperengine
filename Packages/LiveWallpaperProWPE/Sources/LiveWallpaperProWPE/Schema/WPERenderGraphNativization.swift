@@ -1,12 +1,7 @@
 import Foundation
 
-/// Load-time localization of parsed strings into native, contiguous-UTF8 Swift
-/// strings. Scene JSON is parsed with `JSONSerialization` and several builder
-/// paths use `NSString` path APIs; both can hand back lazily-bridged NSStrings
-/// (escape-containing or non-ASCII JSON scalars, `NSPathStore2` path results)
-/// whose every per-frame hash/compare re-transcodes UTF-16
-/// (`_foreignSubscript` / `_withNFCCodeUnits` in Release samples). One pass at
-/// graph-build time makes every hot string cheap for the renderer.
+/// Load-time `makeContiguousUTF8()` so per-frame hash/compare does not
+/// re-transcode lazily-bridged NSStrings from JSONSerialization / NSPathStore2.
 @inline(__always)
 public func wpeNativized(_ string: String) -> String {
     var value = string
@@ -65,8 +60,7 @@ extension WPERenderFBO {
 }
 
 extension WPERenderPass {
-    // Every copy passes ALL memberwise fields; a dropped field is caught by the
-    // `nativized() == self` guard test (strings only change representation).
+    // Memberwise copy of every field; a drop is caught by `nativized() == self`.
     public func nativized() -> WPERenderPass {
         WPERenderPass(
             id: wpeNativized(id),

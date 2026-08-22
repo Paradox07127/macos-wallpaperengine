@@ -252,6 +252,7 @@ extension ScreenManager {
                 descriptor: descriptor,
                 origin: runtimeOrigin,
                 frame: screen.frame,
+                fitMode: configuration.fitMode,
                 dependencyMounts: dependencyMounts,
                 engineAssetsRootURL: engineRoot,
                 onOriginBookmarkRefresh: { [weak self] origin, refreshed in
@@ -281,7 +282,8 @@ extension ScreenManager {
             sceneSession.frameRateController?.setFrameRateLimit(configuration.frameRateLimit)
             sceneSession.setMouseInteractionEnabled(configuration.sceneMouseInteractionEnabled)
             sceneSession.setClickCaptureEnabled(false)
-            sceneSession.setSceneFitMode(configuration.fitMode)
+            // Fit mode is a construction argument now (see `makeSceneSession`);
+            // re-submitting it here would just be a second source for the value.
             if let audio = sceneSession.audioController {
                 audio.setAudioMuted(true)
                 audio.setAudioVolume(configuration.videoVolume)

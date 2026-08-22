@@ -6,15 +6,8 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// Characterization for W5.2b: the per-slot uniform SOURCE plan compiled once
-/// per (pass, layout) must resolve every slot to the same value the old
-/// per-frame candidate walk did.
-///
-/// `LegacyReference` below is that walk plus its packer, replicated verbatim
-/// from the pre-plan `translatedUniformValue` / `packTranslatedUniforms`. It is
-/// deliberately a COPY, not a call into production code: it is the only thing
-/// that fails when the compiled plan reorders a priority, which is what the
-/// mutation check in this file's header comment exercises.
+/// Compiled uniform plan must match the old per-frame candidate walk bit-for-bit.
+/// `LegacyReference` is a copy of that walk, not a call into production.
 @Suite("WPE uniform resolution plan")
 struct WPEUniformResolutionPlanTests {
 

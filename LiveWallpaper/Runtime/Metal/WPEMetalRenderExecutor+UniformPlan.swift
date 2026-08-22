@@ -3,42 +3,24 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperProWPE
 
-/// Per-slot uniform SOURCE resolution, compiled once per (pass, layout) instead
-/// of re-derived per slot per pass per frame.
-///
-/// What it replaces: for every uniform slot the packer walked the slot's
-/// candidate-name list (`u_Foo`, its `material` alias, the `u_`-stripped
-/// spellings) and probed the frame context, `pass.uniformValues` and
-/// `pass.pass.constants` — an exact round and then a lowercased round over all
-/// of them. Only the WINNER of that walk varies with the scene, and it is fixed
-/// by the pass's key SETS, which are load-stable; only the VALUES change per
-/// frame. So the walk is compiled to an ordered step list and only the final
-/// dictionary read stays on the hot path.
-///
-/// The plan is a name resolution, never a value one: nothing is inlined, so
-/// animated values (re-resolved per frame by `addingMetalRuntimeUniforms`) and
-/// scripted overrides keep landing exactly as before.
+/// Per-slot uniform SOURCE resolution, compiled once per (pass, layout).
+/// Only the winner of the old candidate walk varies with the scene, and it is
+/// fixed by the pass's key sets; values still come from live dictionaries so
+/// animated/scripted overrides keep landing as before.
 extension WPEMetalRenderExecutor {
 
     /// One probe, in the same order the interleaved candidate walk performed it.
     enum UniformResolutionStep: Equatable {
-        /// `WPEFrameUniformContext.value(named:passID:)`. NOT terminal: the
-        /// object dictionary is per-frame and the context is `.empty` outside a
-        /// `render` call, so a frame-global name can legitimately miss and must
-        /// still fall through to the pass sources behind it.
+        /// Not terminal: the context is `.empty` outside `render`, so a miss
+        /// must still fall through to the pass sources.
         case frameGlobal(String)
-        /// `pass.uniformValues[key]`, for a key present when the plan was
-        /// compiled. Normally hits; kept non-terminal because a scripted key can
-        /// vanish within a cache generation.
+        /// Not terminal: a scripted key can vanish within a cache generation.
         case passValue(String)
-        /// `pass.pass.constants[key]`, same rule.
         case passConstant(String)
     }
 
     struct UniformResolutionPlan {
-        /// `g_TexelSize` — scene-level, so still computed per frame from
-        /// `currentSceneSize`, and still falls through to the steps when the
-        /// scene size is degenerate.
+        /// `g_TexelSize` is scene-level; falls through when scene size is degenerate.
         let isTexelSize: Bool
         /// `g_Texture<N>Resolution` → N. Falls through when slot N is unbound.
         let textureResolutionSlot: Int?
@@ -47,15 +29,9 @@ extension WPEMetalRenderExecutor {
     }
 
     struct PassUniformPlans {
-        /// Key-set validation, same shape as `UniformKeyIndex`: a scripted
-        /// constant appearing (or the animated `g_Color` override landing) after
-        /// the first tick changes the count and forces a recompile.
         let uniformCount: Int
         let constantsCount: Int
-        /// A pass id alone does not name a layout — tests pack one pass under
-        /// several. `Array ==` short-circuits on shared storage, which is the
-        /// hot-path case (the layout comes from `compiledShaderResultByPassID`,
-        /// so every frame passes the same array instance).
+        /// `Array ==` short-circuits on shared storage (the hot-path case).
         let layout: [WPEUniformSlot]
         let plans: [UniformResolutionPlan]
     }
@@ -82,10 +58,10 @@ extension WPEMetalRenderExecutor {
         return plans
     }
 
-    /// Mirrors the old walk step for step. The interleaving matters: within one
-    /// candidate the frame context is probed before the pass dictionary (the
-    /// merge this descends from inserted frame values last, so they won for
-    /// that name), but a LATER candidate never beats an earlier one.
+    /// Mirrors the old walk. Within one candidate the frame context is probed
+    /// first (it was inserted last, so it won); a later candidate never beats
+    /// an earlier one. The whole probe order is emitted so a later miss still
+    /// has the fallbacks the per-frame walk would have run.
     private func compileUniformPlan(
         for uniform: WPEUniformSlot,
         pass: WPEPreparedRenderPass,
@@ -93,21 +69,11 @@ extension WPEMetalRenderExecutor {
     ) -> UniformResolutionPlan {
         let candidates = memoizedUniformNameCandidates(for: uniform)
         var steps: [UniformResolutionStep] = []
-        // Re-probing the same source can never change the outcome, so a step
-        // already in the plan is dropped (the exact and lowercased rounds
-        // resolve to the same canonical key for an all-lowercase name).
         func append(_ step: UniformResolutionStep) {
             guard !steps.contains(step) else { return }
             steps.append(step)
         }
 
-        // Compilation does NOT stop at the first key that exists today: a step
-        // only proves the key existed when the plan was built, and a scripted
-        // key can disappear later within one cache generation (the key-count
-        // validation misses a same-frame add+remove). Emitting the whole probe
-        // order keeps the fallbacks that the old per-frame walk would have run.
-        // Execution still returns on the first hit, so the hot path is unchanged
-        // — only a miss walks further.
         for name in candidates.names {
             if WPEFrameUniformContext.canonicalNames.contains(name) {
                 append(.frameGlobal(name))
@@ -124,8 +90,6 @@ extension WPEMetalRenderExecutor {
                 append(.passValue(canonical))
             }
         }
-        // Constants are probed only after BOTH uniform rounds, and exact across
-        // every candidate before any lowercased one.
         for name in candidates.names where pass.pass.constants[name] != nil {
             append(.passConstant(name))
         }
@@ -143,18 +107,19 @@ extension WPEMetalRenderExecutor {
         )
     }
 
-    /// `frame` is threaded in rather than read off `self` so the per-pass
-    /// context is loaded once instead of once per slot.
     func resolvedUniformValue(
         plan: UniformResolutionPlan,
         pass: WPEPreparedRenderPass,
         frame: WPEFrameUniformContext,
         texturesBySlot: WPEMetalTextureSlotTable?
     ) -> WPESceneShaderConstantValue? {
+        // PIXEL size, not world size: g_TexelSize describes the FBO chain's head
+        // resolution, and under render scaling the chain head is the scaled scene
+        // output — a world-sized texel would narrow every blur kernel by the scale.
         if plan.isTexelSize,
            let value = Self.texelSizeValue(
                named: Self.texelSizeUniformName,
-               sceneSize: currentSceneSize
+               sceneSize: currentScenePixelSize
            ) {
             return value
         }

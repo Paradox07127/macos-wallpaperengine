@@ -1110,8 +1110,6 @@ private struct WPEShaderSourceLoader: Sendable {
                    let combo = dict["combo"] as? String,
                    !combo.isEmpty,
                    let value = parseInt(dict["default"]) {
-                    // JSONSerialization scalars can be lazily-bridged NSStrings;
-                    // these keys are hashed per frame, so localize at load.
                     comboValues[wpeNativized(combo)] = value
                     continue
                 }
@@ -1342,8 +1340,6 @@ private struct WPEShaderSourceLoader: Sendable {
             return .previous
         }
         if isImplicitFBOTextureName(name) {
-            // Annotation defaults come from JSONSerialization payloads and are
-            // hashed per frame (alias planning / binding lookups); localize.
             return .fbo(wpeNativized(name))
         }
         return .asset(wpeNativized(name))

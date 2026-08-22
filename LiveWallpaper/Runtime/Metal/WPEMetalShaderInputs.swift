@@ -150,10 +150,7 @@ enum WPEMetalShaderInputs {
         return defaultValue
     }
 
-    /// Frame-global-aware variants: for names in the frame-global set
-    /// (`g_Time`, `g_Brightness`, …) the old per-pass merge always won because
-    /// those values were inserted last, so the frame context is consulted
-    /// before the pass dictionary, name by name.
+    /// Frame context first: the old merge inserted those values last, so they won.
     static func floatScalar(
         named name: String,
         in pass: WPEPreparedRenderPass,

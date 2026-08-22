@@ -4,14 +4,10 @@ import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
 
-/// Guards the load-time string localization seam (`WPERenderGraph.nativized()`):
-/// scene JSON parsed with `JSONSerialization` can hand back lazily-bridged
-/// NSStrings whose per-frame hashing re-transcodes UTF-16 on the render thread.
+/// Load-time `nativized()` must localize hot strings without changing values.
 @Suite("WPE render graph string nativization")
 struct WPERenderGraphNativizationTests {
-    /// Pulls a String out of a JSONSerialization parse the same way the scene
-    /// document parser does. The `\/` escaping matches what WPE authoring and
-    /// our own `JSONSerialization.data` writes produce for every path string.
+    /// Same JSONSerialization path the scene parser uses.
     private func parsedString(_ jsonScalar: String) throws -> String {
         let data = try #require("{\"value\": \"\(jsonScalar)\"}".data(using: .utf8))
         let object = try JSONSerialization.jsonObject(with: data)
@@ -21,8 +17,7 @@ struct WPERenderGraphNativizationTests {
 
     @Test("Control: escaped/non-ASCII JSONSerialization scalars bridge as non-contiguous strings")
     func jsonScalarsBridgeAsForeignStrings() throws {
-        // If this control ever fails, Foundation started bridging these
-        // natively and the nativization seam has become a no-op — remove it.
+        // If this fails, Foundation now bridges natively and nativization is a no-op.
         let escaped = try parsedString(#"models\/util\/composelayer_long_enough.json"#)
         #expect(!escaped.isContiguousUTF8)
         let nonASCII = try parsedString("materials/背景图层_很长的非ASCII路径名.tex")
@@ -31,10 +26,7 @@ struct WPERenderGraphNativizationTests {
 
     @Test("nativized() localizes every hot string field and changes no values")
     func nativizedLocalizesAllFieldsAndPreservesEquality() throws {
-        // A plain-ASCII JSON scalar bridges as a contiguous shared string, so
-        // escape the first scalar as \uXXXX: the parser then takes its escape
-        // path and hands back a UTF-16-backed (foreign) NSString, while the
-        // parsed VALUE stays byte-identical to `plain`.
+        // `\uXXXX` forces JSONSerialization's escape path (foreign NSString), value unchanged.
         func foreign(_ plain: String) throws -> String {
             let first = try #require(plain.unicodeScalars.first)
             let scalar: String

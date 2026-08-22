@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import CoreGraphics
 import Foundation
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import simd
@@ -156,6 +157,20 @@ enum WPEPresentFitMode: Equatable {
     case contain
     case cover
     case center
+}
+
+extension WPEPresentFitMode {
+    /// The renderer-local present transform for the shared `VideoFitMode`. Lives
+    /// here so the session (runtime changes) and the builder (construction) map
+    /// it the same way; the renderer itself has no AVFoundation dependency.
+    init(_ mode: VideoFitMode) {
+        switch mode {
+        case .stretch: self = .stretch
+        case .aspectFit: self = .contain
+        case .aspectFill: self = .cover
+        case .center: self = .center
+        }
+    }
 }
 
 /// Layout MUST match `WPEPresentUniforms` in `WPEMetalBuiltins.metal`. Drives

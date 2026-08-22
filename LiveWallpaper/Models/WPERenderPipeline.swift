@@ -348,12 +348,8 @@ extension WPEPreparedRenderPipeline {
         camera: WPEMetalCameraUniforms,
         scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:]
     ) -> (pipeline: WPEPreparedRenderPipeline, frameUniforms: WPEFrameUniformContext) {
-        // Both are COMPUTED properties — each access rebuilds the dict (the runtime
-        // one also slices audio spectra). Resolve once per frame, not per pass.
-        // Frame-global (runtime/camera) and object (per-layer) uniforms are NOT
-        // merged into the pass dictionaries any more — consumers read them from
-        // the returned `WPEFrameUniformContext`, which preserves the old merge
-        // precedence (frame/object values were inserted last, so they win).
+        // Computed properties: resolve once per frame. Frame/object uniforms stay
+        // in `WPEFrameUniformContext` (old merge inserted them last, so they win).
         let runtimeUniformValues = runtimeUniforms.uniformValues
         let cameraUniformValues = camera.uniformValues
         var objectUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
@@ -377,10 +373,7 @@ extension WPEPreparedRenderPipeline {
                     let overridesLayerColor = geometry.colorAnimation != nil
                         && pass.pass.constants["g_Color"] != nil
                         && Self.consumesLayerColor(pass.pass.shader)
-                    // Fully static pass: `resolved(at:)` is the identity for every
-                    // case except `.animated`, and there is no per-frame override,
-                    // so the load-time pass is reused as-is (struct copy shares the
-                    // CoW dictionaries — zero mutation, zero new dictionaries).
+                    // Static pass: reuse the load-time struct (CoW dictionaries).
                     if !pass.hasAnimatedUniformValues, scripted == nil, !overridesLayerColor {
                         return pass
                     }

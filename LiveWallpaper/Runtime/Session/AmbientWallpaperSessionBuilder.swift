@@ -237,6 +237,10 @@ final class AmbientWallpaperSessionBuilder {
         descriptor: SceneDescriptor,
         origin: WPEOrigin? = nil,
         frame: CGRect,
+        /// The screen's configured fit mode. Passed at construction rather than
+        /// submitted afterwards: the MetalFX plan reads it during `load()`, and
+        /// a later submit would race that.
+        fitMode: VideoFitMode = .aspectFill,
         dependencyMounts: [WPEAssetMount] = [],
         engineAssetsRootURL: URL? = nil,
         applicationSupportRootURL: URL? = nil,
@@ -319,6 +323,14 @@ final class AmbientWallpaperSessionBuilder {
         case .renderThread:
             surfaceControl = WPERenderThreadFramePacer(surface: surface, renderActor: renderActor)
         }
+        // Window BEFORE the renderer so the view has a window (and therefore a
+        // backing scale) to convert against.
+        let window = VideoWallpaperWindow(frame: frame)
+        window.contentView = surface.mtkView
+        // One source of truth (`WPERenderSurface.backingDrawableSize`). Reading
+        // the layer here returns 0x0 — it stays zero until the first
+        // `nextDrawable()`, whatever the window and layout have done.
+        let seededDrawableSize = surface.backingDrawableSize
         let renderer: WPEMetalSceneRenderer
         do {
             renderer = try WPEMetalSceneRenderer(
@@ -331,7 +343,8 @@ final class AmbientWallpaperSessionBuilder {
                 surfaceControl: surfaceControl,
                 mailbox: surface.mailbox,
                 presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-                drawableSize: surface.metalLayer.drawableSize,
+                drawableSize: seededDrawableSize,
+                presentFitMode: WPEPresentFitMode(fitMode),
                 device: device
             )
         } catch {
@@ -343,8 +356,6 @@ final class AmbientWallpaperSessionBuilder {
         let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
         surface.attach(client: shim)
 
-        let window = VideoWallpaperWindow(frame: frame)
-        window.contentView = surface.mtkView
         window.orderBack(nil)
 
         // Start CADisplayLink driver when windowed; `.main` mode keeps MTKView pacing.

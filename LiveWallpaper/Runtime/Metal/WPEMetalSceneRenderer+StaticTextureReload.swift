@@ -56,7 +56,10 @@
                     candidates: record.candidates,
                     resolver: resolver,
                     loader: loader,
-                    streamingThreshold: threshold
+                    streamingThreshold: threshold,
+                    // Same cap as the initial load, or a suspend/resume cycle
+                    // silently reloads every static texture at full size.
+                    maxSourceEdge: latchedTextureCap
                 )
             } catch is CancellationError {
                 return

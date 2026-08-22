@@ -1517,11 +1517,7 @@ private func wpeDayFraction() -> Double {
     return wpeDayFraction(of: Date())
 }
 
-/// One `Calendar.dateComponents` per wall-clock second instead of per
-/// context-tick (hundreds of JSContexts refresh `engine.timeOfDay` every frame).
-/// Bit-identical: `timeOfDay` is h/m/s only and UTC offsets are whole minutes,
-/// so one epoch second maps to one set of components. Locked — script worker
-/// queues tick concurrently.
+/// One `Calendar.dateComponents` per wall-clock second. Locked: script workers tick concurrently.
 private let wpeDayFractionCache = OSAllocatedUnfairLock(
     initialState: (second: Int.min, value: 0.0)
 )

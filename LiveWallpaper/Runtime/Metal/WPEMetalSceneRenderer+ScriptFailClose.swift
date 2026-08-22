@@ -70,9 +70,7 @@
             authoredTransforms: LiveScriptTransforms,
             parallaxFrame: WPECameraParallaxFrame,
             frameSubmission: WPEMetalFrameSubmissionLease,
-            /// Non-nil when the merged-present wrapper already ran the commit
-            /// decision before encoding the present (the continuous async path);
-            /// nil on the sync/standalone-present paths, which decide here.
+            /// Set on the merged-present path (decision already ran); nil on sync/standalone.
             videoCommandsOutcome: Bool? = nil,
             deferredPresent: WPEMetalRenderExecutor.DeferredPresentEncoder? = nil
         ) throws -> MTLTexture {
@@ -108,10 +106,7 @@
             )
             reconcileVideoResidency(stablePipeline)
             updateParticleHostOriginOffsets(using: stableTransforms)
-            // The denied speculative buffer committed WITHOUT a present (the
-            // wrapper skipped it), so the stable re-encode carries the frame's
-            // present — the screen shows the rolled-back content, as the
-            // two-buffer path always did.
+            // Speculative buffer committed without present; stable re-encode carries it.
             let stableFrame = try encodeSceneFrame(
                 pipeline: stablePipeline,
                 uniforms: uniforms,

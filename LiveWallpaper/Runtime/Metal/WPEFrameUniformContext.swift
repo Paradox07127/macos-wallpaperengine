@@ -3,15 +3,12 @@ import Foundation
 import LiveWallpaperProWPE
 
 /// Frame-global uniforms resolved once per frame instead of being merged into
-/// every pass's `uniformValues` dictionary (which rebuilt ~20 String-keyed
-/// entries per pass per frame). Lookup preserves the old merge precedence:
-/// these dictionaries were inserted LAST into the merged dict, so for any
-/// frame-global name the frame value always beat authored/scripted pass values.
+/// every pass's `uniformValues`. Same precedence as the old merge: these were
+/// inserted last, so a frame-global name always beats authored/scripted values.
 struct WPEFrameUniformContext: Sendable {
     let runtimeUniformValues: [String: WPESceneShaderConstantValue]
     let cameraUniformValues: [String: WPESceneShaderConstantValue]
-    /// `g_ModelMatrix`/`g_NormalModelMatrix` per prepared-pass id — object
-    /// scoped, so each layer's passes share one CoW dictionary instance.
+    /// `g_ModelMatrix`/`g_NormalModelMatrix` per prepared-pass id.
     let objectUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]]
 
     static let empty = WPEFrameUniformContext(
@@ -20,14 +17,12 @@ struct WPEFrameUniformContext: Sendable {
         objectUniformValuesByPassID: [:]
     )
 
-    /// Frame-scoped (runtime + camera) value. The two key sets are disjoint,
-    /// so the probe order carries no precedence.
+    /// Runtime and camera key sets are disjoint.
     func frameValue(named name: String) -> WPESceneShaderConstantValue? {
         runtimeUniformValues[name] ?? cameraUniformValues[name]
     }
 
-    /// Frame + object value for a specific pass (all three key sets are
-    /// disjoint).
+    /// All three key sets are disjoint.
     func value(named name: String, passID: String) -> WPESceneShaderConstantValue? {
         if let value = objectUniformValuesByPassID[passID]?[name] { return value }
         return frameValue(named: name)
@@ -38,17 +33,14 @@ struct WPEFrameUniformContext: Sendable {
         return value(named: canonical, passID: passID)
     }
 
-    /// The frame-global key NAMES are a fixed set, so the case-insensitive
-    /// index is process-static. Derived from the real producers (not a literal
-    /// list) so it cannot drift when a uniform is added.
+    /// Derived from the producers so a new uniform cannot drift off this index.
     static let canonicalNameByLowercased: [String: String] = {
         var map: [String: String] = [:]
         for key in allCanonicalNames { map[key.lowercased()] = key }
         return map
     }()
 
-    /// Every name `value(named:passID:)` can possibly resolve. Built from the
-    /// producers rather than from `canonicalNameByLowercased.values`, which
+    /// Built from `allCanonicalNames` rather than the lowercased map, which
     /// would drop one side of a case-variant collision.
     static let canonicalNames: Set<String> = Set(allCanonicalNames)
 

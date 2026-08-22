@@ -14,20 +14,34 @@ struct WPEMetalTextureResolution: Equatable, Sendable {
     let clampUVs: Bool
     /// TEXI NoInterpolation flag → sample with nearest filtering. Default `false` (linear).
     let noInterpolation: Bool
+    /// The AUTHORED image size in world pixels — unlike `imageWidth`/`imageHeight`,
+    /// which describe the uploaded level (and shrink with it when the loader
+    /// uploads a reduced mip under render scaling). World-layout consumers (the
+    /// object-quad size fallback) must use this, never the texture's own
+    /// dimensions; shader UV math keeps using `imageWidth`/`textureWidth`, whose
+    /// ratio stays level-consistent.
+    let worldWidth: Int
+    let worldHeight: Int
 
     init(
         texture: MTLTexture,
         imageWidth: Int? = nil,
         imageHeight: Int? = nil,
         clampUVs: Bool = true,
-        noInterpolation: Bool = false
+        noInterpolation: Bool = false,
+        worldWidth: Int? = nil,
+        worldHeight: Int? = nil
     ) {
         textureWidth = max(texture.width, 1)
         textureHeight = max(texture.height, 1)
-        self.imageWidth = max(Self.validLogicalSize(imageWidth) ?? texture.width, 1)
-        self.imageHeight = max(Self.validLogicalSize(imageHeight) ?? texture.height, 1)
+        let imageWidth = max(Self.validLogicalSize(imageWidth) ?? texture.width, 1)
+        let imageHeight = max(Self.validLogicalSize(imageHeight) ?? texture.height, 1)
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
         self.clampUVs = clampUVs
         self.noInterpolation = noInterpolation
+        self.worldWidth = max(Self.validLogicalSize(worldWidth) ?? imageWidth, 1)
+        self.worldHeight = max(Self.validLogicalSize(worldHeight) ?? imageHeight, 1)
     }
 
     var shaderValue: WPESceneShaderConstantValue {
@@ -75,7 +89,9 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
         imageWidth: Int? = nil,
         imageHeight: Int? = nil,
         clampUVs: Bool = true,
-        noInterpolation: Bool = false
+        noInterpolation: Bool = false,
+        worldWidth: Int? = nil,
+        worldHeight: Int? = nil
     ) {
         let key = ObjectIdentifier(texture as AnyObject)
         let resolution = WPEMetalTextureResolution(
@@ -83,7 +99,9 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
             imageWidth: imageWidth,
             imageHeight: imageHeight,
             clampUVs: clampUVs,
-            noInterpolation: noInterpolation
+            noInterpolation: noInterpolation,
+            worldWidth: worldWidth,
+            worldHeight: worldHeight
         )
         lock.lock()
         resolutions[key] = Entry(texture: texture, resolution: resolution)

@@ -56,8 +56,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
            let scaled = downsampleOnGPU(texture, maxDimension: maxDimension) {
             texture = scaled
         }
-        // The renderer's output ring is `.private` (GPU-exclusive); every
-        // `getBytes` below needs CPU-visible storage, so stage first.
+        // Output ring is `.private`; `getBytes` needs a CPU-visible staging copy.
         guard let readable = stagedForCPURead(texture) else {
             Logger.warning(
                 "[snapshot] CPU staging blit failed (\(texture.width)x\(texture.height), storageMode=\(texture.storageMode.rawValue)) — no poster",
@@ -227,11 +226,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         }
     }
 
-    /// Returns a texture whose bytes `getBytes` may legally read: the input
-    /// itself when already `.shared`, otherwise a same-format staging copy
-    /// (blit + waitUntilCompleted). Diagnostic/read-back paths call this so the
-    /// production render targets can stay `.private`. Internal (not private):
-    /// the trace recorder, the DEBUG PNG dumper, and pixel-reading tests reuse it.
+    /// CPU-visible copy of a `.private` texture for `getBytes` / debug decode.
     static func stagedForCPURead(_ texture: MTLTexture) -> MTLTexture? {
         if texture.storageMode == .shared { return texture }
         let device = texture.device
@@ -241,9 +236,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
             height: texture.height,
             mipmapped: false
         )
-        // `.shaderRead` (not []): the DEBUG PNG dumper samples the staged copy
-        // when decoding compressed formats.
-        descriptor.usage = [.shaderRead]
+        descriptor.usage = [.shaderRead] // debug PNG decode samples this copy
         descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
         guard let staging = device.makeTexture(descriptor: descriptor),
               let commandQueue = commandQueue(for: device),
@@ -370,7 +363,7 @@ struct WPEMetalTextureVisualStats: Codable, Equatable, Sendable, CustomStringCon
         guard texture.pixelFormat == .rgba8Unorm || texture.pixelFormat == .rgba8Unorm_srgb else {
             return nil
         }
-        // Scene outputs are `.private`; stage before the CPU scan below.
+        // Scene outputs are `.private`.
         guard let texture = WPEMetalTextureSnapshotter.stagedForCPURead(texture) else {
             return nil
         }

@@ -49,11 +49,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     /// Original scene-object paint index. Earlier indices paint behind later
     /// ones; particles interleave against this in the executor.
     public let sortIndex: Int
-    /// `imagePath` classified once, here. DERIVED — deliberately not an init
-    /// parameter, so none of the hand-written layer copies can drop it while
-    /// still compiling. The renderer asked `WPEUtilityModelKind.classify` two to
-    /// four times per pass per frame across four call sites (executor,
-    /// dispatcher, target pool), each paying that memo's lock and string hash.
+    /// Derived from `imagePath` in `init`, not an init parameter — copies cannot drop it.
     public let utilityModelKind: WPEUtilityModelKind?
 
     public init(
