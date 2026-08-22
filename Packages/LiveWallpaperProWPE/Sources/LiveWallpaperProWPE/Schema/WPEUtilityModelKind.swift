@@ -12,10 +12,7 @@ public enum WPEUtilityModelKind: String, CaseIterable, Equatable, Sendable {
     /// prefix, `\`-separated Windows paths, and inconsistent case. Tolerates
     /// all three; matches on the trailing `models/util/<name>.json`.
     public static func classify(_ path: String) -> WPEUtilityModelKind? {
-        // Lock-free reject first: every classified path ends in `layer.json`,
-        // and ordinary `.png`/`.tex` layers (the vast majority) must not pay
-        // the memo's lock and hash. Matched on UTF-8 bytes — no String built
-        // to answer "no".
+        // Ordinary `.png`/`.tex` layers must not pay the memo lock.
         guard hasUtilityModelSuffix(path) else { return nil }
         return cache.withLock { cache in
             if let cached = cache[path] { return cached }
@@ -30,11 +27,7 @@ public enum WPEUtilityModelKind: String, CaseIterable, Equatable, Sendable {
         classify(path) != nil
     }
 
-    // MARK: - Classification memo (the stripped-path stage alone measured
-    // 2.3–2.8% of one core on the executor's per-pass hot path; the per-call
-    // `models/util/…` interpolation ×3 showed on top of that. Paths are
-    // load-time invariant, so the FINAL classification is memoized — every
-    // per-frame caller (executor, dispatcher, target pool) shares this).
+    // MARK: - Classification memo (paths are load-time invariant)
 
     private static let kindByStrippedPath: [String: WPEUtilityModelKind] = Dictionary(
         uniqueKeysWithValues: allCases.map { ("models/util/\($0.rawValue).json", $0) }

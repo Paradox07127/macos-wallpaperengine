@@ -58,7 +58,44 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Transient producer-chain completion; published with the texture so static-frame re-presents keep the proof.
     var outputFrameProduction: WPEMetalFrameProductionCompletion?
     var latestFrameProduction: WPEMetalFrameProductionCompletion?
-    var presentFitMode: WPEPresentFitMode = .cover
+    /// Set at construction from the screen's configuration. A default here would
+    /// be indistinguishable from a real user choice, and the MetalFX plan reads
+    /// it during `load()` — which races the async config submit that used to be
+    /// the only way it arrived.
+    var presentFitMode: WPEPresentFitMode
+    /// MetalFX render-scale verdict for the loaded scene. Decided once in
+    /// `performLoad` from the world canvas, drawable, fit mode and HDR flag,
+    /// then read by the executor (target sizes) and the texture loader (upload
+    /// caps). `.inactive` before a scene loads.
+    /// The MetalFX verdict lives on the executor — the per-frame consumer, and
+    /// the place a present-time decline is discovered. Keeping a second copy
+    /// here meant a demote written by `encodePresent` never reached the
+    /// re-planning path, which then read a stale `.active` and un-stuck it.
+    var upscalePlan: WPEMetalUpscalePlan { executor.upscalePlan }
+    /// Set once a plan has been decided. Distinguishes "never planned" from a
+    /// real `.settingOff` verdict, which the plan value alone cannot.
+    var hasPlannedUpscale = false
+    /// Adopt the drawable size a presented frame actually used. This is the only
+    /// moment the true size is guaranteed knowable — `nextDrawable()` is what
+    /// finally sizes the layer — so it backstops a seed that was wrong or a
+    /// display that was reconfigured. Cheap: a CGSize compare per frame.
+    func adoptPresentedDrawableSize() {
+        let presented = executor.lastPresentedDrawableSize
+        guard presented.width > 0, presented != surfaceDrawableSize else { return }
+        updateSurfaceGeometry(drawableSize: presented)
+    }
+
+    /// Forces exactly one full re-render even for a scene with no frame demand.
+    /// A static scene re-presents its cached `outputTexture`, which is at the
+    /// OLD render scale after the plan changes — `.center` would then show a
+    /// downsampled frame at 1:1 forever.
+    var pendingForcedRerender = false
+    /// The source-texture cap actually used for this scene's uploads, latched at
+    /// `loadTextures`. Uploads are the one irreversible step, so the cap is
+    /// decided there rather than when the plan is first computed — by then the
+    /// fit mode or drawable may still be in flight.
+    var latchedTextureCap: Int?
+    var didLatchTextureCap = false
     var particleSystems: [WPEParticleSystem] = []
     var particleTextures: [ObjectIdentifier: MTLTexture] = [:]
     /// REFRACT `g_Texture1`. Absent ⇒ the system renders as a flat sprite.
@@ -296,11 +333,13 @@ final class WPEMetalSceneRenderer: NSObject {
         mailbox: WPEPointerMailbox,
         presentLayer: WPEPresentLayer,
         drawableSize: CGSize,
+        presentFitMode: WPEPresentFitMode = .cover,
         device: MTLDevice,
         frameClock: WPEMetalFrameClock = WPEMetalFrameClock(),
         pointerSampler: WPEMetalPointerSampler? = nil,
         snapshotter: WPEMetalTextureSnapshotter = .shared
     ) throws {
+        self.presentFitMode = presentFitMode
         self.descriptor = descriptor
         self.cacheRootURL = cacheRootURL
         self.dependencyMounts = dependencyMounts
@@ -369,6 +408,7 @@ final class WPEMetalSceneRenderer: NSObject {
         dependencyMounts: [WPEAssetMount],
         engineAssetsRootURL: URL? = nil,
         frame: CGRect,
+        presentFitMode: WPEPresentFitMode = .cover,
         device: MTLDevice,
         frameClock: WPEMetalFrameClock = WPEMetalFrameClock(),
         pointerSampler: WPEMetalPointerSampler? = nil,
@@ -385,7 +425,11 @@ final class WPEMetalSceneRenderer: NSObject {
             surfaceControl: surface,
             mailbox: surface.mailbox,
             presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            drawableSize: surface.metalLayer.drawableSize,
+            // `backingDrawableSize`, never the layer: a CAMetalLayer reads 0x0
+            // until the first `nextDrawable()`, which would leave every scene
+            // built through this initializer permanently unable to plan.
+            drawableSize: surface.backingDrawableSize,
+            presentFitMode: presentFitMode,
             device: device,
             frameClock: frameClock,
             pointerSampler: pointerSampler,
@@ -397,7 +441,60 @@ final class WPEMetalSceneRenderer: NSObject {
     }
 
     func updateSurfaceGeometry(drawableSize: CGSize) {
+        // A sizeless report means "not laid out yet", never "the surface is now
+        // zero". `WPERenderSurface.attach` pushes exactly that immediately after
+        // construction — before the view is in a window — and letting it through
+        // would clobber the size the builder seeded from the screen, leaving the
+        // MetalFX plan with no drawable for the scene's whole life.
+        guard drawableSize.width > 0, drawableSize.height > 0 else { return }
+        guard drawableSize != surfaceDrawableSize else { return }
         surfaceDrawableSize = drawableSize
+        refreshUpscalePlan(reason: "geometry")
+    }
+
+    /// The ONE place the MetalFX verdict is decided. Its three inputs arrive at
+    /// different times — the world canvas from scene parsing, the drawable size
+    /// from window layout (async), the fit mode from a runtime config submit —
+    /// so the plan is a derived value refreshed on every input change rather
+    /// than computed once and patched afterwards.
+    ///
+    /// `isInitial` marks the load-time call, the only one allowed to establish
+    /// the source-texture cap: those uploads happen during load and cannot be
+    /// redone, so every later refresh carries the original cap forward.
+    func refreshUpscalePlan(reason: String, isInitial: Bool = false) {
+        guard isInitial || hasPlannedUpscale else { return }
+        let drawableSize = surfaceDrawableSize
+        let fresh = WPEMetalUpscalePlan.make(
+            worldCanvas: sceneRenderSize,
+            drawableSize: drawableSize,
+            fitMode: presentFitMode,
+            isHDR: cameraUniforms.sceneHDR,
+            renderScale: WPEMetalFXSpatialUpscaler.renderScale,
+            deviceSupportsScaler: WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler
+        )
+        let previous = executor.upscalePlan
+        let updated = isInitial ? fresh : previous.adopting(fresh)
+        hasPlannedUpscale = true
+        executor.upscalePlan = updated
+        guard isInitial || updated.renderPixelScale != previous.renderPixelScale else { return }
+        if !isInitial {
+            // Cached composites hold the old pixel size behind an unchanged
+            // world-size key, so they must go with the scale.
+            executor.invalidateStaticLayerCache()
+            // The presented frame is at the old scale too. A continuous scene
+            // redraws next tick; a static one would re-present it forever.
+            pendingForcedRerender = true
+            surfaceControl.setNeedsRedraw()
+        }
+        guard updated.verdict != .settingOff else { return }
+        Logger.notice(
+            "[metalfx] plan \(updated.verdict.rawValue) scale=\(updated.renderPixelScale) "
+                + "canvas=\(Int(sceneRenderSize.width))x\(Int(sceneRenderSize.height)) "
+                + "drawable=\(Int(drawableSize.width))x\(Int(drawableSize.height)) "
+                + "textureCap=\(updated.maxSourceTextureEdge.map(String.init) ?? "none") "
+                + "(\(reason))",
+            category: .wpeRender
+        )
     }
 
     #if DEBUG

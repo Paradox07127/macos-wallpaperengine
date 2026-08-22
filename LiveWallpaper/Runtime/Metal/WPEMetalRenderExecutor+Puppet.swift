@@ -1088,10 +1088,13 @@ extension WPEMetalRenderExecutor {
         for layer: WPERenderLayer,
         sourceTexture: MTLTexture
     ) -> SIMD2<Float> {
-        // Match `objectQuadUniforms`: use authored/resolved geometry size for placement, falling back
-        // to the source-texture dimensions only when size is absent.
-        let width = Float(layer.geometry.size?.width ?? CGFloat(sourceTexture.width))
-        let height = Float(layer.geometry.size?.height ?? CGFloat(sourceTexture.height))
+        // Match `objectQuadUniforms`: authored geometry size first, then the
+        // WORLD source size (registry) — the physical texture may be a reduced
+        // mip under render scaling, and mixing physical here with world in the
+        // quad path would scale the mesh by 1/pixelScale.
+        let worldSize = WPEMetalRenderExecutor.worldSourceSize(of: sourceTexture)
+        let width = layer.geometry.size.map { Float($0.width) } ?? worldSize.width
+        let height = layer.geometry.size.map { Float($0.height) } ?? worldSize.height
         return SIMD2<Float>(max(width, 1), max(height, 1))
     }
 

@@ -82,6 +82,31 @@ final class WPEMetalRenderTargetPool {
     /// half-float (see `pixelFormat(forFBOFormat:promoteLDRToHDR:)`).
     var promotesLDRFormatsToHDR = false
 
+    /// World-canvas → render-target pixel ratio, set per frame by the executor
+    /// (its `outputPixelScale`). 1 = bit-identical to the pre-scaling pool.
+    /// Applied uniformly to EVERY canvas the key derivation sees — partial
+    /// scaling is forbidden (`wpe_blend_composite_fragment` maps `[[position]]`
+    /// onto snapshot texels 1:1, and off-size targets fall out of the shared
+    /// alias heap; see the `WPEMetalLayerLocalFBOScale` note above).
+    var pixelScale: Double = 1
+
+    /// Register a pooled target with the WORLD size it stands for. Without this
+    /// the registry reports the scaled physical size as the world size, and a
+    /// non-identity layer with no authored `size` — whose object quad falls back
+    /// to the source texture's world dimensions — shrinks by the pixel scale.
+    /// Identity at scale 1.
+    private func registerWorldSize(of texture: MTLTexture) {
+        guard pixelScale < 1 else {
+            WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+            return
+        }
+        WPEMetalTextureMetadataRegistry.shared.register(
+            texture: texture,
+            worldWidth: Int((Double(texture.width) / pixelScale).rounded()),
+            worldHeight: Int((Double(texture.height) / pixelScale).rounded())
+        )
+    }
+
     private struct Allocation {
         let texture: MTLTexture
         let heap: MTLHeap?
@@ -231,7 +256,7 @@ final class WPEMetalRenderTargetPool {
                 bytesPerRow: bytesPerRow
             )
         }
-        WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+        registerWorldSize(of: texture)
         zeroPlaceholderTextures[name] = texture
         return texture
     }
@@ -261,7 +286,7 @@ final class WPEMetalRenderTargetPool {
             throw WPEMetalTextureLoaderError.textureAllocationFailed
         }
         texture.label = label
-        WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+        registerWorldSize(of: texture)
         return texture
     }
 
@@ -348,36 +373,65 @@ final class WPEMetalRenderTargetPool {
         sceneSize: CGSize
     ) -> WPEMetalRenderTargetKey {
         let pixelFormat = Self.pixelFormat(forFBOFormat: spec.format, promoteLDRToHDR: promotesLDRFormatsToHDR)
+        let dimensions = keyDimensions(
+            for: target,
+            spec: spec,
+            layer: layer,
+            sceneSize: sceneSize,
+            pixelScale: pixelScale
+        )
+        return WPEMetalRenderTargetKey(
+            name: spec.name,
+            width: dimensions.width,
+            height: dimensions.height,
+            format: spec.format,
+            pixelFormat: pixelFormat
+        )
+    }
+
+    /// The single pixel-dimension derivation shared by `targetKey` (allocation),
+    /// `diagnosticKey` (alias planning) and `worldCanvasSize` (world geometry) —
+    /// three consumers that mis-render the frame the moment they disagree.
+    /// `pixelScale` converts each world canvas through
+    /// `WPEMetalFXSpatialUpscaler.scaledCanvasSize` BEFORE the authored
+    /// scale-divisor / fit derivation, so a downsample chain keeps WPE's
+    /// truncation semantics relative to its (scaled) chain head; authored `fit`
+    /// (an absolute pixel edge) scales linearly.
+    private func keyDimensions(
+        for target: WPERenderTarget,
+        spec: WPERenderFBO,
+        layer: WPERenderLayer,
+        sceneSize: CGSize,
+        pixelScale: Double
+    ) -> (width: Int, height: Int) {
+        func canvas(_ size: CGSize) -> CGSize {
+            // `minimumEdge: 1` — the 64px floor belongs to the scaler's INPUT,
+            // not to pooled targets: an authored 128x16 strip must scale to
+            // 64x8, never to 64x64.
+            WPEMetalFXSpatialUpscaler.scaledCanvasSize(
+                size, pixelScale: pixelScale, minimumEdge: 1
+            )
+        }
+        let fit = pixelScale < 1 ? spec.fit.map { $0 * pixelScale } : spec.fit
         if let pixelSize = spec.pixelSize {
-            return WPEMetalRenderTargetKey(
-                name: spec.name,
-                width: wpeRenderTargetDimension(pixelSize.width, scale: spec.scale),
-                height: wpeRenderTargetDimension(pixelSize.height, scale: spec.scale),
-                format: spec.format,
-                pixelFormat: pixelFormat
+            let scaled = canvas(pixelSize)
+            return (
+                wpeRenderTargetDimension(scaled.width, scale: spec.scale),
+                wpeRenderTargetDimension(scaled.height, scale: spec.scale)
             )
         }
         if case .layerComposite = target {
-            let localSize = Self.layerCompositeSize(
+            let localSize = canvas(Self.layerCompositeSize(
                 for: layer,
                 sceneSize: sceneSize,
                 memo: sceneCaptureGeometryMemo
-            )
-            if let fitted = wpeFitRenderTargetExtent(localSize, fit: spec.fit) {
-                return WPEMetalRenderTargetKey(
-                    name: spec.name,
-                    width: fitted.width,
-                    height: fitted.height,
-                    format: spec.format,
-                    pixelFormat: pixelFormat
-                )
+            ))
+            if let fitted = wpeFitRenderTargetExtent(localSize, fit: fit) {
+                return fitted
             }
-            return WPEMetalRenderTargetKey(
-                name: spec.name,
-                width: wpeRenderTargetDimension(localSize.width, scale: spec.scale),
-                height: wpeRenderTargetDimension(localSize.height, scale: spec.scale),
-                format: spec.format,
-                pixelFormat: pixelFormat
+            return (
+                wpeRenderTargetDimension(localSize.width, scale: spec.scale),
+                wpeRenderTargetDimension(localSize.height, scale: spec.scale)
             )
         }
         if case .fbo(let fboName) = target,
@@ -387,39 +441,48 @@ final class WPEMetalRenderTargetPool {
                sceneSize: sceneSize,
                memo: sceneCaptureGeometryMemo
            ) {
-            if let fitted = wpeFitRenderTargetExtent(localSize, fit: spec.fit) {
-                return WPEMetalRenderTargetKey(
-                    name: spec.name,
-                    width: fitted.width,
-                    height: fitted.height,
-                    format: spec.format,
-                    pixelFormat: pixelFormat
-                )
+            let scaledLocal = canvas(localSize)
+            if let fitted = wpeFitRenderTargetExtent(scaledLocal, fit: fit) {
+                return fitted
             }
-            return WPEMetalRenderTargetKey(
-                name: spec.name,
-                width: wpeRenderTargetDimension(localSize.width, scale: spec.scale),
-                height: wpeRenderTargetDimension(localSize.height, scale: spec.scale),
-                format: spec.format,
-                pixelFormat: pixelFormat
+            return (
+                wpeRenderTargetDimension(scaledLocal.width, scale: spec.scale),
+                wpeRenderTargetDimension(scaledLocal.height, scale: spec.scale)
             )
         }
-        if let fitted = wpeFitRenderTargetExtent(sceneSize, fit: spec.fit) {
-            return WPEMetalRenderTargetKey(
-                name: spec.name,
-                width: fitted.width,
-                height: fitted.height,
-                format: spec.format,
-                pixelFormat: pixelFormat
-            )
+        let scaledScene = canvas(sceneSize)
+        if let fitted = wpeFitRenderTargetExtent(scaledScene, fit: fit) {
+            return fitted
         }
-        return WPEMetalRenderTargetKey(
-            name: spec.name,
-            sceneSize: sceneSize,
-            scale: spec.scale,
-            format: spec.format,
-            pixelFormat: pixelFormat
+        return (
+            wpeRenderTargetDimension(scaledScene.width, scale: spec.scale),
+            wpeRenderTargetDimension(scaledScene.height, scale: spec.scale)
         )
+    }
+
+    /// The WORLD-space canvas a pooled target represents: the same derivation as
+    /// its pixel key, at pixelScale 1. This is what quad NDC math and text-glyph
+    /// vertex normalization must use as their canvas — with scaling active the
+    /// destination texture's own dimensions are `pixelScale` SMALLER than the
+    /// world canvas, and using them would grow the content by 1/pixelScale.
+    func worldCanvasSize(
+        for target: WPERenderTarget,
+        layer: WPERenderLayer,
+        sceneSize: CGSize
+    ) -> CGSize {
+        switch target {
+        case .scene:
+            return sceneSize
+        case .fbo, .layerComposite:
+            let dimensions = keyDimensions(
+                for: target,
+                spec: targetSpec(for: target, layer: layer),
+                layer: layer,
+                sceneSize: sceneSize,
+                pixelScale: 1
+            )
+            return CGSize(width: dimensions.width, height: dimensions.height)
+        }
     }
 
     func texture(
@@ -502,89 +565,20 @@ final class WPEMetalRenderTargetPool {
         sceneSize: CGSize,
         pixelFormat: MTLPixelFormat
     ) -> WPEMetalRenderTargetKey {
-        switch target {
-        case .layerComposite:
-            if let pixelSize = spec.pixelSize {
-                return WPEMetalRenderTargetKey(
-                    name: spec.name,
-                    width: wpeRenderTargetDimension(pixelSize.width, scale: spec.scale),
-                    height: wpeRenderTargetDimension(pixelSize.height, scale: spec.scale),
-                    format: spec.format,
-                    pixelFormat: pixelFormat
-                )
-            }
-            let localSize = Self.layerCompositeSize(
-                for: layer,
-                sceneSize: sceneSize,
-                memo: sceneCaptureGeometryMemo
-            )
-            if let fitted = wpeFitRenderTargetExtent(localSize, fit: spec.fit) {
-                return WPEMetalRenderTargetKey(
-                    name: spec.name,
-                    width: fitted.width,
-                    height: fitted.height,
-                    format: spec.format,
-                    pixelFormat: pixelFormat
-                )
-            }
-            return WPEMetalRenderTargetKey(
-                name: spec.name,
-                width: wpeRenderTargetDimension(localSize.width, scale: spec.scale),
-                height: wpeRenderTargetDimension(localSize.height, scale: spec.scale),
-                format: spec.format,
-                pixelFormat: pixelFormat
-            )
-        case .scene, .fbo:
-            if let pixelSize = spec.pixelSize {
-                return WPEMetalRenderTargetKey(
-                    name: spec.name,
-                    width: wpeRenderTargetDimension(pixelSize.width, scale: spec.scale),
-                    height: wpeRenderTargetDimension(pixelSize.height, scale: spec.scale),
-                    format: spec.format,
-                    pixelFormat: pixelFormat
-                )
-            }
-            if case .fbo(let fboName) = target,
-               let localSize = Self.layerLocalFBOPixelSize(
-                   fboName: fboName,
-                   layer: layer,
-                   sceneSize: sceneSize,
-                   memo: sceneCaptureGeometryMemo
-               ) {
-                if let fitted = wpeFitRenderTargetExtent(localSize, fit: spec.fit) {
-                    return WPEMetalRenderTargetKey(
-                        name: spec.name,
-                        width: fitted.width,
-                        height: fitted.height,
-                        format: spec.format,
-                        pixelFormat: pixelFormat
-                    )
-                }
-                return WPEMetalRenderTargetKey(
-                    name: spec.name,
-                    width: wpeRenderTargetDimension(localSize.width, scale: spec.scale),
-                    height: wpeRenderTargetDimension(localSize.height, scale: spec.scale),
-                    format: spec.format,
-                    pixelFormat: pixelFormat
-                )
-            }
-            if let fitted = wpeFitRenderTargetExtent(sceneSize, fit: spec.fit) {
-                return WPEMetalRenderTargetKey(
-                    name: spec.name,
-                    width: fitted.width,
-                    height: fitted.height,
-                    format: spec.format,
-                    pixelFormat: pixelFormat
-                )
-            }
-            return WPEMetalRenderTargetKey(
-                name: spec.name,
-                sceneSize: sceneSize,
-                scale: spec.scale,
-                format: spec.format,
-                pixelFormat: pixelFormat
-            )
-        }
+        let dimensions = keyDimensions(
+            for: target,
+            spec: spec,
+            layer: layer,
+            sceneSize: sceneSize,
+            pixelScale: pixelScale
+        )
+        return WPEMetalRenderTargetKey(
+            name: spec.name,
+            width: dimensions.width,
+            height: dimensions.height,
+            format: spec.format,
+            pixelFormat: pixelFormat
+        )
     }
 
     private static func layerCompositeSize(
@@ -649,7 +643,7 @@ final class WPEMetalRenderTargetPool {
            let descriptor = try? textureDescriptor(for: key),
            let texture = aliasHeap.makeTexture(descriptor: descriptor) {
             texture.label = "WPE \(key.name) alias texture"
-            WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+            registerWorldSize(of: texture)
             aliasFrameTextures[key] = (texture, lastPass)
             return texture
         }
@@ -737,7 +731,7 @@ final class WPEMetalRenderTargetPool {
             if let heap = device.makeHeap(descriptor: heapDescriptor),
                let texture = heap.makeTexture(descriptor: descriptor) {
                 texture.label = "WPE \(key.name) \(label) heap texture"
-                WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+                registerWorldSize(of: texture)
                 return Allocation(texture: texture, heap: heap)
             }
         }
@@ -746,7 +740,7 @@ final class WPEMetalRenderTargetPool {
             throw WPEMetalTextureLoaderError.textureAllocationFailed
         }
         texture.label = "WPE \(key.name) \(label) texture"
-        WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
+        registerWorldSize(of: texture)
         return Allocation(texture: texture, heap: nil)
     }
 

@@ -1383,7 +1383,15 @@ fragment half4 wpe_particle_refract_fragment(
     float nx = float(nt.a) * 2.0 - 1.0;
     float ny = float(nt.g) * 2.0 - 1.0;
     float mask = float(nt.r);
-    float2 sceneSize = max(projection.sceneSize.xy, float2(1.0));
+    // Divisor comes from the background texture itself, never from
+    // `projection.sceneSize` — that one is the WORLD canvas (the vertex stage
+    // needs it for NDC) while `[[position]]` is in the render target's PIXEL
+    // space. Under MetalFX render scaling those differ, and dividing by the
+    // world size sampled a fraction of the background: every droplet showed a
+    // reflection from the wrong place, displaced further the further it sat
+    // from the top-left. Same idiom as `wpe_blend_composite_fragment`.
+    float2 sceneSize = max(
+        float2(backgroundTex.get_width(), backgroundTex.get_height()), float2(1.0));
     float2 screenUV = in.position.xy / sceneSize;   // [[position]] = pixels, top-left
     // Project the tangent-space normal onto the quad's screen tangents (WPE's
     // v_ScreenTangents·normal). The tangents already fold in g_RefractAmount and

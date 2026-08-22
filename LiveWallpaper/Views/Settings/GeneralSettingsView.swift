@@ -52,6 +52,9 @@ struct GeneralSettingsView: View {
     #if !LITE_BUILD
     /// Runtime reads this at session build (`WPEOffMainRenderFlag`).
     @AppStorage(WPEOffMainRenderFlag.defaultsKey) var offMainRenderEnabled = true
+    /// Runtime reads this at executor init (`WPEMetalFXSpatialUpscaler.renderScale`);
+    /// unset and 1.0 both mean upscaling off.
+    @AppStorage(WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey, store: .appScoped()) var metalFXRenderScale = 1.0
     #endif
     @State var weatherLocation: WeatherLocationPreference
     @State var locationAuthorizationStatus: CLAuthorizationStatus

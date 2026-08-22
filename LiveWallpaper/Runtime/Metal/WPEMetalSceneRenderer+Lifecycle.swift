@@ -79,6 +79,9 @@ extension WPEMetalSceneRenderer {
         createdLayerTemplatesByImagePath.removeAll(keepingCapacity: false)
         soundRuntime?.stop()
         soundRuntime = nil
+        latchedTextureCap = nil
+        didLatchTextureCap = false
+        hasPlannedUpscale = false
         sceneRenderSize = CGSize(width: 1, height: 1)
         cameraUniforms = .identity
         lastRuntimeUniforms = nil
@@ -445,6 +448,9 @@ extension WPEMetalSceneRenderer {
     func setPresentFitMode(_ mode: WPEPresentFitMode) {
         guard mode != presentFitMode else { return }
         presentFitMode = mode
+        // Fit mode is a MetalFX plan input (center never scales, cover/contain
+        // need an exact aspect), so it refreshes the verdict like any other.
+        refreshUpscalePlan(reason: "fitMode")
         if !needsContinuousFrames, outputTexture != nil {
             surfaceControl.drawImmediately()
         }
@@ -792,11 +798,18 @@ extension WPEMetalSceneRenderer {
         guard didLoad else { return }
         do {
             let textureToPresent: MTLTexture?
-            // Set by the merged-present closure below; nil means the present
-            // still needs its own command buffer (static re-present, or a
-            // sync/readback frame where `render` skips the closure).
+            // nil → present still needs its own command buffer.
+            // Adopt what the LAST present actually drew to. Retrying before the
+            // present would re-read the same unset layer — `nextDrawable()` is
+            // what sizes it — and a static scene pauses after frame one, so a
+            // pre-present retry never gets a second chance.
+            adoptPresentedDrawableSize()
             var mergedPresentResult: Bool?
-            if needsContinuousFrames {
+            // `pendingForcedRerender` promotes one static tick into a real
+            // render — the cached frame is at a superseded render scale.
+            let mustRerender = needsContinuousFrames || pendingForcedRerender
+            pendingForcedRerender = false
+            if mustRerender {
                 let deferredPresent: WPEMetalRenderExecutor.DeferredPresentEncoder?
                 if executor.synchronizeFrameCompletion {
                     deferredPresent = nil
@@ -804,9 +817,7 @@ extension WPEMetalSceneRenderer {
                     let layer = metalLayer.layer
                     let fitMode = presentFitMode
                     deferredPresent = { [self] texture, commandBuffer in
-                        // Poster captures drain here, not before the render: a
-                        // frame that throws earlier leaves them pending for the
-                        // next attempt, exactly as the two-buffer path did.
+                        // Drain posters here: a throw earlier leaves them pending.
                         let livePosterCaptures = takePendingLivePosterCaptures()
                         let presentCompletion = makeReadinessPresentCompletion(
                             livePosterCaptures: livePosterCaptures,
@@ -817,6 +828,7 @@ extension WPEMetalSceneRenderer {
                                 texture: texture,
                                 layer: layer,
                                 fitMode: fitMode,
+                                worldSourceSize: sceneRenderSize,
                                 presentCompletion: presentCompletion,
                                 into: commandBuffer
                             )
@@ -854,6 +866,7 @@ extension WPEMetalSceneRenderer {
                         texture: texture,
                         layer: metalLayer.layer,
                         fitMode: presentFitMode,
+                        worldSourceSize: sceneRenderSize,
                         presentCompletion: presentCompletion
                     )
                     if !presented {

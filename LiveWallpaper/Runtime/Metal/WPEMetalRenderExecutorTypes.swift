@@ -7,11 +7,7 @@ import MetalKit
 import os
 import simd
 
-/// Fragment-texture slots for one transpiled-shader dispatch, indexed rather
-/// than hashed — the `Dictionary` this replaces was allocated per custom pass
-/// per frame for an 8-entry table. Reads are bounds-checked because uniform
-/// names arrive unvalidated: `g_Texture<N>Resolution` parses N out of an
-/// authored shader.
+/// Indexed fragment-texture slots for one transpiled-shader dispatch.
 final class WPEMetalTextureSlotTable {
     private var textures: ContiguousArray<MTLTexture?>
 
@@ -29,8 +25,6 @@ final class WPEMetalTextureSlotTable {
         }
     }
 
-    /// Clears every slot while keeping the storage — the reuse half of the
-    /// scratch (same intent as `removeAll(keepingCapacity:)` elsewhere).
     func reset() {
         for index in textures.indices {
             textures[index] = nil
@@ -63,9 +57,7 @@ enum WPEMetalSceneCaptureUtilityModels {
         )
     }
 
-    /// Same rule, taking the already-resolved classification carried on the
-    /// layer (`WPERenderLayer.utilityModelKind`) so the render path never
-    /// re-classifies a path it already classified at graph-build time.
+    /// Same rule, using the classification already on the layer.
     static func outputGeometry(
         kind: WPEUtilityModelKind?,
         geometry: WPERenderLayerGeometry,
@@ -99,11 +91,7 @@ enum WPEMetalSceneCaptureUtilityModels {
     }
 }
 
-/// Per-layer memo for `WPEMetalSceneCaptureUtilityModels.outputGeometry`, a
-/// pure function of (path, size/scale/angles, scene size) that was re-evaluated
-/// per utility layer per key derivation per frame. Fields the function never
-/// reads (origin, alpha, color…) are excluded from the key so script-driven
-/// layers still hit.
+/// Memo of `outputGeometry` per layer. Key omits fields the function never reads.
 final class WPESceneCaptureOutputGeometryMemo {
     private struct Entry {
         let path: String
@@ -136,8 +124,6 @@ final class WPESceneCaptureOutputGeometryMemo {
             geometry: geometry,
             sceneSize: sceneSize
         )
-        // createLayer keys are script-authored and unbounded over a scene's
-        // lifetime; cap the memo so it can never grow without bound.
         if entries.count >= 512, entries[objectID] == nil {
             entries.removeAll(keepingCapacity: true)
         }

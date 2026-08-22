@@ -61,6 +61,31 @@ extension GeneralSettingsView {
                     .accessibilityHint(Text("Lower the frame rate when windows cover the desktop or on battery, to save power"))
             }
 
+            if WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler {
+                SettingRow(
+                    icon: "wand.and.stars",
+                    iconColor: .cyan,
+                    title: "MetalFX upscaling",
+                    subtitle: "For demanding wallpapers only — renders them smaller, then upscales with MetalFX",
+                    info: "Turn this on only for a wallpaper that makes your Mac run hot. Those render at a reduced internal resolution and Apple's MetalFX spatial scaler rebuilds the full-resolution image, which measurably lowers GPU power. On a light wallpaper the scaler costs more than it saves and can raise power instead — which is why this is off by default. Quality keeps most detail; Performance saves the most but can soften small text. Changing this reloads your wallpapers."
+                ) {
+                    // Read at executor init, so a change must rebuild sessions to
+                    // take effect — reloadAllScreens tears down and restores every
+                    // session, re-reading the scale (same pattern as the
+                    // multithreaded-rendering toggle above).
+                    Picker("", selection: $metalFXRenderScale) {
+                        Text("Off").tag(1.0)
+                        Text("Quality (0.75×)").tag(0.75)
+                        Text("Performance (0.5×)").tag(0.5)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .onChange(of: metalFXRenderScale) { _, _ in screenManager.reloadAllScreens() }
+                    .accessibilityLabel(Text("MetalFX upscaling"))
+                    .accessibilityHint(Text("For demanding wallpapers only — renders them smaller, then upscales with MetalFX"))
+                }
+            }
+
             SettingRow(
                 icon: "cpu",
                 iconColor: .indigo,

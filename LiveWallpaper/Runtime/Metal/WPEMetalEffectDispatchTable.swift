@@ -55,11 +55,7 @@ struct WPEEffectDispatchDescriptor: Sendable {
         self.bind = bind
     }
 
-    /// Shared bind for effects that sample exactly one texture (the
-    /// `textureBindings[0] ?? textures[0] ?? source` chain) and fill one
-    /// uniform struct from the pass (+ optionally the resolved texture,
-    /// e.g. blur's texel size, + the frame context for frame-global names
-    /// like `g_Time`).
+    /// One-texture bind: `textureBindings[0] ?? textures[0] ?? source`, plus uniforms.
     static func singleTexture<U: BitwiseCopyable>(
         _ uniforms: @escaping @Sendable (WPEPreparedRenderPass, MTLTexture, WPEFrameUniformContext) -> U
     ) -> Bind {

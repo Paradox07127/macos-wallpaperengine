@@ -286,15 +286,7 @@ extension WPEMetalSceneRenderer {
                 targetW = max(base.width, (targetW * CGFloat(shrink)).rounded())
                 targetH = max(base.height, (targetH * CGFloat(shrink)).rounded())
             }
-            // MetalFX render-scale experiment: render below the drawable and let
-            // the spatial scaler upscale at present (when the drawable is
-            // larger; at authored-base == drawable the equal-size guard makes
-            // this a no-op). Neither dimension may scale below the authored
-            // base — the same floor the budget shrink above holds.
-            if WPEMetalFXSpatialUpscaler.isExperimentEnabled {
-                targetW = max(base.width, WPEMetalFXSpatialUpscaler.scaledDimension(targetW))
-                targetH = max(base.height, WPEMetalFXSpatialUpscaler.scaledDimension(targetH))
-            }
+            // MetalFX experiment: shrink the native-res RT, never below the authored canvas.
             if targetW > base.width + 1 || targetH > base.height + 1 {
                 cameraUniforms = WPEMetalCameraUniforms(
                     orthogonalProjection: WPESceneOrthogonalProjection(
@@ -327,6 +319,11 @@ extension WPEMetalSceneRenderer {
         cameraParallaxSmoother.reset()
         sceneRenderSize = cameraUniforms.renderSize
         debugStage("camera", "renderSize=\(Int(sceneRenderSize.width))x\(Int(sceneRenderSize.height))")
+        // Decided here, ahead of `loadTextures`: source-texture downsampling is
+        // permanent for the scene's life, so it may only happen once the scaler
+        // is known to be usable for THIS scene on THIS display. Later input
+        // changes (geometry, fit mode) refresh through the same entry point.
+        refreshUpscalePlan(reason: "load", isInitial: true)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         // Before any loader's `installSandbox`, so they see resolved `engine.userProperties` instead of the `?? WPESharedScriptState(...)` fallback.
         sceneScriptSharedState = WPESharedScriptState(

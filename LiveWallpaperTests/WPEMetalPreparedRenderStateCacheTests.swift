@@ -6,15 +6,7 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// Guards the three prepare-time render-state caches added for W5.2a:
-/// the per-pass PSO cache, the indexed fragment-texture slot table, and the
-/// utility-model classification carried on `WPERenderLayer`.
-///
-/// The PSO tests are the mutation guard in permanent form: there is one test
-/// per dimension of `PassPSOKey`, each asserting that varying ONLY that
-/// dimension yields a different `MTLRenderPipelineState`. Dropping any
-/// dimension from the key makes the matching test fail, because the cache would
-/// then hand back the first-built state for the second call.
+/// Per-pass PSO cache, indexed texture slot table, and `utilityModelKind` on the layer.
 @Suite("WPE Metal prepared render-state caches")
 struct WPEMetalPreparedRenderStateCacheTests {
 
@@ -220,8 +212,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
 
     // MARK: - C. Utility-model classification carried on the layer
 
-    /// The malformed shapes WPE authors emit, plus the negatives the reject
-    /// fast path must not swallow.
+    /// Authored path shapes plus negatives the suffix reject must not swallow.
     private static let classificationCorpus = [
         "models/util/composelayer.json",
         "models/util/projectlayer.json",
@@ -248,8 +239,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
         }
     }
 
-    /// The lock-free suffix reject in `classify` must be a pure short-circuit:
-    /// re-deriving the classification the long way has to agree everywhere.
+    /// Suffix reject is a short-circuit; full classification must agree.
     @Test("The suffix fast path never changes classify's answer")
     func suffixRejectMatchesFullClassification() {
         let expected: [String: WPEUtilityModelKind?] = [

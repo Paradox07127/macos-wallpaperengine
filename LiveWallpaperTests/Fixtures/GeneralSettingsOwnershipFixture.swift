@@ -44,6 +44,7 @@ enum OwnershipFixture {
             "videoCacheBudgetMB",
             "adaptiveFrameRateEnabled",
             "offMainRenderEnabled",
+            "metalFXRenderScale",
         ],
         .audio: [
             "audioResponseEnabled",

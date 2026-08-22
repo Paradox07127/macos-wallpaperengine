@@ -46,6 +46,20 @@ struct DoctorProbeReport: Identifiable, Sendable {
     let lastRun: Date
 }
 
+/// The SteamCMD that last passed all three binary probes, kept across launches.
+///
+/// Only facts, never rendered probe text: the details are rebuilt at restore
+/// time so a language change between launches cannot resurrect the old
+/// locale's strings.
+struct DoctorGreenFingerprint: Codable, Equatable, Sendable {
+    let binaryPath: String
+    let sha256: String
+    let isHardenedRuntime: Bool
+    /// When the probes that earned this actually ran. Carried into the restored
+    /// reports so exported diagnostics never claim a check that did not happen.
+    let recordedAt: Date
+}
+
 enum DoctorState: Sendable, Equatable {
     case idle
     case probing
@@ -121,6 +135,7 @@ final class SteamCMDDoctorService {
         static let workdirBookmark = "loomscreen.workshop.doctor.workdirBookmark"
         static let binarySHA256 = "loomscreen.workshop.doctor.binarySHA256"
         static let username = "loomscreen.workshop.doctor.username"
+        static let greenFingerprint = "loomscreen.workshop.doctor.greenFingerprint.v1"
     }
 
     /// Re-bookmark a workshop item under the authorized Steam library (layout moves).
@@ -275,7 +290,8 @@ final class SteamCMDDoctorService {
     /// and nothing on macOS binds a signature verdict to the inode that ends up
     /// executed. Every path stored here came back from the connector.
     func bindResolvedBinary(_ path: String) async throws {
-        let inspection = await SteamConnectorClient.inspectSteamCMDBinary(path: path)
+        beginProbeRun()
+        let inspection = await inspect(path: path)
         if let reason = inspection?.unavailableReason {
             // Busy is not "bad binary": refusing the bind with a resolution error
             // would tell the user to pick a different file for no reason.
@@ -287,6 +303,7 @@ final class SteamCMDDoctorService {
         binaryPath = path
         lastBinarySHA256 = sha256
         verifiedBinarySHA256 = nil
+        greenFingerprint = nil
         // Invalidate every probe whose green-ness depends on which binary
         // we run — re-binding to a different SteamCMD must force a re-run.
         for kind in DoctorProbeKind.allCases where kind != .workingDirectory {
@@ -309,6 +326,7 @@ final class SteamCMDDoctorService {
         binaryPath = nil
         lastBinarySHA256 = nil
         verifiedBinarySHA256 = nil
+        greenFingerprint = nil
         for kind in DoctorProbeKind.allCases where kind != .workingDirectory {
             setProbe(kind, status: .notRun)
         }
@@ -450,7 +468,119 @@ final class SteamCMDDoctorService {
 
     // MARK: - Probes
 
+    nonisolated static let binaryProbeKinds: [DoctorProbeKind] =
+        [.binaryIdentity, .codeSignature, .gatekeeperQuarantine]
+
+    private static func identityVerifiedDetail() -> String {
+        String(localized: "SteamCMD identity verified.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+    }
+
+    private static func verifiedValveBuildDetail(isHardenedRuntime: Bool) -> String {
+        isHardenedRuntime
+            ? String(localized: "Verified Valve build (TeamIdentifier=MXGJJ98X76, Hardened Runtime).", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+            : String(localized: "Verified Valve build (TeamIdentifier=MXGJJ98X76).", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+    }
+
+    private static func gatekeeperClearDetail() -> String {
+        String(localized: "SteamCMD launches without Gatekeeper interference.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+    }
+
+    /// Whether a launch may restore the stored green instead of re-running the
+    /// three binary probes.
+    ///
+    /// Deliberately not time-based: all three are a function of the bytes on
+    /// disk and their signature, so an unchanged fingerprint is an unchanged
+    /// verdict, and a TTL would only burn a SteamCMD launch on a schedule.
+    nonisolated static func canRestoreGreen(
+        fingerprint: DoctorGreenFingerprint?,
+        boundBinaryPath: String?,
+        inspection: SteamCMDBinaryInspection?
+    ) -> Bool {
+        guard let fingerprint,
+              boundBinaryPath == fingerprint.binaryPath,
+              // No verdict is not a green light. A busy or unreachable connector
+              // falls through to the probes, which say so in their own words.
+              let inspection,
+              inspection.unavailableReason == nil,
+              inspection.exists,
+              inspection.sha256 == fingerprint.sha256,
+              inspection.signatureValid,
+              inspection.teamIdentifier == valveTeamIdentifier,
+              !inspection.isQuarantined
+        else { return false }
+        return true
+    }
+
+    /// Launch path.
+    ///
+    /// A relaunch on the same SteamCMD costs one inspection here, against the
+    /// four inspections (eight `codesign` spawns) and two SteamCMD launches that
+    /// `autoConfigureIfNeeded()` + `runAll()` cost between them: the three
+    /// binary probes are restored from the fingerprint the last passing run
+    /// recorded, and re-run only when the bytes, signature or quarantine state
+    /// no longer match it.
+    ///
+    /// `cachedLogin` is deliberately absent. A Steam session expires
+    /// server-side while the app is closed, so a launch-time verdict is already
+    /// stale by the time the user reaches for a download;
+    /// `autoConfirmDownloadReadinessIfNeeded()` runs it when the Workshop pane
+    /// appears.
+    func prepareAtLaunch() async {
+        beginProbeRun()
+        state = .probing
+        var restored = false
+        if let binary = try? resolveBinaryURL() {
+            let didStart = binary.startAccessingSecurityScopedResource()
+            defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
+            let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
+            let inspection = await inspect(path: path)
+            if let fingerprint = greenFingerprint,
+               Self.canRestoreGreen(
+                   fingerprint: fingerprint, boundBinaryPath: binaryPath, inspection: inspection
+               ) {
+                restoreGreen(from: fingerprint)
+                restored = true
+            }
+        }
+        if !restored {
+            for kind in Self.binaryProbeKinds {
+                await performProbe(kind)
+            }
+        }
+        // After the restore, so that its own `.notRun` identity re-probe does not
+        // re-run what we just settled.
+        await autoConfigureIfNeeded()
+        await performProbe(.workingDirectory)
+        finishProbeRun()
+    }
+
+    private func restoreGreen(from fingerprint: DoctorGreenFingerprint) {
+        setProbe(
+            .binaryIdentity,
+            status: .green(detail: redacted(Self.identityVerifiedDetail())),
+            lastRun: fingerprint.recordedAt
+        )
+        setProbe(
+            .codeSignature,
+            status: .green(detail: redacted(
+                Self.verifiedValveBuildDetail(isHardenedRuntime: fingerprint.isHardenedRuntime)
+            )),
+            lastRun: fingerprint.recordedAt
+        )
+        setProbe(
+            .gatekeeperQuarantine,
+            status: .green(detail: Self.gatekeeperClearDetail()),
+            lastRun: fingerprint.recordedAt
+        )
+        // The digest, signature and team id were just confirmed against the
+        // fingerprint, so an in-session probe need not re-spawn codesign.
+        verifiedBinarySHA256 = fingerprint.sha256
+        // Nothing was probed, so nothing may re-date the record.
+        lastInspection = nil
+    }
+
     func runAll() async {
+        beginProbeRun()
         state = .probing
         for kind in DoctorProbeKind.allCases {
             await performProbe(kind)
@@ -459,6 +589,7 @@ final class SteamCMDDoctorService {
     }
 
     func runProbe(_ kind: DoctorProbeKind) async {
+        beginProbeRun()
         state = .probing
         await performProbe(kind)
         finishProbeRun()
@@ -488,7 +619,7 @@ final class SteamCMDDoctorService {
                 return
             }
 
-            var result = await Self.probe(executionAuthorization, args: ["+quit"])
+            var result = await launchSteamCMD(executionAuthorization, args: ["+quit"])
             var retriedAfterSelfUpdate = false
             if !result.timedOut,
                !Self.matches(Self.identityBannerPattern, in: result.stdout),
@@ -504,7 +635,7 @@ final class SteamCMDDoctorService {
                 }
                 executionAuthorization = refreshedAuthorization
                 retriedAfterSelfUpdate = true
-                result = await Self.probe(executionAuthorization, args: ["+quit"])
+                result = await launchSteamCMD(executionAuthorization, args: ["+quit"])
             }
             if result.timedOut {
                 setProbe(.binaryIdentity, status: .red(
@@ -523,9 +654,9 @@ final class SteamCMDDoctorService {
                 return
             }
 
-            var detail = String(localized: "SteamCMD identity verified.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+            var detail = Self.identityVerifiedDetail()
             let rehashPath = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            if let currentSHA = await SteamConnectorClient.inspectSteamCMDBinary(path: rehashPath)?.sha256 {
+            if let currentSHA = await inspect(path: rehashPath)?.sha256 {
                 if let previous = lastBinarySHA256, previous != currentSHA {
                     detail = String(localized: "SteamCMD updated itself (SHA-256 changed) — that's normal.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
                 }
@@ -543,7 +674,7 @@ final class SteamCMDDoctorService {
             let didStart = binary.startAccessingSecurityScopedResource()
             defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
             let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            let result = await SteamConnectorClient.inspectSteamCMDBinary(path: path)
+            let result = await inspect(path: path)
             // Distinguish unreachable/busy connector from a missing SteamCMD file.
             guard let result, result.unavailableReason == nil else {
                 setProbe(.codeSignature, status: .yellow(
@@ -562,9 +693,7 @@ final class SteamCMDDoctorService {
                 return
             }
             if result.signatureValid, result.teamIdentifier == Self.valveTeamIdentifier {
-                let detail = result.isHardenedRuntime
-                    ? String(localized: "Verified Valve build (TeamIdentifier=MXGJJ98X76, Hardened Runtime).", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
-                    : String(localized: "Verified Valve build (TeamIdentifier=MXGJJ98X76).", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+                let detail = Self.verifiedValveBuildDetail(isHardenedRuntime: result.isHardenedRuntime)
                 setProbe(.codeSignature, status: .green(detail: redacted(detail)))
             } else {
                 let team = result.teamIdentifier ?? "none"
@@ -590,7 +719,7 @@ final class SteamCMDDoctorService {
             let didStart = binary.startAccessingSecurityScopedResource()
             defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
             let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            let quarantineCheck = await SteamConnectorClient.inspectSteamCMDBinary(path: path)
+            let quarantineCheck = await inspect(path: path)
             // Unavailable replies default isQuarantined=false — don't treat as clean.
             guard let quarantineCheck, quarantineCheck.unavailableReason == nil else {
                 setProbe(.gatekeeperQuarantine, status: .yellow(
@@ -609,7 +738,7 @@ final class SteamCMDDoctorService {
 
             // Identity already launched SteamCMD → skip heavier anonymous login probe.
             if isGreen(.binaryIdentity) {
-                setProbe(.gatekeeperQuarantine, status: .green(detail: String(localized: "SteamCMD launches without Gatekeeper interference.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")))
+                setProbe(.gatekeeperQuarantine, status: .green(detail: Self.gatekeeperClearDetail()))
                 return
             }
 
@@ -620,12 +749,14 @@ final class SteamCMDDoctorService {
                 ))
                 return
             }
-            let result = await Self.probe(executionAuthorization, args: ["+login", "anonymous", "+quit"])
+            let result = await launchSteamCMD(
+                executionAuthorization, args: ["+login", "anonymous", "+quit"]
+            )
             let combined = "\(result.stdout)\n\(result.stderr)"
             if !result.timedOut,
                !result.killed,
                combined.contains("Steam Console Client") || result.exitCode == 0 {
-                setProbe(.gatekeeperQuarantine, status: .green(detail: String(localized: "SteamCMD launches without Gatekeeper interference.", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")))
+                setProbe(.gatekeeperQuarantine, status: .green(detail: Self.gatekeeperClearDetail()))
             } else {
                 setProbe(.gatekeeperQuarantine, status: .red(
                     message: String(localized: "SteamCMD failed the launch sanity check. If macOS blocked it, clear the quarantine attribute.", comment: "SteamCMD diagnostic (Doctor) probe label or result message."),
@@ -939,6 +1070,61 @@ final class SteamCMDDoctorService {
     /// each launch and whenever the SHA changes.
     @ObservationIgnored private var verifiedBinarySHA256: String?
 
+    /// The most recent inspection that actually reached a verdict, so the
+    /// fingerprint is recorded from the same facts the probes just judged.
+    /// Cleared by a restore, which judged nothing.
+    @ObservationIgnored private var lastInspection: SteamCMDBinaryInspection?
+
+    /// Inspections already paid for during the current probe run, by canonical
+    /// path.
+    ///
+    /// One inspection costs a full-file SHA-256 plus two `codesign` children in
+    /// the connector, serialized behind every other SteamCMD operation, and
+    /// identity, signature and Gatekeeper all ask it about the same bytes.
+    ///
+    /// Valid only from a run's start until the next SteamCMD launch: SteamCMD
+    /// rewrites its own executable, so `launchSteamCMD(_:args:)` drops it.
+    @ObservationIgnored var runScopedInspections: [String: SteamCMDBinaryInspection] = [:]
+
+    /// Opens a probe run: whatever the last one learned about the binary is no
+    /// longer this run's evidence.
+    func beginProbeRun() {
+        runScopedInspections.removeAll()
+    }
+
+    /// The only place a Doctor probe launches SteamCMD, so the only place the
+    /// run cache has to be dropped.
+    func launchSteamCMD(
+        _ authorization: SteamCMDBinaryExecutionAuthorization,
+        args: [String]
+    ) async -> SteamCMDRunResult {
+        let result = await Self.probe(authorization, args: args)
+        runScopedInspections.removeAll()
+        return result
+    }
+
+    var greenFingerprint: DoctorGreenFingerprint? {
+        get {
+            guard let data = defaults.data(forKey: Keys.greenFingerprint) else { return nil }
+            return try? JSONDecoder().decode(DoctorGreenFingerprint.self, from: data)
+        }
+        set {
+            setOptional(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: Keys.greenFingerprint)
+        }
+    }
+
+    /// Every inspection this service asks for goes through here, so no probe
+    /// can record a verdict the fingerprint did not see.
+    func inspect(path: String) async -> SteamCMDBinaryInspection? {
+        if let reused = runScopedInspections[path] { return reused }
+        let inspection = await SteamConnectorClient.inspectSteamCMDBinary(path: path)
+        if let inspection, inspection.unavailableReason == nil, inspection.exists {
+            lastInspection = inspection
+            runScopedInspections[path] = inspection
+        }
+        return inspection
+    }
+
     /// Download progress, as the Workshop UI consumes it. Outlived the retired
     /// `SteamCMDProcessRunner`; the values now originate in the connector.
     typealias SteamCMDProgressHandler = @Sendable (
@@ -1023,7 +1209,7 @@ final class SteamCMDDoctorService {
         let didStart = binary.startAccessingSecurityScopedResource()
         defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
         let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-        guard let inspection = await SteamConnectorClient.inspectSteamCMDBinary(path: path),
+        guard let inspection = await inspect(path: path),
               inspection.exists,
               let currentSHA = inspection.sha256 else {
             verifiedBinarySHA256 = nil
@@ -1134,8 +1320,8 @@ final class SteamCMDDoctorService {
         if let value, !value.isEmpty { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
     }
 
-    func setProbe(_ kind: DoctorProbeKind, status: DoctorProbeStatus) {
-        probes[kind] = DoctorProbeReport(id: kind, status: status, lastRun: Date())
+    func setProbe(_ kind: DoctorProbeKind, status: DoctorProbeStatus, lastRun: Date = Date()) {
+        probes[kind] = DoctorProbeReport(id: kind, status: status, lastRun: lastRun)
     }
 
     private func finishProbeRun() {
@@ -1148,6 +1334,37 @@ final class SteamCMDDoctorService {
             return true
         }
         state = .done(allGreen: allGreen, blockingFailures: blockingFailures)
+        updateGreenFingerprint()
+    }
+
+    /// Keeps the launch fast path's ledger honest, in three rules.
+    ///
+    /// A binary probe that came back yellow or red retires the fingerprint.
+    /// Three greens plus a fresh inspection record a new one. A restored green
+    /// carries no fresh inspection, so it leaves the existing record — and the
+    /// date it was actually earned — alone.
+    func updateGreenFingerprint() {
+        let contradicted = Self.binaryProbeKinds.contains { kind in
+            switch probes[kind]?.status {
+            case .yellow, .red: return true
+            default: return false
+            }
+        }
+        guard !contradicted else {
+            greenFingerprint = nil
+            return
+        }
+        guard Self.binaryProbeKinds.allSatisfy(isGreen),
+              let path = binaryPath,
+              let inspection = lastInspection,
+              let sha256 = inspection.sha256
+        else { return }
+        greenFingerprint = DoctorGreenFingerprint(
+            binaryPath: path,
+            sha256: sha256,
+            isHardenedRuntime: inspection.isHardenedRuntime,
+            recordedAt: Date()
+        )
     }
 
     func isGreen(_ kind: DoctorProbeKind) -> Bool {

@@ -208,11 +208,8 @@ extension WPEMetalSceneRenderer {
                 frameSlot: frameSubmission.slot
             )
         }
-        // The commit permission is the fail-close linearization point, so it
-        // must be decided BEFORE the present is encoded: a denial rolls the
-        // frame back and the STABLE re-encode below carries the present
-        // instead. Deciding after the merged buffer committed would put the
-        // discarded speculative frame on screen.
+        // Fail-close must decide commit BEFORE present is encoded: a denial
+        // rolls back and the stable re-encode carries present instead.
         var videoCommandsOutcome: Bool?
         let guardedPresent: WPEMetalRenderExecutor.DeferredPresentEncoder?
         if let deferredPresent {
@@ -270,9 +267,7 @@ extension WPEMetalSceneRenderer {
             ? WPEMetalFrameProductionCompletion()
             : nil
         defer { frameProduction?.seal() }
-        // Published before `executor.render`, not after: the merged-present
-        // closure runs inside `render` and builds its readiness completion from
-        // `latestFrameProduction`, which must already be this frame's aggregate.
+        // Published before `executor.render`: merged present reads this mid-render.
         latestFrameProduction = frameProduction
         let textFrame = withFrameSignpost("textLayout") {
             prepareTextFrame(

@@ -6,12 +6,7 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// Characterization + mutation guard for the split alias-interval scan: the
-/// cached structural topology (`FBOAliasTopology`) plus per-frame size mapping
-/// must reproduce the pre-split full scan EXACTLY (the reference replica lives
-/// at the bottom of this file), and the cache's invalidation must demonstrably
-/// carry the correctness — a deliberately stale topology must produce wrong
-/// intervals.
+/// Cached FBO alias topology plus per-frame sizes must match the pre-split scan.
 @Suite("WPE Metal FBO alias topology cache")
 struct WPEMetalFBOAliasTopologyCacheTests {
 
@@ -212,8 +207,7 @@ struct WPEMetalFBOAliasTopologyCacheTests {
         )
     }
 
-    /// Same objectID throughout so the memo's own key never changes — only the
-    /// path/geometry/scene inputs it validates against do.
+    /// Same objectID so the memo key is stable; only path/geometry/scene vary.
     private func memoLayer(_ path: String) -> WPERenderLayer {
         WPERenderLayer(
             objectID: "obj",
@@ -303,11 +297,7 @@ private func aliasLayer(
     return WPEPreparedRenderLayer(graphLayer: graph, passes: passes.map(preparedAliasPass))
 }
 
-/// One pipeline covering every alias-scan form: plain FBO write/read across
-/// layers, layer composites, a layer-local FBO, a ping-pong secondary, a
-/// same-named FBO in two layers with different footprints, a godrays-combine
-/// discrete-source read, an undeclared scene-sized FBO target, and a
-/// composelayer utility whose composite size is frame-size dependent.
+/// Fixture covering every alias-scan form the cache must reproduce.
 private func makeAliasFormsPipeline(
     fxSize: CGSize = CGSize(width: 200, height: 100),
     dupSize: CGSize = CGSize(width: 64, height: 32),
@@ -419,9 +409,7 @@ private func normalizedAliasIntervals(
     }.sorted()
 }
 
-/// Replica of the pre-split full-scan algorithm (single-pass key resolution +
-/// interval scan over the flattened pass order). The production path must stay
-/// element-for-element equal to this for any pipeline and any sizes.
+/// Pre-split full-scan replica. Production intervals must match this exactly.
 private func referenceFBOAliasIntervals(
     executor: WPEMetalRenderExecutor,
     pipeline: WPEPreparedRenderPipeline,

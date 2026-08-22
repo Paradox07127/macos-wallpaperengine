@@ -10,8 +10,7 @@ final class WPEMetalPipelineCache {
     private let device: MTLDevice
     private let library: MTLLibrary
     private var pipelineStates: [WPEMetalPipelineKey: MTLRenderPipelineState] = [:]
-    /// Raw blend spelling → lowercased; see `pipelineState`. Content-keyed pure
-    /// memo, bounded by the handful of distinct spellings a scene authors.
+    /// Raw blend spelling → lowercased.
     private var lowercasedBlendModes: [String: String] = [:]
 
     init(device: MTLDevice, library: MTLLibrary) {
@@ -27,8 +26,6 @@ final class WPEMetalPipelineCache {
         colorPixelFormat: MTLPixelFormat,
         depthPixelFormat: MTLPixelFormat
     ) throws -> MTLRenderPipelineState {
-        // Memoized: this runs per pass per frame, and the PSO-cache hit path
-        // must not pay a fresh `.lowercased()` allocation each time.
         let normalizedBlend: String
         if let cached = lowercasedBlendModes[blendMode] {
             normalizedBlend = cached

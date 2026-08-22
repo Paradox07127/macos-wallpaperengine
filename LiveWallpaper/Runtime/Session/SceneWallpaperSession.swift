@@ -538,17 +538,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         renderActor.submitConfig(.clickCaptureEnabled(enabled))
     }
 
-    /// Maps the shared `VideoFitMode` onto the renderer-local present transform
-    /// (the renderer has no AVFoundation dependency).
     func setSceneFitMode(_ mode: VideoFitMode) {
-        let present: WPEPresentFitMode
-        switch mode {
-        case .stretch: present = .stretch
-        case .aspectFit: present = .contain
-        case .aspectFill: present = .cover
-        case .center: present = .center
-        }
-        renderActor.submitConfig(.presentFitMode(present))
+        renderActor.submitConfig(.presentFitMode(WPEPresentFitMode(mode)))
     }
 
     /// Adopt the freshly-built renderer into the actor and drive the initial load,

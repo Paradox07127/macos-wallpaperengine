@@ -214,6 +214,11 @@ extension WPEMetalSceneRenderer {
         let resolver = resourceResolver
         let loader = textureLoader
         let threshold = Self.lazyAnimationRawByteThreshold
+        if !didLatchTextureCap {
+            latchedTextureCap = upscalePlan.maxSourceTextureEdge
+            didLatchTextureCap = true
+        }
+        let maxSourceEdge = latchedTextureCap
         let width = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
 
         try await withThrowingTaskGroup(of: (Int, WPEParallelTextureResult).self) { group in
@@ -231,7 +236,8 @@ extension WPEMetalSceneRenderer {
                             candidates: job.candidates,
                             resolver: resolver,
                             loader: loader,
-                            streamingThreshold: threshold
+                            streamingThreshold: threshold,
+                            maxSourceEdge: maxSourceEdge
                         )
                         return (index, result)
                     } catch is CancellationError {
@@ -289,7 +295,8 @@ extension WPEMetalSceneRenderer {
         candidates: [String],
         resolver: WPEMultiRootResourceResolver,
         loader: WPEMetalTextureLoader,
-        streamingThreshold: Int
+        streamingThreshold: Int,
+        maxSourceEdge: Int? = nil
     ) async throws -> WPEParallelTextureResult {
         try Task.checkCancellation()
         var lastError: Error?
@@ -306,7 +313,9 @@ extension WPEMetalSceneRenderer {
                         if payload.videoPayload != nil || payload.animationTrack != nil {
                             return .needsOnActor
                         }
-                        return .staticTexture(try await loader.makeTexture(from: payload, label: label))
+                        return .staticTexture(try await loader.makeTexture(
+                            from: payload, label: label, maxSourceEdge: maxSourceEdge
+                        ))
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch {
@@ -315,7 +324,9 @@ extension WPEMetalSceneRenderer {
                 }
                 let image = try resolver.resolveImage(relativePath: candidate)
                 try Task.checkCancellation()
-                return .staticTexture(try await loader.makeTexture(from: image, label: label))
+                return .staticTexture(try await loader.makeTexture(
+                    from: image, label: label, maxSourceEdge: maxSourceEdge
+                ))
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -380,7 +391,12 @@ extension WPEMetalSceneRenderer {
         on actor: isolated WPEDisplayRenderActor
     ) async throws {
         do {
-            let resource = try await makeTextureResource(relativePath: path, label: "WPE texture \(path)", on: actor)
+            let resource = try await makeTextureResource(
+                relativePath: path,
+                label: "WPE texture \(path)",
+                maxSourceEdge: latchedTextureCap,
+                on: actor
+            )
             // `publicationAllowed` is an async hop; re-check after it resumes so a cancel during the hop does not publish.
             guard await publicationAllowed() else { throw CancellationError() }
             try Task.checkCancellation()
@@ -479,10 +495,15 @@ extension WPEMetalSceneRenderer {
     }
 
 
+    /// `maxSourceEdge` must stay nil for callers whose consumers do math on the
+    /// texture's PHYSICAL dimensions — the particle sprite-grid divides atlas
+    /// pixels by sidecar frame size, so a reduced-mip upload would halve its
+    /// cols/rows. Only the plain scene-layer path passes a cap.
     func makeTextureResource(
         relativePath: String,
         label: String,
         colorSpace: WPEMetalColorSpace = .sRGB,
+        maxSourceEdge: Int? = nil,
         on actor: isolated WPEDisplayRenderActor
     ) async throws -> WPELoadedTextureResource {
         try Task.checkCancellation()
@@ -531,7 +552,12 @@ extension WPEMetalSceneRenderer {
                             return .dynamicSource(source)
                         }
 
-                        return .staticTexture(try await textureLoader.makeTexture(from: payload, label: label, colorSpace: colorSpace))
+                        return .staticTexture(try await textureLoader.makeTexture(
+                            from: payload,
+                            label: label,
+                            colorSpace: colorSpace,
+                            maxSourceEdge: maxSourceEdge
+                        ))
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch {
@@ -540,7 +566,12 @@ extension WPEMetalSceneRenderer {
                 }
                 let image = try resourceResolver.resolveImage(relativePath: candidate)
                 try Task.checkCancellation()
-                return .staticTexture(try await textureLoader.makeTexture(from: image, label: label, colorSpace: colorSpace))
+                return .staticTexture(try await textureLoader.makeTexture(
+                    from: image,
+                    label: label,
+                    colorSpace: colorSpace,
+                    maxSourceEdge: maxSourceEdge
+                ))
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -567,7 +598,7 @@ extension WPEMetalSceneRenderer {
         label: String
     ) {
         guard !eagerPayload.mipmaps.isEmpty,
-              !WPEMetalTextureLoader.isMipChainEnabled,
+              !WPEMetalTextureLoader.uploadsMipChain(scalingActive: false),
               let streaming = try? resourceResolver.resolveStreamingTexturePayload(relativePath: candidate),
               let provider = WPETexAnimatedAtlasProvider(
                   payload: streaming,

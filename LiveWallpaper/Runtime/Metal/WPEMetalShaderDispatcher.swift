@@ -609,9 +609,7 @@ struct WPEMetalShaderDispatcher {
             && executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
         // The transpiler is fragment-only: it always uses wpe_fullscreen_vertex and
         // synthesizes v_TexCoord / v_Direction in the fragment (it does NOT run the scene .vert).
-        // isEnabled checked FIRST: `isWaveLikePass` lowercases the shader path and
-        // only feeds this log, so the string work must not run every frame just
-        // for appendLog to discard it.
+        // Gate on isEnabled first: `isWaveLikePass` lowercases the path and only feeds this log.
         if WPESceneDebugArtifacts.shared.isEnabled, Self.isWaveLikePass(pass) {
             let maskLive = Self.hasExplicitTextureSlot(1, in: pass)
             WPESceneDebugArtifacts.shared.appendLog(

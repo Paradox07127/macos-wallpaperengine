@@ -51,10 +51,8 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         guard let metalLayer = view.layer as? CAMetalLayer else {
             preconditionFailure("MTKView must be backed by a CAMetalLayer")
         }
-        // Both are the macOS defaults, pinned so they can't drift — except that
-        // framebufferOnly MUST be false while the MetalFX render-scale
-        // experiment is on, because the spatial scaler writes the drawable
-        // texture as its output (`WPEMetalFXSpatialUpscaler`).
+        // macOS defaults, pinned. MetalFX writes the drawable, so framebufferOnly
+        // is off while the experiment is on.
         metalLayer.maximumDrawableCount = 3
         metalLayer.framebufferOnly = !WPEMetalFXSpatialUpscaler.isExperimentEnabled
         let mailbox = WPEPointerMailbox()
@@ -71,11 +69,28 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         }
     }
 
+    /// The surface's backing-pixel size. NOT `metalLayer.drawableSize`: a
+    /// CAMetalLayer reports 0x0 until something calls `nextDrawable()` — entering
+    /// a window, layout and display all leave it at zero (verified in
+    /// `WPEMetalSurfaceGeometryTests`). An MTKView, by contrast, sizes itself
+    /// from its frame at construction.
+    var backingDrawableSize: CGSize {
+        let viewSize = mtkView.drawableSize
+        if viewSize.width > 0, viewSize.height > 0 { return viewSize }
+        return mtkView.convertToBacking(mtkView.bounds).size
+    }
+
     /// Wire the renderer and start feeding the mailbox. Idempotent publisher.
     func attach(client: WPERenderSurfaceClient) {
+        let size = backingDrawableSize
+        // Fill in the layer so anything that reads it later — including our own
+        // present path before its first drawable — sees the real size.
+        if size.width > 0, size.height > 0, metalLayer.drawableSize != size {
+            metalLayer.drawableSize = size
+        }
         self.client = client
         publisher.start()
-        client.updateSurfaceGeometry(drawableSize: metalLayer.drawableSize)
+        client.updateSurfaceGeometry(drawableSize: size)
     }
 
     // MARK: - Display-link Driver Lifecycle

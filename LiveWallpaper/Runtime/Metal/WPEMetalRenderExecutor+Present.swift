@@ -14,19 +14,16 @@ import simd
 private let presentDrawableMissCount = OSAllocatedUnfairLock(initialState: 0)
 
 extension WPEMetalRenderExecutor {
-    /// Encodes the blit-and-present into the continuous path's scene command
-    /// buffer, per frame. See `WPEMetalRenderExecutor.render(deferredPresent:)`.
+    /// Encode present into the continuous path's scene command buffer.
     typealias DeferredPresentEncoder = (MTLTexture, MTLCommandBuffer) throws -> Bool
 
-    // Not `@MainActor`: the present path runs on the renderer's
-    // `WPEDisplayRenderActor`. `CAMetalLayer.nextDrawable()` is safe off-main.
-    /// Static re-present path (and sync/readback frames): a present in its own
-    /// command buffer. The continuous path encodes into the scene buffer via
-    /// `encodePresent(into:)` instead.
+    // Not `@MainActor`: present runs on `WPEDisplayRenderActor`.
+    /// Own command buffer: static re-present and sync/readback.
     func present(
         texture source: MTLTexture,
         layer: CAMetalLayer,
         fitMode: WPEPresentFitMode = .stretch,
+        worldSourceSize: CGSize? = nil,
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)? = nil
     ) throws -> Bool {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
@@ -36,32 +33,28 @@ extension WPEMetalRenderExecutor {
             texture: source,
             layer: layer,
             fitMode: fitMode,
+            worldSourceSize: worldSourceSize,
             presentCompletion: presentCompletion,
             into: commandBuffer
         ) else {
             // Drawable miss: the un-committed buffer is simply dropped.
             return false
         }
-        // Present-CB timing lives here, not in `encodePresent`: on the merged
-        // continuous path the present is part of the scene buffer, whose timing
-        // `recordScene` already covers — recording it as "present" too would
-        // double-count the frame and corrupt the scene→present gap stats.
-        if WPEFrameGPUTimingProbe.isEnabled {
-            let executorID = ObjectIdentifier(self)
-            commandBuffer.addCompletedHandler { cb in
-                WPEFrameGPUTimingProbe.recordPresent(
-                    executor: executorID, gpuStart: cb.gpuStartTime, gpuEnd: cb.gpuEndTime
-                )
-            }
-        }
         commandBuffer.commit()
         return true
     }
 
+    /// `worldSourceSize`: the WORLD canvas the source represents when render
+    /// scaling shrank it. Only `.center` consumes it — center keeps source
+    /// pixels 1:1, and centering the reduced texture would shrink the picture
+    /// on screen by the pixel scale; the world size restores the authored
+    /// footprint (the quad upscales bilinearly). Aspect-driven modes are
+    /// resolution-independent and ignore it.
     func encodePresent(
         texture source: MTLTexture,
         layer: CAMetalLayer,
         fitMode: WPEPresentFitMode,
+        worldSourceSize: CGSize? = nil,
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)?,
         into commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
@@ -87,10 +80,9 @@ extension WPEMetalRenderExecutor {
             return false
         }
 
-        // MetalFX render-scale experiment: hand the drawable to the spatial
-        // scaler instead of the fullscreen blit when eligible; any rejection
-        // falls through to the existing present pass. The present/tracker tail
-        // below is shared by both branches.
+        lastPresentedDrawableSize = CGSize(
+            width: CGFloat(drawable.texture.width), height: CGFloat(drawable.texture.height)
+        )
         var encodedByUpscaler = false
         if let upscaler = metalFXUpscaler {
             encodedByUpscaler = upscaler.encodeIfEligible(
@@ -101,8 +93,31 @@ extension WPEMetalRenderExecutor {
             )
         }
         if !encodedByUpscaler {
+            // The plan sized this frame down expecting the scaler to restore it.
+            // It declined anyway (a fit-mode change after load, a drawable usage
+            // shortfall, or a scaler the device claimed to support and then
+            // refused), so the resolution was spent for nothing. Give scaling up
+            // for the rest of the scene rather than shipping a permanently
+            // bilinear-stretched low-resolution frame.
+            if upscalePlan.isActive,
+               upscalePlan.declineIsConclusive(forDrawableSize: lastPresentedDrawableSize) {
+                upscalePlan = upscalePlan.demotedToNative()
+                // Cached composites hold the OLD pixel size while their key is
+                // the unchanged world size, so they must go with the scale.
+                invalidateStaticLayerCache()
+                Logger.notice(
+                    "[metalfx] scaler declined a planned frame — rendering native for this scene "
+                        + "(source=\(source.width)x\(source.height) drawable="
+                        + "\(drawable.texture.width)x\(drawable.texture.height))",
+                    category: .wpeRender
+                )
+            }
             try encodePresentPass(
-                source: source, drawable: drawable, fitMode: fitMode, into: commandBuffer
+                source: source,
+                drawable: drawable,
+                fitMode: fitMode,
+                worldSourceSize: worldSourceSize,
+                into: commandBuffer
             )
         }
 
@@ -131,12 +146,12 @@ extension WPEMetalRenderExecutor {
         return true
     }
 
-    /// The classic fullscreen-sample present pass (also the fallback whenever
-    /// the MetalFX experiment declines a frame).
+    /// Fullscreen present blit; also the MetalFX fallback.
     private func encodePresentPass(
         source: MTLTexture,
         drawable: CAMetalDrawable,
         fitMode: WPEPresentFitMode,
+        worldSourceSize: CGSize?,
         into commandBuffer: MTLCommandBuffer
     ) throws {
         let descriptor = MTLRenderPassDescriptor()
@@ -166,8 +181,8 @@ extension WPEMetalRenderExecutor {
         // non-16:9 displays don't distort the scene.
         var presentUniforms = WPEPresentUniforms.make(
             fitMode: fitMode,
-            sourceWidth: source.width,
-            sourceHeight: source.height,
+            sourceWidth: worldSourceSize.map { Int($0.width) } ?? source.width,
+            sourceHeight: worldSourceSize.map { Int($0.height) } ?? source.height,
             targetWidth: drawable.texture.width,
             targetHeight: drawable.texture.height
         )

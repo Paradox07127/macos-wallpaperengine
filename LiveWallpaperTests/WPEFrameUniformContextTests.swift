@@ -6,11 +6,7 @@ import Testing
 
 @testable import LiveWallpaper
 
-/// Characterization for the frame-global uniform split: frame-global
-/// (runtime/camera) and object uniforms are no longer merged into each pass's
-/// `uniformValues` dict; consumers read them from `WPEFrameUniformContext`
-/// instead. The reference in every test is the OLD merge semantics, replicated
-/// verbatim by `legacyMergedValues` — packed slots must match bit for bit.
+/// Frame-global uniforms via `WPEFrameUniformContext` must match the old merge.
 @Suite("WPE frame uniform context")
 struct WPEFrameUniformContextTests {
 

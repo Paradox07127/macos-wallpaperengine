@@ -190,9 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            workshopDoctorService.hasBoundBinary,
            workshopDoctorService.workdirBookmarkData != nil {
             lifecycle.schedule(after: .seconds(3)) { [workshopDoctorService] in
-                await workshopDoctorService.autoConfigureIfNeeded()
+                await workshopDoctorService.prepareAtLaunch()
                 guard workshopDoctorService.workdirBookmarkData != nil else { return }
-                await workshopDoctorService.runAll()
                 // Opt-in, and only a version read — nothing downloads until the
                 // user acts on the result.
                 guard UserDefaults.standard.bool(forKey: "loomscreen.workshop.checkAssetsUpdateAtLaunch.v1"),
