@@ -14,6 +14,9 @@ enum GIFPlaybackMode {
 struct AnimatedGIFThumbnail: View {
     let url: URL?
     var playbackMode: GIFPlaybackMode = .hoverToPlay
+    /// Off for tiles that draw their own bottom band — the badge sits in the
+    /// same corner and would end up buried under it.
+    var showsPlayingBadge: Bool = true
     /// Adult-content spoiler gate: blurs the poster behind a "click to reveal"
     /// cover and suppresses playback. The parent flipping it false resumes play.
     var isBlurred: Bool = false
@@ -44,11 +47,13 @@ struct AnimatedGIFThumbnail: View {
     init(
         url: URL?,
         playbackMode: GIFPlaybackMode = .hoverToPlay,
+        showsPlayingBadge: Bool = true,
         isBlurred: Bool = false,
         isHovered: Binding<Bool> = .constant(false)
     ) {
         self.url = url
         self.playbackMode = playbackMode
+        self.showsPlayingBadge = showsPlayingBadge
         self.isBlurred = isBlurred
         self._isHovered = isHovered
     }
@@ -63,7 +68,7 @@ struct AnimatedGIFThumbnail: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if controller.isAnimating, !isBlurred {
+            if controller.isAnimating, !isBlurred, showsPlayingBadge {
                 playingBadge
                     .padding(DesignTokens.Spacing.sm)
                     .transition(.opacity)

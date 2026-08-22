@@ -193,12 +193,8 @@ private struct BookmarkTile: View {
     @Environment(WallpaperExportService.self) private var exportService
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            thumbnailTile
-            metadata
-                .padding(DesignTokens.Spacing.md)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        thumbnailTile
+            .frame(maxWidth: .infinity, alignment: .leading)
         .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
         .onHover { isHovering = $0 }
         .contextMenu { contextMenu }
@@ -237,6 +233,26 @@ private struct BookmarkTile: View {
                 typeBadge
                     .padding(DesignTokens.Spacing.sm)
             }
+            .overlay(alignment: .bottom) { bottomBand }
+    }
+
+    /// Renaming takes the band's place rather than sitting inside it: the field
+    /// is a full-height control and the band is one line of type. Clicking the
+    /// title used to start the rename; on the picture that affordance had no
+    /// visual tell, so it now lives only where it is already spelled out — the
+    /// context menu and the VoiceOver action.
+    @ViewBuilder
+    private var bottomBand: some View {
+        if isRenaming {
+            renameField
+                .padding(DesignTokens.Spacing.sm)
+                .background(Rectangle().fill(.regularMaterial))
+        } else {
+            ThumbnailTitleBand(title: bookmark.label, isHovering: isHovering) {
+                applyControl
+                deleteButton
+            }
+        }
     }
 
     private var tileBackground: some View {
@@ -291,42 +307,6 @@ private struct BookmarkTile: View {
     }
 
     // MARK: Metadata
-
-    private var metadata: some View {
-        HStack(alignment: .center, spacing: DesignTokens.Spacing.sm) {
-            textBlock
-            Spacer(minLength: DesignTokens.Spacing.xs)
-            if !isRenaming {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    applyControl
-                    deleteButton
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var textBlock: some View {
-        if isRenaming {
-            renameField
-        } else {
-            VStack(alignment: .leading, spacing: 1) {
-                Button(action: onStartRename) {
-                    MarqueeText(bookmark.label, lineLimit: 1, isActive: isHovering)
-                        .font(DesignTokens.Typography.bodyEmphasized)
-                        .foregroundStyle(.primary)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(Text("Rename"))
-                bookmark.subtitleText
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-    }
 
     private var renameField: some View {
         HStack(spacing: 4) {

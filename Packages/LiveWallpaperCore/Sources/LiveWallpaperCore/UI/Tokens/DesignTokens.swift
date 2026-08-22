@@ -138,7 +138,9 @@ public enum DesignTokens {
     public enum LibraryGrid {
         public static let minimumColumnWidth: CGFloat = 184
         public static let maximumColumnWidth: CGFloat = 220
-        public static let spacing: CGFloat = Spacing.lg
+        /// Off the spacing scale on purpose: the tiles are square and read as a
+        /// mosaic, where `lg` opened the rows wider than the columns look.
+        public static let spacing: CGFloat = 14
 
         public static var columns: [GridItem] {
             [GridItem(
