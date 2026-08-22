@@ -82,6 +82,15 @@ final class WPEPointerMailbox: Sendable {
         }
     }
 
+    func sample(screenLocation: CGPoint) -> WPEMetalPointerSample {
+        lock.withLock { state in
+            Self.pointerSample(
+                forScreenLocation: screenLocation,
+                geometry: state.geometry
+            )
+        }
+    }
+
     // MARK: - Pure mapping
 
     /// NSView-free re-implementation of `WPEMetalPointerSampler.sampleSceneUV`

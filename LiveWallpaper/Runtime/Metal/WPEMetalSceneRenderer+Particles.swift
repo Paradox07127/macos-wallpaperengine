@@ -142,6 +142,33 @@ extension WPEMetalSceneRenderer {
             objectAngleZ: Float(object.angles.z)
         )
     }
+    func particleTextureResource(
+        relativePath: String,
+        label: String,
+        colorSpace: WPEMetalColorSpace = .sRGB,
+        on actor: isolated WPEDisplayRenderActor
+    ) async throws -> WPELoadedTextureResource {
+        let key = ParticleTextureLoadKey(path: relativePath, colorSpace: colorSpace)
+        if let cached = particleTextureLoadCache[key] {
+            return cached
+        }
+        let loaded = try await makeTextureResource(
+            relativePath: relativePath,
+            label: label,
+            colorSpace: colorSpace,
+            on: actor
+        )
+        // Only static atlases are cached. Particles read frame 0 plus the
+        // sprite-sheet rects and never tick a dynamic source, so holding one for
+        // the scene lifetime would pin a lazy `.tex`'s compressed payload — or an
+        // AVFoundation decoder — that nothing will ever read again, and none of
+        // them are in `dynamicTextureSources` for the suspend-time release.
+        if case .staticTexture = loaded {
+            particleTextureLoadCache[key] = loaded
+        }
+        return loaded
+    }
+
     /// Missing sprite texture would leave fragment-texture(0) stale and paint the 3725117707 black+red-grid overlay.
     func loadParticleSystems(
         from document: WPESceneDocument,
@@ -150,6 +177,7 @@ extension WPEMetalSceneRenderer {
         particleSystems.removeAll(keepingCapacity: true)
         particleTextures.removeAll(keepingCapacity: true)
         particleNormalTextures.removeAll(keepingCapacity: true)
+        particleTextureLoadCache.removeAll(keepingCapacity: true)
         let imageObjectsByID = Dictionary(
             document.imageObjects.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -415,7 +443,7 @@ extension WPEMetalSceneRenderer {
             debugStage("particle", "skip \(object.name) — material missing texture binding: \(particlePath)")
             return nil
         }
-        guard let texturePayload = try? await makeTextureResource(
+        guard let texturePayload = try? await particleTextureResource(
             relativePath: texturePath,
             label: "particle texture \(texturePath)",
             on: actor
@@ -526,7 +554,7 @@ extension WPEMetalSceneRenderer {
         // REFRACT needs the normal map; load fail → flat sprite. Frame 0 of a dynamic source is the whole atlas (TEXS sub-rects). Demanding `.staticTexture` dropped refraction on 3713073223 rain.
         if material?.isRefract == true, let normalPath = material?.normalTexturePath {
             // a normal map is DATA — sRGB gamma corrupts its vectors
-            let normalPayload = try? await makeTextureResource(
+            let normalPayload = try? await particleTextureResource(
                 relativePath: normalPath, label: "particle normal \(normalPath)",
                 colorSpace: .linear, on: actor)
             let normalTexture: MTLTexture? = switch normalPayload {

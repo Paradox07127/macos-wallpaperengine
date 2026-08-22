@@ -181,15 +181,21 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         )
     }
 
-    /// Same `maxSourceEdge` contract as the payload overload: raster images
-    /// resample down to the cap at decode, so the GPU never holds pixels the
-    /// scaled render targets cannot resolve. A failed resample (exotic color
-    /// space) falls back to the original image — never fatal.
+    /// Same `maxSourceEdge` contract as the payload overload. Raster decode
+    /// already thumbnails to the cap when the resolver is given one; this
+    /// downsample is the fallback if that path still handed us a larger image.
+    /// A failed resample (exotic color space) keeps the original — never fatal.
+    ///
+    /// `sourcePixelSize` is the asset's FULL-resolution size, which the caller
+    /// must supply whenever `cgImage` may already be a capped decode: world
+    /// layout reads it back from the registry, so recording the reduced size
+    /// there lays the layer out at a fraction of its authored footprint.
     func makeTexture(
         from cgImage: CGImage,
         label: String,
         colorSpace: WPEMetalColorSpace = .sRGB,
-        maxSourceEdge: Int? = nil
+        maxSourceEdge: Int? = nil,
+        sourcePixelSize: (width: Int, height: Int)? = nil
     ) async throws -> MTLTexture {
         try Task.checkCancellation()
         let device = self.device
@@ -209,8 +215,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
                     texture: texture,
                     imageWidth: upload.width,
                     imageHeight: upload.height,
-                    worldWidth: cgImage.width,
-                    worldHeight: cgImage.height
+                    worldWidth: sourcePixelSize?.width ?? cgImage.width,
+                    worldHeight: sourcePixelSize?.height ?? cgImage.height
                 )
                 return texture
             } catch {

@@ -62,7 +62,7 @@
                     count += 1
                 }
             }
-            // Shader-constant scripts count against the per-scene cap (same as transforms).
+            // Shader-constant scripts share the transform inventory bucket. There is no instance cap.
             let effectConstants = document.imageObjects.reduce(into: 0) { count, object in
                 for effect in object.effects {
                     for override in effect.passOverrides {

@@ -199,6 +199,46 @@ struct WPEFrameDemandTests {
         #expect(stack.surface.mtkView.isPaused == false)
     }
 
+    @Test("Pointer-locked emitters do not keep the loop running while the cursor is off-display")
+    func pointerLockedParticlesDoNotDemandFramesWhilePointerAbsent() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+        try await stack.load()
+
+        let system = try #require(WPEParticleSystem(
+            definition: WPEParticleDefinitionParser.parse(dictionary: [
+                "maxcount": 8,
+                "emitter": [["rate": 5]],
+                "controlpoint": [[
+                    "id": 0,
+                    "offset": "0 0 0",
+                    "flags": 1,
+                ]],
+            ]),
+            device: device,
+            seed: 0xB3
+        ))
+        #expect(system.tracksPointer)
+        #expect(system.isBlockedOnAbsentPointer)
+
+        renderer.particleSystems = [system]
+        renderer.synchronizeFrameDemand()
+        #expect(!renderer.frameDemand.contains(.particles))
+        #expect(!renderer.needsContinuousFrames)
+        #expect(stack.surface.mtkView.isPaused)
+
+        system.pointerCentered = SIMD2<Float>(1, 1)
+        renderer.synchronizeFrameDemand()
+        #expect(!system.isBlockedOnAbsentPointer)
+        #expect(renderer.frameDemand.contains(.particles))
+        #expect(renderer.needsContinuousFrames)
+        #expect(stack.surface.mtkView.isPaused == false)
+    }
+
     @Test("The runtime-activity mirror publishes idle for a static scene and flips with demand")
     func runtimeActivityMirrorFollowsDemand() async throws {
         let fixture = try FrameDemandFixture.make()

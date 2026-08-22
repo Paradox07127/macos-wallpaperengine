@@ -2215,6 +2215,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
         private var cursorWorldPosition: JSValue?
+        /// Reused `update(value)` argument for vec2/vec3. x/y/z are overwritten
+        /// each tick (same shape as `cursorWorldPosition`).
+        private var updateArgument: JSValue?
         private var layerHandles: [String: JSValue] = [:]
         private var neutralLayerHandle: JSValue?
         private var lastRuntimeSeconds: Double?
@@ -2339,6 +2342,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         ) -> SetupOutcome {
             guard let context = JSContext(virtualMachine: virtualMachine) else { return .contextUnavailable }
             self.context = context
+            updateArgument = nil
             let timerScheduler = WPESceneScriptTimerScheduler()
             self.timerScheduler = timerScheduler
             audioBridge = WPESceneScriptInstance.installSandbox(
@@ -2377,21 +2381,36 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             // Call init with authored value — without it audio templates leave initialValue undefined → NaN.
             if let initFn = context.objectForKeyedSubscript("init"),
                !initFn.isUndefined, initFn.hasProperty("call") {
-                _ = initFn.call(withArguments: [jsValue(for: seed, in: context) as Any])
+                _ = initFn.call(withArguments: [jsValue(for: seed, in: context, reuseUpdateArgument: false) as Any])
             }
             return .ready
         }
 
         /// The argument shape WPE gives `init`/`update`: a bare Number for a scalar
         /// property (an effect's shader constant), a Vec2/Vec3 otherwise.
-        private func jsValue(for value: SIMD3<Double>, in context: JSContext) -> JSValue? {
+        /// `init` must not reuse the update object — scripts snapshot `initial = value`
+        /// and would otherwise alias the live argument.
+        private func jsValue(
+            for value: SIMD3<Double>,
+            in context: JSContext,
+            reuseUpdateArgument: Bool = false
+        ) -> JSValue? {
             switch valueShape {
             case .boolean:
                 return JSValue(bool: value.x > 0.5, in: context)
             case .scalar:
                 return JSValue(double: value.x, in: context)
             case .vector2, .vector3:
-                guard let object = JSValue(newObjectIn: context) else { return nil }
+                let object: JSValue
+                if reuseUpdateArgument, let existing = updateArgument {
+                    object = existing
+                } else {
+                    guard let created = JSValue(newObjectIn: context) else { return nil }
+                    if reuseUpdateArgument {
+                        updateArgument = created
+                    }
+                    object = created
+                }
                 object.setObject(value.x, forKeyedSubscript: "x" as NSString)
                 object.setObject(value.y, forKeyedSubscript: "y" as NSString)
                 if valueShape == .vector3 {
@@ -2416,7 +2435,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             cursorWorldPosition?.setObject(seed.z, forKeyedSubscript: "z" as NSString)
 
             didThrow = false
-            guard let argument = jsValue(for: currentValue, in: context) else { return nil }
+            guard let argument = jsValue(for: currentValue, in: context, reuseUpdateArgument: true) else { return nil }
             let now = WPEScriptFaultPolicy.monotonicNow()
             guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return nil }
             let result = updateFunction.call(withArguments: [argument])

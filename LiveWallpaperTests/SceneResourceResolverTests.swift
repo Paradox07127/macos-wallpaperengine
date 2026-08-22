@@ -8,6 +8,38 @@ import UniformTypeIdentifiers
 @Suite("SceneResourceResolver")
 struct SceneResourceResolverTests {
 
+    @Test("Raster decode thumbnails to maxSourceEdge without keeping the full bitmap")
+    func rasterDecodeUsesThumbnailWhenCapped() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try writePNG(at: fixture.cacheRoot.appendingPathComponent("huge.png"), width: 256, height: 256)
+
+        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
+        let full = try resolver.resolveImage(relativePath: "huge.png").image
+        #expect(full.width == 256)
+        #expect(full.height == 256)
+
+        let capped = try resolver.resolveImage(relativePath: "huge.png", maxSourceEdge: 64)
+        #expect(max(capped.image.width, capped.image.height) <= 64)
+        #expect(min(capped.image.width, capped.image.height) > 0)
+        // The registry's world size comes from here; reporting the thumbnail
+        // would lay a layer with no authored size out at a quarter scale.
+        #expect(capped.sourcePixelWidth == 256)
+        #expect(capped.sourcePixelHeight == 256)
+    }
+
+    @Test("Strip-shaped rasters stay full size under a source-edge cap")
+    func rasterDecodeKeepsLUTStrips() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try writePNG(at: fixture.cacheRoot.appendingPathComponent("lut.png"), width: 256, height: 1)
+
+        let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
+        let image = try resolver.resolveImage(relativePath: "lut.png", maxSourceEdge: 64).image
+        #expect(image.width == 256)
+        #expect(image.height == 1)
+    }
+
     @Test("Image inside the cache root decodes successfully")
     func imageInsideCacheRoot() throws {
         let fixture = try makeFixture()
@@ -15,7 +47,7 @@ struct SceneResourceResolverTests {
         try writePNG(at: fixture.cacheRoot.appendingPathComponent("layer.png"))
 
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let image = try resolver.resolveImage(relativePath: "layer.png")
+        let image = try resolver.resolveImage(relativePath: "layer.png").image
 
         #expect(image.width > 0)
         #expect(image.height > 0)
@@ -30,7 +62,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(throws: SceneResourceResolver.ResolveError.pathEscape) {
-            try resolver.resolveImage(relativePath: "../secret.png")
+            try resolver.resolveImage(relativePath: "../secret.png").image
         }
     }
 
@@ -42,7 +74,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(throws: SceneResourceResolver.ResolveError.pathEscape) {
-            try resolver.resolveImage(relativePath: "/etc/passwd")
+            try resolver.resolveImage(relativePath: "/etc/passwd").image
         }
     }
 
@@ -58,7 +90,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(throws: SceneResourceResolver.ResolveError.pathEscape) {
-            try resolver.resolveImage(relativePath: "escape.png")
+            try resolver.resolveImage(relativePath: "escape.png").image
         }
     }
 
@@ -71,7 +103,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         do {
-            _ = try resolver.resolveImage(relativePath: "layer.tex")
+            _ = try resolver.resolveImage(relativePath: "layer.tex").image
             Issue.record("Expected resolveImage to throw on truncated .tex")
         } catch SceneResourceResolver.ResolveError.texture(let texError) {
             switch texError {
@@ -138,7 +170,7 @@ struct SceneResourceResolverTests {
         try writeRGBA8888Tex(at: materialsDir.appendingPathComponent("foo.tex"))
 
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let image = try resolver.resolveImage(relativePath: "models/foo.json")
+        let image = try resolver.resolveImage(relativePath: "models/foo.json").image
 
         #expect(image.width == 4)
         #expect(image.height == 4)
@@ -156,7 +188,7 @@ struct SceneResourceResolverTests {
         try writeRGBA8888Tex(at: stored)
 
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
-        let image = try resolver.resolveImage(relativePath: "workshop/2328851328/particle/雪花.jpg")
+        let image = try resolver.resolveImage(relativePath: "workshop/2328851328/particle/雪花.jpg").image
 
         #expect(image.width == 4)
         #expect(image.height == 4)
@@ -206,7 +238,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         do {
-            _ = try resolver.resolveImage(relativePath: "models/util/solidlayer.json")
+            _ = try resolver.resolveImage(relativePath: "models/util/solidlayer.json").image
             Issue.record("Expected materialUnresolved")
         } catch SceneResourceResolver.ResolveError.materialUnresolved(let reason) {
             #expect(reason.contains("Built-in"))
@@ -227,7 +259,7 @@ struct SceneResourceResolverTests {
 
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
         do {
-            _ = try resolver.resolveImage(relativePath: "models/foo.json")
+            _ = try resolver.resolveImage(relativePath: "models/foo.json").image
             Issue.record("Expected materialUnresolved")
         } catch SceneResourceResolver.ResolveError.materialUnresolved {
         } catch {
@@ -243,7 +275,7 @@ struct SceneResourceResolverTests {
         let resolver = SceneResourceResolver(cacheRootURL: fixture.cacheRoot)
 
         #expect(throws: SceneResourceResolver.ResolveError.fileMissing) {
-            try resolver.resolveImage(relativePath: "missing.png")
+            try resolver.resolveImage(relativePath: "missing.png").image
         }
     }
 
@@ -315,11 +347,11 @@ struct SceneResourceResolverTests {
         ])
     }
 
-    private func writePNG(at url: URL) throws {
+    private func writePNG(at url: URL, width: Int = 4, height: Int = 4) throws {
         guard let context = CGContext(
             data: nil,
-            width: 4,
-            height: 4,
+            width: width,
+            height: height,
             bitsPerComponent: 8,
             bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
@@ -329,7 +361,7 @@ struct SceneResourceResolverTests {
             return
         }
         context.setFillColor(CGColor(red: 1, green: 0.5, blue: 0.2, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         guard let image = context.makeImage() else {
             Issue.record("Failed to render fixture PNG")
             return

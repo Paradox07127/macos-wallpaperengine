@@ -1007,6 +1007,13 @@ final class WPEParticleSystem {
 
     var tracksPointer: Bool { emitterTracksPointer }
 
+    /// Pointer-locked emitter with nothing alive and no live pointer: cannot
+    /// spawn until the cursor returns, but is not permanently idle. Dropping
+    /// `.particles` demand here is safe only because pointer enter wakes a frame.
+    var isBlockedOnAbsentPointer: Bool {
+        tracksPointer && aliveCount == 0 && pointerCentered == nil
+    }
+
     /// Follow Cursor off must clear pointer-locked spawns immediately.
     func clearLiveParticles() {
         // Deliberately sweeps every slot: clearing must reach all of them.

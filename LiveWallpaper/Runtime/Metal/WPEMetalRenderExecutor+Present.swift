@@ -63,7 +63,15 @@ extension WPEMetalRenderExecutor {
         // MTKView remains the pacing source — but the executor no longer needs
         // the view. The MTKView draw path never touches `currentDrawable`, so
         // there's no double-acquire.
-        guard let drawable = layer.nextDrawable() else {
+        #if DEBUG
+        let forceDrawableMiss = remainingForcedDrawableMissesForTesting > 0
+        if forceDrawableMiss {
+            remainingForcedDrawableMissesForTesting -= 1
+        }
+        #else
+        let forceDrawableMiss = false
+        #endif
+        guard !forceDrawableMiss, let drawable = layer.nextDrawable() else {
             // A dropped frame, not an error — but a sustained run means drawable
             // starvation, so keep it visible in Release: first 5 misses, then
             // every 300th (~one line per 10 s at 30 fps).

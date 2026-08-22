@@ -62,6 +62,9 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         self.publisher = WPEPointerPublisher(mailbox: mailbox, view: view)
         super.init()
         view.delegate = self
+        publisher.onPointerEnteredView = { [weak self] in
+            self?.client?.renderAndPresentFrame()
+        }
         // The view latches click/pointer state on the main thread; forward each
         // latch to the mailbox so the render path reads it without the view.
         view.onPointerFrameChange = { [mailbox] frame in

@@ -53,12 +53,28 @@ struct SceneResourceResolver: Sendable {
         )
     }
 
-    func resolveImage(relativePath: String) throws -> CGImage {
+    /// A decoded image plus the asset's FULL-resolution pixel size. They differ
+    /// only when `maxSourceEdge` made the decode produce a thumbnail, and the
+    /// texture metadata registry needs the full size either way: world layout
+    /// falls back to it when a layer authors no explicit size.
+    struct ResolvedImage {
+        let image: CGImage
+        let sourcePixelWidth: Int
+        let sourcePixelHeight: Int
+
+        init(image: CGImage, sourcePixelWidth: Int? = nil, sourcePixelHeight: Int? = nil) {
+            self.image = image
+            self.sourcePixelWidth = sourcePixelWidth ?? image.width
+            self.sourcePixelHeight = sourcePixelHeight ?? image.height
+        }
+    }
+
+    func resolveImage(relativePath: String, maxSourceEdge: Int? = nil) throws -> ResolvedImage {
         guard !relativePath.isEmpty else { throw ResolveError.fileMissing }
         var lastMissing: ResolveError?
         for candidate in imageStorageCandidates(for: relativePath) {
             do {
-                return try resolveImageCandidate(relativePath: candidate)
+                return try resolveImageCandidate(relativePath: candidate, maxSourceEdge: maxSourceEdge)
             } catch ResolveError.fileMissing {
                 lastMissing = .fileMissing
                 continue
@@ -67,7 +83,7 @@ struct SceneResourceResolver: Sendable {
         throw lastMissing ?? ResolveError.fileMissing
     }
 
-    private func resolveImageCandidate(relativePath: String) throws -> CGImage {
+    private func resolveImageCandidate(relativePath: String, maxSourceEdge: Int? = nil) throws -> ResolvedImage {
         let resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
 
         if (resolvedPath as NSString).pathExtension.lowercased() == "tex" {
@@ -75,22 +91,25 @@ struct SceneResourceResolver: Sendable {
             do {
                 payload = try providerWindow(resolvedPath)
             } catch ResolveError.fileMissing {
-                if let image = try resolveRasterSiblingImage(forMissingTexPath: resolvedPath) {
-                    return image
+                if let resolved = try resolveRasterSiblingImage(
+                    forMissingTexPath: resolvedPath,
+                    maxSourceEdge: maxSourceEdge
+                ) {
+                    return resolved
                 }
                 throw ResolveError.fileMissing
             }
             dumpRawTexMetadataIfActive(payload: payload, targetName: resolvedPath)
             switch decoder.decode(span: payload) {
             case .success(let image):
-                return image
+                return ResolvedImage(image: image)
             case .failure(let error):
                 throw ResolveError.texture(error)
             }
         }
 
         let payload = try providerData(resolvedPath)
-        return try decodeRasterImage(payload)
+        return try decodeRasterImage(payload, maxSourceEdge: maxSourceEdge)
     }
 
     private func imageStorageCandidates(for relativePath: String) -> [String] {
@@ -112,12 +131,15 @@ struct SceneResourceResolver: Sendable {
         return candidates
     }
 
-    private func resolveRasterSiblingImage(forMissingTexPath texPath: String) throws -> CGImage? {
+    private func resolveRasterSiblingImage(
+        forMissingTexPath texPath: String,
+        maxSourceEdge: Int? = nil
+    ) throws -> ResolvedImage? {
         let basePath = (texPath as NSString).deletingPathExtension
         for candidate in ["\(basePath).png", "\(basePath).jpg", "\(basePath).jpeg"] {
             do {
                 let payload = try providerData(candidate)
-                return try decodeRasterImage(payload)
+                return try decodeRasterImage(payload, maxSourceEdge: maxSourceEdge)
             } catch ResolveError.fileMissing {
                 continue
             }
@@ -125,12 +147,40 @@ struct SceneResourceResolver: Sendable {
         return nil
     }
 
-    private func decodeRasterImage(_ payload: Data) throws -> CGImage {
-        guard let source = CGImageSourceCreateWithData(payload as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+    private func decodeRasterImage(_ payload: Data, maxSourceEdge: Int? = nil) throws -> ResolvedImage {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(payload as CFData, sourceOptions) else {
             throw ResolveError.decodeFailed
         }
-        return image
+        if let maxSourceEdge,
+           maxSourceEdge > 0,
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? Int,
+           let height = properties[kCGImagePropertyPixelHeight] as? Int,
+           max(width, height) > maxSourceEdge,
+           min(width, height) > 64 {
+            let thumbOptions: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                // Match `CreateImageAtIndex(..., nil)`: do not apply EXIF
+                // orientation (the uncapped path does not).
+                kCGImageSourceCreateThumbnailWithTransform: false,
+                kCGImageSourceThumbnailMaxPixelSize: maxSourceEdge
+            ]
+            if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) {
+                // Carry the pre-thumbnail dimensions: the registry's world size
+                // must stay the asset's, or a layer with no authored size lays
+                // out at the capped resolution.
+                return ResolvedImage(
+                    image: thumbnail,
+                    sourcePixelWidth: width,
+                    sourcePixelHeight: height
+                )
+            }
+        }
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw ResolveError.decodeFailed
+        }
+        return ResolvedImage(image: image)
     }
 
     /// Raw texture payload for Metal-backed renderers.

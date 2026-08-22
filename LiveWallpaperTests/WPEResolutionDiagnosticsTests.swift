@@ -248,7 +248,7 @@ struct WPEResolutionDiagnosticsTests {
             tracer: tracer
         )
 
-        let image = try resolver.resolveImage(relativePath: "materials/util/white.tex")
+        let image = try resolver.resolveImage(relativePath: "materials/util/white.tex").image
 
         #expect(image.width == 1)
         #expect(image.height == 1)
@@ -277,7 +277,7 @@ struct WPEResolutionDiagnosticsTests {
             tracer: tracer
         )
 
-        let image = try resolver.resolveImage(relativePath: rawRef)
+        let image = try resolver.resolveImage(relativePath: rawRef).image
 
         #expect(image.width == 4)
         #expect(image.height == 4)

@@ -23,6 +23,10 @@ final class WPEPointerPublisher {
     private var geometryObservers: [NSObjectProtocol] = []
     private var lastMousePublishAt: TimeInterval = -.greatestFiniteMagnitude
     private var isStarted = false
+    private var lastSampleWasInside = false
+    /// Pointer-locked particle scenes drop frame demand while the cursor is off
+    /// this display. Entering the view must produce one frame so spawn can resume.
+    var onPointerEnteredView: (() -> Void)?
     /// Defaults ON so `attach` behaves exactly as before the renderer's first
     /// post-load demand evaluation arrives.
     private var mouseMonitoringEnabled = true
@@ -106,9 +110,7 @@ final class WPEPointerPublisher {
         // after a gated-off stretch, when the slot still holds the pre-gate
         // position — the mailbox must report the real cursor (not the off-screen
         // sentinel) or the first frames would freeze parallax at center.
-        let time = now()
-        lastMousePublishAt = time
-        mailbox.publishMouseLocation(NSEvent.mouseLocation, timestampNanos: Self.nanos(from: time))
+        ingestPointerLocation(NSEvent.mouseLocation, at: now())
     }
 
     private func removeMouseMonitors() {
@@ -120,21 +122,40 @@ final class WPEPointerPublisher {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
+        lastSampleWasInside = false
     }
 
     // MARK: - Mouse
 
     private func handleMouseEvent() {
-        let time = now()
-        if throttleInterval > 0, time - lastMousePublishAt < throttleInterval { return }
-        lastMousePublishAt = time
         // Global-monitor events carry no window; `NSEvent.mouseLocation` is the
         // screen-space cursor for both monitors, so the event's own coords are
         // deliberately unused.
-        mailbox.publishMouseLocation(
-            NSEvent.mouseLocation,
-            timestampNanos: Self.nanos(from: time)
-        )
+        ingestPointerLocation(NSEvent.mouseLocation, at: now())
+    }
+
+    /// Publish first, then wake. BOTH edges bypass the throttle, not just enter:
+    /// a dropped exit leaves the mailbox holding the last inside position, so
+    /// `followPointerIsLive` stays true, pointer-locked emitters keep spawning at
+    /// a stale point and never release `.particles` demand. Dropping the enter
+    /// would instead have the wake frame sample a stale outside location.
+    func ingestPointerLocation(_ screenLocation: CGPoint, at time: TimeInterval? = nil) {
+        let time = time ?? now()
+        let inside = mailbox.sample(screenLocation: screenLocation).isInsideView
+        let crossedEdge = inside != lastSampleWasInside
+        let throttled = throttleInterval > 0 && time - lastMousePublishAt < throttleInterval
+        if crossedEdge || !throttled {
+            lastMousePublishAt = time
+            mailbox.publishMouseLocation(
+                screenLocation,
+                timestampNanos: Self.nanos(from: time)
+            )
+        }
+        let entered = inside && !lastSampleWasInside
+        lastSampleWasInside = inside
+        if entered {
+            onPointerEnteredView?()
+        }
     }
 
     // MARK: - Geometry
@@ -157,6 +178,16 @@ final class WPEPointerPublisher {
 
     private func publishGeometry() {
         mailbox.publishGeometry(Self.geometry(of: view))
+        // The cursor can cross the view boundary without moving: a display
+        // rearrange or a window move slides the view under (or out from under)
+        // a stationary pointer. Re-sampling here refreshes `lastSampleWasInside`
+        // and fires the wake — otherwise a pointer-locked particle scene that
+        // dropped its demand sleeps until the user happens to move the mouse,
+        // and a stale `true` would suppress the next genuine enter entirely.
+        // Only while the monitors are installed: gated off, `lastSampleWasInside`
+        // must stay the `false` that `removeMouseMonitors` left, or the re-enable
+        // seed would see no edge and skip its wake.
+        if isRunning { ingestPointerLocation(NSEvent.mouseLocation) }
     }
 
     /// The view's current frame in screen coordinates. Missing view/window or a

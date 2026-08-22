@@ -112,10 +112,12 @@ extension WPEMetalSceneRenderer {
         let prewarmDevice = executor.textureSourceDevice
         var pipelinePrewarms: [WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm] = []
         var seenPipelineKeys = Set<String>()
+        var passIDSeeds: [(passID: String, result: WPEShaderCompileResult)] = []
         for layer in pipeline.layers {
             for pass in layer.passes where pass.shader?.isBuiltin == false {
                 guard let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false),
                       let result = resultByKey[request.translationCacheKey] else { continue }
+                passIDSeeds.append((passID: pass.id, result: result))
                 let blend = pass.pass.blending
                 let alphaWritePolicy = WPEMetalAlphaWritePolicy.resolve(
                     targetID: WPEMetalTargetID(target: pass.pass.target),
@@ -136,7 +138,9 @@ extension WPEMetalSceneRenderer {
                 }
             }
         }
-        guard loadGeneration == generation, !pipelinePrewarms.isEmpty else {
+        guard loadGeneration == generation else { return }
+        executor.seedCompiledShaderResultsByPassID(passIDSeeds)
+        guard !pipelinePrewarms.isEmpty else {
             debugStage("pipeline.prewarm.done", "combos=0")
             return
         }
@@ -329,10 +333,16 @@ extension WPEMetalSceneRenderer {
                         lastError = error
                     }
                 }
-                let image = try resolver.resolveImage(relativePath: candidate)
+                let resolved = try resolver.resolveImage(
+                    relativePath: candidate,
+                    maxSourceEdge: maxSourceEdge
+                )
                 try Task.checkCancellation()
                 return .staticTexture(try await loader.makeTexture(
-                    from: image, label: label, maxSourceEdge: maxSourceEdge
+                    from: resolved.image,
+                    label: label,
+                    maxSourceEdge: maxSourceEdge,
+                    sourcePixelSize: (resolved.sourcePixelWidth, resolved.sourcePixelHeight)
                 ))
             } catch is CancellationError {
                 throw CancellationError()
@@ -571,13 +581,17 @@ extension WPEMetalSceneRenderer {
                         lastError = error
                     }
                 }
-                let image = try resourceResolver.resolveImage(relativePath: candidate)
+                let resolved = try resourceResolver.resolveImage(
+                    relativePath: candidate,
+                    maxSourceEdge: maxSourceEdge
+                )
                 try Task.checkCancellation()
                 return .staticTexture(try await textureLoader.makeTexture(
-                    from: image,
+                    from: resolved.image,
                     label: label,
                     colorSpace: colorSpace,
-                    maxSourceEdge: maxSourceEdge
+                    maxSourceEdge: maxSourceEdge,
+                    sourcePixelSize: (resolved.sourcePixelWidth, resolved.sourcePixelHeight)
                 ))
             } catch is CancellationError {
                 throw CancellationError()

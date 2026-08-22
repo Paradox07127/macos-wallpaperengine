@@ -248,6 +248,30 @@ struct WPESceneScriptRuntimeTests {
         #expect(value.z == 0.15, "number property did not reach the script: \(value)")
     }
 
+    @Test("Transform update reuses the same argument object across ticks")
+    func transformUpdateReusesArgumentObjectAcrossTicks() throws {
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            'use strict';
+            export function update(value) {
+                if (typeof globalThis.__arg === 'undefined') {
+                    globalThis.__arg = value;
+                    return { x: 0, y: 0, z: 0 };
+                }
+                return { x: globalThis.__arg === value ? 1 : 0, y: 0, z: 0 };
+            }
+            """,
+            seed: SIMD3<Double>(0, 0, 0),
+            canvasSize: SIMD2<Double>(64, 64)
+        )
+        let first = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 0))
+        #expect(first.x == 0)
+        let second = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 1))
+        #expect(second.x == 1)
+        let third = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 2))
+        #expect(third.x == 1)
+    }
+
     /// Verbatim from 3151551777's `Night (Cycle)` effect, pass constant `multiply1`.
     private static let nightCycleProducerScript = """
     'use strict';

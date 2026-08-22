@@ -45,6 +45,7 @@ extension WPEMetalSceneRenderer {
         pendingAudioStartupDocument = nil
         completedPresentGeneration = nil
         failedPresentGeneration = nil
+        pendingPresentRetryCount = 0
         outputTexture = nil
         outputFrameProduction = nil
         latestFrameProduction = nil
@@ -68,6 +69,7 @@ extension WPEMetalSceneRenderer {
         particleSystems.removeAll(keepingCapacity: false)
         particleTextures.removeAll(keepingCapacity: false)
         particleNormalTextures.removeAll(keepingCapacity: false)
+        particleTextureLoadCache.removeAll(keepingCapacity: false)
         textObjects.removeAll(keepingCapacity: false)
         // `releaseTextTargets` owns the renderer; nil-ing it first here made its
         // atlas release a no-op.
@@ -471,7 +473,7 @@ extension WPEMetalSceneRenderer {
     /// emitter finishing — and pushes the paused/continuous state to the surface
     /// (dedup'd on transitions) plus the activity mirror to the session.
     func synchronizeFrameDemand() {
-        let continuous = needsContinuousFrames
+        let continuous = needsPacingLoop
         if currentProfile == .quality, lastAppliedContinuousFrames != continuous {
             lastAppliedContinuousFrames = continuous
             surfaceControl.applyPacing(WPERenderPacingUpdate(
@@ -491,7 +493,7 @@ extension WPEMetalSceneRenderer {
             // retireRuntimeState clears the demand inputs, but `didLoad &&`
             // stays as the belt: activity must never read "working" between a
             // retire and the load that rebuilds those flags.
-            producesFrames: didLoad && needsContinuousFrames,
+            producesFrames: didLoad && needsPacingLoop,
             audible: soundRuntime != nil
         )
         guard activity != lastPublishedRuntimeActivity else { return }
@@ -572,8 +574,9 @@ extension WPEMetalSceneRenderer {
     /// loop running RIGHT NOW", not "does the scene contain this subsystem":
     ///
     /// - `.particles` excludes permanently finished emitters (one-shot bursts /
-    ///   duration-bounded systems whose last particle died) — nothing can respawn
-    ///   them short of a reload, so no wake path is needed.
+    ///   duration-bounded systems whose last particle died) and pointer-locked
+    ///   emitters that are empty while the cursor is off this display. Pointer
+    ///   enter wakes one frame via `WPEPointerPublisher.onPointerEnteredView`.
     /// - Fully released on-demand videos carry no demand: a reveal is script-
     ///   (scripts hold `.scripts` demand) or property-patch-driven (the static
     ///   patch path renders a frame, whose `reconcileVideoResidency` rebuild
@@ -586,7 +589,7 @@ extension WPEMetalSceneRenderer {
         if hasAnimatedShaderPasses { demand.insert(.animatedShaders) }
         if sceneSupportsAudioProcessing { demand.insert(.audioReactive) }
         if !dynamicTextureSources.isEmpty { demand.insert(.dynamicTextures) }
-        if particleSystems.contains(where: { !$0.isPermanentlyIdle }) {
+        if particleSystems.contains(where: { !$0.isPermanentlyIdle && !$0.isBlockedOnAbsentPointer }) {
             demand.insert(.particles)
         }
         if !dynamicOriginScriptInstances.isEmpty
@@ -693,7 +696,7 @@ extension WPEMetalSceneRenderer {
         dynamicTextureSources.values.forEach { $0.applyPerformanceProfile(profile) }
         switch profile {
         case .quality:
-            let continuous = needsContinuousFrames
+            let continuous = needsPacingLoop
             lastAppliedContinuousFrames = continuous
             surfaceControl.applyPacing(WPERenderPacingUpdate(
                 isPaused: !continuous,
@@ -743,6 +746,7 @@ extension WPEMetalSceneRenderer {
         pendingAudioStartupDocument = nil
         completedPresentGeneration = nil
         failedPresentGeneration = nil
+        pendingPresentRetryCount = 0
         surfaceControl.detach()
         outputTexture = nil
         outputFrameProduction = nil
@@ -763,6 +767,7 @@ extension WPEMetalSceneRenderer {
         particleSystems.removeAll(keepingCapacity: false)
         particleTextures.removeAll(keepingCapacity: false)
         particleNormalTextures.removeAll(keepingCapacity: false)
+        particleTextureLoadCache.removeAll(keepingCapacity: false)
         textObjects.removeAll(keepingCapacity: false)
         // `releaseTextTargets` owns the renderer; nil-ing it first here made its
         // atlas release a no-op.
@@ -818,6 +823,9 @@ extension WPEMetalSceneRenderer {
             let mustRerender = needsContinuousFrames || pendingForcedRerender
             pendingForcedRerender = false
             if mustRerender {
+                #if DEBUG
+                frameEncodeCountForTesting += 1
+                #endif
                 let deferredPresent: WPEMetalRenderExecutor.DeferredPresentEncoder?
                 if executor.synchronizeFrameCompletion {
                     deferredPresent = nil
@@ -862,13 +870,15 @@ extension WPEMetalSceneRenderer {
                 textureToPresent = outputTexture
             }
             guard let texture = textureToPresent else { return }
-            if mergedPresentResult == nil {
+            let presented: Bool
+            if let mergedPresentResult {
+                presented = mergedPresentResult
+            } else {
                 let livePosterCaptures = takePendingLivePosterCaptures()
                 let presentCompletion = makeReadinessPresentCompletion(
                     livePosterCaptures: livePosterCaptures,
                     frameProduction: outputFrameProduction
                 )
-                var presented = false
                 do {
                     presented = try executor.present(
                         texture: texture,
@@ -885,11 +895,31 @@ extension WPEMetalSceneRenderer {
                     throw error
                 }
             }
+            switch WPEStaticPresentRetry.outcome(
+                presented: presented,
+                sceneHasFrameDemand: needsContinuousFrames,
+                retryCount: pendingPresentRetryCount
+            ) {
+            case .idle:
+                pendingPresentRetryCount = 0
+            case .retry(let count):
+                pendingPresentRetryCount = count
+            case .failed:
+                pendingPresentRetryCount = 0
+                // Once this generation is ready, a later static re-present miss
+                // must not flip session prep to `.failed`.
+                if completedPresentGeneration != loadGeneration {
+                    failedPresentGeneration = loadGeneration
+                }
+            }
             didLogFrameFailure = false
             // A frame can retire the last demand source (a one-shot emitter's
             // final particle dying, a patch-hidden video releasing): settle the
             // loop as soon as that happens instead of ticking a finished scene.
             // Dedup'd inside, so steady continuous scenes pay two bool sweeps.
+            // Present retry keeps the link unpaused for the next vsync; do not
+            // `setNeedsRedraw()` here — the render-thread pacer would re-enter
+            // `renderFrame()` on this stack.
             synchronizeFrameDemand()
         } catch is WPEMetalFrameInFlightBudgetExhausted {
             // GPU still busy on a prior frame — skip this vsync rather than

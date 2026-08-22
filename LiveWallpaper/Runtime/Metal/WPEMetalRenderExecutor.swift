@@ -355,6 +355,16 @@ final class WPEMetalRenderExecutor {
         }
     }
 
+    /// Load-time pass-id index so the first encode skips GLSL preprocess.
+    /// Same idempotency as `seedTranslatedShaderCache`: an existing entry wins.
+    func seedCompiledShaderResultsByPassID(
+        _ entries: [(passID: String, result: WPEShaderCompileResult)]
+    ) {
+        for entry in entries where compiledShaderResultByPassID[entry.passID] == nil {
+            compiledShaderResultByPassID[entry.passID] = entry.result
+        }
+    }
+
     /// Splits prewarm work against the content-keyed cache that intentionally
     /// survives scene reloads. Returning the canonical cached result matters
     /// for PSO prewarm too: pipeline keys include `MTLLibrary` identity, so
@@ -433,12 +443,16 @@ final class WPEMetalRenderExecutor {
 
     /// When true, `render()` and the text passes block on GPU completion
     /// (`waitUntilCompleted`) so a CPU read-back of the frame (scene-debug
-    /// first-frame snapshot, visual-stats, GPU capture, test pixel diffs) observes
+    /// first-frame snapshot, visual-stats, GPU capture, oracle/readback) observes
     /// finished pixels. When false — the production live path — frames submit
     /// asynchronously and the CPU only stalls via `inFlightSemaphore`, letting
     /// frame N+1's setup overlap frame N's GPU work. The live renderer sets this
     /// per scene; defaults to the safe synchronous behavior for any other caller.
     var synchronizeFrameCompletion = true
+    #if DEBUG
+    /// Test seam: remaining `encodePresent` calls that skip `nextDrawable()`.
+    var remainingForcedDrawableMissesForTesting = 0
+    #endif
 
     func beginFrameSubmission() throws -> WPEMetalFrameSubmissionLease {
         guard let submission = frameSubmissionPool.tryAcquire() else {
@@ -547,6 +561,7 @@ final class WPEMetalRenderExecutor {
             throw WPEMetalRenderExecutorError.libraryUnavailable
         }
         self.device = device
+        device.shouldMaximizeConcurrentCompilation = true
         commandQueue = queue
         defaultLibrary = library
         self.targetPool = WPEMetalRenderTargetPool(device: device)
@@ -1144,11 +1159,13 @@ final class WPEMetalRenderExecutor {
                 // which the caller logged) so a GPU failure isn't silent in release.
                 if cb.status == .error {
                     let detail = cb.error?.localizedDescription ?? "unknown"
-                    sink.record("async-frame: \(detail)")
-                    Logger.warning(
-                        "[WPE async-frame] command buffer error: \(detail)",
-                        category: .wpeRender
-                    )
+                    let n = sink.record("async-frame: \(detail)")
+                    if WPEGPUErrorSink.shouldLogOccurrence(n) {
+                        Logger.warning(
+                            "[WPE async-frame] command buffer error (#\(n)): \(detail)",
+                            category: .wpeRender
+                        )
+                    }
                 }
             }
             commandBuffer.commit()

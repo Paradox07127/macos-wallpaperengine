@@ -304,6 +304,31 @@ struct WPEParticleSystemTests {
         #expect(system.liveInstanceCount > 0)
     }
 
+    @Test("Pointer-locked empty systems report blocked-on-absent-pointer")
+    func pointerLockedEmptySystemIsBlockedOnAbsentPointer() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let def = WPEParticleDefinition(
+            materialRelativePath: nil,
+            maxCount: 16,
+            rate: 1000,
+            startDelay: 0,
+            lifetimeMin: 100, lifetimeMax: 100,
+            sizeMin: 4, sizeMax: 4,
+            originOffset: SIMD3(0, 0, 0),
+            dispersalMin: SIMD3<Double>(0, 0, 0), dispersalMax: SIMD3<Double>(0, 0, 0),
+            velocityMin: SIMD3(0, 0, 0), velocityMax: SIMD3(0, 0, 0),
+            colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
+            fadeInSeconds: 0.1,
+            controlPoints: [WPEParticleControlPoint(id: 0, offset: SIMD3(0, 0, 0), pointerLocked: true)]
+        )
+        let system = try #require(WPEParticleSystem(definition: def, device: device))
+        #expect(system.isBlockedOnAbsentPointer)
+        system.pointerCentered = SIMD2<Float>(1, 1)
+        #expect(!system.isBlockedOnAbsentPointer)
+        system.pointerCentered = nil
+        #expect(system.isBlockedOnAbsentPointer)
+    }
+
     @Test("Particle system allocates GPU buffer of expected size")
     func allocatesGPUBuffer() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
