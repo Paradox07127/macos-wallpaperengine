@@ -34781,36 +34781,6 @@
         }
       }
     },
-    "Ready in System Settings" : {
-      "comment" : "Tile subtitle for a video that is published but not selected by the system.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ready in System Settings"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システム設定で選択できます"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已就绪，可在系统设置中选择"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已就緒，可在系統設定中選擇"
-          }
-        }
-      }
-    },
     "Rec.2020 HDR" : {
       "extractionState" : "manual",
       "localizations" : {

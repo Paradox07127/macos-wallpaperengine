@@ -27,10 +27,10 @@ SUITES=(
   HTMLTrustVerdictTests
   LogPrivacySourceAuditTests
   LocalizationCoverageTests
-  BoardPlacementAccessibilityCharacterizationTests
+  MonitorBoardPlacementAccessibilityCharacterizationTests
   OverlayVisibilityLifecycleCharacterizationTests
   RuntimeLeaseChurnCharacterizationTests
-  SamplerOwnershipCharacterizationTests
+  MonitorSamplerOwnershipCharacterizationTests
   SuspendEnergyTests
   RepositoryRootTests
   SchemeEnvironmentContractTests
