@@ -1346,6 +1346,32 @@ export function init(value) {
         #expect(instance.tickString() == "Local/1st Arm/42")
     }
 
+    @Test("A transform writer stores a vec3 on shared that Swift fans can read")
+    func sharedVec3RoundTripForReadFans() throws {
+        let store = WPESharedScriptState()
+        let writer = try WPEDynamicTransformScriptInstance(
+            script: """
+            export function update(value) {
+                shared.accentColor = {x: 0.2, y: 0.4, z: 0.6};
+                return value;
+            }
+            """,
+            seed: SIMD3(1, 1, 1),
+            canvasSize: SIMD2(1920, 1080),
+            shared: store
+        )
+        #expect(writer.tick(pointerPosition: SIMD2(0.5, 0.5), runtimeSeconds: 0) == SIMD3(1, 1, 1))
+        #expect(
+            WPESharedReadFanAnalysis.vec3(from: store.get("accentColor"))
+                == SIMD3(0.2, 0.4, 0.6)
+        )
+        #expect(
+            WPESharedReadFanAnalysis.readKey(
+                in: "export function update(value) { return shared.accentColor; }"
+            ) == "accentColor"
+        )
+    }
+
     @Test("Current synchronous containment is deadline plus poison, not termination")
     func synchronousTimeoutSourceContract() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)

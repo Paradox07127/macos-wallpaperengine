@@ -352,6 +352,7 @@ actor WPEDisplayRenderActor {
         guard let renderer else { return }
         defer { renderer.onDemandVideoLoading.remove(key) }
         guard renderer.loadGeneration == generation else { return }
+        let previous = renderer.dynamicTextureSources[key] as? WPEVideoTextureSource
         do {
             // The generation must hold at PUBLICATION time, not just entry: the
             // asset load suspends, and a hibernate/reload in that window bumps
@@ -374,6 +375,9 @@ actor WPEDisplayRenderActor {
         }
         guard renderer.loadGeneration == generation,
               let source = renderer.dynamicTextureSources[key] as? WPEVideoTextureSource else { return }
+        if let previous, previous !== source {
+            previous.invalidate()
+        }
         source.applyPerformanceProfile(renderer.currentProfile)
         renderer.surfaceControl.setNeedsRedraw()
     }

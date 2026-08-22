@@ -596,6 +596,10 @@ extension WPEMetalSceneRenderer {
             || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty
             || !dynamicColorScriptInstances.isEmpty
+            || !sharedOriginReadFans.isEmpty
+            || !sharedScaleReadFans.isEmpty
+            || !sharedAnglesReadFans.isEmpty
+            || !sharedColorReadFans.isEmpty
             || !layerScriptInstances.isEmpty
             || !layerAlphaScriptInstances.isEmpty
             // Text scripts tick per frame too (content writes `shared` state;

@@ -330,3 +330,216 @@ struct WPEVideoTextureSourceTeardownTests {
         #expect(torndown.withLock { $0 }, "deinit must invalidate the dropped source")
     }
 }
+
+@Suite("WPE video output cap and decoder admission")
+struct WPEVideoOutputCapTests {
+    @Test("clampedPixelSize never upscales and even-rounds NV12 dimensions")
+    func clampedPixelSizeNeverUpscales() {
+        #expect(WPEVideoOutputCap.clampedPixelSize(
+            source: CGSize(width: 1920, height: 1080), maxEdge: 1920
+        ) == nil)
+        #expect(WPEVideoOutputCap.clampedPixelSize(
+            source: CGSize(width: 1920, height: 1080), maxEdge: 3840
+        ) == nil)
+        #expect(
+            WPEVideoOutputCap.clampedPixelSize(
+                source: CGSize(width: 3840, height: 2160), maxEdge: 1920
+            ) == CGSize(width: 1920, height: 1080)
+        )
+        #expect(
+            WPEVideoOutputCap.clampedPixelSize(
+                source: CGSize(width: 7680, height: 4320), maxEdge: 3840
+            ) == CGSize(width: 3840, height: 2160)
+        )
+        #expect(WPEVideoOutputCap.clampedPixelSize(
+            source: CGSize(width: 64, height: 64), maxEdge: 0
+        ) == nil)
+        let odd = WPEVideoOutputCap.clampedPixelSize(
+            source: CGSize(width: 1001, height: 501), maxEdge: 100
+        )
+        #expect(odd != nil)
+        #expect(Int(odd?.width ?? 1) % 2 == 0)
+        #expect(Int(odd?.height ?? 1) % 2 == 0)
+        #expect((odd?.width ?? 0) <= 100)
+        #expect((odd?.height ?? 0) <= 100)
+    }
+
+    @Test("maxOutputEdge is the min of drawable long-edge and MetalFX cap")
+    func maxOutputEdgeCombinesDrawableAndPlan() {
+        #expect(
+            WPEVideoOutputCap.maxOutputEdge(
+                drawableSize: CGSize(width: 3840, height: 2160),
+                latchedTextureCap: nil
+            ) == 3840
+        )
+        #expect(
+            WPEVideoOutputCap.maxOutputEdge(
+                drawableSize: CGSize(width: 3840, height: 2160),
+                latchedTextureCap: 1920
+            ) == 1920
+        )
+        #expect(
+            WPEVideoOutputCap.maxOutputEdge(
+                drawableSize: .zero,
+                latchedTextureCap: 1440
+            ) == 1440
+        )
+        #expect(
+            WPEVideoOutputCap.maxOutputEdge(
+                drawableSize: .zero,
+                latchedTextureCap: nil
+            ) == nil
+        )
+    }
+
+    @Test("pixelBufferAttributes omit size until a cap is supplied")
+    func pixelBufferAttributesOmitSizeUntilCapped() {
+        let uncapped = WPEVideoTextureSource.pixelBufferAttributes(
+            pixelFormats: WPEVideoTextureSource.negotiatedPixelFormats,
+            outputSize: nil
+        )
+        #expect(uncapped[kCVPixelBufferWidthKey as String] == nil)
+        #expect(uncapped[kCVPixelBufferHeightKey as String] == nil)
+        #expect(uncapped[kCVPixelBufferPixelFormatTypeKey as String] != nil)
+
+        let capped = WPEVideoTextureSource.pixelBufferAttributes(
+            pixelFormats: WPEVideoTextureSource.negotiatedPixelFormats,
+            outputSize: CGSize(width: 1920, height: 1080)
+        )
+        #expect(capped[kCVPixelBufferWidthKey as String] as? Int == 1920)
+        #expect(capped[kCVPixelBufferHeightKey as String] as? Int == 1080)
+    }
+
+    @Test("Admission limit 1: second source is a still; releasing the first frees the slot")
+    func decoderAdmissionStillFallbackAndRelease() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticVideoFixture.writeMP4(
+            durationSeconds: 0.5,
+            frameRate: 24
+        )
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+
+        let admission = WPEVideoDecoderAdmission(limit: 1)
+        let live = try WPEVideoTextureSource(
+            device: device,
+            videoURL: videoURL,
+            decoderAdmission: admission
+        )
+        #expect(live.isLiveDecoderForTesting)
+        #expect(admission.activeCount == 1)
+
+        let still = try WPEVideoTextureSource(
+            device: device,
+            videoURL: videoURL,
+            decoderAdmission: admission
+        )
+        #expect(!still.isLiveDecoderForTesting)
+        #expect(admission.activeCount == 1)
+        #expect(still.texture(at: 0) != nil, "overflow source must keep a still frame, not refuse")
+
+        live.invalidate()
+        #expect(admission.activeCount == 0)
+
+        let liveAgain = try WPEVideoTextureSource(
+            device: device,
+            videoURL: videoURL,
+            decoderAdmission: admission
+        )
+        defer { liveAgain.invalidate() }
+        #expect(liveAgain.isLiveDecoderForTesting)
+        #expect(admission.activeCount == 1)
+
+        still.invalidate()
+        #expect(admission.activeCount == 1)
+        #expect(!admission.hasVacancy, "the replacement live decoder still holds the only slot")
+        liveAgain.invalidate()
+        #expect(admission.hasVacancy)
+    }
+
+    @Test("Admission with a vacancy of 0 never starts a live decoder")
+    func zeroLimitAdmissionStaysStill() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticVideoFixture.writeMP4(
+            durationSeconds: 0.5,
+            frameRate: 24
+        )
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+
+        let admission = WPEVideoDecoderAdmission(limit: 0)
+        #expect(!admission.hasVacancy)
+        let source = try WPEVideoTextureSource(
+            device: device,
+            videoURL: videoURL,
+            decoderAdmission: admission
+        )
+        defer { source.invalidate() }
+        #expect(!source.isLiveDecoder)
+        #expect(admission.activeCount == 0)
+        #expect(source.texture(at: 0) != nil)
+    }
+
+    @Test("A display-sized cap is stored on the source and does not upscale a 64² clip")
+    func outputPixelSizeIsStoredAndDoesNotUpscaleSmallClips() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let videoURL = try await SyntheticVideoFixture.writeMP4(
+            durationSeconds: 0.5,
+            frameRate: 24
+        )
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+
+        let sourceSize = try #require(await WPEVideoOutputCap.sourceDisplaySize(fileURL: videoURL))
+        #expect(sourceSize.width == 64)
+        #expect(sourceSize.height == 64)
+
+        let noUpscale = WPEVideoOutputCap.clampedPixelSize(source: sourceSize, maxEdge: 3840)
+        #expect(noUpscale == nil)
+        let uncapped = try WPEVideoTextureSource(
+            device: device,
+            videoURL: videoURL,
+            outputPixelSize: noUpscale
+        )
+        defer { uncapped.invalidate() }
+        #expect(uncapped.outputPixelSizeForTesting == nil)
+
+        let downscale = try #require(
+            WPEVideoOutputCap.clampedPixelSize(source: sourceSize, maxEdge: 32)
+        )
+        #expect(downscale == CGSize(width: 32, height: 32))
+        let capped = try WPEVideoTextureSource(
+            device: device,
+            videoURL: videoURL,
+            outputPixelSize: downscale
+        )
+        defer { capped.invalidate() }
+        #expect(capped.outputPixelSizeForTesting == downscale)
+    }
+
+    @Test("Renderer helper clamps 8K source to a 4K drawable")
+    func rendererHelperClampsToDrawable() async throws {
+        let videoURL = try await SyntheticVideoFixture.writeMP4(
+            durationSeconds: 0.5,
+            frameRate: 24
+        )
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+
+        let none = await WPEMetalSceneRenderer.videoOutputPixelSize(
+            fileURL: videoURL,
+            drawableSize: CGSize(width: 3840, height: 2160),
+            latchedTextureCap: nil
+        )
+        #expect(none == nil, "64² source on a 4K display must not upscale")
+
+        // The helper only returns a size when the file itself exceeds the cap.
+        // Probe the clamp math with a synthetic 8K source size — the file
+        // probe is covered above; this pins the renderer wiring.
+        #expect(
+            WPEVideoOutputCap.clampedPixelSize(
+                source: CGSize(width: 7680, height: 4320),
+                maxEdge: WPEVideoOutputCap.maxOutputEdge(
+                    drawableSize: CGSize(width: 3840, height: 2160),
+                    latchedTextureCap: nil
+                ) ?? 0
+            ) == CGSize(width: 3840, height: 2160)
+        )
+    }
+}

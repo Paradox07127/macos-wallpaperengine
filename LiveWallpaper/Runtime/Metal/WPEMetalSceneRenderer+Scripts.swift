@@ -529,28 +529,45 @@ extension WPEMetalSceneRenderer {
             keysByConsumerID: onDemandVideoKeysByConsumerID,
             keysByImagePath: onDemandVideoKeysByImagePath
         )
-        for key in Set(onDemandVideoKeyByID.values.joined()) {
-            if neededKeys.contains(key) {
-                lazyLoadVideo(key: key)
-            } else if let source = dynamicTextureSources[key] as? WPEVideoTextureSource {
-                // Phase-aligned intro/loop sources hold object references elsewhere;
-                // releasing one would leave those refs dangling (no rebuild hook).
-                guard source !== introPhaseSource, source !== loopPhaseSource else { continue }
-                source.invalidate()
-                dynamicTextureSources.removeValue(forKey: key)
-                // 1×1 placeholder, not a removal: a stray sampler reference resolves
-                // instead of erroring. A hidden layer's FBO passes DO still encode
-                // and will sample this placeholder — harmless only because we got
-                // here by proving nothing visible consumes those FBOs.
-                loadedTextures[key] = (try? makeDynamicPlaceholderTexture(label: "\(key) released")) ?? loadedTextures[key]
-            }
+        let allKeys = Set(onDemandVideoKeyByID.values.joined())
+        // Release hidden sources first so overflow stills can take the tickets
+        // in this same frame instead of waiting for the next vsync.
+        for key in allKeys where !neededKeys.contains(key) {
+            guard let source = dynamicTextureSources[key] as? WPEVideoTextureSource else { continue }
+            // Phase-aligned intro/loop sources hold object references elsewhere;
+            // releasing one would leave those refs dangling (no rebuild hook).
+            guard source !== introPhaseSource, source !== loopPhaseSource else { continue }
+            source.invalidate()
+            dynamicTextureSources.removeValue(forKey: key)
+            // 1×1 placeholder, not a removal: a stray sampler reference resolves
+            // instead of erroring. A hidden layer's FBO passes DO still encode
+            // and will sample this placeholder — harmless only because we got
+            // here by proving nothing visible consumes those FBOs.
+            loadedTextures[key] = (try? makeDynamicPlaceholderTexture(label: "\(key) released")) ?? loadedTextures[key]
+        }
+        for key in neededKeys {
+            lazyLoadVideo(key: key)
         }
     }
 
+    static func shouldStartOnDemandVideoLoad(
+        hasResidentSource: Bool,
+        isLiveDecoder: Bool,
+        admissionHasVacancy: Bool
+    ) -> Bool {
+        if !hasResidentSource { return true }
+        return !isLiveDecoder && admissionHasVacancy
+    }
+
     private func lazyLoadVideo(key: String) {
-        guard dynamicTextureSources[key] == nil,
-              !onDemandVideoLoading.contains(key),
-              let actor = displayActor else { return }
+        guard let actor = displayActor,
+              !onDemandVideoLoading.contains(key) else { return }
+        let source = dynamicTextureSources[key] as? WPEVideoTextureSource
+        guard Self.shouldStartOnDemandVideoLoad(
+            hasResidentSource: source != nil,
+            isLiveDecoder: source?.isLiveDecoder ?? false,
+            admissionHasVacancy: WPEVideoDecoderAdmission.shared.hasVacancy
+        ) else { return }
         onDemandVideoLoading.insert(key)
         let generation = loadGeneration
         // Re-enter the render actor to rebuild + force-play the revealed source
@@ -830,14 +847,14 @@ extension WPEMetalSceneRenderer {
     private var installedScriptLayerIDs: Set<String> {
         if let cached = cachedInstalledScriptLayerIDs { return cached }
         let ids = Self.staticCacheExcludedLayerIDs(
-            originScriptIDs: dynamicOriginScriptInstances.keys,
+            originScriptIDs: Array(dynamicOriginScriptInstances.keys) + Array(sharedOriginReadFans.keys),
             // Memo-safe despite `dynamicOriginAnimations` having no invalidating
             // didSet: loadDynamicOriginScripts writes it only AFTER resetting the
             // script-instance dicts (which do invalidate) in the same sync pass.
             originAnimationIDs: dynamicOriginAnimations.keys,
-            scaleScriptIDs: dynamicScaleScriptInstances.keys,
-            anglesScriptIDs: dynamicAnglesScriptInstances.keys,
-            colorScriptIDs: dynamicColorScriptInstances.keys,
+            scaleScriptIDs: Array(dynamicScaleScriptInstances.keys) + Array(sharedScaleReadFans.keys),
+            anglesScriptIDs: Array(dynamicAnglesScriptInstances.keys) + Array(sharedAnglesReadFans.keys),
+            colorScriptIDs: Array(dynamicColorScriptInstances.keys) + Array(sharedColorReadFans.keys),
             liveCreatedLayerIDs: EmptyCollection<String>(),
             layerScriptIDs: layerScriptInstances.keys,
             alphaScriptIDs: layerAlphaScriptInstances.keys,

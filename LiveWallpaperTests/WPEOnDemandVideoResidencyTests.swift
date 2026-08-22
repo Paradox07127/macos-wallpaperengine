@@ -75,6 +75,22 @@ struct WPEOnDemandVideoResidencyTests {
         )
     }
 
+    @Test("A missing source always loads; a still source reloads only when a decoder slot is free")
+    func stillSourcePromotesOnlyWhenAdmissionHasVacancy() {
+        #expect(WPEMetalSceneRenderer.shouldStartOnDemandVideoLoad(
+            hasResidentSource: false, isLiveDecoder: false, admissionHasVacancy: false
+        ))
+        #expect(!WPEMetalSceneRenderer.shouldStartOnDemandVideoLoad(
+            hasResidentSource: true, isLiveDecoder: true, admissionHasVacancy: true
+        ))
+        #expect(!WPEMetalSceneRenderer.shouldStartOnDemandVideoLoad(
+            hasResidentSource: true, isLiveDecoder: false, admissionHasVacancy: false
+        ), "no vacancy → keep the still rather than thrashing rebuilds")
+        #expect(WPEMetalSceneRenderer.shouldStartOnDemandVideoLoad(
+            hasResidentSource: true, isLiveDecoder: false, admissionHasVacancy: true
+        ), "hidden release freeing a ticket must rebuild a visible still")
+    }
+
     @Test("A hidden video layer whose FBO nothing visible samples is releasable")
     func hiddenVideoWritingAnUnreadFBOIsReleasable() {
         let video = Self.layer("video", visible: false, passes: [

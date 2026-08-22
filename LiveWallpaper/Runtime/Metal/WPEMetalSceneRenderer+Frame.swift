@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import AppKit
 import LiveWallpaperCore
+import LiveWallpaperProWPE
 import MetalKit
 import os
 
@@ -408,9 +409,13 @@ extension WPEMetalSceneRenderer {
         guard !dynamicOriginScriptInstances.isEmpty
             || !dynamicScaleScriptInstances.isEmpty
             || !dynamicAnglesScriptInstances.isEmpty
-            || !dynamicColorScriptInstances.isEmpty else { return nil }
+            || !dynamicColorScriptInstances.isEmpty
+            || !sharedOriginReadFans.isEmpty
+            || !sharedScaleReadFans.isEmpty
+            || !sharedAnglesReadFans.isEmpty
+            || !sharedColorReadFans.isEmpty else { return nil }
         var transforms = LiveScriptTransforms()
-        transforms.origins.reserveCapacity(dynamicOriginScriptInstances.count)
+        transforms.origins.reserveCapacity(dynamicOriginScriptInstances.count + sharedOriginReadFans.count)
         // Sorted by objectID for the same shared-state-determinism reason as the
         // layer/text script loops above.
         for (objectID, instance) in dynamicOriginScriptInstances.sorted(by: { $0.key < $1.key }) {
@@ -422,7 +427,8 @@ extension WPEMetalSceneRenderer {
                 transforms.origins[objectID] = origin
             }
         }
-        transforms.scales.reserveCapacity(dynamicScaleScriptInstances.count)
+        applySharedReadFans(sharedOriginReadFans, into: &transforms.origins)
+        transforms.scales.reserveCapacity(dynamicScaleScriptInstances.count + sharedScaleReadFans.count)
         for (objectID, instance) in dynamicScaleScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let scale = tickTransformScript(
                 instance,
@@ -443,7 +449,8 @@ extension WPEMetalSceneRenderer {
                 )
             }
         }
-        transforms.angles.reserveCapacity(dynamicAnglesScriptInstances.count)
+        applySharedReadFans(sharedScaleReadFans, into: &transforms.scales)
+        transforms.angles.reserveCapacity(dynamicAnglesScriptInstances.count + sharedAnglesReadFans.count)
         for (objectID, instance) in dynamicAnglesScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let angle = tickTransformScript(
                 instance,
@@ -458,7 +465,13 @@ extension WPEMetalSceneRenderer {
                 transforms.angles[objectID] = angle * (.pi / 180)
             }
         }
-        transforms.colors.reserveCapacity(dynamicColorScriptInstances.count)
+        applySharedReadFans(sharedAnglesReadFans, into: &transforms.angles)
+        for objectID in sharedAnglesReadFans.keys {
+            if let angle = transforms.angles[objectID] {
+                transforms.angles[objectID] = angle * (.pi / 180)
+            }
+        }
+        transforms.colors.reserveCapacity(dynamicColorScriptInstances.count + sharedColorReadFans.count)
         for (objectID, instance) in dynamicColorScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let color = tickTransformScript(
                 instance,
@@ -468,7 +481,21 @@ extension WPEMetalSceneRenderer {
                 transforms.colors[objectID] = color
             }
         }
+        applySharedReadFans(sharedColorReadFans, into: &transforms.colors)
         return transforms
+    }
+
+    /// Swift fan-out for `return shared.K` scripts that never entered JS.
+    func applySharedReadFans(
+        _ fans: [String: String],
+        into map: inout [String: SIMD3<Double>]
+    ) {
+        guard !fans.isEmpty, let shared = sceneScriptSharedState else { return }
+        for (objectID, key) in fans {
+            if let value = WPESharedReadFanAnalysis.vec3(from: shared.get(key)) {
+                map[objectID] = value
+            }
+        }
     }
 
     /// Particles tick (CPU sim) BEFORE the layer composite so the executor can
@@ -526,7 +553,8 @@ extension WPEMetalSceneRenderer {
     /// its last good value when its script returns nothing, matching how the
     /// transform families hold their last value.
     private func tickEffectConstantScripts(pointer: SIMD2<Double>, time: Double) {
-        guard !effectConstantScriptInstances.isEmpty else { return }
+        guard !effectConstantScriptInstances.isEmpty
+            || !sharedEffectConstantReadFans.isEmpty else { return }
         // Sorted for the same shared-state determinism as the other tick loops.
         for (key, instance) in effectConstantScriptInstances.sorted(
             by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }
@@ -537,6 +565,17 @@ extension WPEMetalSceneRenderer {
                 runtimeSeconds: time
             ) else { continue }
             liveEffectConstants[key.passID, default: [:]][key.uniform] = instance.constantValue(value)
+        }
+        for (key, fan) in sharedEffectConstantReadFans {
+            guard let raw = sceneScriptSharedState?.get(fan.sharedKey),
+                  let value = WPESharedReadFanAnalysis.vec3(from: raw) else { continue }
+            let constant: WPESceneShaderConstantValue
+            switch fan.valueShape {
+            case .scalar, .boolean: constant = .number(value.x)
+            case .vector2: constant = .vector([value.x, value.y])
+            case .vector3: constant = .vector([value.x, value.y, value.z])
+            }
+            liveEffectConstants[key.passID, default: [:]][key.uniform] = constant
         }
     }
 

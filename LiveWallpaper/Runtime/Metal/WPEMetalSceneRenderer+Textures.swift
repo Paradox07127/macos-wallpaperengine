@@ -4,6 +4,68 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import MetalKit
 
+/// Load-time PSO prewarm signatures. Must match `dispatchCustomShader`'s vertex
+/// / color / depth choice — a miss is only a first-frame compile, never a
+/// wrong pipeline, but the previous `{nil, object_quad} × scene color ×
+/// .invalid depth` set missed FBO formats, depth, skew, and shape quads.
+enum WPETranslatedPipelinePrewarmPlan {
+    static func vertexNames(
+        target: WPERenderTarget,
+        shapePointCount: Int?,
+        objectQuadAtRest: Bool,
+        parallaxMayEnableObjectQuad: Bool,
+        skewVertex: Bool,
+        usesPerspectiveProjection: Bool
+    ) -> [String?] {
+        let sceneTarget: Bool
+        if case .scene = target {
+            sceneTarget = true
+        } else {
+            sceneTarget = false
+        }
+        let shapeEligible = sceneTarget && shapePointCount == 4
+        var names: [String?] = []
+        if shapeEligible && !usesPerspectiveProjection {
+            names.append("wpe_shape_quad_vertex")
+            names.append("wpe_object_quad_vertex")
+        } else if objectQuadAtRest {
+            if skewVertex {
+                names.append("wpe_skew_object_quad_vertex")
+            }
+            names.append("wpe_object_quad_vertex")
+        } else {
+            names.append(nil)
+            if parallaxMayEnableObjectQuad {
+                if skewVertex {
+                    names.append("wpe_skew_object_quad_vertex")
+                }
+                names.append("wpe_object_quad_vertex")
+            }
+        }
+        var seen = Set<String>()
+        return names.filter { seen.insert($0 ?? "").inserted }
+    }
+
+    static func colorPixelFormat(
+        target: WPERenderTarget,
+        localFBOs: [WPERenderFBO],
+        sceneColorFormat: MTLPixelFormat,
+        hdr: Bool
+    ) -> MTLPixelFormat {
+        switch target {
+        case .scene, .layerComposite:
+            return sceneColorFormat
+        case .fbo(let name):
+            let format = localFBOs.first(where: { $0.name == name })?.format ?? "rgba8888"
+            return WPEMetalRenderTargetPool.pixelFormat(forFBOFormat: format, promoteLDRToHDR: hdr)
+        }
+    }
+
+    static func depthPixelFormat(needsDepth: Bool) -> MTLPixelFormat {
+        needsDepth ? .depth32Float : .invalid
+    }
+}
+
 extension WPEMetalSceneRenderer {
     // MARK: - Loaded texture resource types
 
@@ -108,7 +170,7 @@ extension WPEMetalSceneRenderer {
         let sceneColorFormat: MTLPixelFormat = cameraUniforms.sceneHDR
             ? .rgba16Float
             : WPEMetalRenderExecutor.outputPixelFormat
-        let vertexCandidates: [String?] = [nil, "wpe_object_quad_vertex"]
+        let hdr = cameraUniforms.sceneHDR
         let prewarmDevice = executor.textureSourceDevice
         var pipelinePrewarms: [WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm] = []
         var seenPipelineKeys = Set<String>()
@@ -123,8 +185,17 @@ extension WPEMetalSceneRenderer {
                     targetID: WPEMetalTargetID(target: pass.pass.target),
                     blendMode: blend
                 )
-                for vertexName in vertexCandidates {
-                    let dedup = "\(ObjectIdentifier(result.library))|\(vertexName ?? result.vertexFunctionName)|\(result.fragmentFunctionName)|\(blend.lowercased())|\(alphaWritePolicy)|\(sceneColorFormat.rawValue)"
+                let colorPixelFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
+                    target: pass.pass.target,
+                    localFBOs: layer.graphLayer.localFBOs,
+                    sceneColorFormat: sceneColorFormat,
+                    hdr: hdr
+                )
+                let depthPixelFormat = WPETranslatedPipelinePrewarmPlan.depthPixelFormat(
+                    needsDepth: executor.depthCache.needsAttachment(for: pass)
+                )
+                for vertexName in prewarmVertexNames(for: pass, layer: layer.graphLayer) {
+                    let dedup = "\(ObjectIdentifier(result.library))|\(vertexName ?? result.vertexFunctionName)|\(result.fragmentFunctionName)|\(blend.lowercased())|\(alphaWritePolicy)|\(colorPixelFormat.rawValue)|\(depthPixelFormat.rawValue)"
                     guard seenPipelineKeys.insert(dedup).inserted else { continue }
                     pipelinePrewarms.append(.init(
                         device: prewarmDevice,
@@ -132,8 +203,8 @@ extension WPEMetalSceneRenderer {
                         vertexName: vertexName,
                         blendMode: blend,
                         alphaWritePolicy: alphaWritePolicy,
-                        colorPixelFormat: sceneColorFormat,
-                        depthPixelFormat: .invalid
+                        colorPixelFormat: colorPixelFormat,
+                        depthPixelFormat: depthPixelFormat
                     ))
                 }
             }
@@ -174,6 +245,39 @@ extension WPEMetalSceneRenderer {
         guard loadGeneration == generation else { return }
         executor.seedTranslatedPipelines(built)
         debugStage("pipeline.prewarm.done", "combos=\(pipelinePrewarms.count) built=\(built.count)")
+    }
+
+    /// Vertex names the first-frame encode of this pass can actually select.
+    /// Parallax can flip identity scene layers onto the object quad after load,
+    /// so those passes prewarm both `nil` (fullscreen) and the object quad.
+    func prewarmVertexNames(
+        for pass: WPEPreparedRenderPass,
+        layer: WPERenderLayer
+    ) -> [String?] {
+        WPETranslatedPipelinePrewarmPlan.vertexNames(
+            target: pass.pass.target,
+            shapePointCount: layer.geometry.shapePoints?.count,
+            objectQuadAtRest: executor.usesObjectQuadGeometry(for: pass, layer: layer),
+            parallaxMayEnableObjectQuad: {
+                guard case .scene = pass.pass.target else { return false }
+                return layer.geometry == .identity
+                    && layer.parallaxDepth != SIMD2<Double>(0, 0)
+            }(),
+            skewVertex: prewarmIncludesSkewVertex(pass),
+            usesPerspectiveProjection: cameraUniforms.usesPerspectiveProjection
+        )
+    }
+
+    /// MODE=1 skew can start with zero authored params and animate in; encode
+    /// then switches vertex, so prewarm the skew vertex whenever MODE=1.
+    func prewarmIncludesSkewVertex(_ pass: WPEPreparedRenderPass) -> Bool {
+        if executor.isVertexSkewPass(pass) { return true }
+        let shader = pass.pass.shader
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+        let isSkew = shader == "effects/skew" || shader.hasSuffix("/effects/skew")
+        let mode = pass.comboValues["MODE"] ?? pass.pass.combos["MODE"] ?? 0
+        return isSkew && mode == 1
     }
 
     // MARK: - Bulk texture loading
@@ -430,7 +534,7 @@ extension WPEMetalSceneRenderer {
                 dynamicTextureSources[path] = source
                 if let texture = source.texture(at: lastRuntimeUniforms?.time ?? 0) {
                     loadedTextures[path] = texture
-                } else {
+                } else if loadedTextures[path] == nil {
                     loadedTextures[path] = try makeDynamicPlaceholderTexture(label: "\(path) placeholder")
                 }
             }
@@ -710,6 +814,11 @@ extension WPEMetalSceneRenderer {
         )
         do {
             try Task.checkCancellation()
+            let outputPixelSize = await Self.videoOutputPixelSize(
+                fileURL: url,
+                drawableSize: surfaceDrawableSize,
+                latchedTextureCap: latchedTextureCap
+            )
             let source = try WPEVideoTextureSource(
                 device: executor.textureSourceDevice,
                 videoURL: url,
@@ -719,7 +828,9 @@ extension WPEMetalSceneRenderer {
                     Task.detached(priority: .utility) {
                         await WPEVideoTextureDiskCache.shared.release(staleURL)
                     }
-                }
+                },
+                outputPixelSize: outputPixelSize,
+                decoderAdmission: .shared
             )
             _ = label
             return source
@@ -727,6 +838,23 @@ extension WPEMetalSceneRenderer {
             await WPEVideoTextureDiskCache.shared.release(url)
             throw error
         }
+    }
+
+    static func videoOutputPixelSize(
+        fileURL: URL,
+        drawableSize: CGSize,
+        latchedTextureCap: Int?
+    ) async -> CGSize? {
+        guard let maxEdge = WPEVideoOutputCap.maxOutputEdge(
+            drawableSize: drawableSize,
+            latchedTextureCap: latchedTextureCap
+        ) else {
+            return nil
+        }
+        guard let source = await WPEVideoOutputCap.sourceDisplaySize(fileURL: fileURL) else {
+            return nil
+        }
+        return WPEVideoOutputCap.clampedPixelSize(source: source, maxEdge: maxEdge)
     }
 
     func makeDynamicPlaceholderTexture(label: String) throws -> MTLTexture {
