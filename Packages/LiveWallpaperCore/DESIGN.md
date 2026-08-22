@@ -4,9 +4,9 @@ The visual contract for every SwiftUI view in the app (Pro + Lite SKUs). All
 tokens live in `DesignTokens` (`LiveWallpaperCore/UI/Tokens`). New views
 **must** use tokens — no inline magic numbers, fonts, or colors.
 
-## Visual language (locked 2026-06-05; content-card rule revised 2026-08-11)
+## Visual language (locked 2026-06-05; content-card rule revised 2026-08-22)
 
-- **Content cards** (wallpaper / library tiles) → `GalleryTileChrome`, which backs the whole card — thumbnail *and* footer — with a light glass surface. A card without a surface has a transparent footer, and `shadow` then traces only the opaque thumbnail, so the card reads as an image with loose text under it.
+- **Content cards** (wallpaper / library tiles) → `GalleryTileChrome`, which backs the whole card — thumbnail *and* footer — with an **opaque** raised surface (`Colors.surfaceRaised`). A card without a surface has a transparent footer, and `shadow` then traces only the opaque thumbnail, so the card reads as an image with loose text under it. Not glass: a card-sized `glassEffect` resamples the scrolling grid behind every tile each frame, and the thumbnail hides it anyway — the badges floating over the artwork are where glass earns its cost.
 - **Floating chrome** (toolbars, filter ribbon, inspector, sheets, toasts, menu-bar dropdown) → glass (`AdaptiveGlass`).
 - **Small accents** (type pills, badges, selection, segmented controls) → liquid-glass (`TypeBadge`, `thumbnailBadgeGlass`).
 - Apple-HIG aligned, modern, restrained. Default SF font design (no `.rounded`) to sit cleanly next to native chrome.

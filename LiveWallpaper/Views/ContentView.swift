@@ -41,6 +41,7 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .providesGalleryCardPreferences()
         .toolbar { toolbarContent }
         .frame(
             minWidth: SettingsWindowMetrics.minimumContentSize.width,

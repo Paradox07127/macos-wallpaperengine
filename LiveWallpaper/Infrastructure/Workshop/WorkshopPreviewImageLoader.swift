@@ -13,11 +13,39 @@ final class WorkshopPreviewImageLoader {
     nonisolated static let cacheCountLimit = 128
     nonisolated static let cacheCostLimit = 128 * 1024 * 1024
 
-    private let assetCache = NSCache<NSURL, CachedWorkshopPreviewAsset>()
-    private var assetInflight: [
-        URL: Task<CachedWorkshopPreviewAsset?, Never>
-    ] = [:]
+    /// Keyed by URL *and* decode size: Steam serves one `preview_url` for the
+    /// grid tile and the detail hero, and a tile-sized poster must not be handed
+    /// to the hero (or the hero's cost charged to a grid page).
+    private let assetCache = NSCache<NSString, CachedWorkshopPreviewAsset>()
+    private var assetInflight: [String: InflightLoad] = [:]
     private let session: URLSession
+
+    /// One shared load, plus how many tiles are still waiting on it. Sweeping
+    /// through pages used to leave every started download running to completion:
+    /// the view's `.task` was cancelled, but the loader's task was deliberately
+    /// detached from it so several tiles could share one fetch, and nothing
+    /// counted when the last of them went away.
+    @MainActor
+    private final class InflightLoad {
+        var task: Task<CachedWorkshopPreviewAsset?, Never>!
+        var waiters = 0
+    }
+
+    /// Both the normal and the cancelled path release the same waiter, and on
+    /// cancellation both can run.
+    ///
+    /// `@unchecked Sendable` so the cancellation handler — which runs on the
+    /// cancelling task's executor — can carry it back to the main actor; every
+    /// read and write of `released` happens there.
+    @MainActor
+    private final class WaiterRelease: @unchecked Sendable {
+        private var released = false
+        func callOnce(_ body: () -> Void) {
+            guard !released else { return }
+            released = true
+            body()
+        }
+    }
 
     init() {
         assetCache.countLimit = Self.cacheCountLimit
@@ -36,52 +64,115 @@ final class WorkshopPreviewImageLoader {
 
     /// Returns `nil` if any allow-list / content-type / size check fails —
     /// callers fall back to a placeholder.
-    func load(_ url: URL) async -> NSImage? {
+    func load(_ url: URL, size: WorkshopPreviewSize = .tile) async -> NSImage? {
         // Route through `loadAsset` so the poster goes through the same byte /
         // frame-count / decoded-pixel caps (paste-flow thumbnails included).
-        await loadCachedAsset(url)?.posterImage
+        await loadCachedAsset(url, size: size)?.posterImage
     }
 
     /// Load as still vs bounded animation for hover-to-play.
-    func loadAsset(_ url: URL) async -> WorkshopPreviewAsset? {
-        await loadCachedAsset(url)?.asset
+    func loadAsset(_ url: URL, size: WorkshopPreviewSize = .tile) async -> WorkshopPreviewAsset? {
+        await loadCachedAsset(url, size: size)?.asset
     }
 
-    private func loadCachedAsset(_ url: URL) async -> CachedWorkshopPreviewAsset? {
-        let cacheKey = url as NSURL
-        if let cached = assetCache.object(forKey: cacheKey) {
+    private func loadCachedAsset(
+        _ url: URL,
+        size: WorkshopPreviewSize
+    ) async -> CachedWorkshopPreviewAsset? {
+        let cacheKey = "\(size.rawValue)|\(url.absoluteString)"
+        if let cached = assetCache.object(forKey: cacheKey as NSString) {
+            PreviewSignpost.event("workshop.cacheHit")
             return cached
         }
-        if let task = assetInflight[url] { return await task.value }
-        let task = Task<CachedWorkshopPreviewAsset?, Never> { @MainActor [weak self] in
-            guard let self,
-                  let asset = await self.performAssetLoad(url) else { return nil }
-            return CachedWorkshopPreviewAsset(asset: asset)
+
+        let load = inflightLoad(for: cacheKey, url: url, size: size)
+        load.waiters += 1
+        let release = WaiterRelease()
+        let result = await withTaskCancellationHandler {
+            await load.task.value
+        } onCancel: {
+            // Fires on the cancelling task's executor, so hop back.
+            Task { @MainActor [weak self] in
+                release.callOnce { self?.dropWaiter(load, forKey: cacheKey) }
+            }
         }
-        assetInflight[url] = task
-        let result = await task.value
-        assetInflight.removeValue(forKey: url)
-        if let result {
-            assetCache.setObject(
-                result,
-                forKey: cacheKey,
-                cost: result.estimatedCacheCost
-            )
-        }
+        release.callOnce { dropWaiter(load, forKey: cacheKey) }
         return result
+    }
+
+    private func inflightLoad(
+        for cacheKey: String,
+        url: URL,
+        size: WorkshopPreviewSize
+    ) -> InflightLoad {
+        if let existing = assetInflight[cacheKey] { return existing }
+        let load = InflightLoad()
+        load.task = Task<CachedWorkshopPreviewAsset?, Never> { @MainActor [weak self] in
+            defer { self?.retire(load, forKey: cacheKey) }
+            guard let self,
+                  let asset = await self.performAssetLoad(url, size: size) else { return nil }
+            let cached = CachedWorkshopPreviewAsset(asset: asset)
+            self.assetCache.setObject(cached, forKey: cacheKey as NSString, cost: cached.estimatedCacheCost)
+            return cached
+        }
+        assetInflight[cacheKey] = load
+        return load
+    }
+
+    /// Cancels the shared load once nothing is waiting on it any more.
+    ///
+    /// Takes the `InflightLoad` the caller actually joined rather than looking
+    /// the key up again: by the time the last waiter of an old load lets go, a
+    /// new tile may already have registered a different load under the same key.
+    private func dropWaiter(_ load: InflightLoad, forKey cacheKey: String) {
+        load.waiters -= 1
+        guard load.waiters <= 0 else { return }
+        load.task.cancel()
+        retire(load, forKey: cacheKey)
+    }
+
+    /// Unregisters `load` only if it is still the load registered for that key.
+    /// A cancelled load finishes *after* its replacement has been registered,
+    /// and removing by key alone would unregister the live one — leaving it
+    /// impossible to cancel and making the next tile re-download the same bytes.
+    private func retire(_ load: InflightLoad, forKey cacheKey: String) {
+        guard assetInflight[cacheKey] === load else { return }
+        assetInflight.removeValue(forKey: cacheKey)
     }
 
     fileprivate static func nsImage(from image: CGImage) -> NSImage {
         NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 
-    private func performAssetLoad(_ url: URL) async -> WorkshopPreviewAsset? {
+    private func performAssetLoad(
+        _ url: URL,
+        size: WorkshopPreviewSize
+    ) async -> WorkshopPreviewAsset? {
         let session = session
-        guard let data = await Self.fetchData(url, session: session) else { return nil }
-        // Decode off the main actor — the CGImageSource work is CPU-bound.
-        return await Task.detached(priority: .userInitiated) {
-            WorkshopAnimatedGIF.make(from: data)
-        }.value
+        return await PreviewWorkGate.shared.run {
+            // First act inside the gate: a tile that scrolled away while queued
+            // must free its slot rather than make a visible tile wait for it.
+            guard !Task.isCancelled else { return nil }
+            let fetching = PreviewSignpost.begin("workshop.fetch")
+            let data = await Self.fetchData(url, session: session)
+            PreviewSignpost.end("workshop.fetch", fetching)
+            guard let data, !Task.isCancelled else { return nil }
+            // Decode off the main actor — the CGImageSource work is CPU-bound.
+            let decoding = PreviewSignpost.begin("workshop.decode")
+            // `Task.detached` does not inherit cancellation, so an abandoned tile
+            // used to hold its gate slot until the decode finished anyway.
+            let decode = Task.detached(priority: .userInitiated) { () -> WorkshopPreviewAsset? in
+                guard !Task.isCancelled else { return nil }
+                return WorkshopAnimatedGIF.make(from: data, size: size)
+            }
+            let asset = await withTaskCancellationHandler {
+                await decode.value
+            } onCancel: {
+                decode.cancel()
+            }
+            PreviewSignpost.end("workshop.decode", decoding)
+            return asset
+        }
     }
 
     /// Stream body with size cap; re-check allow-list; require 200 + image/*.
@@ -107,19 +198,15 @@ final class WorkshopPreviewImageLoader {
             return nil
         }
 
-        var data = Data()
-        if http.expectedContentLength > 0 {
-            data.reserveCapacity(Int(http.expectedContentLength))
-        }
         do {
-            for try await byte in bytes {
-                data.append(byte)
-                if data.count > maxBytes { return nil }
-            }
+            return try await BoundedNetworkFetch.collect(
+                bytes,
+                expectedContentLength: http.expectedContentLength,
+                byteCap: maxBytes
+            )
         } catch {
             return nil
         }
-        return data
     }
 }
 

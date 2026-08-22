@@ -4,6 +4,27 @@ import AppKit
 import ImageIO
 import LiveWallpaperCore
 
+/// How large this preview has to be decoded.
+///
+/// One cap could not serve both: a gallery tile is ~220 pt, while the detail
+/// pane takes `aspectRatio: nil` and fills the window, so on a 2× display it can
+/// want several thousand pixels. `.pane` is the default precisely because the
+/// expensive mistake is the silent one — a tile that decodes too much only
+/// wastes work, a pane that decodes too little visibly softens.
+enum WPEPreviewSize {
+    /// Gallery tiles: 220 pt square, `resizeAspectFill` from 16:9, 2×.
+    case tile
+    /// Detail/inspector panes that fill their container.
+    case pane
+
+    var maxPixelSize: Int {
+        switch self {
+        case .tile: return 800
+        case .pane: return 2560
+        }
+    }
+}
+
 /// `.autoPlay` is the back-compatible default; grid / list call sites pass `.hoverToPlay`.
 enum WPEPreviewPlaybackMode {
     case staticPoster
@@ -20,6 +41,7 @@ struct WPEPreviewView: View {
     /// `1` (default) yields the square gallery / history tile; `nil` lets the
     /// preview fill the parent's bounds (16:9 inspector cards) and aspect-fill crop.
     let aspectRatio: CGFloat?
+    let previewSize: WPEPreviewSize
 
     @State private var loadAttempt: Int = 0
     @State private var loadFailed: Bool = false
@@ -30,12 +52,14 @@ struct WPEPreviewView: View {
         imageURL: URL?,
         securityScopedBookmarkData: Data? = nil,
         playbackMode: WPEPreviewPlaybackMode = .autoPlay,
-        aspectRatio: CGFloat? = 1
+        aspectRatio: CGFloat? = 1,
+        previewSize: WPEPreviewSize = .pane
     ) {
         self.imageURL = imageURL
         self.securityScopedBookmarkData = securityScopedBookmarkData
         self.playbackMode = playbackMode
         self.aspectRatio = aspectRatio
+        self.previewSize = previewSize
     }
 
     private var shouldAnimate: Bool {
@@ -60,6 +84,7 @@ struct WPEPreviewView: View {
                     securityScopedBookmarkData: securityScopedBookmarkData,
                     loadAttempt: loadAttempt,
                     shouldAnimate: shouldAnimate,
+                    previewSize: previewSize,
                     onLoadResult: { success in
                         loadFailed = !success
                     }
@@ -141,27 +166,140 @@ private struct OptionalAspectRatio: ViewModifier {
 
 // MARK: - Aspect-fill bridge
 
-/// In-memory cache of raw image bytes keyed by URL.
-private enum WPEPreviewDataCache {
+/// In-memory cache of *decoded* previews keyed by URL. Caching the raw bytes
+/// instead meant every cache hit paid a synchronous main-thread decode, which is
+/// exactly the cost a cache is supposed to remove.
+private enum WPEPreviewDecodedCache {
     // NSCache is thread-safe internally; `nonisolated(unsafe)` just suppresses
     // the Swift 6 Sendable diagnostic since NSCache isn't formally Sendable.
-    nonisolated(unsafe) static let shared: NSCache<NSURL, NSData> = {
-        let cache = NSCache<NSURL, NSData>()
+    nonisolated(unsafe) static let shared: NSCache<NSString, WPEPreviewDecodedImage> = {
+        let cache = NSCache<NSString, WPEPreviewDecodedImage>()
         cache.countLimit = 256
         cache.totalCostLimit = 64 * 1024 * 1024
         return cache
     }()
 }
 
-private enum WPEPreviewImageDecodeBudget {
+/// A preview decoded once, off the main thread, and replayed from there.
+/// `@unchecked Sendable`: every stored value is immutable, and `CGImageSource`
+/// reads are free-threaded.
+final class WPEPreviewDecodedImage: @unchecked Sendable {
+    let posterFrame: CGImage
+    let frameCount: Int
+    let frameDelays: [TimeInterval]
+    /// `nil` for stills and for animations that blew the pixel budget.
+    private let source: CGImageSource?
+    private let decodeOptions: CFDictionary
+    let estimatedCost: Int
+
+    fileprivate init(
+        posterFrame: CGImage,
+        frameCount: Int,
+        frameDelays: [TimeInterval],
+        source: CGImageSource?,
+        decodeOptions: CFDictionary,
+        encodedByteCount: Int
+    ) {
+        self.posterFrame = posterFrame
+        self.frameCount = frameCount
+        self.frameDelays = frameDelays
+        self.source = source
+        self.decodeOptions = decodeOptions
+        let posterBytes = posterFrame.bytesPerRow * posterFrame.height
+        let (total, overflow) = posterBytes.addingReportingOverflow(source == nil ? 0 : encodedByteCount)
+        estimatedCost = overflow ? Int.max : total
+    }
+
+    func frame(at index: Int) -> CGImage? {
+        guard index > 0, index < frameCount, let source else { return posterFrame }
+        return CGImageSourceCreateThumbnailAtIndex(source, index, decodeOptions)
+    }
+
+    /// Runs on a cooperative-pool thread; nothing here touches the main actor.
+    static func decode(
+        _ data: Data,
+        maxPixelSize: Int = WPEPreviewImageDecodeBudget.defaultMaxPixelSize
+    ) -> WPEPreviewDecodedImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, WPEPreviewImageDecodeBudget.sourceOptions) else {
+            return nil
+        }
+        let options = WPEPreviewImageDecodeBudget.thumbnailOptions(maxPixelSize: maxPixelSize)
+        let count = CGImageSourceGetCount(source)
+        guard count > 0,
+              let dimensions = WPEPreviewImageDecodeBudget.imageDimensions(from: source, index: 0),
+              // The bomb check stays on the *source* dimensions: that is what a
+              // malicious file inflates, and it is known before any decode.
+              WPEPreviewImageDecodeBudget.isWithinPixelBudget(
+                  width: dimensions.width, height: dimensions.height, frameCount: 1
+              ),
+              let poster = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {
+            return nil
+        }
+
+        // Priced against what playback will actually decode, not the source. A
+        // 1080p GIF over ~12 frames used to fall back to a still even though the
+        // frames it would decode are now capped at `maxPixelSize`.
+        let animates = count > 1 && WPEPreviewImageDecodeBudget.allowsAnimation(
+            width: poster.width,
+            height: poster.height,
+            frameCount: count
+        )
+        return WPEPreviewDecodedImage(
+            posterFrame: poster,
+            frameCount: animates ? count : 1,
+            frameDelays: animates ? readFrameDelays(from: source, frameCount: count) : [],
+            source: animates ? source : nil,
+            decodeOptions: options,
+            encodedByteCount: data.count
+        )
+    }
+
+    private static func readFrameDelays(from source: CGImageSource, frameCount: Int) -> [TimeInterval] {
+        (0..<frameCount).map { idx in
+            guard let props = CGImageSourceCopyPropertiesAtIndex(source, idx, nil) as? [String: Any] else {
+                return 0.1
+            }
+            if let gif = props[kCGImagePropertyGIFDictionary as String] as? [String: Any] {
+                if let unclamped = (gif[kCGImagePropertyGIFUnclampedDelayTime as String] as? NSNumber)?.doubleValue, unclamped > 0 {
+                    return max(unclamped, WPEPreviewImageDecodeBudget.minFrameDelay)
+                }
+                if let delay = (gif[kCGImagePropertyGIFDelayTime as String] as? NSNumber)?.doubleValue, delay > 0 {
+                    return max(delay, WPEPreviewImageDecodeBudget.minFrameDelay)
+                }
+            }
+            if let png = props[kCGImagePropertyPNGDictionary as String] as? [String: Any] {
+                if let delay = (png[kCGImagePropertyAPNGUnclampedDelayTime as String] as? NSNumber)?.doubleValue, delay > 0 {
+                    return max(delay, WPEPreviewImageDecodeBudget.minFrameDelay)
+                }
+                if let delay = (png[kCGImagePropertyAPNGDelayTime as String] as? NSNumber)?.doubleValue, delay > 0 {
+                    return max(delay, WPEPreviewImageDecodeBudget.minFrameDelay)
+                }
+            }
+            return 0.1
+        }
+    }
+}
+
+enum WPEPreviewImageDecodeBudget {
     static let maxFrameCount = 120
     static let maxDecodedPixelBytes = 96 * 1024 * 1024
     static let minFrameDelay: TimeInterval = 0.033
+    /// Callers that don't say. `.pane` rather than `.tile`, for the same reason
+    /// `WPEPreviewSize.pane` is the view's default.
+    static let defaultMaxPixelSize = WPEPreviewSize.pane.maxPixelSize
     nonisolated(unsafe) static let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-    nonisolated(unsafe) static let frameOptions = [
-        kCGImageSourceShouldCache: false,
-        kCGImageSourceShouldCacheImmediately: false
-    ] as CFDictionary
+    /// `ShouldCacheImmediately: true` is what actually moves the decode off the
+    /// main thread: without it Image I/O hands back an undecoded `CGImage` and
+    /// the pixels are produced later, on whichever thread draws the layer.
+    static func thumbnailOptions(maxPixelSize: Int) -> CFDictionary {
+        [
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ] as CFDictionary
+    }
 
     static func allowsAnimation(width: Int, height: Int, frameCount: Int) -> Bool {
         frameCount <= maxFrameCount && isWithinPixelBudget(width: width, height: height, frameCount: frameCount)
@@ -195,6 +333,7 @@ private struct AspectFillImage: NSViewRepresentable {
     let securityScopedBookmarkData: Data?
     let loadAttempt: Int
     let shouldAnimate: Bool
+    let previewSize: WPEPreviewSize
     let onLoadResult: (Bool) -> Void
 
     func makeNSView(context: Context) -> AspectFillAnimatedImageView {
@@ -230,23 +369,27 @@ private struct AspectFillImage: NSViewRepresentable {
         context.coordinator.lastAttempt = loadAttempt
         context.coordinator.cancelInflight()
 
-        if let cached = WPEPreviewDataCache.shared.object(forKey: url as NSURL) {
-            let ok = nsView.setImage(data: cached as Data)
+        let cacheKey = Self.cacheKey(for: url, size: previewSize)
+        if let cacheKey, let cached = WPEPreviewDecodedCache.shared.object(forKey: cacheKey) {
+            nsView.apply(cached)
             let resultHandler = onLoadResult
-            Task { @MainActor in resultHandler(ok) }
+            Task { @MainActor in resultHandler(true) }
             return
         }
 
         let bookmarkData = securityScopedBookmarkData
+        let size = previewSize
         let coordinator = context.coordinator
         let resultHandler = onLoadResult
         let task = Task { @MainActor in
-            let data = await Self.loadData(url: url, bookmarkData: bookmarkData)
+            let decoded = await Self.loadAndDecode(url: url, bookmarkData: bookmarkData, size: size)
             guard !Task.isCancelled, coordinator.currentURL == url else { return }
-            if let data {
-                WPEPreviewDataCache.shared.setObject(data as NSData, forKey: url as NSURL, cost: data.count)
-                let ok = nsView.setImage(data: data)
-                resultHandler(ok)
+            if let decoded {
+                if let cacheKey {
+                    WPEPreviewDecodedCache.shared.setObject(decoded, forKey: cacheKey, cost: decoded.estimatedCost)
+                }
+                nsView.apply(decoded)
+                resultHandler(true)
             } else {
                 nsView.clearImage()
                 resultHandler(false)
@@ -255,17 +398,57 @@ private struct AspectFillImage: NSViewRepresentable {
         coordinator.inflightTask = task
     }
 
-    private static func loadData(url: URL, bookmarkData: Data?) async -> Data? {
-        await Task.detached(priority: .userInitiated) {
-            var scopedURL: URL?
-            if let bookmarkData {
-                scopedURL = try? SecurityScopedBookmarkResolver.shared
-                    .resolve(bookmarkData, target: .transient).get().url
+    /// Carries the modification date, because a Workshop update rewrites
+    /// `preview.jpg` at the same path: keyed by URL alone the grid would serve
+    /// the pre-update pixels until the entry was evicted, which on a 256-entry
+    /// cache is "for the rest of the session".
+    ///
+    /// `nil` — and therefore no caching at all — when the date cannot be read.
+    /// That happens for a security-scoped URL whose scope is only opened inside
+    /// `loadAndDecode`, and an entry nothing can invalidate is worse than a
+    /// re-decode. The `stat` runs on the main actor, but only when the URL or
+    /// the retry counter actually changed, not per frame.
+    private static func cacheKey(for url: URL, size: WPEPreviewSize) -> NSString? {
+        guard let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate else { return nil }
+        return "\(modified.timeIntervalSinceReferenceDate)|\(size.maxPixelSize)|\(url.absoluteString)" as NSString
+    }
+
+    /// Disk read *and* decode on the cooperative pool. The main actor only ever
+    /// assigns the finished `CGImage` to `layer.contents`.
+    private static func loadAndDecode(
+        url: URL,
+        bookmarkData: Data?,
+        size: WPEPreviewSize
+    ) async -> WPEPreviewDecodedImage? {
+        // Shares the Workshop grid's budget: both feed the same library screens,
+        // and a Scene tab scrolling next to a downloading Workshop page should
+        // not double the number of decodes in flight.
+        await PreviewWorkGate.shared.run {
+            guard !Task.isCancelled else { return nil }
+            let reading = PreviewSignpost.begin("installed.readAndDecode")
+            defer { PreviewSignpost.end("installed.readAndDecode", reading) }
+            // `Task.detached` does not inherit cancellation; without forwarding
+            // it, a preview that scrolled away kept its gate slot until the read
+            // and decode finished.
+            let work = Task.detached(priority: .userInitiated) { () -> WPEPreviewDecodedImage? in
+                guard !Task.isCancelled else { return nil }
+                var scopedURL: URL?
+                if let bookmarkData {
+                    scopedURL = try? SecurityScopedBookmarkResolver.shared
+                        .resolve(bookmarkData, target: .transient).get().url
+                }
+                let didStart = scopedURL?.startAccessingSecurityScopedResource() ?? false
+                defer { if didStart { scopedURL?.stopAccessingSecurityScopedResource() } }
+                guard let data = try? Data(contentsOf: url), !Task.isCancelled else { return nil }
+                return WPEPreviewDecodedImage.decode(data, maxPixelSize: size.maxPixelSize)
             }
-            let didStart = scopedURL?.startAccessingSecurityScopedResource() ?? false
-            defer { if didStart { scopedURL?.stopAccessingSecurityScopedResource() } }
-            return try? Data(contentsOf: url)
-        }.value
+            return await withTaskCancellationHandler {
+                await work.value
+            } onCancel: {
+                work.cancel()
+            }
+        }
     }
 
     @MainActor
@@ -288,11 +471,9 @@ private struct AspectFillImage: NSViewRepresentable {
 
 /// Used instead of `NSImageView` because the latter only offers fit-style scaling — we need fill-with-crop so square 512×512 WPE previews don't render with horizontal letterbox bars.
 private final class AspectFillAnimatedImageView: NSView {
-    private var imageSource: CGImageSource?
-    private var frameCount: Int = 0
+    private var decoded: WPEPreviewDecodedImage?
     private var currentFrameIndex: Int = 0
-    private var frameDelays: [TimeInterval] = []
-    private var animationTimer: Timer?
+    private var playbackTask: Task<Void, Never>?
     /// Toggled by `setAnimating` so a hover-driven host can freeze the loop on
     /// the poster frame without reloading the image.
     private var wantsAnimation = true
@@ -314,126 +495,68 @@ private final class AspectFillAnimatedImageView: NSView {
 
     override var intrinsicContentSize: NSSize { .zero }
 
-
-    /// Returns `true` on success, `false` on decode failure.
-    @discardableResult
-    func setImage(data: Data) -> Bool {
-        animationTimer?.invalidate()
-        animationTimer = nil
+    /// Main-thread work is one `layer.contents` assignment — the decode already
+    /// happened on the cooperative pool.
+    func apply(_ image: WPEPreviewDecodedImage) {
+        stopPlayback()
+        decoded = image
         currentFrameIndex = 0
-        frameCount = 0
-        frameDelays = []
-
-        guard let source = CGImageSourceCreateWithData(data as CFData, WPEPreviewImageDecodeBudget.sourceOptions) else {
-            layer?.contents = nil
-            imageSource = nil
-            return false
-        }
-
-        let count = CGImageSourceGetCount(source)
-        guard count > 0,
-              let dimensions = WPEPreviewImageDecodeBudget.imageDimensions(from: source, index: 0),
-              WPEPreviewImageDecodeBudget.isWithinPixelBudget(width: dimensions.width, height: dimensions.height, frameCount: 1),
-              let firstFrame = CGImageSourceCreateImageAtIndex(source, 0, WPEPreviewImageDecodeBudget.frameOptions) else {
-            layer?.contents = nil
-            imageSource = nil
-            return false
-        }
-
-        layer?.contents = firstFrame
-
-        if count > 1,
-           WPEPreviewImageDecodeBudget.allowsAnimation(
-               width: dimensions.width,
-               height: dimensions.height,
-               frameCount: count
-           ) {
-            imageSource = source
-            frameCount = count
-            frameDelays = Self.readFrameDelays(from: source, frameCount: count)
-            if wantsAnimation { scheduleNextFrame() }
-        } else {
-            imageSource = nil
-            frameCount = 1
-        }
-        return true
+        layer?.contents = image.posterFrame
+        if wantsAnimation, image.frameCount > 1 { startPlayback() }
     }
 
     /// Starts or freezes playback without reloading the image. Freezing
     /// restores the poster (frame 0) so a hovered-out tile reads as static.
     func setAnimating(_ animate: Bool) {
         guard wantsAnimation != animate else {
-            if animate, frameCount > 1, animationTimer == nil { scheduleNextFrame() }
+            if animate, (decoded?.frameCount ?? 0) > 1, playbackTask == nil { startPlayback() }
             return
         }
         wantsAnimation = animate
         if animate {
-            if frameCount > 1, animationTimer == nil { scheduleNextFrame() }
+            if (decoded?.frameCount ?? 0) > 1, playbackTask == nil { startPlayback() }
         } else {
-            animationTimer?.invalidate()
-            animationTimer = nil
-            if frameCount > 1, currentFrameIndex != 0,
-               let source = imageSource,
-               let poster = CGImageSourceCreateImageAtIndex(source, 0, WPEPreviewImageDecodeBudget.frameOptions) {
+            stopPlayback()
+            if let decoded, decoded.frameCount > 1, currentFrameIndex != 0 {
                 currentFrameIndex = 0
-                layer?.contents = poster
+                layer?.contents = decoded.posterFrame
             }
         }
     }
 
     func clearImage() {
-        animationTimer?.invalidate()
-        animationTimer = nil
-        imageSource = nil
-        frameCount = 0
+        stopPlayback()
+        decoded = nil
         currentFrameIndex = 0
-        frameDelays = []
         layer?.contents = nil
     }
 
-    private func scheduleNextFrame() {
-        guard wantsAnimation, frameCount > 1, imageSource != nil else { return }
-        let delay = frameDelays.indices.contains(currentFrameIndex)
-            ? frameDelays[currentFrameIndex]
-            : 0.1
-        animationTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.advanceFrame()
-            }
-        }
+    private func stopPlayback() {
+        playbackTask?.cancel()
+        playbackTask = nil
     }
 
-    private func advanceFrame() {
-        guard let source = imageSource, frameCount > 1 else { return }
-        currentFrameIndex = (currentFrameIndex + 1) % frameCount
-        if let next = CGImageSourceCreateImageAtIndex(source, currentFrameIndex, WPEPreviewImageDecodeBudget.frameOptions) {
-            layer?.contents = next
-        }
-        scheduleNextFrame()
-    }
-
-    private static func readFrameDelays(from source: CGImageSource, frameCount: Int) -> [TimeInterval] {
-        (0..<frameCount).map { idx in
-            guard let props = CGImageSourceCopyPropertiesAtIndex(source, idx, nil) as? [String: Any] else {
-                return 0.1
+    /// A `Task` rather than a `Timer`: each frame has to be decoded off the main
+    /// thread, and a timer callback would have to hop out and back anyway.
+    private func startPlayback() {
+        guard let decoded, decoded.frameCount > 1 else { return }
+        playbackTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let index = self.currentFrameIndex
+                let delay = decoded.frameDelays.indices.contains(index)
+                    ? decoded.frameDelays[index]
+                    : 0.1
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                let next = (index + 1) % decoded.frameCount
+                let frame = await Task.detached(priority: .userInitiated) {
+                    decoded.frame(at: next)
+                }.value
+                guard !Task.isCancelled else { return }
+                self.currentFrameIndex = next
+                if let frame { self.layer?.contents = frame }
             }
-            if let gif = props[kCGImagePropertyGIFDictionary as String] as? [String: Any] {
-                if let unclamped = (gif[kCGImagePropertyGIFUnclampedDelayTime as String] as? NSNumber)?.doubleValue, unclamped > 0 {
-                    return max(unclamped, WPEPreviewImageDecodeBudget.minFrameDelay)
-                }
-                if let delay = (gif[kCGImagePropertyGIFDelayTime as String] as? NSNumber)?.doubleValue, delay > 0 {
-                    return max(delay, WPEPreviewImageDecodeBudget.minFrameDelay)
-                }
-            }
-            if let png = props[kCGImagePropertyPNGDictionary as String] as? [String: Any] {
-                if let delay = (png[kCGImagePropertyAPNGUnclampedDelayTime as String] as? NSNumber)?.doubleValue, delay > 0 {
-                    return max(delay, WPEPreviewImageDecodeBudget.minFrameDelay)
-                }
-                if let delay = (png[kCGImagePropertyAPNGDelayTime as String] as? NSNumber)?.doubleValue, delay > 0 {
-                    return max(delay, WPEPreviewImageDecodeBudget.minFrameDelay)
-                }
-            }
-            return 0.1
         }
     }
 }

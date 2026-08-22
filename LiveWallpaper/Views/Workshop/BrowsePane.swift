@@ -20,6 +20,9 @@ struct BrowsePane: View {
     /// User collapsed the detail panel via the header toggle while keeping the card selected.
     @State private var inspectorHidden = false
     @State private var rateLimitRemaining: TimeInterval = 0
+    /// Read here, once, and handed to every tile: the cards are `EquatableView`s
+    /// and cannot observe the environment from inside their own `body`.
+    @Environment(\.galleryCardPreferences) private var cardPreferences
     @State private var pageJumpText: String = "1"
     /// Workshop ids already in the local library, for the "In Library" badge.
     @State private var installedWorkshopIDs: Set<String> = []
@@ -83,8 +86,14 @@ struct BrowsePane: View {
             guard hasKey, viewModel.items.isEmpty, !viewModel.isLoading else { return }
             Task { await viewModel.reload() }
         }
+        // Guarded: this fires every second for the whole session, and writing
+        // `@State` invalidates the grid's `ForEach` — every visible card then
+        // rebuilds its tooltip, context menu, accessibility actions and badge
+        // glass once a second, whether or not Steam is rate-limiting anything.
         .onReceive(ticker) { _ in
-            rateLimitRemaining = currentRateLimitRemaining
+            let next = currentRateLimitRemaining
+            guard next != rateLimitRemaining else { return }
+            rateLimitRemaining = next
         }
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             reloadInstalledIDs()
@@ -182,19 +191,9 @@ struct BrowsePane: View {
                     } else {
                         LazyVGrid(columns: gridColumns, spacing: DesignTokens.LibraryGrid.spacing) {
                             ForEach(viewModel.displayedItems) { item in
-                                BrowseCard(
-                                    item: item,
-                                    isInLibrary: installedWorkshopIDs.contains(String(item.id)),
-                                    isSelected: selectedItem?.id == item.id
-                                ) {
-                                    if selectedItem?.id == item.id {
-                                        selectedItem = nil
-                                    } else {
-                                        selectedItem = item
-                                        inspectorHidden = false
-                                    }
-                                }
-                                .id(item.id)
+                                browseCard(for: item)
+                                    .equatable()
+                                    .id(item.id)
                             }
                         }
                         .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
@@ -222,6 +221,23 @@ struct BrowsePane: View {
             }
             .onChange(of: viewModel.pageIndex) { _, _ in
                 proxy.scrollTo(Self.gridTopAnchor, anchor: .top)
+            }
+        }
+    }
+
+    private func browseCard(for item: WorkshopQueryItem) -> BrowseCard {
+        BrowseCard(
+            item: item,
+            isInLibrary: installedWorkshopIDs.contains(String(item.id)),
+            isSelected: selectedItem?.id == item.id,
+            cardPreferences: cardPreferences,
+            reduceMotion: reduceMotion
+        ) {
+            if selectedItem?.id == item.id {
+                selectedItem = nil
+            } else {
+                selectedItem = item
+                inspectorHidden = false
             }
         }
     }

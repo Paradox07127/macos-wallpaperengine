@@ -60,6 +60,32 @@ struct BoundedNetworkFetchTests {
         #expect(data == body)
     }
 
+    @Test("A body spanning several staging chunks round-trips byte for byte")
+    func spansStagingChunks() async throws {
+        // Larger than the 64 KiB staging buffer, and not a multiple of it, so
+        // both the flush path and the trailing remainder are exercised.
+        let body = Data((0..<150_000).map { UInt8($0 % 251) })
+        BoundedFetchURLProtocolStub.plan = { _ in .http(status: 200, headers: [:], body: body) }
+        let session = Self.makeSession()
+        let (data, _) = try await BoundedNetworkFetch.fetch(
+            URLRequest(url: Self.url), session: session, byteCap: 1_000_000
+        )
+        #expect(data == body)
+    }
+
+    @Test("The cap still bites mid-chunk, not only on a chunk boundary")
+    func capBitesMidChunk() async {
+        BoundedFetchURLProtocolStub.plan = { _ in
+            .http(status: 200, headers: [:], body: Data(repeating: 0x43, count: 150_000))
+        }
+        let session = Self.makeSession()
+        await #expect(throws: BoundedNetworkFetch.ResponseTooLarge(byteCap: 70_000)) {
+            _ = try await BoundedNetworkFetch.fetch(
+                URLRequest(url: Self.url), session: session, byteCap: 70_000
+            )
+        }
+    }
+
     private static func makeSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [BoundedFetchURLProtocolStub.self]

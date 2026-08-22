@@ -98,6 +98,9 @@ struct MacOSCompatibilityPolicyTests {
             "LibraryFilterBar.swift",
             "DestructiveControlTint.swift",
             "CapsuleButtonStyle.swift",
+            // Card-sized glass resamples the scrolling grid behind every tile
+            // each frame; the badges floating over the artwork keep theirs.
+            "GalleryTileChrome.swift",
         ]
 
         let offenders = try swiftFiles().flatMap { file -> [String] in

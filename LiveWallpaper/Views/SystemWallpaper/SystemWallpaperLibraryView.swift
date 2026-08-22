@@ -1,3 +1,4 @@
+import ImageIO
 import LiveWallpaperCore
 import SwiftUI
 
@@ -377,7 +378,7 @@ private struct SystemWallpaperTile: View {
     let onRemove: () -> Void
 
     @State private var isHovering = false
-    @State private var thumbnail: NSImage?
+    @State private var thumbnail: CGImage?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -400,7 +401,7 @@ private struct SystemWallpaperTile: View {
     private var preview: some View {
         ZStack {
             if let thumbnail {
-                Image(nsImage: thumbnail)
+                Image(decorative: thumbnail, scale: 1)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -439,9 +440,68 @@ private struct SystemWallpaperTile: View {
         }
         .task(id: thumbnailURL) {
             guard let thumbnailURL else { return }
-            // Data crosses the actor hop; NSImage (non-Sendable) stays on main.
-            let data = await Task.detached { try? Data(contentsOf: thumbnailURL) }.value
-            if let data { thumbnail = NSImage(data: data) }
+            thumbnail = await SystemWallpaperThumbnails.image(for: thumbnailURL)
         }
+    }
+}
+
+/// Tile-sized, already-decoded posters for the System Wallpaper grid.
+///
+/// The grid used to read the file off-main and then hand the bytes to
+/// `NSImage(data:)` on the main actor — which does not decode there either, it
+/// defers the pixels to whichever thread first draws the layer — with nothing
+/// cached, so scrolling a tile out and back paid for the whole thing again.
+private enum SystemWallpaperThumbnails {
+    /// 220 pt (`LibraryGrid.maximumColumnWidth`) at 2×, with headroom. The tile
+    /// is 16:9 and so is the poster, so `scaledToFill` never crops here.
+    private static let maxPixelSize = 512
+
+    nonisolated(unsafe) private static let cache: NSCache<NSString, CGImageBox> = {
+        let cache = NSCache<NSString, CGImageBox>()
+        cache.countLimit = 128
+        cache.totalCostLimit = 32 * 1024 * 1024
+        return cache
+    }()
+
+    private final class CGImageBox {
+        let image: CGImage
+        init(_ image: CGImage) { self.image = image }
+    }
+
+    /// Everything — the `stat`, the read, the decode and the cache probe — runs
+    /// off the main actor. `NSCache` is internally thread-safe, and doing the
+    /// lookup here is what lets the key carry the modification date: keyed by URL
+    /// alone, a regenerated thumbnail would keep serving the old pixels for the
+    /// rest of the session.
+    static func image(for url: URL) async -> CGImage? {
+        await Task.detached(priority: .userInitiated) { () -> CGImage? in
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
+            let key = "\(modified)|\(url.absoluteString)" as NSString
+            if let cached = cache.object(forKey: key) { return cached.image }
+
+            guard let data = try? Data(contentsOf: url),
+                  let source = CGImageSourceCreateWithData(
+                      data as CFData,
+                      [kCGImageSourceShouldCache: false] as CFDictionary
+                  ),
+                  let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                      kCGImageSourceShouldCache: false,
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      // Produce the pixels here, on this background thread,
+                      // rather than lazily on the thread that draws the layer.
+                      kCGImageSourceShouldCacheImmediately: true,
+                      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                  ] as CFDictionary) else {
+                return nil
+            }
+            cache.setObject(
+                CGImageBox(decoded),
+                forKey: key,
+                cost: decoded.bytesPerRow * decoded.height
+            )
+            return decoded
+        }.value
     }
 }
