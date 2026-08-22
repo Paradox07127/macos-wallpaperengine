@@ -175,6 +175,20 @@ final class WPEMetalSceneRenderer: NSObject {
     var dynamicColorScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
+    /// `return shared.K` fans: no JS instance; the frame path copies the host value.
+    var sharedOriginReadFans: [String: String] = [:] {
+        didSet { cachedInstalledScriptLayerIDs = nil }
+    }
+    var sharedScaleReadFans: [String: String] = [:] {
+        didSet { cachedInstalledScriptLayerIDs = nil }
+    }
+    var sharedAnglesReadFans: [String: String] = [:] {
+        didSet { cachedInstalledScriptLayerIDs = nil }
+    }
+    var sharedColorReadFans: [String: String] = [:] {
+        didSet { cachedInstalledScriptLayerIDs = nil }
+    }
+    var sharedEffectConstantReadFans: [WPEEffectConstantScriptKey: (sharedKey: String, valueShape: WPEScriptValueShape)] = [:]
     var effectConstantScriptInstances: [WPEEffectConstantScriptKey: WPEDynamicTransformScriptInstance] = [:]
     /// Keyed by `WPEPassVisibilityGate.id` so clones of one effect share a single JS instance.
     var effectVisibilityScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:]
@@ -185,8 +199,10 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Video source key for `getVideoTexture()`. Populated for ALL video layers, not just scripted ones.
     var layerVideoSourceKey: [String: String] = [:]
     var layerObjectIDByName: [String: String] = [:]
-    /// Every video layer's texture key. Each 4K source is ~300 MB; residency is decided by
-    /// `onDemandVideoKeysByConsumerID`, which `reconcileVideoResidency` flips per frame.
+    /// Every video layer's texture key. Decode size is capped to the display
+    /// (B3); process-wide live decoder count is capped by memory tier (B4).
+    /// Residency is decided by `onDemandVideoKeysByConsumerID`, which
+    /// `reconcileVideoResidency` flips per frame.
     var onDemandVideoKeyByID: [String: Set<String>] = [:]
     /// Load-time consumer graph: layer objectID → the video keys that layer's
     /// visibility keeps resident (it samples the video, or samples an FBO the

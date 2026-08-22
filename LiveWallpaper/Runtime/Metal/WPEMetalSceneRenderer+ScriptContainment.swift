@@ -66,6 +66,10 @@
             dynamicScaleScriptInstances = [:]
             dynamicAnglesScriptInstances = [:]
             dynamicColorScriptInstances = [:]
+            sharedOriginReadFans = [:]
+            sharedScaleReadFans = [:]
+            sharedAnglesReadFans = [:]
+            sharedColorReadFans = [:]
             transformHostLocalTransformsByID = Dictionary(
                 document.transformHostObjects.map { object in
                     (
@@ -148,9 +152,14 @@
             func install(
                 _ scripts: [(String, WPESceneTransformScript)],
                 into instances: inout [String: WPEDynamicTransformScriptInstance],
+                fans: inout [String: String],
                 label: String
             ) {
                 for (objectID, script) in scripts {
+                    if let key = WPESharedReadFanAnalysis.readKey(in: script.script) {
+                        fans[objectID] = key
+                        continue
+                    }
                     do {
                         guard let instance = try constructSceneScript(for: scriptLoadToken, {
                             try WPEDynamicTransformScriptInstance(
@@ -171,10 +180,14 @@
                     }
                 }
             }
-            install(originScripts, into: &dynamicOriginScriptInstances, label: "OriginScript")
-            install(scaleScripts, into: &dynamicScaleScriptInstances, label: "ScaleScript")
-            install(anglesScripts, into: &dynamicAnglesScriptInstances, label: "AnglesScript")
-            install(colorScripts, into: &dynamicColorScriptInstances, label: "ColorScript")
+            install(originScripts, into: &dynamicOriginScriptInstances, fans: &sharedOriginReadFans, label: "OriginScript")
+            install(scaleScripts, into: &dynamicScaleScriptInstances, fans: &sharedScaleReadFans, label: "ScaleScript")
+            install(anglesScripts, into: &dynamicAnglesScriptInstances, fans: &sharedAnglesReadFans, label: "AnglesScript")
+            install(colorScripts, into: &dynamicColorScriptInstances, fans: &sharedColorReadFans, label: "ColorScript")
+            debugStage(
+                "transformScripts.fans",
+                "origin=\(sharedOriginReadFans.count) scale=\(sharedScaleReadFans.count) angles=\(sharedAnglesReadFans.count) color=\(sharedColorReadFans.count)"
+            )
         }
 
         /// Builds one script instance per shader constant a scene binds a script
@@ -189,6 +202,7 @@
             scriptLoadToken: WPESceneScriptInstanceLimitToken
         ) {
             effectConstantScriptInstances = [:]
+            sharedEffectConstantReadFans = [:]
             var bindings = pipeline.layers.flatMap { layer in
                 layer.passes.flatMap { prepared in
                     prepared.pass.constantScripts.map { uniform, script in
@@ -221,6 +235,10 @@
                 ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
             sceneScriptSharedState = sharedState
             for (key, script, shape) in bindings {
+                if let sharedKey = WPESharedReadFanAnalysis.readKey(in: script.script) {
+                    sharedEffectConstantReadFans[key] = (sharedKey, shape)
+                    continue
+                }
                 do {
                     guard let instance = try constructSceneScript(for: scriptLoadToken, {
                         try WPEDynamicTransformScriptInstance(
@@ -242,6 +260,10 @@
                     )
                 }
             }
+            debugStage(
+                "effectConstantScripts.fans",
+                "fans=\(sharedEffectConstantReadFans.count) js=\(effectConstantScriptInstances.count)"
+            )
         }
 
         /// Builds one script instance per DISTINCT effect-visibility gate in the
@@ -357,6 +379,11 @@
             dynamicScaleScriptInstances.removeAll(keepingCapacity: false)
             dynamicAnglesScriptInstances.removeAll(keepingCapacity: false)
             dynamicColorScriptInstances.removeAll(keepingCapacity: false)
+            sharedOriginReadFans.removeAll(keepingCapacity: false)
+            sharedScaleReadFans.removeAll(keepingCapacity: false)
+            sharedAnglesReadFans.removeAll(keepingCapacity: false)
+            sharedColorReadFans.removeAll(keepingCapacity: false)
+            sharedEffectConstantReadFans.removeAll(keepingCapacity: false)
             effectConstantScriptInstances.removeAll(keepingCapacity: false)
             effectVisibilityScriptInstances.removeAll(keepingCapacity: false)
             liveEffectConstants.removeAll(keepingCapacity: false)

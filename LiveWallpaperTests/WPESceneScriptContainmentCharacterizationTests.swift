@@ -239,6 +239,9 @@ struct WPESceneScriptContainmentCharacterizationTests {
             "textVisibleScriptInstances", "textAlphaScriptInstances",
             "dynamicOriginScriptInstances", "dynamicScaleScriptInstances",
             "dynamicAnglesScriptInstances", "dynamicColorScriptInstances",
+            "sharedOriginReadFans", "sharedScaleReadFans",
+            "sharedAnglesReadFans", "sharedColorReadFans",
+            "sharedEffectConstantReadFans",
             "liveLayerVisibility", "liveTextVisibility",
             "liveLayerAlpha", "liveTextAlpha", "liveCreatedLayers",
         ] {

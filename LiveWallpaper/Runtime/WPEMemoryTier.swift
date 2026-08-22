@@ -75,5 +75,15 @@ enum WPEMemoryTier: CaseIterable, Equatable, Sendable {
         case .expansive: return 64 * 1_048_576
         }
     }
+
+    /// Process-wide live `AVQueuePlayer` decoders for MP4-in-`.tex` sources.
+    /// Overflow sources keep a still frame instead of refusing the layer.
+    var videoDecoderLimit: Int {
+        switch self {
+        case .constrained: return 2
+        case .standard: return 4
+        case .expansive: return 6
+        }
+    }
 }
 #endif

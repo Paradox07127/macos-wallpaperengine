@@ -63,20 +63,15 @@ struct VideoResolutionContractCharacterizationTests {
         )
     }
 
-    @Test("Current WPE measurement baseline mirrors decoder pixel-buffer dimensions")
+    @Test("WPE video output attributes take a size cap without upscaling")
     func wpeOutputSizingBaseline() throws {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Runtime/Assets/WPEVideoTextureSource.swift"
         )
-        let itemOutputSettings = try Self.slice(
+        let attributesBuilder = try Self.slice(
             source,
-            from: "private static let outputPixelBufferAttributes",
-            to: "private static let resourceLoaderQueue"
-        )
-        let playerOutputSettings = try Self.slice(
-            source,
-            from: "let outputSettings:",
-            to: "specification.defaultOutputSettings"
+            from: "static func pixelBufferAttributes(",
+            to: "private static func makeStillPixelBuffer"
         )
         let publishPath = try Self.slice(
             source,
@@ -84,20 +79,19 @@ struct VideoResolutionContractCharacterizationTests {
             to: "private func retire("
         )
 
-        for settings in [itemOutputSettings, playerOutputSettings] {
-            #expect(settings.contains("kCVPixelBufferPixelFormatTypeKey"))
-            #expect(settings.contains("kCVPixelBufferMetalCompatibilityKey"))
-            #expect(settings.contains("kCVPixelBufferIOSurfacePropertiesKey"))
-            #expect(!settings.contains("kCVPixelBufferWidthKey"))
-            #expect(!settings.contains("kCVPixelBufferHeightKey"))
-        }
+        #expect(attributesBuilder.contains("kCVPixelBufferPixelFormatTypeKey"))
+        #expect(attributesBuilder.contains("kCVPixelBufferMetalCompatibilityKey"))
+        #expect(attributesBuilder.contains("kCVPixelBufferIOSurfacePropertiesKey"))
+        #expect(attributesBuilder.contains("kCVPixelBufferWidthKey"))
+        #expect(attributesBuilder.contains("kCVPixelBufferHeightKey"))
+        #expect(attributesBuilder.contains("if let outputSize"))
 
         let compactPublishPath = Self.compact(publishPath)
         #expect(compactPublishPath.contains("let width = CVPixelBufferGetWidth(pixelBuffer)"))
         #expect(compactPublishPath.contains("let height = CVPixelBufferGetHeight(pixelBuffer)"))
         #expect(compactPublishPath.contains(".bgra8Unorm_srgb, width, height, 0"))
         #expect(compactPublishPath.contains(".bgra8Unorm, width, height, 0"))
-        // NV12 planes mirror the decoder's per-plane dimensions the same way.
+        // Working texture still follows the (possibly capped) buffer, not the file.
         #expect(compactPublishPath.contains("CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)"))
         #expect(compactPublishPath.contains(".r8Unorm, lumaWidth, lumaHeight, 0"))
         #expect(compactPublishPath.contains(".rg8Unorm, chromaWidth, chromaHeight, 1"))

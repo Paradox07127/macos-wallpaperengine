@@ -345,4 +345,91 @@ struct WPEMetalPreparedRenderStateCacheTests {
         )
     }
 }
+
+@Suite("WPE translated pipeline prewarm signatures")
+struct WPETranslatedPipelinePrewarmPlanTests {
+    @Test("Fullscreen identity stays nil; parallax adds the object quad")
+    func vertexNamesCoverParallaxFlip() {
+        #expect(
+            WPETranslatedPipelinePrewarmPlan.vertexNames(
+                target: .scene,
+                shapePointCount: nil,
+                objectQuadAtRest: false,
+                parallaxMayEnableObjectQuad: false,
+                skewVertex: false,
+                usesPerspectiveProjection: false
+            ) == [nil]
+        )
+        #expect(
+            WPETranslatedPipelinePrewarmPlan.vertexNames(
+                target: .scene,
+                shapePointCount: nil,
+                objectQuadAtRest: false,
+                parallaxMayEnableObjectQuad: true,
+                skewVertex: false,
+                usesPerspectiveProjection: false
+            ) == [nil, "wpe_object_quad_vertex"]
+        )
+    }
+
+    @Test("Object-quad layers prewarm skew when MODE=1, not the fullscreen vertex")
+    func vertexNamesCoverSkewAndSkipFullscreen() {
+        #expect(
+            WPETranslatedPipelinePrewarmPlan.vertexNames(
+                target: .scene,
+                shapePointCount: nil,
+                objectQuadAtRest: true,
+                parallaxMayEnableObjectQuad: false,
+                skewVertex: true,
+                usesPerspectiveProjection: false
+            ) == ["wpe_skew_object_quad_vertex", "wpe_object_quad_vertex"]
+        )
+    }
+
+    @Test("Shape quads prewarm the shape vertex and the object-quad fallback")
+    func vertexNamesCoverShapeQuads() {
+        #expect(
+            WPETranslatedPipelinePrewarmPlan.vertexNames(
+                target: .scene,
+                shapePointCount: 4,
+                objectQuadAtRest: true,
+                parallaxMayEnableObjectQuad: false,
+                skewVertex: false,
+                usesPerspectiveProjection: false
+            ) == ["wpe_shape_quad_vertex", "wpe_object_quad_vertex"]
+        )
+    }
+
+    @Test("FBO color format follows the authored buffer; depth follows the pass")
+    func colorAndDepthMatchEncode() {
+        let fbos = [WPERenderFBO(name: "_rt_Mask", scale: 1, format: "r8")]
+        #expect(
+            WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
+                target: .fbo(name: "_rt_Mask"),
+                localFBOs: fbos,
+                sceneColorFormat: .bgra8Unorm,
+                hdr: false
+            ) == .r8Unorm
+        )
+        #expect(
+            WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
+                target: .scene,
+                localFBOs: fbos,
+                sceneColorFormat: .rgba16Float,
+                hdr: true
+            ) == .rgba16Float
+        )
+        #expect(
+            WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
+                target: .fbo(name: "_rt_Color"),
+                localFBOs: [WPERenderFBO(name: "_rt_Color", scale: 1, format: "rgba8888")],
+                sceneColorFormat: .bgra8Unorm,
+                hdr: true
+            ) == .rgba16Float,
+            "HDR promotes 8-bit color FBOs the same way the target pool does"
+        )
+        #expect(WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: false) == .invalid)
+        #expect(WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: true) == .depth32Float)
+    }
+}
 #endif

@@ -1184,6 +1184,75 @@ struct WPESceneDocumentParserTests {
         #expect(reuse.maxRepeat == 5)
     }
 
+    @Test("return shared.K update bodies classify as read fans; writers and side effects do not")
+    func sharedReadFanClassifier() {
+        let workshopFan = """
+        'use strict';
+        export function update(value) {
+        return shared.accentColor;
+        }
+        """
+        #expect(WPESharedReadFanAnalysis.readKey(in: workshopFan) == "accentColor")
+        #expect(WPESharedReadFanAnalysis.readKey(
+            in: "export function update(v) { return shared.uiopacity; }"
+        ) == "uiopacity")
+        #expect(WPESharedReadFanAnalysis.readKey(
+            in: "export function update(value) { return value; }"
+        ) == nil)
+        #expect(WPESharedReadFanAnalysis.readKey(
+            in: "export function update(value) { return shared.accentColor.x; }"
+        ) == nil)
+        #expect(WPESharedReadFanAnalysis.readKey(
+            in: "export function update(value) { shared.accentColor = value; return value; }"
+        ) == nil)
+        let withApply = """
+        export function applyUserProperties(changed) { thisObject.color = shared.accentColor; }
+        export function update(value) { return shared.accentColor; }
+        """
+        #expect(WPESharedReadFanAnalysis.readKey(in: withApply) == nil)
+        #expect(WPESharedReadFanAnalysis.readKey(
+            in: "export function update(value) { thisLayer.visible = false; return shared.accentColor; }"
+        ) == nil)
+        #expect(WPESharedReadFanAnalysis.readKey(
+            in: "export function update(value) { setTimeout(function(){}, 16); return shared.accentColor; }"
+        ) == nil)
+
+        let parsedFan = "export function update(value) { return shared.accentColor; }"
+        let unique = "export function update(value) { return engine.runtime; }"
+        var objects: [[String: Any]] = (0..<5).map { index in
+            [
+                "id": "\(index)", "name": "img\(index)", "image": "models/util/solidlayer.json",
+                "color": ["value": "1 1 1", "script": parsedFan]
+            ]
+        }
+        objects.append([
+            "id": "9", "name": "solo", "image": "models/util/solidlayer.json",
+            "scale": ["value": "1 1 1", "script": unique]
+        ])
+        let fans = objects.compactMap { object -> String? in
+            guard let color = object["color"] as? [String: String] else { return nil }
+            return WPESharedReadFanAnalysis.readKey(in: color["script"] ?? "")
+        }
+        #expect(fans == Array(repeating: "accentColor", count: 5))
+        #expect(WPESharedReadFanAnalysis.readKey(in: unique) == nil)
+    }
+
+    @Test("Shared-read fan vec3 conversion accepts dict, array, and scalar host values")
+    func sharedReadFanVec3Conversion() {
+        #expect(
+            WPESharedReadFanAnalysis.vec3(from: ["x": 0.2, "y": 0.4, "z": 0.6])
+                == SIMD3(0.2, 0.4, 0.6)
+        )
+        #expect(
+            WPESharedReadFanAnalysis.vec3(from: [0.1, 0.2, 0.3])
+                == SIMD3(0.1, 0.2, 0.3)
+        )
+        #expect(WPESharedReadFanAnalysis.vec3(from: 0.5) == SIMD3(repeating: 0.5))
+        #expect(WPESharedReadFanAnalysis.vec3(from: true) == SIMD3(repeating: 1))
+        #expect(WPESharedReadFanAnalysis.vec3(from: false) == SIMD3.zero)
+        #expect(WPESharedReadFanAnalysis.vec3(from: Double.nan) == nil)
+    }
+
     @Test("A scene binding an audio script requires capture even without the authored flag")
     func scriptBoundAudioRequiresCapture() throws {
         // Every audio-reactive scene in the local corpus omits

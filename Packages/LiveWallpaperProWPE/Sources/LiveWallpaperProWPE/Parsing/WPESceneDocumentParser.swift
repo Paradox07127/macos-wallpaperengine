@@ -85,6 +85,151 @@ public enum WPETransformScriptStaticAnalysis {
     }
 }
 
+/// Load-time classifier for `return shared.K` fans (F2). WPE still ticks
+/// every `update`; we skip the JS instance and copy the host `shared` value
+/// in Swift. Rejects anything with writes, timers, audio, or property
+/// callbacks so a producer is never mistaken for a fan.
+public enum WPESharedReadFanAnalysis: Sendable {
+    public static func readKey(in script: String) -> String? {
+        guard let body = updateFunctionBody(in: script),
+              !body.contains(where: { $0 == "{" || $0 == "}" }) else {
+            return nil
+        }
+        let compact = body.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard compact.hasPrefix("return shared."),
+              let key = sharedIdentifier(in: compact, after: "return shared.") else {
+            return nil
+        }
+        if script.contains("registerAudioBuffers") { return nil }
+        if script.contains("setTimeout") || script.contains("setInterval") { return nil }
+        if script.contains("function applyUserProperties") { return nil }
+        if hasMemberAssignment(script, object: "thisLayer") { return nil }
+        if hasMemberAssignment(script, object: "thisObject") { return nil }
+        if hasMemberAssignment(script, object: "thisScene") { return nil }
+        if hasSharedWrite(script, key: key) { return nil }
+        return key
+    }
+
+    /// Host-side `shared` values after the JS bridge (`toObject` / Number / Bool).
+    public static func vec3(from value: Any?) -> SIMD3<Double>? {
+        guard let value else { return nil }
+        if let vector = value as? SIMD3<Double> {
+            return finite(vector)
+        }
+        if let flag = value as? Bool {
+            return SIMD3(repeating: flag ? 1 : 0)
+        }
+        if let number = double(from: value) {
+            return SIMD3(repeating: number)
+        }
+        if let array = value as? [Any], array.count >= 2 {
+            guard let x = double(from: array[0]), let y = double(from: array[1]) else { return nil }
+            let z = array.count >= 3 ? (double(from: array[2]) ?? 0) : 0
+            return finite(SIMD3(x, y, z))
+        }
+        if let dictionary = value as? [AnyHashable: Any] {
+            return vec3(fromDictionary: dictionary)
+        }
+        if let dictionary = value as? NSDictionary {
+            var boxed: [AnyHashable: Any] = [:]
+            for (key, boxedValue) in dictionary {
+                if let hashable = key as? AnyHashable {
+                    boxed[hashable] = boxedValue
+                }
+            }
+            return vec3(fromDictionary: boxed)
+        }
+        return nil
+    }
+
+    private static func updateFunctionBody(in script: String) -> String? {
+        guard let match = script.range(
+            of: #"function\s+update\s*\([^)]*\)\s*\{"#,
+            options: .regularExpression
+        ) else {
+            return nil
+        }
+        let start = match.upperBound
+        var depth = 1
+        var index = start
+        while index < script.endIndex {
+            let character = script[index]
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return String(script[start..<index])
+                }
+            }
+            index = script.index(after: index)
+        }
+        return nil
+    }
+
+    private static func sharedIdentifier(in compact: String, after prefix: String) -> String? {
+        let rest = compact.dropFirst(prefix.count)
+        var ident = ""
+        for character in rest {
+            if character == ";" { break }
+            if character.isWhitespace {
+                if !ident.isEmpty { break }
+                continue
+            }
+            if ident.isEmpty {
+                guard character.isLetter || character == "_" else { return nil }
+            } else if !(character.isLetter || character.isNumber || character == "_") {
+                return nil
+            }
+            ident.append(character)
+        }
+        return ident.isEmpty ? nil : ident
+    }
+
+    private static func hasMemberAssignment(_ script: String, object: String) -> Bool {
+        script.range(
+            of: "\(object)\\.[A-Za-z_][A-Za-z0-9_]*\\s*=",
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func hasSharedWrite(_ script: String, key: String) -> Bool {
+        script.range(
+            of: "shared\\.\(NSRegularExpression.escapedPattern(for: key))\\s*=",
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func vec3(fromDictionary dictionary: [AnyHashable: Any]) -> SIMD3<Double>? {
+        let x = double(from: dictionary["x"] ?? dictionary[0])
+        let y = double(from: dictionary["y"] ?? dictionary[1])
+        guard let x, let y else { return nil }
+        let z = double(from: dictionary["z"] ?? dictionary[2]) ?? 0
+        return finite(SIMD3(x, y, z))
+    }
+
+    private static func double(from value: Any?) -> Double? {
+        switch value {
+        case let number as Double:
+            return number.isFinite ? number : nil
+        case let number as Float:
+            let value = Double(number)
+            return value.isFinite ? value : nil
+        case let number as NSNumber:
+            let value = number.doubleValue
+            return value.isFinite ? value : nil
+        case let number as Int:
+            return Double(number)
+        default:
+            return nil
+        }
+    }
+
+    private static func finite(_ vector: SIMD3<Double>) -> SIMD3<Double>? {
+        vector.x.isFinite && vector.y.isFinite && vector.z.isFinite ? vector : nil
+    }
+}
+
 /// Parses Wallpaper Engine `scene.json`, accepting object, array, and space-separated vector encodings.
 /// Unsupported features are preserved as diagnostics for capability classification.
 public enum WPESceneDocumentParser {

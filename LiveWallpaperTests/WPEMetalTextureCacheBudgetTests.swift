@@ -41,6 +41,9 @@ struct WPEMetalTextureCacheBudgetTests {
         #expect(WPEMemoryTier.constrained.lazyAnimationRawByteThreshold == 100_000_000)
         #expect(WPEMemoryTier.standard.lazyAnimationRawByteThreshold == 200_000_000)
         #expect(WPEMemoryTier.expansive.lazyAnimationRawByteThreshold == 200_000_000)
+        #expect(WPEMemoryTier.constrained.videoDecoderLimit == 2)
+        #expect(WPEMemoryTier.standard.videoDecoderLimit == 4)
+        #expect(WPEMemoryTier.expansive.videoDecoderLimit == 6)
     }
 
     @Test("Budget resolution: unset follows the tier, manual value always wins")

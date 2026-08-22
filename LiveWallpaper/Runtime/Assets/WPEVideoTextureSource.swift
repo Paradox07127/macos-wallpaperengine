@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import AVFoundation
+import CoreGraphics
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -8,14 +9,121 @@ import Metal
 import QuartzCore
 import simd
 
+/// Display-sized decode cap for MP4-in-`.tex` (B3). Nil means "leave the
+/// decoder at source size" — either no cap was given, or the source already
+/// fits. Never upscales.
+enum WPEVideoOutputCap: Sendable {
+    static func clampedPixelSize(source: CGSize, maxEdge: Int) -> CGSize? {
+        guard maxEdge > 0 else { return nil }
+        let srcW = Double(source.width)
+        let srcH = Double(source.height)
+        guard srcW >= 1, srcH >= 1 else { return nil }
+        let longest = max(srcW, srcH)
+        guard longest > Double(maxEdge) else { return nil }
+        let scale = Double(maxEdge) / longest
+        return CGSize(
+            width: evenPixelCount((srcW * scale).rounded()),
+            height: evenPixelCount((srcH * scale).rounded())
+        )
+    }
+
+    /// Smaller of the drawable's long edge and the MetalFX texture cap.
+    /// A zero drawable (tests, pre-`nextDrawable`) contributes nothing, so a
+    /// MetalFX-off display with an unknown size stays uncapped.
+    static func maxOutputEdge(drawableSize: CGSize, latchedTextureCap: Int?) -> Int? {
+        let drawableEdge = max(
+            Int(drawableSize.width.rounded()),
+            Int(drawableSize.height.rounded())
+        )
+        let display = drawableEdge > 0 ? drawableEdge : nil
+        let plan = latchedTextureCap.flatMap { $0 > 0 ? $0 : nil }
+        switch (display, plan) {
+        case let (d?, p?): return min(d, p)
+        case let (d?, nil): return d
+        case let (nil, p?): return p
+        case (nil, nil): return nil
+        }
+    }
+
+    static func sourceDisplaySize(fileURL: URL) async -> CGSize? {
+        let asset = AVURLAsset(url: fileURL)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first else {
+            return nil
+        }
+        guard let natural = try? await track.load(.naturalSize),
+              let transform = try? await track.load(.preferredTransform) else {
+            return nil
+        }
+        let displayed = natural.applying(transform)
+        let width = abs(displayed.width)
+        let height = abs(displayed.height)
+        guard width >= 1, height >= 1 else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    private static func evenPixelCount(_ value: Double) -> Int {
+        max(2, Int(value) & ~1)
+    }
+}
+
+/// Process-wide live-decoder tickets for MP4-in-`.tex` sources (B4).
+/// All mutable state sits behind `lock`; render actors on different displays
+/// share `shared` and can acquire concurrently.
+final class WPEVideoDecoderAdmission: @unchecked Sendable {
+    struct Ticket: Equatable, Sendable {
+        fileprivate let id: UInt64
+    }
+
+    static let shared = WPEVideoDecoderAdmission(
+        limit: WPEMemoryTier.current.videoDecoderLimit
+    )
+
+    let limit: Int
+    private let lock = NSLock()
+    private var nextID: UInt64 = 1
+    private var active: Set<UInt64> = []
+
+    init(limit: Int) {
+        self.limit = max(0, limit)
+    }
+
+    func tryAcquire() -> Ticket? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard active.count < limit else { return nil }
+        let id = nextID
+        nextID += 1
+        active.insert(id)
+        return Ticket(id: id)
+    }
+
+    func release(_ ticket: Ticket) {
+        lock.lock()
+        active.remove(ticket.id)
+        lock.unlock()
+    }
+
+    var activeCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return active.count
+    }
+
+    var hasVacancy: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return active.count < limit
+    }
+}
+
 /// MP4-in-`.tex` video source → current frame as Metal texture (player-level output on macOS 15+).
 /// Player stays paused after init; performance profile starts it. Not `@MainActor` (renderer actor).
 final class WPEVideoTextureSource {
     private let device: MTLDevice
     private let textureCache: CVMetalTextureCache
-    private let player: AVQueuePlayer
+    private let player: AVQueuePlayer?
     /// Retained for source lifetime — looper drops item rotation if released.
-    private let playerLooper: AVPlayerLooper
+    private let playerLooper: AVPlayerLooper?
     /// Resource-loader delegate is weak — hold the loader so in-memory bytes survive.
     private let inMemoryAssetLoader: InMemoryVideoAssetLoader?
     /// On-disk staging file; returned to disk cache on invalidate when onInvalidate set.
@@ -105,18 +213,33 @@ final class WPEVideoTextureSource {
     /// (`AVPlayerItemVideoOutput`) branch — the shipping path on macOS 14 — is
     /// exercisable on an OS where both APIs exist.
     private let forceLegacyItemLevelOutput: Bool
+    /// Decoder output size after the display cap. Nil = source dimensions.
+    private let outputPixelSize: CGSize?
+    private let admission: WPEVideoDecoderAdmission?
+    private let decoderTicket: WPEVideoDecoderAdmission.Ticket?
+
+    var isLiveDecoder: Bool { player != nil }
+
+    #if DEBUG
+    var isLiveDecoderForTesting: Bool { isLiveDecoder }
+    var outputPixelSizeForTesting: CGSize? { outputPixelSize }
+    #endif
 
     init(
         device: MTLDevice,
         videoURL: URL,
         commandQueue: MTLCommandQueue? = nil,
         onInvalidate: (@Sendable (URL) -> Void)? = nil,
-        forceLegacyItemLevelOutputForTesting: Bool = false
+        forceLegacyItemLevelOutputForTesting: Bool = false,
+        outputPixelSize: CGSize? = nil,
+        decoderAdmission: WPEVideoDecoderAdmission? = nil
     ) throws {
         self.cleanupURL = videoURL
         self.onInvalidate = onInvalidate
         self.device = device
         self.forceLegacyItemLevelOutput = forceLegacyItemLevelOutputForTesting
+        self.outputPixelSize = outputPixelSize
+        self.admission = decoderAdmission
         guard let queue = commandQueue ?? device.makeCommandQueue() else {
             throw WPEMetalTextureLoaderError.textureAllocationFailed
         }
@@ -129,75 +252,99 @@ final class WPEVideoTextureSource {
         }
         self.textureCache = cache
 
-        let assetOptions: [String: any Sendable] = [
-            AVURLAssetReferenceRestrictionsKey: AVAssetReferenceRestrictions.forbidAll.rawValue,
-            AVURLAssetAllowsCellularAccessKey: false,
-            AVURLAssetAllowsExpensiveNetworkAccessKey: false,
-            AVURLAssetAllowsConstrainedNetworkAccessKey: false
-        ]
-        let activeURL: URL
-        let loader: InMemoryVideoAssetLoader?
-        do {
-            let result = try InMemoryVideoAssetLoader.load(from: videoURL)
-            loader = result.loader
-            activeURL = result.customURL
-        } catch {
-            loader = nil
-            activeURL = videoURL
+        let ticket = decoderAdmission?.tryAcquire()
+        // Admission is a hard cap: a failed still-frame extract must not
+        // start an uncounted live decoder (that was the overflow hole).
+        let mustStayStill = decoderAdmission != nil && ticket == nil
+
+        if mustStayStill {
+            self.decoderTicket = nil
+            self.inMemoryAssetLoader = nil
+            self.player = nil
+            self.playerLooper = nil
+        } else {
+            self.decoderTicket = ticket
+
+            let assetOptions: [String: any Sendable] = [
+                AVURLAssetReferenceRestrictionsKey: AVAssetReferenceRestrictions.forbidAll.rawValue,
+                AVURLAssetAllowsCellularAccessKey: false,
+                AVURLAssetAllowsExpensiveNetworkAccessKey: false,
+                AVURLAssetAllowsConstrainedNetworkAccessKey: false
+            ]
+            let activeURL: URL
+            let loader: InMemoryVideoAssetLoader?
+            do {
+                let result = try InMemoryVideoAssetLoader.load(from: videoURL)
+                loader = result.loader
+                activeURL = result.customURL
+            } catch {
+                loader = nil
+                activeURL = videoURL
+            }
+            self.inMemoryAssetLoader = loader
+
+            let asset = AVURLAsset(url: activeURL, options: assetOptions)
+            if let loader {
+                asset.resourceLoader.setDelegate(loader, queue: Self.resourceLoaderQueue)
+            }
+
+            let playerItem = AVPlayerItem(asset: asset)
+            // No forward-buffer hint: measured inert on this path (unset / 2s / 32s
+            // gave the same footprint, swing, frame delivery, request count and byte
+            // volume across three loops), same as the wallpaper player.
+            playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = false
+            if let outputPixelSize {
+                playerItem.preferredMaximumResolution = outputPixelSize
+            }
+
+            let queuePlayer = AVQueuePlayer()
+            // Deliberately NOT `actionAtItemEnd = .none`: AVPlayerLooper loops by
+            // advancing the queue, and pinning the player at item end stalls it at
+            // the last frame of the first pass. Do not re-add it.
+            // Prefetch next looped item before wrap to avoid sparse-decode slow-mo.
+            queuePlayer.automaticallyWaitsToMinimizeStalling = true
+            queuePlayer.preventsDisplaySleepDuringVideoPlayback = false
+            queuePlayer.isMuted = true
+            queuePlayer.volume = 0
+            self.player = queuePlayer
+
+            // macOS 15+: attach player-level output BEFORE looper enqueues items.
+            if #available(macOS 15.0, *), !forceLegacyItemLevelOutputForTesting {
+                self.playerLevelOutput = WPEPlayerLevelVideoOutput(
+                    player: queuePlayer,
+                    pixelFormats: Self.negotiatedPixelFormats,
+                    outputSize: outputPixelSize
+                )
+            }
+
+            self.playerLooper = AVPlayerLooper(player: queuePlayer, templateItem: playerItem)
+
+            // macOS 14 (or forced legacy): item-level outputs; stay paused until
+            // performance profile. `texture(at:)` falls through to this path
+            // whenever `playerLevelOutput` is nil. The looper may not have enqueued
+            // its replicas yet — every texture tick re-runs the attachment.
+            if playerLevelOutput == nil {
+                ensureItemOutputs()
+            }
         }
-        self.inMemoryAssetLoader = loader
 
-        let asset = AVURLAsset(url: activeURL, options: assetOptions)
-        if let loader {
-            asset.resourceLoader.setDelegate(loader, queue: Self.resourceLoaderQueue)
-        }
-
-        let playerItem = AVPlayerItem(asset: asset)
-        // No forward-buffer hint: measured inert on this path (unset / 2s / 32s
-        // gave the same footprint, swing, frame delivery, request count and byte
-        // volume across three loops), same as the wallpaper player.
-        playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = false
-
-        let queuePlayer = AVQueuePlayer()
-        // Deliberately NOT `actionAtItemEnd = .none`: AVPlayerLooper loops by
-        // advancing the queue, and pinning the player at item end stalls it at
-        // the last frame of the first pass. Do not re-add it.
-        // Prefetch next looped item before wrap to avoid sparse-decode slow-mo.
-        queuePlayer.automaticallyWaitsToMinimizeStalling = true
-        queuePlayer.preventsDisplaySleepDuringVideoPlayback = false
-        queuePlayer.isMuted = true
-        queuePlayer.volume = 0
-        self.player = queuePlayer
-
-        // macOS 15+: attach player-level output BEFORE looper enqueues items.
-        if #available(macOS 15.0, *), !forceLegacyItemLevelOutput {
-            self.playerLevelOutput = WPEPlayerLevelVideoOutput(
-                player: queuePlayer,
-                pixelFormats: Self.negotiatedPixelFormats
-            )
-        }
-
-        self.playerLooper = AVPlayerLooper(player: queuePlayer, templateItem: playerItem)
-
-        // macOS 14 (or forced legacy): item-level outputs; stay paused until
-        // performance profile. `texture(at:)` falls through to this path
-        // whenever `playerLevelOutput` is nil. The looper may not have enqueued
-        // its replicas yet — every texture tick re-runs the attachment.
-        if playerLevelOutput == nil {
-            ensureItemOutputs()
+        if mustStayStill,
+           let stillBuffer = Self.makeStillPixelBuffer(fileURL: videoURL, outputSize: outputPixelSize) {
+            publish(pixelBuffer: stillBuffer)
         }
     }
 
     func texture(at time: TimeInterval) -> MTLTexture? {
         _ = time   // Wall-clock pacing comes from AVPlayer, not the scene clock.
         guard !isInvalidated else { return nil }
+        guard player != nil else { return latest?.texture }
 
         // Script play-once: freeze on natural loop wrap (don't mutate looper queue — races frame tap).
         if scriptControlled {
             if scriptHeldAtEnd { return latest?.texture }
             let playhead = playheadSeconds
             if playhead + 0.1 < scriptLastPlaybackSeconds {
-                player.pause()
+                player?.pause()
                 scriptHeldAtEnd = true
                 return latest?.texture   // hold the pre-wrap (≈ last) frame
             }
@@ -235,9 +382,9 @@ final class WPEVideoTextureSource {
         switch profile {
         case .quality:
             // Script-owned source: don't force-play on policy resume.
-            if !scriptControlled { player.play() }
+            if !scriptControlled { player?.play() }
         case .suspended:
-            player.pause()
+            player?.pause()
             // `sweepRetiredFrames` only runs from `publish`, and a paused source
             // never publishes again — without this the last replaced frame's
             // planes (~12 MiB NV12 4K, ~32 MiB BGRA) stay resident for the whole
@@ -272,28 +419,28 @@ final class WPEVideoTextureSource {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
         resetScriptPlayback()
-        player.play()
+        player?.play()
     }
 
     func scriptPause() {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
-        player.pause()
+        player?.pause()
     }
 
     /// Pause + rewind to first frame (reset play-once for replay).
     func scriptStop() {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
-        player.pause()
-        player.seek(to: .zero)
+        player?.pause()
+        player?.seek(to: .zero)
         resetScriptPlayback()
     }
 
     func scriptSetCurrentTime(_ seconds: TimeInterval) {
         guard !isInvalidated else { return }
         enterScriptControlledMode()
-        player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600))
+        player?.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600))
         resetScriptPlayback()
     }
 
@@ -346,13 +493,16 @@ final class WPEVideoTextureSource {
         }
         playerLevelOutput = nil
         lastPlayerLevelPresentationTime = nil
-        playerLooper.disableLooping()
-        player.pause()
+        playerLooper?.disableLooping()
+        player?.pause()
         for entry in itemOutputs { entry.item.remove(entry.output) }
         itemOutputs.removeAll()
         for entry in retiredItemOutputs { entry.item.remove(entry.output) }
         retiredItemOutputs.removeAll()
-        player.removeAllItems()
+        player?.removeAllItems()
+        if let decoderTicket {
+            admission?.release(decoderTicket)
+        }
         if let cleanupURL {
             if let onInvalidate {
                 onInvalidate(cleanupURL)
@@ -368,6 +518,7 @@ final class WPEVideoTextureSource {
     /// pre-rolled next), and move entries whose item left the queue into the
     /// deferred-release list (see `retiredItemOutputs`).
     private func ensureItemOutputs() {
+        guard let player else { return }
         let items = player.items()
         itemOutputs.removeAll { entry in
             guard !items.contains(where: { $0 === entry.item }) else { return false }
@@ -379,9 +530,12 @@ final class WPEVideoTextureSource {
             entry.item.remove(entry.output)
         }
         for item in items where !itemOutputs.contains(where: { $0.item === item }) {
-            let attributes = forcedBGRAOutput
-                ? Self.bgraFallbackPixelBufferAttributes
-                : Self.outputPixelBufferAttributes
+            let attributes = Self.pixelBufferAttributes(
+                pixelFormats: forcedBGRAOutput
+                    ? [kCVPixelFormatType_32BGRA]
+                    : Self.negotiatedPixelFormats,
+                outputSize: outputPixelSize
+            )
             let output = AVPlayerItemVideoOutput(pixelBufferAttributes: attributes)
             output.suppressesPlayerRendering = true
             item.add(output)
@@ -390,7 +544,7 @@ final class WPEVideoTextureSource {
     }
 
     private var currentItemOutput: AVPlayerItemVideoOutput? {
-        guard let current = player.currentItem else { return nil }
+        guard let current = player?.currentItem else { return nil }
         return itemOutputs.first { $0.item === current }?.output
     }
 
@@ -598,11 +752,12 @@ final class WPEVideoTextureSource {
         // Deferred, not released: `latest` may still be backed by these pools.
         retiredItemOutputs.append(contentsOf: itemOutputs)
         itemOutputs.removeAll()
-        if #available(macOS 15.0, *), !forceLegacyItemLevelOutput {
+        if #available(macOS 15.0, *), !forceLegacyItemLevelOutput, let player {
             (playerLevelOutput as? WPEPlayerLevelVideoOutput)?.detach()
             playerLevelOutput = WPEPlayerLevelVideoOutput(
                 player: player,
-                pixelFormats: [kCVPixelFormatType_32BGRA]
+                pixelFormats: [kCVPixelFormatType_32BGRA],
+                outputSize: outputPixelSize
             )
             lastPlayerLevelPresentationTime = nil
         } else {
@@ -680,27 +835,80 @@ final class WPEVideoTextureSource {
     /// Decoder-native NV12 first (video then full range) with a 32BGRA tail:
     /// AVFoundation picks the closest match to the source, so 8-bit SDR lands
     /// on the biplanar path and sources NV12 cannot represent (alpha video)
-    /// negotiate BGRA. Width/height stay absent — buffers mirror the decoder's
-    /// dimensions (VideoResolutionContract).
-    private static let negotiatedPixelFormats: [OSType] = [
+    /// negotiate BGRA. Width/height are added only when `outputSize` is set,
+    /// which is the display-sized cap (never an upscale).
+    static let negotiatedPixelFormats: [OSType] = [
         kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
         kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
         kCVPixelFormatType_32BGRA
     ]
 
     /// Metal video-output attrs as `[String: any Sendable]` for concurrency.
-    private static let outputPixelBufferAttributes: [String: any Sendable] = [
-        kCVPixelBufferPixelFormatTypeKey as String: negotiatedPixelFormats,
-        kCVPixelBufferMetalCompatibilityKey as String: true,
-        kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable]()
-    ]
+    static func pixelBufferAttributes(
+        pixelFormats: [OSType],
+        outputSize: CGSize?
+    ) -> [String: any Sendable] {
+        var attributes: [String: any Sendable] = [
+            kCVPixelBufferPixelFormatTypeKey as String: pixelFormats,
+            kCVPixelBufferMetalCompatibilityKey as String: true,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable]()
+        ]
+        if let outputSize {
+            attributes[kCVPixelBufferWidthKey as String] = Int(outputSize.width)
+            attributes[kCVPixelBufferHeightKey as String] = Int(outputSize.height)
+        }
+        return attributes
+    }
 
-    /// HDR fallback attrs: 32BGRA only, no width/height (decoder dimensions).
-    private static let bgraFallbackPixelBufferAttributes: [String: any Sendable] = [
-        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-        kCVPixelBufferMetalCompatibilityKey as String: true,
-        kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable]()
-    ]
+    private static func makeStillPixelBuffer(fileURL: URL, outputSize: CGSize?) -> CVPixelBuffer? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: fileURL))
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .positiveInfinity
+        if let outputSize {
+            generator.maximumSize = outputSize
+        }
+        guard let image = try? generator.copyCGImage(at: .zero, actualTime: nil) else {
+            return nil
+        }
+        return makeBGRAPixelBuffer(from: image)
+    }
+
+    private static func makeBGRAPixelBuffer(from image: CGImage) -> CVPixelBuffer? {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0 else { return nil }
+        var buffer: CVPixelBuffer?
+        let attributes: [CFString: Any] = [
+            kCVPixelBufferMetalCompatibilityKey: true,
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as [String: any Sendable]
+        ]
+        guard CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_32BGRA,
+            attributes as CFDictionary,
+            &buffer
+        ) == kCVReturnSuccess, let buffer else {
+            return nil
+        }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        guard let context = CGContext(
+            data: CVPixelBufferGetBaseAddress(buffer),
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else {
+            return nil
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return buffer
+    }
 
     /// Resource-loader queue — byte-range fulfilment stays off main.
     private static let resourceLoaderQueue = DispatchQueue(
@@ -711,8 +919,7 @@ final class WPEVideoTextureSource {
 
     /// Current item time (s); used by play-once wrap detection in all builds.
     private var playheadSeconds: TimeInterval {
-        let time = player.currentTime()
-        guard time.isValid, !time.isIndefinite else { return 0 }
+        guard let time = player?.currentTime(), time.isValid, !time.isIndefinite else { return 0 }
         let seconds = time.seconds
         return seconds.isFinite ? seconds : 0
     }
@@ -725,18 +932,18 @@ final class WPEVideoTextureSource {
     var currentPlayheadSeconds: TimeInterval { playheadSeconds }
 
     var loopDurationSeconds: TimeInterval {
-        let duration = player.currentItem?.duration ?? .invalid
+        let duration = player?.currentItem?.duration ?? .invalid
         guard duration.isValid, !duration.isIndefinite else { return 0 }
         let seconds = duration.seconds
         return seconds.isFinite ? seconds : 0
     }
 
-    var isActivelyPlaying: Bool { !isInvalidated && player.rate > 0 }
+    var isActivelyPlaying: Bool { !isInvalidated && (player?.rate ?? 0) > 0 }
 
     /// Phase-align seek (does not enter script-controlled mode).
     func alignPlayhead(to seconds: TimeInterval) {
         guard !isInvalidated, !scriptControlled else { return }
-        player.seek(
+        player?.seek(
             to: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
             toleranceBefore: .zero,
             toleranceAfter: .zero
@@ -786,14 +993,12 @@ private final class WPEPlayerLevelVideoOutput {
     private let output: AVPlayerVideoOutput
     private weak var player: AVQueuePlayer?
 
-    init(player: AVQueuePlayer, pixelFormats: [OSType]) {
+    init(player: AVQueuePlayer, pixelFormats: [OSType], outputSize: CGSize?) {
         let specification = AVVideoOutputSpecification(tagCollections: [.monoscopicForVideoOutput()])
-        let outputSettings: [String: any Sendable] = [
-            kCVPixelBufferPixelFormatTypeKey as String: pixelFormats,
-            kCVPixelBufferMetalCompatibilityKey as String: true,
-            kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable]()
-        ]
-        specification.defaultOutputSettings = outputSettings
+        specification.defaultOutputSettings = WPEVideoTextureSource.pixelBufferAttributes(
+            pixelFormats: pixelFormats,
+            outputSize: outputSize
+        )
         let output = AVPlayerVideoOutput(specification: specification)
         player.videoOutput = output
         self.output = output
