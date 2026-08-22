@@ -557,9 +557,9 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("B2a a script-heavy scene constructs every runtime — there is no count cap")
     func sceneRuntimeInventoryHasNoInstanceCap() throws {
-        // 2955378002 is the corpus's heaviest scene at 676 bindings. It used to be
-        // failed closed; the cap is gone because the count never predicted cost
-        // (676 bindings = 8.5ms/frame, while 185 in 3509243656 = 13.5ms).
+        // 2955378002 has 676 bindings and used to be failed closed by the cap.
+        // Binding count alone does not predict runtime cost, so this characterization
+        // pins only the no-cap construction contract.
         let state = WPESceneScriptLoadState()
         let heavy = WPESceneScriptInstanceInventory(text: 300, layer: 200, transform: 176)
         #expect(heavy.total == 676)

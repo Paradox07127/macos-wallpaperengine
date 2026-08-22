@@ -7,6 +7,35 @@ import Testing
 
 @Suite("WPE Metal render executor")
 struct WPEMetalRenderExecutorTests {
+    @Test("Shader prewarm reuses canonical translated results across reloads")
+    func shaderPrewarmPartitionsCachedAndMissingRequests() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let cachedRequest = shaderCompileRequest(sourceHash: "cached")
+        let missingRequest = shaderCompileRequest(sourceHash: "missing")
+        let cachedResult = WPEShaderCompileResult(
+            library: executor.defaultLibrary,
+            vertexFunctionName: "cached_vertex",
+            fragmentFunctionName: "cached_fragment",
+            mslSource: "// cached",
+            uniformLayout: [],
+            samplerNames: []
+        )
+        executor.seedTranslatedShaderCache([
+            (key: cachedRequest.translationCacheKey, result: cachedResult)
+        ])
+
+        let partition = executor.partitionTranslatedShaderPrewarmRequests([
+            cachedRequest,
+            missingRequest
+        ])
+
+        #expect(partition.cached.count == 1)
+        #expect(partition.cached[0].key == cachedRequest.translationCacheKey)
+        #expect(partition.cached[0].result.library === cachedResult.library)
+        #expect(partition.missing == [missingRequest])
+    }
+
     @Test("Reload clears the untranslatable-shader verdict along with the compiled result")
     func reloadClearsUntranslatableShaderVerdict() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -15,6 +44,17 @@ struct WPEMetalRenderExecutorTests {
         executor.untranslatableShaderReasonByPassID["layer0.0"] = "no translator"
         executor.releaseTransientResources()
         #expect(executor.untranslatableShaderReasonByPassID.isEmpty)
+    }
+
+    private func shaderCompileRequest(sourceHash: String) -> WPEShaderCompileRequest {
+        WPEShaderCompileRequest(
+            shaderName: sourceHash,
+            processedVertexSource: "",
+            processedFragmentSource: "",
+            sourceHash: sourceHash,
+            comboValues: [:],
+            textureBindings: [:]
+        )
     }
 
     @Test("Shader-readable scene and FBO targets retain complete premultiplied RGBA")

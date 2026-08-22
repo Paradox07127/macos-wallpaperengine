@@ -8,15 +8,15 @@
         /// Cap on concurrent in-process evaluations (permit held on engine queue).
         static let maximumConcurrentEvaluations = 4
 
-        /// Batch workers (4): heaviest scene ~3.7ms work → ~1ms/bucket vs 16.7ms frame.
+        /// Four serial VM lanes bound dispatch fan-out while preserving each VM's ordering.
+        /// Re-size only from an independent Release trace; authored binding count alone does
+        /// not predict per-frame script cost.
         static let batchWorkerWidth = 4
 
         // There is deliberately NO cap on script instances per scene. WPE has none,
-        // and a count cap measured worthless here: 2955378002 runs 676 script
-        // bindings for 8.5ms of CPU per frame while 3509243656 runs 185 for 13.5ms.
-        // It only ever failed whole scenes closed, freezing every scripted
-        // clock/date/weekday at its authored placeholder. Per-frame cost is bounded
-        // by the tick deadline, the governor and the quarantine instead.
+        // and a count cap previously failed whole scenes closed, freezing every
+        // scripted clock/date/weekday at its authored placeholder. Per-frame cost
+        // is bounded by the tick deadline, the governor and the quarantine instead.
 
     }
 
