@@ -265,6 +265,45 @@ struct WPEMetalRenderScaleTests {
         #expect(WPEMetalTextureLoader.uploadsMipChain(scalingActive: false) == false)
     }
 
+    // MARK: - Render-scale changes must not strand pixel-keyed resources
+
+    @Test("Changing the render scale releases every pixel-keyed resource")
+    func scaleChangeReleasesSizeKeyedResources() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 64, height: 64, mipmapped: false
+        )
+        descriptor.usage = [.shaderRead, .renderTarget]
+        descriptor.storageMode = .private
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+
+        // Everything below is keyed by a PIXEL dimension, so a scale change makes
+        // every entry unreachable — stranded, not reused.
+        executor.outputTexturePool = [texture]
+        executor.bootstrapPreviousTextureCache[
+            .init(targetID: .scene, width: 64, height: 64, pixelFormat: .rgba8Unorm)
+        ] = texture
+        executor.sceneReadHazardSnapshotCache[
+            .init(targetID: .scene, width: 64, height: 64, pixelFormat: .rgba8Unorm)
+        ] = texture
+        // Validated against the WORLD size, which a scale change leaves alone —
+        // so without an explicit drop it keeps serving old-resolution textures
+        // to `.previous` reads.
+        executor.previousFrameHistory = .init(
+            sceneSize: CGSize(width: 1920, height: 1080),
+            sceneTexture: texture,
+            namedTextures: [:]
+        )
+
+        executor.releaseRenderScaleDependentResources()
+
+        #expect(executor.outputTexturePool.isEmpty)
+        #expect(executor.bootstrapPreviousTextureCache.isEmpty)
+        #expect(executor.sceneReadHazardSnapshotCache.isEmpty)
+        #expect(executor.previousFrameHistory == nil)
+    }
+
     // MARK: - Registry world dimensions
 
     @Test("World dimensions default to the image dimensions and survive overrides")

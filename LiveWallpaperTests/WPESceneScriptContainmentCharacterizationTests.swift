@@ -224,7 +224,15 @@ struct WPESceneScriptContainmentCharacterizationTests {
         let seam = try RR10ProductionSource.read(
             "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptContainment.swift"
         )
-        #expect(load.contains("if ownedFailedLoad { clearSceneScriptRuntimeState() }"))
+        // The owned-failure branch tears the whole partial scene down rather
+        // than clearing scripts alone: `retireRuntimeState` is what reaches the
+        // script runtime families, and it also collects the textures, decoders
+        // and particle buffers `performLoad` had already published. The branch
+        // itself is the invariant — an un-owned failure belongs to a newer load,
+        // whose resources must survive.
+        #expect(load.contains("let ownedFailedLoad = isCurrentSceneScriptLoad(scriptLoadToken)"))
+        #expect(load.contains("if ownedFailedLoad {"))
+        #expect(RR10ProductionSource.occurrences(of: "await retireRuntimeState(on: actor)", in: load) == 1)
         #expect(RR10ProductionSource.occurrences(of: "clearSceneScriptRuntimeState()", in: lifecycle) == 2)
         for dictionary in [
             "textScriptInstances", "layerScriptInstances", "layerAlphaScriptInstances",

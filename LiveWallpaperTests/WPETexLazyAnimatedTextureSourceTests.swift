@@ -1,4 +1,5 @@
 import Compression
+import os
 import Foundation
 import LiveWallpaperProWPE
 import Metal
@@ -365,6 +366,37 @@ struct WPETexLazyAnimatedTextureSourceTests {
         #expect(source.debugPrefetchInFlightImageIDs.isEmpty)
     }
 
+    /// The prefetch work items capture only Sendable values, never `self`, so
+    /// letting the source go does not stop them. A caller that takes one frame
+    /// and drops the source — the particle loader does exactly that for a lazy
+    /// `.tex`, since it downcasts to the eager type this is not — left queued
+    /// LZ4 inflates running for a source nobody could read from.
+    @Test("A dropped source cancels its queued prefetch decodes")
+    func droppedSourceCancelsQueuedPrefetch() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let completions = OSAllocatedUnfairLock(initialState: 0)
+        do {
+            let source = try WPETexLazyAnimatedTextureSource(
+                payload: try makeThreeImageStreamingPayload(),
+                device: device,
+                label: "lazy-prefetch-drop"
+            )
+            source.debugPrefetchDecodeDelay = 0.3
+            source.onPrefetchComplete = { completions.withLock { $0 += 1 } }
+
+            _ = try #require(source.texture(at: 0.0))
+            // Two look-ahead images ⇒ two jobs on a SERIAL queue: the first runs
+            // (and sleeps), the second is still queued and therefore cancellable.
+            #expect(source.debugPrefetchInFlightImageIDs.count == 2)
+        }
+
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        // Not `== 1`: whether the first item had already begun executing when
+        // the source went away is a race with the queue. The invariant that
+        // matters is that they did not BOTH run.
+        #expect(completions.withLock { $0 } < 2)
+    }
+
     @Test("A failed image decode is recorded and never re-scheduled")
     func failedImageDecodeIsRecordedNotReScheduled() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -408,6 +440,38 @@ struct WPETexLazyAnimatedTextureSourceTests {
                 WPETexStreamingFrame(imageID: 1, subRect: CGRect(x: 0, y: 2, width: 2, height: 2), duration: 0.1),
                 WPETexStreamingFrame(imageID: 1, subRect: CGRect(x: 2, y: 2, width: 2, height: 2), duration: 0.1)
             ],
+            frameRate: 10,
+            loop: true
+        )
+    }
+
+    /// Three distinct images so the 2-frame look-ahead actually queues two jobs.
+    private func makeThreeImageStreamingPayload() throws -> WPETexStreamingPayload {
+        let images = try (0..<3).map { index -> WPETexCompressedImage in
+            let bytes = makeImage(width: 4, height: 4, blue: UInt8(index * 0x40))
+            return WPETexCompressedImage(
+                width: 4, height: 4,
+                payloads: [WPETexCompressedMipmap(
+                    index: 0, width: 4, height: 4, isCompressed: true,
+                    compressedBytes: try lz4RawCompress(bytes),
+                    decompressedByteCount: bytes.count
+                )]
+            )
+        }
+        return WPETexStreamingPayload(
+            info: WPETexInfo(
+                containerVersion: 5, infoVersion: 1, width: 4, height: 4,
+                textureFormatCode: WPETexFormat.rgba8888.rawValue, format: .rgba8888,
+                mipmapCount: 1, flags: 0
+            ),
+            compressedImages: images,
+            frames: (0..<3).map {
+                WPETexStreamingFrame(
+                    imageID: $0,
+                    subRect: CGRect(x: 0, y: 0, width: 2, height: 2),
+                    duration: 0.1
+                )
+            },
             frameRate: 10,
             loop: true
         )

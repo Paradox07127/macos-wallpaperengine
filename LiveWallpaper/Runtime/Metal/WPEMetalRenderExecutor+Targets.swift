@@ -12,11 +12,31 @@ extension WPEMetalRenderExecutor {
         targetPool.discardTextures(named: names)
     }
 
-    func releaseTransientResources() {
+    /// Everything whose identity includes a PIXEL dimension. Split out because a
+    /// mid-scene render-scale change invalidates exactly this set and nothing
+    /// else: the pool, bootstrap and hazard caches are keyed by width/height, so
+    /// new keys would strand the old allocations for the scene's life. Worse,
+    /// `previousFrameHistory` is validated against the WORLD size — unchanged by
+    /// a scale change — so its old-resolution textures would keep being served
+    /// to `.previous` reads. Shader/pipeline caches are deliberately NOT dropped
+    /// here: re-transpiling every pass is by far the biggest load cost, and a
+    /// scale change does not invalidate any of it.
+    func releaseRenderScaleDependentResources() {
         targetPool.releaseAll()
         releaseBloomLevels()
         previousFrameHistory = nil
         invalidateStaticLayerCache()
+        // NOT `refractionBackground`: it re-allocates itself whenever the output
+        // size changes, and it is on the reload-persistent list (AF-06).
+        outputTexturePool.removeAll()
+        recentOutputTextureIDs.removeAll()
+        bootstrapPreviousTextureCache.removeAll()
+        sceneReadHazardSnapshotCache.removeAll()
+        metalFXUpscaler?.releaseCachedScaler()
+    }
+
+    func releaseTransientResources() {
+        releaseRenderScaleDependentResources()
         // Clip-role detection + activation diagnostics are keyed by objectID, which a reload can reuse
         // for a different puppet/material/animation, so drop them when the graph is rebuilt.
         puppetClipPairsCache.removeAll()
@@ -28,15 +48,6 @@ extension WPEMetalRenderExecutor {
         lastLoggedPuppetSkinningReason.removeAll()
         bonePaletteBufferPool.drain()
         puppetMeshBufferCache.removeAll()
-        // Scene size / pipeline may change across a reload; drop the recycled
-        // frame targets so the next render() re-allocates at the right size.
-        outputTexturePool.removeAll()
-        recentOutputTextureIDs.removeAll()
-        bootstrapPreviousTextureCache.removeAll()
-        // Same size-keyed lifetime as the bootstrap cache: rebuilt on-miss in
-        // sceneReadHazardSnapshot(matching:commandBuffer:), so dropping it here
-        // only frees the old scene's size/format entries.
-        sceneReadHazardSnapshotCache.removeAll()
         // Pass-id keyed; a reload can reuse an id for a different shader. The
         // content-keyed translatedShaderCache is safe to persist and is not cleared.
         compiledShaderResultByPassID.removeAll()

@@ -102,9 +102,14 @@ extension WPEMetalRenderExecutor {
             if upscalePlan.isActive,
                upscalePlan.declineIsConclusive(forDrawableSize: lastPresentedDrawableSize) {
                 upscalePlan = upscalePlan.demotedToNative()
-                // Cached composites hold the OLD pixel size while their key is
-                // the unchanged world size, so they must go with the scale.
-                invalidateStaticLayerCache()
+                // Every pixel-keyed resource is stale now, exactly as on a
+                // render-scale change. `previousFrameHistory` is the dangerous
+                // one: it is validated against the WORLD size, unchanged here, so
+                // its old smaller textures would keep being served to `.previous`
+                // — and `copyTexture` sizes the blit from the DESTINATION, which
+                // is a validation error once the destination grows. The renderer
+                // drains this after the frame commits.
+                notePresentSideDemotion()
                 Logger.notice(
                     "[metalfx] scaler declined a planned frame — rendering native for this scene "
                         + "(source=\(source.width)x\(source.height) drawable="

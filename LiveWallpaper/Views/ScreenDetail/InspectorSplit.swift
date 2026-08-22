@@ -1,6 +1,21 @@
 import LiveWallpaperCore
 import SwiftUI
 
+/// False while an inspector subtree is mounted but collapsed to zero width.
+/// `isMounted` deliberately keeps that subtree built, so `onDisappear` never
+/// fires for anything inside it — media that decodes on its own (GIF previews)
+/// has no other way to learn it stopped being on screen.
+private struct InspectorContentIsVisibleKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var inspectorContentIsVisible: Bool {
+        get { self[InspectorContentIsVisibleKey.self] }
+        set { self[InspectorContentIsVisibleKey.self] = newValue }
+    }
+}
+
 /// Main column + trailing full-height inspector; widths resolve against live container width.
 struct InspectorSplit<Main: View, Inspector: View>: View {
     /// Keep the (heavy) inspector subtree built even when collapsed.
@@ -44,6 +59,7 @@ struct InspectorSplit<Main: View, Inspector: View>: View {
                     .layoutPriority(1)
                     .allowsHitTesting(isVisible)
                     .accessibilityHidden(!isVisible)
+                    .environment(\.inspectorContentIsVisible, isVisible)
                     .overlay(alignment: .leading) {
                         if isVisible {
                             InspectorResizeHandle(

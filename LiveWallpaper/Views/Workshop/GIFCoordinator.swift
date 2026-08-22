@@ -10,13 +10,19 @@ struct ThumbnailPlaybackGate: Equatable {
     static let hoverPreviewDelayNanoseconds: UInt64 = 250_000_000
 
     var isVisible: Bool
+    /// False while the host panel is mounted but not shown — a collapsed
+    /// inspector clips its subtree to zero width instead of unmounting it, so
+    /// `onDisappear` never fires and `isVisible` stays true. Separate from
+    /// `isVisible` because they come from different sources (view lifecycle vs.
+    /// container state) and both have to hold.
+    var hostIsPresented: Bool = true
     var isHovered: Bool
     var reduceMotion: Bool
     var isBlurred: Bool
     var trigger: Trigger
 
     var allowsPlayback: Bool {
-        isVisible && triggerAllowsPlayback && !reduceMotion && !isBlurred
+        isVisible && hostIsPresented && triggerAllowsPlayback && !reduceMotion && !isBlurred
     }
 
     private var triggerAllowsPlayback: Bool {

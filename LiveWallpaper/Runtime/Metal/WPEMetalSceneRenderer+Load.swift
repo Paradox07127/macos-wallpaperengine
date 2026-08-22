@@ -46,11 +46,8 @@ extension WPEMetalSceneRenderer {
             WPESceneDebugArtifacts.shared.endSession()
         } catch {
             let ownedFailedLoad = isCurrentSceneScriptLoad(scriptLoadToken)
-            sceneScriptLoadState.retire(scriptLoadToken)
-            if ownedFailedLoad { clearSceneScriptRuntimeState() }
-            didLoad = false
-            _ = await staticTextureReloadTaskOwner.quiesce()
-            loadDiagnostics = diagnostic(for: error)
+            // Diagnostics first: the teardown below resets `resolutionTracer` and
+            // drops `cachedSnapshot`, both of which the failure report needs.
             logSceneFailureDiagnostics(error: error)
             WPESceneDebugArtifacts.shared.recordResolutionSummary(resolutionTracer.snapshot())
             WPESceneDebugArtifacts.shared.appendLog(
@@ -61,6 +58,23 @@ extension WPEMetalSceneRenderer {
                 WPESceneDebugArtifacts.shared.recordFirstFrame(image: snapshot)
             }
             WPESceneDebugArtifacts.shared.endSession()
+            if ownedFailedLoad {
+                // Textures, video decoders, particle buffers and half-built
+                // targets are already on the renderer by the time most failures
+                // throw, and `didLoad = false` makes every one unreachable: no
+                // tick samples them, and `hibernate()` refuses to collect them
+                // (`guard didLoad`). Without this they live until the user
+                // retries or switches wallpaper. Bumping `loadGeneration` also
+                // fences the unstructured shader-prewarm task.
+                await retireRuntimeState(on: actor)
+            } else {
+                // A newer load owns the renderer now — tearing down would kill
+                // ITS resources. Retire only this load's own script token.
+                sceneScriptLoadState.retire(scriptLoadToken)
+                didLoad = false
+                _ = await staticTextureReloadTaskOwner.quiesce()
+            }
+            loadDiagnostics = diagnostic(for: error)
             if let reason = Self.metalUnsupportedReason(for: error) {
                 throw SceneRenderingError.metalRendererUnsupported(reason: reason)
             }

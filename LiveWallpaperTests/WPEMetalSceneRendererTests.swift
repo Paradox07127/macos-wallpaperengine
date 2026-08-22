@@ -1170,6 +1170,43 @@ struct WPEMetalSceneRendererTests {
         #expect(!diagnostic.errorDescription.lowercased().contains("shader"))
     }
 
+    /// `performLoad` builds the render graph and pipeline BEFORE it uploads
+    /// textures, so a texture failure lands on a renderer that already owns
+    /// them — plus, further in, video decoders, particle buffers and text
+    /// atlases. `didLoad = false` then makes all of it unreachable: no tick
+    /// samples it, and `hibernate()` refuses to collect it (`guard didLoad`), so
+    /// it lived until the user retried or switched wallpaper.
+    @Test("A failed load tears its partial scene down instead of stranding it")
+    func failedLoadRetiresPartialScene() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.missingTextureScene()
+        defer { fixture.cleanup() }
+
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device
+        )
+
+        await #expect(throws: (any Error).self) {
+            try await renderer.load()
+        }
+
+        // These two specifically: `performLoad` assigns them before it uploads
+        // textures, so they are the only state this fixture proves was published
+        // and then collected. Asserting `particleSystems.isEmpty` or
+        // `outputTexture == nil` here would pass with or without the teardown —
+        // this scene throws before either is ever set.
+        #expect(renderer.renderGraph == nil)
+        #expect(renderer.renderPipeline == nil)
+        // The teardown resets the tracer and drops the snapshot the failure
+        // report reads, so the diagnostics have to be produced BEFORE it runs.
+        // Reordering them silently blanks every scene-failure message.
+        #expect(renderer.loadDiagnostics != nil)
+    }
+
     @Test("Texture candidate generator treats dotted basenames as extension-less")
     func textureCandidatesHandlesDottedBasenames() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

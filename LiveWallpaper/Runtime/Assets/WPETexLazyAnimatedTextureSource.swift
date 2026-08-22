@@ -150,6 +150,14 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     deinit {
         // Return the process-cache lease; entries must not outlive the source.
         frameByteCache.unregisterSource(cacheToken)
+        // In-flight prefetch work items capture only Sendable values, never
+        // `self`, so dropping the dictionary does not stop them — a queued LZ4
+        // inflate would still run for a source nobody can read from. Reached
+        // when a caller takes one frame and lets the source go, as the particle
+        // loader does for a lazy `.tex` (it downcasts to the eager type, which
+        // this is not, so nothing retains it past `texture(at: 0)` — whose
+        // `defer` has just scheduled a look-ahead).
+        for job in prefetchJobs.values { job.item.cancel() }
     }
 
     func texture(at time: TimeInterval) -> MTLTexture? {
