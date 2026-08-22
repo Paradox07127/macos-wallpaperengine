@@ -1,5 +1,4 @@
 import CoreGraphics
-import Foundation
 import Metal
 import MetalFX
 import Testing
@@ -35,22 +34,27 @@ struct WPEMetalFXUpscalerTests {
 
     // MARK: - Eligibility (pure)
 
-    @Test("Non-stretch fit modes pass with matching aspect, reject on mismatch")
-    func eligibilityFitModeNeedsMatchingAspect() {
-        // 16:9 -> 16:9: contain/cover degenerate to the stretch mapping.
-        let matching = WPEMetalFXSpatialUpscaler.preScalerRejection(
+    @Test("contain/cover need an exactly equal aspect; center never qualifies")
+    func eligibilityFitModeSemantics() {
+        // 16:9 -> 16:9 exact: contain/cover degenerate to the stretch mapping.
+        #expect(WPEMetalFXSpatialUpscaler.preScalerRejection(
             fitMode: .contain,
             sourceWidth: 2880, sourceHeight: 1620,
             drawableWidth: 3840, drawableHeight: 2160
-        )
-        #expect(matching == nil)
-        // 16:10 -> 16:9: contain would letterbox, which the scaler cannot do.
-        let mismatched = WPEMetalFXSpatialUpscaler.preScalerRejection(
+        ) == nil)
+        // A 2px-off aspect would letterbox under contain — the scaler would
+        // stretch that letterbox away, so exact equality is required.
+        #expect(WPEMetalFXSpatialUpscaler.preScalerRejection(
             fitMode: .contain,
-            sourceWidth: 2880, sourceHeight: 1800,
+            sourceWidth: 3838, sourceHeight: 2160,
             drawableWidth: 3840, drawableHeight: 2160
-        )
-        #expect(mismatched == .fitMode)
+        ) == .aspectMismatch)
+        // center keeps source pixels 1:1 — a fullscreen scale is never right.
+        #expect(WPEMetalFXSpatialUpscaler.preScalerRejection(
+            fitMode: .center,
+            sourceWidth: 2880, sourceHeight: 1620,
+            drawableWidth: 3840, drawableHeight: 2160
+        ) == .fitMode)
     }
 
     @Test("Source larger than the drawable is rejected (spatial only upscales)")
@@ -63,15 +67,16 @@ struct WPEMetalFXUpscalerTests {
         #expect(rejection == .sourceExceedsDrawable)
     }
 
-    @Test("Aspect mismatch beyond 0.5% is rejected")
-    func eligibilityRejectsAspectMismatch() {
-        // 16:9 source onto a 16:10 drawable.
+    @Test("Stretch ignores aspect: full-rect to full-rect at any ratio")
+    func eligibilityStretchIgnoresAspect() {
+        // 16:9 source onto a 16:10 drawable — stretch and the scaler both map
+        // the full source rect onto the full drawable, so this now qualifies.
         let rejection = WPEMetalFXSpatialUpscaler.preScalerRejection(
             fitMode: .stretch,
             sourceWidth: 2880, sourceHeight: 1620,
             drawableWidth: 3840, drawableHeight: 2400
         )
-        #expect(rejection == .aspectMismatch)
+        #expect(rejection == nil)
     }
 
     @Test("Matching stretch upscale passes the pre-scaler checks")
@@ -92,14 +97,17 @@ struct WPEMetalFXUpscalerTests {
     // creation doesn't crash and that a created scaler encodes without error;
     // the created/not-created outcome is printed to the test log.
 
-    @Test("Spatial scaler probe: bgra8 2880x1620 -> 3840x2160")
-    func spatialScalerProbeBGRA8() throws {
-        try runScalerProbe(inputFormat: .bgra8Unorm, label: "bgra8Unorm")
+    @Test("Spatial scaler probe: production srgb combo 2880x1620 -> 3840x2160")
+    func spatialScalerProbeProductionFormats() throws {
+        // The production pair: scene output and drawable are both rgba8Unorm_srgb.
+        try runScalerProbe(inputFormat: .rgba8Unorm_srgb, label: "rgba8Unorm_srgb")
     }
 
     @Test("Spatial scaler probe: rgba16Float input -> bgra8 output (HDR case)")
     func spatialScalerProbeRGBA16Float() throws {
         try runScalerProbe(inputFormat: .rgba16Float, label: "rgba16Float")
+        // NOTE: production now rejects HDR input pre-scaler (.hdrInput) — this
+        // probe only tracks whether the OS would accept the combination.
     }
 
     private func runScalerProbe(inputFormat: MTLPixelFormat, label: String) throws {
@@ -117,11 +125,11 @@ struct WPEMetalFXUpscalerTests {
         descriptor.outputWidth = 3840
         descriptor.outputHeight = 2160
         descriptor.colorTextureFormat = inputFormat
-        descriptor.outputTextureFormat = .bgra8Unorm
+        descriptor.outputTextureFormat = .rgba8Unorm_srgb
         descriptor.colorProcessingMode = .perceptual
         let scaler = descriptor.makeSpatialScaler(device: device)
         print(
-            "[metalfx-probe] \(label) -> bgra8Unorm 2880x1620 -> 3840x2160: "
+            "[metalfx-probe] \(label) -> rgba8Unorm_srgb 2880x1620 -> 3840x2160: "
                 + "created=\(scaler != nil) device=\(device.name)"
         )
         guard let scaler else { return }
@@ -139,7 +147,7 @@ struct WPEMetalFXUpscalerTests {
             format: inputFormat, width: 2880, height: 1620, usage: scaler.colorTextureUsage
         )
         let output = try makeTexture(
-            format: .bgra8Unorm, width: 3840, height: 2160, usage: scaler.outputTextureUsage
+            format: .rgba8Unorm_srgb, width: 3840, height: 2160, usage: scaler.outputTextureUsage
         )
         let queue = try #require(device.makeCommandQueue())
         let commandBuffer = try #require(queue.makeCommandBuffer())

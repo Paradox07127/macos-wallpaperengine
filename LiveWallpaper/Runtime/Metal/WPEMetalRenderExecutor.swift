@@ -90,7 +90,7 @@ final class WPEMetalRenderExecutor {
     lazy var gpuPassProfiler = WPEMetalPassGPUProfiler.makeIfEnabled(device: device)
     /// nil unless the MetalFX render-scale experiment is on, so the default
     /// present path never constructs a MetalFX object.
-    lazy var metalFXUpscaler = WPEMetalFXSpatialUpscaler.makeIfEnabled(device: device)
+    lazy var metalFXUpscaler = WPEMetalFXSpatialUpscaler.makeIfEnabled(device: device, library: defaultLibrary)
     let targetPool: WPEMetalRenderTargetPool
     let depthCache: WPEMetalDepthStateCache
     private let pipelineCache: WPEMetalPipelineCache
