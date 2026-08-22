@@ -354,6 +354,33 @@ final class WPEMetalRenderExecutor {
             translatedShaderCache[entry.key] = entry.result
         }
     }
+
+    /// Splits prewarm work against the content-keyed cache that intentionally
+    /// survives scene reloads. Returning the canonical cached result matters
+    /// for PSO prewarm too: pipeline keys include `MTLLibrary` identity, so
+    /// recompiling an already-cached shader would build an unreachable PSO for
+    /// a throwaway library even though `seedTranslatedShaderCache` refuses to
+    /// replace the canonical entry.
+    func partitionTranslatedShaderPrewarmRequests(
+        _ requests: [WPEShaderCompileRequest]
+    ) -> (
+        cached: [(key: String, result: WPEShaderCompileResult)],
+        missing: [WPEShaderCompileRequest]
+    ) {
+        var cached: [(key: String, result: WPEShaderCompileResult)] = []
+        var missing: [WPEShaderCompileRequest] = []
+        cached.reserveCapacity(requests.count)
+        missing.reserveCapacity(requests.count)
+        for request in requests {
+            let key = request.translationCacheKey
+            if let result = translatedShaderCache[key] {
+                cached.append((key: key, result: result))
+            } else {
+                missing.append(request)
+            }
+        }
+        return (cached: cached, missing: missing)
+    }
     private var translatedPipelineCache: [TranslatedPipelineKey: MTLRenderPipelineState] = [:]
     var previousFrameHistory: PreviousFrameHistory?
     /// Clip-composite role detection depends on the object's animation layers, so cache the resolved

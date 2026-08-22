@@ -44,18 +44,21 @@ extension WPEMetalSceneRenderer {
                 requestsByKey[request.translationCacheKey] = request
             }
         }
-        let requests = Array(requestsByKey.values)
-        guard !requests.isEmpty, loadGeneration == generation else {
+        let allRequests = Array(requestsByKey.values)
+        guard !allRequests.isEmpty, loadGeneration == generation else {
             debugStage("shader.prewarm.done", "passes=0")
             return
         }
 
+        let partition = executor.partitionTranslatedShaderPrewarmRequests(allRequests)
+        let requests = partition.missing
+
         let compiler = executor.shaderCompiler
         let width = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
 
-        let warmed: [(key: String, result: WPEShaderCompileResult)]
+        let compiled: [(key: String, result: WPEShaderCompileResult)]
         do {
-            warmed = try await withThrowingTaskGroup(
+            compiled = try await withThrowingTaskGroup(
                 of: (key: String, result: WPEShaderCompileResult)?.self
             ) { group in
                 var next = 0
@@ -92,8 +95,12 @@ extension WPEMetalSceneRenderer {
         }
 
         guard loadGeneration == generation else { return }
-        executor.seedTranslatedShaderCache(warmed)
-        debugStage("shader.prewarm.done", "warmed=\(warmed.count)/\(requests.count)")
+        executor.seedTranslatedShaderCache(compiled)
+        let warmed = partition.cached + compiled
+        debugStage(
+            "shader.prewarm.done",
+            "cacheHits=\(partition.cached.count) compiled=\(compiled.count) total=\(allRequests.count)"
+        )
 
         // Pre-build pipeline states too. Over-/under-prediction only changes cache-hit rate, never correctness.
         var resultByKey: [String: WPEShaderCompileResult] = [:]
