@@ -69,7 +69,8 @@ extension WPEMetalSceneRenderer {
         particleTextures.removeAll(keepingCapacity: false)
         particleNormalTextures.removeAll(keepingCapacity: false)
         textObjects.removeAll(keepingCapacity: false)
-        textMeshRenderer = nil
+        // `releaseTextTargets` owns the renderer; nil-ing it first here made its
+        // atlas release a no-op.
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
@@ -763,7 +764,8 @@ extension WPEMetalSceneRenderer {
         particleTextures.removeAll(keepingCapacity: false)
         particleNormalTextures.removeAll(keepingCapacity: false)
         textObjects.removeAll(keepingCapacity: false)
-        textMeshRenderer = nil
+        // `releaseTextTargets` owns the renderer; nil-ing it first here made its
+        // atlas release a no-op.
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
@@ -804,6 +806,12 @@ extension WPEMetalSceneRenderer {
             // what sizes it — and a static scene pauses after frame one, so a
             // pre-present retry never gets a second chance.
             adoptPresentedDrawableSize()
+            // `defer`, not a trailing call: the demote is decided inside
+            // `encodePresent`, and a later throw (a present-pass PSO or encoder
+            // failure) would otherwise skip the drain. On a static scene nothing
+            // requests another tick, so the purge and the forced redraw would
+            // never happen at all.
+            defer { adoptPresentSideDemotion() }
             var mergedPresentResult: Bool?
             // `pendingForcedRerender` promotes one static tick into a real
             // render — the cached frame is at a superseded render scale.

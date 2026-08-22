@@ -49,6 +49,13 @@ final class RemoteContextBridge {
         let contextId = (context.value(forKey: "contextId") as? NSNumber)?.uint32Value ?? 0
         guard contextId != 0 else {
             wpxLog.error("contextId is 0")
+            // `self.caContext` is already assigned and the root layer already
+            // attached. The caller answers a nil by dropping the surface, and
+            // dropping the Swift reference is not enough — the render server
+            // keeps the layer tree pinned until something invalidates the
+            // context, which is the same leak the deferred-teardown path exists
+            // to avoid.
+            invalidate()
             return nil
         }
         return contextId

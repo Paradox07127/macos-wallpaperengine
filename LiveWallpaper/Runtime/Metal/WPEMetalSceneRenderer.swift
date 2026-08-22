@@ -85,6 +85,17 @@ final class WPEMetalSceneRenderer: NSObject {
         updateSurfaceGeometry(drawableSize: presented)
     }
 
+    /// Drains a present-side demote. `refreshUpscalePlan` cannot cover this
+    /// transition: `demotedToNative()` already wrote scale 1.0 and `adopting`
+    /// keeps `.declinedAtPresent` sticky, so the next refresh sees no change and
+    /// returns early. Called at the end of the frame, after present committed.
+    func adoptPresentSideDemotion() {
+        guard executor.takePresentSideDemotion() else { return }
+        executor.releaseRenderScaleDependentResources()
+        pendingForcedRerender = true
+        surfaceControl.setNeedsRedraw()
+    }
+
     /// Forces exactly one full re-render even for a scene with no frame demand.
     /// A static scene re-presents its cached `outputTexture`, which is at the
     /// OLD render scale after the plan changes — `.center` would then show a
@@ -478,9 +489,10 @@ final class WPEMetalSceneRenderer: NSObject {
         executor.upscalePlan = updated
         guard isInitial || updated.renderPixelScale != previous.renderPixelScale else { return }
         if !isInitial {
-            // Cached composites hold the old pixel size behind an unchanged
-            // world-size key, so they must go with the scale.
-            executor.invalidateStaticLayerCache()
+            // Every pixel-keyed resource is stale now — not just the composite
+            // cache. Leaving them stranded the old allocations for the scene's
+            // life and kept serving old-resolution textures to `.previous`.
+            executor.releaseRenderScaleDependentResources()
             // The presented frame is at the old scale too. A continuous scene
             // redraws next tick; a static one would re-present it forever.
             pendingForcedRerender = true

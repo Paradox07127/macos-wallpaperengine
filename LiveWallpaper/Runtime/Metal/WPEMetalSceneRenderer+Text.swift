@@ -216,6 +216,12 @@ extension WPEMetalSceneRenderer {
         textRenderPlans.removeAll(keepingCapacity: false)
         textLayoutCache.removeAll(keepingCapacity: false)
         textFontResolver = nil
+        // Drop the atlas pages before the renderer, the way the suspend path
+        // does. ARC frees the same textures either way, but only this order
+        // takes them out of the weak metadata registry now instead of at its
+        // next 256-register sweep — the asymmetry made reload and suspend
+        // report different resident-texture counts for identical state.
+        textMeshRenderer?.releaseCachedResources()
         textMeshRenderer = nil
     }
 

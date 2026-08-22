@@ -193,6 +193,32 @@ struct ThumbnailPlaybackGateTests {
         gate.isBlurred = true
         #expect(!gate.allowsPlayback)
     }
+
+    /// The Browse detail hero is `.autoPlay` inside an inspector that stays
+    /// MOUNTED when collapsed (`isMounted: true`, so the heavy subtree is not
+    /// rebuilt on every toggle). `onDisappear` therefore never fires and
+    /// `isVisible` stays true — hiding the panel left the decoder running in a
+    /// zero-width container.
+    @Test("A mounted-but-hidden host stops playback even though the view never disappeared")
+    func hiddenHostStopsAutoPlay() {
+        var gate = ThumbnailPlaybackGate(
+            isVisible: true,
+            hostIsPresented: true,
+            isHovered: false,
+            reduceMotion: false,
+            isBlurred: false,
+            trigger: .auto
+        )
+        #expect(gate.allowsPlayback)
+
+        gate.hostIsPresented = false
+        #expect(!gate.allowsPlayback)
+
+        // Hover cannot override it either: the tile is not on screen at all.
+        gate.trigger = .hover
+        gate.isHovered = true
+        #expect(!gate.allowsPlayback)
+    }
 }
 
 @Suite("GIFAnimationController playback gating", .serialized)

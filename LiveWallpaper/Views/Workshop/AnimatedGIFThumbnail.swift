@@ -23,12 +23,17 @@ struct AnimatedGIFThumbnail: View {
     @State private var phase: LoadPhase = .loading
     @State private var isVisible = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A collapsed inspector keeps its subtree mounted, so `onDisappear` never
+    /// fires and `isVisible` stays true — an `.autoPlay` hero would keep
+    /// decoding inside a zero-width panel.
+    @Environment(\.inspectorContentIsVisible) private var inspectorContentIsVisible
 
     private enum LoadPhase { case loading, ready, failed, empty }
 
     private var playbackGate: ThumbnailPlaybackGate {
         ThumbnailPlaybackGate(
             isVisible: isVisible,
+            hostIsPresented: inspectorContentIsVisible,
             isHovered: isHovered,
             reduceMotion: reduceMotion,
             isBlurred: isBlurred,
@@ -212,11 +217,24 @@ final class GIFAnimationController {
             while !Task.isCancelled {
                 let delay = index < gif.frameDelays.count ? gif.frameDelays[index] : 0.1
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                guard !Task.isCancelled else { break }
+                // The task strongly holds `gif` and its `CGImageSource`, so
+                // `[weak self]` only frees the controller — the decode loop
+                // would keep running for a tile that is already gone.
+                // `onDisappear` usually calls `stop()`, but a `LazyVGrid` can
+                // drop a tile without it. A `deinit` cannot do this: the class
+                // is `@MainActor`, so a nonisolated `deinit` may not touch the
+                // task handles.
+                guard !Task.isCancelled, let self else {
+                    // Nobody is left to call `stop()`, so release the LRU slot
+                    // here or a dead client holds one of the eight until it is
+                    // evicted.
+                    GIFPlaybackCoordinator.shared.endPlayback(id: id)
+                    break
+                }
                 index = (index + 1) % gif.frameCount
                 let frame = await GIFAnimationController.decode(gif, at: index)
                 guard !Task.isCancelled else { break }
-                if let frame { self?.displayedFrame = frame }
+                if let frame { self.displayedFrame = frame }
             }
         }
     }

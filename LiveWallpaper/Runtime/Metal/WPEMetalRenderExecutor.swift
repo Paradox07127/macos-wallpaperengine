@@ -564,6 +564,19 @@ final class WPEMetalRenderExecutor {
     /// what finally sizes the layer, so this is the first moment the true size
     /// is knowable — the renderer adopts it to correct a bad seed.
     var lastPresentedDrawableSize: CGSize = .zero
+    /// Set when `encodePresent` gave scaling up mid-scene. The renderer drains it
+    /// at the end of the same frame — NOT at the demote site — so the pixel-keyed
+    /// purge happens after the frame's command buffer is committed rather than
+    /// between its encode and commit.
+    private var presentSideDemotionPending = false
+
+    /// One-shot: true exactly once per present-side demote.
+    func takePresentSideDemotion() -> Bool {
+        defer { presentSideDemotionPending = false }
+        return presentSideDemotionPending
+    }
+
+    func notePresentSideDemotion() { presentSideDemotionPending = true }
     /// The scene output's actual pixel size for the frame currently encoding
     /// (= `scaledCanvasSize(currentSceneSize, outputPixelScale)`). This is the
     /// resolution of the FBO chain's head, which `g_TexelSize` must describe —

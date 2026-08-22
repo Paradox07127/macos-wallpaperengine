@@ -297,7 +297,15 @@
                 from: "func clearSceneScriptRuntimeState()"
             )
             let lazyVideo = try sourceBlock(scriptSource, from: "private func lazyLoadVideo(key:")
-            let releaseTransient = try sourceBlock(targetSource, from: "func releaseTransientResources()")
+            // Both halves: the pixel-keyed releases moved into
+            // `releaseRenderScaleDependentResources` (a mid-scene render-scale
+            // change needs exactly that subset without dropping shader caches),
+            // and `releaseTransientResources` calls it first. The evidence below
+            // is asserted over the pair so the guard keeps its teeth wherever a
+            // given release physically sits.
+            let releaseTransient = try sourceBlock(
+                targetSource, from: "func releaseRenderScaleDependentResources()"
+            ) + sourceBlock(targetSource, from: "func releaseTransientResources()")
             let sessionCleanup = try sourceBlock(sceneSessionSource, from: "func cleanup()")
             let sessionStart = try sourceBlock(sceneSessionSource, from: "func beginLoad() async")
             let sessionReload = try sourceBlock(sceneSessionSource, from: "func reload() async")
@@ -410,6 +418,17 @@
                 ]
             )
             #expect(executorSource.contains("previousFrameHistory = PreviousFrameHistory("))
+            // A present-side demote is decided inside `encodePresent`, mid-frame.
+            // The drain has to be a `defer`: a later throw on the present pass
+            // would skip a trailing call, and a static scene never asks for
+            // another tick, so the purge and the forced redraw would be lost for
+            // the rest of the scene.
+            let renderAndPresent = try sourceBlock(lifecycleSource, from: "func renderAndPresentFrame()")
+            #expect(renderAndPresent.contains("defer { adoptPresentSideDemotion() }"))
+            // Single owner for the text mesh renderer: the callers used to nil it
+            // before calling `releaseTextTargets`, which made the atlas release
+            // inside that function dead code.
+            #expect(!lifecycleSource.contains("textMeshRenderer = nil"))
             expectContains(
                 releaseTransient,
                 owner: "executor transient release",
@@ -421,6 +440,10 @@
                     // Size/format-keyed; rebuilt on miss, so stale-scene entries
                     // are dropped with the other transients instead of leaking.
                     "sceneReadHazardSnapshotCache.removeAll()",
+                    // Keyed by input/output pixel size, so a scale change or a
+                    // present-side demote never overwrites it — nothing asks for
+                    // the old key again. Its working textures are drawable-sized.
+                    "metalFXUpscaler?.releaseCachedScaler()",
                     "compiledShaderResultByPassID.removeAll()",
                 ]
             )
