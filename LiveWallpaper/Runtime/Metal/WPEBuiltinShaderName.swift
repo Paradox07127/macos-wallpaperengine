@@ -163,9 +163,7 @@ enum WPEBuiltinShaderName {
 /// `isGodraysCombine` (dispatch + source-aliasing), the wave/flutter substring
 /// check (diagnostics only), and the raw `commands/copy` spelling probed
 /// inside the copy case body. `WPEMetalShaderDispatcherTests` pins the exact raw-value
-/// set. Lives here (Infrastructure, beside its normalizer fixed-point source)
-/// so the graph/pipeline builders' judgment sites don't add Infra→Runtime
-/// coupling.
+/// set.
 enum WPEBuiltinShaderKind: String, CaseIterable {
     case solidColor = "solidcolor"
     case solidLayer = "solidlayer"

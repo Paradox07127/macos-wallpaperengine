@@ -54,6 +54,4 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
         try c.encode(music, forKey: .music)
         try c.encode(board, forKey: .board)
     }
-
-    /// Absent or corrupt key → nil (caller keeps default).
 }

@@ -1,10 +1,7 @@
 #if !LITE_BUILD
-import Darwin
 import Foundation
 
-/// Username validation gate for every SteamCMD/XPC entry point. Script-writing
-/// used to live here; it moved into the connector along with every other Steam
-/// write (see `SteamWriteOwnershipTests`), leaving only this check behind.
+/// Username validation gate for every SteamCMD/XPC entry point.
 enum SteamCMDScriptWriter {
     /// `^[A-Za-z0-9_]{1,32}$` — Steam's documented login-name charset.
     static func validateUsername(_ username: String) -> Bool {

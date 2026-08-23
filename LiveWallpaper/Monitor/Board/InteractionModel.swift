@@ -17,8 +17,6 @@ struct MonitorBoardDragState: Equatable {
     /// Restore target when the drop finds no legal spot.
     var originAtGrab: CGPoint
     var didMove: Bool
-
-    var ghostOrigin: CGPoint? { snappedOrigin }
 }
 
 /// User-facing move/delete commands before mutating the persisted widget array.

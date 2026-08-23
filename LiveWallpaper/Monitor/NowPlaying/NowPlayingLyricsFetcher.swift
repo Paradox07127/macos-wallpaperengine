@@ -364,7 +364,7 @@ actor NowPlayingLyricsFetcher {
             return try await attempt(state: state)
         } catch {
             guard !Task.isCancelled else { return nil }
-            return (try? await attempt(state: state)) ?? nil
+            return try? await attempt(state: state)
         }
     }
 

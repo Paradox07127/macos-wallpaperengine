@@ -32,9 +32,3 @@ struct WallpaperPreviewStage<Content: View, Controls: View>: View {
             .padding(DesignTokens.Spacing.lg)
     }
 }
-
-extension WallpaperPreviewStage where Controls == EmptyView {
-    init(@ViewBuilder content: @escaping () -> Content) {
-        self.init(content: content, controls: { EmptyView() })
-    }
-}

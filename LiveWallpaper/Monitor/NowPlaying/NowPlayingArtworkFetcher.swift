@@ -205,7 +205,7 @@ actor NowPlayingArtworkFetcher {
             return try await attempt(strategy: strategy, state: state)
         } catch {
             guard !Task.isCancelled else { return nil }
-            return (try? await attempt(strategy: strategy, state: state)) ?? nil
+            return try? await attempt(strategy: strategy, state: state)
         }
     }
 
@@ -234,7 +234,7 @@ actor NowPlayingArtworkFetcher {
             // documented 100x100 URL rather than hard-depending on it.
             if art100.contains("100x100bb"),
                let url600 = URL(string: art100.replacingOccurrences(of: "100x100bb", with: "600x600bb")),
-               let data = ((try? await downloadImage(url600)) ?? nil) {
+               let data = try? await downloadImage(url600) {
                 return data
             }
             guard let url100 = URL(string: art100) else { return nil }

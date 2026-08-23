@@ -8,7 +8,7 @@ final class WorkshopPreviewImageLoader {
 
     static let shared = WorkshopPreviewImageLoader()
 
-    // Sync with WorkshopAnimatedGIF.maxBytes (8 MiB blanked real GIF previews).
+    // Sync with WorkshopAnimatedGIF.maxBytes (32 MiB blanked real GIF previews).
     nonisolated static let maxBytes = 32 * 1024 * 1024
     nonisolated static let cacheCountLimit = 128
     nonisolated static let cacheCostLimit = 128 * 1024 * 1024

@@ -2,7 +2,7 @@ import Foundation
 
 /// Playback tiers for the system-wallpaper extension, decided from ambient
 /// signals the appex can observe on its own. Pure function so the truth
-/// table is unit-testable (plan §4.7).
+/// table is unit-testable.
 enum PlaybackTier: String, Equatable {
     case full       // normal playback
     case reduced    // lower rate, e.g. on battery

@@ -1,8 +1,3 @@
-//
-//  main.swift
-//  SteamConnector
-//
-
 import Foundation
 
 class ServiceDelegate: NSObject, NSXPCListenerDelegate {

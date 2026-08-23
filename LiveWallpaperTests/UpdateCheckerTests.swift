@@ -72,6 +72,8 @@ struct UpdateCheckerTests {
         defaultsSuite.removeObject(forKey: "loomscreen.update.lastCheckedAt")
         defaultsSuite.removeObject(forKey: "loomscreen.update.nextEligibleAt")
         defaultsSuite.removeObject(forKey: "loomscreen.update.skippedVersion")
+        defaultsSuite.removeObject(forKey: "loomscreen.update.announcedVersion")
+        defaultsSuite.removeObject(forKey: "loomscreen.update.availableRelease.v1")
     }
 
     @Test("Surfaces .available when a strictly newer Loomscreen release exists")
@@ -472,6 +474,184 @@ struct UpdateCheckerTests {
 
         #expect(checker.status == .upToDate)
         #expect(defaultsSuite.string(forKey: "loomscreen.update.skippedVersion") == "loomscreen-v1.1.0")
+        #expect(defaultsSuite.dictionary(forKey: "loomscreen.update.availableRelease.v1") == nil)
+    }
+
+    @Test("A discovered release survives relaunch, so the menu bar badge is not blank inside the throttle window")
+    func availableReleaseIsRestoredOnNextLaunch() async {
+        resetDefaults()
+        let transport = StubTransport(releases: [release(tag: "loomscreen-v1.1.0")])
+        let first = UpdateChecker(
+            transport: transport,
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "1.0.0"
+        )
+        await first.checkNow(force: false)
+        #expect(first.status == .available(expectedRelease(tag: "loomscreen-v1.1.0", major: 1, minor: 1)))
+
+        // A relaunch inside the 12 h window: no network call happens at all.
+        let relaunchTransport = StubTransport(releases: [])
+        let second = UpdateChecker(
+            transport: relaunchTransport,
+            now: { Date(timeIntervalSince1970: 1_000_060) },
+            currentVersionString: "1.0.0"
+        )
+
+        guard case .available(let restored) = second.status else {
+            Issue.record("Expected restored .available, got \(String(describing: second.status))")
+            return
+        }
+        #expect(restored.tagName == "loomscreen-v1.1.0")
+        #expect(restored.releasePageURL.absoluteString == "https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.1.0")
+        #expect(relaunchTransport.fetchCount == 0)
+    }
+
+    @Test("An up-to-date check clears the stored release so the badge does not stick after upgrading")
+    func upToDateClearsStoredRelease() async {
+        resetDefaults()
+        let stale = StubTransport(releases: [release(tag: "loomscreen-v1.1.0")])
+        let before = UpdateChecker(
+            transport: stale,
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "1.0.0"
+        )
+        await before.checkNow(force: false)
+        #expect(defaultsSuite.dictionary(forKey: "loomscreen.update.availableRelease.v1") != nil)
+
+        // Same release, but the user is now running it.
+        let after = UpdateChecker(
+            transport: StubTransport(releases: [release(tag: "loomscreen-v1.1.0")]),
+            now: { Date(timeIntervalSince1970: 2_000_000) },
+            currentVersionString: "1.1.0"
+        )
+        #expect(after.status == .idle)
+        await after.checkNow(force: true)
+
+        #expect(after.status == .upToDate)
+        #expect(defaultsSuite.dictionary(forKey: "loomscreen.update.availableRelease.v1") == nil)
+    }
+
+    @Test("A skipped release is not resurrected by the restore path")
+    func skippedReleaseIsNotRestored() async {
+        resetDefaults()
+        let checker = UpdateChecker(
+            transport: StubTransport(releases: [release(tag: "loomscreen-v1.1.0")]),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "1.0.0"
+        )
+        await checker.checkNow(force: false)
+        // Write the release back so restore has something to find even though
+        // the user has skipped it.
+        defaultsSuite.set(
+            [
+                "tag": "loomscreen-v1.1.0",
+                "url": "https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.1.0",
+                "body": ""
+            ],
+            forKey: "loomscreen.update.availableRelease.v1"
+        )
+        checker.skippedVersionTag = "loomscreen-v1.1.0"
+
+        let relaunched = UpdateChecker(
+            transport: StubTransport(releases: []),
+            now: { Date(timeIntervalSince1970: 1_000_060) },
+            currentVersionString: "1.0.0"
+        )
+        #expect(relaunched.status == .idle)
+    }
+
+    @Test("A hostile stored release URL falls back to the canonical releases page")
+    func storedReleaseURLIsRevalidated() {
+        resetDefaults()
+        defaultsSuite.set(
+            [
+                "tag": "loomscreen-v1.1.0",
+                "url": "https://evil.example.com/pwn",
+                "body": ""
+            ],
+            forKey: "loomscreen.update.availableRelease.v1"
+        )
+
+        let checker = UpdateChecker(
+            transport: StubTransport(releases: []),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "1.0.0"
+        )
+
+        guard case .available(let restored) = checker.status else {
+            Issue.record("Expected restored .available, got \(String(describing: checker.status))")
+            return
+        }
+        #expect(restored.releasePageURL == UpdateChecker.releasesPage)
+    }
+
+    @Test("The window dialog is offered once per release and stays quiet after a relaunch")
+    func announcementIsOncePerRelease() async {
+        resetDefaults()
+        let checker = UpdateChecker(
+            transport: StubTransport(releases: [release(tag: "loomscreen-v1.1.0")]),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "1.0.0"
+        )
+        await checker.checkNow(force: false)
+
+        guard let pending = checker.unannouncedAvailableRelease else {
+            Issue.record("Expected a release awaiting its dialog")
+            return
+        }
+        checker.markAnnounced(pending)
+        #expect(checker.unannouncedAvailableRelease == nil)
+
+        let relaunched = UpdateChecker(
+            transport: StubTransport(releases: []),
+            now: { Date(timeIntervalSince1970: 1_000_060) },
+            currentVersionString: "1.0.0"
+        )
+        // Badge still shows, dialog does not.
+        #expect(relaunched.status == .available(expectedRelease(tag: "loomscreen-v1.1.0", major: 1, minor: 1)))
+        #expect(relaunched.unannouncedAvailableRelease == nil)
+    }
+
+    @Test("A failed check does not retract a release the badge is already showing")
+    func failedCheckKeepsKnownRelease() async {
+        struct TestError: Error { }
+        resetDefaults()
+        let found = UpdateChecker(
+            transport: StubTransport(releases: [release(tag: "loomscreen-v1.1.0")]),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "1.0.0"
+        )
+        await found.checkNow(force: false)
+
+        let offline = UpdateChecker(
+            transport: StubTransport(error: TestError()),
+            now: { Date(timeIntervalSince1970: 2_000_000) },
+            currentVersionString: "1.0.0"
+        )
+        await offline.checkNow(force: true)
+
+        #expect(offline.status == .available(expectedRelease(tag: "loomscreen-v1.1.0", major: 1, minor: 1)))
+    }
+
+    @Test("A newer release re-arms the dialog after an older one was announced")
+    func newerReleaseReArmsTheDialog() async {
+        resetDefaults()
+        let checker = UpdateChecker(
+            transport: StubTransport(releases: [release(tag: "loomscreen-v1.1.0")]),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "1.0.0"
+        )
+        await checker.checkNow(force: false)
+        checker.markAnnounced(checker.unannouncedAvailableRelease!)
+
+        let next = UpdateChecker(
+            transport: StubTransport(releases: [release(tag: "loomscreen-v1.2.0")]),
+            now: { Date(timeIntervalSince1970: 2_000_000) },
+            currentVersionString: "1.0.0"
+        )
+        await next.checkNow(force: true)
+
+        #expect(next.unannouncedAvailableRelease?.tagName == "loomscreen-v1.2.0")
     }
 
     @Test("Decodes a realistic GitHub Releases response")
@@ -535,6 +715,21 @@ struct UpdateCheckerTests {
 
     // MARK: - Helpers
 
+    private func expectedRelease(
+        tag: String,
+        major: Int,
+        minor: Int,
+        patch: Int = 0
+    ) -> UpdateChecker.LatestRelease {
+        UpdateChecker.LatestRelease(
+            tagName: tag,
+            version: SemanticVersion(major: major, minor: minor, patch: patch),
+            releasePageURL: URL(string: "https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/\(tag)")!,
+            publishedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            body: ""
+        )
+    }
+
     private func release(
         tag: String,
         asset: String? = nil,
@@ -567,7 +762,8 @@ struct UpdateCheckerTests {
 struct UpdateSurfaceOwnershipTests {
     private static let surfaces = [
         "LiveWallpaper/Views/Settings/UpdateBannerView.swift",
-        "LiveWallpaper/Views/MenuBarContent.swift"
+        "LiveWallpaper/Views/MenuBarContent.swift",
+        "LiveWallpaper/Views/ContentView.swift"
     ]
 
     @Test("No update surface constructs its own UpdateChecker")
@@ -589,6 +785,19 @@ struct UpdateSurfaceOwnershipTests {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
         #expect(source.contains("if case .available(let release) = updateChecker.status"))
         #expect(source.contains("NSWorkspace.shared.open(release.releasePageURL)"))
+    }
+
+    /// The dialog belongs to the window and nowhere else; two presenters would
+    /// mean the "once per release" promise depends on which page you opened.
+    @Test("Only the window presents the new-version dialog")
+    func onlyTheWindowPresentsTheDialog() throws {
+        let window = try RepositoryRoot.source("LiveWallpaper/Views/ContentView.swift")
+        #expect(window.contains("unannouncedAvailableRelease"))
+        #expect(window.contains("markAnnounced"))
+        #expect(window.contains("\"New version available\""))
+
+        let about = try RepositoryRoot.source("LiveWallpaper/Views/Settings/UpdateBannerView.swift")
+        #expect(!about.contains("\"New version available\""))
     }
 }
 

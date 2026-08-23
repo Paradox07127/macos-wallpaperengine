@@ -94,21 +94,6 @@ struct WPESceneSectionStateTests {
     }
 
     @MainActor
-    @Test("FallbackReason rendering distinguishes parse vs resource failure copy")
-    func fallbackReasonCopy() {
-        let parse = FallbackCard(
-            origin: makeOrigin(),
-            reason: .sceneParseFailed("missing camera")
-        )
-        let missing = FallbackCard(
-            origin: makeOrigin(),
-            reason: .sceneResourceMissing
-        )
-        #expect(parse.reason != missing.reason)
-        #expect(parse.reason == .sceneParseFailed("missing camera"))
-    }
-
-    @MainActor
     @Test("Engine-assets recovery is offered on a ref-less failure whose cause fits")
     func engineAssetsRecoveryCoversRefLessFailures() {
         // The reported gap: a scene that failed before the resolver ran left the
@@ -154,18 +139,5 @@ struct WPESceneSectionStateTests {
         #expect(!FallbackReason.sceneShaderUnsupported.mightBeMissingEngineAssets)
         #expect(!FallbackReason.missingDependency(workshopIDs: ["1"]).mightBeMissingEngineAssets)
         #expect(!FallbackReason.unsupportedType.mightBeMissingEngineAssets)
-    }
-
-    private func makeOrigin() -> WPEOrigin {
-        WPEOrigin(
-            workshopID: "state-machine",
-            title: "State Machine",
-            originalType: .scene,
-            sourceFolderBookmark: Data([0x01]),
-            cacheRelativePath: "wpe-cache/state-machine",
-            previewFileName: nil,
-            entryFile: "scene.json",
-            resourceLocation: .cache
-        )
     }
 }

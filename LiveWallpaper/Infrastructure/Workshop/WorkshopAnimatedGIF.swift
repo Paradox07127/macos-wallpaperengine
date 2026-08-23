@@ -60,7 +60,7 @@ struct WorkshopAnimatedGIF: @unchecked Sendable {
     private let decodeOptions: CFDictionary
     private let encodedByteCount: Int
 
-    /// Byte cap (sync with WorkshopPreviewImageLoader; 8 MiB blanked real previews).
+    /// Byte cap (sync with WorkshopPreviewImageLoader; 32 MiB blanked real previews).
     static let maxBytes = 32 * 1024 * 1024
     /// Animate at most this many frames; longer animations degrade to a static
     /// poster (we never drop the preview entirely just because it's long).

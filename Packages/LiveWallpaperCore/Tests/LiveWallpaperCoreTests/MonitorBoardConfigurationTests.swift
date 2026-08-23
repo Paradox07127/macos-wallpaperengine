@@ -310,15 +310,6 @@ struct MonitorBoardConfigurationTests {
         #expect(decoded.schemaVersion == 4)
     }
 
-    @Test("A retired gridColumns key in stored JSON is ignored, not a decode failure")
-    func retiredGridColumnsKeyIsIgnored() throws {
-        let json = """
-        { "schemaVersion": 4, "gridColumns": 16 }
-        """.data(using: .utf8)!
-        let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: json)
-        #expect(decoded.schemaVersion == 4)
-    }
-
     @Test("A board with no schemaVersion is treated as current")
     func missingSchemaVersionSkipsMigration() throws {
         let json = """

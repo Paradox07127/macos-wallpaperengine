@@ -84,10 +84,6 @@
         #endif
     }
 
-    /// Suspension-based counting semaphore. Lived in the retired
-    /// `SteamCMDProcessRunner` until 2026-08-02; the operation gate below is
-    /// now its only user, so it moved here rather than outliving its file.
-    ///
     /// `@unchecked Sendable` is carried by `lock`: every access to `permits`
     /// and `waiters` happens between its lock/unlock, and each continuation is
     /// resumed exactly once outside the critical section.

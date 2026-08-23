@@ -4,11 +4,11 @@ import LiveWallpaperCore
 
 /// Update delivery remains a manual download from GitHub Releases; this view
 /// does not install updates. Both SKUs are published in the same release, so
-/// the banner links to the release page rather than a specific asset.
+/// the banner links to the release page rather than a specific asset. The
+/// once-per-release dialog is presented by `ContentView`, not here — this page
+/// is only the always-available status readout.
 struct UpdateBannerView: View {
     @State private var checker = UpdateChecker.shared
-    @State private var showingAvailableAlert = false
-    @State private var availableRelease: UpdateChecker.LatestRelease?
 
     var body: some View {
         GroupBox {
@@ -34,28 +34,6 @@ struct UpdateBannerView: View {
             .padding(.horizontal, 4)
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
-        // If the launch-time check completes BEFORE the About panel is opened, the `.onChange` handler below never fires for that transition.
-        .onAppear { presentAvailableAlertIfNeeded(for: checker.status) }
-        .onChange(of: checker.status) { _, newStatus in
-            presentAvailableAlertIfNeeded(for: newStatus)
-        }
-        .alert(
-            "New version available",
-            isPresented: $showingAvailableAlert,
-            presenting: availableRelease
-        ) { release in
-            Button("Open download page") {
-                NSWorkspace.shared.open(release.releasePageURL)
-            }
-            Button("Skip this version") {
-                checker.skipCurrentAvailable()
-            }
-            Button("Later", role: .cancel) {}
-        } message: { release in
-            let productName = BundleIdentity.productDisplayName
-            let versionText = release.version.description
-            Text("\(productName) \(versionText) is available. Open the GitHub Releases page to download the new build.")
-        }
     }
 
     // MARK: - Status rendering
@@ -165,10 +143,4 @@ struct UpdateBannerView: View {
         formatter.unitsStyle = .full
         return formatter
     }()
-
-    private func presentAvailableAlertIfNeeded(for status: UpdateChecker.Status) {
-        guard case .available(let release) = status else { return }
-        availableRelease = release
-        showingAvailableAlert = true
-    }
 }

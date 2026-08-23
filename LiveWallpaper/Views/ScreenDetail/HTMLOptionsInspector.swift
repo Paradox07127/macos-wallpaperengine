@@ -2,12 +2,7 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-// Split out of HTMLSourceSection.swift: an independent type cluster with no
-// references to or from the rest of that file.
-
-
-/// Toggle-style behavior settings, kept visually separate from the continuous
-/// geometry controls in `HTMLTransformInspector`. Lives under `SecurityInspector`.
+/// Toggle-style behavior settings, kept visually separate from the continuous geometry controls in `HTMLTransformInspector`.
 struct HTMLOptionsInspector: View {
     var screen: Screen
     @Binding var config: HTMLConfig

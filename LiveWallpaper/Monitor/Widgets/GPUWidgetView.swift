@@ -4,10 +4,6 @@ import LiveWallpaperCore
 struct GPUWidgetView: View {
     let context: MonitorWidgetContext
 
-    init(context: MonitorWidgetContext) {
-        self.context = context
-    }
-
     var body: some View {
         GeometryReader { geo in
             let rowSpan: CGFloat = context.placement.size == .large ? 2 : 1

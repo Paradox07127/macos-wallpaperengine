@@ -279,7 +279,7 @@ extension WPEMetalSceneRenderer {
             )
         }
         if !textFrame.obsoleteTargetNames.isEmpty {
-            executor.discardRenderTargets(named: textFrame.obsoleteTargetNames)
+            executor.targetPool.discardTextures(named: textFrame.obsoleteTargetNames)
         }
         let frame = try withFrameSignpost("encode") { () throws -> MTLTexture in
             let currentTextures = try texturesForCurrentFrame(

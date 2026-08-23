@@ -1125,17 +1125,15 @@ final class SteamCMDDoctorService {
         return inspection
     }
 
-    /// Download progress, as the Workshop UI consumes it. Outlived the retired
-    /// `SteamCMDProcessRunner`; the values now originate in the connector.
+    /// Download progress, as the Workshop UI consumes it.
     typealias SteamCMDProgressHandler = @Sendable (
         _ percent: Double, _ downloadedBytes: UInt64?, _ totalBytes: UInt64?
     ) -> Void
 
     /// What a Doctor probe came back with.
     ///
-    /// Outlived the retired `SteamCMDProcessRunner` because the probe bodies read
-    /// these five fields; `killed` now means "the connector never produced a
-    /// verdict", not "we signalled a child".
+    /// `killed` now means "the connector never produced a verdict", not "we
+    /// signalled a child".
     struct SteamCMDRunResult: Sendable {
         let exitCode: Int32?
         let stdout: String

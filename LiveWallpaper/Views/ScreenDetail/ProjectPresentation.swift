@@ -62,14 +62,14 @@ struct WPEProjectSettingsPresentation: Equatable {
                 flushCurrentSection()
                 currentID = property.key
                 currentTitle = property.displayText
-                currentGroupIsVisible = Self.isVisible(property.condition, values: values)
+                currentGroupIsVisible = WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(condition: property.condition, values: values)
                 continue
             }
 
             guard !excludedKeys.contains(property.key),
                   isInteractive(property.type),
                   !property.isPromotionalLink,
-                  Self.isVisible(property.condition, values: values) else {
+                  WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(condition: property.condition, values: values) else {
                 continue
             }
 
@@ -119,16 +119,6 @@ struct WPEProjectSettingsPresentation: Equatable {
             rows.append(contentsOf: section.properties.map(SettingsRow.property))
             return rows
         }
-    }
-
-    private static func isVisible(
-        _ condition: String?,
-        values: [String: WallpaperEngineProjectPropertyValue]
-    ) -> Bool {
-        WallpaperEngineProjectPropertySchema.visiblePropertyConditionMatches(
-            condition: condition,
-            values: values
-        )
     }
 }
 #endif

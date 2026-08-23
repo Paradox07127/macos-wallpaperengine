@@ -109,7 +109,7 @@ final class HostView: NSView {
 
     // MARK: - Live configuration
 
-    /// Apply without rebuilding the view.
+    /// Push a new board configuration (rebuilds the SwiftUI root).
     func apply(configuration: MonitorBoardConfiguration, topInsetFraction: CGFloat? = nil) {
         // Drop in-flight debounced persist: older edit would clobber this newer external config.
         pendingPersistTask?.cancel()
@@ -238,7 +238,6 @@ final class HostView: NSView {
     }
 }
 
-/// Wraps the board with the reduce-motion + suspend environment.
 struct MonitorBoardRootContainer: View {
     @ObservedObject var model: InteractionModel
     @ObservedObject var data: DataModel

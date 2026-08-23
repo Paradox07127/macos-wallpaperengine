@@ -8,10 +8,6 @@ import MetalKit
 import os
 import simd
 extension WPEMetalRenderExecutor {
-    func discardRenderTargets(named names: Set<String>) {
-        targetPool.discardTextures(named: names)
-    }
-
     /// Everything whose identity includes a PIXEL dimension. Split out because a
     /// mid-scene render-scale change invalidates exactly this set and nothing
     /// else: the pool, bootstrap and hazard caches are keyed by width/height, so

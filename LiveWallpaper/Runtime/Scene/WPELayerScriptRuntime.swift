@@ -280,8 +280,6 @@ final class WPELayerScriptInstance {
     }
     #endif
 
-    // MARK: Synchronous Oracle (DEBUG only)
-    // Test-only bounded-blocking wrappers (production uses batchTick*/seedAsyncTick).
     #if DEBUG
     /// Invoke applyUserProperties (time-of-day scripts gate day/night only here).
     @discardableResult

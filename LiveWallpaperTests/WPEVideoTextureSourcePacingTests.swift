@@ -425,7 +425,7 @@ struct WPEVideoOutputCapTests {
             videoURL: videoURL,
             decoderAdmission: admission
         )
-        #expect(live.isLiveDecoderForTesting)
+        #expect(live.isLiveDecoder)
         #expect(admission.activeCount == 1)
 
         let still = try WPEVideoTextureSource(
@@ -433,7 +433,7 @@ struct WPEVideoOutputCapTests {
             videoURL: videoURL,
             decoderAdmission: admission
         )
-        #expect(!still.isLiveDecoderForTesting)
+        #expect(!still.isLiveDecoder)
         #expect(admission.activeCount == 1)
         #expect(still.texture(at: 0) != nil, "overflow source must keep a still frame, not refuse")
 
@@ -446,7 +446,7 @@ struct WPEVideoOutputCapTests {
             decoderAdmission: admission
         )
         defer { liveAgain.invalidate() }
-        #expect(liveAgain.isLiveDecoderForTesting)
+        #expect(liveAgain.isLiveDecoder)
         #expect(admission.activeCount == 1)
 
         still.invalidate()

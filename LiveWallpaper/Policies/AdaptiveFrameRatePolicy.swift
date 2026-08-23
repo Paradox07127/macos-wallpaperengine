@@ -1,5 +1,3 @@
-import Foundation
-
 /// Decides when a scene should use its lower-power frame-rate profile.
 enum AdaptiveFrameRatePolicy {
     /// Occlusion enter threshold for adaptive FPS (below 0.85 pause cutoff).

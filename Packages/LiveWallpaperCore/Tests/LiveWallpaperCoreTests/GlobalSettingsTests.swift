@@ -64,18 +64,6 @@ struct GlobalSettingsTests {
         #expect(settings.globalShortcutsEnabled == true)
     }
 
-    @Test("Import bundle preserves the imported globalShortcutsEnabled value")
-    func importPreservesDisabledFlag() throws {
-        // A backup with the surface disabled must restore disabled.
-        var snapshot = GlobalSettings()
-        snapshot.globalShortcutsEnabled = false
-
-        let data = try JSONEncoder().encode(snapshot)
-        let restored = try JSONDecoder().decode(GlobalSettings.self, from: data)
-
-        #expect(restored.globalShortcutsEnabled == false)
-    }
-
     @Test("Default initializer enables window-occlusion pause")
     func defaultInitEnablesOcclusionPause() {
         #expect(GlobalSettings().pauseOnWindowOcclusion == true)

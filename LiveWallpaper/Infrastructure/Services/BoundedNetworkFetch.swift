@@ -1,8 +1,7 @@
 import Foundation
 
 /// Streams a response via `session.bytes(for:)` instead of `session.data(for:)`,
-/// so a hostile or misbehaving server can't force unbounded buffering — mirrors
-/// the pattern already used by `WorkshopPreviewImageLoader.fetchData`.
+/// so a hostile server can't force unbounded buffering.
 enum BoundedNetworkFetch {
     struct ResponseTooLarge: Error, Equatable, Sendable {
         let byteCap: Int

@@ -3,7 +3,6 @@ import Foundation
 import LiveWallpaperCore
 
 // Every binding that hands a LiveWallpaperCore store its app-side persistence.
-// One concept, previously one file per store.
 
 /// Wires the shared bookmark store to the app's settings persistence.
 @MainActor

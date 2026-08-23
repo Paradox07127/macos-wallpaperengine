@@ -64,8 +64,7 @@ public final class Logger {
     // MARK: - Core Logging
 
     /// `@autoclosure` defers string interpolation; the message is only evaluated when this level is actually being logged.
-    /// Convenience wrappers forward the closure unevaluated. `notice` and above
-    /// always evaluate (file sink records them); `info`/`debug` ask `OSLog`.
+    /// `notice` and above always evaluate (file sink records them); `info`/`debug` ask `OSLog`.
 
     public static func log(
         _ message: @autoclosure () -> String,

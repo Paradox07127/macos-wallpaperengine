@@ -263,7 +263,6 @@ enum WorkshopDeepLink {
     }
 }
 
-// Merged from WorkshopPaneHeader.swift: single consumer, no independent test surface.
 /// Shared Workshop header hosted inside each tab's main split column.
 struct WorkshopPaneHeader: View {
     let selectedTab: WorkshopPaneTab

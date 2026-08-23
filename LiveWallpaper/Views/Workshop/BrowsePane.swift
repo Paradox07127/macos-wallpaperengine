@@ -599,8 +599,7 @@ struct BrowsePane: View {
     }
 }
 
-/// Shimmering placeholder matching `BrowseCard`'s footprint — zero
-/// layout shift when results arrive.
+/// Thumbnail + title-band placeholder while browse results load.
 private struct WorkshopSkeletonCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

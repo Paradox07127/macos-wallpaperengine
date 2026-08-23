@@ -56,7 +56,6 @@ final class WPETextFontResolver {
     }
 }
 
-// Merged from WPESystemFont.swift: single consumer, no independent test surface.
 /// Map `systemfont_<family>` to the OS font by name (not an asset path — avoids phantom fileMissing).
 enum WPESystemFont {
     private static let prefix = "systemfont_"

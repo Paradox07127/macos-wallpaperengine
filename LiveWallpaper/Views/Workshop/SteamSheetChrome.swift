@@ -86,10 +86,6 @@ enum SteamStatusIcon {
         case .notStarted: return "circle.dashed"
         }
     }
-
-    static func tint(for state: WorkshopStepState) -> Color {
-        state.tint
-    }
 }
 
 /// The status glyph, sized and coloured once.
@@ -106,7 +102,7 @@ struct SteamStatusGlyph: View {
         } else {
             Image(systemName: SteamStatusIcon.symbol(for: state))
                 .font(.system(size: size))
-                .foregroundStyle(SteamStatusIcon.tint(for: state))
+                .foregroundStyle(state.tint)
                 .accessibilityLabel(Text(state.statusText, bundle: .main))
         }
     }

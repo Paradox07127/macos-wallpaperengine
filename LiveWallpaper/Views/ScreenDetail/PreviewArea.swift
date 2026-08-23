@@ -271,7 +271,6 @@ struct PreviewArea: View {
     }
 }
 
-// Merged from ScreenDetailPlaceholderViews.swift: single consumer, no independent test surface.
 struct DetailLoadingView: View {
     var body: some View {
         VStack(spacing: 24) {

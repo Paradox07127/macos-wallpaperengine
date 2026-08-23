@@ -213,7 +213,6 @@ struct Row: View {
     }
 }
 
-// Merged from RowNumberHandle.swift: single consumer, no independent test surface.
 /// Leading-column row number that cross-fades into a drag handle on hover/grab.
 /// Not shown while playing — `EQPulseBar` takes over the leading slot then.
 struct RowNumberHandle: View {
