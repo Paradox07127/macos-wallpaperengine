@@ -423,7 +423,13 @@ extension WPEMetalSceneRenderer {
                         if detectHeavyStreaming(candidate, resolver: resolver, threshold: streamingThreshold) {
                             return .needsOnActor
                         }
-                        let payload = try resolver.resolveTexturePayload(relativePath: candidate)
+                        // Decode only the levels this upload reads; video and
+                        // animation payloads are built before the scope applies.
+                        let payload = try WPETexDecoder.$mipInflateScope.withValue(
+                            WPEMetalTextureLoader.mipInflateScope(maxSourceEdge: maxSourceEdge)
+                        ) {
+                            try resolver.resolveTexturePayload(relativePath: candidate)
+                        }
                         try Task.checkCancellation()
                         if payload.videoPayload != nil || payload.animationTrack != nil {
                             return .needsOnActor
@@ -651,7 +657,14 @@ extension WPEMetalSceneRenderer {
                             return .dynamicSource(source)
                         }
 
-                        let payload = try resourceResolver.resolveTexturePayload(relativePath: candidate)
+                        // Same scope as the parallel lane: narrow the decode to
+                        // the levels `makeTexture` below will upload. The video
+                        // and animation branches are built before it applies.
+                        let payload = try WPETexDecoder.$mipInflateScope.withValue(
+                            WPEMetalTextureLoader.mipInflateScope(maxSourceEdge: maxSourceEdge)
+                        ) {
+                            try resourceResolver.resolveTexturePayload(relativePath: candidate)
+                        }
                         try Task.checkCancellation()
 
                         if payload.videoPayload != nil {
