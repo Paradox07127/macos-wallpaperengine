@@ -57,6 +57,9 @@ extension WPEMetalRenderExecutor {
         fboAliasIntervalScratch.removeAll(keepingCapacity: false)
         cachedFBOAliasTopology = nil
         invalidatePassPipelineStates()
+        // Pass ids are reused across scenes; the dispatcher throttles the
+        // unresolved-slot warning on this set, so a reload must forget it.
+        loggedUnresolvedTextureSlots.removeAll()
     }
 
     /// Drops every cached static-layer composite. Called on scene reload /
@@ -279,7 +282,7 @@ extension WPEMetalRenderExecutor {
                 frameState.seedPreviousTexture(cached, targetID: .named(targetName))
                 frameState.markInitialized(cached)
                 snapshots[targetName] = cached
-                bytes += Self.staticLayerCacheBytes(for: source)
+                bytes += WPEMetalTextureByteEstimator.estimatedBytes(of: source)
             } catch {
                 Logger.warning(
                     "[WPE.static-layer-cache] snapshot failed layer=\(layer.objectID) target=\(targetName): \(error)",
@@ -309,18 +312,6 @@ extension WPEMetalRenderExecutor {
         for layerID in evicted where layerID != layer.objectID {
             loggedStaticLayerCacheHits.remove(layerID)
             Logger.info("[WPE.static-layer-cache] evicted layer=\(layerID)", category: .wpeRender)
-        }
-    }
-
-    private static func staticLayerCacheBytes(for texture: MTLTexture) -> Int {
-        texture.width * texture.height * staticLayerCacheBytesPerPixel(for: texture.pixelFormat)
-    }
-
-    private static func staticLayerCacheBytesPerPixel(for pixelFormat: MTLPixelFormat) -> Int {
-        switch pixelFormat {
-        case .rgba16Float: return 8
-        case .r8Unorm: return 1
-        default: return 4
         }
     }
 

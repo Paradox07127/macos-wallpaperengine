@@ -289,8 +289,7 @@ struct WPEShakeUniforms {
     var padding: Float = 0
 }
 
-// Layout MUST match `WPEGenericImageUniforms` /
-// `WPEGenericParticleUniforms` in `WPEMetalBuiltins.metal`.
+// Layout MUST match `WPEGenericImageUniforms` in `WPEMetalBuiltins.metal`.
 
 struct WPEGenericImageUniforms {
     var color: SIMD4<Float>
@@ -384,12 +383,6 @@ struct WPEPuppetSceneCompositeUniforms {
     var objectCenterAndSize: SIMD4<Float>
     /// Exact copy of `WPEObjectQuadUniforms.sceneSizeAndRotation`.
     var sceneSizeAndRotation: SIMD4<Float>
-}
-
-struct WPEGenericParticleUniforms {
-    var color: SIMD4<Float>
-    /// x = alpha, y = brightness, z/w = reserved padding.
-    var sizeAndAge: SIMD4<Float>
 }
 
 struct WPEOpacityUniforms {

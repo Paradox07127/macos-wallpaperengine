@@ -25,7 +25,11 @@ public final class Logger {
 
         /// Cached to avoid per-call subsystem string interning.
         fileprivate var logger: os.Logger {
-            LoggerCache.shared.logger(for: self)
+            LoggerCache.shared.entry(for: self).logger
+        }
+
+        fileprivate var osLog: OSLog {
+            LoggerCache.shared.entry(for: self).osLog
         }
     }
 
@@ -60,6 +64,8 @@ public final class Logger {
     // MARK: - Core Logging
 
     /// `@autoclosure` defers string interpolation; the message is only evaluated when this level is actually being logged.
+    /// Convenience wrappers forward the closure unevaluated. `notice` and above
+    /// always evaluate (file sink records them); `info`/`debug` ask `OSLog`.
 
     public static func log(
         _ message: @autoclosure () -> String,
@@ -69,23 +75,7 @@ public final class Logger {
         function: String = #function,
         line: Int = #line
     ) {
-        #if !DEBUG
-        if level == .debug { return }
-        #endif
-
-        let fileName = (file as NSString).lastPathComponent
-        let body = sanitizedBody(message())
-        category.logger.log(
-            level: level.osLogType,
-            "\(level.prefix, privacy: .public) [\(fileName, privacy: .public):\(line, privacy: .public)] \(function, privacy: .public) - \(body, privacy: .public)"
-        )
-        LogFileSink.shared.record(
-            category: category,
-            level: level,
-            message: body,
-            file: file,
-            line: line
-        )
+        emit(message, category: category, level: level, file: file, function: function, line: line)
     }
 
     /// Persistent log file path users can `tail -f`. `nil` only if the
@@ -104,24 +94,63 @@ public final class Logger {
 
     public static func debug(_ message: @autoclosure () -> String, category: Category = .general, file: String = #file, function: String = #function, line: Int = #line) {
         #if DEBUG
-        log(message(), category: category, level: .debug, file: file, function: function, line: line)
+        emit(message, category: category, level: .debug, file: file, function: function, line: line)
         #endif
     }
 
     public static func info(_ message: @autoclosure () -> String, category: Category = .general, file: String = #file, function: String = #function, line: Int = #line) {
-        log(message(), category: category, level: .info, file: file, function: function, line: line)
+        emit(message, category: category, level: .info, file: file, function: function, line: line)
     }
 
     public static func notice(_ message: @autoclosure () -> String, category: Category = .general, file: String = #file, function: String = #function, line: Int = #line) {
-        log(message(), category: category, level: .notice, file: file, function: function, line: line)
+        emit(message, category: category, level: .notice, file: file, function: function, line: line)
     }
 
     public static func warning(_ message: @autoclosure () -> String, category: Category = .general, file: String = #file, function: String = #function, line: Int = #line) {
-        log(message(), category: category, level: .warning, file: file, function: function, line: line)
+        emit(message, category: category, level: .warning, file: file, function: function, line: line)
     }
 
     public static func error(_ message: @autoclosure () -> String, category: Category = .general, file: String = #file, function: String = #function, line: Int = #line) {
-        log(message(), category: category, level: .error, file: file, function: function, line: line)
+        emit(message, category: category, level: .error, file: file, function: function, line: line)
+    }
+
+    private static func emit(
+        _ message: () -> String,
+        category: Category,
+        level: Level,
+        file: String,
+        function: String,
+        line: Int
+    ) {
+        #if !DEBUG
+        if level == .debug { return }
+        #endif
+        guard shouldEvaluate(level, category: category) else { return }
+
+        let fileName = (file as NSString).lastPathComponent
+        let body = sanitizedBody(message())
+        category.logger.log(
+            level: level.osLogType,
+            "\(level.prefix, privacy: .public) [\(fileName, privacy: .public):\(line, privacy: .public)] \(function, privacy: .public) - \(body, privacy: .public)"
+        )
+        LogFileSink.shared.record(
+            category: category,
+            level: level,
+            message: body,
+            file: file,
+            line: line
+        )
+    }
+
+    /// File-backed levels always evaluate. `info`/`debug` skip interpolation
+    /// when os_log would drop the line.
+    static func shouldEvaluate(_ level: Level, category: Category) -> Bool {
+        switch level {
+        case .notice, .warning, .error, .fault:
+            return true
+        case .info, .debug:
+            return category.osLog.isEnabled(type: level.osLogType)
+        }
     }
 
     // MARK: - Lifecycle Logging
@@ -193,19 +222,28 @@ public final class PerformanceTimer {
 
 // MARK: - Cache
 
-/// Synchronous, thread-safe cache of `os.Logger` instances.
+/// Synchronous, thread-safe cache of `os.Logger` / `OSLog` pairs.
+/// `@unchecked Sendable`: `lock` serializes `entries`; no other mutable state.
 private final class LoggerCache: @unchecked Sendable {
     static let shared = LoggerCache()
 
-    private var loggers: [Logger.Category: os.Logger] = [:]
+    struct Entry {
+        let logger: os.Logger
+        let osLog: OSLog
+    }
+
+    private var entries: [Logger.Category: Entry] = [:]
     private let lock = NSLock()
 
-    func logger(for category: Logger.Category) -> os.Logger {
+    func entry(for category: Logger.Category) -> Entry {
         lock.lock()
         defer { lock.unlock() }
-        if let cached = loggers[category] { return cached }
-        let new = os.Logger(subsystem: Logger.Category.subsystem, category: category.rawValue)
-        loggers[category] = new
-        return new
+        if let cached = entries[category] { return cached }
+        let entry = Entry(
+            logger: os.Logger(subsystem: Logger.Category.subsystem, category: category.rawValue),
+            osLog: OSLog(subsystem: Logger.Category.subsystem, category: category.rawValue)
+        )
+        entries[category] = entry
+        return entry
     }
 }

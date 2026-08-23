@@ -1218,46 +1218,6 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    /// Packs a `[name: value]` uniform dictionary into the translated shader's
-    /// `WPEUniforms.vals[]` array by the slot indices from its uniform layout.
-    /// Mirrors the per-pass packer but takes a standalone values dict for
-    /// callers that build uniforms outside the render graph.
-    func packTranslatedUniforms(
-        values: [String: WPESceneShaderConstantValue],
-        layout: [WPEUniformSlot],
-        texturesBySlot: WPEMetalTextureSlotTable? = nil
-    ) -> [SIMD4<Float>] {
-        var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
-        for u in layout {
-            guard u.slot < slots.count else { continue }
-            let value = Self.textureResolutionValue(
-                named: u.name,
-                texturesBySlot: texturesBySlot
-            ) ?? Self.firstValue(
-                in: values,
-                matching: Self.translatedUniformNameCandidates(for: u)
-            ) ?? u.defaultValue
-            if let length = u.arrayLength {
-                Self.packArrayUniform(value, glslType: u.glslType, length: length, slot: u.slot, into: &slots)
-                continue
-            }
-            switch u.glslType {
-            case "vec2", "ivec2", "bvec2":
-                let v = Self.vectorValue(value, count: 2)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], 0, 0)
-            case "vec3", "ivec3", "bvec3":
-                let v = Self.vectorValue(value, count: 3)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], v[2], 0)
-            case "vec4", "ivec4", "bvec4":
-                let v = Self.vectorValue(value, count: 4)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], v[2], v[3])
-            default:
-                slots[u.slot].x = Self.scalarValue(value, default: 0)
-            }
-        }
-        return slots
-    }
-
     var textGlyphPipelineCache: [UInt: MTLRenderPipelineState] = [:]
     var textBackgroundPipelineCache: [UInt: MTLRenderPipelineState] = [:]
 
@@ -3041,24 +3001,6 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    private static func firstValue(
-        in values: [String: WPESceneShaderConstantValue],
-        matching candidates: [String]
-    ) -> WPESceneShaderConstantValue? {
-        for candidate in candidates {
-            if let value = values[candidate] {
-                return value
-            }
-        }
-        for candidate in candidates {
-            let normalized = candidate.lowercased()
-            if let match = values.first(where: { $0.key.lowercased() == normalized }) {
-                return match.value
-            }
-        }
-        return nil
-    }
-
     /// `g_TexelSize` is a SCENE-level constant, not a per-pass one.
     ///
     /// RenderDoc, scene 3554161528 bloom chain (`workshop/2822917890`): WPE renders
@@ -3078,17 +3020,6 @@ final class WPEMetalRenderExecutor {
         let height = Double(sceneSize.height)
         guard width > 0, height > 0 else { return nil }
         return .vector([1 / width, 1 / height])
-    }
-
-    private static func textureResolutionValue(
-        named name: String,
-        texturesBySlot: WPEMetalTextureSlotTable?
-    ) -> WPESceneShaderConstantValue? {
-        guard let slot = textureResolutionSlotIndex(for: name),
-              let texture = texturesBySlot?[slot] else {
-            return nil
-        }
-        return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).shaderValue
     }
 
     static func textureResolutionSlotIndex(for name: String) -> Int? {
@@ -3114,11 +3045,10 @@ final class WPEMetalRenderExecutor {
     /// consecutive `float4` slots — one array element per slot, the element's
     /// components in `.x`/`.xy`/`.xyz`/`.xyzw`. This mirrors the transpiler's
     /// per-element read `u.vals[slot + i].<swizzle>` (see
-    /// `WPEShaderTranspiler.renderMSL`). Both pack overloads route here so the
-    /// scalar/vec packing can never drift apart again — the previous divergence
-    /// (`values:` overload packed every array as `vec4[N]`; the per-pass
-    /// overload under-read `vec2/3/4[N]` with `count: length`) silently
-    /// corrupted scalar `float[N]` uniforms such as `g_AudioSpectrum*[N]`.
+    /// `WPEShaderTranspiler.renderMSL`). The production packer is the only
+    /// caller — a previous `values:` overload packed every array as `vec4[N]`
+    /// and silently corrupted scalar `float[N]` uniforms such as
+    /// `g_AudioSpectrum*[N]`.
     private static func packArrayUniform(
         _ value: WPESceneShaderConstantValue?,
         glslType: String,

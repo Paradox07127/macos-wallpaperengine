@@ -133,6 +133,7 @@
                         "private var translatedPipelineCache: [TranslatedPipelineKey: MTLRenderPipelineState] = [:]",
                         "private var customSamplerStateCache: [Int: MTLSamplerState] = [:]",
                         "var textGlyphPipelineCache: [UInt: MTLRenderPipelineState] = [:]",
+                        "var textBackgroundPipelineCache: [UInt: MTLRenderPipelineState] = [:]",
                     ]
                 ),
                 SourceEvidence(
@@ -156,6 +157,7 @@
                         "private var translatedPipelineCache: [TranslatedPipelineKey: MTLRenderPipelineState] = [:]",
                         "private var customSamplerStateCache: [Int: MTLSamplerState] = [:]",
                         "var textGlyphPipelineCache: [UInt: MTLRenderPipelineState] = [:]",
+                        "var textBackgroundPipelineCache: [UInt: MTLRenderPipelineState] = [:]",
                         "var particlePipelineCache: [ParticlePipelineKey: MTLRenderPipelineState] = [:]",
                         "var sceneReadHazardSnapshotCache: [BootstrapPreviousKey: MTLTexture] = [:]",
                         "var refractionBackground: MTLTexture?",
@@ -445,6 +447,7 @@
                     // the old key again. Its working textures are drawable-sized.
                     "metalFXUpscaler?.releaseCachedScaler()",
                     "compiledShaderResultByPassID.removeAll()",
+                    "loggedUnresolvedTextureSlots.removeAll()",
                 ]
             )
             #expect(releaseTransient.contains("content-keyed translatedShaderCache is safe to persist"))
@@ -453,6 +456,7 @@
                 "translatedPipelineCache",
                 "customSamplerStateCache",
                 "textGlyphPipelineCache",
+                "textBackgroundPipelineCache",
                 "particlePipelineCache",
                 "refractionBackground",
                 "pipelineCache",
