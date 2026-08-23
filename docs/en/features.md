@@ -160,20 +160,26 @@ moderate heat still suspends it.
 
 ## 7) Updates (both editions)
 
-`LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` — GitHub Releases
-check at launch (opt-out in **Settings → General**) and on opening the menu bar
-popover, 12-hour throttle, 1-hour
-failure backoff, skip-a-version support. Hardened: trusted host only, 512 KB response cap, release-notes
-truncation, URL allowlisting. It only opens the Releases page — nothing
-auto-installs. Two surfaces read the one shared checker — the **Settings →
-About** banner and the menu bar **Update** button — so a skipped version is
-skipped in both; `UpdateSurfaceOwnershipTests` pins that neither builds its own.
+`LiveWallpaper/Infrastructure/Services/SparkleUpdaterController.swift` — Sparkle
+handles checking, downloading and installing. Updates are verified against an
+ed25519 public key pinned in each edition's `Info.plist`, so an update that is
+not signed by the release key is refused outright; the feed is HTTPS-only.
 
-The check is deliberately SKU-agnostic: it compares `CFBundleShortVersionString`
-against the newest release **tag** and never looks at assets, so one release
-carrying both DMGs serves both editions. Enabling it for Pro is why there is no
-`#if` around the banner — `GeneralSettingsOwnershipCharacterizationTests` pins
-that call site so a gate cannot creep back in.
+Scheduled checks are deliberately quiet. Sparkle would normally raise its alert
+the moment it finds something, which over a full-screen wallpaper is an
+interruption nobody asked for; the gentle-reminder delegate suppresses that and
+lights up the menu bar **Update** button instead. Clicking it hands control to
+Sparkle's own install UI. Automatic checking can be turned off in
+**Settings → General**, and the **Settings → About** banner reports the same
+state plus a manual check.
+
+Because the app is sandboxed it cannot replace its own bundle: Sparkle brokers
+the install through an XPC service that runs outside the sandbox, which is what
+`SUEnableInstallerLauncherService` and the `-spks`/`-spki` mach-lookup
+entitlements are for. Each edition has its own appcast (`appcast-pro.xml`,
+`appcast-lite.xml`), regenerated at release time by
+`scripts/generate-appcast.sh`, because the two ship as separate DMGs and an
+enclosure can only point at one of them.
 
 ## 8) Security & privacy
 

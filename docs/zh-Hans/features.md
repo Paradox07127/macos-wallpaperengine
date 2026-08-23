@@ -132,17 +132,20 @@ Retina 物理像素布局、临时存储（创意工坊导入强制开启）、C
 
 ## 7）更新（两个版本）
 
-`LiveWallpaper/Infrastructure/Services/UpdateChecker.swift` —— 启动时（可在**设置 →
-通用**里关掉）以及打开菜单栏弹窗时查一次 GitHub Releases，12 小时节流，失败后退避 1 小时，支持跳过某个版本。已做加固：仅限受信主机、
-响应体上限 512 KB、发布说明截断、URL 白名单。它只会打开 Releases 页面——不会自动安装
-任何东西。两处界面读的是同一个共享 checker —— **设置 → 关于**的横幅和菜单栏的
-**Update** 按钮 —— 所以跳过某个版本在两处一起生效；`UpdateSurfaceOwnershipTests`
-钉住了"两边都不许自己造一个 checker"。
+`LiveWallpaper/Infrastructure/Services/SparkleUpdaterController.swift` —— 检查、
+下载与安装都交给 Sparkle。更新包会用固定在各版本 `Info.plist` 里的 ed25519 公钥验签，
+没有用发布密钥签过的更新一律拒绝；feed 只走 HTTPS。
 
-这个检查刻意与 SKU 无关：它拿 `CFBundleShortVersionString` 与最新 release 的 **tag**
-比较，从不看 asset，所以同一个挂着两个 DMG 的 release 能同时服务两个版本。也正因为要
-对 Pro 开放，横幅调用点没有任何 `#if` —— `GeneralSettingsOwnershipCharacterizationTests`
-钉住了那一处，防止编译门禁又被加回去。
+后台检查刻意保持安静。Sparkle 默认一发现新版就弹对话框，而这会打断正在全屏播放的壁纸；
+gentle-reminder 委托把那个对话框压掉，改成点亮菜单栏的 **Update** 按钮。点它才把控制权
+交给 Sparkle 自己的安装界面。自动检查可以在**设置 → 通用**里关掉，**设置 → 关于**的
+横幅显示同一份状态并提供手动检查。
+
+因为应用处于沙盒中，它无法替换自己的 bundle：Sparkle 通过一个跑在沙盒外的 XPC 服务
+完成安装，这正是 `SUEnableInstallerLauncherService` 和 `-spks`/`-spki` 两条 mach-lookup
+授权的用途。两个版本各有自己的 appcast（`appcast-pro.xml`、`appcast-lite.xml`），
+发版时由 `scripts/generate-appcast.sh` 重新生成——因为它们是两个独立的 DMG，
+一条 enclosure 只能指向其中一个。
 
 ## 8）安全与隐私
 

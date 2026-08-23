@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 #
-# Build, ad-hoc sign, and package a release DMG for either SKU.
+# Build, sign, and package a release DMG for either SKU.
 #
-# Both SKUs currently ship ad-hoc signed. Manual signing prevents Xcode from
+# Both SKUs ship signed with the free Apple Development certificate rather than
+# ad-hoc. That is not about Gatekeeper — it still rejects both — it is about
+# having a Team ID at all: Hardened Runtime's library validation refuses to load
+# any third-party framework whose Team ID differs from the host's, and two
+# ad-hoc signatures count as "different". Sparkle is a framework, so ad-hoc
+# would mean it cannot load. Manual signing prevents Xcode from
 # selecting an Apple Development certificate that would fail on other Macs.
 #
 # Usage:
@@ -146,7 +151,28 @@ fi
 echo "== [$SKU] Cleaning previous artifacts =="
 rm -rf "$ARCHIVE_PATH" "$STAGING_DIR" "$DMG_PATH" "$SHA_PATH" "$DMG_BG_PATH"
 
-echo "== [$SKU] Archiving $SCHEME (Release, ad-hoc signed) =="
+# Single source of truth: the project's own DEVELOPMENT_TEAM. check_entitlements.sh
+# hardcodes the same value, so a mismatch fails the shipped-app audit below
+# rather than producing a quietly wrong-signed build.
+EXPECTED_TEAM_ID="$(grep -m1 'DEVELOPMENT_TEAM = ' LiveWallpaper.xcodeproj/project.pbxproj \
+  | sed 's/.*= *//; s/;.*//')"
+if [[ -z "$EXPECTED_TEAM_ID" ]]; then
+  echo "ERROR: could not read DEVELOPMENT_TEAM from the project" >&2
+  exit 1
+fi
+# `find-identity` prints the certificate's common name, not its OU, so the Team
+# ID is not checkable here — only that an identity exists at all. A wrong team
+# is caught by check_entitlements.sh --app further down, which compares against
+# the signed binary.
+if ! security find-identity -v -p codesigning | grep -q "Apple Development"; then
+  echo "ERROR: no Apple Development signing identity in this keychain." >&2
+  echo "       Sparkle is a framework and Hardened Runtime's library validation" >&2
+  echo "       refuses to load it without a matching Team ID, so an ad-hoc build" >&2
+  echo "       would ship with updates silently broken." >&2
+  exit 1
+fi
+
+echo "== [$SKU] Archiving $SCHEME (Release, Apple Development signed, team $EXPECTED_TEAM_ID) =="
 xcodebuild archive \
   -project LiveWallpaper.xcodeproj \
   -scheme "$SCHEME" \
@@ -157,8 +183,8 @@ xcodebuild archive \
   -skipPackagePluginValidation \
   -skipMacroValidation \
   CODE_SIGN_STYLE=Manual \
-  CODE_SIGN_IDENTITY="-" \
-  DEVELOPMENT_TEAM="" \
+  CODE_SIGN_IDENTITY="Apple Development" \
+  DEVELOPMENT_TEAM="$EXPECTED_TEAM_ID" \
   PROVISIONING_PROFILE_SPECIFIER="" \
   ENABLE_HARDENED_RUNTIME=YES \
   > "$OUTPUT_DIR/archive-$ARTIFACT.log" 2>&1 || {
@@ -184,7 +210,7 @@ echo "== [$SKU] Verifying signature =="
 # `$(PRODUCT_BUNDLE_IDENTIFIER)` strings.
 codesign --verify --deep --strict --verbose=2 "$APP_PATH" 2>&1 | tail -5
 spctl --assess --type execute --verbose "$APP_PATH" 2>&1 | tail -3 \
-  || echo "  (spctl rejects ad-hoc signing as expected — users will run xattr -dr com.apple.quarantine.)"
+  || echo "  (spctl rejects a non-Developer-ID signature as expected — users will run xattr -dr com.apple.quarantine.)"
 
 echo "== [$SKU] Entitlement baseline (shipped app) =="
 # Validate the archive's effective entitlements, not only the source plist.
@@ -229,7 +255,7 @@ $DISPLAY_NAME $VERSION
 
 ────────────────────────────  English  ────────────────────────────
 
-This build is ad-hoc signed (no paid Apple Developer ID yet). On first
+This build is signed, but not with a paid Apple Developer ID. On first
 launch macOS Gatekeeper will block it unless you run, one time, in Terminal:
 
     xattr -dr com.apple.quarantine "/Applications/${APP_NAME}.app"
@@ -241,7 +267,7 @@ macOS puts on the app. It does not change the app itself.
 
 ───────────────────────────  简体中文  ────────────────────────────
 
-本版本使用 ad-hoc 签名（尚未购买 Apple Developer ID），macOS 的 Gatekeeper
+本版本已签名，但未使用付费的 Apple Developer ID，macOS 的 Gatekeeper
 会拦截首次启动。请在「终端」中执行一次以下命令：
 
     xattr -dr com.apple.quarantine "/Applications/${APP_NAME}.app"
@@ -324,6 +350,22 @@ echo "== [$SKU] Computing SHA-256 =="
   shasum -a 256 "${DMG_PATH##*/}"
 ) | tee "$SHA_PATH"
 
+echo "== [$SKU] Regenerating Sparkle appcast =="
+# The appcast is what installed copies actually read; a release whose DMG ships
+# without a matching appcast entry reaches nobody. Pre-releases are skipped on
+# purpose so a test build cannot be handed to everyone as an update.
+if [[ "$PRERELEASE" == "1" ]]; then
+  echo "  (skipped — pre-release builds are not offered as updates)"
+else
+  BUILD_NUMBER="$(plutil -extract CFBundleVersion raw "$APP_PATH/Contents/Info.plist")"
+  scripts/generate-appcast.sh \
+    --sku "$SKU" \
+    --version "$VERSION" \
+    --build "$BUILD_NUMBER" \
+    --dmg "$DMG_PATH" \
+    --derived-data "$DERIVED_DATA"
+fi
+
 DMG_SIZE_MB=$(( $(stat -f%z "$DMG_PATH") / 1024 / 1024 ))
 
 echo
@@ -338,5 +380,7 @@ if [[ "$PRERELEASE" == "1" ]]; then
   echo "            (the in-app update check skips GitHub pre-releases)"
 else
   echo "  Tag:      loomscreen-v${VERSION} (unified release; attach both SKUs)"
+  echo "  Appcast:  appcast-${SKU}.xml — commit and push it, or installed copies"
+  echo "            will never see this release."
 fi
 echo "============================================================"

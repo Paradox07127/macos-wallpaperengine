@@ -25,7 +25,9 @@ struct GeneralSettingsView: View {
 
     @Environment(ScreenManager.self) var screenManager
     @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) var appLanguageRawValue = AppLanguagePreference.system.rawValue
-    @AppStorage(UpdateChecker.checkAtLaunchKey, store: .appScoped()) var checksUpdatesAtLaunch = true
+    /// Mirrors Sparkle's own `automaticallyChecksForUpdates`; Sparkle persists
+    /// it, so there is no parallel defaults key to keep in sync.
+    @State var checksUpdatesAtLaunch: Bool = SparkleUpdaterController.shared.automaticallyChecksForUpdates
     @State var globalPauseOnBattery: Bool
     @State var startOnLogin: Bool
     @State var loginItemStatus: SMAppService.Status

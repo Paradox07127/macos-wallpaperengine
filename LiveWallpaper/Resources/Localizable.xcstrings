@@ -7645,30 +7645,30 @@
         }
       }
     },
-    "Check for updates at launch" : {
+    "Check for updates automatically" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check for updates at launch"
+            "value" : "Check for updates automatically"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "起動時にアップデートを確認"
+            "value" : "自動的にアップデートを確認"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "启动时检查更新"
+            "value" : "自动检查更新"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "啟動時檢查更新"
+            "value" : "自動檢查更新"
           }
         }
       }
@@ -23940,31 +23940,30 @@
         }
       }
     },
-    "Look for a newer version on GitHub when the app starts" : {
-      "comment" : "Text displayed in a setting row that describes the purpose of the setting.",
+    "Look for a newer version in the background" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Look for a newer version on GitHub when the app starts"
+            "value" : "Look for a newer version in the background"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アプリの起動時に GitHub で新しいバージョンを確認します"
+            "value" : "バックグラウンドで新しいバージョンを確認します"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "App 启动时在 GitHub 上查找更新的版本"
+            "value" : "在后台查找新版本"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "App 啟動時在 GitHub 上尋找更新的版本"
+            "value" : "在背景查找新版本"
           }
         }
       }
@@ -24028,31 +24027,30 @@
         }
       }
     },
-    "Looks for a newer version on GitHub when the app starts" : {
-      "comment" : "A description of the check for updates at launch setting.",
+    "Looks for a newer version in the background" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Looks for a newer version on GitHub when the app starts"
+            "value" : "Looks for a newer version in the background"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アプリの起動時に GitHub で新しいバージョンを確認します"
+            "value" : "バックグラウンドで新しいバージョンを確認します"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "App 启动时在 GitHub 上查找更新的版本"
+            "value" : "在后台查找新版本"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "App 啟動時在 GitHub 上尋找更新的版本"
+            "value" : "在背景查找新版本"
           }
         }
       }
@@ -28800,6 +28798,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未交給系統的影片"
+          }
+        }
+      }
+    },
+    "Nothing is downloaded until you choose to install. When an update is found the menu bar shows an Update button instead of interrupting with a dialog." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing is downloaded until you choose to install. When an update is found the menu bar shows an Update button instead of interrupting with a dialog."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストールを選ぶまで何もダウンロードされません。アップデートが見つかると、ダイアログで作業を中断せず、メニューバーに「アップデート」ボタンが表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在你选择安装之前不会下载任何内容。发现更新时，菜单栏会显示「更新」按钮，而不会弹出对话框打断你。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在你選擇安裝之前不會下載任何內容。發現更新時，選單列會顯示「更新」按鈕，而不會彈出對話框打斷你。"
           }
         }
       }
@@ -38365,35 +38391,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行中…"
-          }
-        }
-      }
-    },
-    "Runs the same check as the About page, at most once every 12 hours. It only reads the latest release tag — nothing is downloaded until you choose to update." : {
-      "comment" : "Text displayed in a setting row that describes the behavior of the update check when the app starts.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Runs the same check as the About page, at most once every 12 hours. It only reads the latest release tag — nothing is downloaded until you choose to update."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「情報」ページと同じ確認を、最大で 12 時間に 1 回実行します。最新のリリースタグを読み取るだけで、更新を選ぶまで何もダウンロードされません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "执行与“关于”页面相同的检查，最多每 12 小时一次。它只读取最新的发布标签——在你选择更新之前不会下载任何内容。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "執行與「關於」頁面相同的檢查，最多每 12 小時一次。它只讀取最新的發佈標籤——在你選擇更新之前不會下載任何內容。"
           }
         }
       }
@@ -50530,6 +50527,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從 Steam 更新"
+          }
+        }
+      }
+    },
+    "Update status unknown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update status unknown"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップデートの状態は不明です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新状态未知"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新狀態未知"
           }
         }
       }

@@ -33,7 +33,6 @@ struct DefaultsIsolationTests {
             .deletingLastPathComponent()
 
         let serviceFiles = [
-            "LiveWallpaper/Infrastructure/Services/UpdateChecker.swift",
             "LiveWallpaper/Monitor/SourceAuthorization.swift",
             "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift",
             "LiveWallpaper/Views/Workshop/BrowseViewModel.swift",

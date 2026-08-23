@@ -16,11 +16,6 @@ struct ContentView: View {
     @State private var didConsumeInitialAddWallpaperPrompt = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isReloading = false
-    /// The window is the only place the update dialog appears, so it owns the
-    /// presentation state; the checker owns the once-per-release bookkeeping.
-    @State private var updateChecker = UpdateChecker.shared
-    @State private var pendingUpdateRelease: UpdateChecker.LatestRelease?
-    @State private var showingUpdateAlert = false
     private let initialAddWallpaperPromptKind: String?
 
     init(initialNavigation: Navigation? = nil, initialAddWallpaperPromptKind: String? = nil) {
@@ -77,39 +72,7 @@ struct ContentView: View {
         .onAppear {
             scheduleDefaultDisplaySelection()
             consumeInitialAddWallpaperPromptIfNeeded()
-            presentUpdateAlertIfNeeded()
         }
-        // The launch check lands ~5 s in, so a window opened before that has to
-        // learn about the release from the status change rather than onAppear.
-        .onChange(of: updateChecker.status) { _, _ in
-            presentUpdateAlertIfNeeded()
-        }
-        .alert(
-            "New version available",
-            isPresented: $showingUpdateAlert,
-            presenting: pendingUpdateRelease
-        ) { release in
-            Button("Open download page") {
-                NSWorkspace.shared.open(release.releasePageURL)
-            }
-            Button("Skip this version") {
-                updateChecker.skipCurrentAvailable()
-            }
-            Button("Later", role: .cancel) {}
-        } message: { release in
-            let productName = BundleIdentity.productDisplayName
-            let versionText = release.version.description
-            Text("\(productName) \(versionText) is available. Open the GitHub Releases page to download the new build.")
-        }
-    }
-
-    /// Shows the dialog at most once per release: the tag is marked announced as
-    /// soon as it is presented, so dismissing with "Later" still counts.
-    private func presentUpdateAlertIfNeeded() {
-        guard let release = updateChecker.unannouncedAvailableRelease else { return }
-        updateChecker.markAnnounced(release)
-        pendingUpdateRelease = release
-        showingUpdateAlert = true
     }
 
     @ViewBuilder

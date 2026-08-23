@@ -45,15 +45,18 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "arrow.triangle.2.circlepath",
                 iconColor: .purple,
-                title: "Check for updates at launch",
-                subtitle: "Look for a newer version on GitHub when the app starts",
-                info: "Runs the same check as the About page, at most once every 12 hours. It only reads the latest release tag — nothing is downloaded until you choose to update."
+                title: "Check for updates automatically",
+                subtitle: "Look for a newer version in the background",
+                info: "Nothing is downloaded until you choose to install. When an update is found the menu bar shows an Update button instead of interrupting with a dialog."
             ) {
                 Toggle("", isOn: $checksUpdatesAtLaunch)
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .accessibilityLabel(Text("Check for updates at launch"))
-                    .accessibilityHint(Text("Looks for a newer version on GitHub when the app starts"))
+                    .onChange(of: checksUpdatesAtLaunch) { _, enabled in
+                        SparkleUpdaterController.shared.automaticallyChecksForUpdates = enabled
+                    }
+                    .accessibilityLabel(Text("Check for updates automatically"))
+                    .accessibilityHint(Text("Looks for a newer version in the background"))
             }
 
             SettingRow(

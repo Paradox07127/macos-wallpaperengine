@@ -42,6 +42,32 @@
 	<string>Access to Downloads is needed to play wallpaper files stored there.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location is used to fetch local weather for weather-reactive effects.</string>
+	<!--
+	    Sparkle auto-update. `SUEnableInstallerLauncherService` must track the
+	    App Sandbox: a sandboxed app cannot install over itself, so Sparkle
+	    routes the install through its Installer XPC service, which runs outside
+	    the sandbox. Turning the sandbox on without this key (or vice versa)
+	    leaves updates unable to install.
+
+	    The feed is per-SKU because Lite and Pro ship as separate DMGs and an
+	    appcast enclosure can only point at one of them; the EdDSA key is shared
+	    because both SKUs are signed by the same release machine.
+	-->
+	<!--
+	    Answers Sparkle's first-launch "check automatically?" prompt in advance.
+	    Without it Sparkle raises that dialog on the launch after its first
+	    successful start — over a full-screen wallpaper, unprompted. The value
+	    matches the default of the UpdateChecker this replaced (checks on), and
+	    the General settings toggle writes Sparkle's own preference afterwards.
+	-->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/Paradox07127/macos-wallpaperengine/main/appcast-lite.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>V1TAiPupv91eQ9YlbHDBxPdztUhLrvG1TTJMYyArArs=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

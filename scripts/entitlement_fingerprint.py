@@ -78,6 +78,37 @@ def scalar_record(key: str, value: Any, *, array: bool) -> str:
     )
 
 
+BUNDLE_ID_PLACEHOLDER = "$(PRODUCT_BUNDLE_IDENTIFIER)"
+
+
+def expand_source_placeholders(values: dict[str, Any], bundle_id: str) -> dict[str, Any]:
+    """Apply the same substitution Xcode performs when it processes entitlements.
+
+    The source plist writes `$(PRODUCT_BUNDLE_IDENTIFIER)` (Sparkle's XPC mach
+    names need it to differ per SKU) while the signed binary carries it
+    expanded. Without this the source and app fingerprints describe the same
+    grant differently and the release gate fails only at package time — after a
+    green `--source` run, which is exactly the false green this expansion
+    removes.
+    """
+
+    def expand(value: Any) -> Any:
+        if isinstance(value, str):
+            expanded = value.replace(BUNDLE_ID_PLACEHOLDER, bundle_id)
+            if "$(" in expanded:
+                # Fail loudly: an unknown placeholder would silently reintroduce
+                # the source/app mismatch this function exists to prevent.
+                raise EntitlementError(
+                    f"unsupported build-setting placeholder in entitlement value: {value!r}"
+                )
+            return expanded
+        if isinstance(value, list):
+            return [expand(member) for member in value]
+        return value
+
+    return {key: expand(value) for key, value in values.items()}
+
+
 def fingerprint(values: dict[str, Any]) -> list[str]:
     records: list[str] = []
     for key, value in values.items():
@@ -168,6 +199,7 @@ def parse_arguments() -> argparse.Namespace:
 
     source = subparsers.add_parser("fingerprint")
     source.add_argument("plist", type=Path)
+    source.add_argument("--bundle-id", required=True)
 
     app = subparsers.add_parser("app-fingerprint")
     app.add_argument("plist", type=Path)
@@ -182,6 +214,8 @@ def main() -> int:
     arguments = parse_arguments()
     try:
         values = load_entitlements(arguments.plist)
+        if arguments.command == "fingerprint":
+            values = expand_source_placeholders(values, arguments.bundle_id)
         if arguments.command == "app-fingerprint":
             values = normalized_app_entitlements(
                 values,

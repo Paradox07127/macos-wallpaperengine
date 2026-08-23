@@ -52,9 +52,29 @@ create_app() {
   plutil -insert CFBundlePackageType -string APPL "$app/Contents/Info.plist"
 }
 
+# Xcode expands build-setting placeholders while processing entitlements, but
+# plain `codesign --entitlements` does not. Without doing it here the fixtures
+# would carry a literal `$(PRODUCT_BUNDLE_IDENTIFIER)` that no shipping binary
+# ever has, and the self-test would pass while the real release gate fails.
+expanded_entitlements() {
+  # Not named `source` — that is a bash builtin, and referring to it from the
+  # same `local` statement that assigns it trips `set -u`.
+  local src="$1" bundle_id="$2" out
+  out="$TMP/expanded-$(basename "$src")"
+  /usr/bin/sed "s|\$(PRODUCT_BUNDLE_IDENTIFIER)|$bundle_id|g" "$src" > "$out"
+  echo "$out"
+}
+
 sign_app() {
-  local app="$1" entitlements="$2"
-  codesign --force --sign - --entitlements "$entitlements" "$app" >/dev/null 2>&1
+  local app="$1" entitlements="$2" bundle_id expanded
+  bundle_id="$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")"
+  expanded="$(expanded_entitlements "$entitlements" "$bundle_id")"
+  # Surfacing a signing failure matters: swallowing it leaves the previous
+  # signature in place and the fixture silently tests the wrong thing.
+  if ! codesign --force --sign - --entitlements "$expanded" "$app" >/dev/null 2>&1; then
+    echo "SELF-TEST ERROR: failed to sign fixture $app" >&2
+    exit 1
+  fi
 }
 
 PRO_APP="$TMP/Loomscreen Pro.app"
@@ -99,7 +119,8 @@ expect_fail "unknown entitlement remains visible to the exact diff" "com.example
 TEAM_ID="FWJP4B62U7"
 APP_ID="$TEAM_ID.com.loomscreen.pro"
 IDENTITY_PLIST="$TMP/signed-identity.entitlements"
-cp "$ROOT/LiveWallpaper/LiveWallpaper.entitlements" "$IDENTITY_PLIST"
+# Same reason as sign_app: a shipping binary never carries the raw placeholder.
+cp "$(expanded_entitlements "$ROOT/LiveWallpaper/LiveWallpaper.entitlements" com.loomscreen.pro)" "$IDENTITY_PLIST"
 /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $APP_ID" "$IDENTITY_PLIST"
 /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string $TEAM_ID" "$IDENTITY_PLIST"
 /usr/libexec/PlistBuddy -c 'Add :keychain-access-groups array' "$IDENTITY_PLIST"

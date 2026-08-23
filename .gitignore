@@ -151,6 +151,7 @@ scripts/*
 !scripts/quality-baselines/
 !scripts/quality-baselines/exclusions.json
 !scripts/quality-baselines/component-loc.json
+!scripts/generate-appcast.sh
 
 # Instruments trace bundles run to gigabytes each; keep them local. The sibling
 # README.md stays tracked because it is the measurement record, so ignore the

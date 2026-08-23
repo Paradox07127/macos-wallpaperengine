@@ -205,12 +205,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
-        // Both SKUs ship ad-hoc signed from the same GitHub release, so we hand-roll a single-shot launch-time update check (no background timer, throttled to 12 h in UpdateChecker itself).
-        if !startupPlan.showOnboarding && !runtimeOptions.isTesting {
-            lifecycle.schedule(after: .seconds(5)) {
-                guard UpdateChecker.checksAtLaunch() else { return }
-                await UpdateChecker.shared.checkNow(force: false)
-            }
+        // Sparkle owns update checking. It runs its own scheduled checks; the
+        // gentle-reminder delegate keeps a finding off-screen and lights up the
+        // menu bar button instead.
+        //
+        // Started unconditionally rather than skipped during onboarding: this is
+        // the only call site, so skipping it left a first-run session — possibly
+        // weeks long — with no checks at all and a disabled manual-check button.
+        // Sparkle's own first-launch prompt is pre-answered by
+        // SUEnableAutomaticChecks, so there is nothing to collide with.
+        if !runtimeOptions.isTesting {
+            SparkleUpdaterController.shared.start()
         }
     }
 

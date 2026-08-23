@@ -44,8 +44,10 @@ fail_with_log() {
 assert_no_removed_dynamic_links() {
   local binary="$1"
   local label="$2"
-  if otool -L "$binary" | grep -Eq 'Sparkle|libc\+\+'; then
-    echo "ERROR: $label links a removed Sparkle/libc++ dependency." >&2
+  # Sparkle used to be listed here. It ships again as of 2026-08-23 and every
+  # app binary links it on purpose, so only libc++ remains banned.
+  if otool -L "$binary" | grep -Eq 'libc\+\+'; then
+    echo "ERROR: $label links a removed libc++ dependency." >&2
     otool -L "$binary" >&2
     exit 1
   fi

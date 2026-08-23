@@ -19,9 +19,9 @@ struct MenuBarContent: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var ownsSystemMonitorLease = false
-    /// The same shared checker the About panel reads, so a version skipped
-    /// there is skipped here and neither can report a different verdict.
-    @State private var updateChecker = UpdateChecker.shared
+    /// The same shared updater the About panel drives, so both surfaces agree
+    /// on whether an update is pending.
+    @State private var updater = SparkleUpdaterController.shared
 
     private var monitor: SystemMonitor { .shared }
 
@@ -55,11 +55,7 @@ struct MenuBarContent: View {
         .modifier(MenuBarOuterShell())
         .onAppear(perform: acquireSystemMonitorLeaseIfNeeded)
         .onDisappear(perform: releaseSystemMonitorLeaseIfNeeded)
-        // Without this the badge only ever reflects the launch-time check, so
-        // a Mac left running for days never learns about a release. `force:
-        // false` means the checker's own 12 h throttle decides whether this
-        // costs a request at all.
-        .task { await updateChecker.checkNow(force: false) }
+
     }
 
     private func acquireSystemMonitorLeaseIfNeeded() {
@@ -116,14 +112,14 @@ struct MenuBarContent: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Present only when there is a release to go get. Update delivery is a
-    /// manual download, so the button's whole job is to open the release page —
-    /// the same page, from the same `UpdateChecker.Status`, as the About panel.
+    /// Present only when Sparkle is holding an update it has already found and
+    /// deliberately not shown (see `SparkleUpdaterController`). Clicking hands
+    /// control to Sparkle's own install UI.
     @ViewBuilder
     private var updateButton: some View {
-        if case .available(let release) = updateChecker.status {
+        if updater.availableVersion != nil {
             Button {
-                NSWorkspace.shared.open(release.releasePageURL)
+                updater.checkForUpdates()
                 dismiss()
             } label: {
                 Label("Update", systemImage: "arrow.down.circle.fill")
@@ -131,7 +127,7 @@ struct MenuBarContent: View {
             }
             .adaptiveGlassButton(.regular, size: .small)
             .fixedSize()
-            .tint(DesignTokens.Colors.Status.warning)
+            .tint(DesignTokens.Colors.Status.info)
             .help(Text("New version available"))
             .accessibilityLabel(Text("Update available"))
         }
