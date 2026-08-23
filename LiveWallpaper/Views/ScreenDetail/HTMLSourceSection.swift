@@ -232,6 +232,13 @@ struct HTMLSourceSection: View {
         switch trust {
         case .localContent:
             EmptyView()
+        case .trustedRemote(let origin) where origin.isLoopback:
+            chip(
+                symbol: "laptopcomputer",
+                label: Text("Local"),
+                color: DesignTokens.Colors.Status.active,
+                help: Text("Local development server — JavaScript allowed.")
+            )
         case .trustedRemote:
             chip(
                 symbol: "checkmark.shield.fill",

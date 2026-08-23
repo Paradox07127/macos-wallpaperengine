@@ -12,7 +12,8 @@ public protocol TrustedHostPersisting {
 @MainActor
 @Observable
 public final class TrustedHostStore {
-    /// Sorted, de-duped, HTTPS-only browser origins.
+    /// Sorted, de-duped browser origins eligible for JavaScript (HTTPS, plus
+    /// private-network literals the user explicitly trusted).
     public private(set) var origins: [TrustedHTMLOrigin]
     @ObservationIgnored private let persistence: any TrustedHostPersisting
 
@@ -50,7 +51,7 @@ public final class TrustedHostStore {
 
     @discardableResult
     public func trust(_ origin: TrustedHTMLOrigin) -> Bool {
-        guard origin.isSecure, !originSet.contains(origin) else { return false }
+        guard origin.canBeTrusted, !originSet.contains(origin) else { return false }
         origins = Self.normalizeOrigins(hosts + [origin.rawValue])
         persist()
         return true
@@ -73,9 +74,11 @@ public final class TrustedHostStore {
         persistence.save(hosts)
     }
 
+    /// Filters on the same predicate as `trust`; otherwise a granted LAN origin
+    /// would be dropped on the next launch and the grant would silently expire.
     public static func normalizeOrigins(_ raw: [String]) -> [TrustedHTMLOrigin] {
         Array(Set(raw.compactMap(TrustedHTMLOrigin.init(persistedValue:))
-            .filter(\.isSecure)))
+            .filter(\.canBeTrusted)))
             .sorted()
     }
 }

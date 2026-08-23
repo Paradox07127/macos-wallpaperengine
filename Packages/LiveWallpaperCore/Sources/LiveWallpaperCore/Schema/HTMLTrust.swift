@@ -58,7 +58,69 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
 
     public var description: String { rawValue }
 
+    /// Cleartext vs TLS. Answers "is the transport encrypted", nothing else —
+    /// the UI shows its HTTP warning from this.
     public var isSecure: Bool { scheme == "https" }
+
+    /// W3C Secure Contexts treats loopback as a potentially trustworthy origin
+    /// even over http, which is why browsers give `http://localhost` the same
+    /// powers as https. Traffic never leaves the machine, so there is no
+    /// network position from which to tamper with it.
+    /// <https://w3c.github.io/webappsec-secure-contexts/>
+    public var isLoopback: Bool { Self.isLoopbackHost(host) }
+
+    /// Expects an already-lowercased host, as stored.
+    public static func isLoopbackHost(_ host: String) -> Bool {
+        // URL.host strips the brackets from [::1]; accept both spellings.
+        if host == "::1" || host == "[::1]" { return true }
+        if host == "localhost" || host == "localhost." { return true }
+        if host.hasSuffix(".localhost") || host.hasSuffix(".localhost.") { return true }
+        return isIPv4Loopback(host)
+    }
+
+    /// Private-network literals (RFC 1918 + link-local, and the IPv6
+    /// equivalents). Cleartext here is still tamperable by anyone already on
+    /// the same LAN, so unlike loopback these are *eligible* for trust rather
+    /// than trusted outright — the user has to grant it per origin.
+    public var isPrivateNetwork: Bool { Self.isPrivateNetworkHost(host) }
+
+    /// Eligible to be granted JavaScript at all. Loopback is excluded because
+    /// it never needs an allowlist entry.
+    public var canBeTrusted: Bool { isSecure || isPrivateNetwork }
+
+    /// Expects an already-lowercased host, as stored.
+    public static func isPrivateNetworkHost(_ host: String) -> Bool {
+        let bare = host.hasPrefix("[") && host.hasSuffix("]")
+            ? String(host.dropFirst().dropLast())
+            : host
+        // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
+        if bare.contains(":") {
+            return bare.hasPrefix("fc") || bare.hasPrefix("fd") || bare.hasPrefix("fe8")
+                || bare.hasPrefix("fe9") || bare.hasPrefix("fea") || bare.hasPrefix("feb")
+        }
+        guard let octets = ipv4Octets(bare) else { return false }
+        switch (octets[0], octets[1]) {
+        case (10, _): return true                      // 10.0.0.0/8
+        case (172, 16...31): return true               // 172.16.0.0/12
+        case (192, 168): return true                   // 192.168.0.0/16
+        case (169, 254): return true                   // 169.254.0.0/16 link-local
+        default: return false
+        }
+    }
+
+    /// Strict dotted-quad parse; rejects anything that is not exactly 4 octets.
+    private static func ipv4Octets(_ host: String) -> [UInt8]? {
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return nil }
+        let octets = parts.compactMap { UInt8($0) }
+        return octets.count == 4 ? octets : nil
+    }
+
+    /// 127.0.0.0/8 — the whole block, not just 127.0.0.1.
+    private static func isIPv4Loopback(_ host: String) -> Bool {
+        guard let octets = ipv4Octets(host) else { return false }
+        return octets[0] == 127
+    }
 
     private static func defaultPort(for scheme: String) -> Int? {
         switch scheme {
@@ -104,6 +166,11 @@ public enum HTMLTrust: Equatable, Sendable {
         case .url(let url):
             guard let origin = TrustedHTMLOrigin(url: url) else {
                 return .localContent
+            }
+            // Loopback is trusted without an allowlist entry, so a local dev
+            // server works out of the box and cannot be revoked by accident.
+            if origin.isLoopback {
+                return .trustedRemote(origin: origin)
             }
             return trustedOrigins.contains(origin) ? .trustedRemote(origin: origin) : .untrustedRemote(origin: origin)
         }
