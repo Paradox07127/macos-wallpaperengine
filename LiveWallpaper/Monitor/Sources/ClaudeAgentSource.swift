@@ -49,7 +49,8 @@ final class ClaudeAgentSource: MonitorDataSource {
 
 private actor Engine {
     private let rootURL: URL
-    private let scanner: ClaudeSessionScanner
+    // `var`: the scanner keeps a per-directory listing cache across rescans.
+    private var scanner: ClaudeSessionScanner
     private let cursorStore: TailCursorStore?
 
     private var sink: (any MonitorSnapshotSink)?

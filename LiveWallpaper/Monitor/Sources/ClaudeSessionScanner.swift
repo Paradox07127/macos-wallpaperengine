@@ -28,13 +28,30 @@ struct ClaudeSessionScanner {
     /// `startedAt` by more than this — cheap defense against PID reuse.
     private static let pidReuseSlack: TimeInterval = 5
 
+    /// A directory's own mtime moves when an entry is added, removed or renamed,
+    /// but NOT when a file already inside it is appended to. So it may gate
+    /// re-*listing* the directory and nothing else — every listed transcript is
+    /// still stat'd on every pass, or a resumed session older than `lookback`
+    /// would never come back into view.
+    private struct DirectoryListing {
+        var modifiedAt: Date
+        var transcriptPaths: [String]
+    }
+
+    private var cachedProjectsRootModifiedAt: Date?
+    private var cachedProjectDirs: [URL] = []
+    private var cachedListings: [URL: DirectoryListing] = [:]
+
+    /// Test seam: `contentsOfDirectory` calls issued since init.
+    private(set) var directoryListingCount = 0
+
     init(rootURL: URL) {
         self.rootURL = rootURL
     }
 
     // MARK: - Transcript discovery
 
-    func discoverTranscripts(
+    mutating func discoverTranscripts(
         now: Date = Date(),
         lookback: TimeInterval = 48 * 3600,
         limit: Int = 40
@@ -42,36 +59,59 @@ struct ClaudeSessionScanner {
         let projectsRoot = rootURL.appendingPathComponent("projects", isDirectory: true)
         let fm = FileManager.default
 
-        let projectDirs = try fm.contentsOfDirectory(
-            at: projectsRoot,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
+        let rootModifiedAt = Self.status(ofPath: projectsRoot.path(percentEncoded: false))?.modifiedAt
+        if rootModifiedAt == nil || rootModifiedAt != cachedProjectsRootModifiedAt {
+            directoryListingCount += 1
+            let entries = try fm.contentsOfDirectory(
+                at: projectsRoot,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+            cachedProjectDirs = entries.filter {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            }
+            cachedProjectsRootModifiedAt = rootModifiedAt
+            let live = Set(cachedProjectDirs)
+            cachedListings = cachedListings.filter { live.contains($0.key) }
+        }
 
         let cutoff = now.addingTimeInterval(-lookback)
         var candidates: [SessionFileCandidate] = []
 
-        for dir in projectDirs {
-            let isDir = (try? dir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-            guard isDir else { continue }
+        for dir in cachedProjectDirs {
             let projectDirName = dir.lastPathComponent
+            let dirModifiedAt = Self.status(ofPath: dir.path(percentEncoded: false))?.modifiedAt
+            let transcriptPaths: [String]
+            if let dirModifiedAt, let cached = cachedListings[dir], cached.modifiedAt == dirModifiedAt {
+                transcriptPaths = cached.transcriptPaths
+            } else {
+                directoryListingCount += 1
+                transcriptPaths = ((try? fm.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                )) ?? [])
+                    .filter { $0.pathExtension == "jsonl" }
+                    .map { $0.path(percentEncoded: false) }
+                if let dirModifiedAt {
+                    cachedListings[dir] = DirectoryListing(
+                        modifiedAt: dirModifiedAt,
+                        transcriptPaths: transcriptPaths
+                    )
+                } else {
+                    cachedListings[dir] = nil
+                }
+            }
 
-            let files = (try? fm.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-                options: [.skipsHiddenFiles]
-            )) ?? []
-
-            for file in files where file.pathExtension == "jsonl" {
-                let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-                let mtime = values?.contentModificationDate ?? .distantPast
-                guard mtime >= cutoff else { continue }
+            for path in transcriptPaths {
+                guard let status = Self.status(ofPath: path), status.modifiedAt >= cutoff else { continue }
+                let file = URL(fileURLWithPath: path)
                 candidates.append(SessionFileCandidate(
                     url: file,
                     sessionId: file.deletingPathExtension().lastPathComponent,
                     projectDirName: projectDirName,
-                    modifiedAt: mtime,
-                    sizeBytes: UInt64(values?.fileSize ?? 0)
+                    modifiedAt: status.modifiedAt,
+                    sizeBytes: status.sizeBytes
                 ))
             }
         }
@@ -81,6 +121,20 @@ struct ClaudeSessionScanner {
             candidates = Array(candidates.prefix(limit))
         }
         return candidates
+    }
+
+    /// `stat(2)` and not `URLResourceValues`: an `NSURL` memoizes every resource
+    /// value it has been asked for, so re-reading a URL held across passes hands
+    /// back the mtime from when the listing was built — and a transcript being
+    /// appended to is precisely what must not be missed. `stat` also follows
+    /// symlinks, so a linked project directory reports its target's mtime rather
+    /// than the link's (which never moves).
+    private static func status(ofPath path: String) -> (modifiedAt: Date, sizeBytes: UInt64)? {
+        var info = Darwin.stat()
+        guard stat(path, &info) == 0 else { return nil }
+        let seconds = Double(info.st_mtimespec.tv_sec)
+            + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000
+        return (Date(timeIntervalSince1970: seconds), UInt64(max(info.st_size, 0)))
     }
 
     // MARK: - PID descriptors
