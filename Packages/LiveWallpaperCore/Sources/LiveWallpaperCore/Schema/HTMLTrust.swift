@@ -45,13 +45,19 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
         port = 443
     }
 
+    /// `URL.host` hands back an IPv6 literal without its brackets, so putting it
+    /// straight into a URL string yields an unparseable `http://fc00::1:3000`.
+    private var hostInURL: String {
+        host.contains(":") ? "[\(host)]" : host
+    }
+
     public var rawValue: String {
-        "\(scheme)://\(host):\(port)"
+        "\(scheme)://\(hostInURL):\(port)"
     }
 
     public var displayName: String {
         if port == Self.defaultPort(for: scheme) {
-            return "\(scheme)://\(host)"
+            return "\(scheme)://\(hostInURL)"
         }
         return rawValue
     }
@@ -71,10 +77,11 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
 
     /// Expects an already-lowercased host, as stored.
     public static func isLoopbackHost(_ host: String) -> Bool {
-        // URL.host strips the brackets from [::1]; accept both spellings.
-        if host == "::1" || host == "[::1]" { return true }
         if host == "localhost" || host == "localhost." { return true }
         if host.hasSuffix(".localhost") || host.hasSuffix(".localhost.") { return true }
+        if let address = ipv6Address(host) {
+            return address == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+        }
         return isIPv4Loopback(host)
     }
 
@@ -90,16 +97,14 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
 
     /// Expects an already-lowercased host, as stored.
     public static func isPrivateNetworkHost(_ host: String) -> Bool {
-        let bare = host.hasPrefix("[") && host.hasSuffix("]")
-            ? String(host.dropFirst().dropLast())
-            : host
-        // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
-        if bare.contains(":") {
-            return bare.hasPrefix("fc") || bare.hasPrefix("fd") || bare.hasPrefix("fe8")
-                || bare.hasPrefix("fe9") || bare.hasPrefix("fea") || bare.hasPrefix("feb")
+        if let address = ipv6Address(host) {
+            // fc00::/7 unique-local, fe80::/10 link-local — compared as
+            // networks, because "fc::1" spells fc but is 0x00fc, a public address.
+            if address[0] & 0xFE == 0xFC { return true }
+            return address[0] == 0xFE && address[1] & 0xC0 == 0x80
         }
-        guard let octets = ipv4Octets(bare) else { return false }
-        switch (octets[0], octets[1]) {
+        guard let address = ipv4Address(host) else { return false }
+        switch (UInt8(truncatingIfNeeded: address >> 24), UInt8(truncatingIfNeeded: address >> 16)) {
         case (10, _): return true                      // 10.0.0.0/8
         case (172, 16...31): return true               // 172.16.0.0/12
         case (192, 168): return true                   // 192.168.0.0/16
@@ -108,18 +113,29 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
         }
     }
 
-    /// Strict dotted-quad parse; rejects anything that is not exactly 4 octets.
-    private static func ipv4Octets(_ host: String) -> [UInt8]? {
-        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 4 else { return nil }
-        let octets = parts.compactMap { UInt8($0) }
-        return octets.count == 4 ? octets : nil
+    /// Parsed by the resolver the connection will use, not by our own spelling
+    /// rules: `inet_aton` reads a leading zero as octal, so `010.0.0.1` dials
+    /// the public 8.0.0.1 and must not be judged as if it were decimal.
+    private static func ipv4Address(_ host: String) -> UInt32? {
+        var address = in_addr()
+        guard host.withCString({ inet_aton($0, &address) }) != 0 else { return nil }
+        return UInt32(bigEndian: address.s_addr)
+    }
+
+    /// URL.host strips the brackets from `[::1]`; accept both spellings.
+    private static func ipv6Address(_ host: String) -> [UInt8]? {
+        let bare = host.hasPrefix("[") && host.hasSuffix("]")
+            ? String(host.dropFirst().dropLast())
+            : host
+        var address = in6_addr()
+        guard bare.withCString({ inet_pton(AF_INET6, $0, &address) }) == 1 else { return nil }
+        return withUnsafeBytes(of: address) { Array($0) }
     }
 
     /// 127.0.0.0/8 — the whole block, not just 127.0.0.1.
     private static func isIPv4Loopback(_ host: String) -> Bool {
-        guard let octets = ipv4Octets(host) else { return false }
-        return octets[0] == 127
+        guard let address = ipv4Address(host) else { return false }
+        return UInt8(truncatingIfNeeded: address >> 24) == 127
     }
 
     private static func defaultPort(for scheme: String) -> Int? {

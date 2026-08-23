@@ -48,6 +48,11 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     /// the per-frame prepare can reuse a fully static pass without cloning
     /// its dictionaries.
     let hasAnimatedUniformValues: Bool
+    /// Set when a script overrode the layer tint of a pass whose `g_Color` is
+    /// itself animated. Writing the override straight into the value would
+    /// sample the animation at frame 0 and store it back as a static vector,
+    /// freezing the components the script never claimed.
+    let layerTintOverride: WPELayerTintOverride?
 
     init(
         pass: WPERenderPass,
@@ -55,7 +60,8 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         textureBindings: [Int: WPETextureReference],
         comboValues: [String: Int],
         uniformValues: [String: WPESceneShaderConstantValue],
-        materialUniformNames: [String: String] = [:]
+        materialUniformNames: [String: String] = [:],
+        layerTintOverride: WPELayerTintOverride? = nil
     ) {
         self.pass = pass
         self.shader = shader
@@ -63,11 +69,19 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         self.comboValues = comboValues
         self.uniformValues = uniformValues
         self.materialUniformNames = materialUniformNames
+        self.layerTintOverride = layerTintOverride
         hasAnimatedUniformValues = uniformValues.values.contains {
             if case .animated = $0 { return true }
             return false
         }
     }
+}
+
+/// Which components of an animated `g_Color` a script has claimed. Applied
+/// after the per-frame resolve so the unclaimed components keep animating.
+struct WPELayerTintOverride: Equatable, Sendable {
+    let color: SIMD3<Double>?
+    let alpha: Double?
 }
 
 struct WPERenderObjectTransform: Equatable, Sendable {
@@ -238,18 +252,34 @@ extension WPEPreparedRenderPipeline {
         passes.map { pass in
             guard pass.pass.constants["g_Color"] != nil,
                   Self.consumesLayerColor(pass.pass.shader) else { return pass }
-            var vector = pass.uniformValues["g_Color"]?.vectorValue
-                ?? pass.pass.constants["g_Color"]?.vectorValue
-                ?? [1, 1, 1, 1]
+            let tint = updateColor ? geometry.color * geometry.brightness : nil
+            let alpha = updateAlpha ? geometry.alpha : nil
+            let existing = pass.uniformValues["g_Color"] ?? pass.pass.constants["g_Color"]
+            // An animated g_Color must stay animated: record the claim and let
+            // the per-frame resolve apply it on top of the sampled value.
+            if case .animated = existing {
+                return WPEPreparedRenderPass(
+                    pass: pass.pass,
+                    shader: pass.shader,
+                    textureBindings: pass.textureBindings,
+                    comboValues: pass.comboValues,
+                    uniformValues: pass.uniformValues,
+                    materialUniformNames: pass.materialUniformNames,
+                    layerTintOverride: WPELayerTintOverride(
+                        color: tint ?? pass.layerTintOverride?.color,
+                        alpha: alpha ?? pass.layerTintOverride?.alpha
+                    )
+                )
+            }
+            var vector = existing?.vectorValue ?? [1, 1, 1, 1]
             while vector.count < 4 { vector.append(1) }
-            if updateColor {
-                let tint = geometry.color * geometry.brightness
+            if let tint {
                 vector[0] = tint.x
                 vector[1] = tint.y
                 vector[2] = tint.z
             }
-            if updateAlpha {
-                vector[3] = geometry.alpha
+            if let alpha {
+                vector[3] = alpha
             }
             var values = pass.uniformValues
             values["g_Color"] = .vector(vector)
@@ -259,7 +289,8 @@ extension WPEPreparedRenderPipeline {
                 textureBindings: pass.textureBindings,
                 comboValues: pass.comboValues,
                 uniformValues: values,
-                materialUniformNames: pass.materialUniformNames
+                materialUniformNames: pass.materialUniformNames,
+                layerTintOverride: pass.layerTintOverride
             )
         }
     }
@@ -462,6 +493,21 @@ extension WPEPreparedRenderPipeline {
                         let tint = geometry.color * geometry.brightness
                         values["g_Color"] = .vector([tint.x, tint.y, tint.z, geometry.alpha])
                     }
+                    // A script claim on an animated g_Color lands after the
+                    // resolve, component-wise: the animation still owns
+                    // whatever the script did not take.
+                    if let claim = pass.layerTintOverride, var rgba = values["g_Color"]?.vectorValue {
+                        while rgba.count < 4 { rgba.append(1) }
+                        if let color = claim.color {
+                            rgba[0] = color.x
+                            rgba[1] = color.y
+                            rgba[2] = color.z
+                        }
+                        if let alpha = claim.alpha {
+                            rgba[3] = alpha
+                        }
+                        values["g_Color"] = .vector(rgba)
+                    }
                     // Script constants override seed; cannot bind g_* frame uniforms
                     // (the frame context wins for frame-global names at read time).
                     if let scripted {
@@ -481,7 +527,8 @@ extension WPEPreparedRenderPipeline {
                         textureBindings: pass.textureBindings,
                         comboValues: pass.comboValues,
                         uniformValues: values,
-                        materialUniformNames: pass.materialUniformNames
+                        materialUniformNames: pass.materialUniformNames,
+                        layerTintOverride: pass.layerTintOverride
                     )
                 }
             )
@@ -527,7 +574,8 @@ private extension WPEPreparedRenderLayer {
             textureBindings: preparedPass.textureBindings,
             comboValues: preparedPass.comboValues,
                 uniformValues: preparedPass.uniformValues,
-                materialUniformNames: preparedPass.materialUniformNames
+                materialUniformNames: preparedPass.materialUniformNames,
+                layerTintOverride: preparedPass.layerTintOverride
         )
         return WPEPreparedRenderLayer(
             graphLayer: graphLayer.createdLayerCopy(state: state, pass: renderPass),
