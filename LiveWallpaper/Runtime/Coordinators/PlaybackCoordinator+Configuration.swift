@@ -130,7 +130,10 @@ extension PlaybackCoordinator {
 
         configuration.frameRateLimit = frameRateLimit
         save(configuration)
-        if configuration.effectConfig.hasActiveEffect {
+        // Effects are an `AVVideoComposition` pass, so they can only carry the
+        // limit for a screen that owns a player. A scene or HTML screen holding
+        // a stale effect config used to route its limit into that path and lose it.
+        if configuration.effectConfig.hasActiveEffect, screen.videoPlayer != nil {
             applyVideoEffects(screen, configuration)
         } else {
             applyFrameRateLimit(frameRateLimit, to: screen)
@@ -151,6 +154,18 @@ extension PlaybackCoordinator {
             return
         }
         #endif
+
+        // HTML paces itself with a JS rAF gate rather than a display link, so it
+        // has no `videoPlayer` for the path below to reach. Without this branch
+        // the limit was silently dropped for every HTML wallpaper.
+        if let ambient = screen.runtimeSession as? AmbientWallpaperSession {
+            Logger.info(
+                "Applying HTML frame rate limit \(frameRateLimit.rawValue) to screen \(screen.id)",
+                category: .videoPlayer
+            )
+            ambient.setFrameRateLimit(frameRateLimit)
+            return
+        }
 
         guard let player = screen.videoPlayer, player.videoFrameRate > 0 else { return }
 

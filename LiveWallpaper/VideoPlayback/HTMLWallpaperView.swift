@@ -83,6 +83,12 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     /// can't prove safe.
     nonisolated(unsafe) var thermalObserver: NSObjectProtocol?
     var lastRafThrottleRatio: Int = 1
+    /// User ceiling, independent of the thermal ratio above and of suspend.
+    /// Nil until a host pushes one: an unset view installs no gate and reports
+    /// the same 60 to Wallpaper Engine it always did, so nothing changes for a
+    /// screen whose limit never reaches here.
+    var targetFrameRateLimit: FrameRateLimit?
+    var lastRafTargetFrameIntervalMilliseconds: Double = 0
 
     var onError: (@MainActor (WallpaperRuntimeError) -> Void)?
     var preparationGeneration: UInt64 = 0
@@ -1029,7 +1035,11 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         \(wallpaperEngineAudioNudge)
         """
         webView.evaluateJavaScript(nudge, completionHandler: nil)
-        notifyWallpaperEngineGeneralProperties(fps: mediaPlaybackSuspended ? 1 : 60)
+        notifyWallpaperEngineGeneralProperties(
+            fps: mediaPlaybackSuspended
+                ? 1
+                : HTMLFramePacingPolicy.wallpaperEngineFPS(for: targetFrameRateLimit)
+        )
         // Suspended reload re-inits user scripts — re-apply lifecycle + snapshot.
         if mediaPlaybackSuspended {
             invokeLifecycleHook(.suspend)
@@ -1039,8 +1049,14 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             restoreCoverDeadlineTask = nil
             hideSnapshotOverlay()
         }
+        // The new document re-ran the user scripts, so both gates are back at
+        // their defaults: drop the caches or the re-push would be deduped away.
         lastRafThrottleRatio = 1
+        lastRafTargetFrameIntervalMilliseconds = 0
         applyRafThrottleRatio(rafThrottleRatio(for: ProcessInfo.processInfo.thermalState))
+        applyRafTargetFrameInterval(
+            HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(for: targetFrameRateLimit)
+        )
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
