@@ -32,6 +32,7 @@ enum OwnershipFixture {
             "loginItemStatusRefreshGeneration",
             "preservePlaybackOnLock",
             "showInDock",
+            "wallpaperVisibleInScreenCapture",
             "loginItemAlert",
         ],
         .performance: [

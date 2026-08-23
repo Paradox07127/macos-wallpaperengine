@@ -15,8 +15,8 @@ struct GeneralSettingsOwnershipCharacterizationTests {
 
         #expect(fixtureValues.count == Set(fixtureValues).count, "A state field must have exactly one candidate owner")
         #expect(actual == Set(fixtureValues))
-        // 40 = 39 + metalFXRenderScale (MetalFX upscaling tier, performance domain).
-        #expect(actual.count == 40, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
+        // 41 = 40 + wallpaperVisibleInScreenCapture (screen-capture opt-out, behavior domain).
+        #expect(actual.count == 41, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
     }
 
     @Test("Each page mounts only its own system-capability probe")

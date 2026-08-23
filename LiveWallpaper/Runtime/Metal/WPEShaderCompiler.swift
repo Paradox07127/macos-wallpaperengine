@@ -204,8 +204,29 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
 
     init(rootURL: URL? = nil) {
         self.fileManager = .default
-        self.rootURL = (rootURL ?? Self.defaultRootURL)
-            .appendingPathComponent("v\(Self.schemaVersion)", isDirectory: true)
+        let base = rootURL ?? Self.defaultRootURL
+        self.rootURL = base.appendingPathComponent("v\(Self.schemaVersion)", isDirectory: true)
+        Self.removeStaleSchemaDirectories(in: base, fileManager: fileManager)
+    }
+
+    /// `maximumDiskBytes` only bounds the current version's directory: after a
+    /// `schemaVersion` bump the previous `v{N}` would otherwise sit at up to a
+    /// full budget of unreadable payloads with nothing but the OS Caches purge
+    /// to reclaim it.
+    private static func removeStaleSchemaDirectories(in base: URL, fileManager: FileManager) {
+        let current = "v\(schemaVersion)"
+        guard let items = try? fileManager.contentsOfDirectory(
+            at: base,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        for url in items {
+            let name = url.lastPathComponent
+            guard name != current, name.hasPrefix("v"),
+                  let version = Int(name.dropFirst()), version >= 0,
+                  (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            try? fileManager.removeItem(at: url)
+        }
     }
 
     nonisolated static var defaultRootURL: URL {

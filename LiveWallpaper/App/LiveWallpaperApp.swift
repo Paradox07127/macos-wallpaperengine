@@ -126,6 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func completeApplicationStartup(_ startupPlan: AppStartupPlan) {
         guard lifecycle.allowsWork, screenManager == nil else { return }
+        // Wallpaper windows read this in their initializer, so it has to be set
+        // before ScreenManager restores the saved wallpapers.
+        WallpaperCapturePolicy.allowsScreenCapture =
+            SettingsManager.shared.loadGlobalSettings().wallpaperVisibleInScreenCapture
         let manager = ScreenManager(startupOptions: startupPlan.screenManagerOptions)
         screenManager = manager
 

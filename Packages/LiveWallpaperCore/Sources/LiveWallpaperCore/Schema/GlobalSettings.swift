@@ -52,6 +52,11 @@ public struct GlobalSettings: Codable, Sendable {
     /// Lower frame rate when covered or on battery.
     public var adaptiveFrameRateEnabled: Bool = false
 
+    /// Whether screenshots, screen recording, and meeting screen-share can read
+    /// the wallpaper. Off substitutes the static macOS desktop picture in every
+    /// capture, which also keeps a full-screen animation out of a shared stream.
+    public var wallpaperVisibleInScreenCapture: Bool = true
+
     /// Preset library, keyed by `ScenePreset.id`. Global rather than per-screen
     /// so one saved look can be applied to any display showing that scene.
     public var scenePresets: [String: ScenePreset] = [:]
@@ -85,7 +90,8 @@ public struct GlobalSettings: Codable, Sendable {
         monitorOverlays: [String: MonitorOverlayConfiguration] = [:],
         screenNames: [String: String] = [:],
         audioResponseEnabled: Bool = false,
-        adaptiveFrameRateEnabled: Bool = false
+        adaptiveFrameRateEnabled: Bool = false,
+        wallpaperVisibleInScreenCapture: Bool = true
     ) {
         self.globalPauseOnBattery = globalPauseOnBattery
         self.preservePlaybackOnLock = preservePlaybackOnLock
@@ -106,6 +112,7 @@ public struct GlobalSettings: Codable, Sendable {
         self.screenNames = screenNames
         self.audioResponseEnabled = audioResponseEnabled
         self.adaptiveFrameRateEnabled = adaptiveFrameRateEnabled
+        self.wallpaperVisibleInScreenCapture = wallpaperVisibleInScreenCapture
     }
 
     public init(from decoder: Decoder) throws {
@@ -145,6 +152,10 @@ public struct GlobalSettings: Codable, Sendable {
         screenNames = (try? c.decodeIfPresent([String: String].self, forKey: .screenNames)) ?? [:]
         audioResponseEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .audioResponseEnabled)) ?? false
         adaptiveFrameRateEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .adaptiveFrameRateEnabled)) ?? false
+        // Installs that predate the key get the new default (visible), which is
+        // the opposite of the hard-coded behaviour they shipped with — that was
+        // the point of making it a setting.
+        wallpaperVisibleInScreenCapture = (try? c.decodeIfPresent(Bool.self, forKey: .wallpaperVisibleInScreenCapture)) ?? true
         // Lossy: one unreadable preset must not drop the rest of the library.
         scenePresets = c.decodeLossyStringDictionary(forKey: .scenePresets) ?? [:]
     }

@@ -183,6 +183,15 @@ final class OverlayController: NSObject {
     }
 
     private var hosts: [MonitorOverlayHostKey: Host] = [:]
+
+    /// Pushes a changed capture policy onto overlays that already exist; new
+    /// ones read it in `OverlayWindow.init`.
+    func applyCapturePolicyToLiveOverlays() {
+        let sharing = WallpaperCapturePolicy.windowSharingType
+        for host in hosts.values {
+            host.window.sharingType = sharing
+        }
+    }
     private var isUserAbsent = false
     private var occludedScreenIDs: Set<CGDirectDisplayID> = []
     private var visibilityDecision = MonitorOverlayVisibilityPolicy.resolve(

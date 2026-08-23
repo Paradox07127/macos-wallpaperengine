@@ -2753,6 +2753,35 @@ struct WPEShaderTranslationCacheTests {
         #expect(cache.diskHitCountForTesting == 0)
     }
 
+    @Test("Init sweeps stale schema-version directories, nothing else")
+    func staleSchemaDirectoriesAreSweptOnInit() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wpe-msl-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stale = root.appendingPathComponent("v0", isDirectory: true)
+        let unrelated = root.appendingPathComponent("unrelated", isDirectory: true)
+        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: unrelated, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(to: stale.appendingPathComponent("x.json"))
+        let notAVersion = root.appendingPathComponent("vNext", isDirectory: true)
+        try FileManager.default.createDirectory(at: notAVersion, withIntermediateDirectories: true)
+        let current = root.appendingPathComponent(
+            "v\(WPEShaderTranslationCache.schemaVersion)", isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: current.appendingPathComponent("keep.json"))
+        let versionNamedFile = root.appendingPathComponent("v-1", isDirectory: false)
+        try Data("file".utf8).write(to: versionNamedFile)
+
+        _ = WPEShaderTranslationCache(rootURL: root)
+
+        #expect(!FileManager.default.fileExists(atPath: stale.path))
+        #expect(FileManager.default.fileExists(atPath: unrelated.path))
+        #expect(FileManager.default.fileExists(atPath: notAVersion.path))
+        #expect(FileManager.default.fileExists(atPath: current.appendingPathComponent("keep.json").path))
+        #expect(FileManager.default.fileExists(atPath: versionNamedFile.path))
+    }
+
     @Test("Cached payload with a wrong schema version is ignored")
     func schemaMismatchIsAMiss() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

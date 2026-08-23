@@ -513,6 +513,159 @@ struct WPEMetalRuntimeUniformsTests {
         ])
     }
 
+    /// Solid passes bind `g_Color` from `uniformValues`, never from geometry.
+    /// Script overrides clear the authored animation, so without a write-through
+    /// (or the alphaAnimation rebuild trigger) the layer freezes at load color.
+    private static func solidPipeline(
+        seedColor: [Double] = [1, 1, 1, 1],
+        geometry: WPERenderLayerGeometry = .identity
+    ) -> WPEPreparedRenderPipeline {
+        let seed = WPESceneShaderConstantValue.vector(seedColor)
+        let pass = WPERenderPass(
+            id: "solid.0",
+            phase: .material,
+            shader: WPEBuiltinShaderKind.solidLayer.rawValue,
+            source: .image("models/solid.json"),
+            target: .scene,
+            textures: [:],
+            binds: [:],
+            constants: ["g_Color": seed],
+            combos: [:],
+            blending: "normal",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+        let layer = WPERenderLayer(
+            objectID: "layer",
+            objectName: "Solid",
+            imagePath: "models/solid.json",
+            materialPath: nil,
+            geometry: geometry,
+            compositeA: "a",
+            compositeB: "b",
+            localFBOs: [],
+            passes: [pass]
+        )
+        return WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(
+                graphLayer: layer,
+                passes: [
+                    WPEPreparedRenderPass(
+                        pass: pass,
+                        shader: nil,
+                        textureBindings: [:],
+                        comboValues: [:],
+                        uniformValues: ["g_Color": seed],
+                        materialUniformNames: [:]
+                    )
+                ]
+            )
+        ])
+    }
+
+    private static func preparedSolidValues(
+        _ pipeline: WPEPreparedRenderPipeline,
+        scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:]
+    ) -> [String: WPESceneShaderConstantValue]? {
+        pipeline.addingMetalRuntimeUniforms(
+            WPEMetalRuntimeUniforms(
+                time: 4,
+                daytime: 0,
+                brightness: 1,
+                pointerPosition: SIMD2<Double>(0.5, 0.5)
+            ),
+            camera: .identity,
+            scriptedConstants: scriptedConstants
+        ).pipeline.layers.first?.passes.first?.uniformValues
+    }
+
+    @Test("Script color override survives through the per-frame prepare")
+    func scriptColorOverrideUpdatesSolidUniform() throws {
+        let tinted = Self.solidPipeline()
+            .applyingLayerColor(["layer": SIMD3<Double>(0.2, 0.4, 0.6)])
+        let values = try #require(Self.preparedSolidValues(tinted))
+        #expect(values["g_Color"]?.vectorValue == [0.2, 0.4, 0.6, 1])
+    }
+
+    @Test("Script alpha override writes g_Color.w and survives the prepare")
+    func scriptAlphaOverrideUpdatesSolidUniform() throws {
+        let faded = Self.solidPipeline()
+            .applyingLayerAlpha(["layer": 0.25])
+        let values = try #require(Self.preparedSolidValues(faded))
+        #expect(values["g_Color"]?.vectorValue == [1, 1, 1, 0.25])
+    }
+
+    @Test("Alpha override keeps an authored rgb that differs from the layer tint")
+    func alphaOverridePreservesAuthoredColor() throws {
+        let faded = Self.solidPipeline(seedColor: [1, 0, 0, 1])
+            .applyingLayerAlpha(["layer": 0.25])
+        let values = try #require(Self.preparedSolidValues(faded))
+        #expect(values["g_Color"]?.vectorValue == [1, 0, 0, 0.25])
+    }
+
+    @Test("Alpha-only animation rebuilds solid g_Color each frame")
+    func alphaOnlyAnimationRebuildsSolidColor() throws {
+        let animatedAlpha = WPESceneAnimatedValue(
+            animation: WPESceneNumericAnimation(
+                tracks: [[
+                    .init(frame: 0, value: 1),
+                    .init(frame: 60, value: 1),
+                    .init(frame: 90, value: 0)
+                ]],
+                fps: 30, length: 90, mode: "single", wrapLoop: false
+            ),
+            scalarFallback: 1,
+            vectorFallback: nil
+        )
+        let geometry = WPERenderLayerGeometry(
+            origin: .zero,
+            scale: SIMD3<Double>(1, 1, 1),
+            angles: .zero,
+            alignment: .center,
+            size: CGSize(width: 10, height: 10),
+            alpha: 1,
+            alphaAnimation: animatedAlpha,
+            color: SIMD3<Double>(1, 1, 1),
+            colorAnimation: nil,
+            brightness: 1
+        )
+        let values = try #require(Self.preparedSolidValues(Self.solidPipeline(geometry: geometry)))
+        #expect(values["g_Color"]?.vectorValue == [1, 1, 1, 0])
+    }
+
+    @Test("A scripted g_Color beats the animated layer tint")
+    func scriptedColorBeatsAnimatedTint() throws {
+        let animatedAlpha = WPESceneAnimatedValue(
+            animation: WPESceneNumericAnimation(
+                tracks: [[
+                    .init(frame: 0, value: 1),
+                    .init(frame: 90, value: 0)
+                ]],
+                fps: 30, length: 90, mode: "single", wrapLoop: false
+            ),
+            scalarFallback: 1,
+            vectorFallback: nil
+        )
+        let geometry = WPERenderLayerGeometry(
+            origin: .zero,
+            scale: SIMD3<Double>(1, 1, 1),
+            angles: .zero,
+            alignment: .center,
+            size: CGSize(width: 10, height: 10),
+            alpha: 1,
+            alphaAnimation: animatedAlpha,
+            color: SIMD3<Double>(1, 1, 1),
+            colorAnimation: nil,
+            brightness: 1
+        )
+        let values = try #require(Self.preparedSolidValues(
+            Self.solidPipeline(geometry: geometry),
+            scriptedConstants: ["solid.0": ["g_Color": .vector([1, 0, 0, 1])]]
+        ))
+        #expect(values["g_Color"]?.vectorValue == [1, 0, 0, 1])
+    }
+
     /// Scripts address a constant by its AUTHORED name while the pass is keyed by
     /// the SHADER name, so an untranslated merge writes to a slot no shader reads
     /// and the seeded value silently keeps winning.

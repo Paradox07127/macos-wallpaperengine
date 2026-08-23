@@ -541,6 +541,19 @@ extension ScreenManager {
         monitorOverlays = SettingsManager.shared.loadMonitorOverlays()
         updateFullScreenFallbackPolling()
         refreshPerformancePolicyForAllScreens()
+        applyWallpaperCapturePolicy()
+    }
+
+    /// Loads the capture setting and pushes it onto every window that already
+    /// exists. Windows built later read the policy in their own initializer.
+    func applyWallpaperCapturePolicy() {
+        WallpaperCapturePolicy.allowsScreenCapture =
+            SettingsManager.shared.loadGlobalSettings().wallpaperVisibleInScreenCapture
+        let sharing = WallpaperCapturePolicy.windowSharingType
+        for screen in screens {
+            screen.activeWallpaperWindow?.sharingType = sharing
+        }
+        OverlayController.shared.applyCapturePolicyToLiveOverlays()
     }
     
     private func handleSystemSleep() {

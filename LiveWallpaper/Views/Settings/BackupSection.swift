@@ -103,6 +103,7 @@ extension GeneralSettingsView {
         pauseInLowPowerMode = settings.pauseInLowPowerMode
         applicationRules = settings.applicationPerformanceRules
         showInDock = settings.showInDock
+        wallpaperVisibleInScreenCapture = settings.wallpaperVisibleInScreenCapture
         audioResponseEnabled = settings.audioResponseEnabled
         weatherLocation = settings.weatherLocation
         #if !LITE_BUILD

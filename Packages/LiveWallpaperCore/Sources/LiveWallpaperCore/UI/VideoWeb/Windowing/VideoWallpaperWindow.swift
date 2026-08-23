@@ -32,7 +32,7 @@ public final class VideoWallpaperWindow: NSWindow {
         collectionBehavior = [.canJoinAllSpaces, .stationary]
         hasShadow = false
         applyMouseInteractionPolicy()
-        sharingType = .none
+        sharingType = WallpaperCapturePolicy.windowSharingType
 
         isReleasedWhenClosed = false
         isExcludedFromWindowsMenu = true
