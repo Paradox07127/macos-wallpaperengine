@@ -1,17 +1,5 @@
 import SwiftUI
 
-/// Inspector row pairing an icon-prefixed title with a trailing control.
-///
-/// The title and value subtitle truncate and expose the full text through
-/// `help`, rather than scrolling it on hover. This was originally taken for
-/// scroll cost; that reading did not hold up — swapping `help` back for
-/// `marqueeOnHover` moves a 64-row inspector by 0.16 ms per scroll step
-/// (5.18 vs 5.02, measured 2026-08-22). It stays because the marquee ran a
-/// display link per hovered row, which is a hover cost, not a scroll one.
-///
-/// Use `info` for "what does this do" explanations and keep `subtitle` for
-/// live state ("Browsing data is cleared on each session") so the two roles
-/// don't bleed into each other.
 /// A small, uniform status seal rendered right after a `SettingRow` title (icon-only).
 public struct SettingRowTitleBadge {
     let systemImage: String
@@ -24,6 +12,18 @@ public struct SettingRowTitleBadge {
     }
 }
 
+/// Inspector row pairing an icon-prefixed title with a trailing control.
+///
+/// The title and value subtitle crawl on hover and also carry a tooltip. The
+/// crawl was once dropped for scroll cost; it costs nothing — swapping the two
+/// moves a 64-row inspector by 0.16 ms per scroll step (5.18 vs 5.02, measured
+/// 2026-08-22), and `marqueeOnHover` mounts its measuring copy only while
+/// hovered. The tooltip stays because the crawl stops at `guard !reduceMotion`,
+/// which would otherwise leave a truncated label with no way to read its tail.
+///
+/// Use `info` for "what does this do" explanations and keep `subtitle` for
+/// live state ("Browsing data is cleared on each session") so the two roles
+/// don't bleed into each other.
 public struct SettingRow<Content: View>: View {
     let icon: String
     let iconColor: Color
@@ -145,8 +145,11 @@ public struct SettingRow<Content: View>: View {
                 HStack(spacing: 4) {
                     title
                         .font(.body.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                        .marqueeOnHover(truncationMode: .tail)
+                        // Kept alongside the crawl, the way the value subtitle
+                        // already does it: the marquee stops at
+                        // `guard !reduceMotion`, and without this the tail of a
+                        // truncated title would be unreachable there.
                         .help(title)
                     if let titleBadge {
                         Image(systemName: titleBadge.systemImage)
@@ -163,8 +166,7 @@ public struct SettingRow<Content: View>: View {
                         subtitle
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            .marqueeOnHover()
                             .help(Text(verbatim: subtitleHelp ?? ""))
                     } else {
                         subtitle
