@@ -76,11 +76,6 @@ final class WPETexInflateMeter: @unchecked Sendable {
 /// Stateless TEXVxxxx `.tex` decoder with precise format/truncation errors.
 struct WPETexDecoder: Sendable {
 
-    /// Bound by the Metal upload sites around `resolveTexturePayload`. A
-    /// task-local rather than a parameter because the only production call path
-    /// runs through `WPEMultiRootResourceResolver`'s generic forwarders.
-    @TaskLocal static var mipInflateScope: WPETexMipInflateScope = .fullChain
-
     #if DEBUG
     @TaskLocal static var inflateMeter: WPETexInflateMeter?
     #endif
@@ -152,12 +147,19 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// Metal path.
-    func extractTexturePayload(data: Data) -> Result<WPETexTexturePayload, WPETexDecodeError> {
-        extractTexturePayload(span: WPEMappedByteSpan(data: data))
+    /// Metal path. `scope` narrows which mip levels get LZ4-inflated to the
+    /// ones the caller's upload will actually read; defaults to the whole chain.
+    func extractTexturePayload(
+        data: Data,
+        scope: WPETexMipInflateScope = .fullChain
+    ) -> Result<WPETexTexturePayload, WPETexDecodeError> {
+        extractTexturePayload(span: WPEMappedByteSpan(data: data), scope: scope)
     }
 
-    func extractTexturePayload(span: WPEMappedByteSpan) -> Result<WPETexTexturePayload, WPETexDecodeError> {
+    func extractTexturePayload(
+        span: WPEMappedByteSpan,
+        scope: WPETexMipInflateScope = .fullChain
+    ) -> Result<WPETexTexturePayload, WPETexDecodeError> {
         do {
             let parsed = try parse(span: span)
 
@@ -178,7 +180,7 @@ struct WPETexDecoder: Sendable {
             let firstFrameMipmaps = try normalizedTextureMipmaps(
                 parsed.bitmap.mipmaps,
                 info: parsed.info,
-                scope: Self.mipInflateScope
+                scope: scope
             )
             let animationTrack = try makeAnimationTrack(from: parsed)
 

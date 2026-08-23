@@ -183,8 +183,13 @@ struct SceneResourceResolver: Sendable {
         return ResolvedImage(image: image)
     }
 
-    /// Raw texture payload for Metal-backed renderers.
-    func resolveTexturePayload(relativePath: String) throws -> WPETexTexturePayload {
+    /// Raw texture payload for Metal-backed renderers. `scope` narrows which
+    /// mip levels the decoder LZ4-inflates to the ones the caller's upload
+    /// will actually read; defaults to the whole chain.
+    func resolveTexturePayload(
+        relativePath: String,
+        scope: WPETexMipInflateScope = .fullChain
+    ) throws -> WPETexTexturePayload {
         guard !relativePath.isEmpty else { throw ResolveError.fileMissing }
         let resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
         guard Self.isTexturePayloadPath(resolvedPath) else {
@@ -193,7 +198,7 @@ struct SceneResourceResolver: Sendable {
 
         let payload = try providerWindow(resolvedPath)
         dumpRawTexMetadataIfActive(payload: payload, targetName: resolvedPath)
-        switch decoder.extractTexturePayload(span: payload) {
+        switch decoder.extractTexturePayload(span: payload, scope: scope) {
         case .success(let texture):
             return texture
         case .failure(let error):

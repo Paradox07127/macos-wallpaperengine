@@ -109,14 +109,19 @@ struct WPEMultiRootResourceResolver: Sendable {
         }
     }
 
-    func resolveTexturePayload(relativePath: String) throws -> WPETexTexturePayload {
+    /// `scope` narrows which mip levels the decoder LZ4-inflates to the ones
+    /// the caller's upload will actually read; defaults to the whole chain.
+    func resolveTexturePayload(
+        relativePath: String,
+        scope: WPETexMipInflateScope = .fullChain
+    ) throws -> WPETexTexturePayload {
         if let dependency = dependencyReference(relativePath) {
             return try resolveDependency(relativePath: relativePath, dependency: dependency) { resolver, path in
-                try resolver.resolveTexturePayload(relativePath: path)
+                try resolver.resolveTexturePayload(relativePath: path, scope: scope)
             }
         }
         return try resolveWithFallbacks(relativePath: relativePath) { resolver, path in
-            try resolver.resolveTexturePayload(relativePath: path)
+            try resolver.resolveTexturePayload(relativePath: path, scope: scope)
         }
     }
 
