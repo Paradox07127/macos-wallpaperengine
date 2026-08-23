@@ -13,9 +13,9 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     private let capabilities: WPEMetalTextureCapabilities
     private let uploadQueue: WPEMetalTextureUploadQueue
 
-    /// Corpus profile: ~47% of `.tex` assets ship a pre-baked mip chain that the
-    /// decoder already decompresses in full (`payload.mipmaps`), while the upload
-    /// path historically wrote level 0 only. Builtin shaders' samplers are
+    /// Corpus profile: ~47% of `.tex` assets ship a pre-baked mip chain, while
+    /// the upload path historically wrote level 0 only (the decoder now inflates
+    /// only what this decision selects). Builtin shaders' samplers are
     /// `constexpr` and cannot be flag-gated, so enabling the chain only benefits
     /// transpiled/custom-shader sampling. Read fresh rather than cached: uploads
     /// happen once per texture at scene load, never per frame, so this takes
@@ -53,16 +53,19 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     /// ordered largest-first). Never scales UP — if even level 0 is below the
     /// cap, level 0 stays. nil/degenerate caps keep level 0 (bit-identical path).
     static func uploadMipStartIndex(mipmaps: [WPETexTextureMipmap], maxEdge: Int?) -> Int {
-        guard let maxEdge, maxEdge > 0, mipmaps.count > 1 else { return 0 }
-        var start = 0
-        for (index, level) in mipmaps.enumerated() {
-            if max(level.width, level.height) >= maxEdge {
-                start = index
-            } else {
-                break
-            }
-        }
-        return start
+        WPETexMipInflateScope.startLevel(
+            levelSizes: mipmaps.map { (width: $0.width, height: $0.height) },
+            maxEdge: maxEdge
+        )
+    }
+
+    /// Decode-side twin of the upload decision below: hand this to the decoder
+    /// so it only inflates the levels this upload will read.
+    static func mipInflateScope(maxSourceEdge: Int?) -> WPETexMipInflateScope {
+        WPETexMipInflateScope(
+            maxSourceEdge: maxSourceEdge,
+            uploadsChain: uploadsMipChain(scalingActive: maxSourceEdge != nil)
+        )
     }
 
     init(
@@ -293,8 +296,13 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             for: format, capabilities: capabilities, colorSpace: colorSpace)
         // Only the level-0 payload is guaranteed present; a real chain needs
         // more than one decoded level before the flag has anything to do.
+        // `allSatisfy` covers the one way the decoder's scope can disagree with
+        // this decision: `mipChainOverride` is read fresh on both sides, so a
+        // user flipping it mid-load leaves levels without bytes. Upload the one
+        // level we do have instead of failing the texture.
         let mipChainEligible = Self.uploadsMipChain(scalingActive: maxSourceEdge != nil)
             && selectedMipmaps.count > 1
+            && selectedMipmaps.allSatisfy { !$0.bytes.isEmpty }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: mapping.pixelFormat,
             width: mip.width,

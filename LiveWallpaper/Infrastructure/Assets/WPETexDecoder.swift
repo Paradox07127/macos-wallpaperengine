@@ -5,8 +5,85 @@ import Foundation
 import ImageIO
 import LiveWallpaperProWPE
 
+/// Which decoded mip levels the caller is actually going to upload.
+///
+/// The container ships a full chain but a Metal upload usually reads one level
+/// out of it (level 0 at renderScale 1.0), so the rest used to be LZ4-inflated
+/// and dropped. Skipped levels keep their index/width/height — that metadata is
+/// all `WPEMetalTextureLoader.uploadMipStartIndex` needs to pick a level — and
+/// carry an empty `bytes`.
+struct WPETexMipInflateScope: Sendable, Equatable {
+    /// Longest-edge cap the consumer renders at; nil = no render-scale cap.
+    let maxSourceEdge: Int?
+    /// Consumer uploads every level from the start level down, not just one.
+    let uploadsChain: Bool
+
+    /// Historical behavior: inflate everything. Every caller that does math on
+    /// physical mip dimensions (particles, animation atlases) needs this.
+    static let fullChain = WPETexMipInflateScope(maxSourceEdge: nil, uploadsChain: true)
+
+    /// Positions (largest-first) whose bytes the upload will actually read.
+    /// MUST mirror `WPEMetalTextureLoader.makeTextureSynchronously`; that
+    /// function degrades to a single level rather than throwing if the two ever
+    /// disagree (the mip-chain default can be flipped mid-load).
+    func selectedLevels(levelSizes: [(width: Int, height: Int)], noInterpolation: Bool) -> Range<Int> {
+        guard let level0 = levelSizes.first else { return 0..<0 }
+        // Data textures index by texel (nearest sampling, or a 4096×1 LUT
+        // strip); minifying them collapses distinct entries, so they pin to 0.
+        let isDataTexture = noInterpolation || min(level0.width, level0.height) <= 64
+        let start = isDataTexture ? 0 : Self.startLevel(levelSizes: levelSizes, maxEdge: maxSourceEdge)
+        guard uploadsChain, levelSizes.count - start > 1 else { return start..<(start + 1) }
+        return start..<levelSizes.count
+    }
+
+    /// The SMALLEST level that still covers `maxEdge` on its longest side.
+    /// Never scales UP; nil/degenerate caps keep level 0.
+    static func startLevel(levelSizes: [(width: Int, height: Int)], maxEdge: Int?) -> Int {
+        guard let maxEdge, maxEdge > 0, levelSizes.count > 1 else { return 0 }
+        var start = 0
+        for (index, level) in levelSizes.enumerated() {
+            if max(level.width, level.height) >= maxEdge {
+                start = index
+            } else {
+                break
+            }
+        }
+        return start
+    }
+}
+
+#if DEBUG
+/// Test-only meter for the mip-inflate scope: total bytes `normalizedBytes`
+/// materialized (LZ4 inflate output, or the raw-copy equivalent). Bound as a
+/// task-local so a parallel suite's decodes cannot leak into the count.
+/// `@unchecked Sendable` because `total` is only ever touched under `lock`.
+final class WPETexInflateMeter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var total = 0
+
+    var materializedMipBytes: Int {
+        lock.lock(); defer { lock.unlock() }
+        return total
+    }
+
+    func record(_ count: Int) {
+        lock.lock(); defer { lock.unlock() }
+        total += count
+    }
+}
+#endif
+
 /// Stateless TEXVxxxx `.tex` decoder with precise format/truncation errors.
 struct WPETexDecoder: Sendable {
+
+    /// Bound by the Metal upload sites around `resolveTexturePayload`. A
+    /// task-local rather than a parameter because the only production call path
+    /// runs through `WPEMultiRootResourceResolver`'s generic forwarders.
+    @TaskLocal static var mipInflateScope: WPETexMipInflateScope = .fullChain
+
+    #if DEBUG
+    @TaskLocal static var inflateMeter: WPETexInflateMeter?
+    #endif
 
     /// Cheap header probe — used by `WPERenderPipelineBuilder` for texture format resolution.
     func probe(data: Data) -> Result<WPETexInfo, WPETexDecodeError> {
@@ -100,7 +177,8 @@ struct WPETexDecoder: Sendable {
 
             let firstFrameMipmaps = try normalizedTextureMipmaps(
                 parsed.bitmap.mipmaps,
-                info: parsed.info
+                info: parsed.info,
+                scope: Self.mipInflateScope
             )
             let animationTrack = try makeAnimationTrack(from: parsed)
 
@@ -117,20 +195,29 @@ struct WPETexDecoder: Sendable {
         }
     }
 
+    /// `scope` defaults to the whole chain; only the static scene-layer upload
+    /// path narrows it (the animation track deliberately keeps every level).
     private func normalizedTextureMipmaps(
         _ mipmaps: [WPETexMipmap],
-        info: WPETexInfo
+        info: WPETexInfo,
+        scope: WPETexMipInflateScope = .fullChain
     ) throws -> [WPETexTextureMipmap] {
-        try mipmaps.map { mipmap in
+        let selected = scope.selectedLevels(
+            levelSizes: mipmaps.map { (width: $0.width, height: $0.height) },
+            noInterpolation: info.noInterpolation
+        )
+        return try mipmaps.enumerated().map { position, mipmap in
             WPETexTextureMipmap(
                 index: mipmap.index,
                 width: mipmap.width,
                 height: mipmap.height,
-                bytes: try normalizedBytes(
-                    for: mipmap,
-                    format: info.format,
-                    textureFormatCode: info.textureFormatCode
-                )
+                bytes: selected.contains(position)
+                    ? try normalizedBytes(
+                        for: mipmap,
+                        format: info.format,
+                        textureFormatCode: info.textureFormatCode
+                    )
+                    : Data()
             )
         }
     }
@@ -923,13 +1010,17 @@ struct WPETexDecoder: Sendable {
         guard let format else {
             throw WPETexDecodeError.unsupportedFormat(code: textureFormatCode)
         }
-        return try inflateIfNeeded(
+        let bytes = try inflateIfNeeded(
             payload: mipmap.payload,
             expectedByteCount: format.expectedByteCount(width: mipmap.width, height: mipmap.height),
             decompressedByteCount: mipmap.decompressedByteCount,
             isCompressed: mipmap.isCompressed,
             mipmap: mipmap.index
         )
+        #if DEBUG
+        Self.inflateMeter?.record(bytes.count)
+        #endif
+        return bytes
     }
 
     private func inflateIfNeeded(
