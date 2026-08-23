@@ -38,6 +38,28 @@ extension WallpaperHibernationEligible {
     }
 }
 
+/// Runtimes that can shed resident resources on *critical* system memory
+/// pressure, ahead of the dwell countdowns they normally release behind.
+///
+/// Taken as state, not as a one-shot trigger: the level is pushed on every
+/// change so a runtime can revoke whatever it armed once the emergency clears.
+///
+/// Orthogonal to `applyPerformanceProfile`, never a substitute for it. The
+/// profile decides *whether* a wallpaper runs and owns play intent; this only
+/// decides *how deep* an already-suspended one goes, and implementations must
+/// not write the profile or intent back from here — otherwise the two signals
+/// start overwriting each other.
+@MainActor
+protocol WallpaperCriticalMemoryPressureResponding: AnyObject {
+    func setCriticalMemoryPressureActive(_ active: Bool)
+}
+
+#if !LITE_BUILD
+/// Conformance only — the scene session already had this method and its body is
+/// unchanged. Declared here so `SceneWallpaperSession.swift` stays untouched.
+extension SceneWallpaperSession: WallpaperCriticalMemoryPressureResponding {}
+#endif
+
 @MainActor
 protocol WallpaperResourceCleanable: AnyObject {
     func cleanup()

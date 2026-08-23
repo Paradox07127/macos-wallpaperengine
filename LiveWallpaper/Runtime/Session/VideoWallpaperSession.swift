@@ -2,7 +2,10 @@ import AppKit
 import LiveWallpaperCore
 
 @MainActor
-final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
+final class VideoWallpaperSession: WallpaperRuntimeSession,
+    WallpaperPlaybackControllable,
+    WallpaperIntentMachineAdopting,
+    WallpaperCriticalMemoryPressureResponding {
     typealias RetryPlayerFactory = @MainActor (
         URL,
         CGRect,
@@ -46,6 +49,10 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// hibernation. Folded into suspend depth and eligibility so a policy
     /// refresh or an absence push cannot wake a wallpaper the user still paused.
     private var isManualPauseHibernating = false
+    /// Latest critical-pressure state pushed by `ScreenManager`. Held as state,
+    /// not consumed as a one-shot: every eligibility push re-derives from it, so
+    /// a routine policy refresh cannot cancel a teardown the emergency started.
+    private var criticalMemoryPressureActive = false
     private(set) var runtimeError: WallpaperRuntimeError? {
         didSet {
             guard oldValue != runtimeError else { return }
@@ -207,9 +214,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         // `pauseDwell` sets `isManualPauseHibernating` and folds in here.
         player?.setSuspended(profile == .suspended || isManualPauseHibernating)
         // After the suspend: the player only arms its own dwell while suspended.
-        player?.setHibernationEligible(
-            absenceHibernationEligible || isManualPauseHibernating
-        )
+        player?.setHibernationEligible(hibernationTriggersArmed)
         if shouldPlayVideo {
             player?.play()
         } else {
@@ -223,7 +228,47 @@ final class VideoWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// push — the two triggers share the player's single dwell slot.
     func setHibernationEligible(_ eligible: Bool) {
         absenceHibernationEligible = eligible
-        player?.setHibernationEligible(eligible || isManualPauseHibernating)
+        player?.setHibernationEligible(hibernationTriggersArmed)
+    }
+
+    /// The player owns a single eligibility flag, so every push site has to
+    /// OR-fold all of the independent triggers into it. Pushing a bare absence
+    /// value is how a manual-pause teardown used to get cancelled mid-flight;
+    /// the pressure trigger has exactly the same shape.
+    private var hibernationTriggersArmed: Bool {
+        absenceHibernationEligible || isManualPauseHibernating || criticalMemoryPressureActive
+    }
+
+    /// Critical system memory pressure: release the player, looper items, decode
+    /// pool and `lwmem://` mapping now instead of behind a dwell. Policy has
+    /// already suspended the session by the time this arrives —
+    /// `WallpaperPolicyEngine` grades `critical` as a hard safety suspend — so
+    /// this only deepens an existing suspend and never writes `currentProfile`
+    /// or play intent.
+    ///
+    /// Reuses the manual-pause handover (`setSuspended` + an immediate
+    /// eligibility push) rather than a second teardown path. That path also
+    /// supplies the fall-back guard: `hibernateNow` re-validates eligibility,
+    /// suspension and `lifecycleGeneration` *after* the still-frame await, so a
+    /// clear that lands mid-teardown wins. No extra snapshot is requested here —
+    /// the capture in that path is the already width-capped one.
+    ///
+    /// Re-armed on every `true` push rather than only on the rising edge: a
+    /// session installed (or a player replaced by `retry()`) while pressure is
+    /// already critical must still go down. The dwell's slot guard makes the
+    /// repeats idempotent instead of restarting a countdown.
+    func setCriticalMemoryPressureActive(_ active: Bool) {
+        criticalMemoryPressureActive = active
+        guard active else {
+            // Falling back must not invent an eligibility value: re-fold from
+            // live state so absence / manual pause decide again, and so a
+            // countdown this signal armed is cancelled in the same turn.
+            player?.setHibernationEligible(hibernationTriggersArmed)
+            return
+        }
+        guard currentProfile == .suspended, let player else { return }
+        player.setSuspended(true)
+        player.setHibernationEligible(true, immediately: true)
     }
 
     /// Second hibernatable class, mirroring `SceneWallpaperSession`: a paused

@@ -388,17 +388,22 @@ extension ScreenManager {
         (screen.runtimeSession as? AmbientWallpaperSession)?
             .setHibernationEligible(isAbsenceLikeSuspension)
         #if !LITE_BUILD
-        if let scene = screen.runtimeSession as? SceneWallpaperSession {
-            scene.setHibernationEligible(isAbsenceLikeSuspension)
-            // Reconciled from the watcher's live level on every refresh, not only
-            // on a level change: a session installed (restore-at-launch, swap-in)
-            // while pressure is ALREADY critical would otherwise never hear about
-            // it and stay fully resident for the whole emergency.
-            scene.setCriticalMemoryPressureActive(
+        (screen.runtimeSession as? SceneWallpaperSession)?
+            .setHibernationEligible(isAbsenceLikeSuspension)
+        #endif
+        // Reconciled from the watcher's live level on every refresh, not only
+        // on a level change: a session installed (restore-at-launch, swap-in)
+        // while pressure is ALREADY critical would otherwise never hear about
+        // it and stay fully resident for the whole emergency.
+        //
+        // Same capability fan-out as `applyMemoryPressureLevel`, and outside the
+        // Pro-only block for the same reason the dwell wiring above is: the two
+        // dispatch points must agree on who receives the signal, or a session
+        // kind gets it from one path and not the other.
+        (screen.runtimeSession as? WallpaperCriticalMemoryPressureResponding)?
+            .setCriticalMemoryPressureActive(
                 memoryPressureWatcher.currentLevel() == .critical
             )
-        }
-        #endif
         return profile
     }
 
