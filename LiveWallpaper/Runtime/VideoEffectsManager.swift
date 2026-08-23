@@ -119,8 +119,61 @@ final class VideoEffectsManager {
 
     // MARK: - Time-of-Day Warmth
 
+    /// Test-only clock seam; production always resolves the real time.
+    nonisolated(unsafe) static var currentDateProvider: () -> Date = Date.init
+
+    /// Guards the three `nonisolated(unsafe)` statics below: `warmthForCurrentHour`
+    /// runs on AVFoundation's per-frame filtering callback, whose delivery thread
+    /// isn't documented as serial, and the cache is shared static state across
+    /// every player.
+    private nonisolated static let warmthCacheLock = NSLock()
+    private nonisolated(unsafe) static var cachedWarmth: Double = 6500
+    private nonisolated(unsafe) static var cacheValidFrom: Date = .distantFuture
+    private nonisolated(unsafe) static var cacheExpiresAt: Date = .distantPast
+    /// Test-only: counts cache misses, so a test can prove the cache itself
+    /// (not just the returned value) is doing its job.
+    nonisolated(unsafe) static var warmthRecomputeCount = 0
+
+    /// Test-only: forces the next call to recompute, so tests with an injected
+    /// clock don't inherit cache state left over from a previous test.
+    nonisolated static func resetWarmthCacheForTesting() {
+        warmthCacheLock.lock()
+        defer { warmthCacheLock.unlock() }
+        cacheValidFrom = .distantFuture
+        cacheExpiresAt = .distantPast
+        warmthRecomputeCount = 0
+    }
+
+    /// `Calendar.current` was being read on every composited video frame (up to
+    /// 216,000 times/hour/player at 60fps) even though the result only changes
+    /// on the hour. Cached until the next hour boundary instead.
     nonisolated static func warmthForCurrentHour() -> Double {
-        let hour = Calendar.current.component(.hour, from: Date())
+        let now = currentDateProvider()
+
+        warmthCacheLock.lock()
+        defer { warmthCacheLock.unlock() }
+
+        // Lower bound too: an NTP correction or a westward timezone change moves
+        // `now` backwards, and an upper-bound-only check would serve the stale
+        // hour until real time caught up again.
+        if now >= cacheValidFrom, now < cacheExpiresAt {
+            return cachedWarmth
+        }
+
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: now)
+        cachedWarmth = Self.warmth(forHour: hour)
+        cacheValidFrom = calendar.dateInterval(of: .hour, for: now)?.start ?? now
+        cacheExpiresAt = calendar.nextDate(
+            after: now,
+            matching: DateComponents(minute: 0, second: 0),
+            matchingPolicy: .nextTime
+        ) ?? now.addingTimeInterval(3600)
+        warmthRecomputeCount += 1
+        return cachedWarmth
+    }
+
+    private nonisolated static func warmth(forHour hour: Int) -> Double {
         switch hour {
         case 6..<9:   return 5500
         case 9..<17:  return 6500
