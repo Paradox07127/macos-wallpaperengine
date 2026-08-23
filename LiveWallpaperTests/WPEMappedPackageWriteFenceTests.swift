@@ -215,6 +215,10 @@ struct WPEMappedPackageWriteFenceTests {
             ".write(to": 2,
         ],
         "LiveWallpaper/VideoPlayback/OggAudioTranscoder.swift": ["forWriting:": 1],
+        // Audited 2026-08-22: the MSL translation cache writes JSON under the
+        // app's own Caches/wpe-msl/v<schema> dir — never a scene content path,
+        // and `.atomic`, so a concurrent reader never sees a partial file.
+        "LiveWallpaper/Runtime/Metal/WPEShaderCompiler.swift": [".write(to": 1],
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Debug.swift": [".write(to": 2],
         "LiveWallpaper/Runtime/Metal/WPEMetalPassGPUProfiler.swift": [".write(to": 1],
         "SteamConnector/SteamConnectorProtocol.swift": [".write(to": 1],
