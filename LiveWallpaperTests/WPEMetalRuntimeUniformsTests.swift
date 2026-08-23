@@ -520,7 +520,13 @@ struct WPEMetalRuntimeUniformsTests {
         seedColor: [Double] = [1, 1, 1, 1],
         geometry: WPERenderLayerGeometry = .identity
     ) -> WPEPreparedRenderPipeline {
-        let seed = WPESceneShaderConstantValue.vector(seedColor)
+        solidPipeline(seed: .vector(seedColor), geometry: geometry)
+    }
+
+    private static func solidPipeline(
+        seed: WPESceneShaderConstantValue,
+        geometry: WPERenderLayerGeometry = .identity
+    ) -> WPEPreparedRenderPipeline {
         let pass = WPERenderPass(
             id: "solid.0",
             phase: .material,
@@ -602,6 +608,35 @@ struct WPEMetalRuntimeUniformsTests {
             .applyingLayerAlpha(["layer": 0.25])
         let values = try #require(Self.preparedSolidValues(faded))
         #expect(values["g_Color"]?.vectorValue == [1, 0, 0, 0.25])
+    }
+
+    @Test("An alpha override leaves an animated g_Color rgb still animating")
+    func alphaOverrideKeepsAnimatedColorAnimating() throws {
+        // g_Color is animated as a uniform (not via geometry.colorAnimation).
+        // Writing the override through must not collapse the whole value to a
+        // static vector: the override owns .w, the animation still owns .rgb.
+        let animatedColor = WPESceneShaderConstantValue.animated(
+            WPESceneAnimatedValue(
+                animation: WPESceneNumericAnimation(
+                    tracks: [
+                        [.init(frame: 0, value: 0), .init(frame: 120, value: 1)],
+                        [.init(frame: 0, value: 0), .init(frame: 120, value: 0)],
+                        [.init(frame: 0, value: 1), .init(frame: 120, value: 0)]
+                    ],
+                    fps: 30, length: 120, mode: "single", wrapLoop: false
+                ),
+                scalarFallback: nil,
+                vectorFallback: [0, 0, 1, 1]
+            )
+        )
+        let faded = Self.solidPipeline(seed: animatedColor)
+            .applyingLayerAlpha(["layer": 0.25])
+        let values = try #require(Self.preparedSolidValues(faded))
+        let rgba = try #require(values["g_Color"]?.vectorValue)
+        #expect(rgba[3] == 0.25)
+        // At t=4s (frame 120) the ramp has run to its end; frame 0 would be [0,0,1].
+        #expect(rgba[0] == 1)
+        #expect(rgba[2] == 0)
     }
 
     @Test("Alpha-only animation rebuilds solid g_Color each frame")

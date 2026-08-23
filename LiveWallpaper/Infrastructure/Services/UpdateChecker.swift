@@ -193,13 +193,15 @@ final class UpdateChecker {
         return dict
     }
 
-    /// Restored values go back through the same tag and URL trust checks as a
-    /// fresh response — defaults are writable by anything running as the user.
+    /// Restored values go back through the same tag, pre-release and URL trust
+    /// checks as a fresh response — defaults are writable by anything running
+    /// as the user.
     private static func storedAvailableRelease(in defaults: UserDefaults) -> LatestRelease? {
         guard let dict = defaults.dictionary(forKey: availableReleaseKey),
               let tag = dict["tag"] as? String,
               tag.hasPrefix(tagPrefix),
-              let version = SemanticVersion(parsing: tag) else { return nil }
+              let version = SemanticVersion(parsing: tag),
+              version.prerelease.isEmpty else { return nil }
         return LatestRelease(
             tagName: tag,
             version: version,

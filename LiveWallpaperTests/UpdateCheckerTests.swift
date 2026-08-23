@@ -560,6 +560,29 @@ struct UpdateCheckerTests {
         #expect(relaunched.status == .idle)
     }
 
+    @Test("A stored pre-release tag is refused by the restore path")
+    func storedPrereleaseIsNotRestored() {
+        resetDefaults()
+        // evaluate() drops prereleases, so this can only come from a defaults
+        // write we did not make — which is the case the restore path exists for.
+        defaultsSuite.set(
+            [
+                "tag": "loomscreen-v1.1.0-beta.1",
+                "url": "https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v1.1.0-beta.1",
+                "body": ""
+            ],
+            forKey: "loomscreen.update.availableRelease.v1"
+        )
+
+        let checker = UpdateChecker(
+            transport: StubTransport(releases: []),
+            now: { Date(timeIntervalSince1970: 1_000_000) },
+            currentVersionString: "1.0.0"
+        )
+
+        #expect(checker.status == .idle)
+    }
+
     @Test("A hostile stored release URL falls back to the canonical releases page")
     func storedReleaseURLIsRevalidated() {
         resetDefaults()

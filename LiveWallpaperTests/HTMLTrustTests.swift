@@ -151,6 +151,52 @@ struct HTMLTrustVerdictTests {
         #expect(explicitHTTPS.displayName == "https://example.com:8443")
     }
 
+    @Test("Private-network eligibility matches what the resolver actually dials")
+    func privateNetworkMatchesResolver() {
+        // inet_aton reads a leading zero as octal: 010.0.0.1 dials 8.0.0.1,
+        // which is public. Parsing the octets as decimal called it 10.0.0.0/8.
+        #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("010.0.0.1"))
+        #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("0177.16.0.1"))
+        #expect(TrustedHTMLOrigin.isPrivateNetworkHost("10.0.0.1"))
+        #expect(TrustedHTMLOrigin.isPrivateNetworkHost("172.16.0.1"))
+        #expect(TrustedHTMLOrigin.isPrivateNetworkHost("192.168.1.1"))
+        #expect(TrustedHTMLOrigin.isPrivateNetworkHost("169.254.1.1"))
+        #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("172.32.0.1"))
+        #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("8.8.8.8"))
+    }
+
+    @Test("IPv6 eligibility follows fc00::/7 and fe80::/10, not a string prefix")
+    func ipv6PrivateNetworkUsesNetworkRanges() {
+        // "fc::1" starts with the letters fc but its first hextet is 0x00fc,
+        // which is outside fc00::/7. Same for "fe8::1" vs fe80::/10.
+        #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("fc::1"))
+        #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("[fc::1]"))
+        #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("fe8::1"))
+        #expect(TrustedHTMLOrigin.isPrivateNetworkHost("fc00::1"))
+        #expect(TrustedHTMLOrigin.isPrivateNetworkHost("[fd12:3456::1]"))
+        #expect(TrustedHTMLOrigin.isPrivateNetworkHost("fe80::1"))
+        #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("2001:db8::1"))
+    }
+
+    @Test("Loopback eligibility matches what the resolver actually dials")
+    func loopbackMatchesResolver() {
+        #expect(TrustedHTMLOrigin.isLoopbackHost("127.0.0.1"))
+        #expect(TrustedHTMLOrigin.isLoopbackHost("127.1.2.3"))
+        #expect(TrustedHTMLOrigin.isLoopbackHost("::1"))
+        #expect(TrustedHTMLOrigin.isLoopbackHost("[::1]"))
+        #expect(TrustedHTMLOrigin.isLoopbackHost("localhost"))
+        // 0177.0.0.1 is 127.0.0.1 to the resolver, but decimal parsing rejected it.
+        #expect(TrustedHTMLOrigin.isLoopbackHost("0177.0.0.1"))
+        #expect(!TrustedHTMLOrigin.isLoopbackHost("128.0.0.1"))
+    }
+
+    @Test("A bracketed IPv6 origin round-trips through its raw value")
+    func ipv6OriginRoundTrips() throws {
+        let origin = try #require(TrustedHTMLOrigin(url: URL(string: "http://[fc00::1]:3000/app")!))
+        let restored = try #require(TrustedHTMLOrigin(persistedValue: origin.rawValue))
+        #expect(restored == origin)
+    }
+
     @Test("Offscreen thumbnails consume normalized config with ephemeral storage")
     func offscreenThumbnailUsesEffectiveConfigContract() throws {
         let service = try RepositoryRoot.source(
