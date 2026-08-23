@@ -122,7 +122,7 @@ final class WPEMetalRenderTargetPool {
     /// targets into one shared heap. Lifetimes are computed conservatively (last
     /// use never under-estimated), so a target is only made aliasable AFTER its
     /// real last GPU use — never before (which would corrupt the frame).
-    struct AliasInterval {
+    struct AliasInterval: Equatable {
         let key: WPEMetalRenderTargetKey
         let firstPass: Int
         let lastPass: Int
@@ -171,16 +171,56 @@ final class WPEMetalRenderTargetPool {
     private var aliasFrameTextures: [WPEMetalRenderTargetKey: (texture: MTLTexture, lastPass: Int)] = [:]
     private var aliasPlanSignature: Int?
 
+    /// Everything `prepare` derives its work from. Comparing INPUTS instead of
+    /// the post-descriptor plan signature is what lets a structurally stable
+    /// frame skip the `declaredFBOs` rebuild AND the per-interval
+    /// `heapTextureSizeAndAlign` driver queries — the old signature was hashed
+    /// only AFTER both had already run, so it saved the heap and nothing else.
+    /// Full equality (not a hash) so a collision cannot serve a stale plan.
+    private struct PrepareInputs: Equatable {
+        let pipelineIdentity: Int
+        /// Both are pool state the caller sets before `prepare`, and neither is
+        /// fully encoded in the interval keys: an already-float FBO keeps the
+        /// same key across an HDR toggle.
+        let pixelScale: Double
+        let promotesLDRFormatsToHDR: Bool
+        let aliasIntervals: [AliasInterval]
+    }
+
+    private var lastPrepareInputs: PrepareInputs?
+
+    /// Test seam: how many times `prepare` ran its body instead of early-exiting.
+    private(set) var prepareRebuildCount = 0
+    /// Test seam: `heapTextureSizeAndAlign` calls issued by the alias planner.
+    private(set) var aliasPlanDeviceQueryCount = 0
+
     init(device: MTLDevice, maximumTextureDimension2D: Int? = nil) {
         self.device = device
         self.maximumTextureDimension2D = maximumTextureDimension2D
             ?? WPEMetalTextureLimits.maximum2DTextureDimension(for: device)
     }
 
+    /// `pipelineIdentity` must change whenever `pipeline.layers`' declared FBOs
+    /// could differ; the executor passes its `fboAliasTopologyRebuildCount`,
+    /// which is bumped by the very same structural revalidation that already
+    /// gates its cached per-target `WPERenderFBO` specs. nil = the caller cannot
+    /// vouch for that, so nothing is skipped.
     func prepare(
         pipeline: WPEPreparedRenderPipeline,
-        aliasIntervals: [AliasInterval] = []
+        aliasIntervals: [AliasInterval] = [],
+        pipelineIdentity: Int? = nil
     ) {
+        let inputs = pipelineIdentity.map {
+            PrepareInputs(
+                pipelineIdentity: $0,
+                pixelScale: pixelScale,
+                promotesLDRFormatsToHDR: promotesLDRFormatsToHDR,
+                aliasIntervals: aliasIntervals
+            )
+        }
+        if let inputs, inputs == lastPrepareInputs { return }
+
+        prepareRebuildCount += 1
         declaredFBOs.removeAll(keepingCapacity: true)
         for layer in pipeline.layers {
             for fbo in layer.graphLayer.localFBOs {
@@ -190,9 +230,14 @@ final class WPEMetalRenderTargetPool {
 
         guard !aliasIntervals.isEmpty else {
             releaseAliasState()
+            lastPrepareInputs = inputs
             return
         }
         prepareAliasPlan(aliasIntervals)
+        // Assigned last: `prepareAliasPlan` clears this via `releaseAliasState`
+        // mid-rebuild. A planner that produced no heap (allocation failure) is
+        // NOT stable — leave the cache empty so the next frame retries.
+        lastPrepareInputs = aliasPlanSignature == nil ? nil : inputs
     }
 
     func releaseAll() {
@@ -663,6 +708,7 @@ final class WPEMetalRenderTargetPool {
         for (index, interval) in intervals.enumerated() {
             guard interval.firstPass <= interval.lastPass,
                   let descriptor = try? textureDescriptor(for: interval.key) else { continue }
+            aliasPlanDeviceQueryCount += 1
             let sizeAndAlign = device.heapTextureSizeAndAlign(descriptor: descriptor)
             guard sizeAndAlign.size > 0 else { continue }
             maxAlignment = max(maxAlignment, sizeAndAlign.align)
@@ -709,6 +755,10 @@ final class WPEMetalRenderTargetPool {
     }
 
     private func releaseAliasState() {
+        // Single choke point for every invalidation (`releaseAll`,
+        // `discardTextures`, empty-interval frames, plan rebuild), so the
+        // early-out cache can never outlive the plan it vouches for.
+        lastPrepareInputs = nil
         aliasFrameTextures.removeAll(keepingCapacity: false)
         aliasLastPassByKey.removeAll(keepingCapacity: false)
         aliasHeap = nil
