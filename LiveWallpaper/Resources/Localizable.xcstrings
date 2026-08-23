@@ -22496,6 +22496,34 @@
         }
       }
     },
+    "Let screenshots, screen recording, and screen sharing capture the wallpaper" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Let screenshots, screen recording, and screen sharing capture the wallpaper"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショット・画面収録・画面共有で壁紙を写します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许截图、录屏和屏幕共享拍到壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允許截圖、螢幕錄製和螢幕共享拍到桌布"
+          }
+        }
+      }
+    },
     "Let the overlay receive clicks instead of passing them through to the desktop" : {
       "comment" : "Description for the Monitor overlay mouse-interaction toggle.",
       "extractionState" : "manual",
@@ -22540,6 +22568,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "讓相容場景回應 Mac 上播放的音訊。預設關閉；需要錄音權限。"
+          }
+        }
+      }
+    },
+    "Lets screenshots, screen recording, and screen sharing capture the wallpaper" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lets screenshots, screen recording, and screen sharing capture the wallpaper"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショット・画面収録・画面共有で壁紙を写せるようにします"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让截图、录屏和屏幕共享能够拍到壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓截圖、螢幕錄製和螢幕共享能夠拍到桌布"
           }
         }
       }
@@ -41467,6 +41523,34 @@
         }
       }
     },
+    "Show wallpaper in screenshots" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show wallpaper in screenshots"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットに壁紙を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截图中显示壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截圖中顯示桌布"
+          }
+        }
+      }
+    },
     "Show whole-system memory usage" : {
       "comment" : "RAM scope toggle a11y label when scope is the whole system.",
       "extractionState" : "manual",
@@ -53113,6 +53197,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "裝好後點「自動定位」，Loomscreen 會自動識別。"
+          }
+        }
+      }
+    },
+    "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The Monitor overlay follows this setting too." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The Monitor overlay follows this setting too."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフにすると、代わりに macOS の静止したデスクトップピクチャが写ります。全画面のアニメーションが会議の共有映像に含まれなくなるため、必要な帯域を抑えられます。モニターオーバーレイもこの設定に従います。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭后，截取到的是 macOS 的静态桌面图片。关闭还能让全屏动画不进入会议共享画面，从而降低占用的带宽。监控叠加层也跟随此设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉後，擷取到的是 macOS 的靜態桌面圖片。關閉還能讓全螢幕動畫不進入會議共享畫面，從而降低佔用的頻寬。監控疊加層也跟隨此設定。"
           }
         }
       }

@@ -188,10 +188,14 @@ extension WPEPreparedRenderPipeline {
                 guard let value = alpha[layer.graphLayer.objectID] else { return layer }
                 let geometry = layer.graphLayer.geometry
                 guard geometry.alpha != value || geometry.alphaAnimation != nil else { return layer }
+                let graphLayer = layer.graphLayer.applyingAlpha(value)
                 return WPEPreparedRenderLayer(
-                    graphLayer: layer.graphLayer.applyingAlpha(value),
+                    graphLayer: graphLayer,
                     puppetModel: layer.puppetModel,
-                    passes: layer.passes
+                    passes: Self.passesApplyingLayerTint(
+                        layer.passes, geometry: graphLayer.geometry,
+                        updateColor: false, updateAlpha: true
+                    )
                 )
             }
         )
@@ -205,13 +209,59 @@ extension WPEPreparedRenderPipeline {
                 guard let value = color[layer.graphLayer.objectID] else { return layer }
                 let geometry = layer.graphLayer.geometry
                 guard geometry.color != value || geometry.colorAnimation != nil else { return layer }
+                let graphLayer = layer.graphLayer.applyingColor(value)
                 return WPEPreparedRenderLayer(
-                    graphLayer: layer.graphLayer.applyingColor(value),
+                    graphLayer: graphLayer,
                     puppetModel: layer.puppetModel,
-                    passes: layer.passes
+                    passes: Self.passesApplyingLayerTint(
+                        layer.passes, geometry: graphLayer.geometry,
+                        updateColor: true, updateAlpha: false
+                    )
                 )
             }
         )
+    }
+
+    /// Solid passes bind `g_Color` from `uniformValues`, never from geometry —
+    /// and a script override clears the authored animation, which also removes
+    /// the layer from `addingMetalRuntimeUniforms`' rebuild condition. Without
+    /// writing the tint through here, an overridden solid layer stays frozen at
+    /// its load-time color. Component-wise on purpose: an alpha override must
+    /// not clobber an authored rgb that differs from the layer tint (and vice
+    /// versa).
+    private static func passesApplyingLayerTint(
+        _ passes: [WPEPreparedRenderPass],
+        geometry: WPERenderLayerGeometry,
+        updateColor: Bool,
+        updateAlpha: Bool
+    ) -> [WPEPreparedRenderPass] {
+        passes.map { pass in
+            guard pass.pass.constants["g_Color"] != nil,
+                  Self.consumesLayerColor(pass.pass.shader) else { return pass }
+            var vector = pass.uniformValues["g_Color"]?.vectorValue
+                ?? pass.pass.constants["g_Color"]?.vectorValue
+                ?? [1, 1, 1, 1]
+            while vector.count < 4 { vector.append(1) }
+            if updateColor {
+                let tint = geometry.color * geometry.brightness
+                vector[0] = tint.x
+                vector[1] = tint.y
+                vector[2] = tint.z
+            }
+            if updateAlpha {
+                vector[3] = geometry.alpha
+            }
+            var values = pass.uniformValues
+            values["g_Color"] = .vector(vector)
+            return WPEPreparedRenderPass(
+                pass: pass.pass,
+                shader: pass.shader,
+                textureBindings: pass.textureBindings,
+                comboValues: pass.comboValues,
+                uniformValues: values,
+                materialUniformNames: pass.materialUniformNames
+            )
+        }
     }
 
     /// Applies per-frame transform-script overrides before object-scoped uniforms
@@ -370,7 +420,8 @@ extension WPEPreparedRenderPipeline {
                     let scripted = scriptedConstants[pass.pass.id]
                     // Resolve animated tints each frame; otherwise the graph-build seed
                     // freezes the layer while Wallpaper Engine advances its color animation.
-                    let overridesLayerColor = geometry.colorAnimation != nil
+                    // Alpha-only animation counts too: solid alpha rides in g_Color.w.
+                    let overridesLayerColor = (geometry.colorAnimation != nil || geometry.alphaAnimation != nil)
                         && pass.pass.constants["g_Color"] != nil
                         && Self.consumesLayerColor(pass.pass.shader)
                     // Static pass: reuse the load-time struct (CoW dictionaries).
@@ -379,6 +430,13 @@ extension WPEPreparedRenderPipeline {
                     }
                     var values = pass.uniformValues.mapValues {
                         $0.resolved(at: runtimeUniforms.time)
+                    }
+                    // The animated tint is a recomputed SEED, so it goes in
+                    // before the script merge — scripted constants override
+                    // seed values, including a g_Color a script sets directly.
+                    if overridesLayerColor {
+                        let tint = geometry.color * geometry.brightness
+                        values["g_Color"] = .vector([tint.x, tint.y, tint.z, geometry.alpha])
                     }
                     // Script constants override seed; cannot bind g_* frame uniforms
                     // (the frame context wins for frame-global names at read time).
@@ -392,10 +450,6 @@ extension WPEPreparedRenderPipeline {
                             let uniformName = pass.materialUniformNames[key] ?? key
                             values[uniformName] = value
                         }
-                    }
-                    if overridesLayerColor {
-                        let tint = geometry.color * geometry.brightness
-                        values["g_Color"] = .vector([tint.x, tint.y, tint.z, geometry.alpha])
                     }
                     return WPEPreparedRenderPass(
                         pass: pass.pass,

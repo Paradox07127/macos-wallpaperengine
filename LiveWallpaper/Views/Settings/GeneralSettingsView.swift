@@ -38,6 +38,7 @@ struct GeneralSettingsView: View {
     @State var applicationRules: [ApplicationPerformanceRule]
     @State var showAppExceptions = false
     @State var showInDock: Bool
+    @State var wallpaperVisibleInScreenCapture: Bool
     /// MB for the Slider; step snaps to multiples of 32; converted to bytes on persist.
     @State var videoCacheBudgetMB: Double
 
@@ -93,6 +94,7 @@ struct GeneralSettingsView: View {
         _pauseInLowPowerMode = State(initialValue: settings.pauseInLowPowerMode)
         _applicationRules = State(initialValue: settings.applicationPerformanceRules)
         _showInDock = State(initialValue: settings.showInDock)
+        _wallpaperVisibleInScreenCapture = State(initialValue: settings.wallpaperVisibleInScreenCapture)
         _videoCacheBudgetMB = State(initialValue: Double(settings.videoCacheMaxBytesPerScreen) / Double(1024 * 1024))
         _audioResponseEnabled = State(initialValue: settings.audioResponseEnabled)
         _adaptiveFrameRateEnabled = State(initialValue: settings.adaptiveFrameRateEnabled)
@@ -395,6 +397,7 @@ struct GeneralSettingsView: View {
         settings.pauseInLowPowerMode = pauseInLowPowerMode
         settings.applicationPerformanceRules = applicationRules
         settings.showInDock = showInDock
+        settings.wallpaperVisibleInScreenCapture = wallpaperVisibleInScreenCapture
         settings.videoCacheMaxBytesPerScreen = Int(videoCacheBudgetMB) * 1024 * 1024
         settings.audioResponseEnabled = audioResponseEnabled
         settings.adaptiveFrameRateEnabled = adaptiveFrameRateEnabled
