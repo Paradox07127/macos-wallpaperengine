@@ -399,7 +399,7 @@ struct WPESceneCustomSettingsCard: View {
                     Slider(
                         value: numberBinding(for: property),
                         in: ValueLogic.sliderRange(for: property),
-                        step: ValueLogic.sliderStep(for: property),
+                        step: ValueLogic.displaySliderStep(for: property),
                         onEditingChanged: { editing in
                             if !editing { Task { @MainActor in await commitPendingEditorState() } }
                         }
