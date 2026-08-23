@@ -172,7 +172,13 @@ public enum HTMLSource: Codable, Equatable, Sendable {
 
     public var isInsecureURL: Bool {
         if case .url(let url) = self {
-            return url.scheme?.lowercased() == "http"
+            guard url.scheme?.lowercased() == "http" else { return false }
+            // Loopback never crosses a network, so the "cannot be verified"
+            // warning would be false there.
+            if let host = url.host?.lowercased(), TrustedHTMLOrigin.isLoopbackHost(host) {
+                return false
+            }
+            return true
         }
         return false
     }

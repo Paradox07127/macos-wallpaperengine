@@ -109,7 +109,7 @@ struct SecurityInspector: View {
 
     @ViewBuilder
     private func originTrustRow(for origin: TrustedHTMLOrigin) -> some View {
-        let isTrusted = trustStore.originSet.contains(origin)
+        let isTrusted = trustStore.originSet.contains(origin) || origin.isLoopback
         SettingRow(
             icon: isTrusted ? "checkmark.shield.fill" : "exclamationmark.shield",
             iconColor: isTrusted ? DesignTokens.Colors.Status.active : DesignTokens.Colors.Status.warning,
@@ -125,19 +125,27 @@ struct SecurityInspector: View {
         if trustStore.isBuiltInTrusted(origin) {
             return "Built-in trust for the platform's official embed surface — cannot be revoked."
         }
+        if origin.isLoopback {
+            return "Local development server. Loopback addresses never leave this Mac, so they run JavaScript automatically — there is nothing to revoke."
+        }
         if isTrusted {
             return "JavaScript runs on this origin. Revoke to disable script execution."
         }
         if origin.isSecure {
             return "Scripts disabled. Trust this origin to allow JavaScript execution."
         }
-        return "HTTP origins cannot be trusted. Use HTTPS instead."
+        if origin.isPrivateNetwork {
+            return "Scripts disabled. This is a plain HTTP address on your local network — anyone else on the same network could alter what it sends. Trust it only if you control this machine."
+        }
+        return "Scripts disabled. Only HTTPS, loopback, and local-network origins can run JavaScript."
     }
 
     @ViewBuilder
     private func trustRowAction(for origin: TrustedHTMLOrigin, isTrusted: Bool) -> some View {
         if trustStore.isBuiltInTrusted(origin) {
             StatusChip("Built-in", tint: .secondary)
+        } else if origin.isLoopback {
+            StatusChip("Local", tint: .secondary)
         } else if isTrusted {
             Button("Revoke", role: .destructive) {
                 guard let source else { return }
@@ -151,7 +159,7 @@ struct SecurityInspector: View {
             }
             .tint(DesignTokens.Colors.Status.danger)
             .fixedSize()
-        } else if origin.isSecure {
+        } else if origin.canBeTrusted {
             Button("Trust…") {
                 pendingTrustOrigin = origin
             }
@@ -180,7 +188,11 @@ struct SecurityInspector: View {
                     pendingTrustOrigin = nil
                 }
             } message: {
-                Text("This allows the wallpaper to run scripts, use local storage, and access WebGPU. Only trust origins you recognize.")
+                if origin.isSecure {
+                    Text("This allows the wallpaper to run scripts, use local storage, and access WebGPU. Only trust origins you recognize.")
+                } else {
+                    Text("This allows the wallpaper to run scripts, use local storage, and access WebGPU. This address is plain HTTP on your local network, so anyone else on that network could change what it sends.")
+                }
             }
         }
     }

@@ -429,3 +429,134 @@ struct TrustedHostStoreTests {
     }
 
 }
+
+/// Loopback origins are trusted without an allowlist entry, matching how
+/// browsers treat `http://localhost` (W3C Secure Contexts "potentially
+/// trustworthy"). The negative cases are the point of this suite: a hostname
+/// that merely *contains* a loopback literal must not inherit that trust.
+@Suite("Loopback origins are potentially trustworthy")
+struct LoopbackTrustTests {
+    private func trust(_ urlString: String) throws -> HTMLTrust {
+        let url = try #require(URL(string: urlString))
+        // Empty allowlist: anything trusted here is trusted structurally.
+        return HTMLTrust.evaluate(source: .url(url), trustedOrigins: [])
+    }
+
+    private func isTrusted(_ urlString: String) throws -> Bool {
+        if case .trustedRemote = try trust(urlString) { return true }
+        return false
+    }
+
+    @Test("Plain http loopback spellings are trusted with an empty allowlist", arguments: [
+        "http://localhost:3000",
+        "http://localhost./",
+        "http://127.0.0.1:8080",
+        "http://127.1.2.3:5173",
+        "http://[::1]:3000",
+        "http://api.localhost:9000",
+    ])
+    func loopbackSpellingsAreTrusted(_ urlString: String) throws {
+        #expect(try isTrusted(urlString), "\(urlString) should be trusted")
+    }
+
+    @Test("Hostnames that only look like loopback stay untrusted", arguments: [
+        "http://127.0.0.1.evil.com",
+        "http://localhost.evil.com",
+        "http://notlocalhost",
+        "http://127.0.0.256",
+        "http://1270.0.1",
+        "http://example.com",
+    ])
+    func lookalikeHostsAreNotTrusted(_ urlString: String) throws {
+        #expect(try !isTrusted(urlString), "\(urlString) must not be treated as loopback")
+    }
+
+    @Test("A loopback dev server gets JavaScript")
+    func loopbackKeepsJavaScript() throws {
+        let verdict = try trust("http://localhost:5173")
+        #expect(verdict.effectiveAllowJavaScript(requested: true))
+        #expect(!verdict.effectiveMuteAudio(requested: false))
+    }
+
+    @Test("A public http origin still loses JavaScript")
+    func publicHTTPStillLosesJavaScript() throws {
+        let verdict = try trust("http://example.com")
+        #expect(!verdict.effectiveAllowJavaScript(requested: true))
+    }
+
+    /// Loopback trust is structural, so it must never be written to the
+    /// persisted allowlist — otherwise "revoke" would appear to work and then
+    /// silently have no effect.
+    @Test("Loopback is never persisted into the allowlist")
+    func loopbackIsNotPersisted() throws {
+        let origin = try #require(TrustedHTMLOrigin(url: URL(string: "http://localhost:3000")!))
+        #expect(origin.isLoopback)
+        #expect(!origin.isSecure, "loopback over http is still cleartext")
+    }
+}
+
+/// LAN literals are *eligible* for trust, not trusted outright: cleartext on a
+/// shared network is tamperable, so the grant is per-origin and explicit.
+@Suite("Private-network origins are trust-eligible")
+@MainActor
+struct PrivateNetworkTrustTests {
+    private func origin(_ urlString: String) throws -> TrustedHTMLOrigin {
+        let url = try #require(URL(string: urlString))
+        return try #require(TrustedHTMLOrigin(url: url))
+    }
+
+    @Test("RFC 1918 and link-local literals are eligible", arguments: [
+        "http://192.168.1.199:3456",
+        "http://10.0.0.5:8080",
+        "http://172.16.0.1:3000",
+        "http://172.31.255.254:3000",
+        "http://169.254.53.38:8000",
+    ])
+    func privateLiteralsAreEligible(_ urlString: String) throws {
+        let o = try origin(urlString)
+        #expect(o.isPrivateNetwork)
+        #expect(o.canBeTrusted)
+        #expect(!o.isLoopback, "LAN is not loopback — it must not be auto-trusted")
+    }
+
+    @Test("Public and near-miss literals are not eligible", arguments: [
+        "http://172.15.0.1:3000",
+        "http://172.32.0.1:3000",
+        "http://193.168.1.1:3000",
+        "http://11.0.0.1:3000",
+        "http://example.com",
+        "http://192.168.1.199.evil.com",
+    ])
+    func publicLiteralsAreNotEligible(_ urlString: String) throws {
+        let o = try origin(urlString)
+        #expect(!o.isPrivateNetwork, "\(urlString) must not count as private")
+        #expect(!o.canBeTrusted)
+    }
+
+    @Test("A LAN origin runs no JavaScript until it is trusted")
+    func lanNeedsExplicitTrust() throws {
+        let url = try #require(URL(string: "http://192.168.1.199:3456/"))
+        let o = try origin("http://192.168.1.199:3456")
+
+        let before = HTMLTrust.evaluate(source: .url(url), trustedOrigins: [])
+        #expect(before == .untrustedRemote(origin: o))
+        #expect(!before.effectiveAllowJavaScript(requested: true))
+
+        let after = HTMLTrust.evaluate(source: .url(url), trustedOrigins: [o])
+        #expect(after == .trustedRemote(origin: o))
+        #expect(after.effectiveAllowJavaScript(requested: true))
+    }
+
+    /// The grant has to survive a relaunch; `normalizeOrigins` used to drop
+    /// every non-HTTPS origin, which would have made "Trust" look like a no-op
+    /// after the next launch.
+    @Test("A trusted LAN origin survives normalization on reload")
+    func lanGrantSurvivesReload() {
+        let normalized = TrustedHostStore.normalizeOrigins([
+            "http://192.168.1.199:3456",
+            "https://example.com:443",
+            "http://example.com:80",
+        ])
+        #expect(normalized.map(\.rawValue) == ["http://192.168.1.199:3456", "https://example.com:443"])
+    }
+}

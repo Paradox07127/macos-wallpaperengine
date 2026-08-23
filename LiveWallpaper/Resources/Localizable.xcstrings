@@ -20320,36 +20320,6 @@
         }
       }
     },
-    "HTTP origins cannot be trusted. Use HTTPS instead." : {
-      "comment" : "Info tooltip on the Origin Access row when the origin is HTTP and cannot be trusted.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "HTTP origins cannot be trusted. Use HTTPS instead."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "HTTP オリジンは信頼できません。HTTPS を使用してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不可信任 HTTP 来源。请改用 HTTPS。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不可信任 HTTP 來源。請改用 HTTPS。"
-          }
-        }
-      }
-    },
     "https://example.com or example.com" : {
       "localizations" : {
         "en" : {
@@ -23541,6 +23511,62 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本機"
+          }
+        }
+      }
+    },
+    "Local development server — JavaScript allowed." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local development server — JavaScript allowed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカル開発サーバー — JavaScript は許可されています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地开发服务器 —— 已允许 JavaScript。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本機開發伺服器 —— 已允許 JavaScript。"
+          }
+        }
+      }
+    },
+    "Local development server. Loopback addresses never leave this Mac, so they run JavaScript automatically — there is nothing to revoke." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local development server. Loopback addresses never leave this Mac, so they run JavaScript automatically — there is nothing to revoke."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカル開発サーバーです。ループバックアドレスはこの Mac の外に出ないため、JavaScript は自動的に実行されます。取り消す対象はありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地开发服务器。回环地址的流量不会离开这台 Mac，因此会自动运行 JavaScript，没有可撤销的授权。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本機開發伺服器。回環位址的流量不會離開這台 Mac，因此會自動執行 JavaScript，沒有可撤銷的授權。"
           }
         }
       }
@@ -39401,6 +39427,62 @@
         }
       }
     },
+    "Scripts disabled. Only HTTPS, loopback, and local-network origins can run JavaScript." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripts disabled. Only HTTPS, loopback, and local-network origins can run JavaScript."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリプトは無効です。JavaScript を実行できるのは HTTPS、ループバック、ローカルネットワークのオリジンのみです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "脚本已禁用。只有 HTTPS、回环地址和局域网地址的来源可以运行 JavaScript。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "腳本已停用。只有 HTTPS、回環位址和區域網路位址的來源可以執行 JavaScript。"
+          }
+        }
+      }
+    },
+    "Scripts disabled. This is a plain HTTP address on your local network — anyone else on the same network could alter what it sends. Trust it only if you control this machine." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripts disabled. This is a plain HTTP address on your local network — anyone else on the same network could alter what it sends. Trust it only if you control this machine."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリプトは無効です。これはローカルネットワーク上の平文 HTTP アドレスであり、同じネットワーク上の他者が内容を改ざんできます。この機器を自分で管理している場合にのみ信頼してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "脚本已禁用。这是局域网上的明文 HTTP 地址，同一网络中的其他人可以篡改它发送的内容。只有在这台机器由你自己掌控时才信任它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "腳本已停用。這是區域網路上的明文 HTTP 位址，同一網路中的其他人可以竄改它傳送的內容。只有在這台機器由你自己掌控時才信任它。"
+          }
+        }
+      }
+    },
     "Scripts disabled. Trust this origin to allow JavaScript execution." : {
       "comment" : "Info tooltip on the Origin Access row when the origin is HTTPS and untrusted.",
       "extractionState" : "manual",
@@ -47501,6 +47583,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這將允許桌布執行腳本、使用本機儲存空間並存取 WebGPU。只信任你認得的來源。"
+          }
+        }
+      }
+    },
+    "This allows the wallpaper to run scripts, use local storage, and access WebGPU. This address is plain HTTP on your local network, so anyone else on that network could change what it sends." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This allows the wallpaper to run scripts, use local storage, and access WebGPU. This address is plain HTTP on your local network, so anyone else on that network could change what it sends."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙がスクリプトの実行、ローカルストレージの使用、WebGPU へのアクセスを行えるようになります。このアドレスはローカルネットワーク上の平文 HTTP のため、同じネットワーク上の他者が内容を変更できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这将允许壁纸运行脚本、使用本地存储并访问 WebGPU。该地址是局域网上的明文 HTTP，同一网络中的其他人可以更改它发送的内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這將允許桌布執行腳本、使用本機儲存空間並存取 WebGPU。該位址是區域網路上的明文 HTTP，同一網路中的其他人可以更改它傳送的內容。"
           }
         }
       }
