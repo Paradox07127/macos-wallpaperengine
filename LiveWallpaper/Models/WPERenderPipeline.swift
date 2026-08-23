@@ -403,20 +403,44 @@ extension WPEPreparedRenderPipeline {
         let runtimeUniformValues = runtimeUniforms.uniformValues
         let cameraUniformValues = camera.uniformValues
         var objectUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
-        let preparedLayers = layers.map { layer -> WPEPreparedRenderLayer in
-            let resolvedGraphLayer = layer.graphLayer.resolved(at: runtimeUniforms.time)
+        var needsRebuild = false
+        for layer in layers {
             // Derive g_ModelMatrix once per layer (object-scoped, not per pass).
-            let geometry = resolvedGraphLayer.geometry
+            // `resolved(at:)` only moves alpha and color, so origin/scale/angles
+            // are the same before and after resolving.
+            let geometry = layer.graphLayer.geometry
             let objectUniforms = WPEMetalObjectUniforms.uniformValues(
                 origin: geometry.origin,
                 scale: geometry.scale,
                 angles: geometry.angles
             )
+            for pass in layer.passes {
+                objectUniformValuesByPassID[pass.pass.id] = objectUniforms
+            }
+            needsRebuild = needsRebuild
+                || layer.graphLayer.isTimeVarying
+                || Self.needsPassRebuild(layer, scriptedConstants: scriptedConstants)
+        }
+        let frameUniforms = WPEFrameUniformContext(
+            runtimeUniformValues: runtimeUniformValues,
+            cameraUniformValues: cameraUniformValues,
+            objectUniformValuesByPassID: objectUniformValuesByPassID
+        )
+        // Nothing below can change a value: the rebuild would copy the tree field
+        // for field. Hand back the load-time one instead of allocating an array
+        // per layer and a struct per pass on every frame.
+        guard needsRebuild else { return (self, frameUniforms) }
+        let preparedLayers = layers.map { layer -> WPEPreparedRenderLayer in
+            guard layer.graphLayer.isTimeVarying
+                || Self.needsPassRebuild(layer, scriptedConstants: scriptedConstants) else {
+                return layer
+            }
+            let resolvedGraphLayer = layer.graphLayer.resolved(at: runtimeUniforms.time)
+            let geometry = resolvedGraphLayer.geometry
             return WPEPreparedRenderLayer(
                 graphLayer: resolvedGraphLayer,
                 puppetModel: layer.puppetModel,
                 passes: layer.passes.map { pass in
-                    objectUniformValuesByPassID[pass.pass.id] = objectUniforms
                     let scripted = scriptedConstants[pass.pass.id]
                     // Resolve animated tints each frame; otherwise the graph-build seed
                     // freezes the layer while Wallpaper Engine advances its color animation.
@@ -462,14 +486,19 @@ extension WPEPreparedRenderPipeline {
                 }
             )
         }
-        return (
-            WPEPreparedRenderPipeline(layers: preparedLayers),
-            WPEFrameUniformContext(
-                runtimeUniformValues: runtimeUniformValues,
-                cameraUniformValues: cameraUniformValues,
-                objectUniformValuesByPassID: objectUniformValuesByPassID
-            )
-        )
+        return (WPEPreparedRenderPipeline(layers: preparedLayers), frameUniforms)
+    }
+
+    /// A pass rebuild is driven by animated authored values or a script write.
+    /// The layer-tint case is NOT here: it needs `graphLayer.isTimeVarying`,
+    /// which every caller already tests alongside this.
+    private static func needsPassRebuild(
+        _ layer: WPEPreparedRenderLayer,
+        scriptedConstants: [String: [String: WPESceneShaderConstantValue]]
+    ) -> Bool {
+        layer.passes.contains { pass in
+            pass.hasAnimatedUniformValues || scriptedConstants[pass.pass.id] != nil
+        }
     }
 }
 
@@ -725,8 +754,16 @@ private extension WPERenderLayer {
         )
     }
 
+    /// Whether `resolved(at:)` can change anything on this layer.
+    var isTimeVarying: Bool {
+        geometry.isTimeVarying
+            || localGeometry?.isTimeVarying == true
+            || groupLocalGeometry?.isTimeVarying == true
+    }
+
     func resolved(at time: Double) -> WPERenderLayer {
-        WPERenderLayer(
+        guard isTimeVarying else { return self }
+        return WPERenderLayer(
             objectID: objectID,
             objectName: objectName,
             visible: visible,

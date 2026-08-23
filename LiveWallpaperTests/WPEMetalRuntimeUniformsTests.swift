@@ -666,6 +666,91 @@ struct WPEMetalRuntimeUniformsTests {
         #expect(values["g_Color"]?.vectorValue == [1, 0, 0, 1])
     }
 
+    /// C1-1: a static scene must stop rebuilding the prepared tree every frame.
+    /// The layer array's buffer address IS the observable — a rebuild allocates
+    /// a fresh one — so this needs no shared counter and stays correct under
+    /// Swift Testing's parallel execution.
+    private static func layerBuffer(_ pipeline: WPEPreparedRenderPipeline) -> UnsafeRawPointer? {
+        pipeline.layers.withUnsafeBufferPointer { UnsafeRawPointer($0.baseAddress) }
+    }
+
+    private static func prepared(
+        _ pipeline: WPEPreparedRenderPipeline,
+        time: Double = 1,
+        scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:]
+    ) -> WPEPreparedRenderPipeline {
+        pipeline.addingMetalRuntimeUniforms(
+            WPEMetalRuntimeUniforms(
+                time: time, daytime: 0, brightness: 1,
+                pointerPosition: SIMD2<Double>(0.5, 0.5)
+            ),
+            camera: .identity,
+            scriptedConstants: scriptedConstants
+        ).pipeline
+    }
+
+    @Test("A static pipeline is handed back without reallocating its layers")
+    func staticPipelineSkipsTreeRebuild() throws {
+        let pipeline = Self.pipelineWithUniform("alpha", value: .number(1))
+        let identity = Self.layerBuffer(pipeline)
+        for frame in 0..<4 {
+            let prepared = Self.prepared(pipeline, time: Double(frame) / 60)
+            #expect(
+                Self.layerBuffer(prepared) == identity,
+                "frame \(frame) rebuilt a tree that is a field-for-field copy"
+            )
+            #expect(prepared == pipeline, "the skipped rebuild must stay value-equal")
+        }
+    }
+
+    @Test("Animated, scripted and tinted layers all still rebuild")
+    func nonStaticPipelinesStillRebuild() throws {
+        let animatedValue = try #require(Self.animatedScalarConstant(
+            mode: "loop", wrapLoop: true, length: 90, keys: [(0, 0), (30, 1), (90, 0)]
+        ))
+        let animated = Self.pipelineWithUniform("alpha", value: animatedValue)
+        #expect(
+            Self.layerBuffer(Self.prepared(animated)) != Self.layerBuffer(animated),
+            "an animated authored value must still rebuild"
+        )
+
+        let scripted = Self.pipelineWithUniform("alpha", value: .number(1))
+        #expect(
+            Self.layerBuffer(
+                Self.prepared(scripted, scriptedConstants: ["opacity.0": ["alpha": .number(0.5)]])
+            ) != Self.layerBuffer(scripted),
+            "a scripted constant must still rebuild"
+        )
+
+        // Every pass here is static; only the LAYER is time-varying. Drop
+        // `graphLayer.isTimeVarying` from the decide pass and this is the test
+        // that catches it.
+        let tintAnimation = WPESceneAnimatedValue(
+            animation: WPESceneNumericAnimation(
+                tracks: [[.init(frame: 0, value: 1), .init(frame: 90, value: 0)]],
+                fps: 30, length: 90, mode: "single", wrapLoop: false
+            ),
+            scalarFallback: 1,
+            vectorFallback: nil
+        )
+        let tinted = Self.solidPipeline(geometry: WPERenderLayerGeometry(
+            origin: .zero,
+            scale: SIMD3<Double>(1, 1, 1),
+            angles: .zero,
+            alignment: .center,
+            size: CGSize(width: 10, height: 10),
+            alpha: 1,
+            alphaAnimation: tintAnimation,
+            color: SIMD3<Double>(1, 1, 1),
+            colorAnimation: nil,
+            brightness: 1
+        ))
+        #expect(
+            Self.layerBuffer(Self.prepared(tinted, time: 4)) != Self.layerBuffer(tinted),
+            "a time-varying layer tint must still rebuild even with static passes"
+        )
+    }
+
     /// Scripts address a constant by its AUTHORED name while the pass is keyed by
     /// the SHADER name, so an untranslated merge writes to a slot no shader reads
     /// and the seeded value silently keeps winning.

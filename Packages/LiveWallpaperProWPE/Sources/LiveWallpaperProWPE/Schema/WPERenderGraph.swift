@@ -149,8 +149,16 @@ public struct WPERenderLayerGeometry: Equatable, Sendable {
         self.shapePoints = shapePoints
     }
 
+    /// Whether `resolved(at:)` can return anything but `self`. Both slots nil
+    /// makes it a field-by-field copy, so a caller rebuilding a tree per frame
+    /// can skip the layer entirely.
+    public var isTimeVarying: Bool {
+        alphaAnimation != nil || colorAnimation != nil
+    }
+
     public func resolved(at time: Double) -> WPERenderLayerGeometry {
-        WPERenderLayerGeometry(
+        guard isTimeVarying else { return self }
+        return WPERenderLayerGeometry(
             origin: origin,
             scale: scale,
             angles: angles,
