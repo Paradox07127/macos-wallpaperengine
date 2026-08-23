@@ -792,7 +792,14 @@ final class WPEMetalRenderExecutor {
         // skips a layer's passes, which would break the lockstep pass index the
         // alias plan relies on.
         let aliasIntervals = fboAliasIntervals(pipeline: preparedPipeline, sceneSize: size)
-        targetPool.prepare(pipeline: preparedPipeline, aliasIntervals: aliasIntervals)
+        // `fboAliasIntervals` above has already revalidated the pipeline's
+        // structure this frame, so its rebuild counter is the pipeline identity
+        // the pool needs to skip a whole stable-frame prepare.
+        targetPool.prepare(
+            pipeline: preparedPipeline,
+            aliasIntervals: aliasIntervals,
+            pipelineIdentity: fboAliasTopologyRebuildCount
+        )
         targetPool.beginAliasFrame()
         // The per-frame output texture is freshly allocated (`.private`); its
         // backing store is NOT zeroed by Metal. A scene-alias read of
