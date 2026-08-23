@@ -12,7 +12,6 @@ import LiveWallpaperProWPE
 final class WPETextFontResolver {
     private let resolver: WPEMultiRootResourceResolver
     private var descriptorCache: [String: CTFontDescriptor] = [:]
-    private var registeredFonts: Set<String> = []
 
     init(resolver: WPEMultiRootResourceResolver) {
         self.resolver = resolver
@@ -36,23 +35,20 @@ final class WPETextFontResolver {
         return CTFontCreateWithName("HelveticaNeue" as CFString, size, nil)
     }
 
+    /// Descriptors carry the file URL, so `CTFontCreateWithFontDescriptor` loads
+    /// the face straight off disk — no `CTFontManagerRegisterFontsForURL`. We
+    /// never look scene faces up by name, and the header states registration is
+    /// what makes a face "participate in font descriptor matching", which is
+    /// exactly the capability we don't use. Registering instead pinned every
+    /// face a scene ever touched in the process font catalogue for the life of
+    /// the process, and nothing here ever unregistered them.
     private func fontDescriptor(forPath path: String) -> CTFontDescriptor? {
         if let cached = descriptorCache[path] { return cached }
-        registerFontIfNeeded(path)
         guard let url = try? resolver.resolveExistingFileURL(relativePath: path),
               let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
               let descriptor = descriptors.first else { return nil }
         descriptorCache[path] = descriptor
         return descriptor
-    }
-
-    private func registerFontIfNeeded(_ path: String) {
-        guard !WPESystemFont.isReference(path), !registeredFonts.contains(path) else { return }
-        registeredFonts.insert(path)
-        guard let url = try? resolver.resolveExistingFileURL(relativePath: path) else { return }
-        var unmanagedError: Unmanaged<CFError>?
-        _ = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &unmanagedError)
-        unmanagedError?.release()
     }
 }
 
