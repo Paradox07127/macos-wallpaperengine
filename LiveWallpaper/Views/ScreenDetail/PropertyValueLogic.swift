@@ -42,6 +42,38 @@ enum PropertyValueLogic {
         return property.fraction ? 0.1 : 1
     }
 
+    /// SwiftUI's slider costs roughly four times more per layout pass beyond
+    /// ~1000 detents (measured 2026-08-22: 4.1ms -> 16.8ms per scroll step on a
+    /// 64-row inspector), and the cost saturates there rather than growing.
+    /// Set AT the cliff, not below it: everything under 1000 is equally cheap,
+    /// so a smaller cap buys no speed and only costs the user reachable values.
+    /// Counts stops, not intervals.
+    static let maximumSliderDetents = 1000.0
+
+    /// Step handed to the `Slider` *view*; writes still snap to the authored
+    /// step through `normalizedSliderValue`.
+    ///
+    /// WPE scenes routinely author `step: 0.001` over a `0...300` range, i.e.
+    /// 300 000 detents, which was the whole of the inspector's scroll jank.
+    /// Widening to a whole multiple of the authored step keeps every detent on
+    /// the authored grid, so the thumb can only stop where a write would.
+    static func displaySliderStep(for property: Property) -> Double {
+        let authored = sliderStep(for: property)
+        let range = sliderRange(for: property)
+        let width = range.upperBound - range.lowerBound
+        // A non-finite width makes every comparison below false, which would
+        // return the authored step and drop the cap entirely — the one case
+        // that needs it most.
+        guard authored > 0, width.isFinite, width > 0 else { return authored }
+        // A stepped slider has one more stop than it has intervals, so budget
+        // the intervals at one below the stop count.
+        let budgeted = width / (maximumSliderDetents - 1)
+        guard authored < budgeted else { return authored }
+        // Strictly `authored < budgeted` with both finite and `authored > 0`,
+        // so the multiplier is finite and at least 2.
+        return authored * (budgeted / authored).rounded(.up)
+    }
+
     static func normalizedSliderValue(_ raw: Double, for property: Property) -> Double {
         let range = sliderRange(for: property)
         let clamped = clamp(raw, to: range)

@@ -117,7 +117,7 @@ struct WPEProjectCustomSettingsCard: View {
                     Slider(
                         value: numberBinding(for: property),
                         in: ValueLogic.sliderRange(for: property),
-                        step: ValueLogic.sliderStep(for: property)
+                        step: ValueLogic.displaySliderStep(for: property)
                     )
                     .frame(width: DesignTokens.Inspector.sliderWidth)
                     .controlSize(.small)

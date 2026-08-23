@@ -3,17 +3,11 @@ import SwiftUI
 /// Inspector row pairing an icon-prefixed title with a trailing control.
 ///
 /// The title and value subtitle truncate and expose the full text through
-/// `help`, rather than scrolling it on hover.
-///
-/// Measured, from an Animation Hitches trace of scrolling the WPE property
-/// inspector: the app-update phase ran a median of 21.9 ms against a 16.7 ms
-/// frame, while the GPU sat at 1.3 ms — and the main thread's profile was
-/// `Attribute.init`, `AG::Graph::add_attribute` and `propagate_dirty`, i.e.
-/// SwiftUI building attribute-graph nodes for rows as they scroll in. What a row
-/// costs to *materialise* is therefore the length of its modifier chain, and
-/// `marqueeOnHover` was the longest link on every single row: three renderings
-/// of the label, two geometry observers and a hover tracking area, so that a
-/// title which almost never overflows could scroll.
+/// `help`, rather than scrolling it on hover. This was originally taken for
+/// scroll cost; that reading did not hold up — swapping `help` back for
+/// `marqueeOnHover` moves a 64-row inspector by 0.16 ms per scroll step
+/// (5.18 vs 5.02, measured 2026-08-22). It stays because the marquee ran a
+/// display link per hovered row, which is a hover cost, not a scroll one.
 ///
 /// Use `info` for "what does this do" explanations and keep `subtitle` for
 /// live state ("Browsing data is cleared on each session") so the two roles
