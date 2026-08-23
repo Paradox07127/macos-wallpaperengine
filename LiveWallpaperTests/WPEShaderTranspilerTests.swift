@@ -2673,3 +2673,104 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 }
+
+@Suite("WPE shader translation disk cache")
+struct WPEShaderTranslationCacheTests {
+    private func makeRequest(hash: String) -> WPEShaderCompileRequest {
+        WPEShaderCompileRequest(
+            shaderName: "opacity_inline",
+            processedVertexSource: "// not used by transpiler",
+            processedFragmentSource: """
+            #version 410 core
+            uniform sampler2D g_Texture0;
+            uniform float g_Opacity;
+            in vec2 v_TexCoord;
+            void main() {
+                vec4 c = texture(g_Texture0, v_TexCoord);
+                gl_FragColor = vec4(c.rgb * g_Opacity, c.a * g_Opacity);
+            }
+            """,
+            sourceHash: hash,
+            comboValues: [:],
+            textureBindings: [:]
+        )
+    }
+
+    private func makeCache() throws -> (WPEShaderTranslationCache, URL) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wpe-msl-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return (WPEShaderTranslationCache(rootURL: root), root)
+    }
+
+    @Test("A second compiler on a new executor hits process memory and skips transpile")
+    func memoryHitSkipsTranspile() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let (cache, root) = try makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = makeRequest(hash: "a1-memory-\(UUID().uuidString)")
+        let first = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        #expect(cache.storeCountForTesting == 1)
+        #expect(cache.memoryHitCountForTesting == 0)
+        let second = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        #expect(cache.memoryHitCountForTesting == 1)
+        #expect(second.mslSource == first.mslSource)
+        #expect(second.uniformLayout == first.uniformLayout)
+        #expect(second.library !== first.library, "each compile still makeLibrary's on this device")
+    }
+
+    @Test("Dropping memory still hits disk with the same MSL and layout")
+    func diskHitSurvivesMemoryDrop() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let (cache, root) = try makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = makeRequest(hash: "a1-disk-\(UUID().uuidString)")
+        let first = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        cache.dropMemoryForTesting()
+        let second = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        #expect(cache.diskHitCountForTesting == 1)
+        #expect(second.mslSource == first.mslSource)
+        #expect(second.uniformLayout == first.uniformLayout)
+        #expect(second.fragmentFunctionName == "wpe_translated_fragment")
+    }
+
+    @Test("Corrupt disk payload is a miss, not a crash")
+    func corruptDiskIsAMiss() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let (cache, root) = try makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = makeRequest(hash: "a1-corrupt-\(UUID().uuidString)")
+        _ = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        cache.dropMemoryForTesting()
+        let files = try FileManager.default.contentsOfDirectory(
+            at: root.appendingPathComponent("v\(WPEShaderTranslationCache.schemaVersion)"),
+            includingPropertiesForKeys: nil
+        )
+        let json = try #require(files.first { $0.pathExtension == "json" })
+        try Data("{}".utf8).write(to: json, options: .atomic)
+        let recovered = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        #expect(!recovered.mslSource.isEmpty)
+        #expect(cache.diskHitCountForTesting == 0)
+    }
+
+    @Test("Cached payload with a wrong schema version is ignored")
+    func schemaMismatchIsAMiss() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let (cache, root) = try makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = makeRequest(hash: "a1-schema-\(UUID().uuidString)")
+        let first = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        cache.dropMemoryForTesting()
+        let versionDir = root.appendingPathComponent("v\(WPEShaderTranslationCache.schemaVersion)")
+        let files = try FileManager.default.contentsOfDirectory(at: versionDir, includingPropertiesForKeys: nil)
+        let json = try #require(files.first { $0.pathExtension == "json" })
+        var payload = try JSONDecoder().decode(WPEShaderTranslationCache.Payload.self, from: Data(contentsOf: json))
+        payload.schemaVersion = 0
+        payload.mslSource = "// stale schema must not be assembled"
+        try JSONEncoder().encode(payload).write(to: json, options: .atomic)
+        let second = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
+        #expect(second.mslSource == first.mslSource)
+        #expect(second.mslSource != "// stale schema must not be assembled")
+        #expect(cache.diskHitCountForTesting == 0)
+    }
+}

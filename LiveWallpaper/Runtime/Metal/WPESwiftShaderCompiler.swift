@@ -11,13 +11,38 @@ import Metal
 /// real first-frame render — not twice.
 struct WPESwiftShaderCompiler: Sendable {
     let device: MTLDevice
+    let translationCache: WPEShaderTranslationCache
     /// Fragment-only compiler contract: vertex execution always stays on the
     /// built-in fullscreen quad. Model/vertex-domain shaders are never compiled
     /// here — they surface a `.translationFailed`/`.mslLibraryFailed` diagnostic
     /// rather than crashing Metal.
     static let fixedVertexFunctionName = "wpe_fullscreen_vertex"
 
+    init(device: MTLDevice, translationCache: WPEShaderTranslationCache = .shared) {
+        self.device = device
+        self.translationCache = translationCache
+    }
+
     func compile(_ request: WPEShaderCompileRequest, recordFailure: Bool = true) throws -> WPEShaderCompileResult {
+        let cacheKey = request.translationCacheKey
+        if let payload = translationCache.lookup(cacheKey) {
+            do {
+                return try assemble(
+                    mslSource: payload.mslSource,
+                    vertexFunctionName: payload.vertexFunctionName,
+                    fragmentFunctionName: payload.fragmentFunctionName,
+                    uniformLayout: payload.uniformSlots(),
+                    samplerNames: payload.samplerNames,
+                    shaderName: request.shaderName,
+                    processedVertex: request.processedVertexSource,
+                    processedFragment: request.processedFragmentSource,
+                    recordFailure: recordFailure
+                )
+            } catch {
+                translationCache.remove(cacheKey)
+            }
+        }
+
         let translation: WPEShaderTranslationResult
         let fragmentSource = Self.fragmentSourceByAddingVertexUniformsIfNeeded(
             fragmentSource: request.processedFragmentSource,
@@ -61,20 +86,50 @@ struct WPESwiftShaderCompiler: Sendable {
             )
         }
 
+        let result = try assemble(
+            mslSource: translation.mslSource,
+            vertexFunctionName: Self.fixedVertexFunctionName,
+            fragmentFunctionName: "wpe_translated_fragment",
+            uniformLayout: translation.uniformLayout,
+            samplerNames: translation.samplers,
+            shaderName: request.shaderName,
+            processedVertex: request.processedVertexSource,
+            processedFragment: request.processedFragmentSource,
+            recordFailure: recordFailure
+        )
+        if let payload = WPEShaderTranslationCache.Payload.from(result) {
+            translationCache.store(payload, for: cacheKey)
+        }
+        return result
+    }
+
+    private func assemble(
+        mslSource: String,
+        vertexFunctionName: String,
+        fragmentFunctionName: String,
+        uniformLayout: [WPEUniformSlot],
+        samplerNames: [String],
+        shaderName: String,
+        processedVertex: String,
+        processedFragment: String,
+        recordFailure: Bool
+    ) throws -> WPEShaderCompileResult {
         let library: MTLLibrary
         do {
             let options = MTLCompileOptions()
             options.languageVersion = .version3_0
-            library = try device.makeLibrary(source: translation.mslSource, options: options)
+            // Pin so a disk replay matches the compile that produced the MSL.
+            options.fastMathEnabled = true
+            library = try device.makeLibrary(source: mslSource, options: options)
         } catch {
             if recordFailure {
                 WPESceneDebugArtifacts.shared.recordShaderFailure(
-                    shaderName: request.shaderName,
+                    shaderName: shaderName,
                     originalVertex: nil,
-                    processedVertex: request.processedVertexSource,
+                    processedVertex: processedVertex,
                     originalFragment: nil,
-                    processedFragment: request.processedFragmentSource,
-                    translatedMSL: translation.mslSource,
+                    processedFragment: processedFragment,
+                    translatedMSL: mslSource,
                     errorText: "Metal rejected MSL: \(error.localizedDescription)"
                 )
             }
@@ -83,17 +138,16 @@ struct WPESwiftShaderCompiler: Sendable {
             // has already been written to `WPESceneDebugArtifacts` above
             // for offline inspection.
             throw WPEShaderCompilerError.mslLibraryFailed(
-                "Metal rejected translated MSL for '\(request.shaderName)': \(error.localizedDescription)"
+                "Metal rejected translated MSL for '\(shaderName)': \(error.localizedDescription)"
             )
         }
-
         return WPEShaderCompileResult(
             library: library,
-            vertexFunctionName: Self.fixedVertexFunctionName,
-            fragmentFunctionName: "wpe_translated_fragment",
-            mslSource: translation.mslSource,
-            uniformLayout: translation.uniformLayout,
-            samplerNames: translation.samplers
+            vertexFunctionName: vertexFunctionName,
+            fragmentFunctionName: fragmentFunctionName,
+            mslSource: mslSource,
+            uniformLayout: uniformLayout,
+            samplerNames: samplerNames
         )
     }
 
