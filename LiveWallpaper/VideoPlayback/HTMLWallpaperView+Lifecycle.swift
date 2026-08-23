@@ -45,6 +45,36 @@ struct HTMLMediaLifecycleState {
     }
 }
 
+/// HTML runtimes whose frame pacing is a JS rAF gate rather than a display link.
+/// Separate from `WallpaperFrameRateConfigurable`: that protocol also carries the
+/// adaptive background throttle, which only the scene renderer is dispatched.
+@MainActor
+protocol HTMLWallpaperFrameRateTargeting: AnyObject {
+    func setTargetFrameRate(_ limit: FrameRateLimit)
+}
+
+/// The user frame-rate ceiling translated for the web runtime.
+///
+/// It has to be an interval rather than a divisor of the display refresh:
+/// WebKit exposes no frame-rate knob at all (no `WKWebpagePreferences` property,
+/// and the media-suspension API only reaches `<video>`/`<audio>`), so the ceiling
+/// lands on our own rAF gate, and 30 fps is not a whole divisor of a 136 Hz panel.
+enum HTMLFramePacingPolicy {
+    /// Milliseconds between allowed rAF callbacks; 0 = run at the display rate.
+    static func minimumFrameIntervalMilliseconds(for limit: FrameRateLimit?) -> Double {
+        guard let limit, limit != .unlimited, limit.rawValue > 0 else { return 0 }
+        return 1000.0 / Double(limit.rawValue)
+    }
+
+    /// `wallpaperPropertyListener.applyGeneralProperties({fps})`. Unlimited (and
+    /// "no limit pushed yet") keep reporting 60: a WPE web wallpaper reads this
+    /// as its animation tempo and has no "as fast as the display" value.
+    static func wallpaperEngineFPS(for limit: FrameRateLimit?) -> Int {
+        guard let limit, limit != .unlimited else { return 60 }
+        return limit.rawValue
+    }
+}
+
 struct HTMLPreparationProbeState {
     let generation: UInt64
     let source: HTMLSource?
@@ -229,6 +259,34 @@ extension HTMLWallpaperView {
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         setMediaPlaybackSuspended(profile == .suspended)
+    }
+
+    /// User frame-rate ceiling. Deliberately not folded into the performance
+    /// profile: `.suspended` stops the page, this only slows it down, and a
+    /// suspended view must keep the target so the resume publishes it rather
+    /// than snapping back to 60.
+    func setTargetFrameRate(_ limit: FrameRateLimit) {
+        guard !isCleaningUp, targetFrameRateLimit != limit else { return }
+        targetFrameRateLimit = limit
+        // Pushed even while suspended: the JS side stores the value behind its
+        // own suspend guard and reconciles the wrapper on resume.
+        applyRafTargetFrameInterval(
+            HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(for: limit)
+        )
+        guard !mediaPlaybackSuspended else { return }
+        notifyWallpaperEngineGeneralProperties(
+            fps: HTMLFramePacingPolicy.wallpaperEngineFPS(for: limit)
+        )
+    }
+
+    func applyRafTargetFrameInterval(_ milliseconds: Double) {
+        guard !isCleaningUp,
+              milliseconds != lastRafTargetFrameIntervalMilliseconds else { return }
+        lastRafTargetFrameIntervalMilliseconds = milliseconds
+        webView.evaluateJavaScript(
+            HTMLWallpaperRuntimeScript.rafTargetFrameInterval(milliseconds: milliseconds),
+            completionHandler: nil
+        )
     }
 
     /// Native+JS suspend/resume; generation-ordered. The JS half reaches
@@ -431,7 +489,9 @@ extension HTMLWallpaperView {
         let completion = mediaLifecycleState.finish(transition)
 
         if completion.wasCurrent, !transition.suspended {
-            notifyWallpaperEngineGeneralProperties(fps: 60)
+            notifyWallpaperEngineGeneralProperties(
+                fps: HTMLFramePacingPolicy.wallpaperEngineFPS(for: targetFrameRateLimit)
+            )
             applyRafThrottleRatio(rafThrottleRatio(for: ProcessInfo.processInfo.thermalState))
             if restartPackageBackingAfterResume {
                 restartPackageBackingAfterResume = false
@@ -509,5 +569,7 @@ extension HTMLWallpaperView {
 }
 
 extension HTMLWallpaperView: HTMLWallpaperRetrying {}
+
+extension HTMLWallpaperView: HTMLWallpaperFrameRateTargeting {}
 
 extension HTMLWallpaperView: WallpaperHibernationEligible {}

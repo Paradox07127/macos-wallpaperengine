@@ -736,6 +736,16 @@ enum HTMLWallpaperRuntimeScript {
             var rafBackup = null;
             var rafThrottleRatio = 1;
             var rafThrottleCounter = 0;
+            // Minimum milliseconds between dispatched rAF callbacks — the user's
+            // frame-rate ceiling. Separate from the thermal ratio above: an
+            // integer divisor of the display refresh cannot express 30 on a
+            // 136 Hz panel, and the two must compose instead of overwriting.
+            var rafTargetIntervalMs = 0;
+            var rafLastDispatchMs = 0;
+            var rafLastTickMs = 0;
+            var rafNativeIntervalMs = 0;
+            var rafGateStampMs = null;
+            var rafGateStampAllows = true;
             var suspended = false;
             var hiddenDescriptorBackup = null;
             var visibilityDescriptorBackup = null;
@@ -963,16 +973,44 @@ enum HTMLWallpaperRuntimeScript {
                 }
             }
 
+            // The host can only evaluate script in the main frame, so the frame
+            // pacing rides the same relay the suspend phase does.
+            function broadcastPacingToChildFrames() {
+                var children;
+                try { children = window.frames; } catch (e) { return; }
+                if (!children) return;
+                for (var i = 0; i < children.length; i++) {
+                    try {
+                        children[i].postMessage({
+                            __lwPacing__: {
+                                ratio: rafThrottleRatio,
+                                intervalMs: rafTargetIntervalMs
+                            }
+                        }, '*');
+                    } catch (e) {}
+                }
+            }
+
             function installFrameLifecycleRelay() {
                 if (isTopFrame) return;
                 try {
                     window.addEventListener('message', function (event) {
                         var data = event && event.data;
                         if (!data || typeof data !== 'object') return;
-                        var phase = data.__lwLifecycle__;
-                        if (phase !== 'suspend' && phase !== 'resume') return;
                         // Only the embedding frame may drive this one.
                         if (event.source !== window.parent) return;
+                        var pacing = data.__lwPacing__;
+                        if (pacing && typeof pacing === 'object') {
+                            // Both knobs then one broadcast: going through the
+                            // public setters would post twice per level and
+                            // double the message count at every nesting depth.
+                            installRafThrottle(clampRafRatio(pacing.ratio));
+                            installRafTargetInterval(clampRafInterval(pacing.intervalMs));
+                            broadcastPacingToChildFrames();
+                            return;
+                        }
+                        var phase = data.__lwLifecycle__;
+                        if (phase !== 'suspend' && phase !== 'resume') return;
                         if (phase === 'suspend') window.__lwSuspend__();
                         else window.__lwResume__();
                     }, false);
@@ -1049,6 +1087,11 @@ enum HTMLWallpaperRuntimeScript {
                 if (rafCafBackup) window.cancelAnimationFrame = rafCafBackup;
                 rafBackup = null;
                 rafCafBackup = null;
+                // Timestamps from before the suspend would make the gate's first
+                // decision on a gap the size of the whole absence.
+                rafLastDispatchMs = 0;
+                rafLastTickMs = 0;
+                rafGateStampMs = null;
                 var pending = rafQueue;
                 rafQueue = [];
                 for (var i = 0; i < pending.length; i++) {
@@ -1058,12 +1101,74 @@ enum HTMLWallpaperRuntimeScript {
                 }
             }
 
+            function clampRafRatio(ratio) {
+                var value = parseInt(ratio, 10);
+                if (!isFinite(value) || value < 1) return 1;
+                return value > 8 ? 8 : value;
+            }
+
+            function clampRafInterval(intervalMs) {
+                var value = parseFloat(intervalMs);
+                if (!isFinite(value) || value < 0) return 0;
+                return value > 1000 ? 1000 : value;
+            }
+
+            // One decision per frame timestamp: every callback scheduled for the
+            // same frame gets the same answer. Deciding per callback lets two
+            // independent loops alternate through the gate and hand the page
+            // back its full rate while each loop looks throttled.
+            function rafFrameGateAllows(t) {
+                if (rafGateStampMs === t) return rafGateStampAllows;
+                rafGateStampMs = t;
+                if (rafLastTickMs > 0) {
+                    var tick = t - rafLastTickMs;
+                    // Ignore the huge gap a resumed or backgrounded page reports.
+                    if (tick > 0 && tick < 200) rafNativeIntervalMs = tick;
+                }
+                rafLastTickMs = t;
+
+                var allows = true;
+                if (rafThrottleRatio > 1) {
+                    rafThrottleCounter = (rafThrottleCounter + 1) % rafThrottleRatio;
+                    if (rafThrottleCounter !== 0) allows = false;
+                }
+                if (allows && rafTargetIntervalMs > 0) {
+                    if (rafLastDispatchMs === 0) {
+                        rafLastDispatchMs = t;
+                    } else {
+                        // Half a native frame of slack: a plain `>= interval`
+                        // test rejects the tick that lands a fraction early and
+                        // drops a 30 fps target to 20 on a 60 Hz display.
+                        var slack = rafNativeIntervalMs > 0 ? rafNativeIntervalMs / 2 : 0;
+                        if (t - rafLastDispatchMs >= rafTargetIntervalMs - slack) {
+                            rafLastDispatchMs = t;
+                        } else {
+                            allows = false;
+                        }
+                    }
+                }
+                rafGateStampAllows = allows;
+                return allows;
+            }
+
             function installRafThrottle(ratio) {
                 rafThrottleRatio = ratio;
                 rafThrottleCounter = 0;
                 // While suspended, keep ratio; resume reconciles after restoreRaf.
                 if (rafBackup) return;
-                if (ratio <= 1) {
+                reconcileRafPacing();
+            }
+
+            function installRafTargetInterval(intervalMs) {
+                rafTargetIntervalMs = intervalMs;
+                rafLastDispatchMs = 0;
+                // Same suspended-keeps-the-value rule as the ratio above.
+                if (rafBackup) return;
+                reconcileRafPacing();
+            }
+
+            function reconcileRafPacing() {
+                if (rafThrottleRatio <= 1 && rafTargetIntervalMs <= 0) {
                     if (window.__lwRafThrottleBackup__) {
                         window.requestAnimationFrame = window.__lwRafThrottleBackup__;
                         window.__lwRafThrottleBackup__ = null;
@@ -1076,8 +1181,7 @@ enum HTMLWallpaperRuntimeScript {
                 var original = window.__lwRafThrottleBackup__;
                 window.requestAnimationFrame = function (cb) {
                     return original.call(window, function (t) {
-                        rafThrottleCounter = (rafThrottleCounter + 1) % rafThrottleRatio;
-                        if (rafThrottleCounter === 0) cb(t);
+                        if (rafFrameGateAllows(t)) cb(t);
                         else window.requestAnimationFrame(cb);
                     });
                 };
@@ -1175,13 +1279,18 @@ enum HTMLWallpaperRuntimeScript {
                 resumeTimers();
                 // Ratio 1 still reconciles so a pre-suspend throttle wrapper is cleared.
                 installRafThrottle(rafThrottleRatio);
+                installRafTargetInterval(rafTargetIntervalMs);
             };
 
             window.__lwSetRafThrottle__ = function (ratio) {
-                var r = parseInt(ratio, 10);
-                if (!isFinite(r) || r < 1) r = 1;
-                if (r > 8) r = 8;
-                installRafThrottle(r);
+                installRafThrottle(clampRafRatio(ratio));
+                broadcastPacingToChildFrames();
+            };
+
+            // Milliseconds; 0 means "no ceiling, run at the display rate".
+            window.__lwSetRafTargetInterval__ = function (intervalMs) {
+                installRafTargetInterval(clampRafInterval(intervalMs));
+                broadcastPacingToChildFrames();
             };
 
             installFrameLifecycleRelay();
@@ -1228,6 +1337,22 @@ enum HTMLWallpaperRuntimeScript {
                 mo.observe(document.documentElement || document, { childList: true });
             } catch (e) {}
         })();
+        """
+    }
+
+    // MARK: - Frame pacing
+
+    /// Pushes the user's frame-rate ceiling into the lifecycle controller's rAF
+    /// gate. JS animation only: `<video>`/`<audio>` decode is owned by the media
+    /// element and is never rate-limited from here.
+    static func rafTargetFrameInterval(milliseconds: Double) -> String {
+        let literal = String(
+            format: "%.3f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            max(milliseconds, 0)
+        )
+        return """
+        if (typeof window.__lwSetRafTargetInterval__ === 'function') { try { window.__lwSetRafTargetInterval__(\(literal)); } catch (e) {} }
         """
     }
 

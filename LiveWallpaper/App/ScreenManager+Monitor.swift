@@ -216,6 +216,11 @@ extension ScreenManager {
                     effectiveCommitConfiguration = updated
                 }
             }
+            // Seeded here for the same reason the scene branch seeds its own
+            // controller below: the coordinator only pushes the limit when the
+            // user changes it, so a session rebuilt by a wallpaper switch or a
+            // relaunch would otherwise run unthrottled until the next edit.
+            session.setFrameRateLimit(configuration.frameRateLimit)
             candidate = session
             if case .url = effectiveSource {
                 timeout = .seconds(12)
