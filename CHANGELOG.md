@@ -13,6 +13,46 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.5.6] — 2026-08-22
+
+### Added
+
+- MetalFX upscaling, in Settings → General → Performance. A scene renders at
+  0.75× or 0.5× of the display and MetalFX rebuilds the full image; heavy scenes
+  measured 23–44% less GPU power. Off by default — on a light wallpaper it costs
+  more than it saves.
+
+### Changed
+
+- Scenes start faster after a restart: the Metal shader translated from a scene's
+  GLSL is now kept on disk instead of being retranslated every cold start.
+- Video layers inside a scene decode at the display's pixel size instead of the
+  file's, and how many decode at once is bounded by the Mac's memory.
+- Less CPU per frame: render-target aliasing and uniform resolution are planned
+  once at load rather than recomputed every frame.
+- The Workshop grid no longer rebuilds every tile once a second, and previews
+  decode off the main thread at tile size.
+- Inspector sliders no longer write to disk, filters and the render session on
+  every sample of a drag.
+- Thumbnails in the Library, Workshop, history and system-wallpaper lists share
+  one title band, so the same card looks the same everywhere.
+- A row's title and subtitle no longer scroll on hover; long text truncates with
+  the full string in the tooltip.
+- The SteamCMD setup check remembers a passing result and re-probes only when the
+  binary it approved has changed.
+
+### Fixed
+
+- Scrolling a scene's settings could stutter badly. A property authored in steps
+  of 0.001 over a 0–300 range asked SwiftUI for 300,000 slider stops; the count is
+  now capped where the cost stops growing.
+- Turning MetalFX upscaling off mid-session left resources sized for the old
+  resolution behind.
+- A scene that failed to load left its partially built state in place.
+- GIF previews kept decoding inside a collapsed inspector, and a dropped animated
+  texture left its prefetch running.
+- Log messages below the current level still built their strings.
+
 ## [0.5.5] — 2026-08-20
 
 ### Added
