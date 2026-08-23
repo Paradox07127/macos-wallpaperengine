@@ -1928,11 +1928,30 @@ final class WPEMetalRenderExecutor {
             frameState.markInitialized(destination.texture)
         }
 
+        // Resolved BEFORE the encoder exists: with `.dontCare` below, an encoder
+        // that ends without drawing leaves the attachment undefined rather than
+        // untouched, so a missing texture or pipeline must abort while the
+        // destination is still whole.
+        let pipelineState = try renderPipeline(
+            fragmentName: "wpe_copy_fragment",
+            blendMode: "disabled",
+            colorPixelFormat: destination.texture.pixelFormat
+        )
+        let sourceTexture = try WPEMetalShaderInputs.resolve(
+            reference: reference,
+            textures: textures,
+            frameState: frameState,
+            currentTargetID: destination.id
+        )
+
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = destination.texture
-        descriptor.colorAttachments[0].loadAction = frameState.hasInitialized(destination.texture) ? .load : .clear
+        // Fullscreen quad, blending disabled, full write mask: every texel of the
+        // attachment is overwritten, so neither the previous contents nor a clear
+        // is ever observable. `.dontCare` drops the attachment read this used to
+        // pay on the scene target.
+        descriptor.colorAttachments[0].loadAction = .dontCare
         descriptor.colorAttachments[0].storeAction = .store
-        descriptor.colorAttachments[0].clearColor = clearColor(for: destination.id)
 
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "copy|\(layer.objectName)")
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
@@ -1943,20 +1962,8 @@ final class WPEMetalRenderExecutor {
         encoder.setFrontFacing(.counterClockwise)
         encoder.setCullMode(.none)
 
-        encoder.setRenderPipelineState(try renderPipeline(
-            fragmentName: "wpe_copy_fragment",
-            blendMode: "disabled",
-            colorPixelFormat: destination.texture.pixelFormat
-        ))
-        encoder.setFragmentTexture(
-            try WPEMetalShaderInputs.resolve(
-                reference: reference,
-                textures: textures,
-                frameState: frameState,
-                currentTargetID: destination.id
-            ),
-            index: 0
-        )
+        encoder.setRenderPipelineState(pipelineState)
+        encoder.setFragmentTexture(sourceTexture, index: 0)
         // Parallax is a geometry translation applied in object-quad scene
         // passes; raw-pointer UV shifts are intentionally not applied here.
         // (Plain full-frame layers routed through this fullscreen copy don't
