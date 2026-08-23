@@ -110,14 +110,12 @@ struct WPETexMipInflateScopeTests {
 
     @Test("Streaming payload extraction inflates nothing under any scope")
     func streamingPayloadInflatesNothing() throws {
+        // extractStreamingPayload never reads the mip-inflate scope at all, so
+        // there is nothing to pass here — the test title is about that fact.
         let meter = WPETexInflateMeter()
         let tex = Self.animatedTex()
-        let payload = try WPETexDecoder.$mipInflateScope.withValue(
-            WPEMetalTextureLoader.mipInflateScope(maxSourceEdge: 100)
-        ) {
-            try WPETexDecoder.$inflateMeter.withValue(meter) {
-                try WPETexDecoder().extractStreamingPayload(data: tex).get()
-            }
+        let payload = try WPETexDecoder.$inflateMeter.withValue(meter) {
+            try WPETexDecoder().extractStreamingPayload(data: tex).get()
         }
 
         #expect(payload.compressedImages.count == 2)
@@ -214,10 +212,8 @@ struct WPETexMipInflateScopeTests {
         scope: WPETexMipInflateScope,
         meter: WPETexInflateMeter?
     ) throws -> WPETexTexturePayload {
-        try WPETexDecoder.$mipInflateScope.withValue(scope) {
-            try WPETexDecoder.$inflateMeter.withValue(meter) {
-                try WPETexDecoder().extractTexturePayload(data: tex).get()
-            }
+        try WPETexDecoder.$inflateMeter.withValue(meter) {
+            try WPETexDecoder().extractTexturePayload(data: tex, scope: scope).get()
         }
     }
 
