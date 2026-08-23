@@ -21,18 +21,22 @@ extension ScreenManager {
     private func applyMemoryPressureLevel(_ level: SystemMemoryPressureLevel) {
         guard !isTerminating else { return }
         setMemoryPressure(level)
-        #if !LITE_BUILD
         // Critical pressure skips the hibernate dwell: the refresh above has
-        // already suspended every session, so release scene renderer resources
+        // already suspended every session, so release its resident resources
         // now instead of waiting out a countdown the system may not survive.
         // Pushed on EVERY level change, not just the critical edge — the
         // session's retry cadence has to be revoked when the pressure clears.
+        //
+        // Fanned out over the capability protocol rather than to one concrete
+        // session type: this used to reach the scene runtime only, so on a Lite
+        // install — where no scene session exists at all — the deepest signal
+        // the system has reached nobody. Keep this cast identical to the second
+        // dispatch point in `ScreenManager+Observers`.
         let isCritical = level == .critical
         for screen in screens {
-            (screen.runtimeSession as? SceneWallpaperSession)?
+            (screen.runtimeSession as? WallpaperCriticalMemoryPressureResponding)?
                 .setCriticalMemoryPressureActive(isCritical)
         }
-        #endif
     }
 
     /// Records the graded level without changing the user's play/pause intent.
