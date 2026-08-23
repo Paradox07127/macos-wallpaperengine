@@ -42,5 +42,24 @@
 		<string>(allow process-info-pidinfo)</string>
 		<string>(allow process-info-rusage)</string>
 	</array>
+	<!--
+	    Sparkle's two XPC services. A sandboxed app cannot replace its own
+	    bundle, so Sparkle brokers the download and the install through services
+	    that run outside the sandbox; reaching them is a mach-lookup, which the
+	    sandbox denies unless the global name is listed here. The names are
+	    Sparkle's fixed convention (bundle id + `-spks` / `-spki`) and Xcode
+	    expands the placeholder at signing time, so Lite gets its own pair
+	    scoped to com.loomscreen rather than sharing Pro's.
+
+	    This is a SEPARATE key from `com.apple.security.exception.mach-lookup.
+	    global-name` above — that one is the non-temporary variant and the
+	    sandbox treats the two independently, so the Sparkle names cannot be
+	    folded into it.
+	-->
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+	</array>
 </dict>
 </plist>

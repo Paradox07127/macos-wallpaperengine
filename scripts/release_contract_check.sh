@@ -122,21 +122,33 @@ project_file="LiveWallpaper.xcodeproj/project.pbxproj"
 [[ "$(grep -c 'CODE_SIGN_ENTITLEMENTS = LiveWallpaper/LiveWallpaperLite.entitlements;' "$project_file")" == "2" ]]
 
 
-# Prevent removed dependencies from returning to release surfaces.
-if git grep -n -E \
-  'Sparkle\.framework|sparkle-project|SPUStandardUpdaterController|SPUUpdater|SUFeedURL|SUPublicEDKey|XCRemoteSwiftPackageReference.*Sparkle' \
-  -- "$project_file" LiveWallpaperInfo.plist LoomscreenInfo.plist \
-     LiveWallpaper/LiveWallpaper.entitlements LiveWallpaper/LiveWallpaperLite.entitlements \
-     'Packages/*/Package.swift' ':(glob)**/Package.resolved' \
-     scripts/release-app.sh scripts/release_candidate_check.sh .github/workflows; then
-  echo "ERROR: removed Sparkle integration resurfaced in a live release surface." >&2
-  exit 1
-fi
-
-if git grep -n -E \
-  '^[[:space:]]*import[[:space:]]+Sparkle|SPUStandardUpdaterController|SPUUpdater' \
-  -- LiveWallpaper LiveWallpaperTests; then
-  echo "ERROR: removed Sparkle runtime API resurfaced in app source or tests." >&2
+# Sparkle is shipped deliberately as of 2026-08-23, so the gate asserts it is
+# wired rather than absent. It was banned here before, from a removal whose
+# reason the squashed history no longer records; the ban was lifted only after
+# an end-to-end install was verified under App Sandbox + Hardened Runtime.
+# That combination only works because the app is signed with a real Team ID —
+# two ad-hoc signatures read as "different teams" to library validation and the
+# framework will not load, which is the most likely thing the original removal
+# ran into.
+for plist in LiveWallpaperInfo.plist LoomscreenInfo.plist; do
+  if ! grep -q '<key>SUPublicEDKey</key>' "$plist"; then
+    echo "ERROR: $plist has no SUPublicEDKey; Sparkle would accept unsigned updates." >&2
+    exit 1
+  fi
+  if ! grep -q '<key>SUEnableInstallerLauncherService</key>' "$plist"; then
+    echo "ERROR: $plist is missing SUEnableInstallerLauncherService; a sandboxed app cannot install its own update without it." >&2
+    exit 1
+  fi
+done
+for ent in LiveWallpaper/LiveWallpaper.entitlements LiveWallpaper/LiveWallpaperLite.entitlements; do
+  if ! grep -q 'PRODUCT_BUNDLE_IDENTIFIER)-spki' "$ent"; then
+    echo "ERROR: $ent cannot reach Sparkle's Installer XPC service; updates would fail to install." >&2
+    exit 1
+  fi
+done
+# A release whose appcast is not regenerated ships to nobody.
+if ! grep -q 'scripts/generate-appcast.sh' scripts/release-app.sh; then
+  echo "ERROR: release-app.sh no longer regenerates the Sparkle appcast." >&2
   exit 1
 fi
 

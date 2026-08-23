@@ -2,6 +2,8 @@ array-string	com.apple.security.exception.mach-lookup.global-name	com.apple.audi
 array-string	com.apple.security.temporary-exception.apple-events	com.apple.Music
 array-string	com.apple.security.temporary-exception.apple-events	com.spotify.client
 array-string	com.apple.security.temporary-exception.iokit-user-client-class	AppleSMCClient
+array-string	com.apple.security.temporary-exception.mach-lookup.global-name	com.loomscreen-spki
+array-string	com.apple.security.temporary-exception.mach-lookup.global-name	com.loomscreen-spks
 array-string	com.apple.security.temporary-exception.sbpl	(allow process-info-listpids)
 array-string	com.apple.security.temporary-exception.sbpl	(allow process-info-pidinfo)
 array-string	com.apple.security.temporary-exception.sbpl	(allow process-info-rusage)

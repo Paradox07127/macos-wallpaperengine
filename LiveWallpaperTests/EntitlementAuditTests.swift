@@ -56,6 +56,15 @@ struct EntitlementAuditTests {
             "(allow process-info-pidinfo)",
             "(allow process-info-rusage)",
         ]),
+        // Sparkle's Downloader/Installer XPC services. A sandboxed app cannot
+        // replace its own bundle, so the install is brokered out of the sandbox
+        // and reaching those services is a mach-lookup. Both SKUs ship Sparkle,
+        // and the placeholder expands per-SKU at signing time so each one can
+        // only reach its own services — see `expectedHostValue`.
+        "com.apple.security.temporary-exception.mach-lookup.global-name": .strings([
+            "$(PRODUCT_BUNDLE_IDENTIFIER)-spks",
+            "$(PRODUCT_BUNDLE_IDENTIFIER)-spki",
+        ]),
     ]
 
     private static let proOnlyValues: [String: EntitlementValue] = [
@@ -115,7 +124,7 @@ struct EntitlementAuditTests {
         }
     }
 
-    @Test("Lite removes exactly the three Pro-only grant families")
+    @Test("Lite removes exactly the Pro-only grant families")
     func liteDeltaIsExact() throws {
         let proValues = try Self.sourceValues(at: Self.pro.sourcePath)
         let liteValues = try Self.sourceValues(at: Self.lite.sourcePath)
@@ -226,6 +235,28 @@ struct EntitlementAuditTests {
                 return .strings(paths + ["/"])
             }
         #endif
+        // The source plist carries `$(PRODUCT_BUNDLE_IDENTIFIER)`; the signed
+        // host carries it expanded, so the two only compare equal after the
+        // same substitution Xcode performs. Under DEBUG the test host also
+        // receives Xcode's own lookup names appended, exactly like the
+        // repository-root exception handled above — the shipping archive is
+        // signed without them and is gated by `check_entitlements.sh --app`.
+        if key == "com.apple.security.temporary-exception.mach-lookup.global-name",
+           case let .strings(names) = sourceValue,
+           let bundleID = Bundle.main.bundleIdentifier {
+            let expanded = names.map {
+                $0.replacingOccurrences(of: "$(PRODUCT_BUNDLE_IDENTIFIER)", with: bundleID)
+            }
+            #if DEBUG
+                return .strings(expanded + [
+                    "com.apple.testmanagerd",
+                    "com.apple.dt.testmanagerd.runner",
+                    "com.apple.coresymbolicationd",
+                ])
+            #else
+                return .strings(expanded)
+            #endif
+        }
         return sourceValue
     }
 

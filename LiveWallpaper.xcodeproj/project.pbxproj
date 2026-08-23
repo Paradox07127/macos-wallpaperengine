@@ -13,6 +13,7 @@
 		F5C1C0E330351DA700FF0A00 /* SystemWallpaperProvider.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = F5C1C0DC30351DA700FF0A00 /* SystemWallpaperProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F5C1C11330352D6F00FF0A00 /* SystemWallpaperProviderLite.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = F5C1C10C30352D6F00FF0A00 /* SystemWallpaperProviderLite.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F5C8FFB4301D663800D85832 /* SteamConnector.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = F5C8FFA9301D663800D85832 /* SteamConnector.xpc */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F5EA85A1303B3613009D91C4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = F5EA85A0303B3613009D91C4 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -182,6 +183,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F5EA85A1303B3613009D91C4 /* Sparkle in Frameworks */,
 				0CA00000000000000000A003 /* LiveWallpaperCore in Frameworks */,
 				0CA00000000000000000A303 /* LiveWallpaperProWPE in Frameworks */,
 			);
@@ -285,6 +287,7 @@
 			packageProductDependencies = (
 				0CA00000000000000000A002 /* LiveWallpaperCore */,
 				0CA00000000000000000A302 /* LiveWallpaperProWPE */,
+				F5EA85A0303B3613009D91C4 /* Sparkle */,
 			);
 			productName = LiveWallpaper;
 			productReference = 0C322BEF2D6950480033C48B /* Loomscreen Pro.app */;
@@ -475,6 +478,7 @@
 			packageReferences = (
 				0CA00000000000000000A001 /* XCLocalSwiftPackageReference "Packages/LiveWallpaperCore" */,
 				0CA00000000000000000A301 /* XCLocalSwiftPackageReference "Packages/LiveWallpaperProWPE" */,
+				F5EA859F303B3613009D91C4 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0C322BF02D6950480033C48B /* Products */;
@@ -1232,6 +1236,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		F5EA859F303B3613009D91C4 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		0CA00000000000000000A002 /* LiveWallpaperCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1244,6 +1259,11 @@
 		0CA00000000000000000B020 /* LiveWallpaperCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LiveWallpaperCore;
+		};
+		F5EA85A0303B3613009D91C4 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F5EA859F303B3613009D91C4 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

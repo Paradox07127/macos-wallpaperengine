@@ -16,7 +16,7 @@ trap 'rm -f "$DIFF_FILE"' EXIT
 # Use a structural parser because multiline SBPL values are unsafe to parse
 # line by line.
 fingerprint_plist() {
-  python3 "$ROOT/scripts/entitlement_fingerprint.py" fingerprint "$1"
+  python3 "$ROOT/scripts/entitlement_fingerprint.py" fingerprint "$1" --bundle-id "$EXPECTED_BUNDLE_ID"
 }
 
 fingerprint_app() {

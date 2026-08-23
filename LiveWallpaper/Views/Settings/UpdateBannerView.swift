@@ -2,13 +2,11 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Update delivery remains a manual download from GitHub Releases; this view
-/// does not install updates. Both SKUs are published in the same release, so
-/// the banner links to the release page rather than a specific asset. The
-/// once-per-release dialog is presented by `ContentView`, not here — this page
-/// is only the always-available status readout.
+/// About-page readout for Sparkle. Sparkle owns the actual update UI — this
+/// view only reports whether something is pending and offers a manual check;
+/// pressing either control hands off to Sparkle's own dialog.
 struct UpdateBannerView: View {
-    @State private var checker = UpdateChecker.shared
+    @State private var updater = SparkleUpdaterController.shared
 
     var body: some View {
         GroupBox {
@@ -38,97 +36,47 @@ struct UpdateBannerView: View {
 
     // MARK: - Status rendering
 
+    /// "No pending update" and "never successfully checked" are different facts.
+    /// Reporting the second as "up to date" would tell a user whose feed is
+    /// unreachable that they are current, which is the one thing they are not
+    /// in a position to know.
+    private var hasCheckedBefore: Bool { updater.lastUpdateCheckDate != nil }
+
     @ViewBuilder
     private var statusGlyph: some View {
-        switch checker.status {
-        case .idle:
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .foregroundStyle(.secondary)
-        case .checking:
-            ProgressView().controlSize(.small)
-        case .upToDate:
+        if updater.availableVersion != nil {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundStyle(DesignTokens.Colors.Status.info)
+        } else if hasCheckedBefore {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(DesignTokens.Colors.Status.active)
-        case .available:
-            Image(systemName: "arrow.down.circle.fill")
-                .foregroundStyle(DesignTokens.Colors.Status.warning)
-        case .failed:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(DesignTokens.Colors.Status.warning)
+        } else {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .foregroundStyle(.secondary)
         }
     }
 
     private var statusTitle: String {
-        switch checker.status {
-        case .idle:
-            return String(localized: "Update checker idle", comment: "About panel update status when idle.")
-        case .checking:
-            return String(localized: "Checking for updates…", comment: "About panel update status while checking.")
-        case .upToDate:
+        if let version = updater.availableVersion {
             return String(
-                localized: "\(BundleIdentity.productDisplayName) is up to date",
-                comment: "About panel update status when current. Placeholder is the product name."
-            )
-        case .available(let release):
-            return String(
-                localized: "\(BundleIdentity.productDisplayName) \(release.version.description) available",
+                localized: "\(BundleIdentity.productDisplayName) \(version) available",
                 comment: "About panel update status when a release is available. Placeholders are product name and version."
             )
-        case .failed:
-            return String(localized: "Update check failed", comment: "About panel update status after a failed check.")
         }
+        guard hasCheckedBefore else {
+            return String(
+                localized: "Update status unknown",
+                comment: "About panel update status before any successful check has run."
+            )
+        }
+        return String(
+            localized: "\(BundleIdentity.productDisplayName) is up to date",
+            comment: "About panel update status when current. Placeholder is the product name."
+        )
     }
 
     private var statusDetail: String? {
-        switch checker.status {
-        case .idle:
-            return lastCheckedSummary
-        case .checking:
-            return String(
-                localized: "Asking GitHub for the latest release tag…",
-                comment: "About panel detail while querying GitHub Releases."
-            )
-        case .upToDate:
-            return lastCheckedSummary
-        case .available(let release):
-            if let publishedAt = release.publishedAt {
-                let relative = Self.relativeFormatter.localizedString(for: publishedAt, relativeTo: Date())
-                return String(
-                    localized: "Released \(relative)",
-                    comment: "About panel detail for release date. Placeholder is a relative date string."
-                )
-            }
-            return release.tagName
-        case .failed(let reason):
-            return reason
-        }
-    }
-
-    @ViewBuilder
-    private var trailingAction: some View {
-        switch checker.status {
-        case .available(let release):
-            Button("Open") {
-                NSWorkspace.shared.open(release.releasePageURL)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        case .checking:
-            EmptyView()
-        default:
-            Button {
-                Task { await checker.checkNow(force: true) }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .help(Text("Check for updates now"))
-            .accessibilityLabel(Text("Check for updates now"))
-        }
-    }
-
-    private var lastCheckedSummary: String {
-        guard let date = checker.lastCheckedAt else {
+        guard let date = updater.lastUpdateCheckDate else {
             return String(localized: "Not checked yet", comment: "About panel update detail when no check has run.")
         }
         let relative = Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
@@ -136,6 +84,27 @@ struct UpdateBannerView: View {
             localized: "Last checked \(relative)",
             comment: "About panel update detail. Placeholder is a relative date string."
         )
+    }
+
+    @ViewBuilder
+    private var trailingAction: some View {
+        if updater.availableVersion != nil {
+            Button("Open") {
+                updater.checkForUpdates()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        } else {
+            Button {
+                updater.checkForUpdates()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .disabled(!updater.canCheckForUpdates)
+            .help(Text("Check for updates now"))
+            .accessibilityLabel(Text("Check for updates now"))
+        }
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {

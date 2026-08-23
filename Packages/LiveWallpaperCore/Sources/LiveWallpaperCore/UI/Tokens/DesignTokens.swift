@@ -49,6 +49,8 @@ public enum DesignTokens {
 
         public enum Status {
             public static let active = Color(nsColor: .systemGreen)
+            /// Actionable, non-alarming — an update being available is news, not a fault.
+            public static let info = Color(nsColor: .systemBlue)
             public static let warning = Color(nsColor: .systemOrange)
             public static let caution = Color(nsColor: .systemYellow)
             public static let danger = Color(nsColor: .systemRed)
