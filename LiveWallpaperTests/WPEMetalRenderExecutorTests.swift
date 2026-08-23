@@ -1752,7 +1752,7 @@ struct WPEMetalRenderExecutorTests {
         #expect(slots[0] == SIMD4<Float>(8, 4, 7, 3))
     }
 
-    @Test("Scalar float[N] audio array packs one bin per slot in .x (both pack overloads)")
+    @Test("Scalar float[N] audio array packs one bin per slot in .x")
     func audioSpectrumArrayPacksOneBinPerSlot() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
@@ -1760,40 +1760,13 @@ struct WPEMetalRenderExecutorTests {
         let layout = [
             WPEUniformSlot(name: "g_AudioSpectrum64Left", glslType: "float", slot: 0, slotCount: 64, arrayLength: 64)
         ]
-
-        let slotsValues = executor.packTranslatedUniforms(
-            values: ["g_AudioSpectrum64Left": .vector(bins)],
+        let slots = executor.packTranslatedUniforms(
+            for: packingPass(values: ["g_AudioSpectrum64Left": .vector(bins)]),
             layout: layout
         )
         for i in 0..<64 {
-            #expect(slotsValues[i].x == Float(bins[i]))
-            #expect(slotsValues[i].y == 0 && slotsValues[i].z == 0 && slotsValues[i].w == 0)
-        }
-
-        let pass = WPEPreparedRenderPass(
-            pass: WPERenderPass(
-                id: "audio.0",
-                phase: .effect(file: "effects/workshop/audio/effect.json"),
-                shader: "workshop/audio/bars",
-                source: .image("materials/base.png"),
-                target: .scene,
-                textures: [:],
-                binds: [:],
-                constants: [:],
-                combos: [:],
-                blending: "normal",
-                cullMode: "nocull",
-                depthTest: "disabled",
-                depthWrite: "disabled"
-            ),
-            shader: nil,
-            textureBindings: [:],
-            comboValues: [:],
-            uniformValues: ["g_AudioSpectrum64Left": .vector(bins)]
-        )
-        let slotsPass = executor.packTranslatedUniforms(for: pass, layout: layout)
-        for i in 0..<64 {
-            #expect(slotsPass[i].x == Float(bins[i]))
+            #expect(slots[i].x == Float(bins[i]))
+            #expect(slots[i].y == 0 && slots[i].z == 0 && slots[i].w == 0)
         }
     }
 
@@ -1806,7 +1779,7 @@ struct WPEMetalRenderExecutorTests {
             WPEUniformSlot(name: "u_Points", glslType: "vec2", slot: 0, slotCount: 4, arrayLength: 4)
         ]
         let slots = executor.packTranslatedUniforms(
-            values: ["u_Points": .vector(flat)],
+            for: packingPass(values: ["u_Points": .vector(flat)]),
             layout: layout
         )
         for i in 0..<4 {
@@ -4274,6 +4247,29 @@ private func preparedPipeline(
     return WPEPreparedRenderPipeline(layers: [
         WPEPreparedRenderLayer(graphLayer: layer, passes: passes)
     ])
+}
+
+private func packingPass(
+    values: [String: WPESceneShaderConstantValue]
+) -> WPEPreparedRenderPass {
+    preparedBuiltinPass(
+        WPERenderPass(
+            id: "pack.0",
+            phase: .effect(file: "effects/pack/effect.json"),
+            shader: "effects/pack",
+            source: .image("materials/base.png"),
+            target: .scene,
+            textures: [:],
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            blending: "disabled",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        ),
+        uniforms: values
+    )
 }
 
 private func preparedBuiltinPass(

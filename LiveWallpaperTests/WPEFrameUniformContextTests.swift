@@ -204,8 +204,7 @@ struct WPEFrameUniformContextTests {
 
         // Reference: a pass whose dict IS the legacy merge, packed by the SAME
         // per-pass packer with no frame context — identical packing logic, old
-        // merge precedence. (The standalone `packTranslatedUniforms(values:)`
-        // has no mat2/3/4 cases, so it cannot serve as the mat4 reference.)
+        // merge precedence.
         executor.frameUniformContext = .empty
         let originals: [(WPEPreparedRenderPass, Int)] = [
             (staticPass, 0), (animatedPass, 0), (scriptedPass, 1), (collidingPass, 1)

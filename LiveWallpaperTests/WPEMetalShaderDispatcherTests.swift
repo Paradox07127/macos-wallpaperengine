@@ -1,3 +1,4 @@
+import Foundation
 import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
@@ -74,6 +75,19 @@ struct WPEMetalShaderDispatcherTests {
             for: .effectOpacity,
             passShader: "effect_opacity"
         ).textureSlots == [0, 1])
+    }
+
+    @Test("Swift WPEGenericParticleUniforms is gone; the metallib struct stays")
+    func swiftGenericParticleUniformsRemoved() throws {
+        let uniforms = try RepositoryRoot.source(
+            "LiveWallpaper/Runtime/Metal/WPEMetalRenderErrors+Uniforms.swift"
+        )
+        let metal = try RepositoryRoot.source(
+            "LiveWallpaper/VideoPlayback/WPEMetalBuiltins.metal"
+        )
+        #expect(!uniforms.contains("struct WPEGenericParticleUniforms"))
+        #expect(metal.contains("struct WPEGenericParticleUniforms"))
+        #expect(metal.contains("wpe_genericparticle_fragment"))
     }
 
     @Test("Malformed godrays blend combos fail safe instead of trapping")

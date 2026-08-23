@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import LiveWallpaperCore
 
@@ -55,6 +56,15 @@ struct LogPrivacyBoundaryTests {
             #expect(output.contains("phase=parse"))
             #expect(output.contains("code=42"))
         }
+    }
+
+    @Test("notice and above always evaluate; info asks os_log")
+    func fileBackedLevelsAlwaysEvaluate() {
+        #expect(Logger.shouldEvaluate(.notice, category: .general))
+        #expect(Logger.shouldEvaluate(.warning, category: .general))
+        #expect(Logger.shouldEvaluate(.error, category: .general))
+        #expect(Logger.shouldEvaluate(.fault, category: .general))
+        #expect(Logger.shouldEvaluate(.info, category: .general) == OSLog(subsystem: Logger.Category.subsystem, category: Logger.Category.general.rawValue).isEnabled(type: .info))
     }
 
     @Test("Redaction is idempotent")

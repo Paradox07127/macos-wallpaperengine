@@ -194,7 +194,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
         table[3] = slot3
 
         let slots = executor.packTranslatedUniforms(
-            values: [:],
+            for: packingPass(values: [:]),
             layout: [
                 WPEUniformSlot(name: "g_Texture0Resolution", glslType: "vec4", slot: 0, slotCount: 1),
                 WPEUniformSlot(name: "g_Texture3Resolution", glslType: "vec4", slot: 1, slotCount: 1),
@@ -208,6 +208,15 @@ struct WPEMetalPreparedRenderStateCacheTests {
         #expect(slots[0] == SIMD4<Float>(8, 4, 8, 4))
         #expect(slots[1] == SIMD4<Float>(16, 2, 16, 2))
         #expect(slots[2] == SIMD4<Float>(0, 0, 0, 0))
+    }
+
+    @Test("Production packer is the only translated-uniform packer")
+    func productionPackerIsTheOnlyTranslatedUniformPacker() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor.swift"
+        )
+        #expect(source.contains("func packTranslatedUniforms(\n        for pass: WPEPreparedRenderPass,"))
+        #expect(!source.contains("func packTranslatedUniforms(\n        values: [String: WPESceneShaderConstantValue],"))
     }
 
     // MARK: - C. Utility-model classification carried on the layer
@@ -431,5 +440,31 @@ struct WPETranslatedPipelinePrewarmPlanTests {
         #expect(WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: false) == .invalid)
         #expect(WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: true) == .depth32Float)
     }
+}
+
+private func packingPass(
+    values: [String: WPESceneShaderConstantValue]
+) -> WPEPreparedRenderPass {
+    WPEPreparedRenderPass(
+        pass: WPERenderPass(
+            id: "pack.0",
+            phase: .effect(file: "effects/pack/effect.json"),
+            shader: "effects/pack",
+            source: .image("materials/base.png"),
+            target: .scene,
+            textures: [:],
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            blending: "disabled",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        ),
+        shader: nil,
+        textureBindings: [:],
+        comboValues: [:],
+        uniformValues: values
+    )
 }
 #endif

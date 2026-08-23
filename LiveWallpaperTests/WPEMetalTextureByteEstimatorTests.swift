@@ -87,6 +87,15 @@ struct WPEMetalTextureByteEstimatorTests {
         ) == 16_777_216 * 3)
     }
 
+    @Test("Static-layer cache bills through the shared estimator")
+    func staticLayerCacheUsesEstimator() throws {
+        let targets = try RepositoryRoot.source(
+            "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor+Targets.swift"
+        )
+        #expect(targets.contains("WPEMetalTextureByteEstimator.estimatedBytes(of:"))
+        #expect(!targets.contains("staticLayerCacheBytesPerPixel"))
+    }
+
     @Test("Every memory tier ships a bounded texture-cache budget")
     func everyTierIsBounded() {
         for tier in WPEMemoryTier.allCases {
