@@ -144,12 +144,5 @@ extension WPEMetalSceneRenderer {
             continuation.resume(returning: image)
         }
     }
-
-    static func finishLivePosterCaptures(
-        _ batch: LivePosterCaptureBatch?,
-        image: NSImage?
-    ) {
-        batch?.finish(image: image)
-    }
 }
 #endif

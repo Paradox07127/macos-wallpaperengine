@@ -1,9 +1,6 @@
 import Foundation
 import CoreGraphics
-import AppKit
-import AVFoundation
 import LiveWallpaperCore
-import ServiceManagement
 
 @MainActor
 final class SettingsManager {

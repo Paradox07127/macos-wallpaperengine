@@ -1,7 +1,6 @@
-import SwiftUI
-import Combine
+import CoreGraphics
+import Foundation
 import LiveWallpaperCore
-import Observation
 #if !LITE_BUILD
 import LiveWallpaperProWPE
 #endif

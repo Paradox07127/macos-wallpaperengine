@@ -591,7 +591,7 @@ final class WPEMetalRenderTargetPool {
         // composelayer boxes still use their authored local texture size; their
         // capture shader samples the matching scene subregion before downstream
         // effects run in layer-local UV space.
-        if isSceneCaptureUtilityLayer(layer),
+        if layer.isUtilityModelLayer,
            layer.groupCompositeSource == nil,
            (memo?.outputGeometry(
                layer: layer,
@@ -614,10 +614,6 @@ final class WPEMetalRenderTargetPool {
             width: max(size.width, 1),
             height: max(size.height, 1)
         )
-    }
-
-    private static func isSceneCaptureUtilityLayer(_ layer: WPERenderLayer) -> Bool {
-        layer.isUtilityModelLayer
     }
 
     private func textureDescriptor(for key: WPEMetalRenderTargetKey) throws -> MTLTextureDescriptor {

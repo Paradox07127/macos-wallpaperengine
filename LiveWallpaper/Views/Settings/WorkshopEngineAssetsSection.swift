@@ -6,10 +6,9 @@ import SwiftUI
 /// Linking or downloading a Wallpaper Engine install for the assets some
 /// scenes reference.
 ///
-/// Split out of the Workshop settings page when the page's three setup
-/// concerns each became their own section. The download progress gets a row of
-/// its own here: a multi-GB bar squeezed into the trailing slot next to three
-/// buttons was the one place this page ran out of width.
+/// The download progress gets a row of its own here: a multi-GB bar squeezed
+/// into the trailing slot next to three buttons was the one place this page
+/// ran out of width.
 struct WorkshopEngineAssetsSection: View {
     /// Called when an action needs the Steam connection set up first. The page
     /// scrolls there rather than pushing a second-level screen — the steps are

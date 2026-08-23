@@ -41,7 +41,7 @@ enum BugReporter {
     }
 
     private static func issueTemplateURL(named template: String) -> URL {
-        URL(string: "\(newIssueURLString)?template=\(template)") ?? URL(fileURLWithPath: "/")
+        URL(string: "\(newIssueURLString)?template=\(template)")!
     }
 
     /// How many recent warning/error lines we lift from the runtime log into the markdown preview.

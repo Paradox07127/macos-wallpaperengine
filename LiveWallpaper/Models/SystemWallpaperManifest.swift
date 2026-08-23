@@ -1,13 +1,5 @@
 import Foundation
 
-/// Shared contract between the main app (writer) and the wallpaper appex
-/// (reader). Compiled into both targets — keep it Foundation-only.
-///
-/// On-disk layout, inside the *host app's* sandbox container:
-///   .../Library/Application Support/Loomscreen/SystemWallpaper/
-///     manifest.json      written by the app
-///     heartbeat.json     written back by the appex (plan §3 U5)
-///     Videos/<fileName>  copied video assets
 /// What the wallpaper does once the desktop is showing. The lock screen always
 /// plays: that is the one moment the system asks for motion.
 enum SystemWallpaperPlaybackMode: String, Codable, Equatable, CaseIterable {
@@ -17,6 +9,14 @@ enum SystemWallpaperPlaybackMode: String, Codable, Equatable, CaseIterable {
     case stillOnDesktop
 }
 
+/// Shared contract between the main app (writer) and the wallpaper appex
+/// (reader). Compiled into both targets — keep it Foundation-only.
+///
+/// On-disk layout, inside the *host app's* sandbox container:
+///   .../Library/Application Support/Loomscreen/SystemWallpaper/
+///     manifest.json      written by the app
+///     heartbeat.json     written back by the appex
+///     Videos/<fileName>  copied video assets
 struct SystemWallpaperManifest: Codable, Equatable {
     struct Item: Codable, Equatable, Identifiable {
         var id: String

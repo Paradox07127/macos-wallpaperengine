@@ -98,7 +98,7 @@ final class ScreenManager {
             machine.userPause()
         }
     }
-    /// Kept as the coarse "not normal" question several call sites still ask.
+    /// Coarse "not normal" memory-pressure flag for tests.
     var isUnderMemoryPressure: Bool { memoryPressureLevel != .normal }
     /// Coordinates per-screen playback configuration mutations + transition tokens.
     @ObservationIgnored lazy var playbackCoordinator = PlaybackCoordinator(

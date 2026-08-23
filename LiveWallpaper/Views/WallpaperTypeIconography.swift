@@ -1,6 +1,6 @@
 import LiveWallpaperCore
 
-/// Single source of truth for the WallpaperType → SF Symbol mapping used by display rows (sidebar `ScreenRow`, menu-bar `MenuBarDisplayRow`).
+/// WallpaperType → SF Symbol used by MenuBarDisplayRow.
 extension WallpaperType {
     var displaySymbolName: String {
         switch self {

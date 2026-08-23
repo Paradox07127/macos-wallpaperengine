@@ -7,10 +7,9 @@ import LiveWallpaperProWPE
 ///
 /// The runtime cache (`wpe-cache/<id>/`) only holds what the `scene.pkg`
 /// archive shipped — `project.json` lives next to the archive in the workshop
-/// folder and is never extracted. Try cache first (a future importer revision
-/// may top it up), then fall back to `WPEOrigin.sourceFolderBookmark` so
-/// existing caches without a copied `project.json` still show their
-/// author-defined properties.
+/// folder and is never extracted. Try cache first, then fall back to
+/// `WPEOrigin.sourceFolderBookmark` so existing caches without a copied
+/// `project.json` still show their author-defined properties.
 enum WPESceneProjectSchemaLoader {
     struct Outcome: Sendable {
         let schema: WallpaperEngineProjectPropertySchema?

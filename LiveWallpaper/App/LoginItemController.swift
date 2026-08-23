@@ -6,9 +6,8 @@ import ServiceManagement
 /// the cases where `SMAppService` reports success but the item never becomes
 /// active — the app not living in `/Applications`, or signing being rejected.
 ///
-/// Extracted from `SettingsManager`: nothing here touches settings persistence,
-/// and the generation counter that cancels a superseded validation is state only
-/// this controller needs.
+/// Nothing here touches settings persistence, and the generation counter that
+/// cancels a superseded validation is state only this controller needs.
 @MainActor
 final class LoginItemController {
     /// Identifies the apply currently allowed to report. Bumped on every apply

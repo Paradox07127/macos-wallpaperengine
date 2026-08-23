@@ -65,7 +65,7 @@ extension WPEMetalShaderDispatcher {
         var metadata = Self.builtinTraceMetadata(for: kind, passShader: pass.pass.shader)
         let firstReference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
         let singleTextureCompose = kind == .compose
-            && isSceneCaptureUtilityLayer(layer)
+            && layer.isUtilityModelLayer
             && isLayerCompositeTarget(pass.pass.target)
             && (isSceneAliasReference(firstReference)
                 || isGroupCompositeSourceReference(firstReference, layer: layer))

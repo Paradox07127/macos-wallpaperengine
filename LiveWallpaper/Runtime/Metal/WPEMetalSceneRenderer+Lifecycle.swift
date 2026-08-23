@@ -853,12 +853,12 @@ extension WPEMetalSceneRenderer {
                                 into: commandBuffer
                             )
                             if !presented {
-                                Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
+                                livePosterCaptures?.finish(image: nil)
                             }
                             mergedPresentResult = presented
                             return presented
                         } catch {
-                            Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
+                            livePosterCaptures?.finish(image: nil)
                             throw error
                         }
                     }
@@ -892,10 +892,10 @@ extension WPEMetalSceneRenderer {
                         presentCompletion: presentCompletion
                     )
                     if !presented {
-                        Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
+                        livePosterCaptures?.finish(image: nil)
                     }
                 } catch {
-                    Self.finishLivePosterCaptures(livePosterCaptures, image: nil)
+                    livePosterCaptures?.finish(image: nil)
                     throw error
                 }
             }

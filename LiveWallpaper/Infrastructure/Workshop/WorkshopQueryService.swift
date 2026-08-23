@@ -663,8 +663,7 @@ actor WorkshopQueryService {
             .map(WorkshopDiagnosticRedactor.redact)
             .filter { !$0.isEmpty }
 
-        let communityURL = URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")
-            ?? URL(string: "https://steamcommunity.com/")!
+        let communityURL = URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")!
 
         return WorkshopQueryItem(
             id: id,

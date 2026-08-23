@@ -107,17 +107,6 @@ public extension ThumbnailTitleBand where Leading == EmptyView {
     }
 }
 
-public extension ThumbnailTitleBand where Leading == EmptyView, Trailing == EmptyView {
-    init(title: String, isHovering: Bool) {
-        self.init(
-            title: title,
-            isHovering: isHovering,
-            leading: { EmptyView() },
-            trailing: { EmptyView() }
-        )
-    }
-}
-
 /// The green glass check a tile wears when its wallpaper is already local.
 public struct ThumbnailPresenceCheck: View {
     private let tint: Color

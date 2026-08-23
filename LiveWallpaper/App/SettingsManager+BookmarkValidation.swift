@@ -1,14 +1,9 @@
 import Foundation
 import CoreGraphics
-import AppKit
-import AVFoundation
 import LiveWallpaperCore
-import ServiceManagement
 
-// Split out of SettingsManager.swift: security-scoped bookmark validation and
-// refresh. Kept as an extension rather than its own type because it calls back
-// into loadConfigurations()/saveConfiguration() — injecting those as closures
-// would be decoupling in name only.
+// Kept as an extension rather than its own type because it calls back into
+// loadConfigurations()/saveConfiguration() — injecting those as closures would be decoupling in name only.
 
 extension SettingsManager {
     func validateConfiguration(for screenID: CGDirectDisplayID) -> Bool {

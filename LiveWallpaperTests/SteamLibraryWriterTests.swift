@@ -284,10 +284,10 @@ struct ConnectorQueueExpiryTests {
             encoding: .utf8
         )
         let clientTimeout = try #require(
-            client.firstMatch(of: /timeout: TimeInterval = (\d+)/).map { Double($0.output.1) } ?? nil
+            client.firstMatch(of: /timeout: TimeInterval = (\d+)/).flatMap { Double($0.output.1) }
         )
         let serviceExpiry = try #require(
-            service.firstMatch(of: /maxQueueWait: TimeInterval = (\d+)/).map { Double($0.output.1) } ?? nil
+            service.firstMatch(of: /maxQueueWait: TimeInterval = (\d+)/).flatMap { Double($0.output.1) }
         )
         #expect(clientTimeout > serviceExpiry)
     }

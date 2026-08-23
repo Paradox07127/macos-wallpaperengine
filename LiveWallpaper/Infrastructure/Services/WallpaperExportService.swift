@@ -5,7 +5,7 @@ import LiveWallpaperCore
 import Observation
 
 /// Publishes library videos into the shared directory the wallpaper appex
-/// reads (plan §4.5), and mirrors the appex's heartbeat back into UI state.
+/// reads, and mirrors the appex's heartbeat back into UI state.
 /// Both SKUs ship this — the system-wallpaper outlet is not Pro-gated.
 @MainActor
 @Observable
@@ -77,7 +77,7 @@ final class WallpaperExportService {
 
     /// Heartbeat younger than this counts as "the system is driving us now".
     /// 300 s is provisional — recalibrate once the real acquire/update cadence
-    /// is measured (plan §3 U5).
+    /// is measured.
     static let heartbeatFreshnessInterval: TimeInterval = 300
 
     private(set) var items: [SystemWallpaperManifest.Item] = []
@@ -515,8 +515,7 @@ final class WallpaperExportService {
     }
 
     func openWallpaperSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension") else { return }
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension")!)
     }
 
     /// Workshop videos live inside `scene.pkg` as one contiguous, uncompressed

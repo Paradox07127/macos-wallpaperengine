@@ -8,7 +8,7 @@ import LiveWallpaperProWPE
 /// Stateless TEXVxxxx `.tex` decoder with precise format/truncation errors.
 struct WPETexDecoder: Sendable {
 
-    /// Cheap header probe — used by `WallpaperEngineImportService` during capability tier classification.
+    /// Cheap header probe — used by `WPERenderPipelineBuilder` for texture format resolution.
     func probe(data: Data) -> Result<WPETexInfo, WPETexDecodeError> {
         probe(span: WPEMappedByteSpan(data: data))
     }

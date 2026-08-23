@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// The status vocabulary is deliberately narrow: only what our own files prove
 /// (the manifest we write, the heartbeat the appex writes back). The page never
-/// claims a system-side state it cannot observe (plan §5.4).
+/// claims a system-side state it cannot observe.
 @available(macOS 26.0, *)
 struct SystemWallpaperLibraryView: View {
     @Environment(WallpaperExportService.self) private var service

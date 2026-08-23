@@ -275,7 +275,6 @@ struct WPEMetalPreparedRenderStateCacheTests {
     func consumersAgreeWithClassify() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        let dispatcher = WPEMetalShaderDispatcher(executor: executor)
         let sceneSize = CGSize(width: 1024, height: 768)
 
         for path in Self.classificationCorpus {
@@ -286,7 +285,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
             let layer = makeLayer(imagePath: path, geometry: geometry)
 
             // Dispatcher (compose-family gate).
-            #expect(dispatcher.isSceneCaptureUtilityLayer(layer) == (expected != nil), "path: \(path)")
+            #expect(layer.isUtilityModelLayer == (expected != nil), "path: \(path)")
             // Executor (object-quad routing + composite geometry).
             #expect(
                 executor.sceneCaptureUtilityOutputGeometry(for: layer)

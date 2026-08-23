@@ -3,10 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-// Split out of WallpaperEngineImportService.swift: an independent type cluster with no
-// references to or from the rest of that file.
-
-
 @MainActor
 struct WPECachedContentResolver {
     private let applicationSupportRootURL: URL

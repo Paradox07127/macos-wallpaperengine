@@ -4,10 +4,6 @@ import LiveWallpaperCore
 struct PowerWidgetView: View {
     let context: MonitorWidgetContext
 
-    init(context: MonitorWidgetContext) {
-        self.context = context
-    }
-
     private var system: MonitorSystemSnapshot? { context.snapshot.system }
     private var model: MonitorPowerModel { .init(system: system) }
 
@@ -20,15 +16,13 @@ struct PowerWidgetView: View {
     var body: some View {
         GeometryReader { geo in
             let cellHeight = geo.size.height / 2   // both sizes are 2 rows tall
-            WidgetContainer(label: "Power", systemImage: powerSymbol, cellHeight: cellHeight) {
-                EmptyView()
-            } content: {
+            WidgetContainer(label: "Power", systemImage: powerSymbol, cellHeight: cellHeight, content: {
                 switch context.placement.size {
                 case .small:  smallBody(cellHeight: cellHeight)
                 case .medium: mediumBody(cellHeight: cellHeight)
                 case .large:  mediumBody(cellHeight: cellHeight)
                 }
-            }
+            })
         }
     }
 

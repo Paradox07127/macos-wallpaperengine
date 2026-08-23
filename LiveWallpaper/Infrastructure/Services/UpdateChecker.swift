@@ -38,12 +38,32 @@ final class UpdateChecker {
         set { defaults.set(newValue, forKey: Self.skippedVersionKey) }
     }
 
+    /// Tag whose "new version" dialog has already been shown once. Persisted so
+    /// relaunching does not re-announce a release the user already dismissed.
+    private(set) var announcedVersionTag: String? {
+        get { defaults.string(forKey: Self.announcedVersionKey) }
+        set { defaults.set(newValue, forKey: Self.announcedVersionKey) }
+    }
+
+    /// The release that still owes the user one dialog; nil once announced.
+    var unannouncedAvailableRelease: LatestRelease? {
+        guard case .available(let release) = status,
+              release.tagName != announcedVersionTag else { return nil }
+        return release
+    }
+
+    /// Records that `release` has had its one dialog, so no later window open
+    /// shows it again.
+    func markAnnounced(_ release: LatestRelease) {
+        announcedVersionTag = release.tagName
+    }
+
     static let releasesAPI = URL(
         string: "https://api.github.com/repos/Paradox07127/macos-wallpaperengine/releases?per_page=10"
-    ) ?? URL(fileURLWithPath: "/")
+    )!
     static let releasesPage = URL(
         string: "https://github.com/Paradox07127/macos-wallpaperengine/releases"
-    ) ?? URL(fileURLWithPath: "/")
+    )!
 
     static let tagPrefix = "loomscreen-v"
     static let throttleInterval: TimeInterval = 60 * 60 * 12
@@ -64,6 +84,10 @@ final class UpdateChecker {
     private static let lastCheckedKey = "loomscreen.update.lastCheckedAt"
     private static let nextEligibleKey = "loomscreen.update.nextEligibleAt"
     private static let skippedVersionKey = "loomscreen.update.skippedVersion"
+    private static let announcedVersionKey = "loomscreen.update.announcedVersion"
+    /// Last known available release, so the menu bar badge survives a relaunch
+    /// instead of going blank for the rest of the 12 h throttle window.
+    private static let availableReleaseKey = "loomscreen.update.availableRelease.v1"
     private let transport: any UpdateCheckerTransport
     private let now: @Sendable () -> Date
     private let currentVersion: SemanticVersion
@@ -92,6 +116,9 @@ final class UpdateChecker {
             // 12 h window off their recorded last-checked time.
             self.nextEligibleAt = stored.addingTimeInterval(Self.throttleInterval)
         }
+        if let restored = self.knownAvailableRelease() {
+            self.status = .available(restored)
+        }
     }
 
     /// Checks for a release, optionally bypassing the automatic-check throttle.
@@ -112,12 +139,16 @@ final class UpdateChecker {
         do {
             let releases = try await transport.fetchReleases(from: Self.releasesAPI)
             status = evaluate(releases: releases)
+            persistAvailability(status)
             scheduleNextEligible(after: Self.throttleInterval, from: attemptedAt)
         } catch {
             // Generic user-facing string so a hostile response can't smuggle
             // implementation details into the UI.
             Logger.error("Update check failed: \(String(describing: error))", category: .updates)
-            status = .failed(reason: "Unable to check for updates right now.")
+            // A dropped connection must not retract a release we already know
+            // about — the badge is the whole point of persisting it.
+            status = knownAvailableRelease().map(Status.available)
+                ?? .failed(reason: "Unable to check for updates right now.")
             scheduleNextEligible(after: Self.failureRetryInterval, from: attemptedAt)
         }
     }
@@ -127,7 +158,55 @@ final class UpdateChecker {
         if case .available(let release) = status {
             skippedVersionTag = release.tagName
             status = .upToDate
+            defaults.removeObject(forKey: Self.availableReleaseKey)
         }
+    }
+
+    /// Stored release, filtered through the same eligibility rules as a fresh one.
+    private func knownAvailableRelease() -> LatestRelease? {
+        guard let stored = Self.storedAvailableRelease(in: defaults),
+              stored.version > currentVersion,
+              stored.tagName != skippedVersionTag else { return nil }
+        return stored
+    }
+
+    /// A failed check deliberately leaves the stored release alone — a GitHub
+    /// hiccup must not blank a badge we already earned.
+    private func persistAvailability(_ status: Status) {
+        switch status {
+        case .available(let release):
+            defaults.set(Self.encodeAvailableRelease(release), forKey: Self.availableReleaseKey)
+        case .upToDate:
+            defaults.removeObject(forKey: Self.availableReleaseKey)
+        case .idle, .checking, .failed:
+            break
+        }
+    }
+
+    private static func encodeAvailableRelease(_ release: LatestRelease) -> [String: Any] {
+        var dict: [String: Any] = [
+            "tag": release.tagName,
+            "url": release.releasePageURL.absoluteString,
+            "body": release.body
+        ]
+        if let publishedAt = release.publishedAt { dict["publishedAt"] = publishedAt }
+        return dict
+    }
+
+    /// Restored values go back through the same tag and URL trust checks as a
+    /// fresh response — defaults are writable by anything running as the user.
+    private static func storedAvailableRelease(in defaults: UserDefaults) -> LatestRelease? {
+        guard let dict = defaults.dictionary(forKey: availableReleaseKey),
+              let tag = dict["tag"] as? String,
+              tag.hasPrefix(tagPrefix),
+              let version = SemanticVersion(parsing: tag) else { return nil }
+        return LatestRelease(
+            tagName: tag,
+            version: version,
+            releasePageURL: trustedReleasePageURL((dict["url"] as? String).flatMap(URL.init(string:))),
+            publishedAt: dict["publishedAt"] as? Date,
+            body: dict["body"] as? String ?? ""
+        )
     }
 
     private func recordLastChecked(_ stamp: Date) {

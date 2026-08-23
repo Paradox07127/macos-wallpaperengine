@@ -338,7 +338,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     // Nil-when-no-renderer semantics preserved: consumers guard on this, and a
-    // torn-down session must report no controller (mirrors the old `{ renderer }`).
+    // torn-down session must report no controller.
     var frameRateController: (any WallpaperFrameRateConfigurable)? {
         hasRenderer ? rendererConfigAdapter : nil
     }

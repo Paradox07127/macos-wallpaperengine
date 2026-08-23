@@ -319,7 +319,7 @@ struct WPEMetalShaderDispatcher {
     ) throws {
         let firstReference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
         let secondReference = pass.textureBindings[1] ?? pass.pass.textures[1] ?? firstReference
-        let isSingleTextureComposeLayer = isSceneCaptureUtilityLayer(layer)
+        let isSingleTextureComposeLayer = layer.isUtilityModelLayer
             && isLayerCompositeTarget(pass.pass.target)
             && (isSceneAliasReference(firstReference) || isGroupCompositeSourceReference(firstReference, layer: layer))
         let isLocalSceneCaptureComposeLayer = isSingleTextureComposeLayer
@@ -932,12 +932,8 @@ struct WPEMetalShaderDispatcher {
         return UInt32(value)
     }
 
-    private static func isWaterWavesPass(_ pass: WPEPreparedRenderPass) -> Bool {
-        WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .effectWaterWaves
-    }
-
     private static func isWaveLikePass(_ pass: WPEPreparedRenderPass) -> Bool {
-        if isWaterWavesPass(pass) { return true }
+        if WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .effectWaterWaves { return true }
         let shader = pass.pass.shader.lowercased()
         return shader.contains("wave") || shader.contains("flutter")
     }
@@ -946,10 +942,6 @@ struct WPEMetalShaderDispatcher {
         pass.textureBindings[slot] != nil
             || pass.pass.textures[slot] != nil
             || pass.pass.binds[slot] != nil
-    }
-
-    func isSceneCaptureUtilityLayer(_ layer: WPERenderLayer) -> Bool {
-        layer.isUtilityModelLayer
     }
 
     func isLayerCompositeTarget(_ target: WPERenderTarget) -> Bool {

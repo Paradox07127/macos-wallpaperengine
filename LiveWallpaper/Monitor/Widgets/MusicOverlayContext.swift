@@ -15,6 +15,4 @@ struct MusicOverlayContext {
     var isEditing: Bool
     var reduceMotion: Bool
     var now: Date
-
-    var nowPlaying: MonitorNowPlayingState? { snapshot.nowPlaying }
 }

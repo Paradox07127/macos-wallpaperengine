@@ -655,7 +655,7 @@ extension WPEMetalSceneRenderer {
                         try Task.checkCancellation()
 
                         if payload.videoPayload != nil {
-                            let source = try await makeVideoTextureSource(from: payload, label: label, on: actor)
+                            let source = try await makeVideoTextureSource(from: payload, on: actor)
                             try Task.checkCancellation()
                             return .dynamicSource(source)
                         }
@@ -800,7 +800,6 @@ extension WPEMetalSceneRenderer {
 
     private func makeVideoTextureSource(
         from payload: WPETexTexturePayload,
-        label: String,
         on actor: isolated WPEDisplayRenderActor
     ) async throws -> WPEVideoTextureSource {
         try Task.checkCancellation()
@@ -832,7 +831,6 @@ extension WPEMetalSceneRenderer {
                 outputPixelSize: outputPixelSize,
                 decoderAdmission: .shared
             )
-            _ = label
             return source
         } catch {
             await WPEVideoTextureDiskCache.shared.release(url)

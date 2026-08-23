@@ -221,7 +221,6 @@ final class WPEVideoTextureSource {
     var isLiveDecoder: Bool { player != nil }
 
     #if DEBUG
-    var isLiveDecoderForTesting: Bool { isLiveDecoder }
     var outputPixelSizeForTesting: CGSize? { outputPixelSize }
     #endif
 

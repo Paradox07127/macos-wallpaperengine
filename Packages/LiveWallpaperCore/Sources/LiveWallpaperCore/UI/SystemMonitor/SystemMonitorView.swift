@@ -5,10 +5,8 @@ struct SystemMonitorView: View {
     @State private var powerSource: PowerMonitor.PowerSource = PowerMonitor.shared.currentPowerSource
     @AppStorage("Dashboard.RAMScope") private var ramScopeRaw: String = "system"
 
-    /// Snapshot of how many displays are currently playing a wallpaper, and
-    /// how many displays are connected in total. Passed in from the caller
-    /// because `SystemMonitorView` lives in the Pro features package and
-    /// cannot import the main-app `ScreenManager` type directly.
+    /// Snapshot of playing vs connected display counts. Passed in because
+    /// this view must not import the app's `ScreenManager`.
     private let activeDisplayCount: Int
     private let totalDisplayCount: Int
 
@@ -303,7 +301,6 @@ private extension PowerMonitor.PowerSource {
     }
 }
 
-// Merged from RAMScopePicker.swift: single consumer, no independent test surface.
 struct RAMScopePicker: View {
     @Binding var selection: String
     var maxWidth: CGFloat?

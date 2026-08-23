@@ -121,7 +121,7 @@ struct BrowseCard: View, Equatable {
         }
         .overlay(alignment: .topTrailing) {
             if let resolutionLabel, !shouldBlur, cardPreferences.showsResolution {
-                resolutionPill(resolutionLabel)
+                ThumbnailBadge(verbatim: resolutionLabel)
                     .padding(DesignTokens.Spacing.sm)
             }
         }
@@ -131,10 +131,6 @@ struct BrowseCard: View, Equatable {
             }
         }
         .aspectRatio(1, contentMode: .fit)
-    }
-
-    private func resolutionPill(_ label: String) -> some View {
-        ThumbnailBadge(verbatim: label)
     }
 
     private func typePill(_ type: WorkshopContentTypeFilter) -> some View {
@@ -175,7 +171,7 @@ struct BrowseCard: View, Equatable {
         }
     }
 
-    /// Leading type glyph, matching the app's existing drag-preview iconography (`InstalledView.dragIconName`) so Scene/Video/Web read the same everywhere.
+    /// Leading type glyph so Scene/Video/Web read the same in the grid.
     private static func typeSymbol(for type: WorkshopContentTypeFilter) -> String {
         switch type {
         case .scene: return "cube.transparent.fill"
@@ -211,7 +207,6 @@ struct BrowseCard: View, Equatable {
 
     // MARK: - Derived values
 
-    /// `voteScore` is 0...1; map to a 0...5 star value.
     private var ratingValue: Double? {
         guard let score = item.voteScore, score > 0 else { return nil }
         return min(max(score * 5, 0), 5)

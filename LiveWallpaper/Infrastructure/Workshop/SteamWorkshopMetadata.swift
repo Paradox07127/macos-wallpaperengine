@@ -236,8 +236,7 @@ final class SteamWorkshopMetadataService {
             }
         }
 
-        let communityURL = URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")
-            ?? URL(string: "https://steamcommunity.com/")!
+        let communityURL = URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")!
 
         return .success(SteamWorkshopMetadata(
             publishedFileID: id,

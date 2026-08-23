@@ -217,7 +217,7 @@ struct RootView: View {
 
     @ViewBuilder
     private func ghostFrame(drag: MonitorBoardDragState, geometry: MonitorBoardGeometry) -> some View {
-        if let ghostOrigin = drag.ghostOrigin {
+        if let ghostOrigin = drag.snappedOrigin {
             let raw = CGRect(origin: ghostOrigin, size: drag.footprint)
             let rect = geometry.renderRect(forRawRect: raw)
             RoundedRectangle(cornerRadius: geometry.cornerRadius, style: .continuous)

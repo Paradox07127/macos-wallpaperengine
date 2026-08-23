@@ -98,7 +98,7 @@ struct HistoryRow: View {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         if let resolutionLabel, cardPreferences.showsResolution {
-                            resolutionPill(resolutionLabel)
+                            ThumbnailBadge(verbatim: resolutionLabel)
                         }
                         if let badge = compatibilityBadge {
                             ThumbnailBadge(
@@ -145,10 +145,6 @@ struct HistoryRow: View {
                 }
             }
         }
-    }
-
-    private func resolutionPill(_ label: String) -> some View {
-        ThumbnailBadge(verbatim: label)
     }
 
     /// Only video projects have a resolution at all — a WPE scene renders at

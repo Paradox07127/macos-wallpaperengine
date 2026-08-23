@@ -17,7 +17,7 @@ enum SourceRegistration {
         return [NowPlayingSource(audioReactive: options.musicAudioReactive)]
     }
 
-    /// Idempotent; MainActor before first `Runtime.acquire`.
+    /// Must run on MainActor before the first `Runtime.acquire`.
     @MainActor static func registerDefaultFactories() {
         guard !registered else { return }
         registered = true
