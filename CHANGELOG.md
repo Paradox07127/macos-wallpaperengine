@@ -13,6 +13,31 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.5.7] — 2026-08-23
+
+### Added
+
+- "Show wallpaper in screenshots", in Settings → General. Off by default; turn
+  it on to let screenshots, screen recording and screen sharing capture the
+  wallpaper.
+- The HTML security inspector now says why scripts are off, and names a loopback
+  address as a local development server rather than an untrusted remote host.
+
+### Changed
+
+- Static frames no longer rebuild the render tree. Every layer and pass struct
+  used to be copied each frame even when nothing was animating.
+
+### Fixed
+
+- An origin like `010.0.0.1` was judged private by its decimal spelling, but the
+  resolver reads the leading zero as octal and dials the public 8.0.0.1. Private
+  and loopback addresses are now decided the same way the connection is.
+- An IPv6 origin lost its brackets when saved, so trusting one never persisted.
+- A script that changed a layer's opacity froze that layer's color animation on
+  its first frame.
+- A pre-release left in the update cache could be offered to a stable install.
+
 ## [0.5.6] — 2026-08-22
 
 ### Added
