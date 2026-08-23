@@ -287,11 +287,93 @@ struct CodexAgentSourceTests {
                 .init(url: liveURL, modificationDate: now.addingTimeInterval(-5), processAlive: true)
             ],
             now: now,
-            waitTracker: &tracker
+            waitTracker: &tracker,
+            liveProcessDirectories: (directories: [], complete: false)
         )
 
         #expect(states.map(\.id) == ["codex:live", "codex:recent-ended"])
         #expect(states.map(\.status) == [.running, .ended])
+    }
+
+    @Test("Executable basename matching agrees with URL.lastPathComponent")
+    func codexBasenameMatching() {
+        let paths = [
+            "/usr/local/bin/codex",
+            "/opt/codex",
+            "codex",
+            "/codex",
+            "/usr/bin/codexd",
+            "/usr/bin/xcodex",
+            "/opt/mycodex",
+            "/codex/bin/node",
+            "/usr/bin/CODEX",
+            "/usr/bin/code",
+            "/Applications/My codex.app/Contents/MacOS/codex",
+            "",
+        ]
+        for path in paths {
+            let bytes = Array(path.utf8CString.dropLast())
+            let expected = !path.isEmpty
+                && URL(fileURLWithPath: path).lastPathComponent == "codex"
+            #expect(
+                CodexProcessProbe.hasCodexBasename(bytes, length: bytes.count) == expected,
+                "\(path)"
+            )
+        }
+    }
+
+    @Test("Basename matching never reads buffer bytes past the reported length")
+    func codexBasenameIgnoresStaleBufferBytes() {
+        // The probe reuses one buffer across the whole process table, so a short
+        // path must not see the tail of the previous, longer one.
+        var buffer = Array("/usr/bin/some-very-long-daemon-name".utf8CString.dropLast())
+        let shortPath = Array("/usr/bin/codex".utf8CString.dropLast())
+        buffer.replaceSubrange(0..<shortPath.count, with: shortPath)
+        #expect(CodexProcessProbe.hasCodexBasename(buffer, length: shortPath.count))
+        #expect(!CodexProcessProbe.hasCodexBasename(buffer, length: buffer.count))
+    }
+
+    @Test("Live process directories decide liveness in both directions when complete")
+    func liveProcessDirectoriesOverrideScanner() {
+        let model = Self.model(
+            id: "alive",
+            eventTime: Date(timeIntervalSince1970: 10_000),
+            eventType: "task_started"
+        )
+        // Discovery: a running codex in this checkout beats a stale mtime.
+        #expect(CodexAgentSource.isAlive(
+            model: model,
+            scannerSaysAlive: false,
+            liveProcessDirectories: (directories: ["/tmp/alive"], complete: true)
+        ))
+        // Disappearance: no matching cwd means gone, even inside the mtime window.
+        #expect(!CodexAgentSource.isAlive(
+            model: model,
+            scannerSaysAlive: true,
+            liveProcessDirectories: (directories: ["/tmp/other"], complete: true)
+        ))
+    }
+
+    @Test("An incomplete probe falls back to the scanner instead of reading as dead")
+    func incompleteProbeFallsBackToScanner() {
+        let model = Self.model(
+            id: "alive",
+            eventTime: Date(timeIntervalSince1970: 10_000),
+            eventType: "task_started"
+        )
+        for scannerSaysAlive in [true, false] {
+            #expect(CodexAgentSource.isAlive(
+                model: model,
+                scannerSaysAlive: scannerSaysAlive,
+                liveProcessDirectories: (directories: [], complete: false)
+            ) == scannerSaysAlive)
+            // A refused cwd is "unknown" even when other codex processes answered.
+            #expect(CodexAgentSource.isAlive(
+                model: model,
+                scannerSaysAlive: scannerSaysAlive,
+                liveProcessDirectories: (directories: ["/tmp/alive"], complete: false)
+            ) == scannerSaysAlive)
+        }
     }
 
     private static func model(

@@ -134,7 +134,19 @@ final class CodexAgentSource: MonitorDataSource {
                 }
             }
 
-            let sessions = Self.sessionStates(modelsByURL: models, files: files, now: now, waitTracker: &waitTracker)
+            // Default arguments are re-evaluated at every call site, which is how
+            // this full process-table walk ended up running on every 1.5 s tick.
+            // It is only meaningful once there is a transcript to attribute.
+            let liveProcessDirectories = files.isEmpty
+                ? (directories: Set<String>(), complete: false)
+                : CodexProcessProbe.codexWorkingDirectories()
+            let sessions = Self.sessionStates(
+                modelsByURL: models,
+                files: files,
+                now: now,
+                waitTracker: &waitTracker,
+                liveProcessDirectories: liveProcessDirectories
+            )
             await sink.updateAgents(sourceID: sourceID, sessions: sessions)
             if pollHadError {
                 await sink.updateHealth(Self.health(state: "error", detail: "Failed to read Codex sessions", at: now))
@@ -152,7 +164,6 @@ final class CodexAgentSource: MonitorDataSource {
         now: Date,
         waitTracker: inout MonitorAgentWaitTracker,
         liveProcessDirectories: (directories: Set<String>, complete: Bool)
-            = CodexProcessProbe.codexWorkingDirectories()
     ) -> [MonitorAgentSessionState] {
         let states = files.compactMap { file -> MonitorAgentSessionState? in
             guard let model = modelsByURL[file.url],
