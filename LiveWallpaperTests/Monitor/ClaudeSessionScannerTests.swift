@@ -43,7 +43,7 @@ struct ClaudeSessionScannerTests {
         try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "older", ageHours: 10)
         try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "stale", ageHours: 100)
 
-        let scanner = ClaudeSessionScanner(rootURL: root)
+        var scanner = ClaudeSessionScanner(rootURL: root)
         let found = try scanner.discoverTranscripts()
 
         let ids = found.map(\.sessionId)
@@ -61,7 +61,7 @@ struct ClaudeSessionScannerTests {
         for i in 0..<10 {
             try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "s\(i)", ageHours: Double(i) * 0.1)
         }
-        let scanner = ClaudeSessionScanner(rootURL: root)
+        var scanner = ClaudeSessionScanner(rootURL: root)
         let found = try scanner.discoverTranscripts(limit: 3)
         #expect(found.count == 3)
     }
@@ -70,10 +70,14 @@ struct ClaudeSessionScannerTests {
     func discoveryThrowsWhenRootMissing() {
         let bogus = FileManager.default.temporaryDirectory
             .appendingPathComponent("does-not-exist-\(UUID().uuidString)", isDirectory: true)
-        let scanner = ClaudeSessionScanner(rootURL: bogus)
-        #expect(throws: (any Error).self) {
+        var scanner = ClaudeSessionScanner(rootURL: bogus)
+        var thrown: (any Error)?
+        do {
             _ = try scanner.discoverTranscripts()
+        } catch {
+            thrown = error
         }
+        #expect(thrown != nil)
     }
 
     @Test("current process pid is alive; pid 99999999 is dead")
@@ -120,5 +124,111 @@ struct ClaudeSessionScannerTests {
 
         let scanner = ClaudeSessionScanner(rootURL: root)
         #expect(scanner.loadPIDDescriptors().isEmpty)
+    }
+
+    private func directoryModifiedAt(_ url: URL) throws -> Date {
+        try #require(
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        )
+    }
+
+    private func appendLine(root: URL, projectDir: String, sessionId: String, mtime: Date) throws {
+        let url = root
+            .appendingPathComponent("projects/\(projectDir)", isDirectory: true)
+            .appendingPathComponent("\(sessionId).jsonl")
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("{\"type\":\"assistant\"}\n".utf8))
+        try handle.close()
+        try FileManager.default.setAttributes([.modificationDate: mtime],
+                                              ofItemAtPath: url.path(percentEncoded: false))
+    }
+
+    // MARK: - Scan scope
+
+    @Test("an unchanged tree is not re-listed")
+    func unchangedTreeIsNotRelisted() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "a", ageHours: 1)
+        try writeTranscript(root: root, projectDir: "-Users-me-other", sessionId: "b", ageHours: 2)
+
+        var scanner = ClaudeSessionScanner(rootURL: root)
+        let first = try scanner.discoverTranscripts()
+        let listingsAfterFirst = scanner.directoryListingCount
+        #expect(listingsAfterFirst == 3, "projects root + two project directories")
+
+        let second = try scanner.discoverTranscripts()
+        #expect(scanner.directoryListingCount == listingsAfterFirst,
+                "a tree nobody touched must cost zero directory listings")
+        #expect(first.map(\.sessionId) == second.map(\.sessionId))
+    }
+
+    @Test("an append to an already-listed transcript is seen although its directory never changed")
+    func appendedTranscriptIsRediscovered() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projectDir = root.appendingPathComponent("projects/-Users-me-proj", isDirectory: true)
+
+        // Beyond the lookback on the first pass: listed, but not reported.
+        try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "resumed", ageHours: 100)
+        var scanner = ClaudeSessionScanner(rootURL: root)
+        #expect(!(try scanner.discoverTranscripts().map(\.sessionId).contains("resumed")))
+
+        let directoryMTimeBefore = try directoryModifiedAt(projectDir)
+        try appendLine(root: root, projectDir: "-Users-me-proj", sessionId: "resumed", mtime: Date())
+
+        #expect(try directoryModifiedAt(projectDir) == directoryMTimeBefore,
+                "precondition: an append must not move the directory mtime, or this test proves nothing")
+        #expect(try scanner.discoverTranscripts().map(\.sessionId).contains("resumed"),
+                "a live session appending to an old transcript must come back into view")
+    }
+
+    @Test("a transcript added to an already-listed directory is discovered")
+    func newTranscriptInKnownDirectoryIsDiscovered() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "first", ageHours: 1)
+        var scanner = ClaudeSessionScanner(rootURL: root)
+        _ = try scanner.discoverTranscripts()
+        let listingsBefore = scanner.directoryListingCount
+
+        try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "second", ageHours: 0)
+        let found = try scanner.discoverTranscripts().map(\.sessionId)
+        #expect(found.contains("second"))
+        #expect(found.contains("first"))
+        #expect(scanner.directoryListingCount > listingsBefore,
+                "a directory whose entries changed must be re-listed")
+    }
+
+    @Test("a brand new project directory is discovered")
+    func newProjectDirectoryIsDiscovered() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "known", ageHours: 1)
+        var scanner = ClaudeSessionScanner(rootURL: root)
+        _ = try scanner.discoverTranscripts()
+
+        try writeTranscript(root: root, projectDir: "-Users-me-fresh", sessionId: "newborn", ageHours: 0)
+        let found = try scanner.discoverTranscripts().map(\.sessionId)
+        #expect(found.contains("newborn"))
+        #expect(found.contains("known"))
+    }
+
+    @Test("a deleted transcript stops being reported")
+    func deletedTranscriptDisappears() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writeTranscript(root: root, projectDir: "-Users-me-proj", sessionId: "doomed", ageHours: 1)
+        var scanner = ClaudeSessionScanner(rootURL: root)
+        #expect(try scanner.discoverTranscripts().map(\.sessionId).contains("doomed"))
+
+        try FileManager.default.removeItem(
+            at: root.appendingPathComponent("projects/-Users-me-proj/doomed.jsonl"))
+        #expect(!(try scanner.discoverTranscripts().map(\.sessionId).contains("doomed")))
     }
 }
