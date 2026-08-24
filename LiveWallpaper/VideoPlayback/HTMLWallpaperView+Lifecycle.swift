@@ -373,6 +373,7 @@ extension HTMLWallpaperView {
     /// run its full term in the session, and re-running this one after it made
     /// a paused HTML wallpaper hold its resources longer than a paused scene.
     func setHibernationEligible(_ eligible: Bool, immediately: Bool = false) {
+        hibernationEligible = eligible
         guard eligible,
               !isCleaningUp,
               mediaPlaybackSuspended,
@@ -390,6 +391,15 @@ extension HTMLWallpaperView {
         }
     }
 
+    /// Re-read when the cover reply lands, not captured when it was requested:
+    /// the snapshot is asynchronous, and a pressure clear arriving inside that
+    /// window used to release a manually paused wallpaper that still had most of
+    /// its 300s warm dwell left. `generation` already rejects a reply that
+    /// crossed a wake; eligibility is the dimension it does not cover.
+    var stillWantsHibernation: Bool {
+        !isCleaningUp && mediaPlaybackSuspended && hibernationEligible
+    }
+
     /// Re-checks across the dwell — cancellation races the sleep waking up.
     /// Returns false only for a transient blocker so the dwell re-arms: a restore
     /// in flight will finish, and dropping the countdown there would skip the rest
@@ -402,7 +412,7 @@ extension HTMLWallpaperView {
         let generation = hibernationState.generation
         presentHibernationCover { [weak self] presented in
             guard let self else { return }
-            let covered = presented && !self.isCleaningUp && self.mediaPlaybackSuspended
+            let covered = presented && self.stillWantsHibernation
             guard self.hibernationState.coverDidPresent(covered, generation: generation)
                 == .releaseResources else { return }
             self.dropDocumentForHibernation()
