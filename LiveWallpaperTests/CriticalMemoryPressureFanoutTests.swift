@@ -162,6 +162,72 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(!harness.player.hasInMemoryAssetLoaderForTesting)
     }
 
+    /// `retry()` swaps in a fresh player while the emergency is still on — the
+    /// scenario the doc comment on `setCriticalMemoryPressureActive` calls out
+    /// by name. Before the fix, `retry()` only pushed the routine dwelled
+    /// eligibility, so the replacement rode out a full `hibernationDelay` in
+    /// the middle of a critical-pressure emergency instead of going down
+    /// immediately like the player it replaced.
+    @Test("A player installed by retry() while critical pressure is active deep-hibernates immediately")
+    func retryPlayerUnderCriticalPressureHibernatesImmediately() async throws {
+        let harness = try await Harness.make(
+            playerHibernationDelay: .seconds(30),
+            userPauseHibernationDelay: .seconds(30)
+        )
+        defer { harness.teardown() }
+
+        harness.session.applyPerformanceProfile(.suspended)
+        harness.session.setCriticalMemoryPressureActive(true)
+        try await Harness.poll("critical pressure hibernates the original video") {
+            harness.player.isHibernated
+        }
+
+        var replacement: WallpaperVideoPlayer?
+        harness.session.onVideoPlayerReplacement = { _, newPlayer in
+            replacement = newPlayer
+        }
+
+        await harness.session.retry()
+
+        let installed = try #require(replacement)
+        #expect(installed !== harness.player)
+        // The replacement's own dwell is the default 20s — a poll this short
+        // only passes if the immediate path fired, not the routine dwell.
+        try await Harness.poll(
+            "the replacement deep-hibernates immediately, bypassing its own dwell",
+            timeout: .seconds(3)
+        ) {
+            installed.isHibernated
+        }
+        #expect(installed.player == nil)
+    }
+
+    /// Control group for the test above: with no pressure signal active,
+    /// `retry()`'s player swap must keep behaving exactly as before this fix —
+    /// the routine dwelled push, not an immediate teardown.
+    @Test("A player installed by retry() with no pressure signal keeps the normal dwell")
+    func retryPlayerWithoutPressureKeepsNormalDwell() async throws {
+        let harness = try await Harness.make(
+            playerHibernationDelay: .seconds(30),
+            userPauseHibernationDelay: .seconds(30)
+        )
+        defer { harness.teardown() }
+
+        harness.session.applyPerformanceProfile(.suspended)
+
+        var replacement: WallpaperVideoPlayer?
+        harness.session.onVideoPlayerReplacement = { _, newPlayer in
+            replacement = newPlayer
+        }
+
+        await harness.session.retry()
+
+        let installed = try #require(replacement)
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(!installed.isHibernated)
+        #expect(installed.player != nil)
+    }
+
     // MARK: - ScreenManager fan-out (both dispatch points)
 
     /// Dispatch point 1, `ScreenManager+MemoryPressure.applyMemoryPressureLevel`,

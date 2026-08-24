@@ -239,24 +239,12 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         absenceHibernationEligible || isManualPauseHibernating || criticalMemoryPressureActive
     }
 
-    /// Critical system memory pressure: release the player, looper items, decode
-    /// pool and `lwmem://` mapping now instead of behind a dwell. Policy has
-    /// already suspended the session by the time this arrives —
-    /// `WallpaperPolicyEngine` grades `critical` as a hard safety suspend — so
-    /// this only deepens an existing suspend and never writes `currentProfile`
-    /// or play intent.
-    ///
-    /// Reuses the manual-pause handover (`setSuspended` + an immediate
-    /// eligibility push) rather than a second teardown path. That path also
-    /// supplies the fall-back guard: `hibernateNow` re-validates eligibility,
-    /// suspension and `lifecycleGeneration` *after* the still-frame await, so a
-    /// clear that lands mid-teardown wins. No extra snapshot is requested here —
-    /// the capture in that path is the already width-capped one.
-    ///
-    /// Re-armed on every `true` push rather than only on the rising edge: a
-    /// session installed (or a player replaced by `retry()`) while pressure is
-    /// already critical must still go down. The dwell's slot guard makes the
-    /// repeats idempotent instead of restarting a countdown.
+    /// Releases the player, looper items, decode pool and `lwmem://` mapping now
+    /// rather than behind a dwell, by reusing the manual-pause handover instead
+    /// of a second teardown path. That path also carries the fall-back guard:
+    /// `hibernateNow` re-validates eligibility, suspension and
+    /// `lifecycleGeneration` *after* its still-frame await, so a clear landing
+    /// mid-teardown wins.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         criticalMemoryPressureActive = active
         guard active else {
@@ -266,7 +254,16 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
             player?.setHibernationEligible(hibernationTriggersArmed)
             return
         }
-        guard currentProfile == .suspended, let player else { return }
+        applyImmediateCriticalHibernation()
+    }
+
+    /// Shared by `setCriticalMemoryPressureActive(true)` and `retry()`: pushes
+    /// the immediate teardown rather than `applyPerformanceProfile`'s normal
+    /// dwelled push. `retry()` calls this after installing its replacement
+    /// player so a player swapped in mid-critical-pressure goes down right
+    /// away instead of riding out a full `hibernationDelay` in an emergency.
+    private func applyImmediateCriticalHibernation() {
+        guard criticalMemoryPressureActive, currentProfile == .suspended, let player else { return }
         player.setSuspended(true)
         player.setHibernationEligible(true, immediately: true)
     }
@@ -363,6 +360,11 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         // The replacement is built `startsHidden`, so it must be ordered back here.
         replacement.orderWindowBack()
         runtimeError = replacement.runtimeError
+        // Before the routine push below: `AbsenceDwell.arm` is a no-op once a
+        // dwell already occupies the slot, so a dwelled push landing first
+        // would claim it at the full delay and make the immediate arm here
+        // silently do nothing.
+        applyImmediateCriticalHibernation()
         applyPerformanceProfile(currentProfile)
         retireEffectsWork(oldPlayer)
         oldPlayer.cleanup()
