@@ -132,7 +132,9 @@ extension WPEMetalRenderExecutor {
            let texture = texturesBySlot?[slot] {
             return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).shaderValue
         }
+        WPEFrameOccupancyMeter.count(.uniformSlotResolved)
         for step in plan.steps {
+            WPEFrameOccupancyMeter.count(.uniformDictProbe)
             switch step {
             case .frameGlobal(let name):
                 if let value = frame.value(named: name, passID: pass.id) {
