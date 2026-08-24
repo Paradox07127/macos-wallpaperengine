@@ -716,21 +716,18 @@ struct WPEMetalShaderDispatcher {
             #endif
         }
 
-        var packedUniformSlots: [SIMD4<Float>] = []
-        if !result.uniformLayout.isEmpty {
-            packedUniformSlots = executor.packTranslatedUniforms(
-                for: pass,
-                layout: result.uniformLayout,
-                texturesBySlot: resolvedTexturesBySlot
-            )
-        }
+        let packedUniforms = executor.packTranslatedUniformsForBinding(
+            for: pass,
+            layout: result.uniformLayout,
+            texturesBySlot: resolvedTexturesBySlot
+        )
         #if !LITE_BUILD && DEBUG
         WPECanonicalTraceRecorder.shared.recordCustomPass(
             pass: pass,
             destination: destination,
             result: result,
             textureBindings: canonicalTextureBindings,
-            packedUniformSlots: packedUniformSlots,
+            packedUniformSlots: packedUniforms.slotsForTracing(),
             usesObjectQuad: usesObjectQuad
         )
         #endif
@@ -761,8 +758,8 @@ struct WPEMetalShaderDispatcher {
         )
         encoder.setRenderPipelineState(pipelineState)
 
-        if !packedUniformSlots.isEmpty {
-            executor.bindTranslatedUniformSlots(packedUniformSlots, to: encoder)
+        if !packedUniforms.isEmpty {
+            executor.bindTranslatedUniformSlots(packedUniforms, to: encoder)
         }
         if usesShapeQuad {
             var shapeUniforms = executor.shapeQuadUniforms(

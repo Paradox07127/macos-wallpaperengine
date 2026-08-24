@@ -451,6 +451,15 @@ final class WPEMetalRenderExecutor {
     private let frameSubmissionPool = WPEMetalFrameSubmissionPool(
         slotCount: WPEMetalRenderExecutor.maxFramesInFlight
     )
+    /// Resident storage for translated-shader uniform packing, partitioned by frame
+    /// slot. Lazy so the buffers only exist for executors that actually render.
+    private(set) lazy var uniformArena = WPEMetalUniformArena(
+        device: device, slotCount: Self.maxFramesInFlight
+    )
+    /// This frame's arena slot, taken from the frame-submission lease. Nil whenever
+    /// the caller passed no lease — sync/readback and not-yet-migrated async callers
+    /// have no slot identity, so they keep the per-pass allocation path.
+    var currentUniformArenaSlot: Int?
     /// Backpressure for asynchronous frame submission: gates the render caller
     /// once `maxFramesInFlight` frames are queued so the CPU cannot outrun the GPU
     /// (which would starve the output ring and grow latency unboundedly).
@@ -653,6 +662,16 @@ final class WPEMetalRenderExecutor {
     /// keeps a fixed SCREEN-space width (see `texelSizeValue`).
     private(set) var currentScenePixelSize: CGSize = .zero
 
+    #if DEBUG
+    /// Test-only seam. `g_TexelSize` is derived from this rather than from any
+    /// dictionary, so without a way to set it a characterization test can only
+    /// chain the helpers and would stay green if `resolvedUniformValue` started
+    /// reading world size instead — which is exactly what two reviewers caught.
+    func setCurrentScenePixelSizeForTesting(_ size: CGSize) {
+        currentScenePixelSize = size
+    }
+    #endif
+
     // Object IDs that are parents of at least one other layer. A `composelayer`
     // that hosts children is a WPE "layer group" (transform/opacity container),
     // NOT a scene-capture effect box — its children render as flat layers, so its
@@ -759,6 +778,16 @@ final class WPEMetalRenderExecutor {
                 inFlightSemaphore.signal()
             }
         }
+        // Uniform packing writes into the arena partition this lease owns. Without a
+        // lease there is no slot identity to partition by, so those callers keep the
+        // per-pass allocation path. `beginFrame` decides for itself whether the slot
+        // may be rewound — on the fail-close second `render()` the lease is the same
+        // one, and the speculative command buffer is still in flight.
+        if let frameSubmission {
+            uniformArena.beginFrame(slot: frameSubmission.slot)
+            currentUniformArenaSlot = frameSubmission.slot
+        }
+        defer { currentUniformArenaSlot = nil }
         #if DEBUG
         scenePassDumps.removeAll()
         // Collect per-pass scene-target snapshots when the workshopID-scoped dump
@@ -1188,6 +1217,11 @@ final class WPEMetalRenderExecutor {
         }
 
         recyclePaletteBuffersOnCompletion(of: commandBuffer)
+        // Pin this frame's arena regions until the GPU is done reading them. Must be
+        // registered before `commit()` — the last moment Metal accepts a handler.
+        if let frameSlot = currentUniformArenaSlot {
+            uniformArena.trackSubmission(of: commandBuffer, frameSlot: frameSlot)
+        }
         if WPEFrameGPUTimingProbe.isEnabled {
             commandBuffer.addCompletedHandler { cb in
                 WPEFrameGPUTimingProbe.recordScene(gpuStart: cb.gpuStartTime, gpuEnd: cb.gpuEndTime)
@@ -1317,6 +1351,85 @@ final class WPEMetalRenderExecutor {
         WPEFrameOccupancyMeter.count(.largeUniformBufferCreate)
         encoder.setFragmentBuffer(buffer, offset: 0, index: index)
         return .buffer(byteCount: byteCount)
+    }
+
+    /// Where a pass's packed uniform slots live between packing and binding.
+    enum PackedTranslatedUniforms {
+        case empty
+        /// Written straight into this frame's arena slot — no per-pass allocation.
+        case arena(WPEMetalUniformArena.Region)
+        /// Pre-arena storage: no frame lease this frame, or the arena had no room.
+        case array([SIMD4<Float>])
+
+        var isEmpty: Bool {
+            switch self {
+            case .empty: true
+            case .arena(let region): region.storage.isEmpty
+            case .array(let slots): slots.isEmpty
+            }
+        }
+
+        /// Copies the slots out. DEBUG trace recording only — the frame path binds
+        /// from the packed storage and never materializes an array.
+        func slotsForTracing() -> [SIMD4<Float>] {
+            switch self {
+            case .empty: []
+            case .arena(let region): Array(region.storage)
+            case .array(let slots): slots
+            }
+        }
+    }
+
+    /// Packs a pass's uniforms into this frame's arena when one is open, and into a
+    /// freshly allocated array otherwise. The arena reservation is exactly
+    /// `translatedSlotCount(for:)` slots, which is what the packer indexes.
+    func packTranslatedUniformsForBinding(
+        for pass: WPEPreparedRenderPass,
+        layout: [WPEUniformSlot],
+        texturesBySlot: WPEMetalTextureSlotTable? = nil
+    ) -> PackedTranslatedUniforms {
+        guard !layout.isEmpty else { return .empty }
+        if let frameSlot = currentUniformArenaSlot,
+           let region = uniformArena.reserve(
+               slotCount: Self.translatedSlotCount(for: layout), frameSlot: frameSlot
+           ) {
+            packTranslatedUniformSlots(
+                for: pass, layout: layout, texturesBySlot: texturesBySlot, into: region.storage
+            )
+            return .arena(region)
+        }
+        return .array(
+            packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: texturesBySlot)
+        )
+    }
+
+    /// Binds whichever storage the packer used. The arena keeps the same 4 KB split
+    /// as the array path: under the cap `setFragmentBytes` copies into the command
+    /// buffer's own argument storage, so the pass carries no residency entry for the
+    /// arena and one copy less than before (the old path built an array AND copied it
+    /// again through `var inline`); over the cap the arena buffer is bound in place,
+    /// which is what removes the per-frame `makeBuffer`.
+    @discardableResult
+    func bindTranslatedUniformSlots(
+        _ packed: PackedTranslatedUniforms,
+        to encoder: MTLRenderCommandEncoder,
+        index: Int = 0
+    ) -> TranslatedUniformBinding {
+        switch packed {
+        case .empty:
+            return .empty
+        case .array(let slots):
+            return bindTranslatedUniformSlots(slots, to: encoder, index: index)
+        case .arena(let region):
+            let byteCount = region.byteCount
+            guard byteCount > 0, let base = region.storage.baseAddress else { return .empty }
+            if byteCount <= 4096 {
+                encoder.setFragmentBytes(base, length: byteCount, index: index)
+                return .inline(byteCount: byteCount)
+            }
+            encoder.setFragmentBuffer(region.buffer, offset: region.offset, index: index)
+            return .buffer(byteCount: byteCount)
+        }
     }
 
     var textGlyphPipelineCache: [UInt: MTLRenderPipelineState] = [:]
@@ -3025,12 +3138,33 @@ final class WPEMetalRenderExecutor {
     }
 
     /// Packs runtime uniforms into the transpiler's one-to-four-float4 slot layout.
+    ///
+    /// Kept as the array-returning entry point every test and diagnostic already
+    /// calls; the frame path goes through `packTranslatedUniformsForBinding`, which
+    /// writes the same bytes straight into the uniform arena.
     func packTranslatedUniforms(
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable? = nil
     ) -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
+        slots.withUnsafeMutableBufferPointer {
+            packTranslatedUniformSlots(
+                for: pass, layout: layout, texturesBySlot: texturesBySlot, into: $0
+            )
+        }
+        return slots
+    }
+
+    /// The packing itself, over storage the caller owns. `slots` MUST arrive zeroed:
+    /// each case below writes only the lanes its `glslType` covers and leaves the
+    /// rest — vec3's `.w`, slots no uniform claims — at whatever was already there.
+    func packTranslatedUniformSlots(
+        for pass: WPEPreparedRenderPass,
+        layout: [WPEUniformSlot],
+        texturesBySlot: WPEMetalTextureSlotTable?,
+        into slots: UnsafeMutableBufferPointer<SIMD4<Float>>
+    ) {
         let plans = uniformPlans(for: pass, layout: layout)
         let frame = frameUniformContext
         for (index, u) in layout.enumerated() {
@@ -3041,7 +3175,7 @@ final class WPEMetalRenderExecutor {
                 texturesBySlot: texturesBySlot
             )
             if let length = u.arrayLength {
-                Self.packArrayUniform(value, glslType: u.glslType, length: length, slot: u.slot, into: &slots)
+                Self.packArrayUniform(value, glslType: u.glslType, length: length, slot: u.slot, into: slots)
                 continue
             }
             switch u.glslType {
@@ -3075,7 +3209,6 @@ final class WPEMetalRenderExecutor {
                 slots[u.slot].x = Self.scalarValue(value, default: 0)
             }
         }
-        return slots
     }
 
     struct UniformNameCandidates {
@@ -3168,7 +3301,7 @@ final class WPEMetalRenderExecutor {
         glslType: String,
         length: Int,
         slot: Int,
-        into slots: inout [SIMD4<Float>]
+        into slots: UnsafeMutableBufferPointer<SIMD4<Float>>
     ) {
         let components: Int
         switch glslType {
