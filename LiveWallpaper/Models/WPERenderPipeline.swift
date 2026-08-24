@@ -442,32 +442,29 @@ extension WPEPreparedRenderPipeline {
         }
     }
 
+    /// - Parameter objectUniformCache: caller-owned memo for the per-layer
+    ///   object matrices. Nil recomputes them all, which is what every call
+    ///   site did before the cache existed; the render loop passes its
+    ///   executor-owned instance so a static scene pays nothing per frame.
     func addingMetalRuntimeUniforms(
         _ runtimeUniforms: WPEMetalRuntimeUniforms,
         camera: WPEMetalCameraUniforms,
-        scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:]
+        scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:],
+        objectUniformCache: WPEObjectUniformCache? = nil
     ) -> (pipeline: WPEPreparedRenderPipeline, frameUniforms: WPEFrameUniformContext) {
         // Computed properties: resolve once per frame. Frame/object uniforms stay
         // in `WPEFrameUniformContext` (old merge inserted them last, so they win).
         let runtimeUniformValues = runtimeUniforms.uniformValues
         let cameraUniformValues = camera.uniformValues
-        var objectUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
-        var needsRebuild = false
-        for layer in layers {
-            // Derive g_ModelMatrix once per layer (object-scoped, not per pass).
-            // `resolved(at:)` only moves alpha and color, so origin/scale/angles
-            // are the same before and after resolving.
-            let geometry = layer.graphLayer.geometry
-            let objectUniforms = WPEMetalObjectUniforms.uniformValues(
-                origin: geometry.origin,
-                scale: geometry.scale,
-                angles: geometry.angles
-            )
-            for pass in layer.passes {
-                objectUniformValuesByPassID[pass.pass.id] = objectUniforms
-            }
-            needsRebuild = needsRebuild
-                || layer.graphLayer.isTimeVarying
+        // g_ModelMatrix is object-scoped (one per layer, shared by its passes)
+        // and depends only on origin/scale/angles — `resolved(at:)` moves alpha
+        // and color, so the pre-resolve geometry read here is the same one the
+        // resolve would produce. The cache turns that into per-layer work only
+        // when a layer actually moved.
+        let objectUniformValuesByPassID = (objectUniformCache ?? WPEObjectUniformCache())
+            .objectUniformValuesByPassID(for: layers)
+        let needsRebuild = layers.contains { layer in
+            layer.graphLayer.isTimeVarying
                 || Self.needsPassRebuild(layer, scriptedConstants: scriptedConstants)
         }
         let frameUniforms = WPEFrameUniformContext(
