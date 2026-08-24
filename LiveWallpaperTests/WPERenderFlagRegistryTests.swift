@@ -16,6 +16,7 @@ struct WPERenderFlagRegistryTests {
         "WPEDumpLayerPasses": "dump/trace toggle; prints per-layer pass dumps only",
         "WPEDumpScenePasses": "dump/trace toggle; prints the scene pass structure only",
         "WPEFrameGPUTimingLog": "log-only toggle; per-frame GPU timing aggregates, never changes what renders",
+        "WPEFrameOccupancyLog": "log-only toggle; GPU-object and JSC-crossing counters, never changes what renders",
         "WPEHoverCursorDebug": "log-only toggle; never changes what renders",
         "WPEImageUniformDebugLog": "log-only toggle; never changes what renders",
         "WPEMemoryAuditLog": "log-only toggle; prints the texture/JSContext census after a load",

@@ -2116,6 +2116,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 
         encoder.setFrontFacing(.counterClockwise)
@@ -2188,6 +2189,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 
         encoder.setFrontFacing(.counterClockwise)

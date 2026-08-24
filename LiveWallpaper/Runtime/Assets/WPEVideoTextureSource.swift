@@ -470,6 +470,7 @@ final class WPEVideoTextureSource {
         // for the few milliseconds until `player.pause()` below, and a render
         // command buffer mid-flight would sample the overwritten surface.
         if let current = latest, let marker = conversionQueue.makeCommandBuffer() {
+            WPEFrameOccupancyMeter.count(.videoMarkerCommandBuffer)
             retire(current, fence: marker)
             marker.commit()
         }
@@ -616,6 +617,8 @@ final class WPEVideoTextureSource {
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else {
             return
         }
+        WPEFrameOccupancyMeter.count(.videoConversionCommandBuffer)
+        WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(lumaTexture, index: 0)
         encoder.setFragmentTexture(chromaTexture, index: 1)
@@ -681,6 +684,7 @@ final class WPEVideoTextureSource {
         // cannot be created the wrappers drop immediately: that is exactly the
         // pre-hardening contract, not a new hole.
         if let previous = latest, let marker = conversionQueue.makeCommandBuffer() {
+            WPEFrameOccupancyMeter.count(.videoMarkerCommandBuffer)
             retire(previous, fence: marker)
             marker.commit()
         }

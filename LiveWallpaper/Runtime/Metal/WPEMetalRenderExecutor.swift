@@ -779,6 +779,7 @@ final class WPEMetalRenderExecutor {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
 
         let reusableHistory: PreviousFrameHistory?
         if let history = previousFrameHistory, history.sceneSize == size {
@@ -1221,6 +1222,7 @@ final class WPEMetalRenderExecutor {
         } else if let buffer = slots.withUnsafeBytes({
             device.makeBuffer(bytes: $0.baseAddress!, length: byteCount, options: .storageModeShared)
         }) {
+            WPEFrameOccupancyMeter.count(.largeUniformBufferCreate)
             encoder.setFragmentBuffer(buffer, offset: 0, index: index)
         }
     }
@@ -1515,6 +1517,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 
         encoder.setFrontFacing(.counterClockwise)
@@ -1828,6 +1831,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
     }
 
@@ -1839,6 +1843,7 @@ final class WPEMetalRenderExecutor {
         guard let blit = commandBuffer.makeBlitCommandEncoder() else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.helperEncoder)
         blit.copy(
             from: source,
             sourceSlice: 0,
@@ -1964,6 +1969,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.helperEncoder)
         defer { encoder.endEncoding() }
 
         encoder.setFrontFacing(.counterClockwise)
@@ -2527,6 +2533,7 @@ final class WPEMetalRenderExecutor {
               let blit = commandBuffer.makeBlitCommandEncoder() else {
             return
         }
+        WPEFrameOccupancyMeter.count(.helperEncoder)
         blit.copy(
             from: output,
             sourceSlice: 0,
@@ -2595,6 +2602,7 @@ final class WPEMetalRenderExecutor {
               ) else {
             return nil
         }
+        WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(source, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
