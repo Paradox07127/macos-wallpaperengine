@@ -34,6 +34,10 @@ enum WPEFrameOccupancyMeter {
         case videoMarkerCommandBuffer
         case aliasHeapTextureCreate
         case largeUniformBufferCreate
+        /// One per uniform slot resolved this frame.
+        case uniformSlotResolved
+        /// One per String-keyed dictionary probe a resolution plan actually ran.
+        case uniformDictProbe
         case jscCall
         case jscSetObject
         case jscRead
@@ -53,6 +57,8 @@ enum WPEFrameOccupancyMeter {
             case .videoMarkerCommandBuffer: "videoMarkCB"
             case .aliasHeapTextureCreate: "aliasTex"
             case .largeUniformBufferCreate: "bigUniformBuf"
+            case .uniformSlotResolved: "uSlot"
+            case .uniformDictProbe: "uProbe"
             case .jscCall: "jscCall"
             case .jscSetObject: "jscSet"
             case .jscRead: "jscRead"
