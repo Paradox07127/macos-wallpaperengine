@@ -13,7 +13,7 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
-## [Unreleased]
+## [0.6.0] — 2026-08-24
 
 ### Changed
 
@@ -23,15 +23,18 @@ not covered by this file.
 - Web wallpapers follow the frame-rate limit. It reached scene and video
   wallpapers only, so choosing 30 fps left `requestAnimationFrame` running at
   the display's rate.
+- Less CPU per frame across scene wallpapers: uniforms, object matrices and
+  render targets are now recomputed only when something actually changed.
 
 ### Fixed
 
 - Critical memory pressure released scene resources alone. A video wallpaper
   held on to its player and decode pool, and a web wallpaper to its document,
   for the whole emergency.
-- Turning off "Check for updates at launch" before 0.5.8 no longer comes back
-  on. Sparkle keeps that choice under its own key and defaults to on, so the
-  old setting is carried over once on first launch.
+- Turning off "Check for updates at launch" in 0.5.7 or earlier no longer comes
+  back on. Sparkle keeps that choice under its own key and defaults to on, so
+  the old setting is carried over once on first launch.
+- The time-of-day tint kept the old hour's warmth after a time zone change.
 
 ## [0.5.7] — 2026-08-23
 
