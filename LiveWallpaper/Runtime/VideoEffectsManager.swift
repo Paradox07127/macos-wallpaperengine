@@ -139,23 +139,40 @@ final class VideoEffectsManager {
     nonisolated static func resetWarmthCacheForTesting() {
         warmthCacheLock.lock()
         defer { warmthCacheLock.unlock() }
-        cacheValidFrom = .distantFuture
-        cacheExpiresAt = .distantPast
+        invalidateWarmthCacheLocked()
         warmthRecomputeCount = 0
     }
+
+    private nonisolated static func invalidateWarmthCacheLocked() {
+        cacheValidFrom = .distantFuture
+        cacheExpiresAt = .distantPast
+    }
+
+    /// A time zone change moves the local hour without moving `Date`, so neither
+    /// bound in `warmthForCurrentHour` can see it. Observing the change costs
+    /// nothing per frame, unlike re-reading `Calendar.current` to compare.
+    /// Registered on first use; `static let` initialisation is one-shot.
+    private nonisolated static let timeZoneObserver: NSObjectProtocol = NotificationCenter.default
+        .addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: nil) { _ in
+            warmthCacheLock.lock()
+            defer { warmthCacheLock.unlock() }
+            invalidateWarmthCacheLocked()
+        }
 
     /// `Calendar.current` was being read on every composited video frame (up to
     /// 216,000 times/hour/player at 60fps) even though the result only changes
     /// on the hour. Cached until the next hour boundary instead.
     nonisolated static func warmthForCurrentHour() -> Double {
         let now = currentDateProvider()
+        _ = timeZoneObserver
 
         warmthCacheLock.lock()
         defer { warmthCacheLock.unlock() }
 
-        // Lower bound too: an NTP correction or a westward timezone change moves
-        // `now` backwards, and an upper-bound-only check would serve the stale
-        // hour until real time caught up again.
+        // Lower bound as well as upper: an NTP correction moves `now` backwards,
+        // and an upper-bound-only check would serve the stale hour until real
+        // time caught up. A time zone change moves neither bound — that one
+        // arrives through `timeZoneObserver`.
         if now >= cacheValidFrom, now < cacheExpiresAt {
             return cachedWarmth
         }
