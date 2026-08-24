@@ -336,8 +336,13 @@ final class WPEMetalRenderTargetPool {
     }
 
     /// Start of each `render()`. Drops the prior frame's aliasable textures so
-    /// this frame allocates fresh; the single serial command queue guarantees the
-    /// prior frame's GPU work finished before this frame reuses the memory.
+    /// this frame allocates fresh. What makes that safe across the two frames the
+    /// executor keeps in flight is the heap's `.tracked` hazard mode, NOT the
+    /// serial queue: `MTLHeap.h` has the driver delay reads and writes on every
+    /// resource suballocated from a tracked heap until in-flight access finishes.
+    /// The objects must be dropped rather than reused — Apple documents reading or
+    /// writing through an already-aliased instance as undefined behaviour, so
+    /// keeping them across frames to skip `makeTexture` is not available here.
     func beginAliasFrame() {
         guard !aliasFrameTextures.isEmpty else { return }
         for entry in aliasFrameTextures.values {
