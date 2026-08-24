@@ -75,15 +75,53 @@ extension WPEMetalRenderExecutor {
         pipeline: WPEPreparedRenderPipeline,
         sceneSize: CGSize
     ) -> [WPEMetalRenderTargetPool.AliasInterval] {
-        let topology: FBOAliasTopology
-        if let cached = cachedFBOAliasTopology, cached.matches(pipeline) {
-            topology = cached
-        } else {
-            topology = computeFBOAliasTopology(pipeline: pipeline)
-            cachedFBOAliasTopology = topology
-            fboAliasTopologyRebuildCount += 1
+        var topology = validatedFBOAliasTopology(for: pipeline)
+        let inputs = FBOAliasTopology.IntervalInputs(
+            sceneSize: sceneSize,
+            pixelScale: targetPool.pixelScale,
+            promotesLDRFormatsToHDR: targetPool.promotesLDRFormatsToHDR,
+            sizingGeneration: topology.sizingGeneration
+        )
+        if let memo = topology.intervalMemo, memo.inputs == inputs {
+            return memo.intervals
         }
-        return fboAliasIntervals(topology: topology, pipeline: pipeline, sceneSize: sceneSize)
+        let intervals = fboAliasIntervals(topology: topology, pipeline: pipeline, sceneSize: sceneSize)
+        topology.intervalMemo = FBOAliasTopology.IntervalMemo(inputs: inputs, intervals: intervals)
+        topology.metrics.intervalRebuilds += 1
+        cachedFBOAliasTopology = topology
+        return intervals
+    }
+
+    /// The cached topology for `pipeline`, rebuilt (and `fboAliasTopologyRebuildCount`
+    /// bumped) only when the graph itself changed. The counter IS the structural
+    /// generation the pool's stable-frame early-out consumes as `pipelineIdentity`,
+    /// so it must move on every real graph change and stand still on every
+    /// animation / script / uniform frame.
+    func validatedFBOAliasTopology(
+        for pipeline: WPEPreparedRenderPipeline
+    ) -> FBOAliasTopology {
+        if var cached = cachedFBOAliasTopology {
+            // Same array storage ⇒ same graph, no walk at all.
+            if cached.holdsSameLayerStorage(as: pipeline) { return cached }
+            cached.metrics.structuralScans += 1
+            let survived = cached.matches(pipeline)
+            if survived {
+                // Structure survived, but this is a freshly built array (an
+                // animation/script frame). Adopt it so the NEXT frame that
+                // re-presents the same value takes the O(1) path, and re-derive
+                // the sizing snapshot the interval memo keys on.
+                cached.adopt(layers: pipeline.layers)
+            }
+            cachedFBOAliasTopology = cached
+            if survived { return cached }
+        }
+        var topology = computeFBOAliasTopology(pipeline: pipeline)
+        // Counters and the sizing generation are monotonic across rebuilds: a
+        // reset would let a stale interval memo look current after a rebuild.
+        topology.carryForward(cachedFBOAliasTopology)
+        cachedFBOAliasTopology = topology
+        fboAliasTopologyRebuildCount += 1
+        return topology
     }
 
     /// Name/index-level half of the alias-interval scan. Reloads drop it.
@@ -110,9 +148,113 @@ extension WPEMetalRenderExecutor {
             let passes: [PassSignature]
         }
 
+        /// Everything `WPEMetalRenderTargetPool.keyDimensions` reads off a live
+        /// layer. Alpha/color/origin never reach a pool key, so an animated tint
+        /// or a moved (but unscaled) layer must not invalidate the interval memo.
+        struct SizingGeometry: Equatable {
+            let size: CGSize?
+            let scale: SIMD3<Double>
+            let angles: SIMD3<Double>
+
+            init(_ geometry: WPERenderLayerGeometry) {
+                size = geometry.size
+                scale = geometry.scale
+                angles = geometry.angles
+            }
+        }
+
+        /// Everything outside the topology that can move a pool key. `pixelScale`
+        /// and the HDR promotion are pool state the executor sets per frame;
+        /// `sizingGeneration` stands in for the per-layer geometry snapshot.
+        struct IntervalInputs: Equatable {
+            let sceneSize: CGSize
+            let pixelScale: Double
+            let promotesLDRFormatsToHDR: Bool
+            let sizingGeneration: Int
+        }
+
+        struct IntervalMemo {
+            let inputs: IntervalInputs
+            let intervals: [WPEMetalRenderTargetPool.AliasInterval]
+        }
+
+        /// Test seams: how often each cached stage ran its body. Carried across
+        /// rebuilds so a test can count over a whole scene's life.
+        struct Metrics: Equatable {
+            var structuralScans = 0
+            var intervalRebuilds = 0
+            var depthRebuilds = 0
+        }
+
         let items: [Item]
         let itemIndicesByKeyName: [String: [Int]]
         let signature: [SignatureEntry]
+        /// Layers that own at least one pooled target, so their geometry can move
+        /// a key. Deliberately not narrowed further (e.g. by `spec.pixelSize`):
+        /// under-listing a layer here silently serves stale intervals, which is
+        /// the one failure mode that aliases two live FBOs together.
+        let sizingLayerIndices: [Int]
+
+        /// The exact array this topology was built or validated against, RETAINED.
+        /// Retention is what makes `holdsSameLayerStorage` sound: while we hold
+        /// the buffer, no later array can be allocated at the same address, so
+        /// equal base addresses mean the same buffer rather than a recycled one.
+        private(set) var validatedLayers: [WPEPreparedRenderLayer]
+        private(set) var sizingGeometry: [SizingGeometry]
+        /// Bumped whenever `sizingGeometry` actually changes value, so the
+        /// interval memo compares one Int instead of walking the snapshot.
+        private(set) var sizingGeneration = 0
+        var intervalMemo: IntervalMemo?
+        /// Purely structural (`depthWrite`/`depthTest` on the authored pass), so
+        /// it needs no input beyond the topology itself.
+        var persistentDepthTargetIDs: Set<WPEMetalTargetID>?
+        var metrics = Metrics()
+
+        init(
+            items: [Item],
+            itemIndicesByKeyName: [String: [Int]],
+            signature: [SignatureEntry],
+            sizingLayerIndices: [Int],
+            layers: [WPEPreparedRenderLayer]
+        ) {
+            self.items = items
+            self.itemIndicesByKeyName = itemIndicesByKeyName
+            self.signature = signature
+            self.sizingLayerIndices = sizingLayerIndices
+            validatedLayers = layers
+            sizingGeometry = sizingLayerIndices.map {
+                SizingGeometry(layers[$0].graphLayer.geometry)
+            }
+        }
+
+        /// O(1) and exact — see `validatedLayers`. Two empty arrays compare equal
+        /// (both have no layers, so the empty topology is valid for both).
+        func holdsSameLayerStorage(as pipeline: WPEPreparedRenderPipeline) -> Bool {
+            guard validatedLayers.count == pipeline.layers.count else { return false }
+            return validatedLayers.withUnsafeBufferPointer { mine in
+                pipeline.layers.withUnsafeBufferPointer { theirs in
+                    mine.baseAddress == theirs.baseAddress
+                }
+            }
+        }
+
+        /// Take over a structurally identical but freshly built layer array.
+        mutating func adopt(layers: [WPEPreparedRenderLayer]) {
+            validatedLayers = layers
+            let geometry = sizingLayerIndices.map {
+                SizingGeometry(layers[$0].graphLayer.geometry)
+            }
+            guard geometry != sizingGeometry else { return }
+            sizingGeometry = geometry
+            sizingGeneration += 1
+        }
+
+        /// Monotonic hand-off from the topology this one replaces.
+        mutating func carryForward(_ previous: FBOAliasTopology?) {
+            guard let previous else { return }
+            metrics = previous.metrics
+            sizingGeneration = previous.sizingGeneration + 1
+        }
 
         /// Ordered (objectID, imagePath, pass id/target). Texture refs / localFBOs
         /// are load-invariant; a reload clears the cache.
@@ -149,6 +291,7 @@ extension WPEMetalRenderExecutor {
         var writtenTargets: Set<WPEMetalTargetID> = []
         var signature: [FBOAliasTopology.SignatureEntry] = []
         signature.reserveCapacity(pipeline.layers.count)
+        var sizingLayerIndices: [Int] = []
 
         for (layerIndex, layer) in pipeline.layers.enumerated() {
             signature.append(FBOAliasTopology.SignatureEntry(
@@ -188,6 +331,9 @@ extension WPEMetalRenderExecutor {
                 ))
                 if let spec {
                     itemIndicesByKeyName[spec.name, default: []].append(index)
+                    if sizingLayerIndices.last != layerIndex {
+                        sizingLayerIndices.append(layerIndex)
+                    }
                 }
                 writtenTargets.insert(targetID)
             }
@@ -196,7 +342,9 @@ extension WPEMetalRenderExecutor {
         return FBOAliasTopology(
             items: items,
             itemIndicesByKeyName: itemIndicesByKeyName,
-            signature: signature
+            signature: signature,
+            sizingLayerIndices: sizingLayerIndices,
+            layers: pipeline.layers
         )
     }
 
@@ -314,7 +462,23 @@ extension WPEMetalRenderExecutor {
     /// Targets used by more than one depth pass (depth-write OR depth-test) — a
     /// later pass can `.load` an earlier pass's depth (e.g. `depthTest:less` across
     /// encoders), so their depth must stay persistent rather than transient/memoryless.
+    ///
+    /// Derived from the authored `depthWrite`/`depthTest` and the pass target
+    /// only — no per-frame input — so it is memoized on the structural topology
+    /// and recomputed exactly when the graph is rebuilt.
     func computePersistentDepthTargetIDs(
+        for pipeline: WPEPreparedRenderPipeline
+    ) -> Set<WPEMetalTargetID> {
+        var topology = validatedFBOAliasTopology(for: pipeline)
+        if let cached = topology.persistentDepthTargetIDs { return cached }
+        let ids = persistentDepthTargetIDsScan(for: pipeline)
+        topology.persistentDepthTargetIDs = ids
+        topology.metrics.depthRebuilds += 1
+        cachedFBOAliasTopology = topology
+        return ids
+    }
+
+    private func persistentDepthTargetIDsScan(
         for pipeline: WPEPreparedRenderPipeline
     ) -> Set<WPEMetalTargetID> {
         var depthPassCounts: [WPEMetalTargetID: Int] = [:]
