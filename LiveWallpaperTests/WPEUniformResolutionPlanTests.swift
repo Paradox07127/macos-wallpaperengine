@@ -577,5 +577,127 @@ struct WPEUniformResolutionPlanTests {
         #expect(secondSlots[0].x == 6.5)
         #expect(executor.uniformPlanCompileCount == 2)
     }
+
+    /// One scripted key vanishing as another appears keeps the dictionary the
+    /// same SIZE, which the old count-only cache identity read as "unchanged".
+    private struct SwapFixture {
+        let executor: WPEMetalRenderExecutor
+        let pipeline: WPEPreparedRenderPipeline
+        let layout: [WPEUniformSlot]
+    }
+
+    private static func makeSwapFixture() throws -> SwapFixture {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let (raw, seed) = makePass(
+            id: "swap.0",
+            constants: ["g_Early": .number(-1)],
+            uniformValues: ["u_Known": .number(1)],
+            materialUniformNames: ["early1": "g_Early", "late1": "g_Late"]
+        )
+        return SwapFixture(
+            executor: try WPEMetalRenderExecutor(device: device),
+            pipeline: WPEPreparedRenderPipeline(layers: [
+                WPEPreparedRenderLayer(graphLayer: makeLayer(objectID: "SWAP", passes: [raw]), passes: [seed])
+            ]),
+            layout: [
+                WPEUniformSlot(name: "g_Early", glslType: "float", slot: 0, slotCount: 1),
+                WPEUniformSlot(name: "g_Late", glslType: "float", slot: 1, slotCount: 1)
+            ]
+        )
+    }
+
+    private static func swapFrame(
+        _ fixture: SwapFixture,
+        scripted: [String: WPESceneShaderConstantValue]
+    ) -> (pass: WPEPreparedRenderPass, frame: WPEFrameUniformContext) {
+        let (prepared, frame) = fixture.pipeline.addingMetalRuntimeUniforms(
+            runtime,
+            camera: camera,
+            scriptedConstants: ["swap.0": scripted]
+        )
+        return (prepared.layers[0].passes[0], frame)
+    }
+
+    @Test("A same-count scripted key substitution recompiles the plan")
+    func sameCountKeySubstitutionRebuildsThePlan() throws {
+        let fixture = try Self.makeSwapFixture()
+        let executor = fixture.executor
+        defer { executor.frameUniformContext = .empty }
+
+        // Frame 1: the script writes g_Early → {u_Known, g_Early}.
+        let first = Self.swapFrame(fixture, scripted: ["early1": .number(4)])
+        executor.frameUniformContext = first.frame
+        let firstSlots = executor.packTranslatedUniforms(for: first.pass, layout: fixture.layout)
+        #expect(firstSlots[0].x == 4)
+        #expect(firstSlots[1].x == 0)
+
+        // Frame 2: g_Early vanishes as g_Late appears. Same key COUNT.
+        let second = Self.swapFrame(fixture, scripted: ["late1": .number(6.5)])
+        executor.frameUniformContext = second.frame
+        #expect(second.pass.uniformValues.count == first.pass.uniformValues.count)
+        #expect(second.pass.pass.constants.count == first.pass.pass.constants.count)
+
+        let plans = executor.uniformPlans(for: second.pass, layout: fixture.layout)
+        // The vanished key is no longer probed, and the new one now is.
+        #expect(plans[0].steps == [.passConstant("g_Early")])
+        #expect(plans[1].steps == [.passValue("g_Late")])
+        #expect(executor.uniformPlanCompileCount == 2)
+
+        let secondSlots = executor.packTranslatedUniforms(for: second.pass, layout: fixture.layout)
+        #expect(secondSlots[0].x == -1)  // g_Early falls back to its raw constant
+        #expect(secondSlots[1].x == 6.5) // the newly scripted key actually lands
+    }
+
+    @Test("A same-count scripted key substitution rebuilds the lowercase key index")
+    func sameCountKeySubstitutionRebuildsTheKeyIndex() throws {
+        let fixture = try Self.makeSwapFixture()
+        let executor = fixture.executor
+
+        let first = Self.swapFrame(fixture, scripted: ["early1": .number(4)])
+        let firstIndex = executor.uniformKeyIndex(for: first.pass)
+        #expect(firstIndex.uniformKeys["g_early"] == "g_Early")
+
+        let second = Self.swapFrame(fixture, scripted: ["late1": .number(6.5)])
+        let secondIndex = executor.uniformKeyIndex(for: second.pass)
+        #expect(secondIndex.uniformKeys["g_late"] == "g_Late")
+        #expect(secondIndex.uniformKeys["g_early"] == nil)
+        #expect(executor.uniformKeyIndexBuildCount == 2)
+    }
+
+    @Test("A dictionary rebuilt every frame with the same keys still hits the cache")
+    func rebuiltDictionaryWithUnchangedKeysKeepsTheCachedPlan() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let animated = try #require(Self.makeAnimatedConstant())
+        let (raw, seed) = Self.makePass(id: "anim.0", uniformValues: ["u_Anim": animated])
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(graphLayer: Self.makeLayer(objectID: "ANIM", passes: [raw]), passes: [seed])
+        ])
+        let layout = [WPEUniformSlot(name: "u_Anim", glslType: "float", slot: 0, slotCount: 1)]
+        defer { executor.frameUniformContext = .empty }
+
+        // An animated value forces `addingMetalRuntimeUniforms` to rebuild the
+        // pass dictionary every frame: same keys, new storage, new values.
+        var sampled: [Float] = []
+        for time in [0.25, 0.5, 0.75, 1.0] {
+            let (prepared, frame) = pipeline.addingMetalRuntimeUniforms(
+                WPEMetalRuntimeUniforms(
+                    time: time,
+                    daytime: 0.5,
+                    brightness: 1,
+                    pointerPosition: SIMD2<Double>(0, 0)
+                ),
+                camera: Self.camera
+            )
+            executor.frameUniformContext = frame
+            sampled.append(
+                executor.packTranslatedUniforms(for: prepared.layers[0].passes[0], layout: layout)[0].x
+            )
+        }
+        // Control: the values really did move, so the dictionaries really were rebuilt.
+        #expect(Set(sampled).count > 1)
+        #expect(executor.uniformPlanCompileCount == 1)
+        #expect(executor.uniformKeyIndexBuildCount == 1)
+    }
 }
 #endif

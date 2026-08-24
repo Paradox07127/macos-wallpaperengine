@@ -112,11 +112,18 @@ final class WPEMetalRenderExecutor {
     /// what makes the non-`Sendable` cache safe to hold here.
     private let objectUniformCache = WPEObjectUniformCache()
 
-    /// Case-insensitive uniform-key index, keyed by pass id. Rebuilds when a
-    /// dict count changes. Cleared on reload.
+    typealias ShaderConstantKeys = Dictionary<String, WPESceneShaderConstantValue>.Keys
+
+    /// Case-insensitive uniform-key index, keyed by pass id. Cleared on reload.
     struct UniformKeyIndex {
-        let uniformCount: Int
-        let constantsCount: Int
+        /// The cache identity is the KEY SET, not its size: a script that drops
+        /// one key and writes another in the same frame leaves the count
+        /// unchanged, and a count compare then froze an index that still mapped
+        /// the vanished key and never learned the new one. `Dictionary.Keys ==`
+        /// short-circuits on shared storage, so a pass that reused its load-time
+        /// dictionary (no animated value, no script) is still a pointer compare.
+        let uniformKeySet: ShaderConstantKeys
+        let constantKeySet: ShaderConstantKeys
         /// lowercased → canonical. Case-variant collisions pick one and freeze it.
         let uniformKeys: [String: String]
         let constantsKeys: [String: String]
@@ -124,24 +131,29 @@ final class WPEMetalRenderExecutor {
 
     private var uniformKeyIndexByPassID: [String: UniformKeyIndex] = [:]
 
+    /// Test seam: cache hit vs silent per-frame rebuild.
+    var uniformKeyIndexBuildCount = 0
+
     func uniformKeyIndex(for pass: WPEPreparedRenderPass) -> UniformKeyIndex {
         if let cached = uniformKeyIndexByPassID[pass.id],
-           cached.uniformCount == pass.uniformValues.count,
-           cached.constantsCount == pass.pass.constants.count {
+           cached.uniformKeySet == pass.uniformValues.keys,
+           cached.constantKeySet == pass.pass.constants.keys {
             return cached
         }
         let index = UniformKeyIndex(
-            uniformCount: pass.uniformValues.count,
-            constantsCount: pass.pass.constants.count,
+            uniformKeySet: pass.uniformValues.keys,
+            constantKeySet: pass.pass.constants.keys,
             uniformKeys: Self.lowercasedKeyMap(pass.uniformValues),
             constantsKeys: Self.lowercasedKeyMap(pass.pass.constants)
         )
+        uniformKeyIndexBuildCount += 1
         uniformKeyIndexByPassID[pass.id] = index
         return index
     }
 
     func invalidateUniformKeyIndexes() {
         uniformKeyIndexByPassID.removeAll()
+        uniformKeyIndexBuildCount = 0
     }
 
     /// Compiled per-slot uniform source plans. Cleared on reload.
@@ -1252,21 +1264,59 @@ final class WPEMetalRenderExecutor {
         max(layout.reduce(0) { Swift.max($0, $1.slot + $1.slotCount) }, 1)
     }
 
+    /// What one `bindTranslatedUniformSlots` call actually bound. `.allocationFailed`
+    /// used to be unrepresentable: the `>4 KB` branch was an `else if let` with no
+    /// `else`, so a failed allocation left the slot unbound and silent.
+    enum TranslatedUniformBinding: Equatable {
+        case empty
+        case inline(byteCount: Int)
+        case buffer(byteCount: Int)
+        case allocationFailed(byteCount: Int)
+    }
+
     /// macOS caps `setFragmentBytes` at 4 KB (256 × 16-byte slots). Shaders under that ride the inline
     /// fast path; audio visualizers above it (e.g. a 258-slot oscilloscope) bind a transient shared
     /// buffer instead. The buffer is retained by the command buffer until GPU completion.
-    func bindTranslatedUniformSlots(_ slots: [SIMD4<Float>], to encoder: MTLRenderCommandEncoder, index: Int = 0) {
-        guard !slots.isEmpty else { return }
+    ///
+    /// `allocate` is a test seam for the out-of-memory branch; production passes `nil`.
+    @discardableResult
+    func bindTranslatedUniformSlots(
+        _ slots: [SIMD4<Float>],
+        to encoder: MTLRenderCommandEncoder,
+        index: Int = 0,
+        allocate: ((UnsafeRawPointer, Int) -> MTLBuffer?)? = nil
+    ) -> TranslatedUniformBinding {
+        guard !slots.isEmpty else { return .empty }
         let byteCount = MemoryLayout<SIMD4<Float>>.stride * slots.count
         if byteCount <= 4096 {
             var inline = slots
             encoder.setFragmentBytes(&inline, length: byteCount, index: index)
-        } else if let buffer = slots.withUnsafeBytes({
-            device.makeBuffer(bytes: $0.baseAddress!, length: byteCount, options: .storageModeShared)
-        }) {
-            WPEFrameOccupancyMeter.count(.largeUniformBufferCreate)
-            encoder.setFragmentBuffer(buffer, offset: 0, index: index)
+            return .inline(byteCount: byteCount)
         }
+        let buffer = slots.withUnsafeBytes { raw -> MTLBuffer? in
+            guard let base = raw.baseAddress else { return nil }
+            if let allocate { return allocate(base, byteCount) }
+            return device.makeBuffer(bytes: base, length: byteCount, options: .storageModeShared)
+        }
+        guard let buffer else {
+            // Nothing correct is left to bind: >4 KB cannot ride `setFragmentBytes`,
+            // and a zero-filled stand-in needs the allocation that just failed. The
+            // pass draws with an unbound uniform slot, same as before — but it is now
+            // reported, because a silent one reads as a shader bug. Rate-limited like
+            // the async command-buffer errors so a stuck allocator cannot flood the log.
+            let n = gpuErrorSink.record("uniform-buffer: \(byteCount) bytes (\(slots.count) slots)")
+            if WPEGPUErrorSink.shouldLogOccurrence(n) {
+                Logger.warning(
+                    "[WPE uniforms] uniform buffer allocation failed (#\(n)): "
+                        + "\(byteCount) bytes, \(slots.count) slots — this pass draws with undefined uniforms",
+                    category: .wpeRender
+                )
+            }
+            return .allocationFailed(byteCount: byteCount)
+        }
+        WPEFrameOccupancyMeter.count(.largeUniformBufferCreate)
+        encoder.setFragmentBuffer(buffer, offset: 0, index: index)
+        return .buffer(byteCount: byteCount)
     }
 
     var textGlyphPipelineCache: [UInt: MTLRenderPipelineState] = [:]
