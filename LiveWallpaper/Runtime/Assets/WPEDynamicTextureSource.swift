@@ -9,6 +9,24 @@ protocol WPEDynamicTextureSource: AnyObject {
     func texture(at time: TimeInterval, frameSlot: Int) -> MTLTexture?
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile)
     func invalidate()
+
+    /// True when this source decoded a frame whose GPU work still has to ride
+    /// the renderer's scene command buffer (see the three calls below).
+    var hasStagedFrameWork: Bool { get }
+    /// Encode into the frame's scene command buffer, before any pass samples
+    /// this source. Fence completed-handlers are armed here because Metal
+    /// requires them before commit — nothing is published yet.
+    func encodeStagedFrameWork(into commandBuffer: MTLCommandBuffer)
+    /// The scene command buffer was committed: publish the staged frame and
+    /// hand the frame it replaced to that buffer's fence.
+    func commitStagedFrameWork()
+    /// The scene command buffer was dropped before commit (encode throw,
+    /// `makeCommandBuffer` failure, in-flight budget exhausted, no renderable
+    /// passes): keep the published frame where it is and leave the staged one
+    /// for the next buffer. NOT a drawable miss — a merged present whose
+    /// `nextDrawable` comes back nil still commits the buffer, so the frame
+    /// advances and simply does not reach the screen.
+    func rollbackStagedFrameWork()
 }
 
 extension WPEDynamicTextureSource {
@@ -17,5 +35,12 @@ extension WPEDynamicTextureSource {
         _ = frameSlot
         return texture(at: time)
     }
+
+    /// Sources that own their uploads outright (every `.tex` path) never stage
+    /// frame work; only the video source overrides these.
+    var hasStagedFrameWork: Bool { false }
+    func encodeStagedFrameWork(into commandBuffer: MTLCommandBuffer) { _ = commandBuffer }
+    func commitStagedFrameWork() {}
+    func rollbackStagedFrameWork() {}
 }
 #endif

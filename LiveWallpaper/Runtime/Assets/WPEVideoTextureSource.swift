@@ -147,12 +147,24 @@ final class WPEVideoTextureSource {
     /// Last player-level frame PTS — avoid re-wrapping the same buffer every tick.
     private var lastPlayerLevelPresentationTime: CMTime?
     private var latest: PublishedFrame?
+    /// Decoded and wrapped, but NOT yet published: its NV12→BGRA pass still
+    /// has to be encoded into the renderer's scene command buffer. It becomes
+    /// `latest` only once that buffer is committed, so a frame whose buffer is
+    /// dropped (drawable miss, encode throw, in-flight budget) can never end up
+    /// sampled with its conversion unexecuted.
+    private var staged: StagedFrame?
+    /// Retirement armed on the scene command buffer at encode time (Metal wants
+    /// completed handlers before commit) and moved into `pendingRetirements`
+    /// only once that buffer is committed — `drainRetiredFrames` waits on those
+    /// fences, and waiting on an uncommitted buffer never returns.
+    private var armedRetirement: PendingFrameRetirement?
     private var isInvalidated = false
 
-    /// Conversion passes commit here. In the app this is the render executor's
-    /// frame queue: same-queue hazard tracking then orders the NV12→BGRA pass
-    /// ahead of the frame that samples the working texture (a private queue
-    /// would be unordered against the render frame).
+    /// Only `invalidate()` builds a command buffer here now — the per-frame
+    /// NV12→BGRA pass rides the renderer's scene buffer instead
+    /// (`encodeStagedFrameWork`). In the app this is the render executor's
+    /// frame queue, so the teardown marker still fences behind every render
+    /// buffer that could be reading a retired plane.
     private let conversionQueue: MTLCommandQueue
     private var conversionPipeline: MTLRenderPipelineState?
     private var conversionSetupFailed = false
@@ -172,21 +184,43 @@ final class WPEVideoTextureSource {
     #if DEBUG
     /// Last publish branch taken — observation seam for the NV12 tests.
     private(set) var lastPublishPathForTesting: PublishPath?
+    /// Counts working-texture allocations that were cleared. Whether an
+    /// unwritten `.private` texture reads back as garbage is not decidable, so
+    /// the test pins that the clear happens, not what skipping it would show.
+    private(set) var workingTextureClearsForTesting = 0
     var didForceBGRAOutputForTesting: Bool { forcedBGRAOutput }
     /// Frames handed to `publish` — the loop-seam probe measures the gaps between increments.
     private(set) var publishedFrameCountForTesting = 0
     #endif
+
+    /// A published frame plus the GPU work the renderer still owes it.
+    private struct StagedFrame {
+        let frame: PublishedFrame
+        /// Nil on the BGRA path: that wrap is sampleable as-is, only the
+        /// publish/retire transaction waits for the scene command buffer.
+        let conversion: PendingConversion?
+    }
+
+    /// Everything `encodeStagedFrameWork` needs to write the staged frame into
+    /// the reused working texture. Holds plain `MTLTexture`s — the owning
+    /// `CVMetalTexture` wrappers are retained by the staged `PublishedFrame`.
+    private struct PendingConversion {
+        let pipeline: MTLRenderPipelineState
+        let target: MTLTexture
+        let luma: MTLTexture
+        let chroma: MTLTexture
+        let uniforms: WPEVideoYCbCrConversion
+    }
 
     private struct PublishedFrame {
         let texture: MTLTexture
         /// CV wrappers stay retained here until the next publish replaces this
         /// frame (one wrapper on the BGRA path, luma + chroma on biplanar).
         /// At replacement they do NOT drop — they move into
-        /// `pendingRetirements`, fenced by a command buffer committed on
-        /// `conversionQueue` at that publish (NV12: the conversion pass itself;
-        /// BGRA: an empty marker buffer). In the app `conversionQueue` is the
-        /// render executor's frame queue, so the fence completes only after
-        /// every render command buffer that could still sample this frame —
+        /// `pendingRetirements`, fenced by the scene command buffer that
+        /// carried the replacing frame's conversion (or, at teardown, by
+        /// `invalidate()`'s marker buffer). That buffer is committed after every
+        /// render buffer that could still sample this frame, on the same queue —
         /// the pool cannot recycle a plane mid-read anymore. Release happens
         /// on the publishing thread (`sweepRetiredFrames`) or in `invalidate()`
         /// after `waitUntilCompleted` on the fences; the completed handler
@@ -333,19 +367,30 @@ final class WPEVideoTextureSource {
         }
     }
 
+    /// What the renderer samples this frame. A staged frame wins over the
+    /// published one: its conversion is encoded into the same scene command
+    /// buffer, ahead of every pass that reads it.
+    ///
+    /// A staged NV12 frame is therefore handed out before its conversion has
+    /// run. In the steady state that is the same working texture `latest`
+    /// points at, so the worst case is last frame's pixels; on the first frame
+    /// and after a decoder resolution change it is a brand-new backing, which
+    /// is why `ensureWorkingTexture` clears one at allocation — see there.
+    private var currentTexture: MTLTexture? { staged?.frame.texture ?? latest?.texture }
+
     func texture(at time: TimeInterval) -> MTLTexture? {
         _ = time   // Wall-clock pacing comes from AVPlayer, not the scene clock.
         guard !isInvalidated else { return nil }
-        guard player != nil else { return latest?.texture }
+        guard player != nil else { return currentTexture }
 
         // Script play-once: freeze on natural loop wrap (don't mutate looper queue — races frame tap).
         if scriptControlled {
-            if scriptHeldAtEnd { return latest?.texture }
+            if scriptHeldAtEnd { return currentTexture }
             let playhead = playheadSeconds
             if playhead + 0.1 < scriptLastPlaybackSeconds {
                 player?.pause()
                 scriptHeldAtEnd = true
-                return latest?.texture   // hold the pre-wrap (≈ last) frame
+                return currentTexture   // hold the pre-wrap (≈ last) frame
             }
             scriptLastPlaybackSeconds = playhead
         }
@@ -356,15 +401,15 @@ final class WPEVideoTextureSource {
                 publish(pixelBuffer: frame.pixelBuffer)
                 lastPlayerLevelPresentationTime = frame.presentationTime
             }
-            return latest?.texture
+            return currentTexture
         }
 
         ensureItemOutputs()
-        guard let videoOutput = currentItemOutput else { return latest?.texture }
+        guard let videoOutput = currentItemOutput else { return currentTexture }
 
         let host = CACurrentMediaTime()
         let itemTime = videoOutput.itemTime(forHostTime: host)
-        guard itemTime.isValid else { return latest?.texture }
+        guard itemTime.isValid else { return currentTexture }
 
         if videoOutput.hasNewPixelBuffer(forItemTime: itemTime),
            let pixelBuffer = videoOutput.copyPixelBuffer(
@@ -373,7 +418,7 @@ final class WPEVideoTextureSource {
            ) {
             publish(pixelBuffer: pixelBuffer)
         }
-        return latest?.texture
+        return currentTexture
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
@@ -475,6 +520,12 @@ final class WPEVideoTextureSource {
             marker.commit()
         }
         drainRetiredFrames()
+        // A staged frame needs no fence: `commitStagedFrameWork` clears `staged`
+        // in the same synchronous step that commits its buffer, so anything
+        // still staged here was never handed to committed GPU work. Same for an
+        // armed retirement — its buffer never reached `pendingRetirements`.
+        armedRetirement = nil
+        staged = nil
         // Drop the published frame BEFORE the player goes away. Its
         // `CVMetalTexture` backing references a pixel buffer owned by the video
         // output's pool, so releasing it after the outputs are removed /
@@ -604,43 +655,24 @@ final class WPEVideoTextureSource {
         guard let working = ensureWorkingTexture(width: lumaWidth, height: lumaHeight) else { return }
 
         let matrixAttachment = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, nil) as? String
-        var conversion = WPEVideoYCbCrConversion.make(
+        let conversion = WPEVideoYCbCrConversion.make(
             kind: WPEVideoYCbCrConversion.kind(matrixAttachment: matrixAttachment, sourceHeight: lumaHeight),
             fullRange: fullRange
         )
 
-        let passDescriptor = MTLRenderPassDescriptor()
-        passDescriptor.colorAttachments[0].texture = working.target
-        passDescriptor.colorAttachments[0].loadAction = .dontCare
-        passDescriptor.colorAttachments[0].storeAction = .store
-        guard let commandBuffer = conversionQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else {
-            return
-        }
-        WPEFrameOccupancyMeter.count(.videoConversionCommandBuffer)
-        WPEFrameOccupancyMeter.count(.helperEncoder)
-        encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentTexture(lumaTexture, index: 0)
-        encoder.setFragmentTexture(chromaTexture, index: 1)
-        encoder.setFragmentBytes(&conversion, length: MemoryLayout<WPEVideoYCbCrConversion>.stride, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        encoder.endEncoding()
-        // The conversion pass doubles as the retirement fence for the frame
-        // being replaced (same queue as the render executor → completes after
-        // any render pass that sampled it). Handler must attach pre-commit.
-        retire(latest, fence: commandBuffer)
-        commandBuffer.commit()
-
-        latest = PublishedFrame(texture: working.sampleView, retainedSourceTextures: [lumaCV, chromaCV])
         #if DEBUG
         lastPublishPathForTesting = .biPlanar
         #endif
-        // The cache holds a mapping per pixel buffer it has wrapped; the pool
-        // rotates buffers, so without a periodic flush the mappings accumulate
-        // for the source's lifetime. Flushing only drops unreferenced mappings —
-        // the frame just stored in `latest` retains its wrappers, so the in-use
-        // mappings survive.
-        CVMetalTextureCacheFlush(textureCache, 0)
+        stage(
+            PublishedFrame(texture: working.sampleView, retainedSourceTextures: [lumaCV, chromaCV]),
+            conversion: PendingConversion(
+                pipeline: pipeline,
+                target: working.target,
+                luma: lumaTexture,
+                chroma: chromaTexture,
+                uniforms: conversion
+            )
+        )
     }
 
     /// Legacy direct-wrap path: BGRA buffers arrive when NV12 cannot represent
@@ -679,27 +711,107 @@ final class WPEVideoTextureSource {
               let texture = CVMetalTextureGetTexture(cvTexture) else {
             return
         }
-        // No conversion pass on this path — commit an empty marker buffer as
-        // the retirement fence for the frame being replaced. If the marker
-        // cannot be created the wrappers drop immediately: that is exactly the
-        // pre-hardening contract, not a new hole.
-        if let previous = latest, let marker = conversionQueue.makeCommandBuffer() {
-            WPEFrameOccupancyMeter.count(.videoMarkerCommandBuffer)
-            retire(previous, fence: marker)
-            marker.commit()
-        }
-        latest = PublishedFrame(texture: texture, retainedSourceTextures: [cvTexture])
         #if DEBUG
         lastPublishPathForTesting = .bgra
         #endif
-        // See publishBiPlanar for why this flush is safe and required.
+        // Nothing to convert, but the publish still goes through staging: the
+        // scene command buffer is what fences the frame this one replaces, so
+        // the empty marker buffer this path used to commit is gone.
+        stage(PublishedFrame(texture: texture, retainedSourceTextures: [cvTexture]), conversion: nil)
+    }
+
+    /// Hand a decoded frame to the renderer without publishing it. Replacing an
+    /// already-staged frame drops its wrappers immediately, which is safe: a
+    /// staged frame is only ever referenced by a command buffer that was NOT
+    /// committed (commit clears `staged` in the same synchronous step), so no
+    /// GPU work can still be reading it.
+    private func stage(_ frame: PublishedFrame, conversion: PendingConversion?) {
+        staged = StagedFrame(frame: frame, conversion: conversion)
+        // The cache holds a mapping per pixel buffer it has wrapped; the pool
+        // rotates buffers, so without a periodic flush the mappings accumulate
+        // for the source's lifetime. Flushing only drops unreferenced mappings —
+        // the frame just staged retains its wrappers, so the in-use ones survive.
         CVMetalTextureCacheFlush(textureCache, 0)
     }
 
-    /// Queue a replaced frame's CV wrappers behind a GPU fence. Also called
-    /// with `nil` (biplanar first publish) purely to track the fence, so
-    /// `invalidate()` can wait out the conversion pass reading the CURRENT
-    /// frame's planes. Must run before `fence` is committed.
+    // MARK: - Renderer frame contract
+
+    var hasStagedFrameWork: Bool { staged != nil }
+
+    /// Step 1: fold this source's conversion into the frame's scene command
+    /// buffer. The renderer calls this after creating the buffer and before
+    /// encoding any scene pass, so same-buffer ordering — not just same-queue
+    /// hazard tracking — puts the write ahead of every read.
+    func encodeStagedFrameWork(into commandBuffer: MTLCommandBuffer) {
+        guard !isInvalidated, let staged else { return }
+        if let conversion = staged.conversion {
+            let passDescriptor = MTLRenderPassDescriptor()
+            passDescriptor.colorAttachments[0].texture = conversion.target
+            passDescriptor.colorAttachments[0].loadAction = .dontCare
+            passDescriptor.colorAttachments[0].storeAction = .store
+            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else {
+                // Nothing encoded and nothing armed, so `commitStagedFrameWork`
+                // will not publish: the frame stays staged for the next buffer
+                // and the working texture keeps the last converted frame — the
+                // very texture object `latest` hands out.
+                return
+            }
+            // No command buffer of our own here: this used to be one commit per
+            // decoded frame (60/s on a single live source).
+            WPEFrameOccupancyMeter.count(.helperEncoder)
+            var uniforms = conversion.uniforms
+            encoder.setRenderPipelineState(conversion.pipeline)
+            encoder.setFragmentTexture(conversion.luma, index: 0)
+            encoder.setFragmentTexture(conversion.chroma, index: 1)
+            encoder.setFragmentBytes(
+                &uniforms, length: MemoryLayout<WPEVideoYCbCrConversion>.stride, index: 0
+            )
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            encoder.endEncoding()
+        }
+        armRetirement(of: latest, fence: commandBuffer)
+    }
+
+    /// Step 2a — the ignition point. The scene command buffer is committed, so
+    /// the staged frame becomes the published one and the frame it replaced
+    /// joins the fenced retirements.
+    func commitStagedFrameWork() {
+        guard let armed = armedRetirement, let staged else {
+            armedRetirement = nil
+            return
+        }
+        armedRetirement = nil
+        #if DEBUG
+        retirementFencesCreatedForTesting += 1
+        #endif
+        pendingRetirements.append(armed)
+        latest = staged.frame
+        self.staged = nil
+    }
+
+    /// Step 2b. Drop the armed retirement only — its wrappers are a copy of the
+    /// ones `latest` still holds, and `latest` did not move. The staged frame
+    /// stays staged so the next scene command buffer re-encodes it.
+    func rollbackStagedFrameWork() {
+        armedRetirement = nil
+    }
+
+    /// Arm the replaced frame's wrappers behind the scene command buffer. Also
+    /// armed with `nil` (first publish) purely to track the fence, so
+    /// `invalidate()` can wait out the pass reading the CURRENT frame's planes.
+    private func armRetirement(of previous: PublishedFrame?, fence: MTLCommandBuffer) {
+        let flag = WPEFrameFenceFlag()
+        fence.addCompletedHandler { _ in flag.markCompleted() }
+        armedRetirement = PendingFrameRetirement(
+            fence: fence,
+            flag: flag,
+            wrappers: previous?.retainedSourceTextures ?? []
+        )
+    }
+
+    /// Teardown-only twin of `armRetirement`: `invalidate()`'s marker buffer is
+    /// committed on the spot, so the entry can go straight into
+    /// `pendingRetirements`. Must run before `fence` is committed.
     private func retire(_ previous: PublishedFrame?, fence: MTLCommandBuffer) {
         #if DEBUG
         retirementFencesCreatedForTesting += 1
@@ -824,15 +936,54 @@ final class WPEVideoTextureSource {
         // samples through this sRGB view — byte-identical to the old
         // `.bgra8Unorm_srgb` CV wrap, with no double gamma conversion.
         let sampleView = target.makeTextureView(pixelFormat: .bgra8Unorm_srgb) ?? target
+        // Clear once, here, not per frame. `texture(at:)` hands a staged frame's
+        // target to the renderer before the conversion that fills it has been
+        // encoded, so a brand-new `.private` backing would be sampled as
+        // undefined memory in the one case where `makeRenderCommandEncoder`
+        // then returns nil. Both review models raised this for the first frame
+        // and for a decoder resolution change; a resolution change is rare and
+        // the first allocation happens once, so the cost is a command buffer
+        // per allocation rather than anything on the frame path.
+        if let commandBuffer = conversionQueue.makeCommandBuffer() {
+            let clearPass = MTLRenderPassDescriptor()
+            clearPass.colorAttachments[0].texture = target
+            clearPass.colorAttachments[0].loadAction = .clear
+            clearPass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1)
+            clearPass.colorAttachments[0].storeAction = .store
+            commandBuffer.makeRenderCommandEncoder(descriptor: clearPass)?.endEncoding()
+            commandBuffer.commit()
+            #if DEBUG
+            workingTextureClearsForTesting += 1
+            #endif
+        }
         workingTarget = target
         workingSampleView = sampleView
         return (target, sampleView)
     }
 
     /// Direct pixel-buffer ingest — test seam for hermetic NV12/HDR/BGRA
-    /// branch coverage without AVPlayer timing.
-    func ingestForTesting(pixelBuffer: CVPixelBuffer) {
+    /// branch coverage without AVPlayer timing. `drivesFrame` also runs the
+    /// renderer's half of the contract (encode into a command buffer, commit,
+    /// publish), so a call is one whole frame; pass false to stop at staging
+    /// and drive the three steps by hand.
+    func ingestForTesting(pixelBuffer: CVPixelBuffer, drivesFrame: Bool = true) {
         publish(pixelBuffer: pixelBuffer)
+        if drivesFrame { driveStagedFrameWorkForTesting() }
+    }
+
+    /// Test seam: play the renderer's half of the contract on this source's own
+    /// queue — encode into a command buffer, commit, publish. Production drives
+    /// the same three calls from `WPEMetalRenderExecutor.render`, which is what
+    /// `videoConversionRidesTheSceneCommandBuffer` pins.
+    @discardableResult
+    func driveStagedFrameWorkForTesting() -> Bool {
+        guard hasStagedFrameWork, let commandBuffer = conversionQueue.makeCommandBuffer() else {
+            return false
+        }
+        encodeStagedFrameWork(into: commandBuffer)
+        commandBuffer.commit()
+        commitStagedFrameWork()
+        return true
     }
 
     /// Decoder-native NV12 first (video then full range) with a 32BGRA tail:

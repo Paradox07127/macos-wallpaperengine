@@ -1043,11 +1043,22 @@ extension WPEMetalSceneRenderer {
         pipeline: WPEPreparedRenderPipeline,
         frameSlot: Int
     ) throws -> [String: MTLTexture] {
+        // Collected in the same walk that ticks the sources: a video source
+        // that just decoded a frame hands back the texture its conversion pass
+        // will write, and that pass has to be encoded into this frame's scene
+        // command buffer before any pass samples it. Load-time decodes (a still
+        // frame published from `init`) are caught here too — they are still
+        // staged on the first frame that walks the dictionary.
+        var stagedWork: [any WPEDynamicTextureSource] = []
         for (path, source) in dynamicTextureSources {
             if let texture = source.texture(at: time, frameSlot: frameSlot) {
                 loadedTextures[path] = texture
             }
+            if source.hasStagedFrameWork {
+                stagedWork.append(source)
+            }
         }
+        executor.stageTextureWork(stagedWork)
 
         // Skip the active-path walk unless the budget is/was on or a placeholder still awaits reload.
         if textureCacheBudgetBytesResolved != nil
@@ -1079,6 +1090,7 @@ extension WPEMetalSceneRenderer {
     }
 
     func releaseDynamicTextureSources() {
+        executor.stageTextureWork([])
         dynamicTextureSources.values.forEach { $0.invalidate() }
         dynamicTextureSources.removeAll()
         loadedTextures.removeAll()
