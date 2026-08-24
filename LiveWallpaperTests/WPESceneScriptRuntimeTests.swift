@@ -668,6 +668,53 @@ struct WPESceneScriptRuntimeTests {
         #expect(instance.tickString() == "0.5:0.25:0.375:0")
     }
 
+    /// WPE's permanent link is the array *identity*: a module-scope capture
+    /// must keep observing later ticks. Replacing `audioBuffer.average` each
+    /// tick would pass value tests and still break the corpus template.
+    @Test("Registered audio buffer arrays keep identity while values update in place")
+    func engineAudioBuffersKeepPermanentLinkIdentity() throws {
+        var left = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
+        var right = left
+        left[60] = 0.5
+        left[61] = 0.25
+        right[60] = 0.25
+        right[61] = 0.25
+        SystemAudioCaptureManager.broker.attachAnalyzer(
+            SpectrumAnalyzerStub(AudioSpectrumFrame(left: left, right: right, timestampNanos: 1))
+        )
+        SystemAudioCaptureManager.setCapturingForTesting(true)
+        defer {
+            SystemAudioCaptureManager.setCapturingForTesting(false)
+            SystemAudioCaptureManager.broker.attachAnalyzer(nil)
+            SystemAudioCaptureManager.broker.resetToSilence()
+        }
+        let script = """
+        let audioBuffer = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
+        const capturedAvg = audioBuffer.average;
+        const capturedLeft = audioBuffer.left;
+        const capturedRight = audioBuffer.right;
+        export function update(value) {
+            return [
+                capturedAvg === audioBuffer.average ? 1 : 0,
+                capturedLeft === audioBuffer.left ? 1 : 0,
+                capturedRight === audioBuffer.right ? 1 : 0,
+                capturedAvg[15], capturedLeft[15], capturedRight[15]
+            ].join(':');
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "")
+        #expect(instance.tickString() == "1:1:1:0.375:0.5:0.25")
+
+        left[60] = 0.25
+        left[61] = 0.25
+        right[60] = 1
+        right[61] = 0
+        SystemAudioCaptureManager.broker.attachAnalyzer(
+            SpectrumAnalyzerStub(AudioSpectrumFrame(left: left, right: right, timestampNanos: 2))
+        )
+        #expect(instance.tickString() == "1:1:1:0.625:0.25:1")
+    }
+
     @Test("Audio buffers fall back to silence while capture is off")
     func engineAudioBuffersSilentWhenCaptureOff() throws {
         var left = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
@@ -3039,5 +3086,261 @@ export function init(value) {
         #expect(scripted.text.isEmpty)
         #expect(scripted.textScript?.isEmpty == false)
         #expect(!document.textObjects.contains(where: { $0.id == "346" }))
+    }
+
+    // MARK: - Batched per-tick host writes (J-a)
+
+    // The per-tick clock and cursor writes now go through one cached JS helper
+    // call per group instead of one JSC boundary crossing per field. These
+    // tests pin the contract that must not move: the values scripts observe,
+    // the identity of the objects scripts may have captured, and the per-field
+    // fallback when the helper factory cannot be built.
+
+    @Test("Batched clock write delivers runtime, frametime and timeOfDay to layer scripts")
+    func batchedClockWriteDeliversAllThreeFields() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(
+            script: """
+            export function update() {
+                shared.rt = engine.runtime;
+                shared.ft = engine.frametime;
+                shared.tod = engine.timeOfDay;
+            }
+            """,
+            shared: store
+        )
+        _ = instance.tick(runtimeSeconds: 1.5)
+        _ = instance.tick(runtimeSeconds: 2.0)
+        #expect(store.get("rt") as? Double == 2.0)
+        #expect(store.get("ft") as? Double == 0.5)
+        let timeOfDay = try #require(store.get("tod") as? Double)
+        #expect(timeOfDay >= 0 && timeOfDay <= 1)
+    }
+
+    /// A script may capture `input.cursorScreenPosition` once and keep reading
+    /// it. The batched cursor write must assign onto those SAME objects — a
+    /// helper that replaced them would silently freeze every captured reference.
+    @Test("Cursor objects captured at init keep observing new values")
+    func capturedCursorObjectsKeepTheirIdentityAcrossTicks() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(
+            script: """
+            var p, w;
+            export function init() {
+                p = input.cursorScreenPosition;
+                w = input.cursorWorldPosition;
+            }
+            export function update() {
+                shared.px = p.x;
+                shared.py = p.y;
+                shared.wy = w.y;
+            }
+            """,
+            shared: store,
+            canvasSize: SIMD2<Double>(200, 100)
+        )
+        let first = WPEPointerFrame(
+            position: SIMD2<Double>(0.25, 0.75),
+            clickPosition: SIMD2<Double>(0.25, 0.75),
+            isDown: false,
+            isRightDown: false
+        )
+        _ = instance.tick(runtimeSeconds: 1, pointerFrame: first)
+        #expect(store.get("px") as? Double == 50)
+        #expect(store.get("py") as? Double == 75)
+        #expect(store.get("wy") as? Double == 25)
+
+        let second = WPEPointerFrame(
+            position: SIMD2<Double>(0.5, 0.25),
+            clickPosition: SIMD2<Double>(0.5, 0.25),
+            isDown: false,
+            isRightDown: false
+        )
+        _ = instance.tick(runtimeSeconds: 2, pointerFrame: second)
+        #expect(store.get("px") as? Double == 100)
+        #expect(store.get("py") as? Double == 25)
+        #expect(store.get("wy") as? Double == 75)
+    }
+
+    /// Same identity pin for the transform engine, whose input carries only
+    /// `cursorWorldPosition`: the module-scope capture happens at script eval,
+    /// before any tick writes.
+    @Test("Transform script's captured cursorWorldPosition keeps observing new values")
+    func transformCapturedCursorObjectKeepsIdentity() throws {
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            var w = input.cursorWorldPosition;
+            export function update(value) {
+                value.x = w.x;
+                value.y = w.y;
+                return value;
+            }
+            """,
+            seed: SIMD3<Double>(0, 0, 7),
+            canvasSize: SIMD2<Double>(200, 100)
+        )
+        let first = try #require(instance.tick(
+            pointerPosition: SIMD2<Double>(0.25, 0.75),
+            runtimeSeconds: 1
+        ))
+        #expect(first == SIMD3<Double>(50, 25, 7))
+        let second = try #require(instance.tick(
+            pointerPosition: SIMD2<Double>(0.5, 0.25),
+            runtimeSeconds: 2
+        ))
+        #expect(second == SIMD3<Double>(100, 75, 7))
+    }
+
+    /// When the helper factory cannot be evaluated the writer must keep the
+    /// clock moving through per-field writes — a failed setup optimisation may
+    /// cost crossings, never correctness.
+    @Test("Engine clock writer falls back to per-field writes when its factory fails")
+    func engineClockWriterFallsBackWhenFactoryFails() throws {
+        let context = try #require(JSContext())
+        context.setObject(
+            JSValue(newObjectIn: context),
+            forKeyedSubscript: "engine" as NSString
+        )
+        let broken = try #require(WPEEngineClockWriter(
+            context: context,
+            factory: "throw new Error('no helper');"
+        ))
+        #expect(!broken.usesBatchedHelper)
+        broken.refresh(runtime: 1.5, frameTime: 0.25)
+        #expect(context.evaluateScript("engine.runtime")?.toDouble() == 1.5)
+        #expect(context.evaluateScript("engine.frametime")?.toDouble() == 0.25)
+        let timeOfDay = try #require(context.evaluateScript("engine.timeOfDay")?.toDouble())
+        #expect(timeOfDay >= 0 && timeOfDay <= 1)
+
+        let healthy = try #require(WPEEngineClockWriter(context: context))
+        #expect(healthy.usesBatchedHelper)
+        healthy.refresh(runtime: 2.0, frameTime: 0.5)
+        #expect(context.evaluateScript("engine.runtime")?.toDouble() == 2.0)
+        #expect(context.evaluateScript("engine.frametime")?.toDouble() == 0.5)
+    }
+
+    @Test("Prelude install ordinals increment per VM and restart on a new VM")
+    func preludeOrdinalsIncrementPerVirtualMachine() throws {
+        WPESceneScriptBaseclasses.resetPreludeOrdinalsForTesting()
+        let vmA = JSVirtualMachine()
+        let vmB = JSVirtualMachine()
+        let a1 = try #require(JSContext(virtualMachine: vmA))
+        let a2 = try #require(JSContext(virtualMachine: vmA))
+        let b1 = try #require(JSContext(virtualMachine: vmB))
+        let firstA = WPESceneScriptBaseclasses.installTimed(in: a1)
+        let secondA = WPESceneScriptBaseclasses.installTimed(in: a2)
+        let firstB = WPESceneScriptBaseclasses.installTimed(in: b1)
+        #expect(firstA.ordinal == 1)
+        #expect(secondA.ordinal == 2)
+        #expect(firstA.vmSlot == secondA.vmSlot)
+        #expect(firstB.ordinal == 1)
+        #expect(firstB.vmSlot != firstA.vmSlot)
+        WPESceneScriptBaseclasses.resetPreludeOrdinalsForTesting()
+    }
+
+    /// `wpeMakeHostTickHelper` returning nil is what routes every engine onto
+    /// its pre-existing per-field path, so nil-on-garbage is load-bearing.
+    @Test("Host tick helper factory rejects throwing or non-callable factories")
+    func hostTickHelperFactoryRejectsBrokenFactories() throws {
+        let context = try #require(JSContext())
+        #expect(wpeMakeHostTickHelper(
+            in: context, factory: "throw new Error('boom');", targets: []
+        ) == nil)
+        #expect(wpeMakeHostTickHelper(
+            in: context, factory: "(function () { return 42; })", targets: []
+        ) == nil)
+        let target = try #require(JSValue(newObjectIn: context))
+        let helper = try #require(wpeMakeHostTickHelper(
+            in: context,
+            factory: "(function (t) { return function (v) { t.marked = v; }; })",
+            targets: [target]
+        ))
+        helper.call(withArguments: [7.0])
+        #expect(target.objectForKeyedSubscript("marked")?.toDouble() == 7)
+    }
+
+    /// `updateInput` skips the JSC write when the UV has not changed. A setter
+    /// on the captured cursor object fires only on real writes, so a second
+    /// tick with the same pointer must not increment.
+    /// The clock helper must reach `engine` through the scope chain, not through
+    /// an object captured at setup: a script that replaces the global used to keep
+    /// receiving the clock (the host re-looked-up every tick) and must still.
+    @Test("Replacing the engine global still receives the clock")
+    func replacedEngineGlobalStillReceivesTheClock() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(
+            script: """
+            export function init() {
+                var replacement = {};
+                engine = replacement;
+            }
+            export function update() {
+                shared.rt = engine.runtime;
+            }
+            """,
+            shared: store
+        )
+        _ = instance.tick(runtimeSeconds: 3.5)
+        #expect(store.get("rt") as? Double == 3.5)
+    }
+
+    /// The batched cursor write must still land on EVERY tick, not only when the
+    /// pointer moved. A script may assign into `input.cursorScreenPosition` /
+    /// `cursorWorldPosition`; the host used to overwrite that assignment on the
+    /// next tick, and skipping the write while the pointer is still would let the
+    /// script's value survive instead. Counted through a JS setter.
+    @Test("The cursor write reaches the script on every tick, moved or not")
+    func cursorIsRewrittenEveryTick() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(
+            script: """
+            var writes = 0;
+            export function init() {
+                var p = input.cursorScreenPosition;
+                var stored = p.x;
+                Object.defineProperty(p, 'x', {
+                    configurable: true,
+                    enumerable: true,
+                    get: function() { return stored; },
+                    set: function(v) { writes += 1; stored = v; }
+                });
+            }
+            export function update() {
+                shared.writes = writes;
+                shared.px = input.cursorScreenPosition.x;
+                shared.wz = input.cursorWorldPosition.z;
+                // Scribble on the host-owned input; the next tick must restore it.
+                input.cursorWorldPosition.z = 42;
+            }
+            """,
+            shared: store,
+            canvasSize: SIMD2<Double>(200, 100)
+        )
+        let pointer = WPEPointerFrame(
+            position: SIMD2<Double>(0.25, 0.75),
+            clickPosition: SIMD2<Double>(0.25, 0.75),
+            isDown: false,
+            isRightDown: false
+        )
+        _ = instance.tick(runtimeSeconds: 1, pointerFrame: pointer)
+        let afterFirst = try #require(store.get("writes") as? Double)
+        #expect(afterFirst >= 1)
+        #expect(store.get("px") as? Double == 50)
+
+        // Same pointer: the write still happens, and the script's scribble on z is gone.
+        _ = instance.tick(runtimeSeconds: 2, pointerFrame: pointer)
+        #expect(store.get("writes") as? Double == afterFirst + 1)
+        #expect(store.get("px") as? Double == 50)
+        #expect(store.get("wz") as? Double == 0)
+
+        let moved = WPEPointerFrame(
+            position: SIMD2<Double>(0.5, 0.25),
+            clickPosition: SIMD2<Double>(0.5, 0.25),
+            isDown: false,
+            isRightDown: false
+        )
+        _ = instance.tick(runtimeSeconds: 3, pointerFrame: moved)
+        #expect(store.get("writes") as? Double == afterFirst + 2)
+        #expect(store.get("px") as? Double == 100)
     }
 }

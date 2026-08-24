@@ -193,7 +193,8 @@ extension WPEMetalSceneRenderer {
                 category: .wpeRender
             )
         }
-        // Diagnostic only (2955378002: 676 bindings, 124 distinct). Every binding still gets its own runtime.
+        // Diagnostic only. 2955378002 is ~941 runtime bindings / ~137 distinct
+        // sources; every binding still gets its own runtime.
         let reuse = WPESceneScriptInstanceInventory.sourceReuse(in: document)
         debugStage(
             "scripts.inventory",

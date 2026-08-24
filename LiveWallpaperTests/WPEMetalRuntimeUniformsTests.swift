@@ -586,6 +586,24 @@ struct WPEMetalRuntimeUniformsTests {
         ).pipeline.layers.first?.passes.first?.uniformValues
     }
 
+    @Test("Visibility overlay that already matches authored visible reuses the pipeline")
+    func matchingVisibilityOverlayReusesPipeline() {
+        let pipeline = Self.solidPipeline()
+        #expect(pipeline.applyingLayerVisibility(["layer": true]) == pipeline)
+        let hidden = pipeline.applyingLayerVisibility(["layer": false])
+        #expect(hidden != pipeline)
+        #expect(hidden.applyingLayerVisibility(["layer": false]) == hidden)
+    }
+
+    @Test("Alpha overlay that already matches authored alpha reuses the pipeline")
+    func matchingAlphaOverlayReusesPipeline() {
+        let pipeline = Self.solidPipeline()
+        #expect(pipeline.applyingLayerAlpha(["layer": 1]) == pipeline)
+        let faded = pipeline.applyingLayerAlpha(["layer": 0.25])
+        #expect(faded != pipeline)
+        #expect(faded.applyingLayerAlpha(["layer": 0.25]) == faded)
+    }
+
     @Test("Script color override survives through the per-frame prepare")
     func scriptColorOverrideUpdatesSolidUniform() throws {
         let tinted = Self.solidPipeline()
