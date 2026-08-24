@@ -582,11 +582,23 @@ final class WPEMetalRenderExecutor {
         device
     }
 
-    /// Video NV12→BGRA conversion passes must commit on the frame queue:
-    /// same-queue hazard tracking orders them ahead of the frame that samples
-    /// the converted working texture (a separate queue would be unordered).
+    /// Only `WPEVideoTextureSource.invalidate()` still builds a command buffer
+    /// of its own; it goes on the frame queue so its teardown fence lands
+    /// behind every render buffer that could be reading a retired plane.
     var textureSourceCommandQueue: MTLCommandQueue {
         commandQueue
+    }
+
+    /// Dynamic sources that decoded a frame whose GPU work has to ride the next
+    /// `render` call's scene command buffer. Handed over by
+    /// `texturesForCurrentFrame` — which runs immediately before `render` and
+    /// is the only thing that ticks those sources — and consumed once: a
+    /// `render` that throws before it makes a buffer leaves the sources staged,
+    /// and the next frame's walk collects them again.
+    private var stagedTextureWork: [any WPEDynamicTextureSource] = []
+
+    func stageTextureWork(_ sources: [any WPEDynamicTextureSource]) {
+        stagedTextureWork = sources
     }
 
     /// One-shot guard so the waterwaves dispatch logs its first live execution per renderer
@@ -713,6 +725,8 @@ final class WPEMetalRenderExecutor {
         // handler on success; the `defer` releases it on any early throw so a
         // permit is never lost.
         let asyncSubmission = !synchronizeFrameCompletion
+        let stagedTextureWork = self.stagedTextureWork
+        self.stagedTextureWork = []
         // A renderer-owned frame lease already accounts for every command buffer
         // in this logical frame. Retain the historical semaphore only for callers
         // that have not migrated to that lease; applying both budgets can reject
@@ -784,6 +798,28 @@ final class WPEMetalRenderExecutor {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
         WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
+        // Video conversions first: they write textures the scene passes below
+        // sample, and same-buffer order is what guarantees write-before-read.
+        // Nothing is published yet — a buffer this frame never commits must
+        // leave the sources on their previously published frame.
+        var didPublishStagedTextureWork = stagedTextureWork.isEmpty
+        for source in stagedTextureWork {
+            source.encodeStagedFrameWork(into: commandBuffer)
+        }
+        func publishStagedTextureWork() {
+            guard !didPublishStagedTextureWork else { return }
+            didPublishStagedTextureWork = true
+            for source in stagedTextureWork {
+                source.commitStagedFrameWork()
+            }
+        }
+        defer {
+            if !didPublishStagedTextureWork {
+                for source in stagedTextureWork {
+                    source.rollbackStagedFrameWork()
+                }
+            }
+        }
 
         let reusableHistory: PreviousFrameHistory?
         if let history = previousFrameHistory, history.sceneSize == size {
@@ -1181,9 +1217,11 @@ final class WPEMetalRenderExecutor {
                 }
             }
             commandBuffer.commit()
+            publishStagedTextureWork()
             didCommitAsync = true
         } else {
             commandBuffer.commit()
+            publishStagedTextureWork()
             commandBuffer.waitUntilCompleted()
             if commandBuffer.status == .error {
                 gpuErrorSink.record("frame: \(commandBuffer.error?.localizedDescription ?? "unknown")")

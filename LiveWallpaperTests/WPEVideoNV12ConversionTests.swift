@@ -199,6 +199,10 @@ struct WPEVideoNV12ConversionTests {
         let deadline = Date().addingTimeInterval(3.0)
         while Date() < deadline {
             texture = source.texture(at: 0)
+            // The renderer's half of the contract: a decoded frame is staged,
+            // and its conversion pass only runs once a command buffer carries
+            // it. Nothing else in this test plays the executor.
+            source.driveStagedFrameWorkForTesting()
             if texture != nil { break }
             try await Task.sleep(for: .milliseconds(30))
         }
