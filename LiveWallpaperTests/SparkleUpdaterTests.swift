@@ -73,16 +73,54 @@ struct SparkleUpdaterOwnershipTests {
         #expect(plist["CFBundleShortVersionString"] as? String == "$(MARKETING_VERSION)")
     }
 
-    /// A failed check (no network, 404, bad signature) ends the session, so this
-    /// callback is on the failure path. Sparkle 2.9.6 delivers it on the main
-    /// thread, but its own `assert` for that is compiled out of release and the
-    /// protocol header does not promise it — assuming isolation would turn a
-    /// future version bump into a crash on every failed update check.
+    /// Someone who turned launch checks off in 0.5.7 must not have them turned
+    /// back on by the move to Sparkle — the Info.plist default is on.
+    @Test("A 0.5.7 opt-out carries over, once, and never beats a Sparkle-side choice", arguments: [
+        // legacy value, Sparkle already stores a choice, what should be applied
+        (false, false, false as Bool?),
+        (true, false, true as Bool?),
+        (false, true, nil as Bool?),
+    ])
+    func legacyOptOutMigration(_ legacy: Bool, _ sparkleStored: Bool, _ expected: Bool?) {
+        let suite = "SparkleMigrationTests-\(UUID().uuidString)"
+        let defaults = try! #require(UserDefaults(suiteName: suite))
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        defaults.set(legacy, forKey: SparkleUpdaterController.legacyCheckAtLaunchKey)
+
+        let carried = SparkleUpdaterController.legacyOptOutToCarryOver(
+            defaults: defaults,
+            sparkleChoiceIsStored: sparkleStored
+        )
+
+        #expect(carried == expected)
+        // Consumed either way, so a later change in Sparkle's own settings sticks.
+        #expect(defaults.object(forKey: SparkleUpdaterController.legacyCheckAtLaunchKey) == nil)
+    }
+
+    @Test("With no 0.5.7 key there is nothing to carry over")
+    func migrationIsANoOpWithoutTheLegacyKey() {
+        let suite = "SparkleMigrationTests-\(UUID().uuidString)"
+        let defaults = try! #require(UserDefaults(suiteName: suite))
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+
+        #expect(
+            SparkleUpdaterController.legacyOptOutToCarryOver(
+                defaults: defaults,
+                sparkleChoiceIsStored: false
+            ) == nil
+        )
+    }
+
     @MainActor
     private final class CallbackFlag {
         var fired = false
     }
 
+    /// A failed check (no network, 404, bad signature) ends the session, so this
+    /// callback is on the failure path. Sparkle 2.9.6 delivers it on the main
+    /// thread, but its own `assert` for that is compiled out of release and the
+    /// protocol header does not promise it — assuming isolation would turn a
+    /// future version bump into a crash on every failed update check.
     @Test("The session-finished callback survives arriving off the main thread")
     func sessionFinishedFromBackgroundThreadDoesNotTrap() async throws {
         let delegate = await GentleReminderDelegate()

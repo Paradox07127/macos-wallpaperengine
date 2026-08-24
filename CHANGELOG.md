@@ -29,6 +29,9 @@ not covered by this file.
 - Critical memory pressure released scene resources alone. A video wallpaper
   held on to its player and decode pool, and a web wallpaper to its document,
   for the whole emergency.
+- Turning off "Check for updates at launch" before 0.5.8 no longer comes back
+  on. Sparkle keeps that choice under its own key and defaults to on, so the
+  old setting is carried over once on first launch.
 
 ## [0.5.7] — 2026-08-23
 
