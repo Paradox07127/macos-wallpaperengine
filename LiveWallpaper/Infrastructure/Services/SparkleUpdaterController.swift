@@ -40,11 +40,36 @@ final class SparkleUpdaterController {
     /// Starts the scheduled-check machinery. Kept out of `init` so tests can
     /// touch the type without it reaching the network.
     func start() {
+        if let carried = Self.legacyOptOutToCarryOver(
+            defaults: .appScoped(),
+            sparkleChoiceIsStored: UserDefaults.standard.object(forKey: Self.sparkleAutomaticChecksKey) != nil
+        ) {
+            controller.updater.automaticallyChecksForUpdates = carried
+        }
         do {
             try controller.updater.start()
         } catch {
             Logger.error("Sparkle updater failed to start: \(String(describing: error))", category: .updates)
         }
+    }
+
+    nonisolated static let legacyCheckAtLaunchKey = "loomscreen.update.checkAtLaunch.v1"
+    /// Read from the user-defaults layer alone. `SUEnableAutomaticChecks` is also
+    /// in both Info.plists, so Sparkle's merged value is never unset and cannot
+    /// tell us whether the user has chosen anything.
+    nonisolated static let sparkleAutomaticChecksKey = "SUEnableAutomaticChecks"
+
+    /// 0.5.7 kept the launch-check opt-out in its own key, and Sparkle defaults
+    /// to on, so an upgrade would re-enable network checks for someone who had
+    /// turned them off. Consumes the old key either way: a choice already made in
+    /// Sparkle's settings wins, and this must not reapply on the next launch.
+    nonisolated static func legacyOptOutToCarryOver(
+        defaults: UserDefaults,
+        sparkleChoiceIsStored: Bool
+    ) -> Bool? {
+        guard let legacy = defaults.object(forKey: legacyCheckAtLaunchKey) as? Bool else { return nil }
+        defaults.removeObject(forKey: legacyCheckAtLaunchKey)
+        return sparkleChoiceIsStored ? nil : legacy
     }
 
     /// Shows Sparkle's own update UI — used by the menu bar button and the
