@@ -100,6 +100,25 @@ struct VideoEffectsManagerWarmthCacheTests {
         }
     }
 
+    @Test("A time zone change invalidates the cache even though the clock moved forward")
+    func timeZoneChangeInvalidates() {
+        defer { VideoEffectsManager.currentDateProvider = Date.init }
+        VideoEffectsManager.resetWarmthCacheForTesting()
+
+        VideoEffectsManager.currentDateProvider = { Self.date(hour: 10) }
+        let before = VideoEffectsManager.warmthForCurrentHour()
+
+        // The clock keeps moving forward, so both bounds still hold; only the
+        // local hour changed underneath, which is what the observer is for.
+        NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        VideoEffectsManager.currentDateProvider = { Self.date(hour: 10, minute: 30) }
+        let after = VideoEffectsManager.warmthForCurrentHour()
+
+        #expect(before == 6500)
+        #expect(after == 6500)
+        #expect(VideoEffectsManager.warmthRecomputeCount == 2)
+    }
+
     @Test("A backwards clock jump invalidates the cache instead of serving the stale hour")
     func clockRewindInvalidates() {
         defer { VideoEffectsManager.currentDateProvider = Date.init }
