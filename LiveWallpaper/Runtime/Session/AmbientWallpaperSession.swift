@@ -137,20 +137,11 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
             )
     }
 
-    /// Critical system memory pressure: hand the already-suspended HTML view
-    /// into the deep-hibernation path it owns (snapshot cover → `about:blank`)
-    /// without waiting out its 20s absence dwell.
-    ///
-    /// Resource depth only — it never writes `currentProfile` or play intent,
-    /// and the wake is the ordinary resume. `WallpaperPolicyEngine` grades
-    /// `critical` as a hard safety suspend, so the profile has already landed by
-    /// the time this arrives; a session still at `.quality` is one the profile
-    /// has not reached yet, and tearing it down here would be this signal
-    /// overriding the profile instead of layering on it.
-    ///
-    /// Re-armed on every `true` push rather than only on the rising edge: a
-    /// session installed while pressure is already critical must still go down.
-    /// The view's dwell slot makes the repeats idempotent.
+    /// Hands the already-suspended HTML view into the deep-hibernation path it
+    /// owns (snapshot cover → `about:blank`) without waiting out its absence
+    /// dwell. A session still at `.quality` is one the profile has not reached
+    /// yet: tearing that one down would override the profile rather than layer
+    /// on it.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         criticalMemoryPressureActive = active
         guard active else {
