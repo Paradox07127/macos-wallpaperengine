@@ -523,6 +523,17 @@ final class WPELayerScriptInstance {
         private var lastRuntimeSeconds: Double?
         private var cursorScreenPosition: JSValue?
         private var cursorWorldPosition: JSValue?
+        /// One-crossing clock updates; nil until setUp (then falls back to
+        /// `wpeRefreshEngineClock` should construction ever fail).
+        private var engineClockWriter: WPEEngineClockWriter?
+        /// Batched cursor write (one crossing for all 5 fields, assigning onto
+        /// the two cached cursor objects above); nil → per-field fallback.
+        private var cursorHelper: JSValue?
+        /// `update(value)` boolean argument reused across ticks — JS booleans
+        /// are immutable, so identity reuse is unobservable and saves one
+        /// JSValue creation per tick.
+        private var cachedTrueArgument: JSValue?
+        private var cachedFalseArgument: JSValue?
         /// Reused per-context stubs for `getParent()` / `getAnimationLayer()` so a
         /// chain (`getParent().getParent()`) doesn't mint a fresh object each call.
         private var neutralLayerStubCache: JSValue?
@@ -717,6 +728,9 @@ final class WPELayerScriptInstance {
             WPESceneScriptBaseclasses.install(in: context)
             installCanvasSize(in: context)
             installInput(in: context)
+            engineClockWriter = WPEEngineClockWriter(context: context)
+            cachedTrueArgument = JSValue(bool: true, in: context)
+            cachedFalseArgument = JSValue(bool: false, in: context)
             _ = updateEngineRuntime(0)
             installLayerBridge(in: context)
             if case let .returnedAlpha(initialValue) = outputMode {
@@ -812,8 +826,10 @@ final class WPELayerScriptInstance {
                 // `setOwnLayerVisible`, which goes through the same
                 // `defineProperty` setter an assignment uses.
                 let current = assignedVisible[Self.ownKey] ?? initialOwnVisible
-                let arg = JSValue(bool: current, in: context)
+                let arg = (current ? cachedTrueArgument : cachedFalseArgument)
+                    ?? JSValue(bool: current, in: context)
                     ?? JSValue(nullIn: context)!
+                WPEFrameOccupancyMeter.count(.jscCall)
                 if let result = updateFunction.call(withArguments: [arg as Any]),
                    !result.isUndefined, !result.isNull {
                     let value: Bool?
@@ -835,6 +851,7 @@ final class WPELayerScriptInstance {
                 // value, or `thisLayer.alpha = 1 - value` reads the seed forever.
                 let current = assignedAlpha[Self.ownKey] ?? initialOwnAlpha
                 let arg = JSValue(object: current, in: context) ?? JSValue(nullIn: context)!
+                WPEFrameOccupancyMeter.count(.jscCall)
                 if let result = updateFunction.call(withArguments: [arg as Any]),
                    !result.isUndefined, !result.isNull, result.isNumber {
                     let value = result.toDouble()
@@ -932,7 +949,11 @@ final class WPELayerScriptInstance {
                 frameTime = max(runtime, 1.0 / 30.0)
             }
             lastRuntimeSeconds = runtime
-            wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+            if let engineClockWriter {
+                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
+            } else {
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+            }
             return supplied == nil ? nil : runtime
         }
 
@@ -973,6 +994,16 @@ final class WPELayerScriptInstance {
             context.setObject(input, forKeyedSubscript: "input" as NSString)
             cursorScreenPosition = screen
             cursorWorldPosition = world
+            cursorHelper = wpeMakeHostTickHelper(
+                in: context,
+                factory: """
+                (function (screen, world) { return function (sx, sy, wx, wy, wz) {
+                    screen.x = sx; screen.y = sy;
+                    world.x = wx; world.y = wy; world.z = wz;
+                }; })
+                """,
+                targets: [screen, world]
+            )
             updateInput(.neutral)
         }
 
@@ -980,11 +1011,27 @@ final class WPELayerScriptInstance {
             guard let pointerFrame else { return }
             let x = clampFinite(pointerFrame.position.x, lower: 0, upper: 1)
             let y = clampFinite(pointerFrame.position.y, lower: 0, upper: 1)
-            cursorScreenPosition?.setObject(x * canvasSize.x, forKeyedSubscript: "x" as NSString)
-            cursorScreenPosition?.setObject(y * canvasSize.y, forKeyedSubscript: "y" as NSString)
-            cursorWorldPosition?.setObject(x * canvasSize.x, forKeyedSubscript: "x" as NSString)
-            cursorWorldPosition?.setObject((1.0 - y) * canvasSize.y, forKeyedSubscript: "y" as NSString)
-            cursorWorldPosition?.setObject(0.0, forKeyedSubscript: "z" as NSString)
+            // Rewritten every tick even when the pointer has not moved: a script
+            // that assigns into `input.cursorScreenPosition` / `cursorWorldPosition`
+            // must see the host value restored, the way it did before the write was
+            // batched into one crossing.
+            if let cursorHelper {
+                WPEFrameOccupancyMeter.count(.jscCall)
+                cursorHelper.call(withArguments: [
+                    x * canvasSize.x,
+                    y * canvasSize.y,
+                    x * canvasSize.x,
+                    (1.0 - y) * canvasSize.y,
+                    0.0,
+                ])
+            } else {
+                WPEFrameOccupancyMeter.count(.jscSetObject, by: 5)
+                cursorScreenPosition?.setObject(x * canvasSize.x, forKeyedSubscript: "x" as NSString)
+                cursorScreenPosition?.setObject(y * canvasSize.y, forKeyedSubscript: "y" as NSString)
+                cursorWorldPosition?.setObject(x * canvasSize.x, forKeyedSubscript: "x" as NSString)
+                cursorWorldPosition?.setObject((1.0 - y) * canvasSize.y, forKeyedSubscript: "y" as NSString)
+                cursorWorldPosition?.setObject(0.0, forKeyedSubscript: "z" as NSString)
+            }
         }
 
         private func cursorEventObject(

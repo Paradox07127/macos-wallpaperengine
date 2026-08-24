@@ -238,7 +238,28 @@ final class WPESceneScriptAudioBridge {
         let average: JSValue
         let left: JSValue
         let right: JSValue
+        /// JSC-owned `Float64Array` of `bands * 3` (left | right | average).
+        let packed: JSValue?
+        /// One JSC crossing that fans `packed` into the three registered arrays.
+        let fanOut: JSValue?
     }
+
+    /// Bound at registration to the exact `average`/`left`/`right` objects
+    /// `registerAudioBuffers` returned, so script-held captures keep observing
+    /// new values (WPE permanent link).
+    /// `n` is bound at registration, never re-read from `avg.length`: a script
+    /// that shrinks the array would otherwise make `right`/`avg` copy out of the
+    /// wrong packed slice. The pre-batch path indexed by the registered `bands`.
+    private static let fanOutFactory = """
+    (function (avg, left, right, packed, n) { return function () {
+        var twoN = n * 2, i = 0;
+        for (; i < n; i++) {
+            left[i] = packed[i];
+            right[i] = packed[n + i];
+            avg[i] = packed[twoN + i];
+        }
+    }; })
+    """
 
     private var buffers: [Buffer] = []
     /// One trailing zero pass after capture stops; later ticks only read isCapturing.
@@ -274,8 +295,23 @@ final class WPESceneScriptAudioBridge {
                 )
             }
             if let self {
+                let packed = Self.makePackedSnapshot(bands: bands, in: context)
+                let fanOut = packed.flatMap {
+                    wpeMakeHostTickHelper(
+                        in: context,
+                        factory: Self.fanOutFactory,
+                        targets: [average, left, right, $0, JSValue(int32: Int32(bands), in: context)]
+                    )
+                }
                 self.buffers.append(
-                    Buffer(bands: bands, average: average, left: left, right: right)
+                    Buffer(
+                        bands: bands,
+                        average: average,
+                        left: left,
+                        right: right,
+                        packed: packed,
+                        fanOut: fanOut
+                    )
                 )
                 // A dropped buffer's JS arrays simply stop receiving updates;
                 // a per-update registrant converges on its newest registration.
@@ -358,6 +394,22 @@ final class WPESceneScriptAudioBridge {
     }
 
     private func write(_ buffer: Buffer, left: [Float]?, right: [Float]?) {
+        if let packed = buffer.packed, let fanOut = buffer.fanOut,
+           let ptr = Self.packedBytes(packed, count: buffer.bands * 3) {
+            WPEFrameOccupancyMeter.count(.audioBandWrite)
+            let n = buffer.bands
+            for band in 0..<n {
+                let l = Double(left?[band] ?? 0)
+                let r = Double(right?[band] ?? 0)
+                ptr[band] = l
+                ptr[n + band] = r
+                ptr[n * 2 + band] = (l + r) * 0.5
+            }
+            WPEFrameOccupancyMeter.count(.jscCall)
+            fanOut.call(withArguments: [])
+            return
+        }
+        WPEFrameOccupancyMeter.count(.audioBandWrite, by: buffer.bands * 3)
         for band in 0..<buffer.bands {
             let l = Double(left?[band] ?? 0)
             let r = Double(right?[band] ?? 0)
@@ -365,6 +417,38 @@ final class WPESceneScriptAudioBridge {
             buffer.right.setValue(r, at: band)
             buffer.average.setValue((l + r) * 0.5, at: band)
         }
+    }
+
+    private static func makePackedSnapshot(bands: Int, in context: JSContext) -> JSValue? {
+        var exception: JSValueRef?
+        guard let object = JSObjectMakeTypedArray(
+            context.jsGlobalContextRef,
+            kJSTypedArrayTypeFloat64Array,
+            bands * 3,
+            &exception
+        ), exception == nil else { return nil }
+        return JSValue(jsValueRef: object, in: context)
+    }
+
+    /// `JSObjectGetTypedArrayBytesPtr` is valid until the next GC — fill
+    /// immediately and don't store the pointer across a JSC call.
+    private static func packedBytes(
+        _ packed: JSValue,
+        count: Int
+    ) -> UnsafeMutablePointer<Double>? {
+        guard let context = packed.context else { return nil }
+        var exception: JSValueRef?
+        guard let object = JSValueToObject(
+            context.jsGlobalContextRef,
+            packed.jsValueRef,
+            &exception
+        ), exception == nil,
+           let raw = JSObjectGetTypedArrayBytesPtr(
+            context.jsGlobalContextRef,
+            object,
+            &exception
+           ), exception == nil else { return nil }
+        return raw.bindMemory(to: Double.self, capacity: count)
     }
 
     /// Pairwise max halving matching WPEMetalRuntimeUniforms.halve
@@ -493,6 +577,7 @@ final class WPESceneScriptTimerScheduler {
             // Keep the entry addressable while its callback runs so handle()
             // self-cancellation and clearTimeout(handle) both tombstone it.
             beforeEachCallback()
+            WPEFrameOccupancyMeter.count(.jscCall)
             let result = entry.callback.call(withArguments: [])
             if result == nil || callbackDidThrow() {
                 entry.isCancelled = true
@@ -811,6 +896,9 @@ final class WPESceneScriptInstance {
         private var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
         private var lastRuntimeSeconds: Double?
+        /// One-crossing clock updates; nil until setUp (then falls back to
+        /// `wpeRefreshEngineClock` should construction ever fail).
+        private var engineClockWriter: WPEEngineClockWriter?
         private let shared: WPESharedScriptState?
         fileprivate let governor: WPESceneScriptExecutionGovernor
         fileprivate let participant: WPESceneScriptExecutionGovernor.Participant
@@ -955,6 +1043,7 @@ final class WPESceneScriptInstance {
             )
             WPESceneScriptBaseclasses.install(in: context)
             installCanvasSize(in: context)
+            engineClockWriter = WPEEngineClockWriter(context: context)
             _ = updateEngineRuntime(0)
             if let shared { wpeInstallSharedState(shared, in: context) }
             context.exceptionHandler = { [weak self] _, ex in
@@ -1010,6 +1099,7 @@ final class WPESceneScriptInstance {
             guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return nil }
             let arg = JSValue(object: lastValue, in: context) ?? JSValue(nullIn: context)!
             didThrow = false
+            WPEFrameOccupancyMeter.count(.jscCall)
             let result = updateFunction.call(withArguments: [arg as Any])
             if didThrow {
                 faultPolicy.recordFailure(entryPoint: "update", at: now)
@@ -1034,7 +1124,11 @@ final class WPESceneScriptInstance {
             let runtime = max(lastRuntimeSeconds ?? 0, supplied ?? lastRuntimeSeconds ?? 0)
             let frameTime = lastRuntimeSeconds.map { max(runtime - $0, 0) } ?? 0
             lastRuntimeSeconds = runtime
-            wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+            if let engineClockWriter {
+                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
+            } else {
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+            }
             return supplied == nil ? nil : runtime
         }
 
@@ -1535,15 +1629,94 @@ private func wpeDayFraction(of date: Date) -> Double {
 
 /// Per-tick engine clock, shared by all script families so `runtime` /
 /// `frametime` / `timeOfDay` can't drift apart between them.
+///
+/// Fallback path: the live engines go through `WPEEngineClockWriter` (one JSC
+/// crossing per tick) and only land here when that writer could not be built.
 func wpeRefreshEngineClock(
     in context: JSContext?,
     runtime: Double,
     frameTime: Double
 ) {
     guard let engine = context?.objectForKeyedSubscript("engine"), !engine.isUndefined else { return }
+    WPEFrameOccupancyMeter.count(.jscRead)
+    WPEFrameOccupancyMeter.count(.jscSetObject, by: 3)
     engine.setObject(runtime, forKeyedSubscript: "runtime" as NSString)
     engine.setObject(frameTime, forKeyedSubscript: "frametime" as NSString)
     engine.setObject(wpeDayFraction(), forKeyedSubscript: "timeOfDay" as NSString)
+}
+
+/// Builds a cached per-tick helper function: evaluates `factory` (an
+/// expression of the form `(function (target…) { return function (…) {…}; })`)
+/// and binds it to `targets` once at setup, so each tick costs one JSC boundary
+/// crossing instead of one per written field. The bound function assigns onto
+/// the exact objects passed in `targets` — never replacing them — so script-held
+/// references (`var p = input.cursorScreenPosition`) keep observing new values.
+/// Returns nil when the evaluation fails or yields a non-callable; callers keep
+/// their per-field writes as the fallback.
+func wpeMakeHostTickHelper(
+    in context: JSContext,
+    factory: String,
+    targets: [JSValue]
+) -> JSValue? {
+    // Setup-time evaluation: don't leak a factory exception into the context
+    // state the engine's own script evaluation inspects afterwards. The handler
+    // is swapped for a no-op — `registerAudioBuffers` builds its helper while the
+    // engine's handler is live, and a factory that failed to evaluate would
+    // otherwise set `didThrow` and be read back as the user script throwing.
+    // It must be a no-op block rather than nil: JSC's `notifyException` calls the
+    // handler unconditionally, so a nil one crashes the process on the first throw.
+    let priorException = context.exception
+    let priorHandler = context.exceptionHandler
+    context.exceptionHandler = { _, _ in }
+    defer {
+        context.exception = priorException
+        context.exceptionHandler = priorHandler
+    }
+    guard let factoryValue = context.evaluateScript(factory),
+          factoryValue.isObject, factoryValue.hasProperty("call"),
+          let helper = factoryValue.call(withArguments: targets),
+          helper.isObject, helper.hasProperty("call") else {
+        return nil
+    }
+    return helper
+}
+
+/// Engine clock updates batched into one JSC crossing per tick, replacing a
+/// global lookup plus three `setObject` calls. The helper reaches `engine` as a
+/// FREE VARIABLE rather than a bound argument, so a script that replaces the
+/// global still gets the clock — the same late binding the per-tick
+/// `objectForKeyedSubscript` gave, at one crossing instead of four. The fallback
+/// goes through `wpeRefreshEngineClock`, which re-looks-up for the same reason.
+struct WPEEngineClockWriter {
+    private let context: JSContext
+    private let helper: JSValue?
+
+    static let defaultFactory = """
+    (function () { return function (rt, ft, tod) {
+        engine.runtime = rt; engine.frametime = ft; engine.timeOfDay = tod;
+    }; })
+    """
+
+    /// `factory` is injectable so tests can force the fallback branch.
+    init?(context: JSContext, factory: String = WPEEngineClockWriter.defaultFactory) {
+        guard context.objectForKeyedSubscript("engine")?.isUndefined == false else {
+            return nil
+        }
+        self.context = context
+        helper = wpeMakeHostTickHelper(in: context, factory: factory, targets: [])
+    }
+
+    /// Test probe: whether the one-crossing helper path is active.
+    var usesBatchedHelper: Bool { helper != nil }
+
+    func refresh(runtime: Double, frameTime: Double) {
+        if let helper {
+            WPEFrameOccupancyMeter.count(.jscCall)
+            helper.call(withArguments: [runtime, frameTime, wpeDayFraction()])
+        } else {
+            wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+        }
+    }
 }
 
 /// Install cross-context `shared` proxy (container mutations write root back to host).
@@ -2215,9 +2388,17 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
         private var cursorWorldPosition: JSValue?
+        /// One-crossing clock updates; nil until setUp (then falls back to
+        /// `wpeRefreshEngineClock` should construction ever fail).
+        private var engineClockWriter: WPEEngineClockWriter?
+        /// Batched cursor write (one crossing for x/y/z, assigning onto the
+        /// `cursorWorldPosition` object above); nil → per-field fallback.
+        private var cursorHelper: JSValue?
         /// Reused `update(value)` argument for vec2/vec3. x/y/z are overwritten
         /// each tick (same shape as `cursorWorldPosition`).
         private var updateArgument: JSValue?
+        /// Last pointer UV written into `cursorWorldPosition`. Equal input skips
+        /// the JSC crossing.
         private var layerHandles: [String: JSValue] = [:]
         private var neutralLayerHandle: JSValue?
         private var lastRuntimeSeconds: Double?
@@ -2354,6 +2535,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             installCanvasSize(in: context)
             installInput(in: context)
             installLayerBridge(in: context)
+            engineClockWriter = WPEEngineClockWriter(context: context)
             _ = updateEngineRuntime(0)
             if let shared { wpeInstallSharedState(shared, in: context) }
             context.exceptionHandler = { [weak self] _, _ in self?.didThrow = true }
@@ -2430,14 +2612,28 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return nil }
             guard let updateFunction else { return nil }
             // Renderer pointer UV is top-left; WPE cursorWorldPosition is Y-up canvas space.
-            cursorWorldPosition?.setObject(pointerPosition.x * canvasSize.x, forKeyedSubscript: "x" as NSString)
-            cursorWorldPosition?.setObject((1.0 - pointerPosition.y) * canvasSize.y, forKeyedSubscript: "y" as NSString)
-            cursorWorldPosition?.setObject(seed.z, forKeyedSubscript: "z" as NSString)
+            // Rewritten every tick even when the pointer has not moved: a script
+            // that assigns into `input.cursorWorldPosition` must see the host value
+            // restored, the way it was before the write was batched.
+            if let cursorHelper {
+                WPEFrameOccupancyMeter.count(.jscCall)
+                cursorHelper.call(withArguments: [
+                    pointerPosition.x * canvasSize.x,
+                    (1.0 - pointerPosition.y) * canvasSize.y,
+                    seed.z,
+                ])
+            } else {
+                WPEFrameOccupancyMeter.count(.jscSetObject, by: 3)
+                cursorWorldPosition?.setObject(pointerPosition.x * canvasSize.x, forKeyedSubscript: "x" as NSString)
+                cursorWorldPosition?.setObject((1.0 - pointerPosition.y) * canvasSize.y, forKeyedSubscript: "y" as NSString)
+                cursorWorldPosition?.setObject(seed.z, forKeyedSubscript: "z" as NSString)
+            }
 
             didThrow = false
             guard let argument = jsValue(for: currentValue, in: context, reuseUpdateArgument: true) else { return nil }
             let now = WPEScriptFaultPolicy.monotonicNow()
             guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return nil }
+            WPEFrameOccupancyMeter.count(.jscCall)
             let result = updateFunction.call(withArguments: [argument])
             if didThrow {
                 let verdict = faultPolicy.recordFailure(entryPoint: "update", at: now)
@@ -2491,7 +2687,11 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 frameTime = 1.0 / 30.0
             }
             lastRuntimeSeconds = runtime
-            wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+            if let engineClockWriter {
+                engineClockWriter.refresh(runtime: runtime, frameTime: frameTime)
+            } else {
+                wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
+            }
             return runtimeSeconds?.isFinite == true ? runtime : nil
         }
 
@@ -2532,6 +2732,15 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             input.setObject(cursor, forKeyedSubscript: "cursorWorldPosition" as NSString)
             context.setObject(input, forKeyedSubscript: "input" as NSString)
             cursorWorldPosition = cursor
+            cursorHelper = wpeMakeHostTickHelper(
+                in: context,
+                factory: """
+                (function (world) { return function (wx, wy, wz) {
+                    world.x = wx; world.y = wy; world.z = wz;
+                }; })
+                """,
+                targets: [cursor]
+            )
         }
 
         /// Read-only graph bridge for transform scripts. It is intentionally

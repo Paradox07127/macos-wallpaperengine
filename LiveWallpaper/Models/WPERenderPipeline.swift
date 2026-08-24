@@ -181,59 +181,65 @@ extension WPEPreparedRenderPipeline {
     /// the executor reads `graphLayer.visible` to gate the scene draw.
     func applyingLayerVisibility(_ visibility: [String: Bool]) -> WPEPreparedRenderPipeline {
         guard !visibility.isEmpty else { return self }
-        return WPEPreparedRenderPipeline(
-            layers: layers.map { layer in
-                let resolved = visibility[layer.graphLayer.objectID] ?? layer.graphLayer.visible
-                guard resolved != layer.graphLayer.visible else { return layer }
-                return WPEPreparedRenderLayer(
-                    graphLayer: layer.graphLayer.applyingVisible(resolved),
-                    puppetModel: layer.puppetModel,
-                    passes: layer.passes
-                )
-            }
-        )
+        var didChange = false
+        let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
+            let resolved = visibility[layer.graphLayer.objectID] ?? layer.graphLayer.visible
+            guard resolved != layer.graphLayer.visible else { return layer }
+            didChange = true
+            return WPEPreparedRenderLayer(
+                graphLayer: layer.graphLayer.applyingVisible(resolved),
+                puppetModel: layer.puppetModel,
+                passes: layer.passes
+            )
+        }
+        guard didChange else { return self }
+        return WPEPreparedRenderPipeline(layers: newLayers)
     }
 
     /// Script layer alpha override (clears authored alpha animation).
     func applyingLayerAlpha(_ alpha: [String: Double]) -> WPEPreparedRenderPipeline {
         guard !alpha.isEmpty else { return self }
-        return WPEPreparedRenderPipeline(
-            layers: layers.map { layer in
-                guard let value = alpha[layer.graphLayer.objectID] else { return layer }
-                let geometry = layer.graphLayer.geometry
-                guard geometry.alpha != value || geometry.alphaAnimation != nil else { return layer }
-                let graphLayer = layer.graphLayer.applyingAlpha(value)
-                return WPEPreparedRenderLayer(
-                    graphLayer: graphLayer,
-                    puppetModel: layer.puppetModel,
-                    passes: Self.passesApplyingLayerTint(
-                        layer.passes, geometry: graphLayer.geometry,
-                        updateColor: false, updateAlpha: true
-                    )
+        var didChange = false
+        let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
+            guard let value = alpha[layer.graphLayer.objectID] else { return layer }
+            let geometry = layer.graphLayer.geometry
+            guard geometry.alpha != value || geometry.alphaAnimation != nil else { return layer }
+            didChange = true
+            let graphLayer = layer.graphLayer.applyingAlpha(value)
+            return WPEPreparedRenderLayer(
+                graphLayer: graphLayer,
+                puppetModel: layer.puppetModel,
+                passes: Self.passesApplyingLayerTint(
+                    layer.passes, geometry: graphLayer.geometry,
+                    updateColor: false, updateAlpha: true
                 )
-            }
-        )
+            )
+        }
+        guard didChange else { return self }
+        return WPEPreparedRenderPipeline(layers: newLayers)
     }
 
     /// Script layer color override (clears authored color animation).
     func applyingLayerColor(_ color: [String: SIMD3<Double>]) -> WPEPreparedRenderPipeline {
         guard !color.isEmpty else { return self }
-        return WPEPreparedRenderPipeline(
-            layers: layers.map { layer in
-                guard let value = color[layer.graphLayer.objectID] else { return layer }
-                let geometry = layer.graphLayer.geometry
-                guard geometry.color != value || geometry.colorAnimation != nil else { return layer }
-                let graphLayer = layer.graphLayer.applyingColor(value)
-                return WPEPreparedRenderLayer(
-                    graphLayer: graphLayer,
-                    puppetModel: layer.puppetModel,
-                    passes: Self.passesApplyingLayerTint(
-                        layer.passes, geometry: graphLayer.geometry,
-                        updateColor: true, updateAlpha: false
-                    )
+        var didChange = false
+        let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
+            guard let value = color[layer.graphLayer.objectID] else { return layer }
+            let geometry = layer.graphLayer.geometry
+            guard geometry.color != value || geometry.colorAnimation != nil else { return layer }
+            didChange = true
+            let graphLayer = layer.graphLayer.applyingColor(value)
+            return WPEPreparedRenderLayer(
+                graphLayer: graphLayer,
+                puppetModel: layer.puppetModel,
+                passes: Self.passesApplyingLayerTint(
+                    layer.passes, geometry: graphLayer.geometry,
+                    updateColor: true, updateAlpha: false
                 )
-            }
-        )
+            )
+        }
+        guard didChange else { return self }
+        return WPEPreparedRenderPipeline(layers: newLayers)
     }
 
     /// Solid passes bind `g_Color` from `uniformValues`, never from geometry —
@@ -306,24 +312,34 @@ extension WPEPreparedRenderPipeline {
     ) -> WPEPreparedRenderPipeline {
         guard !origins.isEmpty || !scales.isEmpty || !angles.isEmpty else { return self }
         guard !parentByID.isEmpty || !hostTransforms.isEmpty else {
-            return WPEPreparedRenderPipeline(
-                layers: layers.map { layer in
-                    let objectID = layer.graphLayer.objectID
-                    let origin = origins[objectID]
-                    let scale = scales[objectID]
-                    let angle = angles[objectID]
-                    guard origin != nil || scale != nil || angle != nil else { return layer }
-                    return WPEPreparedRenderLayer(
-                        graphLayer: layer.graphLayer.applyingTransform(
-                            origin: origin,
-                            scale: scale,
-                            angles: angle
-                        ),
-                        puppetModel: layer.puppetModel,
-                        passes: layer.passes
-                    )
+            var didChange = false
+            let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
+                let objectID = layer.graphLayer.objectID
+                let origin = origins[objectID]
+                let scale = scales[objectID]
+                let angle = angles[objectID]
+                guard origin != nil || scale != nil || angle != nil else { return layer }
+                let graphLayer = layer.graphLayer.applyingTransform(
+                    origin: origin,
+                    scale: scale,
+                    angles: angle
+                )
+                let current = layer.graphLayer.geometry
+                let next = graphLayer.geometry
+                guard current.origin != next.origin
+                    || current.scale != next.scale
+                    || current.angles != next.angles else {
+                    return layer
                 }
-            )
+                didChange = true
+                return WPEPreparedRenderLayer(
+                    graphLayer: graphLayer,
+                    puppetModel: layer.puppetModel,
+                    passes: layer.passes
+                )
+            }
+            guard didChange else { return self }
+            return WPEPreparedRenderPipeline(layers: newLayers)
         }
 
         let layerLocalTransforms = Dictionary(
@@ -360,27 +376,29 @@ extension WPEPreparedRenderPipeline {
             return resolved
         }
 
-        return WPEPreparedRenderPipeline(
-            layers: layers.map { layer in
-                let objectID = layer.graphLayer.objectID
-                guard let resolved = resolvedTransform(for: objectID, stack: []) else { return layer }
-                let current = layer.graphLayer.geometry
-                guard current.origin != resolved.origin
-                    || current.scale != resolved.scale
-                    || current.angles != resolved.angles else {
-                    return layer
-                }
-                return WPEPreparedRenderLayer(
-                    graphLayer: layer.graphLayer.applyingTransform(
-                        origin: resolved.origin,
-                        scale: resolved.scale,
-                        angles: resolved.angles
-                    ),
-                    puppetModel: layer.puppetModel,
-                    passes: layer.passes
-                )
+        var didChange = false
+        let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
+            let objectID = layer.graphLayer.objectID
+            guard let resolved = resolvedTransform(for: objectID, stack: []) else { return layer }
+            let current = layer.graphLayer.geometry
+            guard current.origin != resolved.origin
+                || current.scale != resolved.scale
+                || current.angles != resolved.angles else {
+                return layer
             }
-        )
+            didChange = true
+            return WPEPreparedRenderLayer(
+                graphLayer: layer.graphLayer.applyingTransform(
+                    origin: resolved.origin,
+                    scale: resolved.scale,
+                    angles: resolved.angles
+                ),
+                puppetModel: layer.puppetModel,
+                passes: layer.passes
+            )
+        }
+        guard didChange else { return self }
+        return WPEPreparedRenderPipeline(layers: newLayers)
     }
 
     /// Runtime createLayer: single-pass non-puppet templates only.
