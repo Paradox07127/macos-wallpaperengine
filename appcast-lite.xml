@@ -8,22 +8,16 @@
     <language>en</language>
     <item>
       <title>Version 0.6.0</title>
-      <pubDate>Mon, 24 Aug 2026 20:23:53 +0000</pubDate>
+      <pubDate>Mon, 24 Aug 2026 20:35:26 +0000</pubDate>
       <sparkle:version>0.6.0</sparkle:version>
       <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
-<h2>Loomscreen 0.6.0</h2>
-<p><strong>Gatekeeper:</strong> this build is code-signed but not notarized. If
-you install the DMG by hand, clear the quarantine attribute once:</p>
+<p><strong>Not notarized</strong> — if you installed the DMG by hand, run this once in Terminal:</p>
 <pre>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</pre>
-<p>An update installed by Loomscreen itself clears it for you.</p>
-<p><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.0">Full release notes</a></p>
+<p>An update installed by Loomscreen itself clears it for you. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.0">Full release notes</a></p>
 <hr>
-<p><strong>Gatekeeper:</strong>本构建有签名但未经苹果公证。如果你是手动安装 DMG，请在终端执行一次：</p>
-<pre>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</pre>
-<p>通过 Loomscreen 自动更新装上的版本已经替你清掉了。</p>
-<p><a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.0">完整发布说明</a></p>
+<p><strong>未经苹果公证</strong>——手动安装 DMG 的话，在终端执行一次上面那条命令。自动更新装上的版本已经替你清掉了。<a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.0">完整发布说明</a></p>
       ]]></description>
       <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.0/Loomscreen-0.6.0.dmg" type="application/octet-stream" sparkle:edSignature="ndoiXPRdu/aiboeXRvb0SdQZedq/KE65/+sob0dAJe1xluA1MKEGBOajyCHnVoaT/nX85xucjPHee57ZWECVAQ==" length="9664399" />
     </item>

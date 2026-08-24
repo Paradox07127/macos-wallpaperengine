@@ -115,17 +115,11 @@ NOTES_URL="https://github.com/$REPO_SLUG/releases/tag/$TAG_PREFIX$VERSION"
 # every update's notes instead of living only in a release body someone has to
 # remember to write.
 read -r -d '' DESCRIPTION <<HTML || true
-<h2>$TITLE $VERSION</h2>
-<p><strong>Gatekeeper:</strong> this build is code-signed but not notarized. If
-you install the DMG by hand, clear the quarantine attribute once:</p>
+<p><strong>Not notarized</strong> — if you installed the DMG by hand, run this once in Terminal:</p>
 <pre>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</pre>
-<p>An update installed by $TITLE itself clears it for you.</p>
-<p><a href="$NOTES_URL">Full release notes</a></p>
+<p>An update installed by $TITLE itself clears it for you. <a href="$NOTES_URL">Full release notes</a></p>
 <hr>
-<p><strong>Gatekeeper:</strong>本构建有签名但未经苹果公证。如果你是手动安装 DMG，请在终端执行一次：</p>
-<pre>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</pre>
-<p>通过 $TITLE 自动更新装上的版本已经替你清掉了。</p>
-<p><a href="$NOTES_URL">完整发布说明</a></p>
+<p><strong>未经苹果公证</strong>——手动安装 DMG 的话，在终端执行一次上面那条命令。自动更新装上的版本已经替你清掉了。<a href="$NOTES_URL">完整发布说明</a></p>
 HTML
 
 URL="https://github.com/$REPO_SLUG/releases/download/$TAG_PREFIX$VERSION/$DMG_NAME"
