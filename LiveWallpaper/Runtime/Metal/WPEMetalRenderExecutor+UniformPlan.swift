@@ -29,8 +29,13 @@ extension WPEMetalRenderExecutor {
     }
 
     struct PassUniformPlans {
-        let uniformCount: Int
-        let constantsCount: Int
+        /// Which keys EXIST is what the steps are compiled from, so the key set
+        /// is the cache identity — see `UniformKeyIndex`. A count compare kept a
+        /// plan alive across a same-count scripted key substitution: it went on
+        /// probing the key that vanished and never compiled a step for the one
+        /// that appeared.
+        let uniformKeySet: ShaderConstantKeys
+        let constantKeySet: ShaderConstantKeys
         /// `Array ==` short-circuits on shared storage (the hot-path case).
         let layout: [WPEUniformSlot]
         let plans: [UniformResolutionPlan]
@@ -41,8 +46,8 @@ extension WPEMetalRenderExecutor {
         layout: [WPEUniformSlot]
     ) -> [UniformResolutionPlan] {
         if let cached = uniformPlansByPassID[pass.id],
-           cached.uniformCount == pass.uniformValues.count,
-           cached.constantsCount == pass.pass.constants.count,
+           cached.uniformKeySet == pass.uniformValues.keys,
+           cached.constantKeySet == pass.pass.constants.keys,
            cached.layout == layout {
             return cached.plans
         }
@@ -50,8 +55,8 @@ extension WPEMetalRenderExecutor {
         let plans = layout.map { compileUniformPlan(for: $0, pass: pass, keyIndex: keyIndex) }
         uniformPlanCompileCount += 1
         uniformPlansByPassID[pass.id] = PassUniformPlans(
-            uniformCount: pass.uniformValues.count,
-            constantsCount: pass.pass.constants.count,
+            uniformKeySet: pass.uniformValues.keys,
+            constantKeySet: pass.pass.constants.keys,
             layout: layout,
             plans: plans
         )
