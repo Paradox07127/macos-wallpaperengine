@@ -223,6 +223,267 @@ struct WPEMetalFBOAliasTopologyCacheTests {
     }
 }
 
+/// E3a: the topology carries a structural generation, and the per-frame
+/// alias-interval / persistent-depth scans hang off it instead of re-running.
+/// Every test here also asserts the VALUE is right, because a cache that
+/// under-invalidates aliases two live FBOs onto the same memory.
+@Suite("WPE Metal FBO alias structural generation")
+struct WPEMetalFBOAliasStructuralGenerationTests {
+    private static let sceneSize = CGSize(width: 1024, height: 768)
+
+    private func executor() throws -> WPEMetalRenderExecutor {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        return try WPEMetalRenderExecutor(device: device)
+    }
+
+    private func metrics(
+        _ executor: WPEMetalRenderExecutor
+    ) throws -> WPEMetalRenderExecutor.FBOAliasTopology.Metrics {
+        try #require(executor.cachedFBOAliasTopology).metrics
+    }
+
+    // MARK: - 1. Steady state
+
+    @Test("Re-presenting the same pipeline value costs no walk and no rescan")
+    func identicalPipelineValueSkipsEveryScan() throws {
+        let executor = try executor()
+        let pipeline = makeAliasFormsPipeline()
+
+        let first = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: Self.sceneSize)
+        let firstDepth = executor.computePersistentDepthTargetIDs(for: pipeline)
+        let cold = try metrics(executor)
+        #expect(cold == .init(structuralScans: 0, intervalRebuilds: 1, depthRebuilds: 1))
+
+        for _ in 0..<8 {
+            let intervals = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: Self.sceneSize)
+            let depth = executor.computePersistentDepthTargetIDs(for: pipeline)
+            #expect(normalizedAliasIntervals(intervals) == normalizedAliasIntervals(first))
+            #expect(depth == firstDepth)
+        }
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+        let steady = try metrics(executor)
+        #expect(
+            steady == .init(structuralScans: 0, intervalRebuilds: 1, depthRebuilds: 1),
+            "a steady frame must not walk the graph at all"
+        )
+    }
+
+    @Test("An animated frame rebuilds the pipeline value but not the topology or its results")
+    func animationFrameKeepsGenerationAndMemos() throws {
+        let executor = try executor()
+        let animated = animatedUniformPipeline(makeAliasFormsPipeline())
+        let camera = WPEMetalCameraUniforms.identity
+
+        let (frame0, _) = animated.addingMetalRuntimeUniforms(
+            WPEMetalRuntimeUniforms(time: 0, daytime: 0, brightness: 1, pointerPosition: .zero),
+            camera: camera
+        )
+        let first = executor.fboAliasIntervals(pipeline: frame0, sceneSize: Self.sceneSize)
+        _ = executor.computePersistentDepthTargetIDs(for: frame0)
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+
+        for step in 1...4 {
+            let (frame, _) = animated.addingMetalRuntimeUniforms(
+                WPEMetalRuntimeUniforms(
+                    time: Double(step) * 0.25, daytime: 0, brightness: 1, pointerPosition: .zero
+                ),
+                camera: camera
+            )
+            // The fixture must actually produce a NEW value each frame, or this
+            // test degenerates into the identical-value case above.
+            let cached = try #require(executor.cachedFBOAliasTopology)
+            #expect(!cached.holdsSameLayerStorage(as: frame))
+
+            let intervals = executor.fboAliasIntervals(pipeline: frame, sceneSize: Self.sceneSize)
+            _ = executor.computePersistentDepthTargetIDs(for: frame)
+            #expect(normalizedAliasIntervals(intervals) == normalizedAliasIntervals(first))
+        }
+
+        #expect(executor.fboAliasTopologyRebuildCount == 1, "uniform animation is not a graph change")
+        let final = try metrics(executor)
+        #expect(final.intervalRebuilds == 1, "intervals must be reused across animated frames")
+        #expect(final.depthRebuilds == 1, "the depth set is structural — one scan per graph")
+        #expect(final.structuralScans == 4, "one revalidation walk per rebuilt pipeline value")
+    }
+
+    @Test("Alpha and colour animation never disturbs the interval memo")
+    func tintOnlyChangeKeepsTheIntervalMemo() throws {
+        let executor = try executor()
+        let base = makeAliasFormsPipeline()
+        _ = executor.fboAliasIntervals(pipeline: base, sceneSize: Self.sceneSize)
+
+        let tinted = base.applyingLayerAlpha(["fx": 0.25]).applyingLayerColor(
+            ["fx": SIMD3<Double>(0.1, 0.2, 0.3)]
+        )
+        _ = executor.fboAliasIntervals(pipeline: tinted, sceneSize: Self.sceneSize)
+
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+        let tintedMetrics = try metrics(executor)
+        #expect(tintedMetrics.intervalRebuilds == 1)
+    }
+
+    // MARK: - 2/3/4/5. Invalidation
+
+    @Test("Created-layer insertion and removal both move the generation")
+    func createdLayerInsertAndRemoveRebuild() throws {
+        let executor = try executor()
+        let base = makeAliasFormsPipeline()
+        _ = executor.fboAliasIntervals(pipeline: base, sceneSize: Self.sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+
+        let grown = makeAliasFormsPipeline(includeExtraLayer: true)
+        let grownIntervals = executor.fboAliasIntervals(pipeline: grown, sceneSize: Self.sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 2)
+        let grownMetrics = try metrics(executor)
+        #expect(grownMetrics.intervalRebuilds == 2)
+        #expect(normalizedAliasIntervals(grownIntervals) == normalizedAliasIntervals(
+            referenceFBOAliasIntervals(executor: executor, pipeline: grown, sceneSize: Self.sceneSize)
+        ))
+
+        let shrunkIntervals = executor.fboAliasIntervals(pipeline: base, sceneSize: Self.sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 3)
+        #expect(normalizedAliasIntervals(shrunkIntervals) == normalizedAliasIntervals(
+            referenceFBOAliasIntervals(executor: executor, pipeline: base, sceneSize: Self.sceneSize)
+        ))
+    }
+
+    @Test("A reload to a different graph rebuilds even after releaseTransientResources")
+    func reloadRebuilds() throws {
+        let executor = try executor()
+        _ = executor.fboAliasIntervals(pipeline: makeAliasFormsPipeline(), sceneSize: Self.sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+
+        // Structurally different scene, no explicit release: the signature alone
+        // must catch it.
+        let other = makeAliasFormsPipeline(fxImagePath: "materials/other.png")
+        _ = executor.fboAliasIntervals(pipeline: other, sceneSize: Self.sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 2)
+
+        // And the reload path itself drops the retained layers + every memo.
+        executor.releaseTransientResources()
+        #expect(executor.cachedFBOAliasTopology == nil)
+        _ = executor.fboAliasIntervals(pipeline: other, sceneSize: Self.sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 3)
+    }
+
+    @Test("Same layers, one renamed pass target — the easiest miss — rebuilds")
+    func renamedPassTargetRebuilds() throws {
+        let executor = try executor()
+        let base = makeAliasFormsPipeline()
+        let first = executor.fboAliasIntervals(pipeline: base, sceneSize: Self.sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+
+        let renamed = makeAliasFormsPipeline(discreteTargetName: "fxBlur3")
+        #expect(renamed.layers.count == base.layers.count)
+        let intervals = executor.fboAliasIntervals(pipeline: renamed, sceneSize: Self.sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 2)
+        #expect(normalizedAliasIntervals(intervals) != normalizedAliasIntervals(first))
+        #expect(normalizedAliasIntervals(intervals) == normalizedAliasIntervals(
+            referenceFBOAliasIntervals(executor: executor, pipeline: renamed, sceneSize: Self.sceneSize)
+        ))
+    }
+
+    @Test("Scene size, pixel scale and HDR promotion each re-derive the intervals")
+    func perFrameKeyInputsInvalidateTheMemo() throws {
+        let executor = try executor()
+        let pipeline = makeAliasFormsPipeline()
+        let first = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: Self.sceneSize)
+
+        let resized = executor.fboAliasIntervals(
+            pipeline: pipeline, sceneSize: CGSize(width: 800, height: 600)
+        )
+        #expect(executor.fboAliasTopologyRebuildCount == 1, "size is not structure")
+        #expect(normalizedAliasIntervals(resized) != normalizedAliasIntervals(first))
+
+        executor.targetPool.pixelScale = 0.5
+        let scaled = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: Self.sceneSize)
+        #expect(normalizedAliasIntervals(scaled) != normalizedAliasIntervals(first))
+        #expect(normalizedAliasIntervals(scaled) == normalizedAliasIntervals(
+            referenceFBOAliasIntervals(executor: executor, pipeline: pipeline, sceneSize: Self.sceneSize)
+        ))
+
+        executor.targetPool.pixelScale = 1
+        executor.targetPool.promotesLDRFormatsToHDR = true
+        let hdr = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: Self.sceneSize)
+        #expect(normalizedAliasIntervals(hdr) != normalizedAliasIntervals(first))
+        #expect(normalizedAliasIntervals(hdr) == normalizedAliasIntervals(
+            referenceFBOAliasIntervals(executor: executor, pipeline: pipeline, sceneSize: Self.sceneSize)
+        ))
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+    }
+
+    /// The memo's teeth: a layer whose geometry drives its pooled-target size
+    /// must invalidate it even though the GRAPH is untouched. Serving the memo
+    /// here would hand the pool intervals keyed to the old pixel size.
+    @Test("Layer geometry that feeds a pool key invalidates the interval memo")
+    func sizingGeometryChangeInvalidatesTheMemo() throws {
+        let executor = try executor()
+        let base = makeAliasFormsPipeline()
+        let first = executor.fboAliasIntervals(pipeline: base, sceneSize: Self.sceneSize)
+
+        let resizedLayer = makeAliasFormsPipeline(fxSize: CGSize(width: 320, height: 160))
+        let intervals = executor.fboAliasIntervals(pipeline: resizedLayer, sceneSize: Self.sceneSize)
+        let reference = referenceFBOAliasIntervals(
+            executor: executor, pipeline: resizedLayer, sceneSize: Self.sceneSize
+        )
+        #expect(executor.fboAliasTopologyRebuildCount == 1, "geometry is not structure")
+        #expect(normalizedAliasIntervals(intervals) == normalizedAliasIntervals(reference))
+        #expect(
+            normalizedAliasIntervals(reference) != normalizedAliasIntervals(first),
+            "control: the stale memo would have been observably wrong"
+        )
+
+        // `scale` reaches the key only through the compose utility layer's
+        // fullscreen/subregion classification — 120x80 scaled 9x/10x covers the
+        // canvas, so its composite flips from local to scene-sized.
+        let scaled = makeAliasFormsPipeline(
+            fxSize: CGSize(width: 320, height: 160),
+            composeScale: SIMD3<Double>(9, 10, 1)
+        )
+        let scaledIntervals = executor.fboAliasIntervals(pipeline: scaled, sceneSize: Self.sceneSize)
+        let scaledReference = referenceFBOAliasIntervals(
+            executor: executor, pipeline: scaled, sceneSize: Self.sceneSize
+        )
+        #expect(normalizedAliasIntervals(scaledIntervals) == normalizedAliasIntervals(scaledReference))
+        #expect(normalizedAliasIntervals(scaledIntervals).contains {
+            $0.hasPrefix("_rt_imageLayerComposite_compose_a#1024x768#")
+        }, "control: scale must have moved this key, or the assertion above is vacuous")
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
+    }
+
+    // MARK: - 6. The pool early-out downstream
+
+    @Test("The pool still skips its whole prepare on a steady frame")
+    func poolStableFrameEarlyOutSurvives() throws {
+        let executor = try executor()
+        let pipeline = makeAliasFormsPipeline()
+        let pool = executor.targetPool
+
+        for _ in 0..<12 {
+            let intervals = executor.fboAliasIntervals(pipeline: pipeline, sceneSize: Self.sceneSize)
+            pool.prepare(
+                pipeline: pipeline,
+                aliasIntervals: intervals,
+                pipelineIdentity: executor.fboAliasTopologyRebuildCount
+            )
+        }
+        #expect(pool.prepareRebuildCount == 1)
+        let steadyQueries = pool.aliasPlanDeviceQueryCount
+
+        // A created-layer insertion must push a NEW identity through, or the
+        // pool would keep a plan built for the old graph.
+        let grown = makeAliasFormsPipeline(includeExtraLayer: true)
+        let grownIntervals = executor.fboAliasIntervals(pipeline: grown, sceneSize: Self.sceneSize)
+        pool.prepare(
+            pipeline: grown,
+            aliasIntervals: grownIntervals,
+            pipelineIdentity: executor.fboAliasTopologyRebuildCount
+        )
+        #expect(pool.prepareRebuildCount == 2)
+        #expect(pool.aliasPlanDeviceQueryCount > steadyQueries)
+    }
+}
+
 // MARK: - Pipeline fixtures
 
 private func aliasGeometry(
@@ -302,6 +563,7 @@ private func makeAliasFormsPipeline(
     fxSize: CGSize = CGSize(width: 200, height: 100),
     dupSize: CGSize = CGSize(width: 64, height: 32),
     composeSize: CGSize = CGSize(width: 120, height: 80),
+    composeScale: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
     includeExtraLayer: Bool = false,
     fxImagePath: String = "materials/base.png",
     discreteTargetName: String = "fxBlur2",
@@ -374,7 +636,7 @@ private func makeAliasFormsPipeline(
     layers.append(aliasLayer(
         objectID: "compose",
         imagePath: "models/util/composelayer.json",
-        geometry: aliasGeometry(size: composeSize),
+        geometry: aliasGeometry(size: composeSize, scale: composeScale),
         passes: [
             aliasPass(
                 id: "compose.0",
@@ -395,6 +657,41 @@ private func makeAliasFormsPipeline(
             aliasPass(id: "created_1.0", target: .scene)
         ]))
     }
+    return WPEPreparedRenderPipeline(layers: layers)
+}
+
+/// Gives the first layer an animated constant so `addingMetalRuntimeUniforms`
+/// takes its rebuild path and hands back a FRESH layers array every frame —
+/// the case the structural generation must see through.
+private func animatedUniformPipeline(
+    _ pipeline: WPEPreparedRenderPipeline
+) -> WPEPreparedRenderPipeline {
+    let animated = WPESceneShaderConstantValue.animated(WPESceneAnimatedValue(
+        animation: WPESceneNumericAnimation(
+            tracks: [[.init(frame: 0, value: 0), .init(frame: 30, value: 1)]],
+            fps: 30,
+            length: 30,
+            mode: "loop",
+            wrapLoop: true
+        ),
+        scalarFallback: 1,
+        vectorFallback: nil
+    ))
+    var layers = pipeline.layers
+    let head = layers[0]
+    layers[0] = WPEPreparedRenderLayer(
+        graphLayer: head.graphLayer,
+        puppetModel: head.puppetModel,
+        passes: head.passes.map { pass in
+            WPEPreparedRenderPass(
+                pass: pass.pass,
+                shader: pass.shader,
+                textureBindings: pass.textureBindings,
+                comboValues: pass.comboValues,
+                uniformValues: ["g_Fade": animated]
+            )
+        }
+    )
     return WPEPreparedRenderPipeline(layers: layers)
 }
 
