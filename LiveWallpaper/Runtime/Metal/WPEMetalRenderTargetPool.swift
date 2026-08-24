@@ -683,6 +683,7 @@ final class WPEMetalRenderTargetPool {
         if let aliasHeap,
            let descriptor = try? textureDescriptor(for: key),
            let texture = aliasHeap.makeTexture(descriptor: descriptor) {
+            WPEFrameOccupancyMeter.count(.aliasHeapTextureCreate)
             texture.label = "WPE \(key.name) alias texture"
             registerWorldSize(of: texture)
             aliasFrameTextures[key] = (texture, lastPass)

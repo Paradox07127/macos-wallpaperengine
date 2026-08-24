@@ -44,6 +44,7 @@ extension WPEMetalRenderExecutor {
             bg = tex
         }
         guard let blit = commandBuffer.makeBlitCommandEncoder() else { return nil }
+        WPEFrameOccupancyMeter.count(.helperEncoder)
         blit.copy(from: output, to: bg)
         blit.endEncoding()
         frameState.markRefractionSnapshotFresh(for: output)

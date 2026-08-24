@@ -29,6 +29,7 @@ extension WPEMetalRenderExecutor {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
         guard try encodePresent(
             texture: source,
             layer: layer,
@@ -187,6 +188,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.presentEncoder)
         encoder.setRenderPipelineState(copyState)
         encoder.setFragmentTexture(source, index: 0)
         // Fit the scene texture's aspect to the drawable. Stretch reproduces the
@@ -263,6 +265,7 @@ extension WPEMetalRenderExecutor {
             guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
                 throw WPEMetalRenderExecutorError.commandBufferFailed
             }
+            WPEFrameOccupancyMeter.count(.bloomEncoder)
             defer { encoder.endEncoding() }
             encoder.setRenderPipelineState(try renderPipeline(
                 vertexName: "wpe_fullscreen_vertex",
@@ -448,6 +451,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.colorCorrectionEncoder)
         defer { encoder.endEncoding() }
 
         encoder.setRenderPipelineState(try renderPipeline(

@@ -509,6 +509,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPass) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
         bootstrapPreviousTextureCache[key] = cleared
         return cleared
