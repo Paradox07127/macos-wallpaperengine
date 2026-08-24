@@ -13,6 +13,23 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [Unreleased]
+
+### Changed
+
+- Updates are handled by Sparkle. The in-app dialog is gone; a scheduled check
+  lights the menu bar button instead of interrupting a full-screen wallpaper,
+  and the button opens Sparkle's own flow.
+- Web wallpapers follow the frame-rate limit. It reached scene and video
+  wallpapers only, so choosing 30 fps left `requestAnimationFrame` running at
+  the display's rate.
+
+### Fixed
+
+- Critical memory pressure released scene resources alone. A video wallpaper
+  held on to its player and decode pool, and a web wallpaper to its document,
+  for the whole emergency.
+
 ## [0.5.7] — 2026-08-23
 
 ### Added
