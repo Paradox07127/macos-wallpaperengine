@@ -116,4 +116,123 @@ enum WPEMetalObjectUniforms {
         )
     }
 }
+
+/// Cross-frame memo for `WPEMetalObjectUniforms.uniformValues`, plus the
+/// pass-id map `WPEPreparedRenderPipeline.addingMetalRuntimeUniforms` hands to
+/// `WPEFrameUniformContext`.
+///
+/// Both matrices are a pure function of `origin`/`scale`/`angles` (see
+/// `uniformValues` above — it reads nothing else), so a layer that did not move
+/// reuses last frame's dictionary, and a scene where no layer moved reuses the
+/// whole map. Without this a fully static scene still paid two `[Double]`
+/// allocations plus a matrix inverse per layer and a dictionary insert per
+/// pass, every frame, *before* the `needsRebuild` early-out.
+///
+/// Deliberately NOT `Sendable`: one instance per `WPEMetalRenderExecutor`, and
+/// each executor is confined to its own display's off-main render thread. Being
+/// non-`Sendable` is what makes that compiler-checked — the box cannot be
+/// captured into another isolation domain, and nothing here is global or
+/// static, so two displays sharing the same immutable pipeline value still get
+/// one cache each.
+final class WPEObjectUniformCache {
+
+    /// The complete input of `WPEMetalObjectUniforms.uniformValues`.
+    private struct TransformKey: Equatable {
+        let origin: SIMD3<Double>
+        let scale: SIMD3<Double>
+        let angles: SIMD3<Double>
+    }
+
+    /// Ordered mirror of the layer array the map was built from.
+    private struct LayerEntry {
+        let layerID: String
+        let transform: TransformKey
+        let passIDs: [String]
+    }
+
+    private var entries: [LayerEntry] = []
+    /// Memo consulted when the map has to be rebuilt (a layer moved, or the
+    /// layer set changed). Keyed by layer id, but the transform is re-checked
+    /// on every hit — so a recycled id can only ever hit on a transform that
+    /// produces the identical matrices.
+    private var memoByLayerID: [String: (transform: TransformKey, values: [String: WPESceneShaderConstantValue])] = [:]
+    private var valuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
+
+    /// Test seam: how many times the matrices were actually built.
+    private(set) var computeCount = 0
+    /// Test seam: how many times the pass-id map was rebuilt.
+    private(set) var mapRebuildCount = 0
+
+    func resetCounters() {
+        computeCount = 0
+        mapRebuildCount = 0
+    }
+
+    func objectUniformValuesByPassID(
+        for layers: [WPEPreparedRenderLayer]
+    ) -> [String: [String: WPESceneShaderConstantValue]] {
+        if isUnchanged(layers) { return valuesByPassID }
+        mapRebuildCount += 1
+
+        var nextEntries: [LayerEntry] = []
+        nextEntries.reserveCapacity(layers.count)
+        var nextMemo: [String: (transform: TransformKey, values: [String: WPESceneShaderConstantValue])] = [:]
+        nextMemo.reserveCapacity(layers.count)
+        var nextValuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
+        nextValuesByPassID.reserveCapacity(valuesByPassID.count)
+
+        for layer in layers {
+            let geometry = layer.graphLayer.geometry
+            let key = TransformKey(
+                origin: geometry.origin, scale: geometry.scale, angles: geometry.angles
+            )
+            let values: [String: WPESceneShaderConstantValue]
+            if let memo = memoByLayerID[layer.id], memo.transform == key {
+                values = memo.values
+            } else {
+                computeCount += 1
+                values = WPEMetalObjectUniforms.uniformValues(
+                    origin: key.origin, scale: key.scale, angles: key.angles
+                )
+            }
+            var passIDs: [String] = []
+            passIDs.reserveCapacity(layer.passes.count)
+            for pass in layer.passes {
+                // Last writer wins on a duplicated pass id, matching the
+                // pre-cache loop this replaced.
+                nextValuesByPassID[pass.pass.id] = values
+                passIDs.append(pass.pass.id)
+            }
+            nextEntries.append(
+                LayerEntry(layerID: layer.id, transform: key, passIDs: passIDs)
+            )
+            nextMemo[layer.id] = (key, values)
+        }
+
+        entries = nextEntries
+        // Replaced, not merged: a layer that left the pipeline (reload, a
+        // createLayer state going invisible) must not keep its slot alive.
+        memoByLayerID = nextMemo
+        valuesByPassID = nextValuesByPassID
+        return valuesByPassID
+    }
+
+    /// Layer identity, transform and pass ids all have to match in order, so a
+    /// runtime insertion or a reload can never serve a stale map.
+    private func isUnchanged(_ layers: [WPEPreparedRenderLayer]) -> Bool {
+        guard entries.count == layers.count else { return false }
+        for (entry, layer) in zip(entries, layers) {
+            guard entry.layerID == layer.id else { return false }
+            let geometry = layer.graphLayer.geometry
+            guard entry.transform.origin == geometry.origin,
+                  entry.transform.scale == geometry.scale,
+                  entry.transform.angles == geometry.angles else { return false }
+            guard entry.passIDs.count == layer.passes.count else { return false }
+            for (cachedID, pass) in zip(entry.passIDs, layer.passes) where cachedID != pass.pass.id {
+                return false
+            }
+        }
+        return true
+    }
+}
 #endif

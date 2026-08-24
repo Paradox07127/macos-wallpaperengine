@@ -108,6 +108,9 @@ final class WPEMetalRenderExecutor {
 
     /// Frame-global uniforms for the current `render` call. Single render thread.
     var frameUniformContext: WPEFrameUniformContext = .empty
+    /// One per executor = one per display's off-main render thread, which is
+    /// what makes the non-`Sendable` cache safe to hold here.
+    private let objectUniformCache = WPEObjectUniformCache()
 
     /// Case-insensitive uniform-key index, keyed by pass id. Rebuilds when a
     /// dict count changes. Cleared on reload.
@@ -744,7 +747,8 @@ final class WPEMetalRenderExecutor {
         let (preparedPipeline, frameUniforms) = pipeline.addingMetalRuntimeUniforms(
             runtimeUniforms,
             camera: cameraUniforms,
-            scriptedConstants: scriptedConstants
+            scriptedConstants: scriptedConstants,
+            objectUniformCache: objectUniformCache
         )
         frameUniformContext = frameUniforms
         defer { frameUniformContext = .empty }
