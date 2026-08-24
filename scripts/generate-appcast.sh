@@ -38,8 +38,24 @@ esac
 
 [[ -n "$VERSION" ]] || { echo "ERROR: --version is required (e.g. 0.5.8)" >&2; exit 64; }
 [[ -f "$DMG" ]] || { echo "ERROR: --dmg not found: ${DMG:-<missing>}" >&2; exit 66; }
-# CFBundleVersion drives Sparkle's ordering; marketing version is display only.
+# Sparkle compares sparkle:version to the running app's CFBundleVersion. Both
+# SKUs set CFBundleVersion to MARKETING_VERSION, so --build must equal --version.
 BUILD="${BUILD:-$VERSION}"
+if [[ "$BUILD" != "$VERSION" ]]; then
+  echo "ERROR: --build ($BUILD) must equal --version ($VERSION);" >&2
+  echo "       Sparkle compares CFBundleVersion, which tracks MARKETING_VERSION." >&2
+  exit 64
+fi
+if [[ -f "$APPCAST" ]]; then
+  OLD_BUILD="$(sed -n 's/.*<sparkle:version>\([^<]*\)<\/sparkle:version>.*/\1/p' "$APPCAST" | head -1)"
+  if [[ -n "$OLD_BUILD" && "$OLD_BUILD" != "$BUILD" ]]; then
+    newest="$(printf '%s\n%s\n' "$OLD_BUILD" "$BUILD" | sort -V | tail -1)"
+    if [[ "$newest" != "$BUILD" ]]; then
+      echo "ERROR: sparkle:version $BUILD is not newer than $OLD_BUILD in $(basename "$APPCAST")" >&2
+      exit 1
+    fi
+  fi
+fi
 
 # Ships with the SPM checkout rather than the repo, so resolve it instead of
 # hardcoding a DerivedData path that differs per machine.
@@ -124,7 +140,14 @@ cat > "$APPCAST" <<XML
 </rss>
 XML
 
+written="$(sed -n 's/.*<sparkle:version>\([^<]*\)<\/sparkle:version>.*/\1/p' "$APPCAST" | head -1)"
+if [[ "$written" != "$BUILD" ]]; then
+  echo "ERROR: wrote sparkle:version=$written, expected $BUILD" >&2
+  exit 1
+fi
+
 echo "  ✓ wrote $APPCAST"
 echo "    enclosure: $URL"
 echo
-echo "  Commit and push it — the app reads it from main via raw.githubusercontent.com."
+echo "  Commit it, create the GitHub release so the enclosure URL exists,"
+echo "  then push to main — the app reads the feed from raw.githubusercontent.com."

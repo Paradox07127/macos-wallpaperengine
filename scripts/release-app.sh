@@ -87,6 +87,84 @@ DERIVED_DATA="${DERIVED_DATA:-/tmp/${ARTIFACT}Release}"
 DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
 export DEVELOPER_DIR
 
+codesign_team_id() {
+  codesign -dv "$1" 2>&1 | awk -F= '/^TeamIdentifier/{print $2; exit}'
+}
+
+# Code Sign on Copy re-signs Sparkle.framework's main binary with this app's
+# Team ID but leaves Installer.xpc / Autoupdate / Updater.app ad-hoc. Sparkle's
+# sandboxing docs require those helpers to be re-signed before distribution.
+# Re-seal the outer app with --preserve-metadata so Xcode's processed sandbox
+# entitlements stay — never pass a source .entitlements file.
+resign_sparkle_helpers() {
+  local app="$1"
+  local sparkle="$app/Contents/Frameworks/Sparkle.framework"
+  local version_dir="$sparkle/Versions/B"
+  if [[ ! -d "$sparkle" ]]; then
+    echo "ERROR: Sparkle.framework missing from $app" >&2
+    exit 1
+  fi
+  local identity
+  identity="$(codesign -dvv "$app" 2>&1 | sed -n 's/^Authority=//p' | head -1)"
+  if [[ -z "$identity" ]] || codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'; then
+    echo "ERROR: $app is not team-signed; Sparkle helpers cannot share a Team ID." >&2
+    exit 1
+  fi
+  # Pull entitlements off the still-valid archive signature before nested
+  # re-signing invalidates it. Passing a source .entitlements plist here would
+  # drop the processed sandbox.
+  local ent
+  ent="$(mktemp -t loomscreen-sparkle-ent.XXXXXX)"
+  # `:-` writes XML to stdout. Bare `-` dumps a text blob codesign will not
+  # accept back as `--entitlements`.
+  codesign -d --entitlements :- --xml "$app" 2>/dev/null >"$ent"
+  if ! grep -q 'com.apple.security.app-sandbox' "$ent"; then
+    echo "ERROR: extracted entitlements from $app do not contain the App Sandbox." >&2
+    rm -f "$ent"
+    exit 1
+  fi
+  echo "  Re-signing Sparkle nested helpers as: $identity"
+  local installer="$version_dir/XPCServices/Installer.xpc"
+  local downloader="$version_dir/XPCServices/Downloader.xpc"
+  local autoupdate="$version_dir/Autoupdate"
+  local updater_app="$version_dir/Updater.app"
+  [[ -d "$installer" ]] || { echo "ERROR: missing $installer" >&2; rm -f "$ent"; exit 1; }
+  [[ -f "$autoupdate" ]] || { echo "ERROR: missing $autoupdate" >&2; rm -f "$ent"; exit 1; }
+  [[ -d "$updater_app" ]] || { echo "ERROR: missing $updater_app" >&2; rm -f "$ent"; exit 1; }
+  codesign -f -s "$identity" -o runtime "$installer"
+  if [[ -d "$downloader" ]]; then
+    codesign -f -s "$identity" -o runtime --preserve-metadata=entitlements "$downloader"
+  fi
+  codesign -f -s "$identity" -o runtime "$autoupdate"
+  codesign -f -s "$identity" -o runtime "$updater_app"
+  codesign -f -s "$identity" -o runtime "$sparkle"
+  codesign -f -s "$identity" -o runtime --entitlements "$ent" "$app"
+  rm -f "$ent"
+
+  local host_team
+  host_team="$(codesign_team_id "$app")"
+  if [[ -z "$host_team" || "$host_team" == "not set" ]]; then
+    echo "ERROR: host TeamIdentifier is '${host_team:-empty}'; Sparkle needs a real Team ID." >&2
+    exit 1
+  fi
+  local nested team
+  for nested in "$installer" "$autoupdate" "$updater_app" "$sparkle"; do
+    team="$(codesign_team_id "$nested")"
+    if [[ "$team" != "$host_team" ]]; then
+      echo "ERROR: $nested TeamIdentifier=$team, host is $host_team" >&2
+      exit 1
+    fi
+  done
+  if [[ -d "$downloader" ]]; then
+    team="$(codesign_team_id "$downloader")"
+    if [[ "$team" != "$host_team" ]]; then
+      echo "ERROR: $downloader TeamIdentifier=$team, host is $host_team" >&2
+      exit 1
+    fi
+  fi
+  echo "  ✓ Sparkle helpers TeamIdentifier=$host_team"
+}
+
 OUTPUT_DIR="$ROOT/build/release"
 STAGING_DIR="$OUTPUT_DIR/staging-$ARTIFACT"
 ARCHIVE_PATH="$OUTPUT_DIR/${ARTIFACT}-${VERSION}.xcarchive"
@@ -109,8 +187,20 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 echo "== [$SKU] Pre-flight: working tree =="
-if ! git diff --quiet HEAD || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-  echo "ERROR: working tree has tracked or untracked changes. Commit or stash first." >&2
+# Appcasts are produced at the end of each SKU. Allowing those two files to be
+# dirty is what lets `lite` then `pro` run back-to-back; everything else still
+# has to be committed first.
+blocked_dirty=0
+while IFS= read -r path; do
+  [[ -z "$path" ]] && continue
+  case "$path" in
+    appcast-lite.xml|appcast-pro.xml) continue ;;
+  esac
+  blocked_dirty=1
+  echo "  $path" >&2
+done < <({ git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u)
+if [[ "$blocked_dirty" == "1" ]]; then
+  echo "ERROR: working tree has tracked or untracked changes (appcast-*.xml is allowed)." >&2
   git status -s >&2
   exit 65
 fi
@@ -203,11 +293,15 @@ echo "== [$SKU] Staging .app for packaging =="
 mkdir -p "$STAGING_DIR"
 ditto "$ARCHIVED_APP" "$APP_PATH"
 
+echo "== [$SKU] Re-signing Sparkle nested helpers =="
+# Code Sign on Copy re-signs Sparkle.framework's main binary with this app's
+# Team ID but leaves Installer.xpc / Autoupdate / Updater.app ad-hoc. Sparkle's
+# sandboxing docs require those helpers to be re-signed before distribution.
+# Re-seal the outer app with --preserve-metadata so Xcode's processed sandbox
+# entitlements stay — never pass a source .entitlements file.
+resign_sparkle_helpers "$APP_PATH"
+
 echo "== [$SKU] Verifying signature =="
-# Preserve Xcode's archive signature. Xcode expands build-setting placeholders
-# and synthesizes ENABLE_APP_SANDBOX into the processed entitlements; re-signing
-# with the raw source plist would remove the sandbox and embed literal
-# `$(PRODUCT_BUNDLE_IDENTIFIER)` strings.
 codesign --verify --deep --strict --verbose=2 "$APP_PATH" 2>&1 | tail -5
 spctl --assess --type execute --verbose "$APP_PATH" 2>&1 | tail -3 \
   || echo "  (spctl rejects a non-Developer-ID signature as expected — users will run xattr -dr com.apple.quarantine.)"
@@ -219,6 +313,7 @@ scripts/check_entitlements.sh --sku "$SKU" --app "$APP_PATH"
 echo "== [$SKU] Bundle identity check =="
 ACTUAL_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP_PATH/Contents/Info.plist")"
 ACTUAL_VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP_PATH/Contents/Info.plist")"
+ACTUAL_BUNDLE_VERSION="$(plutil -extract CFBundleVersion raw "$APP_PATH/Contents/Info.plist")"
 ACTUAL_DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw "$APP_PATH/Contents/Info.plist")"
 
 if [[ "$ACTUAL_BUNDLE_ID" != "$BUNDLE_ID" ]]; then
@@ -229,6 +324,10 @@ if [[ "$ACTUAL_VERSION" != "$VERSION" ]]; then
   echo "ERROR: CFBundleShortVersionString $ACTUAL_VERSION != $VERSION" >&2
   exit 1
 fi
+if [[ "$ACTUAL_BUNDLE_VERSION" != "$VERSION" ]]; then
+  echo "ERROR: CFBundleVersion ($ACTUAL_BUNDLE_VERSION) must equal marketing version ($VERSION) so Sparkle treats each release as newer." >&2
+  exit 1
+fi
 if [[ "$ACTUAL_DISPLAY_NAME" != "$DISPLAY_NAME" ]]; then
   echo "ERROR: CFBundleDisplayName expected $DISPLAY_NAME, got $ACTUAL_DISPLAY_NAME" >&2
   exit 1
@@ -236,6 +335,7 @@ fi
 echo "  ✓ Bundle ID:        $ACTUAL_BUNDLE_ID"
 echo "  ✓ DisplayName:      $ACTUAL_DISPLAY_NAME"
 echo "  ✓ Short version:    $ACTUAL_VERSION"
+echo "  ✓ Bundle version:   $ACTUAL_BUNDLE_VERSION"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "== [$SKU] Dry run complete — skipping DMG generation =="
@@ -377,10 +477,10 @@ echo "  Size:     ${DMG_SIZE_MB} MB"
 echo "  SHA-256:  $SHA_PATH"
 if [[ "$PRERELEASE" == "1" ]]; then
   echo "  Tag:      loomscreen-v${VERSION} — publish with 'gh release create --prerelease'"
-  echo "            (the in-app update check skips GitHub pre-releases)"
+  echo "            (pre-releases are not written to the Sparkle appcast)"
 else
   echo "  Tag:      loomscreen-v${VERSION} (unified release; attach both SKUs)"
-  echo "  Appcast:  appcast-${SKU}.xml — commit and push it, or installed copies"
-  echo "            will never see this release."
+  echo "  Appcast:  appcast-${SKU}.xml — commit both SKUs' appcasts, create the"
+  echo "            GitHub release so the enclosure exists, then push to main."
 fi
 echo "============================================================"

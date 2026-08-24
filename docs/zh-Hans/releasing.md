@@ -2,23 +2,27 @@
 
 [English](../en/releasing.md) · **简体中文**
 
-这是手动发 `0.x` 版本的维护者清单。公开构建是 ad-hoc 签名的，以 DMG 形式从
-GitHub Releases 分发。
+这是手动发 `0.x` 版本的维护者清单。公开构建用 Apple Development 证书签名（带
+Team ID，Sparkle 才能加载），以 DMG 形式从 GitHub Releases 分发。不是
+Developer ID，也没有公证。
 
 ## 当前的更新器边界
 
-发版投递走 GitHub Releases，并且仍是手动的：用户下载新的 DMG 并替换已安装的应用。
-两个 SKU 都会跑启动时和"关于"面板里的 GitHub 更新检查；两者都不会自动安装更新。
+已安装的副本去拉 `main` 上按 SKU 分开的 Sparkle appcast（`appcast-lite.xml` /
+`appcast-pro.xml`）。Sparkle 下载对应 DMG、校验 EdDSA 签名并替换应用。新下载的
+构建首次启动仍要跑清除隔离标记的命令——没有公证。
 
 ## 版本号清单
 
 1. 把两个应用 target（`LiveWallpaper` 和 `LiveWallpaperLite`）的 `MARKETING_VERSION`
-   设为 `X.Y.Z`。
-2. 除非构建号策略有变，否则 `CURRENT_PROJECT_VERSION` 保持不动。
+   设为 `X.Y.Z`。`CFBundleVersion` 跟这个值走（Sparkle 比的是 `CFBundleVersion`，
+   构建号冻在 `1` 会让每一版看起来都一样）。
+2. Xcode 工程里的 `CURRENT_PROJECT_VERSION` 不用动；应用 plist 已经不读它。
 3. 更新 `CHANGELOG.md`，加上 `## [X.Y.Z] — YYYY-MM-DD` 与页脚的 compare 链接。
 4. Swift 包的 pin 有变动时，确保带上
    `LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`。
-5. 打包前先提交版本号与文档改动。本地打包脚本拒绝在脏工作树上运行。
+5. 打包前先提交版本号与文档改动。本地打包脚本拒绝脏工作树，但允许
+   `appcast-lite.xml` 和 `appcast-pro.xml`，因为脚本会重新生成它们。
 
 ## 预检
 
@@ -52,7 +56,7 @@ Intel Mac。两者的嵌套签名都必须有效。Pro 必须且只能内嵌一�
 因为一个进了沙盒的辅助进程会把它的 STEAMROOT 放回应用容器里，从而悄悄撤销 Steam
 库迁移。（本段原先描述的 SceneScript XPC 辅助进程已于 2026-07-23 退役。）
 Lite 必须完全不含内嵌 XPC 服务，也不能含 Pro 的渲染器/SceneScript 符号、
-JavaScriptCore、Sparkle，或手动链接的 libc++ 动态库。每次运行都用新的
+JavaScriptCore，或手动链接的 libc++ 动态库。Sparkle 是故意链接的。每次运行都用新的
 `DERIVED_DATA`/archive 路径；门禁拒绝删除或覆盖已存在的 archive。
 
 这些 ad-hoc archive 是**验证证据，不是出货用的 entitlement 产物**。Xcode 的
@@ -116,8 +120,12 @@ gh release create loomscreen-vX.Y.Z \
   --notes-file <notes.md>
 ```
 
-发布说明应以 Lite 下载开头，并说明更新是手动的：下载新 DMG、替换
-`/Applications` 里的应用，然后再执行一次清除隔离标记的命令。
+两个 SKU 都打完后提交 `appcast-lite.xml` 和 `appcast-pro.xml`。创建 GitHub
+release（让 enclosure URL 真正存在）并马上把这两份 appcast 推到 `main`——Sparkle
+读的是 `main` 上的 feed，feed 上了但 DMG 还没挂出来会 404。
+
+发布说明应以 Lite 下载开头。写明新下载的构建首次启动仍要跑清除隔离标记的命令（没有公证），
+之后的更新从 **设置 → 关于** 或菜单栏的 **Update** 按钮安装。
 
 ## 发布后冒烟
 
@@ -128,4 +136,4 @@ gh release create loomscreen-vX.Y.Z \
    ```
 3. 启动 Loomscreen，确认菜单栏应用能打开。
 4. 在 **设置 → 关于** 里确认版本为 `X.Y.Z`。
-5. 确认**立即检查**能通过 GitHub Releases 解析到当前版本。
+5. 确认**立即检查**走的是 Sparkle（不是报错，也不是 appcast 还没上 `main` 时的假“已是最新”）。

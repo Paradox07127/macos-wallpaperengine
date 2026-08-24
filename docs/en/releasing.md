@@ -3,26 +3,32 @@
 **English** · [简体中文](../zh-Hans/releasing.md)
 
 This is the maintainer checklist for a manual `0.x` release. Public builds are
-ad-hoc signed and distributed from GitHub Releases as DMGs.
+signed with an Apple Development certificate (a Team ID, so Sparkle can load)
+and distributed from GitHub Releases as DMGs. They are not Developer ID signed
+and are not notarized.
 
 ## Current updater boundary
 
-Release delivery uses GitHub Releases and remains manual: users download the
-new DMG and replace the installed app. Both SKUs run the launch-time and
-About-panel GitHub update checks; neither auto-installs updates.
+Installed copies check a per-SKU Sparkle appcast (`appcast-lite.xml` /
+`appcast-pro.xml` on `main`). Sparkle downloads that SKU's DMG, verifies the
+EdDSA signature, and replaces the app. First launch of a newly downloaded build
+still needs the quarantine-clear command — there is no notarization.
 
 ## Version checklist
 
 1. Set `MARKETING_VERSION` to `X.Y.Z` for both app targets:
-   `LiveWallpaper` and `LiveWallpaperLite`.
-2. Keep `CURRENT_PROJECT_VERSION` unchanged unless the build-number policy
-   changes.
+   `LiveWallpaper` and `LiveWallpaperLite`. `CFBundleVersion` tracks that
+   value (Sparkle compares `CFBundleVersion`, so a frozen build number would
+   hide every release).
+2. Leave `CURRENT_PROJECT_VERSION` in the Xcode project alone; the app plists
+   no longer read it.
 3. Update `CHANGELOG.md` with `## [X.Y.Z] — YYYY-MM-DD` and footer compare
    links.
 4. Make sure `LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
    is included when Swift package pins changed.
 5. Commit the version and documentation changes before packaging. The local
-   packaging script refuses a dirty tree.
+   packaging script refuses a dirty tree except for `appcast-lite.xml` and
+   `appcast-pro.xml`, which it regenerates.
 
 ## Preflight
 
@@ -62,7 +68,8 @@ sandboxed one would put its STEAMROOT back in the app container and silently
 undo the Steam-library migration. (The SceneScript XPC helper this paragraph
 used to describe retired on 2026-07-23.) Lite must contain no embedded XPC
 service at all, and no Pro renderer/SceneScript symbols,
-JavaScriptCore, Sparkle, or manual libc++ dynamic link. Use a fresh
+JavaScriptCore, or manual libc++ dynamic link. Sparkle is linked on
+purpose. Use a fresh
 `DERIVED_DATA`/archive path for each run; the gate refuses to delete or
 overwrite an existing archive.
 
@@ -132,9 +139,15 @@ gh release create loomscreen-vX.Y.Z \
   --notes-file <notes.md>
 ```
 
-Release notes should lead with the Lite download and mention that updating is
-manual: download the new DMG, replace the app in `/Applications`, then repeat
-the quarantine-clear command once.
+Commit `appcast-lite.xml` and `appcast-pro.xml` after both SKUs package. Create
+the GitHub release (so the enclosure URLs exist) and push those appcasts to
+`main` in the same breath — Sparkle reads the feed from `main`, and a live
+appcast whose DMG is not on GitHub yet 404s.
+
+Release notes should lead with the Lite download. Mention that the first launch
+of a downloaded build still needs the quarantine-clear command (no notarization),
+and that later updates install from **Settings → About** or the menu bar
+**Update** button.
 
 ## Post-release smoke
 
@@ -145,4 +158,5 @@ the quarantine-clear command once.
    ```
 3. Launch Loomscreen and confirm the menu bar app opens.
 4. In **Settings -> About**, confirm the version is `X.Y.Z`.
-5. Confirm **Check Now** resolves the current version through GitHub Releases.
+5. Confirm **Check Now** talks to Sparkle (not an error, not a false
+   “up to date” before the appcast is on `main`).
