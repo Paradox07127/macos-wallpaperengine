@@ -183,6 +183,12 @@ if ! grep -q 'must equal --version' scripts/generate-appcast.sh; then
   echo "ERROR: generate-appcast.sh no longer requires sparkle:version to match the marketing version." >&2
   exit 1
 fi
+# Nothing here is notarized, so a hand-installed DMG stays quarantined. The
+# update dialog is the only place a user reliably reads before installing.
+if ! grep -q 'xattr -dr com.apple.quarantine' scripts/generate-appcast.sh; then
+  echo "ERROR: generate-appcast.sh no longer puts the quarantine command in the update notes." >&2
+  exit 1
+fi
 
 if grep -Eq -- '(^|[ ="])-lc\+\+|CLANG_CXX_LIBRARY|c\+\+17|gnu\+\+17' "$project_file"; then
   echo "ERROR: removed manual libc++/target C++17 settings resurfaced." >&2

@@ -108,6 +108,26 @@ if [[ $SIGN_STATUS -ne 0 || "$SIG_ATTRS" != *edSignature=* ]]; then
 fi
 
 DMG_NAME="$(basename "$DMG")"
+NOTES_URL="https://github.com/$REPO_SLUG/releases/tag/$TAG_PREFIX$VERSION"
+# Sparkle clears com.apple.quarantine on what it installs (2.9.6 does it in
+# Installer.xpc), but a DMG downloaded by hand from the releases page arrives
+# quarantined and nothing here is notarized. The command therefore rides along in
+# every update's notes instead of living only in a release body someone has to
+# remember to write.
+read -r -d '' DESCRIPTION <<HTML || true
+<h2>$TITLE $VERSION</h2>
+<p><strong>Gatekeeper:</strong> this build is code-signed but not notarized. If
+you install the DMG by hand, clear the quarantine attribute once:</p>
+<pre>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</pre>
+<p>An update installed by $TITLE itself clears it for you.</p>
+<p><a href="$NOTES_URL">Full release notes</a></p>
+<hr>
+<p><strong>Gatekeeper:</strong>本构建有签名但未经苹果公证。如果你是手动安装 DMG，请在终端执行一次：</p>
+<pre>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</pre>
+<p>通过 $TITLE 自动更新装上的版本已经替你清掉了。</p>
+<p><a href="$NOTES_URL">完整发布说明</a></p>
+HTML
+
 URL="https://github.com/$REPO_SLUG/releases/download/$TAG_PREFIX$VERSION/$DMG_NAME"
 PUB_DATE="$(date -u "+%a, %d %b %Y %H:%M:%S +0000")"
 # Read the real deployment target rather than hardcoding one that can drift.
@@ -133,7 +153,9 @@ cat > "$APPCAST" <<XML
       <sparkle:version>$BUILD</sparkle:version>
       <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>$MIN_OS</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/$REPO_SLUG/releases/tag/$TAG_PREFIX$VERSION</sparkle:releaseNotesLink>
+      <description sparkle:descriptionFormat="html"><![CDATA[
+$DESCRIPTION
+      ]]></description>
       <enclosure url="$URL" type="application/octet-stream" $SIG_ATTRS />
     </item>
   </channel>
@@ -143,6 +165,14 @@ XML
 written="$(sed -n 's/.*<sparkle:version>\([^<]*\)<\/sparkle:version>.*/\1/p' "$APPCAST" | head -1)"
 if [[ "$written" != "$BUILD" ]]; then
   echo "ERROR: wrote sparkle:version=$written, expected $BUILD" >&2
+  exit 1
+fi
+if ! grep -q 'xattr -dr com.apple.quarantine' "$APPCAST"; then
+  echo "ERROR: $APPCAST carries no quarantine instructions; the update dialog would omit them." >&2
+  exit 1
+fi
+if ! xmllint --noout "$APPCAST" 2>/dev/null; then
+  echo "ERROR: $APPCAST is not well-formed XML." >&2
   exit 1
 fi
 
