@@ -975,20 +975,61 @@ enum HTMLWallpaperRuntimeScript {
 
             // The host can only evaluate script in the main frame, so the frame
             // pacing rides the same relay the suspend phase does.
+            function currentPacingMessage() {
+                return {
+                    __lwPacing__: {
+                        ratio: rafThrottleRatio,
+                        intervalMs: rafTargetIntervalMs
+                    }
+                };
+            }
+
             function broadcastPacingToChildFrames() {
                 var children;
                 try { children = window.frames; } catch (e) { return; }
                 if (!children) return;
                 for (var i = 0; i < children.length; i++) {
                     try {
-                        children[i].postMessage({
-                            __lwPacing__: {
-                                ratio: rafThrottleRatio,
-                                intervalMs: rafTargetIntervalMs
-                            }
-                        }, '*');
+                        children[i].postMessage(currentPacingMessage(), '*');
                     } catch (e) {}
                 }
+            }
+
+            function isOwnChildFrame(source) {
+                if (!source) return false;
+                var children;
+                try { children = window.frames; } catch (e) { return false; }
+                if (!children) return false;
+                for (var i = 0; i < children.length; i++) {
+                    try { if (children[i] === source) return true; } catch (e) {}
+                }
+                return false;
+            }
+
+            // A broadcast only reaches the frames that exist when it is sent, so
+            // an iframe inserted after the last push used to run at the display
+            // rate until the next thermal/limit change. The newcomer asks
+            // instead. Reaches exactly the frames WebKit injects this script
+            // into (`forMainFrameOnly: false`), which is not every frame.
+            function installPacingRequestResponder() {
+                try {
+                    window.addEventListener('message', function (event) {
+                        var data = event && event.data;
+                        if (!data || typeof data !== 'object') return;
+                        if (data.__lwPacingRequest__ !== true) return;
+                        // Only a frame we actually embed may pull our pacing.
+                        if (!isOwnChildFrame(event.source)) return;
+                        try {
+                            event.source.postMessage(currentPacingMessage(), '*');
+                        } catch (e) {}
+                    }, false);
+                } catch (e) {}
+            }
+
+            function requestPacingFromParent() {
+                try {
+                    window.parent.postMessage({ __lwPacingRequest__: true }, '*');
+                } catch (e) {}
             }
 
             function installFrameLifecycleRelay() {
@@ -1015,6 +1056,8 @@ enum HTMLWallpaperRuntimeScript {
                         else window.__lwResume__();
                     }, false);
                 } catch (e) {}
+                // After the listener exists, or the answer arrives at nobody.
+                requestPacingFromParent();
             }
 
             function captureDescriptor(name) {
@@ -1141,7 +1184,20 @@ enum HTMLWallpaperRuntimeScript {
                         // drops a 30 fps target to 20 on a 60 Hz display.
                         var slack = rafNativeIntervalMs > 0 ? rafNativeIntervalMs / 2 : 0;
                         if (t - rafLastDispatchMs >= rafTargetIntervalMs - slack) {
-                            rafLastDispatchMs = t;
+                            // Advance the schedule instead of restamping to `t`.
+                            // Restamping folds every slack-sized early accept
+                            // into the next deadline, so the error accumulates:
+                            // 30 fps on a 75 Hz panel ran at 37.5. Advancing
+                            // leaves the deadline at most `slack` ahead of `t`,
+                            // which makes the long-run rate <= the target.
+                            rafLastDispatchMs += rafTargetIntervalMs;
+                            // More than a whole interval behind means the page
+                            // was stalled (long frame, offscreen tab). Snapping
+                            // caps the catch-up at this one frame instead of
+                            // letting the backlog run ungated.
+                            if (t - rafLastDispatchMs >= rafTargetIntervalMs) {
+                                rafLastDispatchMs = t;
+                            }
                         } else {
                             allows = false;
                         }
@@ -1293,6 +1349,7 @@ enum HTMLWallpaperRuntimeScript {
                 broadcastPacingToChildFrames();
             };
 
+            installPacingRequestResponder();
             installFrameLifecycleRelay();
         })();
         """

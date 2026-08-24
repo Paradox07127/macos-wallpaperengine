@@ -53,6 +53,10 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     var restoreCoverDeadlineTask: Task<Void, Never>?
     var hibernationState = HibernationPhase()
     let hibernationDwell = AbsenceDwell()
+    /// Last pushed eligibility. The dwell's cancellation covers the countdown,
+    /// but not a cover request already awaiting its snapshot reply, which is why
+    /// this is state rather than an argument.
+    var hibernationEligible = false
     var mediaLifecycleState = HTMLMediaLifecycleState()
     var mediaPlaybackSuspended: Bool {
         mediaLifecycleState.desiredSuspended

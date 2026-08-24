@@ -161,6 +161,144 @@ struct HTMLPerformanceTargetTests {
         #expect((29...31).contains(afterParent), "got \(afterParent)")
     }
 
+    /// The ceiling is a ceiling, not a target to hover around. Restamping the
+    /// deadline to the accepting timestamp folded each slack-sized early accept
+    /// into the next deadline, so the error accumulated: 30 fps asked for on a
+    /// 75 Hz panel was dispatched at 37.5. The bound below is `<=`, not "close
+    /// to" — a rate above the user's choice is the whole defect.
+    @Test(
+        "A 30 FPS ceiling never averages above 30, whatever the panel refreshes at",
+        arguments: [60, 75, 120]
+    )
+    func ceilingNeverAveragesAboveTheTarget(refreshHz: Int) throws {
+        let seconds = 5
+        let context = try makeRafHarness()
+        context.evaluateScript("window.__lwSetRafTargetInterval__(33.333);")
+        context.evaluateScript(
+            "startLoop(); run(\(refreshHz * seconds), 1000 / \(refreshHz));"
+        )
+
+        #expect(context.exception?.toString() == nil)
+        let dispatched = Int(context.evaluateScript("dispatched")?.toInt32() ?? -1)
+        let ceiling = 30 * seconds
+        #expect(
+            dispatched <= ceiling,
+            "\(refreshHz) Hz dispatched \(dispatched) frames, ceiling is \(ceiling)"
+        )
+        // Control group: without it a gate that simply drops everything passes.
+        #expect(
+            dispatched >= ceiling - 2,
+            "\(refreshHz) Hz dispatched only \(dispatched) of \(ceiling)"
+        )
+    }
+
+    /// The catch-up guard. Advancing the deadline by one interval per accept is
+    /// what keeps the average down, but a page that stalled for a second would
+    /// then be a second behind schedule and run ungated until it caught up.
+    @Test("A long stall does not buy the page a burst of catch-up frames")
+    func aStallDoesNotBuyCatchUpFrames() throws {
+        let context = try makeRafHarness()
+        context.evaluateScript("window.__lwSetRafTargetInterval__(33.333);")
+        context.evaluateScript("startLoop(); run(6, 1000 / 60);")
+        // One tick carrying a whole second of wall clock: the shape of a page
+        // that was offscreen or blocked on a long task.
+        context.evaluateScript("tick(1000); dispatched = 0; run(60, 1000 / 60);")
+
+        #expect(context.exception?.toString() == nil)
+        let dispatched = Int(context.evaluateScript("dispatched")?.toInt32() ?? -1)
+        #expect(dispatched <= 30, "burst of \(dispatched) frames after the stall")
+    }
+
+    // MARK: - Frames that appear after the ceiling was pushed
+
+    /// F2: the ceiling is fanned out once, by the frame that receives it. An
+    /// iframe inserted afterwards was never in that broadcast and ran at the
+    /// display rate until the next thermal or limit change happened to push
+    /// again. It asks on arrival instead.
+    @Test("A frame that joins after the broadcast pulls the current pacing")
+    func lateChildFramePullsTheCurrentPacing() throws {
+        let context = try makeRafHarness()
+        context.evaluateScript("window.__lwSetRafTargetInterval__(33.333);")
+        context.evaluateScript(
+            """
+            function recordingFrame() {
+                return {
+                    received: [],
+                    postMessage: function (message) { this.received.push(message); }
+                };
+            }
+            var lateChild = recordingFrame();
+            var stranger = recordingFrame();
+            // Joins the tree strictly after the one and only broadcast.
+            window.frames = [childFrame, lateChild];
+            deliverMessage({ __lwPacingRequest__: true }, lateChild);
+            deliverMessage({ __lwPacingRequest__: true }, stranger);
+            """
+        )
+
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("lateChild.received.length")?.toInt32() == 1)
+        #expect(
+            context.evaluateScript("lateChild.received[0].__lwPacing__.intervalMs")?
+                .toDouble() == 33.333
+        )
+        // Only a frame we actually embed may pull our pacing.
+        #expect(context.evaluateScript("stranger.received.length")?.toInt32() == 0)
+    }
+
+    @Test("A child frame asks its parent for the pacing as soon as it is injected")
+    func childFrameAsksItsParentOnInstall() throws {
+        let context = try makeRafHarness(isTopFrame: false)
+
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("postedToParent.length")?.toInt32() == 1)
+        #expect(
+            context.evaluateScript("postedToParent[0].__lwPacingRequest__")?.toBool() == true
+        )
+    }
+
+    /// The two halves joined up: what the parent answers is what paces the late
+    /// frame's loop. Covers the frames the script is injected into
+    /// (`forMainFrameOnly: false`) — not a claim about frames WebKit skips.
+    @Test("The answer a late frame pulls actually paces its loop")
+    func theAnswerPacesTheLateFrame() throws {
+        let parent = try makeRafHarness()
+        parent.evaluateScript("window.__lwSetRafTargetInterval__(33.333);")
+        parent.evaluateScript(
+            """
+            var lateChild = {
+                received: [],
+                postMessage: function (message) { this.received.push(message); }
+            };
+            window.frames = [lateChild];
+            deliverMessage({ __lwPacingRequest__: true }, lateChild);
+            """
+        )
+        #expect(parent.evaluateScript("lateChild.received.length")?.toInt32() == 1)
+        let answered = try #require(
+            parent.evaluateScript("lateChild.received[0].__lwPacing__.intervalMs")?.toDouble()
+        )
+        try #require(answered.isFinite)
+
+        let child = try makeRafHarness(isTopFrame: false)
+        child.evaluateScript("startLoop(); run(60, 1000 / 60);")
+        #expect(
+            child.evaluateScript("dispatched")?.toInt32() == 60,
+            "control: the late frame runs unpaced until the answer lands"
+        )
+        child.evaluateScript(
+            """
+            dispatched = 0;
+            deliverMessage({ __lwPacing__: { ratio: 1, intervalMs: \(answered) } }, parentFrame);
+            run(60, 1000 / 60);
+            """
+        )
+
+        #expect(child.exception?.toString() == nil)
+        let paced = child.evaluateScript("dispatched")?.toInt32() ?? 0
+        #expect((29...31).contains(paced), "got \(paced)")
+    }
+
     // MARK: - Host dispatch
 
     @Test("Setting the target on the view pushes the interval to the web view")
@@ -349,7 +487,85 @@ struct HTMLPerformanceTargetTests {
         }
     }
 
+    /// F3: the cover is a `takeSnapshot` round trip, so every reason to
+    /// hibernate has to be re-read when the reply lands. A wallpaper the user
+    /// had manually paused stays `mediaPlaybackSuspended` after the pressure
+    /// clears, so that check alone let the teardown run anyway — releasing the
+    /// document minutes into a 300s warm dwell the user never saw expire.
+    @Test("A pressure clear inside the cover request leaves the document alone")
+    func pressureClearInsideTheCoverRequestKeepsTheDocument() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LWHTMLCover-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data("<html><body>live</body></html>".utf8)
+            .write(to: folder.appendingPathComponent("index.html"))
+        let bookmark = try #require(ResourceUtilities.createBookmark(for: folder))
+        let source = HTMLSource.folder(bookmarkData: bookmark, indexFileName: "index.html")
+
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 256, height: 256))
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 256, height: 256),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = view
+        let session = AmbientWallpaperSession(
+            window: window,
+            wallpaperType: .html,
+            performanceTarget: view,
+            // The manual-pause dwell must not fire during the test; the point is
+            // that the wallpaper still has that whole dwell left.
+            userPauseHibernationDelay: .seconds(600)
+        )
+        defer { session.cleanup() }
+
+        view.loadSource(source)
+        try await poll("the source finishes loading") {
+            view.completedNavigationGeneration == view.preparationGeneration
+        }
+
+        session.applyPerformanceProfile(.suspended)
+        try await poll("the suspend snapshot lands") { view.isSnapshotOverlayPresenting }
+        // `presentHibernationCover` answers synchronously while the overlay is
+        // already up, and then there is no window at all. Pressure arriving
+        // before the suspend snapshot settled is the case with one.
+        view.hideSnapshotOverlay()
+
+        pushCriticalMemoryPressure(true, to: session)
+        try await spinUntil("the cover request is in flight") {
+            view.hibernationState.isPresentingCover
+        }
+        // No suspension point between these two lines, so the clear provably
+        // lands while the snapshot reply is still outstanding rather than after.
+        #expect(view.hibernationState.isPresentingCover)
+        pushCriticalMemoryPressure(false, to: session)
+
+        try await poll("the cover reply lands") { !view.hibernationState.isPresentingCover }
+        #expect(
+            view.webView.url != HTMLWallpaperView.aboutBlank,
+            "the teardown ran on a wallpaper that is no longer eligible"
+        )
+        #expect(view.hibernationState.phase == .live)
+    }
+
     // MARK: - Harnesses
+
+    /// Yields rather than sleeps: the window this waits for is one main-actor
+    /// job wide, and a millisecond poll would step over it.
+    private func spinUntil(
+        _ what: String,
+        iterations: Int = 100_000,
+        _ condition: @MainActor () -> Bool
+    ) async throws {
+        for _ in 0..<iterations {
+            if condition() { return }
+            await Task.yield()
+        }
+        Issue.record("Spun out waiting for: \(what)")
+        throw HarnessError.timedOut(what)
+    }
 
     private func poll(
         _ what: String,
@@ -476,7 +692,10 @@ struct HTMLPerformanceTargetTests {
         } else {
             context.evaluateScript(
                 """
-                var parentFrame = { postMessage: function () {} };
+                var postedToParent = [];
+                var parentFrame = {
+                    postMessage: function (message) { postedToParent.push(message); }
+                };
                 window.top = { name: 'top' };
                 window.parent = parentFrame;
                 window.frames = [];

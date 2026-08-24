@@ -189,14 +189,26 @@ struct HTMLWallpaperFrameLifecycleTests {
         #expect(context.objectForKeyedSubscript("hiddenAfterResume")?.toBool() == false)
     }
 
-    @Test("The top frame installs no relay listener")
-    func topFrameDoesNotListenForRelayMessages() throws {
+    @Test("The top frame answers pacing requests but never relays a phase to itself")
+    func topFrameIgnoresPhaseMessagesPostedAtItself() throws {
         let context = try makeLifecycleHarnessContext(isTopFrame: true)
         context.evaluateScript(
             HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false)
         )
 
-        #expect(context.evaluateScript("messageListeners.length")?.toInt32() == 0)
+        // One listener, and it is the pacing responder a late iframe pulls from.
+        // The phase relay is what the top frame must not have: a page able to
+        // post `__lwLifecycle__` at its own window could drive its own suspend.
+        #expect(context.evaluateScript("messageListeners.length")?.toInt32() == 1)
+        context.evaluateScript(
+            """
+            deliverMessage({ __lwLifecycle__: 'suspend' }, window);
+            var hiddenAfterSelfPost = document.hidden === true;
+            """
+        )
+
+        #expect(context.exception?.toString() == nil)
+        #expect(context.objectForKeyedSubscript("hiddenAfterSelfPost")?.toBool() == false)
     }
 
     @MainActor
