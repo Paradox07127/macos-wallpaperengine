@@ -72,9 +72,23 @@ final class SparkleUpdaterController {
 /// Separate object because `SPUStandardUserDriverDelegate` requires NSObject
 /// conformance, which does not mix with `@Observable`'s generated storage.
 @MainActor
-private final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
+final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
     var onUpdateFound: ((String) -> Void)?
     var onSessionFinished: (() -> Void)?
+
+    /// Sparkle 2.9.6 calls the delegate on the main thread — `SPUStandardUserDriver.m`
+    /// asserts `NSThread.isMainThread` at each call site — but that `assert` is
+    /// compiled out of its release build and the guarantee is not written into
+    /// the protocol header, so a version bump could move a callback off. A late
+    /// banner is recoverable; `assumeIsolated` off the main thread traps. The
+    /// failed-check path reaches `standardUserDriverWillFinishUpdateSession`.
+    private nonisolated func onMain(_ body: @escaping @MainActor () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(body)
+        } else {
+            Task { @MainActor in body() }
+        }
+    }
 
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
@@ -92,10 +106,10 @@ private final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDeleg
         state: SPUUserUpdateState
     ) {
         let version = update.displayVersionString
-        MainActor.assumeIsolated { onUpdateFound?(version) }
+        onMain { [weak self] in self?.onUpdateFound?(version) }
     }
 
     nonisolated func standardUserDriverWillFinishUpdateSession() {
-        MainActor.assumeIsolated { onSessionFinished?() }
+        onMain { [weak self] in self?.onSessionFinished?() }
     }
 }

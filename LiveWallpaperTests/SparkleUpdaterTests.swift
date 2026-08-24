@@ -73,6 +73,39 @@ struct SparkleUpdaterOwnershipTests {
         #expect(plist["CFBundleShortVersionString"] as? String == "$(MARKETING_VERSION)")
     }
 
+    /// A failed check (no network, 404, bad signature) ends the session, so this
+    /// callback is on the failure path. Sparkle 2.9.6 delivers it on the main
+    /// thread, but its own `assert` for that is compiled out of release and the
+    /// protocol header does not promise it — assuming isolation would turn a
+    /// future version bump into a crash on every failed update check.
+    @MainActor
+    private final class CallbackFlag {
+        var fired = false
+    }
+
+    @Test("The session-finished callback survives arriving off the main thread")
+    func sessionFinishedFromBackgroundThreadDoesNotTrap() async throws {
+        let delegate = await GentleReminderDelegate()
+        let flag = await CallbackFlag()
+        await MainActor.run {
+            delegate.onSessionFinished = {
+                MainActor.assertIsolated("the callback must land back on the main actor")
+                flag.fired = true
+            }
+        }
+
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                #expect(!Thread.isMainThread)
+                delegate.standardUserDriverWillFinishUpdateSession()
+                continuation.resume()
+            }
+        }
+
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await flag.fired)
+    }
+
     @Test("Release packaging re-signs Sparkle helpers and allows a dirty appcast between SKUs")
     func releaseScriptWiresSparkleInstall() throws {
         let source = try RepositoryRoot.source("scripts/release-app.sh")
