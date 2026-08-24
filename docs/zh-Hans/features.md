@@ -145,7 +145,9 @@ gentle-reminder 委托把那个对话框压掉，改成点亮菜单栏的 **Upda
 完成安装，这正是 `SUEnableInstallerLauncherService` 和 `-spks`/`-spki` 两条 mach-lookup
 授权的用途。两个版本各有自己的 appcast（`appcast-pro.xml`、`appcast-lite.xml`），
 发版时由 `scripts/generate-appcast.sh` 重新生成——因为它们是两个独立的 DMG，
-一条 enclosure 只能指向其中一个。
+一条 enclosure 只能指向其中一个。Sparkle 按 `CFBundleVersion` 排序，两份
+plist 都把它设成 `MARKETING_VERSION`。打包时会重签 Sparkle 嵌套的安装
+helper，让它们和主程序共用同一个 Team ID。
 
 ## 8）安全与隐私
 

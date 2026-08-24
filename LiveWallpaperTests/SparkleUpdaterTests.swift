@@ -64,5 +64,21 @@ struct SparkleUpdaterOwnershipTests {
         let feed = try #require(plist["SUFeedURL"] as? String)
         #expect(feed.hasPrefix("https://"), "the feed must not be fetched over cleartext")
         #expect(feed.hasSuffix(expectedFeedFile), "\(plistName) points at the wrong SKU's appcast")
+        // Sparkle compares CFBundleVersion, not CFBundleShortVersionString. A
+        // frozen "1" here means every release looks the same and nobody updates.
+        #expect(
+            plist["CFBundleVersion"] as? String == "$(MARKETING_VERSION)",
+            "\(plistName) CFBundleVersion must track the marketing version"
+        )
+        #expect(plist["CFBundleShortVersionString"] as? String == "$(MARKETING_VERSION)")
+    }
+
+    @Test("Release packaging re-signs Sparkle helpers and allows a dirty appcast between SKUs")
+    func releaseScriptWiresSparkleInstall() throws {
+        let source = try RepositoryRoot.source("scripts/release-app.sh")
+        #expect(source.contains("XPCServices/Installer.xpc"), "Installer.xpc would stay ad-hoc")
+        #expect(source.contains("loomscreen-sparkle-ent"), "must reseal with extracted archive entitlements")
+        #expect(source.contains("appcast-lite.xml"))
+        #expect(source.contains("ACTUAL_BUNDLE_VERSION"))
     }
 }

@@ -7,6 +7,7 @@ cd "$ROOT"
 
 bash -n \
   scripts/release-app.sh \
+  scripts/generate-appcast.sh \
   scripts/check_entitlements.sh \
   scripts/check_entitlements_self_test.sh \
   scripts/release_candidate_check.sh \
@@ -109,8 +110,31 @@ python3 scripts/check_quality_exclusions.py
 python3 scripts/check_module_import_boundaries.py --self-test
 python3 scripts/check_module_import_boundaries.py
 
-if grep -Eq 'codesign .*--entitlements|codesign .*--force.*--sign' scripts/release-app.sh; then
-  echo "ERROR: release-app.sh must preserve Xcode's processed archive signature; raw entitlement re-signing is forbidden." >&2
+# Nested Sparkle helpers must be re-signed (Code Sign on Copy leaves them
+# ad-hoc). The outer app must NOT be re-signed from a source entitlements
+# plist — that strips the processed sandbox.
+if grep -E 'codesign .*(LiveWallpaper/LiveWallpaper\.entitlements|LiveWallpaper/LiveWallpaperLite\.entitlements)' scripts/release-app.sh; then
+  echo "ERROR: release-app.sh must not re-sign with a source entitlements plist." >&2
+  exit 1
+fi
+if ! grep -q 'XPCServices/Installer.xpc' scripts/release-app.sh; then
+  echo "ERROR: release-app.sh no longer re-signs Sparkle's Installer XPC; installs would fail." >&2
+  exit 1
+fi
+if ! grep -q 'loomscreen-sparkle-ent' scripts/release-app.sh; then
+  echo "ERROR: release-app.sh no longer extracts archive entitlements before Sparkle helper re-sign." >&2
+  exit 1
+fi
+if ! grep -q 'entitlements :-' scripts/release-app.sh; then
+  echo "ERROR: entitlement extraction must use ':-' (XML). Bare '-' dumps a blob codesign will not re-apply." >&2
+  exit 1
+fi
+if ! grep -q 'appcast-lite.xml' scripts/release-app.sh || ! grep -q 'appcast-pro.xml' scripts/release-app.sh; then
+  echo "ERROR: release-app.sh must allow dirty appcast files so both SKUs can be packaged back-to-back." >&2
+  exit 1
+fi
+if ! grep -q 'ACTUAL_BUNDLE_VERSION' scripts/release-app.sh; then
+  echo "ERROR: release-app.sh no longer asserts CFBundleVersion equals the marketing version." >&2
   exit 1
 fi
 grep -q 'scripts/check_entitlements.sh --sku "$SKU" --app' scripts/release-app.sh
@@ -139,6 +163,10 @@ for plist in LiveWallpaperInfo.plist LoomscreenInfo.plist; do
     echo "ERROR: $plist is missing SUEnableInstallerLauncherService; a sandboxed app cannot install its own update without it." >&2
     exit 1
   fi
+  if ! awk '/<key>CFBundleVersion<\/key>/{getline; if ($0 ~ /\$\(MARKETING_VERSION\)/) found=1} END{exit found?0:1}' "$plist"; then
+    echo "ERROR: $plist CFBundleVersion must track MARKETING_VERSION (Sparkle compares CFBundleVersion)." >&2
+    exit 1
+  fi
 done
 for ent in LiveWallpaper/LiveWallpaper.entitlements LiveWallpaper/LiveWallpaperLite.entitlements; do
   if ! grep -q 'PRODUCT_BUNDLE_IDENTIFIER)-spki' "$ent"; then
@@ -149,6 +177,10 @@ done
 # A release whose appcast is not regenerated ships to nobody.
 if ! grep -q 'scripts/generate-appcast.sh' scripts/release-app.sh; then
   echo "ERROR: release-app.sh no longer regenerates the Sparkle appcast." >&2
+  exit 1
+fi
+if ! grep -q 'must equal --version' scripts/generate-appcast.sh; then
+  echo "ERROR: generate-appcast.sh no longer requires sparkle:version to match the marketing version." >&2
   exit 1
 fi
 

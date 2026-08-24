@@ -179,7 +179,9 @@ the install through an XPC service that runs outside the sandbox, which is what
 entitlements are for. Each edition has its own appcast (`appcast-pro.xml`,
 `appcast-lite.xml`), regenerated at release time by
 `scripts/generate-appcast.sh`, because the two ship as separate DMGs and an
-enclosure can only point at one of them.
+enclosure can only point at one of them. Sparkle orders updates by
+`CFBundleVersion`, which both plists set to `MARKETING_VERSION`. Packaging
+re-signs Sparkle's nested installer helpers so they share the app's Team ID.
 
 ## 8) Security & privacy
 
