@@ -426,6 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func presentSettingsWindow(_ controller: NSWindowController) {
         controller.showWindow(nil)
         guard let window = controller.window else { return }
+        LocalImageCacheReclaimer.shared.windowDidOpen(window)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
@@ -483,6 +484,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let controller = onboardingWindowController {
             Logger.info("Onboarding window reused", category: .ui)
+            if let window = controller.window {
+                LocalImageCacheReclaimer.shared.windowDidOpen(window)
+            }
             NSApp.activate(ignoringOtherApps: true)
             controller.window?.makeKeyAndOrderFront(nil)
             controller.window?.orderFrontRegardless()
@@ -553,6 +557,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         window.delegate = self
 
+        LocalImageCacheReclaimer.shared.windowDidOpen(window)
         NSApp.activate(ignoringOtherApps: true)
         controller.showWindow(nil)
         window.makeKeyAndOrderFront(nil)
@@ -578,6 +583,7 @@ extension AppDelegate: NSWindowDelegate {
     /// the next window.
     func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow else { return }
+        LocalImageCacheReclaimer.shared.windowWillClose(closingWindow)
 
         if closingWindow == settingsWindowController?.window {
             releaseSettingsSystemMonitorLeaseIfNeeded()

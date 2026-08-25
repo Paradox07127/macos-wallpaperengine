@@ -1,66 +1,10 @@
 #if !LITE_BUILD
-import Foundation
 import JavaScriptCore
-import LiveWallpaperCore
-import os
 
 enum WPESceneScriptBaseclasses {
-    /// One `evaluateScript` of the 518-line prelude per context. When occupancy
-    /// logging is on, each call is timed and tagged with a per-VM ordinal so a
-    /// scene load can show whether JSC's in-memory CodeCache already collapses
-    /// re-parse on the same `JSVirtualMachine` (n=1 expensive, n≥2 cheap) or
-    /// still scales with binding count.
     static func install(in context: JSContext) {
-        guard WPEFrameOccupancyMeter.isEnabled else {
-            _ = context.evaluateScript(Self.prelude)
-            return
-        }
-        let sample = installTimed(in: context)
-        Logger.notice(
-            "[prelude] vm=\(sample.vmSlot) n=\(sample.ordinal) dt=\(sample.microseconds)us",
-            category: .wpeRender
-        )
-    }
-
-    struct TimedInstall: Equatable, Sendable {
-        let vmSlot: Int
-        let ordinal: Int
-        let microseconds: UInt64
-    }
-
-    /// Always times. Tests use this; production `install` only logs when occupancy is on.
-    static func installTimed(in context: JSContext) -> TimedInstall {
-        let vmID = ObjectIdentifier(context.virtualMachine)
-        let started = DispatchTime.now()
         _ = context.evaluateScript(Self.prelude)
-        let microseconds = (DispatchTime.now().uptimeNanoseconds &- started.uptimeNanoseconds) / 1_000
-        let labeled = ordinals.withLock { state -> (slot: Int, ordinal: Int) in
-            let slot: Int
-            if let existing = state.slotByVM[vmID] {
-                slot = existing
-            } else {
-                slot = state.nextSlot
-                state.slotByVM[vmID] = slot
-                state.nextSlot += 1
-            }
-            let ordinal = (state.countByVM[vmID] ?? 0) + 1
-            state.countByVM[vmID] = ordinal
-            return (slot, ordinal)
-        }
-        return TimedInstall(vmSlot: labeled.slot, ordinal: labeled.ordinal, microseconds: microseconds)
     }
-
-    static func resetPreludeOrdinalsForTesting() {
-        ordinals.withLock { $0 = .init() }
-    }
-
-    private struct OrdinalState: Sendable {
-        var nextSlot = 1
-        var slotByVM: [ObjectIdentifier: Int] = [:]
-        var countByVM: [ObjectIdentifier: Int] = [:]
-    }
-
-    private static let ordinals = OSAllocatedUnfairLock(initialState: OrdinalState())
 
     private static let prelude = #"""
 (function () {

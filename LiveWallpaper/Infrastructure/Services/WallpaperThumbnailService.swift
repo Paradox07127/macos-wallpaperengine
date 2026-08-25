@@ -7,16 +7,21 @@ import WebKit
 final class WallpaperThumbnailService {
     static let shared = WallpaperThumbnailService()
 
-    private let cache: NSCache<NSString, NSImage> = {
+    /// Internal, not private, only so `LocalImageCacheReclaimerTests` can
+    /// observe the purge; every production reader stays in this file.
+    let cache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
         c.countLimit = 256
         // ~64 MB byte ceiling (count cap alone could pin ~125 MB of RGBA thumbs).
         c.totalCostLimit = 64 * 1024 * 1024
+        WPEImageCacheMeter.attach(c, as: .wallpaperThumbnail)
+        LocalImageCacheRegistry.shared.register(c)
         return c
     }()
 
     /// Dedup: re-entering for the same key returns the same task, not a parallel snapshot.
-    private var inFlightVideoTasks: [String: Task<NSImage?, Never>] = [:]
+    /// The task hands the poster back instead of inserting it — see `cacheGeneratedPoster`.
+    private var inFlightVideoTasks: [String: Task<(image: NSImage, cost: Int)?, Never>] = [:]
 
     /// Held strong until snapshot completion — WKWebView fails silently if released mid-load.
     private var pendingWebViews: [
@@ -38,9 +43,11 @@ final class WallpaperThumbnailService {
 
     func videoPosterImage(for url: URL, cacheKey: String) async -> NSImage? {
         if let cached = cachedThumbnail(forKey: cacheKey) { return cached }
-        if let inFlight = inFlightVideoTasks[cacheKey] { return await inFlight.value }
+        if let inFlight = inFlightVideoTasks[cacheKey] {
+            return cacheGeneratedPoster(await inFlight.value, forKey: cacheKey)
+        }
 
-        let task = Task<NSImage?, Never> { [cache] in
+        let task = Task<(image: NSImage, cost: Int)?, Never> {
             let didStart = url.startAccessingSecurityScopedResource()
             defer { if didStart { url.stopAccessingSecurityScopedResource() } }
 
@@ -55,17 +62,39 @@ final class WallpaperThumbnailService {
                 let (cgImage, _) = try await generator.image(at: .zero)
                 let size = NSSize(width: cgImage.width, height: cgImage.height)
                 let image = NSImage(cgImage: cgImage, size: size)
-                cache.setObject(image, forKey: cacheKey as NSString, cost: Self.estimatedCost(of: cgImage))
-                return image
+                return (image, Self.estimatedCost(of: cgImage))
             } catch {
                 return nil
             }
         }
 
         inFlightVideoTasks[cacheKey] = task
-        let result = await task.value
+        let generated = await task.value
         inFlightVideoTasks.removeValue(forKey: cacheKey)
-        return result
+        return cacheGeneratedPoster(generated, forKey: cacheKey)
+    }
+
+    /// The only place a video poster enters the cache, and deliberately on the
+    /// requester's side of the `await`.
+    ///
+    /// The generator task is unstructured, so it neither inherits the
+    /// requester's cancellation nor ends with it; inserting from inside it let a
+    /// poster land in the cache *after* `LocalImageCacheReclaimer` had emptied
+    /// it, and the reclaim is a one-shot armed by a window closing — with no
+    /// window left to close, nothing would ever take that entry out again.
+    /// Here the insert can only happen while a caller is still waiting for the
+    /// image, which is the rule the HTML-snapshot, scene-preview and Workshop
+    /// paths already follow.
+    private func cacheGeneratedPoster(
+        _ generated: (image: NSImage, cost: Int)?,
+        forKey cacheKey: String
+    ) -> NSImage? {
+        guard let generated, !Task.isCancelled else { return nil }
+        WPEImageCacheMeter.recordInsert(
+            generated.image, cost: generated.cost, in: .wallpaperThumbnail
+        )
+        cache.setObject(generated.image, forKey: cacheKey as NSString, cost: generated.cost)
+        return generated.image
     }
 
     /// width × height × 4 (RGBA) — drives `NSCache.totalCostLimit` so the cache
@@ -212,10 +241,12 @@ final class WallpaperThumbnailService {
         guard !Task.isCancelled else { return nil }
 
         if let image {
+            let cost = Self.estimatedCost(of: image)
+            WPEImageCacheMeter.recordInsert(image, cost: cost, in: .wallpaperThumbnail)
             cache.setObject(
                 image,
                 forKey: request.cacheKey as NSString,
-                cost: Self.estimatedCost(of: image)
+                cost: cost
             )
             return image
         }

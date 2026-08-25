@@ -3219,24 +3219,6 @@ export function init(value) {
         #expect(context.evaluateScript("engine.frametime")?.toDouble() == 0.5)
     }
 
-    @Test("Prelude install ordinals increment per VM and restart on a new VM")
-    func preludeOrdinalsIncrementPerVirtualMachine() throws {
-        WPESceneScriptBaseclasses.resetPreludeOrdinalsForTesting()
-        let vmA = JSVirtualMachine()
-        let vmB = JSVirtualMachine()
-        let a1 = try #require(JSContext(virtualMachine: vmA))
-        let a2 = try #require(JSContext(virtualMachine: vmA))
-        let b1 = try #require(JSContext(virtualMachine: vmB))
-        let firstA = WPESceneScriptBaseclasses.installTimed(in: a1)
-        let secondA = WPESceneScriptBaseclasses.installTimed(in: a2)
-        let firstB = WPESceneScriptBaseclasses.installTimed(in: b1)
-        #expect(firstA.ordinal == 1)
-        #expect(secondA.ordinal == 2)
-        #expect(firstA.vmSlot == secondA.vmSlot)
-        #expect(firstB.ordinal == 1)
-        #expect(firstB.vmSlot != firstA.vmSlot)
-        WPESceneScriptBaseclasses.resetPreludeOrdinalsForTesting()
-    }
 
     /// `wpeMakeHostTickHelper` returning nil is what routes every engine onto
     /// its pre-existing per-field path, so nil-on-garbage is load-bearing.
