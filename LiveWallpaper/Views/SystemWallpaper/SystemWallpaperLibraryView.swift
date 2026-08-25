@@ -451,19 +451,24 @@ private struct SystemWallpaperTile: View {
 /// `NSImage(data:)` on the main actor — which does not decode there either, it
 /// defers the pixels to whichever thread first draws the layer — with nothing
 /// cached, so scrolling a tile out and back paid for the whole thing again.
-private enum SystemWallpaperThumbnails {
+///
+/// Internal, not private, only so `LocalImageCacheReclaimerTests` can observe
+/// the purge; every production reader stays in this file.
+enum SystemWallpaperThumbnails {
     /// 220 pt (`LibraryGrid.maximumColumnWidth`) at 2×, with headroom. The tile
     /// is 16:9 and so is the poster, so `scaledToFill` never crops here.
     private static let maxPixelSize = 512
 
-    nonisolated(unsafe) private static let cache: NSCache<NSString, CGImageBox> = {
+    nonisolated(unsafe) static let cache: NSCache<NSString, CGImageBox> = {
         let cache = NSCache<NSString, CGImageBox>()
         cache.countLimit = 128
         cache.totalCostLimit = 32 * 1024 * 1024
+        WPEImageCacheMeter.attach(cache, as: .systemWallpaperLibrary)
+        LocalImageCacheRegistry.shared.register(cache)
         return cache
     }()
 
-    private final class CGImageBox {
+    final class CGImageBox {
         let image: CGImage
         init(_ image: CGImage) { self.image = image }
     }
@@ -496,11 +501,10 @@ private enum SystemWallpaperThumbnails {
                   ] as CFDictionary) else {
                 return nil
             }
-            cache.setObject(
-                CGImageBox(decoded),
-                forKey: key,
-                cost: decoded.bytesPerRow * decoded.height
-            )
+            let box = CGImageBox(decoded)
+            let cost = decoded.bytesPerRow * decoded.height
+            WPEImageCacheMeter.recordInsert(box, cost: cost, in: .systemWallpaperLibrary)
+            cache.setObject(box, forKey: key, cost: cost)
             return decoded
         }.value
     }

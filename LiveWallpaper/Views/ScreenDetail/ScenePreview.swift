@@ -169,13 +169,18 @@ private struct OptionalAspectRatio: ViewModifier {
 /// In-memory cache of *decoded* previews keyed by URL. Caching the raw bytes
 /// instead meant every cache hit paid a synchronous main-thread decode, which is
 /// exactly the cost a cache is supposed to remove.
-private enum WPEPreviewDecodedCache {
+///
+/// Internal, not private, only so `LocalImageCacheReclaimerTests` can observe
+/// the purge; every production reader stays in this file.
+enum WPEPreviewDecodedCache {
     // NSCache is thread-safe internally; `nonisolated(unsafe)` just suppresses
     // the Swift 6 Sendable diagnostic since NSCache isn't formally Sendable.
     nonisolated(unsafe) static let shared: NSCache<NSString, WPEPreviewDecodedImage> = {
         let cache = NSCache<NSString, WPEPreviewDecodedImage>()
         cache.countLimit = 256
         cache.totalCostLimit = 64 * 1024 * 1024
+        WPEImageCacheMeter.attach(cache, as: .scenePreviewDecoded)
+        LocalImageCacheRegistry.shared.register(cache)
         return cache
     }()
 }
@@ -386,6 +391,9 @@ private struct AspectFillImage: NSViewRepresentable {
             guard !Task.isCancelled, coordinator.currentURL == url else { return }
             if let decoded {
                 if let cacheKey {
+                    WPEImageCacheMeter.recordInsert(
+                        decoded, cost: decoded.estimatedCost, in: .scenePreviewDecoded
+                    )
                     WPEPreviewDecodedCache.shared.setObject(decoded, forKey: cacheKey, cost: decoded.estimatedCost)
                 }
                 nsView.apply(decoded)
