@@ -79,7 +79,7 @@ struct BoardPreview: NSViewRepresentable {
         let host = HostView(
             frame: NSRect(x: 0, y: 0, width: 480, height: 168),
             configuration: configuration,
-            nameOnlyTiles: true,
+            isInspectorPreview: true,
             topInsetFraction: topInsetFraction,
             referenceWidth: referenceWidth
         )

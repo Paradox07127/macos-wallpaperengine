@@ -13,6 +13,9 @@ public enum DestructiveAction: Identifiable, Equatable {
     case clearAllStorageCaches(byteSize: String)
     case clearSceneVideoCache(byteSize: String)
     case applyConfigurationToAllDisplays(otherCount: Int)
+    /// The overlay tab's own copy: the layer you are looking at, and nothing
+    /// else. The wallpaper underneath every target display stays as it is.
+    case applyOverlayToAllDisplays(overlayName: String, otherCount: Int)
     case clearCurrentWallpaper(displayName: String)
     case resetDisplaySettings(displayName: String)
     case removeSystemWallpaper(title: String, isInUse: Bool)
@@ -38,6 +41,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .clearSystemWallpaperLibrary(let n, let b): return "clearSystemWallpaperLibrary-\(n)-\(b)"
         case .clearSceneVideoCache(let b): return "clearSceneVideoCache-\(b)"
         case .applyConfigurationToAllDisplays(let c): return "applyConfigurationToAllDisplays-\(c)"
+        case .applyOverlayToAllDisplays(let n, let c): return "applyOverlayToAllDisplays-\(n)-\(c)"
         case .clearCurrentWallpaper(let n): return "clearCurrentWallpaper-\(n)"
         case .resetDisplaySettings(let n): return "resetDisplaySettings-\(n)"
         case .disconnectAerialsLibrary: return "disconnectAerialsLibrary"
@@ -59,6 +63,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .clearSystemWallpaperLibrary: return "Remove every System Wallpaper?"
         case .clearSceneVideoCache:       return "Clear scene video texture cache?"
         case .applyConfigurationToAllDisplays: return "Apply this wallpaper to every other display?"
+        case .applyOverlayToAllDisplays: return "Apply this overlay to every other display?"
         case .clearCurrentWallpaper:     return "Clear current wallpaper?"
         case .resetDisplaySettings:      return "Reset this display's settings?"
         case .removeSystemWallpaper:     return "Remove this video from System Wallpaper?"
@@ -131,6 +136,11 @@ public enum DestructiveAction: Identifiable, Equatable {
                 localized: "This replaces the wallpaper on \(count) other displays with the same content and settings as this one.",
                 comment: "Destructive confirm message. Placeholder is the number of other displays."
             )
+        case .applyOverlayToAllDisplays(let overlayName, let count):
+            return String(
+                localized: "This replaces the \(overlayName) overlay on \(count) other displays. Their wallpapers are left alone.",
+                comment: "Destructive confirm message. Placeholders are the overlay's name and the number of other displays."
+            )
         case .clearCurrentWallpaper(let displayName):
             return String(
                 localized: "Only removes the current wallpaper from \(displayName). Source files, bookmarks, and library items are not deleted.",
@@ -168,6 +178,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .clearSystemWallpaperLibrary: return "Remove All"
         case .clearSceneVideoCache:       return "Clear Video Cache"
         case .applyConfigurationToAllDisplays: return "Apply to All Displays"
+        case .applyOverlayToAllDisplays: return "Apply to All Displays"
         case .clearCurrentWallpaper:     return "Clear Wallpaper"
         case .resetDisplaySettings:      return "Reset Settings"
         case .removeSystemWallpaper:     return "Remove"

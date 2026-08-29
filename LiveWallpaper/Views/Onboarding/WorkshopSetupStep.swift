@@ -126,7 +126,7 @@ struct OnboardingWorkshopSetupView: View {
                         title: "Link an existing install",
                         detail: String(localized: "No sign-in needed — read-only access to a Wallpaper Engine folder", comment: "Onboarding engine-assets link-folder path detail: this path has no prerequisites.")
                     ) {
-                        Button("Link folder…") { Task { await linkEngineAssetsFolder() } }
+                        Button("Link folder") { Task { await linkEngineAssetsFolder() } }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                     }
@@ -252,7 +252,7 @@ struct OnboardingWorkshopSetupView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
         } else {
-            Button("Install SteamCMD…") { showingInstallConsent = true }
+            Button("Install SteamCMD") { showingInstallConsent = true }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }

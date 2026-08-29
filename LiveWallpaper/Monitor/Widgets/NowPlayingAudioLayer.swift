@@ -411,9 +411,16 @@ struct NowPlayingAudioReactiveView: View {
         haloGradient = Gradient(colors: [accent, accent.opacity(0)])
     }
 
-    private static let barWidth: CGFloat = 2
-    private static let barSpacing: CGFloat = 2
-    private static let spokeCount = 48
+    /// Bars were 2pt wide on a 2pt gap, which on a wallpaper viewed from a
+    /// normal desk distance read as noise rather than as a meter. Wide enough
+    /// to have a shape, with a gap that still separates them.
+    private static let barWidth: CGFloat = 5
+    private static let barSpacing: CGFloat = 4
+    /// Floor so a quiet passage leaves a readable baseline instead of nothing.
+    private static let barFloor: CGFloat = 2
+    /// Fewer, thicker spokes for the same reason the bars got wider.
+    private static let spokeCount = 32
+    private static let spokeWidth: CGFloat = 3.5
     /// Per-channel offset direction for the chromatic split.
     private static let chromaticChannels: [(color: Color, direction: CGFloat)] = [
         (.red, -1), (.green, 0), (.blue, 1),
@@ -539,12 +546,16 @@ struct NowPlayingAudioReactiveView: View {
     private func drawBars(in context: inout GraphicsContext, size: CGSize, gain: Double) {
         var path = Path()
         var x: CGFloat = 0
+        let radius = Self.barWidth / 2
         for value in engine.bands {
-            let height = max(1, CGFloat(value) * size.height)
-            path.addRect(CGRect(x: x, y: size.height - height, width: Self.barWidth, height: height))
+            let height = max(Self.barFloor, CGFloat(value) * size.height)
+            path.addRoundedRect(
+                in: CGRect(x: x, y: size.height - height, width: Self.barWidth, height: height),
+                cornerSize: CGSize(width: radius, height: radius)
+            )
             x += Self.barWidth + Self.barSpacing
         }
-        let alpha = NowPlayingAudioLayer.Effects.alpha(0.6 * engine.fade * gain)
+        let alpha = NowPlayingAudioLayer.Effects.alpha(0.82 * engine.fade * gain)
         context.fill(path, with: .color(accent.opacity(alpha)))
     }
 
@@ -560,28 +571,29 @@ struct NowPlayingAudioReactiveView: View {
         for (index, value) in engine.bands.enumerated() {
             let angle = 2 * .pi * CGFloat(index) / CGFloat(engine.bands.count) - .pi / 2
             let direction = CGPoint(x: cos(angle), y: sin(angle))
-            let length = 1.5 + CGFloat(value) * maxLength
+            let length = 2.5 + CGFloat(value) * maxLength
             path.move(to: CGPoint(x: center.x + direction.x * base, y: center.y + direction.y * base))
             path.addLine(to: CGPoint(
                 x: center.x + direction.x * (base + length),
                 y: center.y + direction.y * (base + length)
             ))
         }
-        let alpha = NowPlayingAudioLayer.Effects.alpha(0.7 * engine.fade * gain)
+        let alpha = NowPlayingAudioLayer.Effects.alpha(0.88 * engine.fade * gain)
         context.stroke(
             path,
             with: .color(accent.opacity(alpha)),
-            style: StrokeStyle(lineWidth: 2, lineCap: .round)
+            style: StrokeStyle(lineWidth: Self.spokeWidth, lineCap: .round)
         )
     }
 
     /// Additive halo on top of aurora's static 0.3 glow, breathing on the bass
-    /// envelope; amplitude stays ≤ 0.15 before the pulse gain.
+    /// envelope. The amplitude used to cap at 0.15 — under the glow it sits on,
+    /// so the breathing was there in the numbers and invisible on screen.
     private func drawHalo(in context: inout GraphicsContext, size: CGSize, gain: Double) {
         let low = Double(engine.drives.bassAtt)
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        let radius = size.width * 0.375 * (1 + 0.12 * low)
-        let alpha = NowPlayingAudioLayer.Effects.alpha(0.15 * low * engine.fade * gain)
+        let radius = size.width * 0.375 * (1 + 0.18 * low)
+        let alpha = NowPlayingAudioLayer.Effects.alpha(0.34 * low * engine.fade * gain)
         guard alpha > 0.002 else { return }
         var halo = context
         halo.opacity = alpha
@@ -627,9 +639,9 @@ struct NowPlayingAudioReactiveView: View {
             let yFraction = 1 - phase
             let x = (s3 + 0.04 * sin(now * (0.4 + 0.5 * s4) + s1 * 2 * .pi)) * size.width
             let y = yFraction * size.height
-            let diameter = 2 + s4
+            let diameter = 3.5 + 2 * s4
             let alpha = NowPlayingAudioLayer.Effects.alpha(
-                engine.fade * (0.1 + 0.5 * envelope) * gain * sin(.pi * yFraction)
+                engine.fade * (0.16 + 0.62 * envelope) * gain * sin(.pi * yFraction)
             )
             guard alpha > 0.004 else { continue }
             context.fill(
@@ -660,7 +672,7 @@ struct NowPlayingAudioReactiveView: View {
                     width: radius * 2, height: radius * 2
                 )),
                 with: .color(accent.opacity(alpha)),
-                lineWidth: 1.5
+                lineWidth: 2.2
             )
         }
     }

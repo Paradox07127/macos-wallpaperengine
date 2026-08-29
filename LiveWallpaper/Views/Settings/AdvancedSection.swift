@@ -23,7 +23,7 @@ extension GeneralSettingsView {
                 title: "Export Diagnostics",
                 subtitle: "Save a sanitized diagnostic report as a text file."
             ) {
-                Button("Export…") { beginDiagnosticsExport() }
+                Button("Export") { beginDiagnosticsExport() }
                     .fixedSize()
                     .accessibilityLabel(Text("Export diagnostics"))
             }
@@ -34,7 +34,7 @@ extension GeneralSettingsView {
                 title: "Report a Bug",
                 subtitle: "Review diagnostics before opening a GitHub issue."
             ) {
-                Button("Open…") { presentBugReport() }
+                Button("Open") { presentBugReport() }
                     .fixedSize()
                     .accessibilityLabel(Text("Report a bug"))
             }

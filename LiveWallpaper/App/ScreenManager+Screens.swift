@@ -93,6 +93,9 @@ extension ScreenManager {
         }
 
         automationOrchestrator.refreshMonitoringIfActive()
+        if effectsCoordinatorWasInitialized {
+            effectsCoordinator.screensDidChange(arrivedScreenIDs: reloadIDs)
+        }
         NotificationCenter.default.post(name: .screensRefreshed, object: nil)
     }
 

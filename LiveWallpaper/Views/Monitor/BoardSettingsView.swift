@@ -22,6 +22,10 @@ struct BoardSettingsView: View {
     private var widgetTintHex = MonitorPanelAppearance.defaultTintHex
     @AppStorage(MonitorPanelAppearance.opacityKey, store: .appScoped())
     private var widgetOpacity = MonitorPanelAppearance.defaultOpacity
+    @AppStorage(MonitorPanelAppearance.glassKey, store: .appScoped())
+    private var widgetLiquidGlass = MonitorPanelAppearance.defaultGlass
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         VStack(spacing: 12) {
@@ -49,6 +53,7 @@ struct BoardSettingsView: View {
                     reduceMotionRow
                     Divider()
                     temperatureUnitRow
+                    widgetGlassRow
                     widgetTintRow
                     widgetOpacityRow
                     Divider()
@@ -61,10 +66,14 @@ struct BoardSettingsView: View {
 
     /// Its own card: these grants exist only for the Agent Session instrument,
     /// and they are the one setting here that touches files outside the app.
+    ///
+    /// The title names what is being read, not who reads it: "Agent Access"
+    /// told a collapsed reader nothing about the transcripts on their own disk
+    /// that it opens.
     private var authorizationSection: some View {
         GroupBox {
             CollapsibleSection(
-                title: "Agent Access",
+                title: "AI Session History Access",
                 systemImage: "folder.badge.person.crop",
                 isExpanded: $isAuthorizationExpanded
             ) {
@@ -178,6 +187,32 @@ struct BoardSettingsView: View {
 
     // MARK: - Widget appearance
 
+    /// Only offered where there is real Liquid Glass to turn on. Below macOS 26
+    /// the alternative is an imitation of it, which looks worse than the
+    /// designed gradient the board already ships — so the row is absent rather
+    /// than present-and-disabled, which would read as something being broken.
+    @ViewBuilder
+    private var widgetGlassRow: some View {
+        if #available(macOS 26.0, *) {
+            SettingRow(
+                icon: "circle.hexagongrid.circle",
+                iconColor: .teal,
+                title: "Liquid Glass",
+                subtitle: reduceTransparency
+                    ? "Reduce Transparency is on, so the cards stay solid."
+                    : nil,
+                info: "Cards refract the wallpaper behind them, the way Apple's own widgets do. Each card re-samples what is behind it every frame, so a busy live wallpaper under a full board costs more energy than the painted cards."
+            ) {
+                Toggle("", isOn: $widgetLiquidGlass)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .disabled(reduceTransparency)
+                    .accessibilityLabel(Text("Liquid Glass widget cards"))
+            }
+        }
+    }
+
     /// Board-wide, not per widget: the tiles are meant to read as one surface.
     private var widgetTintRow: some View {
         SettingRow(
@@ -231,7 +266,7 @@ struct BoardSettingsView: View {
 
     // MARK: - Layout management (reset / import / export)
 
-    /// Three buttons never fit beside the title — inline they clip "Export…" off
+    /// Three buttons never fit beside the title — inline they clip "Export" off
     /// the panel's trailing edge even at the default width. Same full-width
     /// second line the authorization rows use.
     private var layoutManagementRow: some View {
@@ -250,11 +285,11 @@ struct BoardSettingsView: View {
                     .controlSize(.small)
                     .fixedSize()
                     .disabled(isDefaultLayout)
-                Button("Import…", action: importLayout)
+                Button("Import", action: importLayout)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .fixedSize()
-                Button("Export…", action: exportLayout)
+                Button("Export", action: exportLayout)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .fixedSize()
@@ -336,7 +371,7 @@ struct BoardSettingsView: View {
                 info: info
             ) {
                 if !isAuthorized {
-                    Button("Authorize…", action: authorize)
+                    Button("Authorize", action: authorize)
                         .fixedSize()
                 }
             }
@@ -346,7 +381,7 @@ struct BoardSettingsView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .fixedSize()
-                    Button("Re-authorize…", action: authorize)
+                    Button("Re-authorize", action: authorize)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .fixedSize()

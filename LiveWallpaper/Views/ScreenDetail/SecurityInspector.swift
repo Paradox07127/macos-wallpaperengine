@@ -160,7 +160,7 @@ struct SecurityInspector: View {
             .tint(DesignTokens.Colors.Status.danger)
             .fixedSize()
         } else if origin.canBeTrusted {
-            Button("Trust…") {
+            Button("Trust") {
                 pendingTrustOrigin = origin
             }
             .buttonStyle(.borderedProminent)

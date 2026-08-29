@@ -256,8 +256,15 @@ final class MusicOverlaySectionTests: XCTestCase {
                 "a stack-mounted control row re-introduces the overflow bug"
             )
         }
-        // Centred, per the same fix: an edge-anchored row is the thing that
-        // can leave the tile when the content grows.
-        XCTAssertTrue(source.contains("maxHeight: .infinity, alignment: .center)"))
+        // The row was centred until it turned out to land on the progress
+        // line: vinyl and aurora centre their content block vertically, so the
+        // pill covered the one control worth dragging. Top-trailing is the
+        // only corner no style draws a scrubbable line in.
+        XCTAssertTrue(source.contains("maxHeight: .infinity, alignment: .topTrailing)"))
+        // What the centring was really protecting is the tile rect, and that
+        // is the frame plus this inset — not the anchor. Both halves have to
+        // be here or the row can reach the edge the hit test stops at.
+        XCTAssertTrue(source.contains("maxWidth: .infinity, maxHeight: .infinity, alignment:"))
+        XCTAssertTrue(source.contains(".padding(max(6, side * 0.26))"))
     }
 }

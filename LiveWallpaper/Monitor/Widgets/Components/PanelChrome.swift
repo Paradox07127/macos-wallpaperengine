@@ -10,8 +10,45 @@ struct PanelChrome: ViewModifier {
     private var tintHex = MonitorPanelAppearance.defaultTintHex
     @AppStorage(MonitorPanelAppearance.opacityKey, store: .appScoped())
     private var panelOpacity = MonitorPanelAppearance.defaultOpacity
+    @AppStorage(MonitorPanelAppearance.glassKey, store: .appScoped())
+    private var liquidGlass = MonitorPanelAppearance.defaultGlass
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    @ViewBuilder
     func body(content: Content) -> some View {
+        if MonitorPanelAppearance.usesGlass(liquidGlass, reduceTransparency: reduceTransparency) {
+            glassCard(content)
+        } else {
+            paintedCard(content)
+        }
+    }
+
+    /// Liquid Glass draws its own material, edge highlight and refraction, so
+    /// this drops the painted gradient, the grain and the top highlight rather
+    /// than stacking them on top — layering the designed lighting over a
+    /// material that already has its own is what makes glass look like a grey
+    /// rectangle. The drop shadow stays: Apple's own widgets cast one, and it
+    /// is what separates the card from the wallpaper it is refracting.
+    ///
+    /// Verified 2026-08-29 that `.glassEffect` really does refract through a
+    /// desktop-level `OverlayWindow` onto the wallpaper behind it, rather than
+    /// only sampling its own window — a two-colour backdrop showed through the
+    /// glass with the seam bending at the edge.
+    private func glassCard(_ content: Content) -> some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .adaptiveGlassScrimmed(
+                cornerRadius: cornerRadius,
+                scrim: MonitorPanelAppearance.glassScrim(tintHex: tintHex, opacity: panelOpacity)
+            )
+            .shadow(color: .black.opacity(0.34), radius: 18, x: 0, y: 10)
+            // Glass picks its light or dark variant from the colour scheme, and
+            // these tiles are dark-themed whatever the system is set to.
+            .environment(\.colorScheme, .dark)
+    }
+
+    private func paintedCard(_ content: Content) -> some View {
         let fill = MonitorPanelAppearance.fill(tintHex: tintHex, opacity: panelOpacity)
         return content
             .background(

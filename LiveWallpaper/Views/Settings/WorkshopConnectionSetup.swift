@@ -127,9 +127,9 @@ struct WorkshopConnectionSetup<Header: View>: View {
     @ViewBuilder
     private var libraryControl: some View {
         if service.isLibraryReady {
-            Button("Change…") { pickSteamLibrary() }
+            Button("Change") { pickSteamLibrary() }
         } else {
-            Button("Choose…") { pickSteamLibrary() }
+            Button("Choose") { pickSteamLibrary() }
                 .buttonStyle(.borderedProminent)
         }
     }
@@ -146,9 +146,9 @@ struct WorkshopConnectionSetup<Header: View>: View {
         } else {
             HStack(spacing: DesignTokens.Spacing.xs) {
                 if service.isBinaryPresumedReady {
-                    Button("Change…") { pickBinaryManually() }
+                    Button("Change") { pickBinaryManually() }
                 } else {
-                    Button("Install SteamCMD…") { showingInstallConsent = true }
+                    Button("Install SteamCMD") { showingInstallConsent = true }
                         .buttonStyle(.borderedProminent)
                 }
 
@@ -188,12 +188,12 @@ struct WorkshopConnectionSetup<Header: View>: View {
         // The button beside this menu already carries the common verb for the
         // current state; the menu carries the other one, never both.
         if service.isBinaryPresumedReady {
-            Button("Install SteamCMD…") { showingInstallConsent = true }
+            Button("Install SteamCMD") { showingInstallConsent = true }
         } else {
-            Button("Choose SteamCMD…") { pickBinaryManually() }
+            Button("Choose SteamCMD") { pickBinaryManually() }
         }
         Button("Locate automatically") { autoDetectBinary() }
-        Button("Install with Homebrew…") { showingBrewInstructions = true }
+        Button("Install with Homebrew") { showingBrewInstructions = true }
         if hasManualBinding {
             Button("Forget the SteamCMD I chose") { forgetManualBinary() }
         }
@@ -211,7 +211,7 @@ struct WorkshopConnectionSetup<Header: View>: View {
         if discoveredAccounts.isEmpty {
             // One verb, not two side by side. Rescan is the rarer of the pair
             // and moves into the menu once there is a menu to hold it.
-            Button("Sign In…") { showingSignIn = true }
+            Button("Sign In") { showingSignIn = true }
                 .buttonStyle(.borderedProminent)
         } else {
             Menu {
@@ -294,7 +294,7 @@ struct WorkshopConnectionSetup<Header: View>: View {
                 // copy it tried and what went wrong. The generic sentence is
                 // only right when nothing was found at all.
                 setupError = service.lastAutoDetectDiagnosis?.remedy ?? String(
-                    localized: "No SteamCMD found in the usual places. Use Install SteamCMD… for Loomscreen's own copy, or Choose SteamCMD… to point at one yourself.",
+                    localized: "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself.",
                     comment: "Workshop setup error when auto-detection finds no SteamCMD."
                 )
             }
@@ -446,7 +446,7 @@ struct WorkshopConnectionSetup<Header: View>: View {
                 // A button, not a link: this copies a payload to the
                 // pasteboard. Link styling is for things that open a web page.
                 Button(action: exportDiagnostics) {
-                    Text("Export…", bundle: .main)
+                    Text("Export", bundle: .main)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -640,7 +640,7 @@ extension SteamCMDDoctorService {
     ///
     /// Probe results are not persisted, so every relaunch starts at `.notRun`
     /// and a perfectly good binding reads as unverified. Gating the prominent
-    /// button on the strict flag put "Install SteamCMD…" in front of users who
+    /// button on the strict flag put "Install SteamCMD" in front of users who
     /// already had one bound — clicking it reinstalls what is on disk. Matches
     /// `binaryStepState`, which already treats bound-but-unprobed as working.
     var isBinaryPresumedReady: Bool {

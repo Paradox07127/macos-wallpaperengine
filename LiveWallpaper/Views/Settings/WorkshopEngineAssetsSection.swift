@@ -236,7 +236,7 @@ struct WorkshopEngineAssetsSection: View {
             }
             .fixedSize()
             .help(Text("Download the copy of Wallpaper Engine you own so scenes can use its shared assets"))
-            Button("Link folder…") { Task { await requestManualEngineAssetsAccess() } }
+            Button("Link folder") { Task { await requestManualEngineAssetsAccess() } }
                 .fixedSize()
                 .help(Text("Grant read-only access to a Wallpaper Engine install so scenes can use its shared assets"))
         }

@@ -5,7 +5,12 @@ import Foundation
 /// not a new branch in the fetch path.
 struct NowPlayingArtworkRoute: Sendable {
     enum Strategy: Sendable {
-        /// oEmbed document form: thumbnail resolved from the track ID.
+        /// Ask Spotify for the cover URL, and fall back to resolving one from
+        /// the track ID through oEmbed. The player already knows the answer,
+        /// so the lookup is a round trip spent re-deriving what is sitting in
+        /// its own dictionary — but it only knows it once Automation consent
+        /// exists, and consent is not something a wallpaper layer may demand,
+        /// so oEmbed stays as the path for everyone who has not granted it.
         case spotifyOEmbed
         /// iTunes Search scored against artist/title/album (no track ID exists).
         case itunesSearch
@@ -36,7 +41,12 @@ actor NowPlayingArtworkFetcher {
     static let negativeTTL: TimeInterval = 600
     static let positiveCacheLimit = 32
 
+    /// A player-supplied cover URL, or nil when the player has no vocabulary
+    /// for it or has not been granted Automation consent.
+    typealias ArtworkURLProvider = @Sendable (MonitorNowPlayingState) async -> URL?
+
     private let transport: Transport
+    private let artworkURLProvider: ArtworkURLProvider
     private let now: @Sendable () -> Date
 
     private var cache: [String: Data] = [:]
@@ -48,10 +58,20 @@ actor NowPlayingArtworkFetcher {
 
     init(
         transport: @escaping Transport = NowPlayingNetwork.boundedTransport(byteCap: maxImageBytes),
+        artworkURLProvider: @escaping ArtworkURLProvider = NowPlayingArtworkFetcher.playerArtworkURL,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.transport = transport
+        self.artworkURLProvider = artworkURLProvider
         self.now = now
+    }
+
+    /// Never prompts: `value(for:from:)` answers nil until consent exists.
+    static let playerArtworkURL: ArtworkURLProvider = { state in
+        guard let text = await NowPlayingController.shared
+            .value(for: .artworkURL, from: state.playerBundleID)?.stringValue
+        else { return nil }
+        return URL(string: text)
     }
 
     // MARK: - Keys and URLs (pure, test-visible)
@@ -212,6 +232,14 @@ actor NowPlayingArtworkFetcher {
     private func attempt(strategy: NowPlayingArtworkRoute.Strategy, state: MonitorNowPlayingState) async throws -> Data? {
         switch strategy {
         case .spotifyOEmbed:
+            // The allow-list still applies: this URL comes from another
+            // process, and "Spotify said so" is not a reason to fetch from an
+            // arbitrary host.
+            if let direct = await artworkURLProvider(state),
+               NowPlayingNetwork.isAllowed(direct, for: .artwork),
+               let data = try? await downloadImage(direct) {
+                return data
+            }
             guard let trackID = state.trackID, let url = Self.spotifyOEmbedURL(trackID: trackID) else { return nil }
             guard let body = try await fetch(url) else { return nil }
             guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],

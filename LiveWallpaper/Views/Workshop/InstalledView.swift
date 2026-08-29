@@ -293,7 +293,7 @@ struct InstalledView: View {
             return EmptyStateButtonAction("Browse Online", action: onBrowseOnline)
         }
         return onInstallSteamCMD.map { install in
-            EmptyStateButtonAction("Install SteamCMD…", action: install)
+            EmptyStateButtonAction("Install SteamCMD", action: install)
         }
     }
 

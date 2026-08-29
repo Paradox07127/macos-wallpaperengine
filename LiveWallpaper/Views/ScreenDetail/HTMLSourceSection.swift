@@ -158,7 +158,7 @@ struct HTMLSourceSection: View {
 
             Spacer(minLength: 0)
 
-            Button("Choose…") { pickLocal() }
+            Button("Choose") { pickLocal() }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
         }

@@ -13,7 +13,7 @@ extension GeneralSettingsView {
                 subtitle: "Save settings, display defaults, bookmarks, and per-display setup to a .lwconfig file",
                 info: "The bundle includes global preferences, display defaults, wallpaper library bookmarks, and per-display playback / effect setup. Wallpaper files themselves are not copied — only references to them."
             ) {
-                Button("Export…") { beginExport() }
+                Button("Export") { beginExport() }
                     .fixedSize()
                     .accessibilityHint(Text("Save the current settings, display defaults, bookmarks, and per-display setup to a backup file"))
             }
@@ -25,7 +25,7 @@ extension GeneralSettingsView {
                 subtitle: "Restore from a previously exported .lwconfig file",
                 info: "Importing replaces the current global preferences, display defaults, and per-display setup. Bookmarks from the backup are merged into your library — existing entries with the same source are kept."
             ) {
-                Button("Import…") { beginImport() }
+                Button("Import") { beginImport() }
                     .fixedSize()
                     .accessibilityHint(Text("Restore settings, display defaults, bookmarks, and per-display setup from a backup file"))
             }

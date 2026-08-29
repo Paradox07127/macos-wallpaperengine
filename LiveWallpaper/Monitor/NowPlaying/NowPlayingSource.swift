@@ -25,12 +25,104 @@ final actor NowPlayingSource: MonitorDataSource {
         monitor: NowPlayingMonitor? = nil,
         artworkFetcher: NowPlayingArtworkFetcher? = nil,
         audioReactive: Bool = true,
-        audioDemand: (@MainActor @Sendable (Bool) -> Void)? = nil
+        audioDemand: (@MainActor @Sendable (Bool) -> Void)? = nil,
+        positionProvider: PositionProvider? = nil,
+        positionPollInterval: Duration = NowPlayingSource.defaultPositionPollInterval
     ) {
         monitorOverride = monitor
         fetcher = artworkFetcher ?? .shared
         self.audioReactive = audioReactive
         self.audioDemand = audioDemand ?? Self.defaultAudioDemand
+        self.positionProvider = positionProvider ?? Self.defaultPositionProvider
+        self.positionPollInterval = positionPollInterval
+    }
+
+    // MARK: - Playhead polling (players whose notification omits the position)
+
+    /// Reads a player's playhead in seconds, or nil if it cannot be read.
+    typealias PositionProvider = @MainActor @Sendable (String) async -> Double?
+
+    /// The widget interpolates between anchors on its own wall clock, so this
+    /// only has to correct drift and catch scrubs made inside the player. Five
+    /// seconds is one Apple Event per five seconds while a track is up — and
+    /// only while an overlay is actually alive, because this lives on the
+    /// pipeline-scoped source rather than the app-lifetime monitor.
+    static let defaultPositionPollInterval: Duration = .seconds(5)
+
+    private let positionProvider: PositionProvider
+    private let positionPollInterval: Duration
+    private var positionTask: Task<Void, Never>?
+    /// The *track* the running poll loop is asking about, not just the player.
+    /// Keying on the player alone meant skipping to the next song inside one
+    /// app left the loop untouched — no leading tick, so the bar stayed blank
+    /// until the next interval — and let a reply that was already in flight for
+    /// the previous song be written onto the new one.
+    private var positionPollKey: String?
+
+    private static let defaultPositionProvider: PositionProvider = { bundleID in
+        await NowPlayingController.shared.value(for: .playerPosition, from: bundleID)?.doubleValue
+    }
+
+    /// Only players whose mapping carries no position key need this — the rest
+    /// already put the playhead in every notification, and asking twice would
+    /// spend an Apple Event to learn what we were just told.
+    private static func needsPositionPolling(_ state: MonitorNowPlayingState) -> Bool {
+        guard state.phase.hasTrack, let bundleID = state.playerBundleID else { return false }
+        guard let mapping = NowPlayingMonitor.mappings.first(where: { $0.bundleID == bundleID }) else {
+            return false
+        }
+        return mapping.positionKey == nil
+    }
+
+    private func syncPositionPolling(for state: MonitorNowPlayingState) {
+        guard Self.needsPositionPolling(state),
+              let bundleID = state.playerBundleID,
+              let key = NowPlayingArtworkFetcher.trackKey(for: state)
+        else {
+            stopPositionPolling()
+            return
+        }
+        guard positionPollKey != key else { return }
+        stopPositionPolling()
+        positionPollKey = key
+        let interval = positionPollInterval
+        let provider = positionProvider
+        positionTask = Task { [weak self] in
+            // Leading tick: the bar should appear on the track change, not one
+            // interval into the song.
+            while !Task.isCancelled {
+                // Stamped before the round trip, not after. An Apple Event is
+                // synchronous IPC, and a reply that was already in flight when
+                // the user scrubbed would otherwise land wearing a *newer*
+                // timestamp than the scrub — which is exactly the test the
+                // widget uses to decide the player has moved on, so the bar
+                // snapped back to where it was before the drag.
+                let issuedAt = Date().timeIntervalSince1970
+                let seconds = await provider(bundleID)
+                guard !Task.isCancelled else { return }
+                await self?.applyPolledPosition(seconds, key: key, sampledAt: issuedAt)
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
+    private func stopPositionPolling() {
+        positionTask?.cancel()
+        positionTask = nil
+        positionPollKey = nil
+    }
+
+    /// Same token discipline as the artwork landing: a reply for a track that is
+    /// no longer on screen must not be written into whatever replaced it.
+    private func applyPolledPosition(_ seconds: Double?, key: String, sampledAt: Double) async {
+        guard let seconds, seconds.isFinite, seconds >= 0 else { return }
+        guard let sink, positionPollKey == key else { return }
+        guard var state = lastPublishedState,
+              NowPlayingArtworkFetcher.trackKey(for: state) == key else { return }
+        state.position = state.duration.map { min(seconds, $0) } ?? seconds
+        state.positionSampledAt = sampledAt
+        lastPublishedState = state
+        await sink.updateNowPlaying(state)
     }
 
     /// Whether any placed layer still draws the reactive effects. Retaining the
@@ -70,6 +162,7 @@ final actor NowPlayingSource: MonitorDataSource {
     func stop() async {
         generation &+= 1
         sink = nil
+        stopPositionPolling()
         artworkTask?.cancel()
         await fetcher.cancelInFlight(except: nil)
         artworkTask = nil
@@ -139,9 +232,22 @@ final actor NowPlayingSource: MonitorDataSource {
             }
         }
         guard stillCurrent() else { return }
+        // Carry the polled playhead across the notification that replaced it:
+        // Music re-sends full metadata on a bare state change, and rebuilding
+        // the state from it would blank the bar every time the user paused.
+        if state.position == nil,
+           let key = NowPlayingArtworkFetcher.trackKey(for: state),
+           positionPollKey == key,
+           let previous = lastPublishedState,
+           NowPlayingArtworkFetcher.trackKey(for: previous) == key,
+           let carried = previous.position {
+            state.position = carried
+            state.positionSampledAt = previous.positionSampledAt
+        }
         lastPublishedState = state
         await sink.updateNowPlaying(state)
         guard stillCurrent() else { return }
+        syncPositionPolling(for: state)
         await setAudioDemand(audioReactive && state.phase == .playing)
     }
 

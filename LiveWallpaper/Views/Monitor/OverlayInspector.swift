@@ -10,7 +10,6 @@ struct MonitorOverlaySection: View {
     /// Whether a still frame of the current wallpaper exists to sit behind the board.
     let backdropAvailable: Bool
 
-    @AppStorage(MonitorPreviewBackdrop.showsWallpaperDefaultsKey) private var showsWallpaper = true
 
     private var overlay: MonitorOverlayConfiguration {
         screenManager.monitorOverlay(for: screen)
@@ -30,7 +29,7 @@ struct MonitorOverlaySection: View {
                 Divider()
                 layerRow
                 Divider()
-                backdropRow
+                OverlayBackdropRow(available: backdropAvailable)
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
@@ -76,20 +75,34 @@ struct MonitorOverlaySection: View {
         }
     }
 
-    private var backdropRow: some View {
+}
+
+/// The preview's wallpaper backdrop, shown on every overlay page.
+///
+/// One switch, three places: the setting is a single `@AppStorage` key that
+/// every overlay preview canvas already reads, so a user who turns it off on
+/// the Music page expects the Monitor page to follow — and it does. It sits on
+/// each page because that is where the preview it changes is.
+struct OverlayBackdropRow: View {
+    /// Whether this display's wallpaper has a still frame to show at all.
+    let available: Bool
+
+    @AppStorage(MonitorPreviewBackdrop.showsWallpaperDefaultsKey) private var showsWallpaper = true
+
+    var body: some View {
         SettingRow(
             icon: "photo",
             iconColor: .purple,
             title: "Wallpaper Backdrop",
-            info: backdropAvailable
-                ? "Preview the board over this display's wallpaper instead of an empty canvas"
-                : "This wallpaper has no still frame to preview the board against"
+            info: available
+                ? "Preview the overlay over this display's wallpaper instead of an empty canvas"
+                : "This wallpaper has no still frame to preview the overlay against"
         ) {
             Toggle("", isOn: $showsWallpaper)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .disabled(!backdropAvailable)
+                .disabled(!available)
                 .accessibilityLabel(Text("Show wallpaper backdrop in the preview"))
         }
     }

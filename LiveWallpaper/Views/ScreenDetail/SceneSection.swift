@@ -79,7 +79,7 @@ struct SceneSection: View {
                 Button {
                     presentFolderPicker()
                 } label: {
-                    Label("Apply Project Folder…", systemImage: "folder.badge.plus")
+                    Label("Apply Project Folder", systemImage: "folder.badge.plus")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -114,7 +114,7 @@ struct SceneSection: View {
                     Button {
                         presentFolderPicker()
                     } label: {
-                        Label("Apply Project…", systemImage: "plus")
+                        Label("Apply Project", systemImage: "plus")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.regular)

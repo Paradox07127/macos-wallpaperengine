@@ -7,9 +7,9 @@ struct NetworkWidgetView: View {
     private static let rxColor = Design.signalAmber
     private static let txColor = Design.signalSteel
 
-    private static let smallChartWindowSamples = 30
-    private static let mediumChartWindowSamples = 60
-    private static let largeChartWindowSamples = 120
+    private static let smallChartWindowSeconds = 30
+    private static let mediumChartWindowSeconds = 60
+    private static let largeChartWindowSeconds = 120
 
     private var snapshot: MonitorSnapshot { context.snapshot }
     private var system: MonitorSystemSnapshot? { snapshot.system }
@@ -93,7 +93,7 @@ struct NetworkWidgetView: View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         VStack(alignment: .leading, spacing: scale.label * 0.5) {
             dualRate(scale: scale)
-            mirroredScope(scale: scale, windowSamples: Self.smallChartWindowSamples)
+            mirroredScope(scale: scale, windowSeconds: Self.smallChartWindowSeconds)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -127,8 +127,8 @@ struct NetworkWidgetView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.7)
 
-            mirroredScope(scale: scale, windowSamples:
-                isLarge ? Self.largeChartWindowSamples : Self.mediumChartWindowSamples)
+            mirroredScope(scale: scale, windowSeconds:
+                isLarge ? Self.largeChartWindowSeconds : Self.mediumChartWindowSeconds)
                 .overlay(alignment: .topTrailing) { peakTag(scale: scale) }
 
             if activeInterface != nil {
@@ -149,10 +149,10 @@ struct NetworkWidgetView: View {
     }
 
     @ViewBuilder
-    private func mirroredScope(scale: Design.TypeScale, windowSamples: Int) -> some View {
+    private func mirroredScope(scale: Design.TypeScale, windowSeconds: Int) -> some View {
         MirroredAreaChart(
-            up: Self.tail(history.netRx, count: windowSamples),
-            down: Self.tail(history.netTx, count: windowSamples),
+            up: history.windowed(history.netRx, seconds: windowSeconds),
+            down: history.windowed(history.netTx, seconds: windowSeconds),
             upColor: Self.rxColor,
             downColor: Self.txColor
         )
@@ -391,12 +391,6 @@ struct NetworkWidgetView: View {
         guard let space = text.firstIndex(of: " ") else { return (text, "") }
         return (String(text[text.startIndex..<space]),
                 String(text[text.index(after: space)...]))
-    }
-
-    /// Last `count` samples of a series (never fewer than the series has).
-    nonisolated static func tail(_ series: [Double], count: Int) -> [Double] {
-        guard series.count > count else { return series }
-        return Array(series.suffix(count))
     }
 }
 

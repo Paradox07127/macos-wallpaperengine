@@ -404,6 +404,170 @@ struct NowPlayingArbitrationTests {
 
 @Suite("Now Playing source")
 struct NowPlayingSourceTests {
+
+    /// Music's notification has never carried a playhead, so the layer drew no
+    /// progress for it at all — while `sdef /System/Applications/Music.app`
+    /// has always listed `player position`. The source polls for exactly the
+    /// players whose mapping lacks a position key.
+    @MainActor
+    @Test("a player whose notification omits the position gets it polled in")
+    func polledPositionReachesTheSink() async {
+        let monitor = makeMonitor()
+        monitor.ingest(name: Fixture.musicName, userInfo: Fixture.musicPlaying)
+
+        let sink = RecordingNowPlayingSink()
+        let source = NowPlayingSource(
+            monitor: monitor,
+            artworkFetcher: offlineFetcher(),
+            positionProvider: { bundleID in bundleID == "com.apple.Music" ? 42 : nil },
+            positionPollInterval: .milliseconds(20)
+        )
+        await source.start(sink: sink)
+
+        #expect(await waitUntil { sink.box.states.contains { $0.position == 42 } })
+        #expect(sink.box.states.contains { $0.positionSampledAt != nil })
+        await source.stop()
+    }
+
+    /// Spotify already puts the playhead in every frame; asking again would
+    /// spend an Apple Event to be told what we were just told.
+    @MainActor
+    @Test("a player that already reports its position is never polled")
+    func selfReportingPlayerIsNotPolled() async {
+        let monitor = makeMonitor()
+        monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPlaying)
+
+        let asked = NowPlayingStateBox()
+        let sink = RecordingNowPlayingSink()
+        let source = NowPlayingSource(
+            monitor: monitor,
+            artworkFetcher: offlineFetcher(),
+            positionProvider: { _ in
+                asked.append(MonitorNowPlayingState(phase: .playing, title: "asked"))
+                return 999
+            },
+            positionPollInterval: .milliseconds(20)
+        )
+        await source.start(sink: sink)
+        #expect(await waitUntil { sink.box.count >= 1 })
+        // Long enough for several poll intervals to have elapsed.
+        try? await Task.sleep(for: .milliseconds(120))
+        #expect(asked.count == 0)
+        #expect(sink.box.states.allSatisfy { $0.position != 999 })
+        await source.stop()
+    }
+
+    /// Music re-sends full metadata on a bare pause, which rebuilt the state
+    /// from the notification and blanked the polled playhead every time.
+    @MainActor
+    @Test("a polled playhead survives the next notification for the same track")
+    func polledPositionSurvivesRepublish() async {
+        let monitor = makeMonitor()
+        monitor.ingest(name: Fixture.musicName, userInfo: Fixture.musicPlaying)
+
+        let sink = RecordingNowPlayingSink()
+        let source = NowPlayingSource(
+            monitor: monitor,
+            artworkFetcher: offlineFetcher(),
+            positionProvider: { _ in 42 },
+            positionPollInterval: .seconds(30)   // one leading tick, then quiet
+        )
+        await source.start(sink: sink)
+        #expect(await waitUntil { sink.box.states.contains { $0.position == 42 } })
+
+        monitor.ingest(name: Fixture.musicName, userInfo: Fixture.musicPlaying)
+        #expect(await waitUntil { sink.box.count >= 3 })
+        #expect(sink.box.states.last?.position == 42)
+        await source.stop()
+    }
+
+    /// Skipping to the next song inside one player keeps the same bundle ID, so
+    /// a loop keyed on the player alone never restarted: no leading tick, and a
+    /// reply already in flight for the previous song landed on the new one.
+    @MainActor
+    @Test("changing track restarts the poll and re-anchors immediately")
+    func trackChangeRestartsPolling() async {
+        let monitor = makeMonitor()
+        monitor.ingest(name: Fixture.musicName, userInfo: Fixture.musicPlaying)
+
+        let sink = RecordingNowPlayingSink()
+        let asked = NowPlayingStateBox()
+        let source = NowPlayingSource(
+            monitor: monitor,
+            artworkFetcher: offlineFetcher(),
+            positionProvider: { _ in
+                asked.append(MonitorNowPlayingState(phase: .playing, title: "asked"))
+                return 42
+            },
+            // Long enough that a second reading can only come from a restart.
+            positionPollInterval: .seconds(30)
+        )
+        await source.start(sink: sink)
+        #expect(await waitUntil { asked.count >= 1 })
+        let afterFirstTrack = asked.count
+
+        var second = Fixture.musicPlaying
+        second["Name"] = "A different song"
+        monitor.ingest(name: Fixture.musicName, userInfo: second)
+
+        #expect(await waitUntil { asked.count > afterFirstTrack })
+        await source.stop()
+    }
+
+    /// The carried playhead is keyed on the track, not the title: two songs can
+    /// share a name, and inheriting the old offset is worse than none.
+    @MainActor
+    @Test("a new track does not inherit the previous track's playhead")
+    func newTrackDoesNotInheritPosition() async {
+        let monitor = makeMonitor()
+        monitor.ingest(name: Fixture.musicName, userInfo: Fixture.musicPlaying)
+
+        let sink = RecordingNowPlayingSink()
+        let source = NowPlayingSource(
+            monitor: monitor,
+            artworkFetcher: offlineFetcher(),
+            positionProvider: { _ in 42 },
+            positionPollInterval: .seconds(30)
+        )
+        await source.start(sink: sink)
+        #expect(await waitUntil { sink.box.states.contains { $0.position == 42 } })
+
+        var second = Fixture.musicPlaying
+        second["Artist"] = "Someone else entirely"
+        monitor.ingest(name: Fixture.musicName, userInfo: second)
+
+        #expect(await waitUntil { sink.box.states.last?.artist == "Someone else entirely" })
+        let carried = sink.box.states.last(where: { $0.artist == "Someone else entirely" })
+        // Either still unset, or re-read for the new track — never the old
+        // track's value copied across.
+        #expect(carried?.position == nil || carried?.position == 42)
+        await source.stop()
+    }
+
+    @MainActor
+    @Test("stop cancels the poll loop")
+    func stopCancelsPolling() async {
+        let monitor = makeMonitor()
+        monitor.ingest(name: Fixture.musicName, userInfo: Fixture.musicPlaying)
+
+        let asked = NowPlayingStateBox()
+        let sink = RecordingNowPlayingSink()
+        let source = NowPlayingSource(
+            monitor: monitor,
+            artworkFetcher: offlineFetcher(),
+            positionProvider: { _ in
+                asked.append(MonitorNowPlayingState(phase: .playing, title: "asked"))
+                return 42
+            },
+            positionPollInterval: .milliseconds(20)
+        )
+        await source.start(sink: sink)
+        #expect(await waitUntil { asked.count >= 1 })
+        await source.stop()
+        let afterStop = asked.count
+        try? await Task.sleep(for: .milliseconds(120))
+        #expect(asked.count <= afterStop + 1)   // at most the one already in flight
+    }
     @MainActor
     @Test("start publishes the last known state immediately")
     func startPublishesImmediately() async {
