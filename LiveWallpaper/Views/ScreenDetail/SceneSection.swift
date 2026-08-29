@@ -17,15 +17,22 @@ struct SceneSection: View {
     @State private var pendingDestructive: PendingDestructive?
 
     var body: some View {
-        Group {
-            if hasActiveSceneWallpaper {
-                activeSceneCard
-            } else if recentImports.isEmpty {
-                emptyState
-            } else if let selected = selectedHistoryEntry {
-                unsupportedDetail(for: selected)
-            } else {
-                historyList
+        // Above every state, not inside the applied-scene card: the assets are a
+        // setup step, and the reader most likely to need them has no scene
+        // applied yet.
+        VStack(spacing: 0) {
+            EngineAssetsBanner()
+
+            Group {
+                if hasActiveSceneWallpaper {
+                    activeSceneCard
+                } else if recentImports.isEmpty {
+                    emptyState
+                } else if let selected = selectedHistoryEntry {
+                    unsupportedDetail(for: selected)
+                } else {
+                    historyList
+                }
             }
         }
         .animation(reduceMotion ? nil : .default, value: recentImports.isEmpty)

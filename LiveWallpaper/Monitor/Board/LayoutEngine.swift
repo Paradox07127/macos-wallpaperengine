@@ -4,7 +4,7 @@ import LiveWallpaperCore
 
 // MARK: - Monitor board layout engine
 
-/// Cell-exact geometry from Apple HIG widget frames: S 170×170, M 364×170, L 364×376 pt.
+/// Cell-exact geometry on Apple's 170 pt tile: S 170×170, M 356×170, L 356×356 pt.
 struct MonitorBoardGeometry: Equatable {
     let boardSize: CGSize
     let columns: Int
@@ -12,15 +12,21 @@ struct MonitorBoardGeometry: Equatable {
     /// Cell pitch (gutter included); RAW footprint = span × pitch.
     let cellWidth: CGFloat
     let cellHeight: CGFloat
-    /// Per-axis gutter inset (Apple h/v gaps differ: 24 vs 36 pt).
-    let tileInsetX: CGFloat
-    let tileInsetY: CGFloat
+    /// HALF-gutter, both axes: neighbours end up `2 * tileInset` apart.
+    let tileInset: CGFloat
     let cornerRadius: CGFloat
     /// Menu-bar avoidance floor for widget origins (0 if host passes no inset).
     let topInset: CGFloat
 
-    static let appleCellPitch = CGSize(width: 194, height: 206)
-    static let appleTileInset = CGSize(width: 12, height: 18)
+    /// Pitch = tile + one gutter, so `tile == pitch - 2 * inset` holds and a
+    /// small widget stays exactly Apple's 170×170. Spans absorb the gutter they
+    /// cross: medium 356×170, large 356×356. Numbers live in
+    /// `MonitorBoardMetrics` so the schema's default packer measures in the
+    /// same cell the renderer draws in.
+    static let appleCellPitch = CGSize(
+        width: MonitorBoardMetrics.cellPitch, height: MonitorBoardMetrics.cellPitch
+    )
+    static let appleTileInset = CGFloat(MonitorBoardMetrics.gutter / 2)
     static let appleCornerRadius: CGFloat = 16
 
     init(boardSize: CGSize, referenceWidth: CGFloat = 0, topInsetFraction: CGFloat = 0) {
@@ -34,8 +40,7 @@ struct MonitorBoardGeometry: Equatable {
         self.rows = ch > 0 ? max(Int((boardSize.height / ch).rounded(.down)), 1) : 1
         self.cellWidth = max(cw, 0)
         self.cellHeight = max(ch, 0)
-        self.tileInsetX = Self.appleTileInset.width * s
-        self.tileInsetY = Self.appleTileInset.height * s
+        self.tileInset = Self.appleTileInset * s
         self.cornerRadius = max(Self.appleCornerRadius * s, 1)
         self.topInset = max(0, min(boardSize.height, boardSize.height * topInsetFraction))
     }
@@ -56,8 +61,8 @@ struct MonitorBoardGeometry: Equatable {
 
     /// Inset raw rect per axis for gutters; never inverts a tiny rect.
     func renderRect(forRawRect raw: CGRect) -> CGRect {
-        let dx = min(tileInsetX, raw.width / 2)
-        let dy = min(tileInsetY, raw.height / 2)
+        let dx = min(tileInset, raw.width / 2)
+        let dy = min(tileInset, raw.height / 2)
         return raw.insetBy(dx: dx, dy: dy)
     }
 

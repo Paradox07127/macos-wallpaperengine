@@ -75,6 +75,24 @@ public enum DesignTokens {
         /// deliberately darker, where the lighter amber washed out.
         public static let boardEditBorder = Color(red: 0.62, green: 0.50, blue: 0.28)
 
+        /// Board edit chrome, which floats over the user's wallpaper and is
+        /// therefore always dark regardless of system appearance — semantic
+        /// surface tokens would flip it to white over a light wallpaper. These
+        /// replace `Color(white: 0.12/0.14/0.3)` literals that the control bar,
+        /// the settings card and the size toggle each carried their own copy of.
+        public enum BoardChrome {
+            /// Settings card / control bar fill.
+            public static let surface = Color(white: 0.14)
+            /// The card body, a touch darker so a card over the bar reads as behind it.
+            public static let panel = Color(white: 0.12)
+            /// Selected segment inside the size toggle.
+            public static let selected = Color(white: 0.30)
+            /// Well behind an unselected segment group.
+            public static let well = Color.black.opacity(0.30)
+            /// One hairline value for every border in the chrome.
+            public static let hairline = Color.white.opacity(0.12)
+        }
+
         /// Scene-diagnostic log line coloring (`SceneDetailView`) — fixed
         /// values tuned against the panel's own black background, systematically
         /// lighter than `Status.*` so they stay legible there.

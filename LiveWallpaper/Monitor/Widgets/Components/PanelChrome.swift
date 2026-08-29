@@ -4,13 +4,21 @@ import SwiftUI
 struct PanelChrome: ViewModifier {
     var cornerRadius: CGFloat = MonitorBoardGeometry.appleCornerRadius
 
+    // Board-wide appearance, read here because this is the single place every
+    // widget paints its card.
+    @AppStorage(MonitorPanelAppearance.tintKey, store: .appScoped())
+    private var tintHex = MonitorPanelAppearance.defaultTintHex
+    @AppStorage(MonitorPanelAppearance.opacityKey, store: .appScoped())
+    private var panelOpacity = MonitorPanelAppearance.defaultOpacity
+
     func body(content: Content) -> some View {
-        content
+        let fill = MonitorPanelAppearance.fill(tintHex: tintHex, opacity: panelOpacity)
+        return content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [Design.panelFillTop, Design.panelFillBottom],
+                            colors: [fill.top, fill.bottom],
                             startPoint: .top,
                             endPoint: .bottom
                         )

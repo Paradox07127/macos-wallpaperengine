@@ -18,6 +18,10 @@ struct BoardSettingsView: View {
 
     /// Display-only temperature unit for every sensor readout (app-wide, not per-board).
     @AppStorage(MonitorTemperature.fahrenheitDefaultsKey) private var temperatureFahrenheit = false
+    @AppStorage(MonitorPanelAppearance.tintKey, store: .appScoped())
+    private var widgetTintHex = MonitorPanelAppearance.defaultTintHex
+    @AppStorage(MonitorPanelAppearance.opacityKey, store: .appScoped())
+    private var widgetOpacity = MonitorPanelAppearance.defaultOpacity
 
     var body: some View {
         VStack(spacing: 12) {
@@ -45,6 +49,8 @@ struct BoardSettingsView: View {
                     reduceMotionRow
                     Divider()
                     temperatureUnitRow
+                    widgetTintRow
+                    widgetOpacityRow
                     Divider()
                     layoutManagementRow
                 }
@@ -167,6 +173,59 @@ struct BoardSettingsView: View {
             .labelsHidden()
             .fixedSize()
             .accessibilityLabel(Text("Temperature unit"))
+        }
+    }
+
+    // MARK: - Widget appearance
+
+    /// Board-wide, not per widget: the tiles are meant to read as one surface.
+    private var widgetTintRow: some View {
+        SettingRow(
+            icon: "paintpalette",
+            iconColor: .teal,
+            title: "Widget tint",
+            valueSubtitle: widgetTintHex.isEmpty
+                ? String(localized: "Default graphite", comment: "Widget tint row value when no custom colour is set.")
+                : widgetTintHex,
+            info: "Recolours every widget card. The designed top-to-bottom falloff is kept, so the panel still reads as a lit surface rather than a flat rectangle."
+        ) {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                ColorPicker("", selection: Binding(
+                    get: { MonitorPanelAppearance.color(fromHex: widgetTintHex) ?? Design.panelFillTop },
+                    set: { widgetTintHex = MonitorPanelAppearance.hex(from: $0) }
+                ), supportsOpacity: false)
+                .labelsHidden()
+                .accessibilityLabel(Text("Widget tint"))
+
+                // `fixedSize`: the row's title column takes every point it can,
+                // which squeezed this button down to a bare capsule with its
+                // label truncated away.
+                Button("Reset") { widgetTintHex = MonitorPanelAppearance.defaultTintHex }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .disabled(widgetTintHex.isEmpty)
+                    .accessibilityLabel(Text("Reset widget tint to the default"))
+            }
+        }
+    }
+
+    private var widgetOpacityRow: some View {
+        SettingRow(
+            icon: "circle.lefthalf.filled",
+            iconColor: .teal,
+            title: "Widget opacity",
+            valueSubtitle: "\(Int(MonitorPanelAppearance.resolvedOpacity(widgetOpacity) * 100))%",
+            info: "How much wallpaper shows through the widget cards. Bottoms out well above zero — a fully transparent card leaves text floating unreadably over the wallpaper."
+        ) {
+            Slider(
+                value: Binding(
+                    get: { MonitorPanelAppearance.resolvedOpacity(widgetOpacity) },
+                    set: { widgetOpacity = $0 }
+                ),
+                in: MonitorPanelAppearance.opacityRange
+            )
+            .frame(width: 104)
+            .accessibilityLabel(Text("Widget opacity"))
         }
     }
 

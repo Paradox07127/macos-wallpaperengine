@@ -36,6 +36,32 @@ enum WorkshopStepState: Equatable {
     }
 }
 
+extension WorkshopStepState {
+    /// One reading of the Wallpaper Engine assets step, shared by the settings
+    /// status bar, the onboarding checklist and the Scene warning banner — the
+    /// same reason `connectionStepState` exists for the Steam steps.
+    @MainActor
+    static func engineAssets(
+        library: WPEEngineAssetsLibrary,
+        installer: WPEEngineAssetsInstaller
+    ) -> WorkshopStepState {
+        if installer.isBusy { return .working }
+        if installer.updateAvailable { return .attention }
+        if installer.hasManagedInstall || library.isAuthorized { return .ready }
+        return .notStarted
+    }
+
+    /// Whether the shared `assets/` are actually reachable right now. Narrower
+    /// than `== .ready`: an install with an update pending still renders.
+    @MainActor
+    static func hasEngineAssets(
+        library: WPEEngineAssetsLibrary,
+        installer: WPEEngineAssetsInstaller
+    ) -> Bool {
+        installer.hasManagedInstall || library.isAuthorized
+    }
+}
+
 /// One setup step: name, state badge, optional detail, and the control that advances it.
 struct WorkshopSetupRow<Control: View>: View {
     let icon: String

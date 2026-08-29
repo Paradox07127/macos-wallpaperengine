@@ -2,6 +2,21 @@ import Foundation
 
 // MARK: - Monitor widget board configuration
 
+/// The one place the widget grid's dimensions live.
+///
+/// A small tile is Apple's 170×170; every neighbour sits exactly one `gutter`
+/// away on BOTH axes, so a large tile is 2×2 cells minus the gutter it crosses
+/// and comes out square. The board used to carry a 16 pt horizontal and a
+/// 24 pt vertical gap (large 356×364), which is what made the grid read as
+/// squashed sideways against real macOS desktop widgets.
+public enum MonitorBoardMetrics {
+    public static let tileSide: Double = 170
+    /// Gap between neighbouring tiles; each tile is inset by half of it.
+    public static let gutter: Double = 16
+    /// Cell pitch — one tile plus one gutter, so `tile == pitch - gutter`.
+    public static let cellPitch: Double = tileSide + gutter
+}
+
 public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifiable {
     case cpu
     case memory
@@ -261,7 +276,11 @@ extension MonitorBoardConfiguration {
     }
 
     /// Apple-frame cell pitch (schema packs without importing the renderer).
-    static let referenceCellPitch = (width: 194.0, height: 206.0)
+    /// Square on purpose — see `MonitorBoardMetrics`; a test pins it against
+    /// the renderer's `MonitorBoardGeometry.appleCellPitch`.
+    static let referenceCellPitch = (
+        width: MonitorBoardMetrics.cellPitch, height: MonitorBoardMetrics.cellPitch
+    )
     /// Reference board for default placement normalization.
     static let referenceBoard = (width: 1512.0, height: 982.0)
 

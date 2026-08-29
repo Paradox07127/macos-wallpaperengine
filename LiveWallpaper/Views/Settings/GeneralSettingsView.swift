@@ -25,6 +25,7 @@ struct GeneralSettingsView: View {
 
     @Environment(ScreenManager.self) var screenManager
     @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) var appLanguageRawValue = AppLanguagePreference.system.rawValue
+    @AppStorage(AppAppearance.defaultsKey, store: .appScoped()) var appearanceRawValue = AppAppearance.system.rawValue
     /// Mirrors Sparkle's own `automaticallyChecksForUpdates`; Sparkle persists
     /// it, so there is no parallel defaults key to keep in sync.
     @State var checksUpdatesAtLaunch: Bool = SparkleUpdaterController.shared.automaticallyChecksForUpdates
