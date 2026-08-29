@@ -618,6 +618,35 @@
         }
       }
     },
+    "Mist" : {
+      "comment" : "Particle effect name: a slow drifting fog veil.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mist"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "霧"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雾"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "霧"
+          }
+        }
+      }
+    },
     "Monitor is off for this display" : {
       "comment" : "Overlay preview placeholder when the Monitor board is switched off for this display.",
       "localizations" : {

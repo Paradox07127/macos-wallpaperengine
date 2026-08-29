@@ -10,6 +10,7 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
     case stars = "Stars"
     case fallingLeaves = "Leaves"
     case sakura = "Sakura"
+    case mist = "Mist"
 
     public var id: String { rawValue }
 
@@ -21,7 +22,9 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
     public var leansIntoWind: Bool {
         switch self {
         case .rain, .snow, .fallingLeaves, .sakura, .dust: return true
-        case .none, .bokeh, .fireflies, .stars:            return false
+        // Mist does not fall, so there is no fall direction to lean; it drifts
+        // sideways on its own instead.
+        case .none, .bokeh, .fireflies, .stars, .mist:     return false
         }
     }
 
@@ -50,6 +53,7 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
         case .stars: return "Stars"
         case .fallingLeaves: return "Leaves"
         case .sakura: return "Sakura"
+        case .mist: return "Mist"
         }
     }
 
@@ -64,6 +68,7 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
         case .stars: return "star"
         case .fallingLeaves: return "leaf"
         case .sakura: return "camera.macro"
+        case .mist: return "cloud.fog"
         }
     }
 }

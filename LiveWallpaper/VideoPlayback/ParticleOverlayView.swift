@@ -162,6 +162,7 @@ final class ParticleOverlayView: NSView {
         case .stars:         return Self.starsPreset
         case .fallingLeaves: return Self.leavesPreset
         case .sakura:        return Self.sakuraPreset
+        case .mist:          return Self.mistPreset
         }
     }
 
@@ -267,6 +268,58 @@ final class ParticleOverlayView: NSView {
             size: { CGSize(width: $0.width * 2.4, height: 0) }
         )
     }
+
+    // MARK: - Mist
+
+    /// Fog, as a handful of very large, very faint, very slow sprites.
+    ///
+    /// Deliberately not a full-screen noise shader: that is a per-pixel cost
+    /// paid every frame forever, and this layer is up for hours. Apple lists
+    /// fog among `CAEmitterLayer`'s own use cases, and for "a slowly drifting
+    /// translucent veil" — as opposed to fog that has to weave between objects
+    /// and self-shadow — big soft billboards are the cheap way to get there.
+    ///
+    /// Very few particles on purpose: each sprite covers a large area, so the
+    /// look comes from overlap rather than from count. Three sizes at three
+    /// speeds keep it from reading as one sliding sheet.
+    private static let mistPreset: EmitterPreset = {
+        let makeBank = {
+            (radius: CGFloat, velocity: CGFloat, birthRate: Float, alpha: CGFloat) -> CAEmitterCell in
+            let cell = CAEmitterCell()
+            cell.contents = ParticleTextures.softCircle(
+                radius: radius, color: NSColor.white.cgColor
+            )
+            cell.birthRate = birthRate
+            cell.lifetime = 26
+            cell.lifetimeRange = 8
+            cell.velocity = velocity
+            cell.velocityRange = velocity * 0.6
+            cell.emissionLongitude = 0          // drifts sideways, does not fall
+            cell.emissionRange = .pi / 10
+            cell.scale = 1
+            cell.scaleRange = 0.45
+            cell.alphaRange = Float(alpha * 0.4)
+            // Fades in and out rather than popping: a hard-edged cloud of fog
+            // appearing at the screen edge is the tell that it is sprites.
+            cell.alphaSpeed = -Float(alpha) / 26
+            cell.color = NSColor(white: 1, alpha: alpha).cgColor
+            return cell
+        }
+
+        let broad = makeBank(190, 7, 0.5, 0.11)
+        let mid = makeBank(130, 11, 0.8, 0.09)
+        let wisps = makeBank(80, 16, 1.2, 0.07)
+
+        return EmitterPreset(
+            cells: [broad, mid, wisps],
+            shape: .rectangle,
+            renderMode: .unordered,
+            // Born across the whole frame, not along an edge: fog is already
+            // everywhere when you walk into it.
+            position: { CGPoint(x: $0.midX, y: $0.midY) },
+            size: { CGSize(width: $0.width * 1.2, height: $0.height) }
+        )
+    }()
 
     // MARK: - Bokeh
 
@@ -437,7 +490,7 @@ final class ParticleOverlayView: NSView {
             cell.emissionRange = .pi * 2
             cell.scale = scale
             cell.scaleRange = scale * 0.5
-            cell.alphaRange = alpha * 0.4
+            cell.alphaRange = Float(alpha * 0.4)
             cell.alphaSpeed = -0.02
             cell.yAcceleration = -1.5
             cell.xAcceleration = 0.5
