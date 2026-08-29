@@ -168,6 +168,64 @@ struct MasterRenderGateTests {
         }
     }
 
+
+    /// The master switch is "stop every wallpaper", and the overlays are drawn
+    /// over the wallpaper — so they have to stop with it.
+    ///
+    /// Particles already did, because `releaseRuntimeSession` tears their layer
+    /// down on the way past. The Monitor and Now Playing panels are owned by
+    /// `OverlayController`, which the gate never touched, so they kept
+    /// rendering over a desktop with no wallpaper left under them.
+    @Test("The master switch stops the Monitor and Now Playing overlays too")
+    func gateOffStopsMonitorOverlays() throws {
+        guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
+            Issue.record("No NSScreen available")
+            return
+        }
+        let originalConfigurations = SettingsManager.shared.loadConfigurations()
+        let originalOverlays = SettingsManager.shared.loadMonitorOverlays()
+        defer {
+            SettingsManager.shared.replaceAllConfigurations(originalConfigurations)
+            SettingsManager.shared.saveMonitorOverlays(originalOverlays)
+            OverlayController.shared.teardownAll()
+        }
+
+        SettingsManager.shared.replaceAllConfigurations([
+            ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("<p>gate</p>"), config: .default))
+        ])
+        var overlay = MonitorOverlayConfiguration.default
+        overlay.enabled = true
+        SettingsManager.shared.saveMonitorOverlays([screen.displayFingerprint: overlay])
+
+        Self.withGate(true) {
+            let manager = Self.makeManager(screen: screen)
+            defer { screen.resetRuntimeSession() }
+            guard manager.screens.contains(where: { $0.id == screen.id }) else {
+                Issue.record("Injected display registry did not produce a screen")
+                return
+            }
+
+            manager.reconcileMonitorOverlays()
+            #expect(
+                OverlayController.shared.hasActiveOverlay,
+                "the overlay never came up, so switching it off proves nothing"
+            )
+
+            manager.setWallpapersEnabled(false)
+            #expect(
+                !OverlayController.shared.hasActiveOverlay,
+                "overlays are still rendering with every wallpaper stopped"
+            )
+
+            // And back: the switch is not a one-way door.
+            manager.setWallpapersEnabled(true)
+            #expect(
+                OverlayController.shared.hasActiveOverlay,
+                "overlays did not come back when wallpapers were re-enabled"
+            )
+        }
+    }
+
 }
 
 /// Minimal live-session stand-in: the gate's show/release branches are the
