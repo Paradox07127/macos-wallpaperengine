@@ -329,8 +329,9 @@ extension WPEMetalSceneRenderer {
         executor.parallaxObjectParentByID = document.objectParentByID
         executor.parallaxHostDepthByObjectID = parallaxAuthoredDepthByObjectID
         executor.parallaxHostOriginByObjectID = authoredOrigins
-        // Authored flag is shader-driven only. Script audio (`usesAudioAPI`) needs capture or the broker stays silent.
+        // The pipeline scan is the shader-side truth (most scenes never set the authored flag); script audio (`usesAudioAPI`) needs capture too.
         sceneSupportsAudioProcessing = document.general.supportsAudioProcessing
+            || Self.pipelineRequiresAudioCapture(pipeline)
             || WPESceneScriptInstanceInventory.usesAudioAPI(in: document)
         cameraParallaxSmoother.reset()
         sceneRenderSize = cameraUniforms.renderSize
@@ -369,6 +370,13 @@ extension WPEMetalSceneRenderer {
         onProgress?(String(localized: "Loading particle systems", comment: "Scene load progress: building particle systems."))
         await loadParticleSystems(from: document, on: actor)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        // Emitters with audioprocessingmode > 0 consume the spectrum in the CPU
+        // sim; a scene where they are the only audio consumer must still demand
+        // capture. Registered systems exist only from this point, hence the
+        // late OR onto the shader/script scan above.
+        if !sceneSupportsAudioProcessing {
+            sceneSupportsAudioProcessing = particleSystems.contains(where: \.isAudioResponsive)
+        }
         debugStage(
             "particles.load.done",
             "systems=\(particleSystems.count)"

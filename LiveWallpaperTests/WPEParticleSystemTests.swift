@@ -2104,7 +2104,7 @@ struct WPEParticleSystemTests {
         #expect(def.duration == nil)
     }
 
-    @Test("Parser preserves emitter flags and both authored audio key families without consuming them")
+    @Test("Parser preserves emitter flags and both authored audio key families; unknown audio keys stay diagnosed")
     func parserPreservesOpaqueEmitterFlagsAndAudioState() throws {
         let json: [String: Any] = [
             "maxcount": 20,
@@ -2153,6 +2153,113 @@ struct WPEParticleSystemTests {
         system.tick(now: 0.1)
         #expect(system.liveInstanceCount == 10,
                 "opaque emitter flags must not silently become a one-per-frame limit")
+    }
+
+    @Test("An audio-responsive emitter scales its emission rate by the injected spectrum")
+    func audioResponsiveEmitterScalesEmissionRate() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let def = stillParticleDefinition(
+            maxCount: 100,
+            rate: 10,
+            lifetime: 100,
+            emitterAudioState: WPEParticleEmitterAudioState(mode: 1, amount: 3)
+        )
+
+        let silent = try #require(WPEParticleSystem(definition: def, device: device, seed: 0xA03))
+        silent.tick(now: 0)
+        for step in 1...10 { silent.tick(now: Double(step) / 10) }
+        #expect(silent.liveInstanceCount == 10, "no spectrum ⇒ baseline rate")
+
+        let loud = try #require(WPEParticleSystem(definition: def, device: device, seed: 0xA03))
+        loud.audioSpectrum16 = [Float](repeating: 1, count: 16)
+        loud.tick(now: 0)
+        for step in 1...10 { loud.tick(now: Double(step) / 10) }
+        // Full-scale spectrum: level 1 → rate × (1 + 1·3) = 40 births/second.
+        #expect(loud.liveInstanceCount == 40)
+    }
+
+    @Test("A muted audio emitter (mode 0) ignores the spectrum")
+    func mutedAudioEmitterIgnoresSpectrum() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let def = stillParticleDefinition(
+            maxCount: 100,
+            rate: 10,
+            lifetime: 100,
+            emitterAudioState: WPEParticleEmitterAudioState(mode: 0, amount: 3)
+        )
+        let system = try #require(WPEParticleSystem(definition: def, device: device, seed: 0xA03))
+        system.audioSpectrum16 = [Float](repeating: 1, count: 16)
+        system.tick(now: 0)
+        for step in 1...10 { system.tick(now: Double(step) / 10) }
+        #expect(system.liveInstanceCount == 10)
+    }
+
+    @Test("Emission scale follows the reference defaults, bounds, exponent and clamps")
+    func emitterAudioEmissionScaleSemantics() {
+        let half = [Float](repeating: 0.5, count: 16)
+        // Disabled or empty inputs are the neutral scale.
+        #expect(WPEParticleEmitterAudioState(mode: 0).emissionScale(spectrum16: half) == 1)
+        #expect(WPEParticleEmitterAudioState(mode: 1).emissionScale(spectrum16: []) == 1)
+        // Defaults (freq 0…15, bounds 0…1, exponent 1, amount 1): 1 + level.
+        #expect(WPEParticleEmitterAudioState(mode: 1).emissionScale(spectrum16: half) == 1.5)
+        // The authored band range picks its slice; reversed endpoints swap.
+        var spectrum = [Float](repeating: 0, count: 16)
+        spectrum[2] = 1
+        let banded = WPEParticleEmitterAudioState(mode: 1, frequencyStart: 2, frequencyEnd: 2, amount: 2)
+        #expect(banded.emissionScale(spectrum16: spectrum) == 3)
+        let reversed = WPEParticleEmitterAudioState(mode: 1, frequencyStart: 2, frequencyEnd: 0, amount: 2)
+        #expect(abs(reversed.emissionScale(spectrum16: spectrum) - (1 + 2.0 / 3)) < 1e-9)
+        // Out-of-range endpoints clamp into the 16-band array instead of trapping.
+        let clamped = WPEParticleEmitterAudioState(mode: 1, frequencyStart: -5, frequencyEnd: 99)
+        #expect(clamped.emissionScale(spectrum16: half) == 1.5)
+        // Bounds renormalize linearly (not the material path's smoothstep):
+        // level 0.5 against 0…0.5 saturates to 1.
+        let bounded = WPEParticleEmitterAudioState(mode: 1, bounds: [0, 0.5])
+        #expect(bounded.emissionScale(spectrum16: half) == 2)
+        // Exponent shapes the normalized level; amount may push the scale to 0 but never below.
+        let squared = WPEParticleEmitterAudioState(mode: 1, exponent: 2)
+        #expect(squared.emissionScale(spectrum16: half) == 1.25)
+        let damped = WPEParticleEmitterAudioState(mode: 1, amount: -3)
+        #expect(damped.emissionScale(spectrum16: [Float](repeating: 1, count: 16)) == 0)
+    }
+
+    @Test("Frame spectrum pools 64→16 by averaging channels before max-pooling")
+    func audioSpectrum16AverageChannelOrderMatters() {
+        var left = [Double](repeating: 0, count: 64)
+        var right = [Double](repeating: 0, count: 64)
+        left[0] = 1.0
+        right[1] = 0.5
+        let uniforms = WPEMetalRuntimeUniforms(
+            time: 0, daytime: 0, brightness: 1,
+            pointerPosition: SIMD2(0.5, 0.5),
+            audioSpectrumLeft: left, audioSpectrumRight: right
+        )
+        let pooled = uniforms.audioSpectrum16Average
+        #expect(pooled.count == 16)
+        // Average first: mono (0.5, 0.25, 0, 0) → max 0.5. Pooling each channel
+        // before averaging would give (1 + 0.5) / 2 = 0.75 — the wrong order.
+        #expect(pooled[0] == 0.5)
+        #expect(pooled[1...].allSatisfy { $0 == 0 })
+    }
+
+    @Test("Known audio emitter keys are consumed — no unconsumed-fields diagnostic")
+    func knownAudioEmitterKeysAreConsumed() {
+        let json: [String: Any] = [
+            "maxcount": 5,
+            "emitter": [[
+                "rate": 10,
+                "audioprocessingmode": 1,
+                "audioprocessingfrequencystart": 0,
+                "audioprocessingfrequencyend": 15,
+                "audiobounds": "0 1",
+                "audioexponent": 1,
+                "audioamount": 2
+            ]]
+        ]
+        var diagnostics: [WPESceneDiagnostic] = []
+        let def = WPEParticleDefinitionParser.parse(dictionary: json, diagnostics: &diagnostics)
+        #expect(def.emitterAudioState?.isEnabled == true)
+        #expect(!diagnostics.contains { $0.message.contains("without a runtime consumer") })
     }
 
     @Test("Emitter duration stops births while existing particles keep aging to expiry")
@@ -2477,7 +2584,8 @@ struct WPEParticleSystemTests {
         startDelay: Double = 0,
         duration: Double? = nil,
         lifetime: Double = 10,
-        originOffset: SIMD3<Double> = SIMD3(0, 0, 0)
+        originOffset: SIMD3<Double> = SIMD3(0, 0, 0),
+        emitterAudioState: WPEParticleEmitterAudioState? = nil
     ) -> WPEParticleDefinition {
         WPEParticleDefinition(
             materialRelativePath: nil,
@@ -2485,6 +2593,7 @@ struct WPEParticleSystemTests {
             rate: rate,
             startDelay: startDelay,
             duration: duration,
+            emitterAudioState: emitterAudioState,
             lifetimeMin: lifetime,
             lifetimeMax: lifetime,
             sizeMin: 1,

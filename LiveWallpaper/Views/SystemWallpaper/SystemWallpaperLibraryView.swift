@@ -235,14 +235,19 @@ struct SystemWallpaperLibraryView: View {
 
     // MARK: - Empty / unavailable
 
+    /// A labelled button, not the header's "+" menu: on an empty page a bare
+    /// glyph never says what it adds, and the picker is the only source that
+    /// works on a fresh install anyway — the other sources stay one click away
+    /// in the header menu.
     private var emptyState: some View {
         IllustratedEmptyState(
             symbol: "macwindow.on.rectangle",
             title: "Let macOS play your wallpaper",
-            message: "Videos you hand to the system keep playing with Loomscreen closed, and the lock screen changes too."
-        ) {
-            SystemWallpaperAddMenu()
-        }
+            message: "Videos you hand to the system keep playing with Loomscreen closed, and the lock screen changes too.",
+            primary: EmptyStateButtonAction("Choose Video…") {
+                SystemWallpaperVideoImport.present(publishingInto: service)
+            }
+        )
     }
 
     @ViewBuilder
@@ -283,6 +288,9 @@ struct SystemWallpaperAddMenu: View {
     @Environment(WallpaperExportService.self) private var service
     @State private var store = BookmarkStore.shared
 
+    /// Same disc as the Workshop header's actions.
+    private static let glyphSize: CGFloat = 30
+
     /// Already-published entries are dropped rather than shown disabled: a menu
     /// is a list of things you can do, not a status display.
     private var libraryVideos: [WallpaperBookmark] {
@@ -292,32 +300,59 @@ struct SystemWallpaperAddMenu: View {
         }
     }
 
+    /// The glass disc is a sibling layer behind the menu rather than a modifier
+    /// on it: `Menu` is an AppKit popup and swallows `glassEffect` applied to
+    /// the menu *and* to its label, which is why the Workshop header draws its
+    /// discs this way too.
     var body: some View {
-        Menu {
-            Button("Import from Files…", systemImage: "folder.badge.plus") { importFromFiles() }
-            if !libraryVideos.isEmpty {
-                Section("In your library") {
-                    ForEach(libraryVideos) { bookmark in
-                        Button {
-                            Task { try? await service.publish(bookmark: bookmark) }
-                        } label: {
-                            Text(verbatim: bookmark.label)
-                        }
-                    }
-                }
+        ZStack {
+            Color.clear
+                .frame(width: Self.glyphSize, height: Self.glyphSize)
+                .adaptiveGlassSurface(.circle, interactive: true)
+            Menu {
+                menuItems
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: Self.glyphSize, height: Self.glyphSize)
+                    .contentShape(Circle())
             }
-            workshopSection
-        } label: {
-            Image(systemName: "plus")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .frame(width: Self.glyphSize, height: Self.glyphSize)
         .help(Text("Add a video to System Wallpaper"))
         .accessibilityLabel(Text("Add Video"))
     }
 
-    private func importFromFiles() {
+    @ViewBuilder
+    private var menuItems: some View {
+        Button("Import from Files…", systemImage: "folder.badge.plus") {
+            SystemWallpaperVideoImport.present(publishingInto: service)
+        }
+        if !libraryVideos.isEmpty {
+            Section("In your library") {
+                ForEach(libraryVideos) { bookmark in
+                    Button {
+                        Task { try? await service.publish(bookmark: bookmark) }
+                    } label: {
+                        Text(verbatim: bookmark.label)
+                    }
+                }
+            }
+        }
+        workshopSection
+    }
+}
+
+/// Shared by the header menu and the empty state's button, which offer the same
+/// picker from two places.
+@available(macOS 26.0, *)
+enum SystemWallpaperVideoImport {
+    @MainActor
+    static func present(publishingInto service: WallpaperExportService) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = ResourceUtilities.supportedVideoContentTypes
         panel.allowsMultipleSelection = true
@@ -434,6 +469,9 @@ private struct SystemWallpaperTile: View {
                 }
             }
         }
+        // Keyed on the entry's own timestamp, not on the URL: a republish
+        // rewrites the same `<id>.jpg` path, so the URL never changes and the
+        // tile went on drawing the poster it had already loaded.
         .task(id: item.addedAt) {
             guard let thumbnailURL else { return }
             thumbnail = await SystemWallpaperThumbnails.image(for: thumbnailURL)

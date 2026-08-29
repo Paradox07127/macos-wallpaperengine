@@ -218,6 +218,14 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
         ]
     }
 
+    /// 16-band mono spectrum for audio-responsive particle emitters. Reference
+    /// order is authoritative: average L/R at 64 bins FIRST, then max-pool —
+    /// pooling each channel before averaging yields different values.
+    var audioSpectrum16Average: [Float] {
+        let mono = zip(audioSpectrumLeft, audioSpectrumRight).map { ($0 + $1) * 0.5 }
+        return Self.halve(Self.halve(mono)).map { Float($0) }
+    }
+
     /// Max-pool adjacent bins (64→32→16). Mean-pool misses WPE: oracle error
     /// 0.0 vs 0.10–0.43 on same-frame 32/16-band uniforms (3448877775).
     private static func halve(_ bins: [Double]) -> [Double] {

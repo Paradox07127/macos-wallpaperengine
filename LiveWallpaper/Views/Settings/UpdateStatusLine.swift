@@ -2,36 +2,27 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// About-page readout for Sparkle. Sparkle owns the actual update UI — this
-/// view only reports whether something is pending and offers a manual check;
-/// pressing either control hands off to Sparkle's own dialog.
-struct UpdateBannerView: View {
+/// About-page readout for Sparkle, sitting inline under the version line rather
+/// than in a card of its own — the update state is a fact about the build named
+/// directly above it, not a separate section. Sparkle owns the actual update UI;
+/// this view only reports whether something is pending and offers a manual
+/// check, and pressing either control hands off to Sparkle's own dialog.
+struct UpdateStatusLine: View {
     @State private var updater = SparkleUpdaterController.shared
 
     var body: some View {
-        GroupBox {
-            HStack(alignment: .center, spacing: 12) {
-                statusGlyph
-                    .font(.title3)
-                    .frame(width: 22)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(statusTitle)
-                        .font(.subheadline.weight(.medium))
-                    if let detail = statusDetail {
-                        Text(detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                trailingAction
+        HStack(spacing: 5) {
+            statusGlyph
+            Text(statusTitle)
+            if let detail = statusDetail {
+                Text(verbatim: "·")
+                    .foregroundStyle(.tertiary)
+                Text(detail)
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 4)
+            trailingAction
         }
-        .groupBoxStyle(ContainerGroupBoxStyle())
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     // MARK: - Status rendering
@@ -59,8 +50,8 @@ struct UpdateBannerView: View {
     private var statusTitle: String {
         if let version = updater.availableVersion {
             return String(
-                localized: "\(BundleIdentity.productDisplayName) \(version) available",
-                comment: "About panel update status when a release is available. Placeholders are product name and version."
+                localized: "Version \(version) available",
+                comment: "About page update status when a release is available. Placeholder is the new version."
             )
         }
         guard hasCheckedBefore else {
@@ -70,12 +61,15 @@ struct UpdateBannerView: View {
             )
         }
         return String(
-            localized: "\(BundleIdentity.productDisplayName) is up to date",
-            comment: "About panel update status when current. Placeholder is the product name."
+            localized: "Up to date",
+            comment: "About page update status when current, shown inline under the version line."
         )
     }
 
+    /// When an update is waiting, the useful second fact is what it is, not when
+    /// we last looked.
     private var statusDetail: String? {
+        guard updater.availableVersion == nil else { return nil }
         guard let date = updater.lastUpdateCheckDate else {
             return String(localized: "Not checked yet", comment: "About panel update detail when no check has run.")
         }
@@ -93,7 +87,8 @@ struct UpdateBannerView: View {
                 updater.checkForUpdates()
             }
             .buttonStyle(.bordered)
-            .controlSize(.small)
+            .controlSize(.mini)
+            .padding(.leading, 2)
         } else {
             Button {
                 updater.checkForUpdates()

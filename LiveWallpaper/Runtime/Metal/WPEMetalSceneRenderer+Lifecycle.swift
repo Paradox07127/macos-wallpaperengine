@@ -695,6 +695,75 @@ extension WPEMetalSceneRenderer {
         }
     }
 
+    /// A pass consumes the system-audio spectrum when its shader text reads
+    /// `g_AudioSpectrum*` — matched case-insensitively, because the runtime
+    /// resolves frame globals through `canonicalNameByLowercased`. With every
+    /// AUDIOPROCESSING combo at 0 the guarded branches are compiled out (the
+    /// preprocessor keeps disabled `#if` branches in the retained source), but
+    /// a read outside those guards is still live.
+    static func pipelineRequiresAudioCapture(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
+        pipeline.layers.contains { layer in
+            layer.passes.contains { prepared in
+                guard let shader = prepared.shader else { return false }
+                let sources = [shader.vertexSource.lowercased(), shader.fragmentSource.lowercased()]
+                guard sources.contains(where: { $0.contains("g_audiospectrum") }) else { return false }
+                let audioCombos = prepared.comboValues.filter { $0.key.uppercased() == "AUDIOPROCESSING" }
+                if audioCombos.isEmpty || audioCombos.values.contains(where: { $0 > 0 }) {
+                    return true
+                }
+                return sources.contains(where: Self.mentionsAudioOutsideAudioGuards)
+            }
+        }
+    }
+
+    /// Lowercased source in. Walks `#if` nesting: a `g_audiospectrum` mention
+    /// counts only when an enclosing conditional is provably compiled out at
+    /// combo 0. Biased toward `true` — the `#else` arm of an audio guard,
+    /// `#ifdef` (the prelude always #defines the combo), and every condition
+    /// that is not exactly `AUDIOPROCESSING` are all treated as live.
+    private static func mentionsAudioOutsideAudioGuards(_ loweredSource: String) -> Bool {
+        var guardStack: [Bool] = []
+        for rawLine in loweredSource.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.drop(while: { $0 == " " || $0 == "\t" })
+            var handled = false
+            if line.first == "#" {
+                let body = line.dropFirst().drop(while: { $0 == " " || $0 == "\t" })
+                let directive = body.prefix(while: { $0.isLetter })
+                let condition = body.dropFirst(directive.count)
+                handled = true
+                switch directive {
+                case "if":
+                    guardStack.append(Self.isPlainAudioProcessingCondition(condition))
+                case "ifdef", "ifndef":
+                    guardStack.append(false)
+                case "elif":
+                    if !guardStack.isEmpty {
+                        guardStack[guardStack.count - 1] = Self.isPlainAudioProcessingCondition(condition)
+                    }
+                case "else":
+                    if !guardStack.isEmpty { guardStack[guardStack.count - 1] = false }
+                case "endif":
+                    if !guardStack.isEmpty { guardStack.removeLast() }
+                default:
+                    handled = false
+                }
+            }
+            if !handled, line.contains("g_audiospectrum"), !guardStack.contains(true) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Only the exact condition `AUDIOPROCESSING` (a trailing `//` comment
+    /// aside) is provably compiled out at combo 0; `#if FOO /* audio… */`,
+    /// `!AUDIOPROCESSING`, `== 0`, and compound conditions stay live-biased.
+    private static func isPlainAudioProcessingCondition(_ condition: Substring) -> Bool {
+        var text = condition
+        if let comment = text.range(of: "//") { text = text[..<comment.lowerBound] }
+        return text.trimmingCharacters(in: .whitespaces) == "audioprocessing"
+    }
+
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         currentProfile = profile
         dynamicTextureSources.values.forEach { $0.applyPerformanceProfile(profile) }

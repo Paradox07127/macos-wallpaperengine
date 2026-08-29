@@ -257,10 +257,10 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(root.contains("#if !LITE_BUILD\n    @State var audioCaptureState"))
         #expect(audio.contains("#if !LITE_BUILD\n        Section"))
         #expect(performance.contains("#if !LITE_BUILD\n            SettingRow("))
-        // The update banner is deliberately NOT SKU-gated: both SKUs ship from
+        // The update readout is deliberately NOT SKU-gated: both SKUs ship from
         // the same GitHub release, so pinning the unwrapped call site keeps a
-        // `#if` from creeping back in.
-        #expect(about.contains("aboutHero\n                UpdateBannerView()"))
+        // `#if` from creeping back in. It lives inline under the version line.
+        #expect(about.contains("UpdateStatusLine()\n                    .padding(.top, 2)"))
         #expect(!about.contains("LITE_BUILD"))
         #expect(detail.contains("if featureCatalog.isEnabled(.wpeImport)"))
         #expect(detail.contains("if featureCatalog.isEnabled(.workshopOnline)"))
