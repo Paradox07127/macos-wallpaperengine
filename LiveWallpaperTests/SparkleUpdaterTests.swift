@@ -8,7 +8,7 @@ import Testing
 @Suite("Sparkle update surfaces share one updater")
 struct SparkleUpdaterOwnershipTests {
     private static let surfaces = [
-        "LiveWallpaper/Views/Settings/UpdateBannerView.swift",
+        "LiveWallpaper/Views/Settings/UpdateStatusLine.swift",
         "LiveWallpaper/Views/MenuBarContent.swift",
     ]
 
@@ -33,16 +33,19 @@ struct SparkleUpdaterOwnershipTests {
         #expect(source.contains("updater.checkForUpdates()"))
     }
 
-    /// The whole point of wiring Sparkle through a gentle-reminder delegate: a
-    /// scheduled check must never throw a dialog over a running wallpaper. If
-    /// this regresses, updates start interrupting the user again.
-    @Test("Scheduled checks stay silent and only light up the menu bar")
-    func scheduledChecksDoNotShowDialogs() throws {
+    /// A found update has to reach the user twice over: Sparkle's own alert, and
+    /// the menu bar badge on top of it. 0.6.0 suppressed the alert and shipped
+    /// the badge alone, which users missed — if the `true` below regresses to
+    /// `false`, that is what comes back.
+    @Test("A scheduled check shows Sparkle's alert and lights the menu bar")
+    func scheduledChecksShowSparkleAlert() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Services/SparkleUpdaterController.swift")
         #expect(source.contains("supportsGentleScheduledUpdateReminders: Bool { true }"))
         #expect(source.contains("standardUserDriverShouldHandleShowingScheduledUpdate"))
-        // The delegate method's body is a bare `false`.
-        #expect(source.contains("    ) -> Bool {\n        false\n    }"))
+        // The delegate method's body is a bare `true`.
+        #expect(source.contains("    ) -> Bool {\n        true\n    }"))
+        // The badge still tracks what Sparkle found.
+        #expect(source.contains("onUpdateFound?(version)"))
     }
 
     /// Sparkle refuses an update whose signature does not verify against this

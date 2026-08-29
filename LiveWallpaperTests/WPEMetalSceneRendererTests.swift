@@ -1487,6 +1487,281 @@ struct WPEMetalSceneRendererTests {
         #expect(renderer.debugAudioStartupPending == false)
     }
 
+    @Test("A shader-only g_AudioSpectrum scene demands system audio capture")
+    func shaderOnlyAudioSpectrumSceneDemandsCapture() async throws {
+        // GitHub #133: most workshop scenes never set `supportsaudioprocessing`
+        // and have no scripts — the audio response lives in shader uniforms.
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.audioSpectrumEffectScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device
+        )
+        defer { renderer.cleanup() }
+
+        try await renderer.load()
+
+        #expect(renderer.sceneSupportsAudioProcessing == true)
+    }
+
+    @Test("An audio-free scene keeps the capture demand off")
+    func audioFreeSceneKeepsCaptureDemandOff() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device
+        )
+        defer { renderer.cleanup() }
+
+        try await renderer.load()
+
+        #expect(renderer.sceneSupportsAudioProcessing == false)
+    }
+
+    @Test("A scene whose only audio consumer is a particle emitter demands capture")
+    func audioResponsiveParticleSceneDemandsCapture() async throws {
+        // No audio shader, no script, no authored flag — the emitter's
+        // audioprocessingmode is the sole reason capture must run.
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.audioResponsiveParticleScene()
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device
+        )
+        defer { renderer.cleanup() }
+
+        try await renderer.load()
+
+        #expect(renderer.particleSystems.count == 1,
+                "fixture emitter must register — a skipped system would fake the flag result")
+        #expect(renderer.sceneSupportsAudioProcessing == true)
+    }
+
+    @Test("A particle emitter without audio fields keeps the capture demand off")
+    func mutedParticleSceneKeepsCaptureDemandOff() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.audioResponsiveParticleScene(audioFields: false)
+        defer { fixture.cleanup() }
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            frame: CGRect(x: 0, y: 0, width: 64, height: 64),
+            device: device
+        )
+        defer { renderer.cleanup() }
+
+        try await renderer.load()
+
+        #expect(renderer.particleSystems.count == 1)
+        #expect(renderer.sceneSupportsAudioProcessing == false)
+    }
+
+    @Test("Fragment g_AudioSpectrum without an AUDIOPROCESSING combo requires capture")
+    func audioCapturePredicateFragmentMentionNoCombo() {
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: "uniform float g_AudioSpectrum32Left[32];\nvoid main() {}"
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("Vertex g_AudioSpectrum without an AUDIOPROCESSING combo requires capture")
+    func audioCapturePredicateVertexMentionNoCombo() {
+        let pipeline = Self.audioPredicatePipeline(
+            vertexSource: "uniform float g_AudioSpectrum16Left[16];\nvoid main() {}"
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("AUDIOPROCESSING == 0 compiles the audio branch out — no capture")
+    func audioCapturePredicateComboZeroDisables() {
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: "#if AUDIOPROCESSING\nuniform float g_AudioSpectrum32Left[32];\n#endif\nvoid main() {}",
+            comboValues: ["AUDIOPROCESSING": 0]
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == false)
+    }
+
+    @Test("A lowercase audioprocessing combo > 0 still requires capture")
+    func audioCapturePredicateLowercaseComboEnabled() {
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: "uniform float g_AudioSpectrum32Left[32];\nvoid main() {}",
+            comboValues: ["audioprocessing": 2]
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("AUDIOPROCESSING == 0 does not veto a read outside the guard")
+    func audioCapturePredicateComboZeroUnguardedReadStillCaptures() {
+        // The [COMBO] annotation alone injects AUDIOPROCESSING=0 into comboValues;
+        // the unguarded read below stays compiled in regardless.
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: """
+            // [COMBO] {"combo":"AUDIOPROCESSING","default":0}
+            uniform float g_AudioSpectrum32Left[32];
+            void main() { gl_FragColor = vec4(g_AudioSpectrum32Left[0]); }
+            """,
+            comboValues: ["AUDIOPROCESSING": 0]
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("The #else arm of an audio guard is live when the combo is 0")
+    func audioCapturePredicateElseBranchLiveAtComboZero() {
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: """
+            #if AUDIOPROCESSING
+            void main() { gl_FragColor = vec4(1.0); }
+            #else
+            uniform float g_AudioSpectrum32Left[32];
+            void main() { gl_FragColor = vec4(g_AudioSpectrum32Left[0]); }
+            #endif
+            """,
+            comboValues: ["AUDIOPROCESSING": 0]
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("A lowercase g_audiospectrum spelling still requires capture")
+    func audioCapturePredicateLowercaseSpectrumSpelling() {
+        // The runtime resolves frame globals case-insensitively
+        // (canonicalNameByLowercased), so this spelling receives live data.
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: "uniform float g_audiospectrum32left[32];\nvoid main() {}"
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("#ifdef AUDIOPROCESSING is live at combo 0 — the macro is always defined")
+    func audioCapturePredicateIfdefIsLiveAtComboZero() {
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: """
+            #ifdef AUDIOPROCESSING
+            uniform float g_AudioSpectrum32Left[32];
+            void main() { gl_FragColor = vec4(g_AudioSpectrum32Left[0]); }
+            #endif
+            """,
+            comboValues: ["AUDIOPROCESSING": 0]
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("A comment naming AUDIOPROCESSING in a foreign #if is not a guard")
+    func audioCapturePredicateCommentInForeignConditionIsNotAGuard() {
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: """
+            #if FOO /* AUDIOPROCESSING */
+            uniform float g_AudioSpectrum32Left[32];
+            void main() { gl_FragColor = vec4(g_AudioSpectrum32Left[0]); }
+            #endif
+            """,
+            comboValues: ["AUDIOPROCESSING": 0]
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("Whitespace after # does not unbalance the guard walk")
+    func audioCapturePredicateWhitespaceEndifKeepsLaterReadLive() {
+        // `# endif` must pop the guard, or the unguarded read below is
+        // wrongly judged compiled-out.
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: """
+            #if AUDIOPROCESSING
+            uniform float unused;
+            # endif
+            uniform float g_AudioSpectrum32Left[32];
+            void main() { gl_FragColor = vec4(g_AudioSpectrum32Left[0]); }
+            """,
+            comboValues: ["AUDIOPROCESSING": 0]
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == true)
+    }
+
+    @Test("A builtin pass without shader source never requires capture")
+    func audioCapturePredicateNilShader() {
+        let pipeline = Self.audioPredicatePipeline(shader: nil)
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == false)
+    }
+
+    @Test("An audio-free shader never requires capture")
+    func audioCapturePredicateNoAudioAnywhere() {
+        let pipeline = Self.audioPredicatePipeline(
+            fragmentSource: "uniform float g_Time;\nvoid main() {}"
+        )
+        #expect(WPEMetalSceneRenderer.pipelineRequiresAudioCapture(pipeline) == false)
+    }
+
+    private static func audioPredicatePipeline(
+        vertexSource: String = "void main() {}",
+        fragmentSource: String = "void main() {}",
+        comboValues: [String: Int] = [:]
+    ) -> WPEPreparedRenderPipeline {
+        audioPredicatePipeline(
+            shader: WPEShaderProgram(
+                name: "effects/probe",
+                vertexSource: vertexSource,
+                fragmentSource: fragmentSource,
+                isBuiltin: false
+            ),
+            comboValues: comboValues
+        )
+    }
+
+    private static func audioPredicatePipeline(
+        shader: WPEShaderProgram?,
+        comboValues: [String: Int] = [:]
+    ) -> WPEPreparedRenderPipeline {
+        let pass = WPERenderPass(
+            id: "1.0",
+            phase: .effect(file: "effects/probe/effect.json"),
+            shader: "effects/probe",
+            source: .previous,
+            target: .scene,
+            textures: [:],
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            blending: "normal",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+        let prepared = WPEPreparedRenderPass(
+            pass: pass,
+            shader: shader,
+            textureBindings: [:],
+            comboValues: comboValues,
+            uniformValues: [:]
+        )
+        let layer = WPERenderLayer(
+            objectID: "1",
+            objectName: "Probe",
+            imagePath: "materials/base.png",
+            materialPath: nil,
+            geometry: .identity,
+            compositeA: "a",
+            compositeB: "b",
+            localFBOs: [],
+            passes: [pass]
+        )
+        return WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(graphLayer: layer, passes: [prepared])
+        ])
+    }
+
     private static func sceneDebugLog(for workshopID: String, containing marker: String) async throws -> String {
         let root = try #require(WPESceneDebugArtifacts.rootURL)
         let fm = FileManager.default
@@ -1920,6 +2195,128 @@ private struct MetalSceneFixture {
             { "id": "img", "name": "Img", "type": "image", "image": "models/base.json", "origin": "0.5 0.5 0", "scale": "1 1 1", "alpha": 1 },
             { "id": "snd", "name": "Loop", "type": "sound", "sound": ["sounds/loop.mp3"] }
           ]
+        }
+        """
+        try Data(scene.utf8).write(to: root.appendingPathComponent("scene.json"))
+        return MetalSceneFixture(
+            root: root,
+            descriptor: SceneDescriptor(
+                workshopID: UUID().uuidString,
+                cacheRelativePath: "wpe-cache/test",
+                entryFile: "scene.json",
+                capabilityTier: .imageOnly
+            ),
+            dependencyRoot: nil
+        )
+    }
+
+    static func audioSpectrumEffectScene() throws -> MetalSceneFixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEMetalSceneRenderer-\(UUID().uuidString)", isDirectory: true)
+        let models = root.appendingPathComponent("models", isDirectory: true)
+        let materials = root.appendingPathComponent("materials", isDirectory: true)
+        let effectMaterials = root.appendingPathComponent("materials/effects", isDirectory: true)
+        let effects = root.appendingPathComponent("effects/audioprobe", isDirectory: true)
+        let shaders = root.appendingPathComponent("shaders/effects", isDirectory: true)
+        for directory in [models, materials, effectMaterials, effects, shaders] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try writePNG(at: materials.appendingPathComponent("base.png"), color: CGColor(red: 0, green: 1, blue: 0, alpha: 1))
+        try Data(#"{ "material": "materials/base.json" }"#.utf8)
+            .write(to: models.appendingPathComponent("base.json"))
+        try Data(#"{ "passes": [{ "shader": "genericimage2", "textures": ["materials/base.png"] }] }"#.utf8)
+            .write(to: materials.appendingPathComponent("base.json"))
+        try Data(#"{ "passes": [{ "material": "materials/effects/audioprobe.json" }] }"#.utf8)
+            .write(to: effects.appendingPathComponent("effect.json"))
+        try Data(#"{ "passes": [{ "shader": "effects/audioprobe" }] }"#.utf8)
+            .write(to: effectMaterials.appendingPathComponent("audioprobe.json"))
+        let vertex = """
+        attribute vec3 a_Position;
+        void main() { gl_Position = vec4(a_Position, 1.0); }
+        """
+        try Data(vertex.utf8).write(to: shaders.appendingPathComponent("audioprobe.vert"))
+        let fragment = """
+        uniform float g_AudioSpectrum32Left[32];
+        void main() { gl_FragColor = vec4(g_AudioSpectrum32Left[0]); }
+        """
+        try Data(fragment.utf8).write(to: shaders.appendingPathComponent("audioprobe.frag"))
+        let scene = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 64, "height": 64, "auto": true } },
+          "objects": [{
+            "id": "img",
+            "name": "Img",
+            "type": "image",
+            "image": "models/base.json",
+            "origin": "0.5 0.5 0",
+            "scale": "1 1 1",
+            "alpha": 1,
+            "effects": [{ "id": 1, "name": "AudioProbe", "file": "effects/audioprobe/effect.json", "visible": true }]
+          }]
+        }
+        """
+        try Data(scene.utf8).write(to: root.appendingPathComponent("scene.json"))
+        return MetalSceneFixture(
+            root: root,
+            descriptor: SceneDescriptor(
+                workshopID: UUID().uuidString,
+                cacheRelativePath: "wpe-cache/test",
+                entryFile: "scene.json",
+                capabilityTier: .imageOnly
+            ),
+            dependencyRoot: nil
+        )
+    }
+
+    /// One drawable emitter whose only audio hookup is the emitter's own
+    /// `audioprocessing*` fields — no audio shader, script, or authored flag.
+    static func audioResponsiveParticleScene(audioFields: Bool = true) throws -> MetalSceneFixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEMetalSceneRenderer-\(UUID().uuidString)", isDirectory: true)
+        let materials = root.appendingPathComponent("materials", isDirectory: true)
+        let particles = root.appendingPathComponent("particles", isDirectory: true)
+        for directory in [materials, particles] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try writePNG(at: materials.appendingPathComponent("spark.png"), color: CGColor(red: 1, green: 1, blue: 0, alpha: 1))
+        try Data(#"{ "passes": [{ "shader": "genericparticle", "textures": ["materials/spark.png"] }] }"#.utf8)
+            .write(to: materials.appendingPathComponent("spark.json"))
+        let audioKeys = audioFields
+            ? #""audioprocessingmode": 1, "audioprocessingfrequencystart": 0, "audioprocessingfrequencyend": 15, "audioamount": 2,"#
+            : ""
+        let particle = """
+        {
+          "material": "materials/spark.json",
+          "maxcount": 20,
+          "emitter": [{
+            "name": "sphererandom",
+            \(audioKeys)
+            "rate": 10,
+            "origin": "0 0 0"
+          }],
+          "initializer": [{ "name": "lifetimerandom", "min": 1, "max": 1 }]
+        }
+        """
+        try Data(particle.utf8).write(to: particles.appendingPathComponent("audio.json"))
+        let scene = """
+        {
+          "camera": { "center": "0 0 0" },
+          "general": { "orthogonalprojection": { "width": 64, "height": 64, "auto": true } },
+          "objects": [{
+            "id": "solid",
+            "name": "Solid",
+            "type": "image",
+            "image": "models/util/solidlayer.json",
+            "color": "1 0 0",
+            "alpha": 1
+          }, {
+            "id": "pfx",
+            "name": "Audio Particles",
+            "particle": "particles/audio.json",
+            "origin": "0.5 0.5 0",
+            "visible": true
+          }]
         }
         """
         try Data(scene.utf8).write(to: root.appendingPathComponent("scene.json"))

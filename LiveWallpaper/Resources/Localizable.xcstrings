@@ -6608,6 +6608,35 @@
         }
       }
     },
+    "Browsing without an API key" : {
+      "comment" : "Workshop header stat when no Steam Web API key is set and Browse uses Valve's public search page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browsing without an API key"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API キーなしで閲覧中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在无 API key 浏览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在無 API key 瀏覽"
+          }
+        }
+      }
+    },
     "Building render graph" : {
       "comment" : "Scene load progress: building the render graph.",
       "localizations" : {
@@ -11197,6 +11226,35 @@
         }
       }
     },
+    "Couldn't download: %@" : {
+      "comment" : "Workshop toast subtitle listing the Workshop IDs of linked items that failed to download.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't download: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードできませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法下载：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法下載：%@"
+          }
+        }
+      }
+    },
     "Couldn't export the layout" : {
       "comment" : "Alert title when a monitor layout file fails to export.",
       "localizations" : {
@@ -11297,6 +11355,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法載入預設。"
+          }
+        }
+      }
+    },
+    "Couldn’t load results from the Steam Workshop page." : {
+      "comment" : "Workshop Browse error shown when the key-free public search page fails to load.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load results from the Steam Workshop page."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam ワークショップのページから結果を読み込めませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法从 Steam 创意工坊页面加载结果。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法從 Steam 創意工坊頁面載入結果。"
           }
         }
       }
@@ -14455,6 +14542,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已連結下載的資源。無法檢查 Steam 更新。"
+          }
+        }
+      }
+    },
+    "Downloaded the other Workshop items this wallpaper needs." : {
+      "comment" : "Workshop toast subtitle after the linked Workshop items were downloaded.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded the other Workshop items this wallpaper needs."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この壁紙が必要とする他のワークショップアイテムをダウンロードしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下载此壁纸所需的其他创意工坊项目。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下載此桌布所需的其他創意工坊項目。"
+          }
+        }
+      }
+    },
+    "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again." : {
+      "comment" : "Workshop toast subtitle when the linked items arrived but re-reading the wallpaper failed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードは完了しましたが、この壁紙をまだ読み込めません。もう一度ダウンロードしてみてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下载,但仍无法读取此壁纸。请重新下载一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下載,但仍無法讀取此桌布。請重新下載一次。"
           }
         }
       }
@@ -31406,6 +31551,35 @@
         }
       }
     },
+    "Paste a Workshop URL to install an item directly, without searching." : {
+      "comment" : "Workshop Browse fallback hint next to the “Or download by link” button.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste a Workshop URL to install an item directly, without searching."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索せずに、ワークショップの URL を貼り付けて直接インストールできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "粘贴创意工坊链接可直接安装,无需搜索。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "貼上創意工坊連結可直接安裝,無需搜尋。"
+          }
+        }
+      }
+    },
     "Paste a Workshop URL to preview it, or set up online browsing and downloading." : {
       "comment" : "Workshop onboarding sheet description.",
       "localizations" : {
@@ -36807,6 +36981,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完整場景支援所必需 —— 下載或連結一個安裝"
+          }
+        }
+      }
+    },
+    "Required items added" : {
+      "comment" : "Workshop toast headline when a wallpaper's linked Workshop items were downloaded too.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Required items added"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必要なアイテムを追加しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已补齐所需项目"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已補齊所需項目"
+          }
+        }
+      }
+    },
+    "Required items missing" : {
+      "comment" : "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Required items missing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必要なアイテムが不足しています"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仍缺少所需项目"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仍缺少所需項目"
           }
         }
       }
@@ -45403,6 +45635,35 @@
         }
       }
     },
+    "Stopped at the download limit for linked items. Still missing: %@" : {
+      "comment" : "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; the placeholder lists the remaining Workshop IDs.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped at the download limit for linked items. Still missing: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "関連アイテムのダウンロード上限に達しました。不足: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关联项目已达下载上限。仍缺少：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關聯項目已達下載上限。仍缺少：%@"
+          }
+        }
+      }
+    },
     "Storage" : {
       "localizations" : {
         "ja" : {
@@ -50463,6 +50724,35 @@
         }
       }
     },
+    "Up to date" : {
+      "comment" : "About page update status when current, shown inline under the version line.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to date"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已是最新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已是最新"
+          }
+        }
+      }
+    },
     "Update" : {
       "comment" : "A label for a button that renames a bookmark.",
       "isCommentAutoGenerated" : true,
@@ -51321,6 +51611,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "版本 %@（%@）"
+          }
+        }
+      }
+    },
+    "Version %@ available" : {
+      "comment" : "About page update status when a release is available. Placeholder is the new version.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@ available"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン %@ が利用可能"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有新版本 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有新版本 %@"
           }
         }
       }
@@ -55108,267 +55427,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 工作階段已過期。請在終端機重新登入後再檢查。"
-          }
-        }
-      }
-    },
-    "Required items added" : {
-      "comment" : "Workshop toast headline when a wallpaper's linked Workshop items were downloaded too.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Required items added"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "必要なアイテムを追加しました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已补齐所需项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已補齊所需項目"
-          }
-        }
-      }
-    },
-    "Downloaded the other Workshop items this wallpaper needs." : {
-      "comment" : "Workshop toast subtitle after the linked Workshop items were downloaded.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloaded the other Workshop items this wallpaper needs."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この壁紙が必要とする他のワークショップアイテムをダウンロードしました。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下载此壁纸所需的其他创意工坊项目。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下載此桌布所需的其他創意工坊項目。"
-          }
-        }
-      }
-    },
-    "Required items missing" : {
-      "comment" : "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Required items missing"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "必要なアイテムが不足しています"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仍缺少所需项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仍缺少所需項目"
-          }
-        }
-      }
-    },
-    "Couldn't download: %@" : {
-      "comment" : "Workshop toast subtitle listing the Workshop IDs of linked items that failed to download; %@ is the ID list.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't download: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードできませんでした: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法下载：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法下載：%@"
-          }
-        }
-      }
-    },
-    "Stopped at the download limit for linked items. Still missing: %@" : {
-      "comment" : "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; %@ lists the remaining Workshop IDs.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stopped at the download limit for linked items. Still missing: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "関連アイテムのダウンロード上限に達しました。不足: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关联项目已达下载上限。仍缺少：%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關聯項目已達下載上限。仍缺少：%@"
-          }
-        }
-      }
-    },
-    "Couldn’t load results from the Steam Workshop page." : {
-      "comment" : "Workshop Browse error shown when the key-free public search page fails to load.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn’t load results from the Steam Workshop page."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam ワークショップのページから結果を読み込めませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法从 Steam 创意工坊页面加载结果。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法從 Steam 創意工坊頁面載入結果。"
-          }
-        }
-      }
-    },
-    "Paste a Workshop URL to install an item directly, without searching." : {
-      "comment" : "Workshop Browse fallback hint next to the “Or download by link” button.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Paste a Workshop URL to install an item directly, without searching."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "検索せずに、ワークショップの URL を貼り付けて直接インストールできます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "粘贴创意工坊链接可直接安装,无需搜索。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "貼上創意工坊連結可直接安裝,無需搜尋。"
-          }
-        }
-      }
-    },
-    "Browsing without an API key" : {
-      "comment" : "Workshop header stat when no Steam Web API key is set and Browse uses Valve's public search page.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browsing without an API key"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "API キーなしで閲覧中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在无 API key 浏览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在無 API key 瀏覽"
-          }
-        }
-      }
-    },
-    "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again." : {
-      "comment" : "Workshop toast subtitle when the linked items arrived but re-reading the wallpaper failed.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードは完了しましたが、この壁紙をまだ読み込めません。もう一度ダウンロードしてみてください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下载,但仍无法读取此壁纸。请重新下载一次。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下載,但仍無法讀取此桌布。請重新下載一次。"
           }
         }
       }

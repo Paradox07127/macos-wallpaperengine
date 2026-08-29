@@ -489,9 +489,9 @@ public indirect enum WPEParticleRawJSONValue: Equatable, Sendable {
 
 /// Authored emitter audio state. The two known naming families are exposed as
 /// typed projections, while every `audio*` field is also retained verbatim in
-/// `rawFields`. Nothing in the particle runtime consumes this state yet: the
-/// workshop keys and the reference-renderer keys disagree, so mapping either
-/// family onto the macOS spectrum broker requires a Windows rate trace first.
+/// `rawFields`. The typed fields drive `emissionScale(spectrum16:)` — an
+/// emission-rate multiplier per the reference renderer (waywallen
+/// ParticleEmitter.cpp `AudioResponseScale`, semantics only).
 public struct WPEParticleEmitterAudioState: Equatable, Sendable {
     public let mode: Int?
     public let frequencyStart: Double?
@@ -517,6 +517,35 @@ public struct WPEParticleEmitterAudioState: Equatable, Sendable {
         self.exponent = exponent
         self.amount = amount
         self.rawFields = rawFields
+    }
+
+    /// `audioprocessingmode != 0` is the only enable gate (reference parser:
+    /// `.enable = wpe.audioprocessingmode != u32()`).
+    public var isEnabled: Bool { (mode ?? 0) != 0 }
+
+    /// Emission-rate multiplier from a 16-band mono spectrum. Reference
+    /// semantics: mean of the clamped `[frequencyStart, frequencyEnd]` band
+    /// range (defaults 0…15), linearly normalized against `bounds` (defaults
+    /// 0…1 — NOT the material path's smoothstep), raised to
+    /// `max(0.001, exponent)`, then `max(0, 1 + level·amount)`. Silence ⇒ 1.
+    public func emissionScale(spectrum16: [Float]) -> Double {
+        guard isEnabled, !spectrum16.isEmpty else { return 1 }
+        let maxIndex = spectrum16.count - 1
+        func bandIndex(_ value: Double) -> Int {
+            min(max(Int(value.rounded()), 0), maxIndex)
+        }
+        var first = bandIndex(frequencyStart ?? 0)
+        var last = bandIndex(frequencyEnd ?? Double(maxIndex))
+        if last < first { swap(&first, &last) }
+        var level = 0.0
+        for index in first...last { level += Double(max(0, spectrum16[index])) }
+        level /= Double(last - first + 1)
+        let low = min(bounds?.first ?? 0, bounds?.dropFirst().first ?? 1)
+        let high = max(bounds?.first ?? 0, bounds?.dropFirst().first ?? 1)
+        if high > low { level = (level - low) / (high - low) }
+        level = min(max(level, 0), 1)
+        level = pow(level, max(0.001, exponent ?? 1))
+        return max(0, 1 + level * (amount ?? 1))
     }
 }
 
@@ -565,7 +594,8 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     /// Authored emitter `flags`, preserved as an opaque integer. In particular,
     /// bit 0 is NOT interpreted as one-per-frame without Windows-side evidence.
     public let emitterFlagsRaw: Int?
-    /// Authored `audio*` emitter fields, preserved and diagnosed but not consumed.
+    /// Authored `audio*` emitter fields; `emissionScale(spectrum16:)` drives
+    /// the runtime's audio-reactive emission rate.
     public let emitterAudioState: WPEParticleEmitterAudioState?
     public let lifetimeMin: Double
     public let lifetimeMax: Double
@@ -1140,10 +1170,15 @@ public enum WPEParticleDefinitionParser {
         }
         let emitterAudioState = firstEmitter.flatMap(Self.parseEmitterAudioState)
         if let emitterAudioState {
-            diagnostics.append(.init(
-                severity: .info,
-                message: "Particle emitter audio fields [\(emitterAudioState.rawFields.keys.sorted().joined(separator: ", "))] were preserved without a runtime consumer"
-            ))
+            let unconsumed = emitterAudioState.rawFields.keys
+                .filter { !Self.consumedEmitterAudioKeys.contains($0.lowercased()) }
+                .sorted()
+            if !unconsumed.isEmpty {
+                diagnostics.append(.init(
+                    severity: .info,
+                    message: "Particle emitter audio fields [\(unconsumed.joined(separator: ", "))] were preserved without a runtime consumer"
+                ))
+            }
         }
 
         var rate: Double = 0
@@ -1559,6 +1594,16 @@ public enum WPEParticleDefinitionParser {
         if let v = value as? String { return Int(v) }
         return nil
     }
+
+    /// Both key families feeding `emissionScale`; anything else in `rawFields`
+    /// is preserved but unconsumed and gets the parse diagnostic.
+    private static let consumedEmitterAudioKeys: Set<String> = [
+        "audioprocessingmode",
+        "audioprocessingfrequencystart", "audioprocessingfrequencyend", "audiofrequency",
+        "audioprocessingbounds", "audiobounds",
+        "audioprocessingexponent", "audioexponent",
+        "audioamount"
+    ]
 
     private static func parseEmitterAudioState(
         _ emitter: [String: Any]

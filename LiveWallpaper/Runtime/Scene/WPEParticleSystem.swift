@@ -241,6 +241,10 @@ final class WPEParticleSystem {
     var groupOpacityMask: MTLTexture?
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
     var pointerCentered: SIMD2<Float>?
+    /// 16-band mono spectrum for this frame (renderer-set); nil ⇒ silence ⇒ scale 1.
+    var audioSpectrum16: [Float]?
+
+    var isAudioResponsive: Bool { definition.emitterAudioState?.isEnabled == true }
 
     weak var followParent: WPEParticleSystem? {
         didSet { followParent?.beginRecordingSpawnEvents() }
@@ -1173,7 +1177,13 @@ final class WPEParticleSystem {
                 }
             }
             if isWithinDuration, definition.rate > 0 {
-                spawnAccumulator += Double(dt) * definition.rate
+                // Audio response scales the continuous rate only — bursts stay
+                // authored-size (reference: AudioResponseScale multiplies emit_speed).
+                var rate = definition.rate
+                if let audioState = definition.emitterAudioState, let spectrum = audioSpectrum16 {
+                    rate *= audioState.emissionScale(spectrum16: spectrum)
+                }
+                spawnAccumulator += Double(dt) * rate
                 while spawnAccumulator >= 1 {
                     spawnAccumulator -= 1
                     guard let slot = nextFreeSlot() else { break }

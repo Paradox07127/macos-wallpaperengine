@@ -206,7 +206,10 @@ extension WPEMetalSceneRenderer {
                 followPointerIsLive: frameContext.followPointerIsLive,
                 pointer: frameContext.pointer,
                 liveTransforms: liveTransforms,
-                frameSlot: frameSubmission.slot
+                frameSlot: frameSubmission.slot,
+                audioSpectrum16: particleSystems.contains(where: \.isAudioResponsive)
+                    ? uniforms.audioSpectrum16Average
+                    : nil
             )
         }
         // Fail-close must decide commit BEFORE present is encoded: a denial
@@ -505,7 +508,8 @@ extension WPEMetalSceneRenderer {
         followPointerIsLive: Bool,
         pointer: SIMD2<Double>,
         liveTransforms: LiveScriptTransforms,
-        frameSlot: Int
+        frameSlot: Int,
+        audioSpectrum16: [Float]? = nil
     ) {
         guard !particleSystems.isEmpty else { return }
         // Cursor in the centered render frame (Y-up), or nil when Follow
@@ -525,6 +529,7 @@ extension WPEMetalSceneRenderer {
         // is already this-frame-fresh when its event-follow child ticks.
         for system in particleSystems {
             system.pointerCentered = particlePointer
+            if system.isAudioResponsive { system.audioSpectrum16 = audioSpectrum16 }
             Self.injectFollowControlPoint(into: system)
             system.tick(now: time, frameSlot: frameSlot)
         }

@@ -4,12 +4,11 @@ import Sparkle
 
 /// Owns the one Sparkle updater for the app.
 ///
-/// Sparkle would normally throw its own alert on screen the moment a scheduled
-/// check finds something. This app deliberately opts into "gentle reminders"
-/// instead: the scheduled check stays silent and only lights up the menu bar
-/// button, so a wallpaper that is running full-screen is never interrupted by a
-/// dialog the user did not ask for. Clicking that button hands control back to
-/// Sparkle's standard UI.
+/// A scheduled check that finds something gets Sparkle's standard alert — its
+/// default behaviour — because the menu bar badge alone is too easy to miss.
+/// The badge is still lit on top of it: `standardUserDriverWillHandleShowingUpdate`
+/// fires whether or not Sparkle handles the presentation, so the About page and
+/// the menu bar stay in sync with what Sparkle found.
 @MainActor
 @Observable
 final class SparkleUpdaterController {
@@ -115,16 +114,26 @@ final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
         }
     }
 
+    /// Still true: the menu bar badge below is a gentle reminder, layered on top
+    /// of Sparkle's alert rather than replacing it. Sparkle reads this only to
+    /// decide whether to log its "background app with no gentle reminder" warning
+    /// (`SPUStandardUserDriver.logGentleScheduledUpdateReminderWarningIfNeeded`),
+    /// which would be a false alarm here.
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
-    /// `false` = do not put Sparkle's alert on screen for a scheduled check.
+    /// `true` = Sparkle's own default: it puts the update alert on screen for a
+    /// scheduled check. 0.6.0 and earlier returned `false` and left the menu bar
+    /// badge as the only signal, which users missed.
     nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(
         _ update: SUAppcastItem,
         andInImmediateFocus immediateFocus: Bool
     ) -> Bool {
-        false
+        true
     }
 
+    /// Fires on both paths — Sparkle calls it before showing the alert itself as
+    /// well as when the delegate would have shown it — so the badge tracks the
+    /// found version either way.
     nonisolated func standardUserDriverWillHandleShowingUpdate(
         _ handleShowingUpdate: Bool,
         forUpdate update: SUAppcastItem,
