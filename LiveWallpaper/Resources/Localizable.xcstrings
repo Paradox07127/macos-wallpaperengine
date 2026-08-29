@@ -55372,6 +55372,64 @@
           }
         }
       }
+    },
+    "Couldn't add the video: it was removed from System Wallpaper while it was still being copied." : {
+      "comment" : "Error shown when a publish is abandoned because the user removed that item, or cleared the library, mid-copy.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't add the video: it was removed from System Wallpaper while it was still being copied."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画を追加できませんでした。コピー中にシステム壁紙から削除されました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法添加该视频:复制过程中它已从系统壁纸中移除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法加入該影片:複製過程中它已從系統桌布中移除。"
+          }
+        }
+      }
+    },
+    "Couldn't add “%@”: %@" : {
+      "comment" : "One line of the summary shown after importing several videos at once. Placeholders are the file name and the failure reason.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't add “%@”: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」を追加できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法添加“%@”:%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法加入「%@」:%@"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

@@ -79,10 +79,25 @@ struct WallpaperExportServiceTests {
         }
     }
 
+    /// Lets a test run code at the one moment a publish has yielded the main
+    /// actor — between the staged copy and the commit — which is the window a
+    /// concurrent remove has to land in.
+    @MainActor
+    private final class PublishHook {
+        var run: (() -> Void)?
+        /// Fires once: the setup publish a test does first must not trip it.
+        func fire() {
+            let pending = run
+            run = nil
+            pending?()
+        }
+    }
+
     private func makeRig(
         osSupported: Bool = true,
         thumbnailJPEG: Data? = Data([0xFF, 0xD8, 0xFF, 0xE0]),
-        now: Date = referenceNow
+        now: Date = referenceNow,
+        duringThumbnail: PublishHook? = nil
     ) throws -> Rig {
         let base = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("WallpaperExportServiceTests-\(UUID().uuidString)")
@@ -103,7 +118,10 @@ struct WallpaperExportServiceTests {
             sharedRoot: root,
             resolver: resolver,
             now: { now },
-            makeThumbnailJPEG: { _ in thumbnailJPEG },
+            makeThumbnailJPEG: { _ in
+                if let duringThumbnail { await MainActor.run { duringThumbnail.fire() } }
+                return thumbnailJPEG
+            },
             osSupported: osSupported
         ))
         return Rig(service: service, root: root, sourceDirectory: sources)
@@ -365,6 +383,79 @@ struct WallpaperExportServiceTests {
             .contentsOfDirectory(atPath: rig.videosDirectory.path)
             .filter { $0.contains("backup-") }
         #expect(leftovers.isEmpty, "the restore must not leave its backup behind: \(leftovers)")
+    }
+
+    @Test("A remove that lands mid-publish keeps the entry removed")
+    func removeDuringPublishIsNotUndone() async throws {
+        let hook = PublishHook()
+        let rig = try makeRig(duringThumbnail: hook)
+        let bookmark = try rig.makeVideoBookmark(bytes: Data("original".utf8))
+        try await rig.service.publish(bookmark: bookmark)
+        let itemID = bookmark.id.uuidString
+
+        // The user hits Remove while the republish is still copying: the
+        // commit happens after, and used to write the entry straight back.
+        hook.run = { try? rig.service.remove(itemID: itemID) }
+        let replacement = WallpaperBookmark(
+            label: "Replacement",
+            content: try rig.makeVideoBookmark(
+                named: "second.mp4", bytes: Data("replacement".utf8)
+            ).content,
+            id: bookmark.id
+        )
+        await #expect(throws: (any Error).self) {
+            try await rig.service.publish(bookmark: replacement)
+        }
+
+        #expect(rig.service.items.isEmpty, "the removed entry must not come back")
+        #expect(try rig.manifestOnDisk().items.isEmpty)
+        let leftovers = try FileManager.default
+            .contentsOfDirectory(atPath: rig.videosDirectory.path)
+            .filter { $0 != "manifest.lock" }
+        #expect(leftovers.isEmpty, "nor its files: \(leftovers)")
+    }
+
+    @Test("A failure in the middle of a multi-file import is not erased by a later success")
+    func batchPublishKeepsMidListFailure() async throws {
+        let rig = try makeRig()
+        let first = rig.sourceDirectory.appendingPathComponent("one.mp4")
+        let third = rig.sourceDirectory.appendingPathComponent("three.mp4")
+        for url in [first, third] { try Data("bytes".utf8).write(to: url) }
+        let missing = rig.sourceDirectory.appendingPathComponent("two.mp4")
+
+        await rig.service.publish(fileURLs: [first, missing, third])
+
+        #expect(rig.service.items.count == 2, "the readable files still publish")
+        let reported = try #require(rig.service.lastError)
+        #expect(reported.contains("two.mp4"),
+                "the middle failure must survive the later success: \(reported)")
+    }
+
+    @Test("A republish's displaced backup outlives a concurrent sweep")
+    func sweepSparesRepublishBackup() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("OrphanSweepBackup-\(UUID().uuidString)")
+        let videos = root.appendingPathComponent("Videos")
+        try FileManager.default.createDirectory(at: videos, withIntermediateDirectories: true)
+        // The backup *is* the previously published video, so it carries that
+        // file's mtime — months old for anything published a while ago.
+        let backup = videos.appendingPathComponent(
+            SystemWallpaperLibrary.transientBackupName(
+                itemID: "live", ext: "mp4", tag: UUID(), now: Self.referenceNow
+            )
+        )
+        try Data("displaced".utf8).write(to: backup)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Self.referenceNow.addingTimeInterval(-365 * 86400)],
+            ofItemAtPath: backup.path
+        )
+
+        SystemWallpaperLibrary.sweepOrphans(
+            manifest: .empty, videosDirectory: videos, now: Self.referenceNow
+        )
+
+        #expect(FileManager.default.fileExists(atPath: backup.path),
+                "sweeping the rollback copy away mid-republish makes the rollback lose the video")
     }
 
     @Test("A manifest entry whose file name escapes Videos/ is dropped at decode")

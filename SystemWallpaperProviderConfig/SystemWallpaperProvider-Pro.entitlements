@@ -6,7 +6,7 @@
 	<true/>
 	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
 	<array>
-		<string>/Library/Containers/com.loomscreen.pro/Data/Library/Application Support/Loomscreen/</string>
+		<string>/Library/Containers/com.loomscreen.pro/Data/Library/Application Support/Loomscreen/SystemWallpaper/</string>
 	</array>
 </dict>
 </plist>

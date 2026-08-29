@@ -325,11 +325,7 @@ struct SystemWallpaperAddMenu: View {
         panel.prompt = L10n.Panel.addVideos
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
-        Task {
-            for url in urls {
-                try? await service.publish(fileURL: url)
-            }
-        }
+        Task { await service.publish(fileURLs: urls) }
     }
 }
 

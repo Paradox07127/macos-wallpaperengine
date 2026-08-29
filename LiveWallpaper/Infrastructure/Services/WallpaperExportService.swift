@@ -42,6 +42,9 @@ final class WallpaperExportService {
         /// The manifest exists but will not decode. Every mutation refuses
         /// rather than rewriting the library from scratch.
         case manifestUnreadable
+        /// A remove (or a Remove All) landed while this publish was still
+        /// copying, so committing would resurrect what the user just deleted.
+        case supersededByRemoval
 
         var errorDescription: String? {
             switch self {
@@ -61,6 +64,11 @@ final class WallpaperExportService {
                 return String(
                     localized: "The System Wallpaper library index is damaged, so it wasn't changed.",
                     comment: "Error shown when the system wallpaper manifest cannot be decoded and the operation is refused."
+                )
+            case .supersededByRemoval:
+                return String(
+                    localized: "Couldn't add the video: it was removed from System Wallpaper while it was still being copied.",
+                    comment: "Error shown when a publish is abandoned because the user removed that item, or cleared the library, mid-copy."
                 )
             }
         }
@@ -87,6 +95,11 @@ final class WallpaperExportService {
     private(set) var playbackMode: SystemWallpaperPlaybackMode = .always
 
     @ObservationIgnored private let dependencies: Dependencies
+    /// Publishes that have started copying but not yet committed, keyed by a
+    /// per-publish token so two publishes of the same item stay distinct. The
+    /// copy and the thumbnail run off the main actor, so a remove can land in
+    /// between — and the commit used to write the entry straight back.
+    @ObservationIgnored private var activePublishes: [UUID: String] = [:]
 
     init(dependencies: Dependencies = .live()) {
         self.dependencies = dependencies
@@ -176,6 +189,32 @@ final class WallpaperExportService {
         )
     }
 
+    /// Publishes several picked files in turn. The summary is assembled here
+    /// rather than at the call site because a successful publish clears
+    /// `lastError`: a plain per-file loop reported only the last file's outcome,
+    /// so a file that failed mid-selection disappeared with no message at all.
+    func publish(fileURLs: [URL]) async {
+        var failures: [String] = []
+        for url in fileURLs {
+            do {
+                try await publish(fileURL: url)
+            } catch {
+                failures.append(Self.publishFailureLine(
+                    name: url.lastPathComponent,
+                    reason: error.localizedDescription
+                ))
+            }
+        }
+        lastError = failures.isEmpty ? nil : failures.joined(separator: "\n")
+    }
+
+    private static func publishFailureLine(name: String, reason: String) -> String {
+        String(
+            localized: "Couldn't add “\(name)”: \(reason)",
+            comment: "One line of the summary shown after importing several videos at once. Placeholders are the file name and the failure reason."
+        )
+    }
+
     /// Content resolved from an installed Workshop entry that the user has not
     /// bookmarked (the Workshop library keeps its own list).
     func publish(content: WallpaperContent, title: String) async throws {
@@ -208,6 +247,9 @@ final class WallpaperExportService {
     private func performPublish(id itemID: String, title: String, source: PublishSource) async throws {
         let resolver = dependencies.resolver
         let videosDirectory = videosDirectory
+        let token = UUID()
+        activePublishes[token] = itemID
+        defer { activePublishes[token] = nil }
 
         // Copy off the main actor — a 4K source can be hundreds of MB. Bookmarks
         // are resolved fresh every time and the URL is never cached (resolver contract).
@@ -276,95 +318,108 @@ final class WallpaperExportService {
             throw ServiceError.thumbnailFailed
         }
 
+        // A remove that landed while this publish was copying wins: committing
+        // now would put the entry the user just deleted straight back.
+        guard activePublishes[token] != nil else {
+            try? FileManager.default.removeItem(at: staged.url)
+            throw ServiceError.supersededByRemoval
+        }
+
         let destination = videosDirectory.appendingPathComponent("\(itemID).\(staged.ext)")
         let thumbnailURL = videosDirectory.appendingPathComponent("\(itemID).jpg")
         let thumbnailFileName = thumbnailURL.lastPathComponent
         let manager = FileManager.default
         // A republish overwrites files the manifest still points at, so the old
         // copies are renamed aside (cheap, no second copy of a 4K video) and
-        // only dropped once the manifest write lands. A leftover backup from a
-        // crash is unreferenced, so the orphan sweep reclaims it within the hour.
-        let backupTag = "backup-\(UUID().uuidString)"
-        let videoBackupURL = videosDirectory.appendingPathComponent("\(itemID).\(backupTag).\(staged.ext)")
-        let thumbnailBackupURL = videosDirectory.appendingPathComponent("\(itemID).\(backupTag).jpg")
-        // A republish has an older copy the manifest still points at, so a
-        // later failure must leave it alone. A first publish owns everything it
-        // just created and has to take it back.
-        let isRepublish = manager.fileExists(atPath: destination.path)
-        do {
-            if isRepublish {
-                // Atomic swap — no window where the old copy is gone and the
-                // new one is not yet in place. The displaced original stays
-                // behind under `backupItemName` until this publish commits.
-                _ = try manager.replaceItemAt(
-                    destination,
-                    withItemAt: staged.url,
-                    backupItemName: videoBackupURL.lastPathComponent,
-                    options: [.withoutDeletingBackupItem]
-                )
-                if manager.fileExists(atPath: thumbnailURL.path) {
-                    try? manager.moveItem(at: thumbnailURL, to: thumbnailBackupURL)
-                }
-            } else {
-                try manager.moveItem(at: staged.url, to: destination)
-            }
-        } catch {
-            try? manager.removeItem(at: staged.url)
-            throw error
-        }
-
-        /// Puts the library back exactly as it was. A first publish owns
-        /// everything it just created and takes it back; a republish restores
-        /// the copies it displaced — without this a failed thumbnail write or
-        /// an unreadable manifest reported failure while the old video was
-        /// already gone.
-        func rollbackPublish() {
-            guard isRepublish else {
-                try? manager.removeItem(at: destination)
-                try? manager.removeItem(at: thumbnailURL)
-                return
-            }
-            if manager.fileExists(atPath: videoBackupURL.path) {
-                _ = try? manager.replaceItemAt(destination, withItemAt: videoBackupURL)
-            }
-            if manager.fileExists(atPath: thumbnailBackupURL.path) {
-                try? manager.removeItem(at: thumbnailURL)
-                try? manager.moveItem(at: thumbnailBackupURL, to: thumbnailURL)
-            }
-        }
-
-        func discardPublishBackups() {
-            try? manager.removeItem(at: videoBackupURL)
-            try? manager.removeItem(at: thumbnailBackupURL)
-        }
-
-        do {
-            try jpeg.write(to: thumbnailURL, options: .atomic)
-        } catch {
-            rollbackPublish()
-            throw error
-        }
+        // only dropped once the manifest write lands. They carry staging names
+        // so a sweep in the other process judges them by that timestamp rather
+        // than by the displaced file's own, possibly ancient, mtime.
+        let backupTag = UUID()
+        let videoBackupURL = videosDirectory.appendingPathComponent(
+            SystemWallpaperLibrary.transientBackupName(
+                itemID: itemID, ext: staged.ext, tag: backupTag, now: dependencies.now()
+            )
+        )
+        let thumbnailBackupURL = videosDirectory.appendingPathComponent(
+            SystemWallpaperLibrary.transientBackupName(
+                itemID: itemID, ext: "jpg", tag: backupTag, now: dependencies.now()
+            )
+        )
 
         let manifest: SystemWallpaperManifest
         do {
+            // Locked from the swap onwards, not just for the manifest write: the
+            // appex removes an entry *and unlinks its files* under this lock, so
+            // swapping outside it could commit a manifest entry naming a file
+            // that the removal had already deleted.
             manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
-                var manifest = try loadManifestForMutation()
-                manifest.items.removeAll { $0.id == itemID }
-                manifest.items.append(SystemWallpaperManifest.Item(
-                    id: itemID,
-                    title: title,
-                    fileName: destination.lastPathComponent,
-                    thumbnailFileName: thumbnailFileName,
-                    addedAt: dependencies.now()
-                ))
-                try writeManifest(manifest)
-                return manifest
+                // A republish has an older copy the manifest still points at, so
+                // a later failure must leave it alone. A first publish owns
+                // everything it just created and has to take it back.
+                let isRepublish = manager.fileExists(atPath: destination.path)
+
+                /// Puts the library back exactly as it was. Without this a failed
+                /// thumbnail write or an unreadable manifest reported failure
+                /// while the old video was already gone.
+                func rollbackPublish() {
+                    guard isRepublish else {
+                        try? manager.removeItem(at: destination)
+                        try? manager.removeItem(at: thumbnailURL)
+                        return
+                    }
+                    if manager.fileExists(atPath: videoBackupURL.path) {
+                        _ = try? manager.replaceItemAt(destination, withItemAt: videoBackupURL)
+                    }
+                    if manager.fileExists(atPath: thumbnailBackupURL.path) {
+                        try? manager.removeItem(at: thumbnailURL)
+                        try? manager.moveItem(at: thumbnailBackupURL, to: thumbnailURL)
+                    }
+                }
+
+                if isRepublish {
+                    // Atomic swap — no window where the old copy is gone and the
+                    // new one is not yet in place. The displaced original stays
+                    // behind under `backupItemName` until this publish commits.
+                    _ = try manager.replaceItemAt(
+                        destination,
+                        withItemAt: staged.url,
+                        backupItemName: videoBackupURL.lastPathComponent,
+                        options: [.withoutDeletingBackupItem]
+                    )
+                    if manager.fileExists(atPath: thumbnailURL.path) {
+                        try? manager.moveItem(at: thumbnailURL, to: thumbnailBackupURL)
+                    }
+                } else {
+                    try manager.moveItem(at: staged.url, to: destination)
+                }
+
+                do {
+                    try jpeg.write(to: thumbnailURL, options: .atomic)
+                    var manifest = try loadManifestForMutation()
+                    manifest.items.removeAll { $0.id == itemID }
+                    manifest.items.append(SystemWallpaperManifest.Item(
+                        id: itemID,
+                        title: title,
+                        fileName: destination.lastPathComponent,
+                        thumbnailFileName: thumbnailFileName,
+                        addedAt: dependencies.now()
+                    ))
+                    try writeManifest(manifest)
+                    try? manager.removeItem(at: videoBackupURL)
+                    try? manager.removeItem(at: thumbnailBackupURL)
+                    return manifest
+                } catch {
+                    rollbackPublish()
+                    throw error
+                }
             }
         } catch {
-            rollbackPublish()
+            // A no-op once the swap has consumed it; what this catches is the
+            // lock itself being untakeable, which would otherwise strand the
+            // staged copy until the sweep.
+            try? manager.removeItem(at: staged.url)
             throw error
         }
-        discardPublishBackups()
         items = manifest.items
         refreshDiskUsage()
         postLibraryChanged()
@@ -375,6 +430,9 @@ final class WallpaperExportService {
     /// would leave the user with no way to delete the files at all. The
     /// confirmation states what macOS does afterwards.
     func remove(itemID: String) throws {
+        // A publish of this item that is still copying must not commit after
+        // the user has asked for it to go away.
+        activePublishes = activePublishes.filter { $0.value != itemID }
         let manifest: SystemWallpaperManifest?
         // Collected inside the lock, reported after: the entry is gone either
         // way, but leftover bytes on disk should not be silent.
@@ -414,6 +472,7 @@ final class WallpaperExportService {
     /// app does not remove its container, so without this the system's copies
     /// survive an uninstall with no way to reach them.
     func clearLibrary() throws {
+        activePublishes.removeAll()
         nonisolated(unsafe) var survivors: [String] = []
         do {
             try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {

@@ -55,8 +55,11 @@ struct SystemWallpaperGuardTests {
             )
             #expect(exceptions.count == 1, "\(sku.name): exactly one exception path is allowed")
             #expect(
-                exceptions.first == "/Library/Containers/\(sku.hostBundleID)/Data/Library/Application Support/Loomscreen/",
-                "\(sku.name): exception must point at its own host's container"
+                // The SystemWallpaper subtree, not all of Loomscreen/: the appex
+                // only ever touches sharedRoot(), and a decoder compromised by a
+                // malformed video should not reach the host's other state.
+                exceptions.first == "/Library/Containers/\(sku.hostBundleID)/Data/Library/Application Support/Loomscreen/SystemWallpaper/",
+                "\(sku.name): exception must point at its own host's SystemWallpaper directory"
             )
             #expect(entitlements.count == 2, "\(sku.name): no other entitlements belong on the appex")
         }
@@ -187,9 +190,14 @@ struct SystemWallpaperGuardTests {
     @Test("Every choice-change heartbeat publishes the whole active set")
     func choiceChangeHeartbeatCarriesEveryActiveChoice() throws {
         let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
+        // Slice to the member's closing brace: a fixed-length prefix shrinks
+        // silently whenever the comment above the code grows.
         let selected = try #require(
-            handler.range(of: "func selectedChoicesDidChange")
-                .map { String(handler[$0.lowerBound...].prefix(900)) }
+            handler.range(of: "func selectedChoicesDidChange").map { start -> String in
+                let body = handler[start.lowerBound...]
+                guard let end = body.range(of: "\n    }\n") else { return String(body) }
+                return String(body[..<end.upperBound])
+            }
         )
         #expect(
             selected.contains("Self.writeActiveHeartbeat("),

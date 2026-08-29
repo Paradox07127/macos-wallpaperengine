@@ -1,4 +1,5 @@
 import Foundation
+import IOKit.ps
 import os.log
 
 /// Sole home of every private-API touchpoint (plan §2): dlopen of
@@ -78,7 +79,52 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         }
     }
 
+    /// `PlaybackPolicy` reads thermal state, Low Power Mode and AC/battery on
+    /// every evaluation, but the only things that triggered an evaluation were
+    /// the Agent's `update` and the app's Darwin note — so unplugging the power
+    /// or heating the machine up left a running wallpaper on its old rate until
+    /// something unrelated happened. Lives as long as the bridge (= the
+    /// process), so no removal path is needed.
+    private final class PowerConditionObserver {
+        private let registry: SurfaceRegistry
+        private let store: SharedLibraryStore
+
+        init(registry: SurfaceRegistry, store: SharedLibraryStore) {
+            self.registry = registry
+            self.store = store
+            // Same one-way handoff `reapplyPolicy` documents: the registry is
+            // confined to the lifecycle queue, and these closures do nothing
+            // with it but pass it there.
+            nonisolated(unsafe) let registry = registry
+            let store = store
+            for name in [ProcessInfo.thermalStateDidChangeNotification,
+                         NSNotification.Name.NSProcessInfoPowerStateDidChange] {
+                NotificationCenter.default.addObserver(
+                    forName: name, object: nil, queue: nil
+                ) { _ in WallpaperXPCHandler.reapplyPolicy(registry: registry, store: store) }
+            }
+            // On macOS NSProcessInfoPowerStateDidChange only reports Low Power
+            // Mode; AC↔battery — a policy input of its own (`onBattery`) — has
+            // to come from IOKit.
+            guard let source = IOPSNotificationCreateRunLoopSource({ context in
+                guard let context else { return }
+                Unmanaged<PowerConditionObserver>.fromOpaque(context)
+                    .takeUnretainedValue()
+                    .reapply()
+            }, Unmanaged.passUnretained(self).toOpaque())?.takeRetainedValue() else {
+                wpxLog.error("power source notifications unavailable — battery policy will not follow")
+                return
+            }
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+        }
+
+        private func reapply() {
+            WallpaperXPCHandler.reapplyPolicy(registry: registry, store: store)
+        }
+    }
+
     private let libraryObserver: LibraryChangeObserver
+    private let powerObserver: PowerConditionObserver
 
     init(store: SharedLibraryStore) {
         self.store = store
@@ -87,6 +133,7 @@ final class WallpaperXPCBridge: @unchecked Sendable {
             providerID: Bundle.main.bundleIdentifier ?? "com.loomscreen.wallpaper"
         )
         self.libraryObserver = LibraryChangeObserver(registry: registry, store: store)
+        self.powerObserver = PowerConditionObserver(registry: registry, store: store)
         self.libraryObserver.owner = self
     }
 
