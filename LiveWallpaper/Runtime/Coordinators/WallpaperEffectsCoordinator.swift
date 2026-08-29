@@ -77,11 +77,10 @@ final class WallpaperEffectsCoordinator {
         let effect = resolvedParticleEffect(for: config)
         applyParticleEffect(
             effect,
-            density: WeatherReactivePolicy.resolvedParticleDensity(
-                userDensity: clamped,
-                weatherReactive: config.effectConfig.weatherReactive,
-                intensity: weatherService.currentIntensity
-            ),
+            // Through the shared helper, not a second copy of the rule: the
+            // last inline duplicate of this drifted and quietly ignored a
+            // switch the user had just flipped.
+            density: resolvedParticleDensity(for: config),
             tiltRadians: windTilt(for: effect, config: config),
             to: screen
         )
@@ -103,6 +102,39 @@ final class WallpaperEffectsCoordinator {
                 applyVideoEffects(for: screen, config: config)
             }
         }
+    }
+
+    /// Whether live wind leans the particles on this display.
+    func setWeatherWind(_ enabled: Bool, for screen: Screen) {
+        updateWeatherOption(for: screen) { config in
+            guard config.effectConfig.weatherWind != enabled else { return false }
+            config.effectConfig.weatherWind = enabled
+            return true
+        }
+    }
+
+    /// Whether the reported downpour/flurry strength scales the density.
+    func setWeatherIntensity(_ enabled: Bool, for screen: Screen) {
+        updateWeatherOption(for: screen) { config in
+            guard config.effectConfig.weatherIntensity != enabled else { return false }
+            config.effectConfig.weatherIntensity = enabled
+            return true
+        }
+    }
+
+    /// Both sub-options only ever matter while "match local weather" is on, and
+    /// `applyWeatherEffects` already declines otherwise, so neither needs its
+    /// own guard for that.
+    private func updateWeatherOption(
+        for screen: Screen, mutate: (inout ScreenConfiguration) -> Bool
+    ) {
+        guard !isShutdown else { return }
+        guard var config = configurationStore.get(
+            for: screen.id, fingerprint: screen.displayFingerprint
+        ) else { return }
+        guard mutate(&config) else { return }
+        saveConfiguration(config)
+        applyWeatherEffects(for: screen)
     }
 
     func applyWeatherEffects(for screen: Screen) {
@@ -305,16 +337,18 @@ final class WallpaperEffectsCoordinator {
         WeatherReactivePolicy.resolvedParticleDensity(
             userDensity: config.effectConfig.particleDensity,
             weatherReactive: config.effectConfig.weatherReactive,
-            intensity: weatherService.currentIntensity
+            intensity: weatherService.currentIntensity,
+            intensityEnabled: config.effectConfig.weatherIntensity
         )
     }
 
     /// How far the wind leans this effect on this display. Zero unless the
-    /// display is weather-reactive and the API actually sent a wind reading —
-    /// a hand-picked snow effect should not start blowing sideways because it
-    /// happens to be gusty outside.
+    /// display is weather-reactive, the user asked for wind, and the API
+    /// actually sent a reading — a hand-picked snow effect should not start
+    /// blowing sideways because it happens to be gusty outside.
     private func windTilt(for effect: ParticleEffect, config: ScreenConfiguration) -> Double {
-        guard config.effectConfig.weatherReactive, effect.leansIntoWind,
+        guard config.effectConfig.weatherReactive, config.effectConfig.weatherWind,
+              effect.leansIntoWind,
               let wind = weatherService.currentWind else { return 0 }
         let fallSpeed: Double
         switch effect {

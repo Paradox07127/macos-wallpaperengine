@@ -453,7 +453,9 @@ struct DetailView: View {
                 backdropAvailable: monitorBackdrop.isAvailable,
                 onParticleEffectChange: { screenManager.updateParticleEffect($0, for: screen) },
                 onParticleDensityChange: { screenManager.updateParticleDensity($0, for: screen) },
-                onWeatherReactiveChange: { screenManager.setWeatherReactive($0, for: screen) }
+                onWeatherReactiveChange: { screenManager.setWeatherReactive($0, for: screen) },
+                onWeatherWindChange: { screenManager.setWeatherWind($0, for: screen) },
+                onWeatherIntensityChange: { screenManager.setWeatherIntensity($0, for: screen) }
             )
         } else {
             wallpaperInspectorPanel(width: width)

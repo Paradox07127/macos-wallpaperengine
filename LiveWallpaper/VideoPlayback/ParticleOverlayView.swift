@@ -128,6 +128,11 @@ final class ParticleOverlayView: NSView {
     var debugEmitterState: (isHidden: Bool, speed: Float, birthRate: Float)? {
         activeEmitter.map { ($0.isHidden, $0.speed, $0.birthRate) }
     }
+
+    /// The cells a preset would build, so a test can fly them itself.
+    func debugCells(for effect: ParticleEffect, tilt: CGFloat) -> [CAEmitterCell] {
+        preset(for: effect, tilt: tilt).cells
+    }
     #endif
 
     // MARK: - Layout
@@ -163,6 +168,9 @@ final class ParticleOverlayView: NSView {
         case .fallingLeaves: return Self.leavesPreset
         case .sakura:        return Self.sakuraPreset
         case .mist:          return Self.mistPreset
+        case .embers:        return Self.embersPreset
+        case .bubbles:       return Self.bubblesPreset
+        case .meteors:       return Self.meteorsPreset
         }
     }
 
@@ -220,21 +228,40 @@ final class ParticleOverlayView: NSView {
 
     /// Three depth layers rather than one flat sheet.
     ///
-    /// Speeds follow the measured terminal velocities: drizzle-sized drops fall
-    /// around 2 m/s and the biggest stable drops around 9 m/s, so the near
-    /// layer runs roughly twice the far layer's speed rather than some
-    /// arbitrary spread. Far particles are smaller, slower, fainter and shorter
-    /// — which is what depth looks like — and they are also the cheapest, so
-    /// the layer that carries the most particles is the one that costs least.
+    /// Speeds follow the measured terminal velocities: drizzle-sized drops
+    /// fall around 3 m/s and the biggest stable drops around 9 m/s, so the
+    /// near layer runs roughly twice the far layer's speed rather than some
+    /// arbitrary spread. Far particles are smaller, slower, fainter and
+    /// shorter — which is what depth looks like — and they are also the
+    /// cheapest, so the layer that carries the most particles is the one that
+    /// costs least. Counts follow the same relation the other way: small drops
+    /// vastly outnumber large ones, which is the shape of the Marshall–Palmer
+    /// distribution and the reason the far layer is the densest.
     private static func rainPreset(tilt: CGFloat) -> EmitterPreset {
+        // The lean a drop takes is `atan(wind / itsOwnFallSpeed)`, so a slow
+        // small drop leans much further than a fast large one in the same
+        // wind. `tilt` arrives worked out for the middle layer; each layer
+        // re-derives its own from its own speed. Without this the whole field
+        // slants in lockstep, which is the tell that it is a sprite sheet
+        // rather than weather.
+        let reference: CGFloat = 460
+        let leanFor: (CGFloat) -> CGFloat = { speed in
+            guard tilt != 0, speed > 0 else { return 0 }
+            return atan(tan(tilt) * reference / speed)
+        }
+        // Streak length is the motion blur of one exposure, so it is
+        // proportional to speed rather than picked per layer.
+        let exposure: CGFloat = 0.0433
+
         let makeLayer = {
             (scale: CGFloat, velocity: CGFloat, birthRate: Float,
-             alpha: CGFloat, length: CGFloat, width: CGFloat) -> CAEmitterCell in
+             alpha: CGFloat, width: CGFloat) -> CAEmitterCell in
+            let lean = leanFor(velocity)
             let cell = CAEmitterCell()
             cell.contents = ParticleTextures.streak(
-                length: length, width: width,
+                length: velocity * exposure, width: width,
                 color: NSColor.white.withAlphaComponent(alpha).cgColor,
-                tilt: tilt
+                tilt: lean
             )
             cell.birthRate = birthRate
             cell.lifetime = 4
@@ -243,20 +270,27 @@ final class ParticleOverlayView: NSView {
             cell.velocityRange = velocity * 0.18
             // Travel direction matches the lean baked into the texture, so a
             // drop always points the way it is going.
-            cell.emissionLongitude = -.pi / 2 + tilt
+            cell.emissionLongitude = -.pi / 2 + lean
             cell.emissionRange = .pi / 90      // rain falls in lines, not cones
             cell.scale = scale
             cell.scaleRange = scale * 0.25
             cell.alphaRange = 0.2
-            cell.yAcceleration = -160
+            // No gravity: a drop is already at terminal velocity, so its path
+            // is a straight line. Accelerating it swung the heading from 0.5
+            // rad at birth to 0.10 rad at death (measured) while the streak
+            // bitmap stayed at 0.5 — the drop spent most of its life drawn
+            // pointing 20° away from where it was actually going.
+            cell.yAcceleration = 0
             cell.color = NSColor(white: 1, alpha: alpha).cgColor
             return cell
         }
 
         // near, mid, far — the far layer is the densest and the dimmest.
-        let near = makeLayer(1.15, 300, 55, 0.75, 26, 2.4)
-        let mid = makeLayer(0.8, 230, 95, 0.5, 18, 2.0)
-        let far = makeLayer(0.5, 165, 130, 0.3, 12, 1.6)
+        // Speeds are what the old cells averaged once gravity had had its say,
+        // so removing the acceleration did not turn the rain into drizzle.
+        let near = makeLayer(1.15, 600, 55, 0.75, 2.4)
+        let mid = makeLayer(0.8, reference, 95, 0.5, 2.0)
+        let far = makeLayer(0.5, 330, 130, 0.3, 1.6)
 
         return EmitterPreset(
             cells: [near, mid, far],
@@ -264,7 +298,8 @@ final class ParticleOverlayView: NSView {
             renderMode: .unordered,
             position: { CGPoint(x: $0.midX, y: $0.maxY) },
             // Much wider than the screen: leaning rain enters from off the
-            // upwind edge, and a screen-width line leaves that side dry.
+            // upwind edge, and a screen-width line leaves that side dry. The
+            // slowest layer leans furthest, so this is sized for that one.
             size: { CGSize(width: $0.width * 2.4, height: 0) }
         )
     }
@@ -318,6 +353,155 @@ final class ParticleOverlayView: NSView {
             // everywhere when you walk into it.
             position: { CGPoint(x: $0.midX, y: $0.midY) },
             size: { CGSize(width: $0.width * 1.2, height: $0.height) }
+        )
+    }()
+
+    // MARK: - Embers
+
+    /// Sparks lifting off an unseen fire below the screen.
+    ///
+    /// The colour ramp is the whole effect: a spark leaves the fire yellow-hot
+    /// and cools through orange to a dull red before it goes out, so green and
+    /// blue are driven down over its life while red is held. A spark that
+    /// keeps its birth colour the whole way up reads as confetti.
+    ///
+    /// Buoyancy, not gravity: hot gas is still rising when the spark reaches
+    /// the top, so the acceleration points the same way as the velocity.
+    private static let embersPreset: EmitterPreset = {
+        let makeLayer = {
+            (scale: CGFloat, velocity: CGFloat, birthRate: Float,
+             radius: CGFloat, life: Float, drift: CGFloat) -> CAEmitterCell in
+            let cell = CAEmitterCell()
+            cell.contents = ParticleTextures.softCircle(
+                radius: radius, color: NSColor.white.cgColor
+            )
+            cell.birthRate = birthRate
+            cell.lifetime = life
+            cell.lifetimeRange = life * 0.4
+            cell.velocity = velocity
+            cell.velocityRange = velocity * 0.5
+            cell.emissionLongitude = .pi / 2          // straight up
+            cell.emissionRange = .pi / 7
+            cell.scale = scale
+            cell.scaleRange = scale * 0.6
+            cell.scaleSpeed = -scale / CGFloat(life) * 0.5
+            cell.alphaRange = 0.35
+            cell.alphaSpeed = -1.0 / life
+            cell.yAcceleration = 14
+            cell.xAcceleration = drift
+            cell.color = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.42, alpha: 0.9).cgColor
+            // Cools to a deep red over the spark's life.
+            cell.greenSpeed = -0.5 / life
+            cell.blueSpeed = -0.4 / life
+            return cell
+        }
+
+        let near = makeLayer(1.3, 70, 6, 3.5, 7, 6)
+        let mid = makeLayer(0.8, 52, 14, 2.5, 9, -4)
+        let far = makeLayer(0.45, 36, 26, 1.8, 11, 3)
+
+        return EmitterPreset(
+            cells: [near, mid, far],
+            shape: .line,
+            renderMode: .additive,
+            position: { CGPoint(x: $0.midX, y: $0.minY) },
+            size: { CGSize(width: $0.width * 1.1, height: 0) }
+        )
+    }()
+
+    // MARK: - Bubbles
+
+    /// Rising bubbles, as seen from inside the water.
+    ///
+    /// Bigger bubbles rise faster — that is the real relation, and it is also
+    /// what sells the depth: the large near ones climb past the small far
+    /// ones. `CAEmitterCell` cannot make a particle wander, so the sideways
+    /// wobble is faked across banks instead of within one: the two halves
+    /// drift in opposite directions, so the field as a whole meanders even
+    /// though no single bubble does.
+    private static let bubblesPreset: EmitterPreset = {
+        let makeLayer = {
+            (scale: CGFloat, velocity: CGFloat, birthRate: Float,
+             radius: CGFloat, alpha: CGFloat, drift: CGFloat) -> CAEmitterCell in
+            let cell = CAEmitterCell()
+            cell.contents = ParticleTextures.bubble(radius: radius, color: NSColor.white.cgColor)
+            cell.birthRate = birthRate
+            cell.lifetime = 22
+            cell.lifetimeRange = 6
+            cell.velocity = velocity
+            cell.velocityRange = velocity * 0.35
+            cell.emissionLongitude = .pi / 2
+            cell.emissionRange = .pi / 12
+            cell.scale = scale
+            cell.scaleRange = scale * 0.45
+            cell.alphaRange = Float(alpha * 0.4)
+            cell.spin = 0.2
+            cell.spinRange = 0.6
+            cell.xAcceleration = drift
+            cell.color = NSColor(white: 1, alpha: alpha).cgColor
+            return cell
+        }
+
+        let near = makeLayer(1.25, 46, 3, 15, 0.5, 1.6)
+        let mid = makeLayer(0.75, 32, 7, 11, 0.38, -1.2)
+        let far = makeLayer(0.4, 21, 14, 8, 0.26, 0.9)
+
+        return EmitterPreset(
+            cells: [near, mid, far],
+            shape: .line,
+            renderMode: .unordered,
+            position: { CGPoint(x: $0.midX, y: $0.minY) },
+            size: { CGSize(width: $0.width, height: 0) }
+        )
+    }()
+
+    // MARK: - Meteors
+
+    /// A sparse shower of shooting stars across the upper sky.
+    ///
+    /// Deliberately rare and fast: a meteor that is always on screen is a
+    /// streak of rain. The slant is fixed rather than wind-driven — meteors
+    /// come in on their own path, and the whole field sharing one angle is
+    /// what makes it read as a radiant shower rather than as noise.
+    private static let meteorsPreset: EmitterPreset = {
+        // Shallow enough to read as "across the sky" rather than "falling".
+        let slant: CGFloat = 1.0
+        let makeLayer = {
+            (scale: CGFloat, velocity: CGFloat, birthRate: Float,
+             length: CGFloat, width: CGFloat, alpha: CGFloat) -> CAEmitterCell in
+            let cell = CAEmitterCell()
+            cell.contents = ParticleTextures.comet(
+                length: length, width: width,
+                color: NSColor(calibratedRed: 0.92, green: 0.96, blue: 1.0, alpha: alpha).cgColor,
+                tilt: slant
+            )
+            cell.birthRate = birthRate
+            cell.lifetime = 2.2
+            cell.lifetimeRange = 0.6
+            cell.velocity = velocity
+            cell.velocityRange = velocity * 0.2
+            cell.emissionLongitude = -.pi / 2 + slant
+            cell.emissionRange = .pi / 60
+            cell.scale = scale
+            cell.scaleRange = scale * 0.3
+            cell.alphaRange = 0.25
+            // Burns out rather than blinking off at the end of its life.
+            cell.alphaSpeed = -Float(alpha) / 2.2
+            cell.color = NSColor(white: 1, alpha: alpha).cgColor
+            return cell
+        }
+
+        let bright = makeLayer(1.1, 900, 0.5, 200, 3.0, 0.9)
+        let faint = makeLayer(0.6, 700, 1.1, 150, 2.2, 0.5)
+
+        return EmitterPreset(
+            cells: [bright, faint],
+            shape: .line,
+            renderMode: .additive,
+            // Along the top, reaching well past the upwind edge so the slant
+            // does not leave one corner empty.
+            position: { CGPoint(x: $0.midX, y: $0.maxY) },
+            size: { CGSize(width: $0.width * 3.0, height: 0) }
         )
     }()
 
@@ -603,11 +787,30 @@ private enum ParticleTextures {
               let along = CGGradient(
                 colorsSpace: colorSpace,
                 colors: [clear, opaque, opaque, clear] as CFArray,
-                // Fades in fast and trails out slowly: the tail is the part of
-                // the streak the eye reads as "this was moving downwards".
-                locations: [0.0, 0.25, 0.7, 1.0]
+                // The long fade sits on the trailing end and the leading end
+                // is cut short. That is what a motion-blurred drop looks like,
+                // and it is the only cue in the sprite for which way it is
+                // going — it used to be the other way round, so the streak
+                // trailed off ahead of the drop.
+                locations: [0.0, 0.55, 0.9, 1.0]
               )
         else { return nil }
+
+        // The streak narrows toward its tail rather than being a parallel bar.
+        // Garg & Nayar's streak model (Columbia CAVE, TOG 2006) and the game
+        // implementations that follow it draw a drop as an uneven capsule —
+        // the falling drop keeps its width, the blur behind it thins out — and
+        // a constant-width bar is the single thing that most makes rain read
+        // as scratches on the screen.
+        let taper = CGMutablePath()
+        let tailInset = width * 0.35
+        taper.move(to: CGPoint(x: 0, y: 0))
+        taper.addLine(to: CGPoint(x: width, y: 0))
+        taper.addLine(to: CGPoint(x: width - tailInset, y: length))
+        taper.addLine(to: CGPoint(x: tailInset, y: length))
+        taper.closeSubpath()
+        ctx.addPath(taper)
+        ctx.clip()
 
         // Taper across the width so the edges do not alias into hard bars.
         let steps = max(Int(ceil(width)), 2)
@@ -699,6 +902,108 @@ private enum ParticleTextures {
             endRadius: max(widthF, heightF),
             options: []
         )
+        return ctx.makeImage()
+    }
+
+    /// A bubble: a bright rim, a nearly empty middle, and one small specular
+    /// highlight. Drawn hollow because that is what makes it read as a shell
+    /// of water rather than as a ball — a filled disc is a snowflake.
+    static func bubble(radius: CGFloat, color: CGColor) -> CGImage? {
+        let diameter = max(Int(ceil(radius * 2)), 4)
+        guard let ctx = makeContext(width: diameter, height: diameter) else { return nil }
+        let side = CGFloat(diameter)
+        let center = CGPoint(x: side / 2, y: side / 2)
+
+        guard let rim = color.copy(alpha: 1.0),
+              let faint = color.copy(alpha: 0.14),
+              let clear = color.copy(alpha: 0.0),
+              let shell = CGGradient(
+                colorsSpace: colorSpace,
+                colors: [clear, faint, faint, rim, clear] as CFArray,
+                // Empty core, a faint wash of internal reflection, then the
+                // rim right at the edge.
+                locations: [0.0, 0.35, 0.72, 0.93, 1.0]
+              )
+        else { return nil }
+
+        ctx.drawRadialGradient(
+            shell,
+            startCenter: center, startRadius: 0,
+            endCenter: center, endRadius: side / 2,
+            options: []
+        )
+
+        // Specular dot, up and to the left, where a single light source puts it.
+        let highlight = CGPoint(x: side * 0.33, y: side * 0.7)
+        if let hot = color.copy(alpha: 0.85),
+           let gone = color.copy(alpha: 0.0),
+           let spark = CGGradient(
+            colorsSpace: colorSpace, colors: [hot, gone] as CFArray, locations: [0.0, 1.0]
+           ) {
+            ctx.drawRadialGradient(
+                spark,
+                startCenter: highlight, startRadius: 0,
+                endCenter: highlight, endRadius: side * 0.16,
+                options: []
+            )
+        }
+        return ctx.makeImage()
+    }
+
+    /// A meteor: a hot round head with a long tail behind it.
+    ///
+    /// Same lean-baked-into-the-bitmap trick as ``streak`` — rotating the
+    /// emitter would swing its emission line off the screen — but the
+    /// brightness runs the other way. A raindrop is a uniform blur; a meteor
+    /// is a burning object with a trail, so nearly all the light is at the
+    /// leading end and the tail is what is left behind it.
+    static func comet(
+        length: CGFloat, width: CGFloat, color: CGColor, tilt: CGFloat
+    ) -> CGImage? {
+        let head = width * 1.8
+        let w = max(Int(ceil(abs(length * sin(tilt)) + head)), 4)
+        let h = max(Int(ceil(abs(length * cos(tilt)) + head)), 4)
+        guard let ctx = makeContext(width: w, height: h) else { return nil }
+        ctx.translateBy(x: CGFloat(w) / 2, y: CGFloat(h) / 2)
+        ctx.rotate(by: tilt)
+        ctx.translateBy(x: -width / 2, y: -length / 2)
+
+        guard let opaque = color.copy(alpha: 1.0), let clear = color.copy(alpha: 0.0),
+              let tail = CGGradient(
+                colorsSpace: colorSpace,
+                colors: [clear, opaque] as CFArray,
+                locations: [0.0, 1.0]
+              )
+        else { return nil }
+
+        // Tail: drawn from the trailing end (top of the local box) down to the
+        // head, tapered across its width so it does not alias into a bar.
+        let steps = max(Int(ceil(width)), 2)
+        for column in 0..<steps {
+            let t = (CGFloat(column) + 0.5) / CGFloat(steps)
+            let edge = 1 - abs(t * 2 - 1)
+            ctx.saveGState()
+            ctx.clip(to: CGRect(x: CGFloat(column), y: 0, width: 1, height: length))
+            ctx.setAlpha(edge * edge)
+            ctx.drawLinearGradient(
+                tail,
+                start: CGPoint(x: 0, y: length),
+                end: CGPoint(x: 0, y: 0),
+                options: []
+            )
+            ctx.restoreGState()
+        }
+
+        if let core = color.copy(alpha: 1.0), let gone = color.copy(alpha: 0.0),
+           let glow = CGGradient(
+            colorsSpace: colorSpace, colors: [core, gone] as CFArray, locations: [0.0, 1.0]
+           ) {
+            let at = CGPoint(x: width / 2, y: 0)
+            ctx.drawRadialGradient(
+                glow, startCenter: at, startRadius: 0, endCenter: at, endRadius: head,
+                options: []
+            )
+        }
         return ctx.makeImage()
     }
 

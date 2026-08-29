@@ -17,6 +17,16 @@ final class EnvironmentOverlayController {
         }
     }
 
+    /// The same band the Monitor board uses: above every wallpaper window,
+    /// below every application window.
+    ///
+    /// Not the plain desktop level — an HTML wallpaper with mouse interaction
+    /// on climbs to `desktopIconWindow + 1` and would then be drawn straight
+    /// over the particles, which are opaque enough to hide completely.
+    static let overlayLevel = NSWindow.Level(
+        rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2
+    )
+
     private var hosts: [CGDirectDisplayID: Host] = [:]
 
     func apply(
@@ -59,6 +69,14 @@ final class EnvironmentOverlayController {
         host.window.close()
     }
 
+    #if DEBUG
+    /// Window level actually in force, for the regression test that pins the
+    /// particles below application windows.
+    func debugWindowLevel(screenID: CGDirectDisplayID) -> Int? {
+        hosts[screenID]?.window.level.rawValue
+    }
+    #endif
+
     func retainOnly(_ liveScreenIDs: Set<CGDirectDisplayID>) {
         for screenID in Array(hosts.keys) where !liveScreenIDs.contains(screenID) {
             teardown(screenID: screenID)
@@ -78,8 +96,12 @@ final class EnvironmentOverlayController {
             backing: .buffered,
             defer: false
         )
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
+        // Order matters: `isFloatingPanel` rewrites `level` to `.floating` (3),
+        // which is above every application window — the particles then rained
+        // over other apps. Measured, not guessed: setting the flag after the
+        // level moved it from -2147483623 to 3.
         window.isFloatingPanel = true
+        window.level = Self.overlayLevel
         window.hidesOnDeactivate = false
         window.isOpaque = false
         window.backgroundColor = .clear

@@ -2310,6 +2310,36 @@
         }
       }
     },
+    "A downpour draws more particles than a drizzle" : {
+      "comment" : "Weather sub-option explainer: intensity scaling.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A downpour draws more particles than a drizzle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "土砂降りは霧雨より粒子が多くなります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暴雨的粒子会比毛毛雨更密"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暴雨的粒子會比毛毛雨更密"
+          }
+        }
+      }
+    },
     "A texture failed to decode (%@). Re-downloading the wallpaper in Steam usually fixes it." : {
       "comment" : "Wallpaper Engine fallback warning body. The placeholder is decode detail.",
       "localizations" : {
@@ -55678,6 +55708,186 @@
         }
       }
     },
+    "Bubbles" : {
+      "comment" : "Particle effect name: bubbles rising as if underwater.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bubbles"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "泡"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "气泡"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "氣泡"
+          }
+        }
+      }
+    },
+    "Embers" : {
+      "comment" : "Particle effect name: sparks rising from an unseen fire.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Embers"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "残り火"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "余烬"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "餘燼"
+          }
+        }
+      }
+    },
+    "Follow Intensity" : {
+      "comment" : "Weather sub-option: scale particle density by reported intensity.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow Intensity"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "強さに追従"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随强度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟隨強度"
+          }
+        }
+      }
+    },
+    "Follow weather intensity" : {
+      "comment" : "Accessibility label for the intensity-following toggle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow weather intensity"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気の強さに追従"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随天气强度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟隨天氣強度"
+          }
+        }
+      }
+    },
+    "Follow Wind" : {
+      "comment" : "Weather sub-option: lean particles with the live wind.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow Wind"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "風に追従"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随风向"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟隨風向"
+          }
+        }
+      }
+    },
+    "Follow wind direction" : {
+      "comment" : "Accessibility label for the wind-following toggle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow wind direction"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "風向きに追従"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随风向"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟隨風向"
+          }
+        }
+      }
+    },
     "macOS wouldn't unlock your saved API key — allow access when it asks, or set the key again in Settings." : {
       "comment" : "Workshop browse error when the keychain refused to hand over the stored API key.",
       "localizations" : {
@@ -55703,6 +55913,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 未能取出已儲存的 API key —— 彈出詢問時請允許存取,或在設定裡重新設定一次。"
+          }
+        }
+      }
+    },
+    "Meteors" : {
+      "comment" : "Particle effect name: a sparse shower of shooting stars.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meteors"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "流星"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "流星雨"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "流星雨"
+          }
+        }
+      }
+    },
+    "Particles lean the way the wind is blowing outside" : {
+      "comment" : "Weather sub-option explainer: wind lean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Particles lean the way the wind is blowing outside"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外の風向きに合わせて粒子が傾きます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "粒子会朝室外风吹的方向倾斜"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "粒子會朝室外風吹的方向傾斜"
           }
         }
       }

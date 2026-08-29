@@ -24,17 +24,31 @@ enum WeatherWindPolicy {
     /// order of magnitude faster than a snowflake — which is why it is a
     /// parameter and not a constant.
     ///
-    /// Capped: past roughly 60° the emitter is throwing particles sideways
-    /// across the screen, which reads as a glitch rather than as weather, and
-    /// gusts of that size are rare enough not to be worth looking wrong for.
+    /// Capped, and lower than the physics alone would suggest. The drawn fall
+    /// speed is in points per second and is not calibrated to metres, so
+    /// pushing a real wind through a real terminal velocity overstates the
+    /// on-screen lean: rain no longer accelerates, so the lean now holds for
+    /// the whole fall instead of being straightened out by gravity a second
+    /// in, and an ordinary breeze came out looking like a gale. 30° is about
+    /// where a leaning field still reads as rain rather than as sleet fired
+    /// across the desktop.
+    /// Compressed rather than clipped. `atan(wind / fall)` saturates fast — an
+    /// ordinary 25 km/h breeze already puts rain past 40° — so a hard clamp at
+    /// a comfortable angle made every wind above a light one produce the exact
+    /// same lean, and the wind reading stopped mattering at all (it also made
+    /// snow and rain lean identically, which they never do). `tanh` keeps the
+    /// gentle end untouched, stays strictly increasing forever, and only
+    /// approaches the limit instead of hitting it.
     static func tiltRadians(
         windSpeedKPH: Double,
         fallSpeedMPS: Double,
-        maximum: Double = .pi / 3
+        maximum: Double = .pi / 6
     ) -> Double {
-        guard windSpeedKPH.isFinite, windSpeedKPH > 0, fallSpeedMPS > 0 else { return 0 }
+        guard windSpeedKPH.isFinite, windSpeedKPH > 0, fallSpeedMPS > 0, maximum > 0 else {
+            return 0
+        }
         let windMPS = windSpeedKPH / 3.6
-        return min(atan(windMPS / fallSpeedMPS), maximum)
+        return maximum * tanh(atan(windMPS / fallSpeedMPS) / maximum)
     }
 
     /// Terminal fall speeds, m/s, used only to work out the lean above.

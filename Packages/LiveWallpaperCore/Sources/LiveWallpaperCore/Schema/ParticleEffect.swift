@@ -11,6 +11,9 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
     case fallingLeaves = "Leaves"
     case sakura = "Sakura"
     case mist = "Mist"
+    case embers = "Embers"
+    case bubbles = "Bubbles"
+    case meteors = "Meteors"
 
     public var id: String { rawValue }
 
@@ -23,8 +26,11 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
         switch self {
         case .rain, .snow, .fallingLeaves, .sakura, .dust: return true
         // Mist does not fall, so there is no fall direction to lean; it drifts
-        // sideways on its own instead.
-        case .none, .bokeh, .fireflies, .stars, .mist:     return false
+        // sideways on its own instead. Embers and bubbles rise, and meteors
+        // come in on their own fixed slant — none of them has a fall to tilt,
+        // and none is driven by the weather in the first place.
+        case .none, .bokeh, .fireflies, .stars, .mist,
+             .embers, .bubbles, .meteors:                  return false
         }
     }
 
@@ -54,6 +60,9 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
         case .fallingLeaves: return "Leaves"
         case .sakura: return "Sakura"
         case .mist: return "Mist"
+        case .embers: return "Embers"
+        case .bubbles: return "Bubbles"
+        case .meteors: return "Meteors"
         }
     }
 
@@ -69,6 +78,9 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
         case .fallingLeaves: return "leaf"
         case .sakura: return "camera.macro"
         case .mist: return "cloud.fog"
+        case .embers: return "flame"
+        case .bubbles: return "bubbles.and.sparkles"
+        case .meteors: return "sparkle"
         }
     }
 }

@@ -512,10 +512,63 @@ struct WeatherReactivePolicyTests {
         #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: 0, fallSpeedMPS: 8) == 0)
         // A storm leans hard but never sideways.
         let gale = WeatherWindPolicy.tiltRadians(windSpeedKPH: 200, fallSpeedMPS: 1)
-        #expect(gale <= .pi / 3 + 0.0001)
+        #expect(gale < .pi / 6)
+        // The reading has to keep mattering all the way up: a hard clamp made
+        // every wind past a breeze produce the identical lean, so "follow the
+        // wind" silently became "lean by a constant".
+        let breeze = WeatherWindPolicy.tiltRadians(windSpeedKPH: 15, fallSpeedMPS: 8)
+        let strong = WeatherWindPolicy.tiltRadians(windSpeedKPH: 45, fallSpeedMPS: 8)
+        let storm = WeatherWindPolicy.tiltRadians(windSpeedKPH: 90, fallSpeedMPS: 8)
+        #expect(breeze < strong)
+        #expect(strong < storm)
         // Nonsense in, vertical out.
         #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: .nan, fallSpeedMPS: 8) == 0)
         #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: 20, fallSpeedMPS: 0) == 0)
+    }
+
+    /// With "Match local weather" off, nothing about the sky may reach the
+    /// emitter: not the wind, not the intensity. The user picked a preset and
+    /// that is what they get.
+    @Test("weather off means the preset alone")
+    func weatherOffIgnoresWindAndIntensity() {
+        for intensity in [WeatherIntensity.light, .moderate, .heavy] {
+            #expect(
+                WeatherReactivePolicy.resolvedParticleDensity(
+                    userDensity: 1.0, weatherReactive: false, intensity: intensity
+                ) == 1.0,
+                "intensity \(intensity) leaked into a non-reactive display"
+            )
+        }
+    }
+
+    /// Both halves of "match local weather" are separately switchable: a user
+    /// who wants a downpour to actually look heavier but does not want the
+    /// rain slanting has to be able to say so.
+    @Test("intensity scaling can be switched off on its own")
+    func intensityScalingIsOptional() {
+        let heavy = WeatherReactivePolicy.resolvedParticleDensity(
+            userDensity: 1.0, weatherReactive: true, intensity: .heavy, intensityEnabled: true
+        )
+        let flat = WeatherReactivePolicy.resolvedParticleDensity(
+            userDensity: 1.0, weatherReactive: true, intensity: .heavy, intensityEnabled: false
+        )
+        #expect(heavy > 1.0, "heavy rain did not thicken the field")
+        #expect(flat == 1.0, "intensity still applied with the switch off")
+    }
+
+    /// Defaults, stated once: wind is opt-in, intensity is on.
+    @Test("weather sub-options carry their intended defaults")
+    func weatherSubOptionDefaults() {
+        let config = VideoEffectConfig()
+        #expect(config.weatherWind == false)
+        #expect(config.weatherIntensity == true)
+
+        // Configurations written before these keys existed must land on the
+        // same values rather than on `false` for both.
+        let legacy = #"{"weatherReactive":true}"#.data(using: .utf8)!
+        let decoded = try! JSONDecoder().decode(VideoEffectConfig.self, from: legacy)
+        #expect(decoded.weatherWind == false)
+        #expect(decoded.weatherIntensity == true)
     }
 
     /// WMO already grades every precipitation family slight / moderate / heavy.

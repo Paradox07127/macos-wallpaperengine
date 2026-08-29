@@ -297,6 +297,9 @@ private extension ParticleEffect {
         case .fallingLeaves: return "leaf"
         case .sakura: return "camera.macro"
         case .mist: return "cloud.fog"
+        case .embers: return "flame"
+        case .bubbles: return "bubbles.and.sparkles"
+        case .meteors: return "sparkle"
         }
     }
 }
