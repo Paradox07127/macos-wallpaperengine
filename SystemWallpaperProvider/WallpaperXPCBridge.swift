@@ -257,6 +257,14 @@ final class WallpaperXPCBridge: @unchecked Sendable {
             (#selector(WallpaperExtensionXPCProtocol.selectedChoicesDidChange(for:reply:)), [0]),
             (#selector(WallpaperExtensionXPCProtocol.invokeContextMenuAction(menuItemID:groupItemID:reply:)), [0, 1]),
             (#selector(WallpaperExtensionXPCProtocol.isChoiceDownloaded(with:reply:)), [0]),
+            // Stubs, but stubs the system can still call: an un-allowlisted
+            // `id` argument is dropped before it reaches them, so the Agent
+            // waits out its call with no reply and no error.
+            (#selector(WallpaperExtensionXPCProtocol.download(choiceID:reply:)), [0]),
+            (#selector(WallpaperExtensionXPCProtocol.pauseDownload(for:reply:)), [0]),
+            (#selector(WallpaperExtensionXPCProtocol.cancelDownload(for:reply:)), [0]),
+            (#selector(WallpaperExtensionXPCProtocol.resumeDownload(for:reply:)), [0]),
+            (#selector(WallpaperExtensionXPCProtocol.removeDownload(for:reply:)), [0]),
             (#selector(WallpaperExtensionXPCProtocol.migrateSelectedChoice(for:reply:)), [0]),
             (#selector(WallpaperExtensionXPCProtocol.migrate(from:to:reply:)), [0, 1]),
             (#selector(WallpaperExtensionXPCProtocol.skipShuffledContent(id:reply:)), [0]),

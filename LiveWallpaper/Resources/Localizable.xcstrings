@@ -47064,31 +47064,31 @@
         }
       }
     },
-    "The lock screen always plays. This is what happens after you unlock." : {
-      "comment" : "Explains that the playback-mode control only affects the desktop, not the lock screen.",
+    "The lock screen plays unless low power or heat slows it. This is what happens after you unlock." : {
+      "comment" : "Explains that the desktop playback picker does not govern the lock screen, which still throttles on low power or heat.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The lock screen always plays. This is what happens after you unlock."
+            "value" : "The lock screen plays unless low power or heat slows it. This is what happens after you unlock."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ロック画面では常に再生されます。これはロック解除後の動作です。"
+            "value" : "ロック画面は、低電力モードや発熱による減速がない限り再生されます。ここで設定するのはロック解除後の動作です。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "锁屏始终播放。这里设置的是解锁之后的行为。"
+            "value" : "除非低电量或过热导致降速,锁屏都会播放。这里设置的是解锁之后的表现。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鎖定畫面一律播放。這裡設定的是解鎖之後的行為。"
+            "value" : "除非低電量或過熱導致降速,鎖定畫面都會播放。這裡設定的是解鎖之後的表現。"
           }
         }
       }

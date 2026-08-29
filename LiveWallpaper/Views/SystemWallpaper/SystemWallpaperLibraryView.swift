@@ -181,7 +181,7 @@ struct SystemWallpaperLibraryView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("On the desktop")
                     .font(.callout.weight(.medium))
-                Text("The lock screen always plays. This is what happens after you unlock.")
+                Text("The lock screen plays unless low power or heat slows it. This is what happens after you unlock.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -434,7 +434,7 @@ private struct SystemWallpaperTile: View {
                 }
             }
         }
-        .task(id: thumbnailURL) {
+        .task(id: item.addedAt) {
             guard let thumbnailURL else { return }
             thumbnail = await SystemWallpaperThumbnails.image(for: thumbnailURL)
         }

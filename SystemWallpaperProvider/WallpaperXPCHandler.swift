@@ -47,10 +47,15 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         Self.queue.async { [self] in
             let models = settings.makeViewModels()
             // An empty-but-valid reply beats an error: the panel then shows an
-            // empty group instead of logging a 4099 and dropping us.
-            let object = SettingsViewModelsEncoder.makeXPCObject(models)
+            // empty group instead of logging a 4099 and dropping us. A *nil*
+            // object is not that reply — it is us failing to build anything.
+            guard let object = SettingsViewModelsEncoder.makeXPCObject(models)
                 ?? SettingsViewModelsEncoder.makeXPCObject(
-                    SettingsViewModels(desktop: nil, screenSaver: nil))
+                    SettingsViewModels(desktop: nil, screenSaver: nil)) else {
+                reportUnbuildable("settings view models")
+                reply(nil, NSError(domain: "com.loomscreen.wallpaper", code: 4))
+                return
+            }
             wpxLog.info("provideSettingsViewModels — \(models.desktop?.groups.first?.items.count ?? 0) item(s)")
             writeActiveHeartbeat()
             reply(object, nil)
@@ -65,7 +70,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         nonisolated(unsafe) let id = id
         nonisolated(unsafe) let request = request
         Self.queue.async { [self] in
-            let uuid = MirrorProbe.firstUUID(in: id) ?? Self.fallbackUUID(for: request)
+            let uuid = Self.surfaceUUID(id: id, request: request) ?? Self.fallbackUUID(forDisplayID: 0)
             let size = Self.sanitized(size: MirrorProbe.cgSize(named: "size", in: request))
             let scale = Self.sanitized(scale: MirrorProbe.cgFloat(named: "scaleFactor", in: request))
             let displayID = MirrorProbe.uint32(named: "directDisplayID", in: request)
@@ -93,7 +98,11 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 CATransaction.setDisableActions(true)
                 surface.renderer.layer.frame = CGRect(origin: .zero, size: size)
                 CATransaction.commit()
-                let context = PrivateClassFactory.remoteContext(contextId: surface.contextId)
+                guard let context = PrivateClassFactory.remoteContext(contextId: surface.contextId) else {
+                    reportUnbuildable("remote context")
+                    reply(nil, NSError(domain: "com.loomscreen.wallpaper", code: 4))
+                    return
+                }
 
                 guard let choiceID, choiceID != surface.choiceID else {
                     writeActiveHeartbeat()
@@ -142,6 +151,15 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 reply(nil, NSError(domain: "com.loomscreen.wallpaper", code: 1))
                 return
             }
+            // Before the layers and the decoder: a context we cannot hand over
+            // is the same "refuse rather than build" case as the two above.
+            guard let context = PrivateClassFactory.remoteContext(contextId: contextId) else {
+                reportUnbuildable("remote context")
+                surface.bridge.invalidate()
+                registry.remove(uuid)
+                reply(nil, NSError(domain: "com.loomscreen.wallpaper", code: 4))
+                return
+            }
             surface.contextId = contextId
             surface.choiceID = choiceID
 
@@ -166,7 +184,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             }
             writeActiveHeartbeat()
             wpxLog.info("acquire — surface \(uuid.uuidString, privacy: .public) ctx=\(contextId) preview=\(isPreview)")
-            reply(PrivateClassFactory.remoteContext(contextId: contextId), nil)
+            reply(context, nil)
         }
     }
 
@@ -178,8 +196,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         Self.queue.async { [self] in
             let mode = MirrorProbe.enumCaseName(named: "presentationMode", in: request) ?? "default"
             let activity = MirrorProbe.enumCaseName(named: "activityState", in: request) ?? "active"
-            let uuid = MirrorProbe.firstUUID(in: id) ?? MirrorProbe.uint32(named: "directDisplayID", in: id)
-                .map { Self.fallbackUUID(forDisplayID: $0) }
+            let uuid = Self.surfaceUUID(id: id)
 
             let playbackMode = store.loadManifest().playbackMode
             let targets = uuid.flatMap { registry.surface(for: $0) }.map { [$0] } ?? registry.all
@@ -202,8 +219,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             // Acquires without a WallpaperID were keyed off the display; probe
             // the same field here or their surfaces can never be torn down and
             // the remote context leaks into the Agent's composite tree.
-            let uuid = MirrorProbe.firstUUID(in: id)
-                ?? MirrorProbe.uint32(named: "directDisplayID", in: id).map { Self.fallbackUUID(forDisplayID: $0) }
+            let uuid = Self.surfaceUUID(id: id)
             guard let uuid, let surface = registry.surface(for: uuid) else {
                 reply(nil)
                 return
@@ -290,16 +306,25 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         nonisolated(unsafe) let request = request
         Self.queue.async { [self] in
             guard let choiceID = MirrorProbe.identifierFromDescription(request) else {
+                // Nothing was removed, so "success" would leave the panel and
+                // the disk disagreeing with no error anywhere.
                 wpxLog.error("removeChoiceRequest without an identifier")
-                reply(nil)
+                reply(NSError(domain: "com.loomscreen.wallpaper", code: 6))
                 return
             }
             let removed: SystemWallpaperManifest?
             do {
                 removed = try SystemWallpaperLock.withExclusiveLock(root: store.sharedRoot()) {
-                    try SystemWallpaperLibrary.remove(
+                    // Inside the lock, and readable-or-nothing: `loadManifest()`
+                    // reports a damaged index as an empty library, so the id was
+                    // "not present" and we replied success while the files sat
+                    // on disk. The app's `remove(itemID:)` throws here.
+                    guard let manifest = store.loadManifestIfReadable() else {
+                        throw NSError(domain: "com.loomscreen.wallpaper", code: 5)
+                    }
+                    return try SystemWallpaperLibrary.remove(
                         id: choiceID,
-                        from: store.loadManifest(),
+                        from: manifest,
                         videosDirectory: store.videosDirectory(),
                         persist: { try store.writeManifest($0) },
                         onFileRemovalFailure: { name, error in
@@ -308,9 +333,10 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     )
                 }
             } catch {
-                // Manifest write failed: nothing was deleted, so the library
-                // is still consistent — report it rather than claim success.
-                wpxLog.error("removeChoiceRequest persist failed: \(String(describing: error), privacy: .public)")
+                // Unreadable index or a failed manifest write: nothing was
+                // deleted, so the library is still consistent — report it
+                // rather than claim success.
+                wpxLog.error("removeChoiceRequest failed: \(String(describing: error), privacy: .public)")
                 reply(error)
                 return
             }
@@ -336,6 +362,24 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             // Without this the panel keeps showing the tile it just removed.
             invalidateAgentSnapshots()
             reply(nil)
+        }
+    }
+
+    /// The push half of `provideSettingsViewModels`: same models, same encoder,
+    /// our side calling the Agent over `remoteObjectInterface`.
+    /// `invalidateSnapshots` alone only re-renders the tiles the panel already
+    /// holds, so an item the app just published or deleted did not appear (or
+    /// disappear) until the panel was closed and reopened.
+    private func pushSettingsViewModels() {
+        guard let proxy = agentProxyProvider?() else { return }
+        guard let object = SettingsViewModelsEncoder.makeXPCObject(settings.makeViewModels()) else {
+            reportUnbuildable("settings view models")
+            return
+        }
+        proxy.updateSettingsViewModels(object) { error in
+            if let error {
+                wpxLog.error("updateSettingsViewModels failed: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
@@ -375,6 +419,38 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     func handleNotification(named: Any?, reply: @escaping @Sendable (Error?) -> Void) { reply(nil) }
 
     // MARK: - Helpers
+
+    /// `verifyRuntimeLayout` only proves the private classes still exist. One
+    /// that keeps its name but changes the layout we raw-write fails here
+    /// instead, per call — and the old shape of that was `reply(nil, nil)` next
+    /// to a `runtimeHealthy: true` beat, so the panel went blank while the app
+    /// reported the extension was fine. The health bit has to mean "this call
+    /// really produced the object", and every later success rewrites it true.
+    private func reportUnbuildable(_ what: String) {
+        wpxLog.error("could not build \(what, privacy: .public) — the private layout changed under us")
+        // Disarm the keep-alive with it: a timer republishing "healthy" every
+        // two minutes would paper over the failure just recorded. The next
+        // call that does produce an object re-arms it.
+        Self.heartbeatKeepAlive?.cancel()
+        Self.heartbeatKeepAlive = nil
+        store.writeHeartbeat(activeChoiceID: nil, runtimeHealthy: false)
+    }
+
+    /// The one ladder acquire, update and invalidate all key off. They used to
+    /// disagree: acquire filed a surface under the *request*'s
+    /// `directDisplayID` while the other two probed the *id*'s, so a
+    /// WallpaperID-less acquire got updates meant for every display and an
+    /// invalidate that could never find it. Nil only when the call carries no
+    /// identity at all — acquire has a terminal fallback, the other two treat
+    /// it as "not this surface".
+    private static func surfaceUUID(id: Any?, request: Any? = nil) -> UUID? {
+        if let uuid = MirrorProbe.firstUUID(in: id) { return uuid }
+        if let displayID = MirrorProbe.uint32(named: "directDisplayID", in: id) {
+            return fallbackUUID(forDisplayID: displayID)
+        }
+        return MirrorProbe.uint32(named: "directDisplayID", in: request)
+            .map { fallbackUUID(forDisplayID: $0) }
+    }
 
     /// The file this choice would play, or nil when the library cannot serve
     /// it — damaged manifest, entry gone, or asset deleted. Acquire consults
@@ -469,6 +545,42 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             active.append(id)
         }
         store.writeHeartbeat(activeChoiceID: active.first, activeChoiceIDs: active, runtimeHealthy: true)
+        syncHeartbeatKeepAlive(registry: registry, store: store)
+    }
+
+    /// The app reads a beat older than `heartbeatFreshnessInterval` (300 s,
+    /// WallpaperExportService) as "the extension is not running". A wallpaper
+    /// that is simply playing sends us nothing — no acquire, no settings
+    /// request, and `update` only on a state change — so after five minutes the
+    /// app showed "Ready — pick one" under a visibly running wallpaper.
+    private static let heartbeatKeepAliveInterval = 120
+
+    /// Lifecycle queue only, like everything else the registry touches.
+    nonisolated(unsafe) private static var heartbeatKeepAlive: DispatchSourceTimer?
+
+    /// Armed while a non-preview surface is live, disarmed with the last one.
+    /// Hangs off `writeActiveHeartbeat` because every path that changes the
+    /// active set already goes through it. A coalescable timer, not a render
+    /// tick: it encodes a few hundred bytes and writes one file.
+    private static func syncHeartbeatKeepAlive(registry: SurfaceRegistry, store: SharedLibraryStore) {
+        guard registry.all.contains(where: { !$0.isPreview }) else {
+            heartbeatKeepAlive?.cancel()
+            heartbeatKeepAlive = nil
+            return
+        }
+        guard heartbeatKeepAlive == nil else { return }
+        // Same one-way handoff `reapplyPolicy` documents: the registry is
+        // confined to this queue and the timer fires on it.
+        nonisolated(unsafe) let registry = registry
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(
+            deadline: .now() + .seconds(heartbeatKeepAliveInterval),
+            repeating: .seconds(heartbeatKeepAliveInterval),
+            leeway: .seconds(30)
+        )
+        timer.setEventHandler { writeActiveHeartbeat(registry: registry, store: store) }
+        heartbeatKeepAlive = timer
+        timer.resume()
     }
 
     private func writeActiveHeartbeat() {
@@ -531,7 +643,10 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// cannot cover this: the panel's own Remove is disabled for our provider,
     /// so the app is the only delete path users have.
     func libraryDidChange() {
-        Self.queue.async { [self] in invalidateAgentSnapshots() }
+        Self.queue.async { [self] in
+            pushSettingsViewModels()
+            invalidateAgentSnapshots()
+        }
     }
 
     /// The panel and Agent normally send sane values; these guards are about
@@ -552,10 +667,6 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
 
     /// Some acquires arrive without a WallpaperID; key them off the display so
     /// they still get a stable, reusable surface.
-    private static func fallbackUUID(for request: Any?) -> UUID {
-        fallbackUUID(forDisplayID: MirrorProbe.uint32(named: "directDisplayID", in: request) ?? 0)
-    }
-
     static func fallbackUUID(forDisplayID displayID: UInt32) -> UUID {
         var bytes = [UInt8](repeating: 0, count: 16)
         withUnsafeBytes(of: displayID.littleEndian) { raw in
