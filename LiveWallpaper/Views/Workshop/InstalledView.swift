@@ -287,7 +287,9 @@ struct InstalledView: View {
     }
 
     private var emptyStatePrimaryAction: EmptyStateButtonAction? {
-        if doctor.hasBoundBinary, doctor.isGreen(.binaryIdentity), let onBrowseOnline {
+        // Browsing needs only the Web API key (the Browse tab walks the user
+        // through that itself); SteamCMD gates downloads, not the entry point.
+        if let onBrowseOnline {
             return EmptyStateButtonAction("Browse Online", action: onBrowseOnline)
         }
         return onInstallSteamCMD.map { install in

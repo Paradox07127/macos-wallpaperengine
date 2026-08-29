@@ -28,7 +28,7 @@ struct WorkshopAPIKeySection: View {
                 title: "Steam Web API key",
                 subtitle: services.hasWebAPIKey
                     ? "Stored on this Mac only — never synced"
-                    : "Your own free key — required to browse the Workshop online",
+                    : "Your own free key — unlocks the full native search",
                 info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Get one free at steamcommunity.com/dev/apikey."
             ) {
                 summaryControl

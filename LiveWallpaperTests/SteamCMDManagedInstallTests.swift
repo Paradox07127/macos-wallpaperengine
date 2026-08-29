@@ -225,39 +225,6 @@ struct SteamCMDManagedInstallContainmentTests {
     }
 }
 
-@Suite("SteamCMD first-run self-update retry")
-struct SteamCMDSelfUpdateRetryPolicyTests {
-    @Test("A fresh bootstrap update gets one retry")
-    func retriesFreshBootstrapUpdate() {
-        #expect(SteamCMDSelfUpdateRetryPolicy.shouldRetry(
-            output: "Checking for available updates...\nDownloading update...",
-            exitCode: 7,
-            timedOut: false,
-            attempt: 0
-        ))
-    }
-
-    @Test("A normal failure is not hidden behind retries")
-    func refusesUnrelatedFailure() {
-        #expect(!SteamCMDSelfUpdateRetryPolicy.shouldRetry(
-            output: "Failed to connect to content servers",
-            exitCode: 7,
-            timedOut: false,
-            attempt: 0
-        ))
-    }
-
-    @Test("The retry is bounded even if update output repeats")
-    func boundsRetry() {
-        #expect(!SteamCMDSelfUpdateRetryPolicy.shouldRetry(
-            output: "Verifying installation...",
-            exitCode: 7,
-            timedOut: false,
-            attempt: 1
-        ))
-    }
-}
-
 @Suite("SteamCMD managed install symlink containment")
 struct SteamCMDManagedInstallSymlinkTests {
     @Test("A symlink escaping the payload is detected")
@@ -768,7 +735,7 @@ struct SteamCMDManagedInstallInterleavingTests {
         )
 
         async let removal = coordinator.forget()
-        await Task.yield()
+        #expect(await gateReached(gate), "the removal never reached the gate")
         #expect(coordinator.status == .removing)
 
         // The whole point: this must not start. Before `.removing` existed the
@@ -811,9 +778,9 @@ struct SteamCMDManagedInstallInterleavingTests {
         )
 
         async let older = coordinator.forget()
-        await Task.yield()
+        #expect(await gateReached(first), "the first removal never reached its gate")
         async let newer = coordinator.forget()
-        await Task.yield()
+        #expect(await gateReached(second), "the second removal never reached its gate")
 
         // The older one replies first and claims success. It has been
         // superseded, so its verdict must be discarded rather than clearing a
@@ -835,8 +802,12 @@ struct SteamCMDManagedInstallInterleavingTests {
 private actor AsyncGate {
     private var continuations: [CheckedContinuation<Void, Never>] = []
     private var isOpen = false
+    /// How many callers have entered `wait()`. Reaching the gate is the only
+    /// observable proof that the task holding it actually started.
+    private(set) var arrivals = 0
 
     func wait() async {
+        arrivals += 1
         if isOpen { return }
         await withCheckedContinuation { continuations.append($0) }
     }
@@ -847,6 +818,21 @@ private actor AsyncGate {
         continuations = []
         pending.forEach { $0.resume() }
     }
+}
+
+/// `Task.yield()` only reschedules the caller — it does not promise a child
+/// task has been scheduled, let alone run far enough to reach the gate. Waiting
+/// on the arrival itself is what makes the interleaving deterministic; the
+/// deadline keeps a regression a failure rather than a hang.
+private func gateReached(
+    _ gate: AsyncGate, arrivals count: Int = 1, within seconds: Double = 5
+) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(seconds)
+    while await gate.arrivals < count {
+        if ContinuousClock.now >= deadline { return false }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
+    return true
 }
 
 /// The manifest is Valve's own steamcmd update channel; installing from it is

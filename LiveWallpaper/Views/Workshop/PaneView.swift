@@ -16,7 +16,7 @@ struct PaneView: View {
     @State private var isShowingKeyEntry = false
     @State private var isShowingInstallConsent = false
     @State private var installedCount = 0
-    @State private var managedInstaller = SteamCMDManagedInstallCoordinator()
+    @State private var managedInstaller = SteamCMDManagedInstallCoordinator.shared
     @State private var steamCMDSetupError: String?
 
     var body: some View {
@@ -175,10 +175,10 @@ struct PaneView: View {
         Task { await viewModel.searchFromDeepLink(query) }
     }
 
-    /// Browse Online is useless without a Web API key and SteamCMD, and neither
-    /// is discoverable on its own — so the setup sheet greets the first visit to
-    /// that tab. It used to hang off the paste button, which a user looking for
-    /// downloads never presses.
+    /// A Web API key unlocks the full native search (keyless Browse falls back
+    /// to Valve's own public listing), and the key isn't discoverable on its
+    /// own — so the setup sheet greets the first visit to that tab. It used to hang off the paste button, which
+    /// a user looking for downloads never presses.
     private func presentOnboardingIfNeeded() {
         guard selectedTab == .browseOnline, !onboardingShown else { return }
         isShowingOnboarding = true
@@ -377,7 +377,9 @@ struct WorkshopPaneHeader: View {
             return String(localized: "\(installedCount) installed", comment: "Workshop header stat: number of installed wallpapers.")
         case .browseOnline:
             if !services.hasWebAPIKey {
-                return String(localized: "API key required", comment: "Workshop header stat when no Steam Web API key is set.")
+                // Browse still works without a key — it just runs off Valve's
+                // public page, which issues no Web API requests to count.
+                return String(localized: "Browsing without an API key", comment: "Workshop header stat when no Steam Web API key is set and Browse uses Valve's public search page.")
             }
             return String(localized: "\(WorkshopRequestCounter.countForToday()) API requests today", comment: "Workshop header stat: Steam Web API requests issued today.")
         }

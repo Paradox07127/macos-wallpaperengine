@@ -3,6 +3,14 @@ import Foundation
 import LiveWallpaperCore
 import os
 
+/// Identity of the long SteamCMD operation the current task is running, so a
+/// Cancel can name the exact child in the connector instead of "whatever is
+/// running now". A task-local because the download path crosses
+/// `SteamCMDDoctorService`, which has no per-attempt identity to carry.
+enum SteamCMDOperationScope {
+    @TaskLocal static var currentID: String?
+}
+
 /// XPC client for the unsandboxed Steam connector (real $HOME / STEAMROOT).
 /// One short-lived connection per call.
 @MainActor
@@ -131,23 +139,34 @@ enum SteamConnectorClient {
     /// Long-running app_update with progress.
     static func installWallpaperEngineAssets(
         accountName: String,
+        operationID: String,
         onProgress: @escaping @Sendable (SteamOperationProgress) -> Void
     ) async -> SteamEngineAssetsResult? {
         let data = await call(onProgress: onProgress) { connector, reply in
-            connector.installWallpaperEngineAssets(accountName: accountName, with: reply)
+            connector.installWallpaperEngineAssets(
+                accountName: accountName,
+                operationID: operationID,
+                with: reply
+            )
         }
         return data.flatMap { try? JSONDecoder().decode(SteamEngineAssetsResult.self, from: $0) }
     }
 
+    /// The cancel identity comes from `SteamCMDOperationScope`, not a parameter:
+    /// this call is reached through `SteamCMDDoctorService`, which carries no
+    /// per-attempt identity of its own. Outside a scope the run still registers,
+    /// under an id nobody holds — uncancellable, as unscoped runs were before.
     static func downloadWorkshopItem(
         workshopID: String,
         accountName: String,
         onProgress: @escaping @Sendable (SteamOperationProgress) -> Void
     ) async -> SteamWorkshopDownloadResult? {
+        let operationID = SteamCMDOperationScope.currentID ?? UUID().uuidString
         let data = await call(onProgress: onProgress) { connector, reply in
             connector.downloadWorkshopItem(
                 workshopID: workshopID,
                 accountName: accountName,
+                operationID: operationID,
                 with: reply
             )
         }
@@ -163,9 +182,25 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamDeleteResult.self, from: $0) }
     }
 
-    static func latestWallpaperEngineBuildID(accountName: String) async -> String? {
+    /// SIGTERMs the connector's SteamCMD child if it is the one `operationID`
+    /// started. The interrupted operation returns through its own reply as a
+    /// failure. true = something was signalled; false = a different operation
+    /// (or none) holds the queue; nil = connector unreachable.
+    @discardableResult
+    static func cancelActiveSteamCMD(operationID: String) async -> Bool? {
         let data = await call { connector, reply in
-            connector.latestWallpaperEngineBuildID(accountName: accountName, with: reply)
+            connector.cancelActiveSteamCMD(operationID: operationID, with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(Bool.self, from: $0) }
+    }
+
+    static func latestWallpaperEngineBuildID(accountName: String, operationID: String) async -> String? {
+        let data = await call { connector, reply in
+            connector.latestWallpaperEngineBuildID(
+                accountName: accountName,
+                operationID: operationID,
+                with: reply
+            )
         }
         return data.flatMap { try? JSONDecoder().decode(String?.self, from: $0) } ?? nil
     }

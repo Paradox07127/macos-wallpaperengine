@@ -332,6 +332,12 @@ actor WorkshopQueryService {
     private var inflight: [String: Task<WorkshopQueryPage, Error>] = [:]
     private var tokenBucket = tokenCapacity
     private var tokenRefilledAt = Date()
+    /// Reports each keyed Valve verdict so `WorkshopServices` can surface a
+    /// stored key that Valve later revoked: `false` only on an explicit auth
+    /// rejection (401/403/disabled-key body), `true` on a successful keyed
+    /// response. Network failures report nothing — offline must not mark a
+    /// known-good key bad.
+    private var authVerdictHandler: (@Sendable (Bool, String) -> Void)?
 
     init(
         keychain: WorkshopKeychainStore,
@@ -341,6 +347,15 @@ actor WorkshopQueryService {
         self.keychain = keychain
         self.session = session
         self.cache = cache
+    }
+
+    func setAuthVerdictHandler(_ handler: @escaping @Sendable (_ accepted: Bool, _ keyFingerprint: String) -> Void) {
+        authVerdictHandler = handler
+    }
+
+    static func keyFingerprint(_ key: String) -> String {
+        SHA256.hash(data: Data(key.utf8)).prefix(8)
+            .map { String(format: "%02x", $0) }.joined()
     }
 
     func fetch(_ request: WorkshopQueryRequest) async throws -> WorkshopQueryPage {
@@ -434,9 +449,7 @@ actor WorkshopQueryService {
     /// Hashes the API key into the cache-key prefix so cache entries are
     /// isolated per Steam account.
     private static func namespacedCacheKey(_ base: String, apiKey: String) -> String {
-        let namespace = SHA256.hash(data: Data(apiKey.utf8)).prefix(8)
-            .map { String(format: "%02x", $0) }.joined()
-        return "\(namespace)-\(base)"
+        "\(keyFingerprint(apiKey))-\(base)"
     }
 
     private func performQuery(_ request: WorkshopQueryRequest, apiKey: String) async throws -> WorkshopQueryPage {
@@ -470,11 +483,20 @@ actor WorkshopQueryService {
 
             switch http.statusCode {
             case 200:
-                let page = try decodeQueryPage(data)
+                let page: WorkshopQueryPage
+                do {
+                    page = try decodeQueryPage(data)
+                } catch let error as WorkshopQueryError where error == .keyDisabled {
+                    authVerdictHandler?(false, Self.keyFingerprint(apiKey))
+                    throw error
+                }
+                authVerdictHandler?(true, Self.keyFingerprint(apiKey))
                 return await resolveCreatorNames(in: page, apiKey: apiKey)
             case 401:
+                authVerdictHandler?(false, Self.keyFingerprint(apiKey))
                 throw WorkshopQueryError.unauthorized
             case 403:
+                authVerdictHandler?(false, Self.keyFingerprint(apiKey))
                 throw Self.bodyContainsDisabledKeyHint(data) ? WorkshopQueryError.keyDisabled : WorkshopQueryError.unauthorized
             case 429:
                 let retryAfter = Self.retryAfter(from: http)

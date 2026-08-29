@@ -26,5 +26,52 @@ struct WPEEngineAssetsInstallerTests {
             latestBuildID: nil
         ) == .checkFailed)
     }
+
+    // MARK: - Stuck-busy regression: a failed precondition must never leave `.checking`
+
+    @Test("Update check without a Steam account leaves the installer idle, not stuck busy")
+    @MainActor
+    func updateCheckWithoutAccountDoesNotStayBusy() {
+        let installer = WPEEngineAssetsInstaller(
+            managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
+        )
+        installer.checkForUpdate(account: nil, binaryResolvable: true) { _, _ in nil }
+        #expect(installer.isBusy == false)
+        #expect(installer.phase == .idle)
+        #expect(installer.updateCheckOutcome == .notChecked)
+    }
+
+    @Test("Update check without a resolvable binary leaves the installer idle, not stuck busy")
+    @MainActor
+    func updateCheckWithoutBinaryDoesNotStayBusy() {
+        let installer = WPEEngineAssetsInstaller(
+            managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
+        )
+        installer.checkForUpdate(account: "steamuser", binaryResolvable: false) { _, _ in nil }
+        #expect(installer.isBusy == false)
+        #expect(installer.phase == .idle)
+        #expect(installer.updateCheckOutcome == .notChecked)
+    }
+
+    @Test("Control: satisfied preconditions do enter .checking, and cancel restores idle")
+    @MainActor
+    func updateCheckWithSatisfiedPreconditionsGoesBusyAndCancelRecovers() {
+        let installer = WPEEngineAssetsInstaller(
+            managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
+        )
+        installer.checkForUpdate(account: "steamuser", binaryResolvable: true) { _, _ in
+            // Never resolves within the test; cancel() must be what recovers.
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            return nil
+        }
+        #expect(installer.isBusy)
+        #expect(installer.phase == .checking)
+        #expect(installer.updateCheckOutcome == .checking)
+
+        installer.cancel()
+        #expect(installer.isBusy == false)
+        #expect(installer.phase == .idle)
+        #expect(installer.updateCheckOutcome == .notChecked)
+    }
 }
 #endif

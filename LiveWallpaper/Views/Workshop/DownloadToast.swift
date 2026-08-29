@@ -64,7 +64,7 @@ struct DownloadToastHost: View {
         .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 10)
         .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
-        .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 6)
+        .shadow(color: .black.opacity(DesignTokens.Card.shadowOpacity), radius: 14, x: 0, y: 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(verbatim: "\(event.headline): \(event.title). \(event.message)"))
     }

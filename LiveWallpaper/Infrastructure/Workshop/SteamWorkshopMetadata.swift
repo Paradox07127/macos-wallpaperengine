@@ -17,6 +17,10 @@ struct SteamWorkshopMetadata: Equatable, Sendable {
     let isBanned: Bool
     let appID: UInt32
     let steamCommunityURL: URL
+    /// Author tags. Carried because the mature-content blur is derived from
+    /// them: without tags a keyless Browse would silently defeat a preference
+    /// that defaults to on.
+    let tags: [String]
 
     /// Steam's documented visibility enum on `GetPublishedFileDetails`:
     /// `0` public, `1` friends-only, `2` private; anything else → `.unknown`.
@@ -249,8 +253,9 @@ final class SteamWorkshopMetadataService {
             timeCreated: payload.time_created.map { Date(timeIntervalSince1970: TimeInterval($0)) },
             visibility: visibility,
             isBanned: (payload.banned ?? 0) != 0,
-                appID: appID,
-            steamCommunityURL: communityURL
+            appID: appID,
+            steamCommunityURL: communityURL,
+            tags: payload.tags?.compactMap(\.tag) ?? []
         ))
     }
 
@@ -301,6 +306,11 @@ private struct GetPublishedFileDetailsEnvelope: Decodable {
         let visibility: Int?
         /// Steam sends 0/1 as Int (not Bool); non-zero ⇒ banned.
         let banned: Int?
+        let tags: [Tag]?
+
+        struct Tag: Decodable {
+            let tag: String?
+        }
     }
     // swiftlint:enable identifier_name
 }

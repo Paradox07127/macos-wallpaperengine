@@ -2,14 +2,18 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// One of the three things Workshop needs before it is fully set up.
+/// One of the things Workshop needs before it is fully set up.
 struct WorkshopSetupFacet: Identifiable {
+    /// Stable ForEach identity. Distinct from `anchor`: two facets may share a
+    /// scroll target (SteamCMD and Steam sign-in both live in the connection
+    /// section), and duplicate ids in a ForEach are undefined behavior.
+    let key: String
     let anchor: SettingsSearchAnchor
     /// Short enough to sit in a three-column legend at settings width.
     let title: LocalizedStringKey
     let state: WorkshopStepState
 
-    var id: String { anchor.rawValue }
+    var id: String { key }
 }
 
 /// The page-top status bar: one segmented track plus a legend naming each

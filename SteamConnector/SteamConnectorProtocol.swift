@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 /// Wire contract between Loomscreen and its Steam connector.
 ///
@@ -37,6 +38,7 @@ protocol SteamConnectorProtocol {
     /// prunes it to `assets/`. Replies with a JSON `SteamEngineAssetsResult`.
     func installWallpaperEngineAssets(
         accountName: String,
+        operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     )
 
@@ -44,6 +46,7 @@ protocol SteamConnectorProtocol {
     /// Replies with a JSON `String?`.
     func latestWallpaperEngineBuildID(
         accountName: String,
+        operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     )
 
@@ -57,10 +60,12 @@ protocol SteamConnectorProtocol {
 
     /// Downloads one Workshop item into the shared repository. Replies with a
     /// JSON `SteamWorkshopDownloadResult` carrying the folder the app should
-    /// import from.
+    /// import from. `operationID` is the app-minted identity a later
+    /// `cancelActiveSteamCMD` must name to reach this run's child.
     func downloadWorkshopItem(
         workshopID: String,
         accountName: String,
+        operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     )
 
@@ -143,6 +148,56 @@ protocol SteamConnectorProtocol {
     /// the app can show "waiting for approval" until the user acts on their
     /// phone.
     func signInSteamAccount(_ request: Data, with reply: @escaping @Sendable (Data) -> Void)
+
+    /// SIGTERMs the SteamCMD child currently running in the connector, if any.
+    /// The app's own `Task` cancel only stops the app-side wait — the child
+    /// keeps downloading for up to its full timeout otherwise. The interrupted
+    /// operation returns through its own reply as a failure; this reply is a
+    /// JSON `Bool`: whether anything was actually signalled.
+    ///
+    /// `operationID` is the id the app passed when it started the run it wants
+    /// to stop; anything else is a no-op.
+    func cancelActiveSteamCMD(operationID: String, with reply: @escaping @Sendable (Data) -> Void)
+}
+
+/// The one SteamCMD child currently running, so a user cancel can reach the
+/// real process and not just the app-side await. The connector serializes every
+/// SteamCMD run on one queue, so at most one child exists at a time.
+///
+/// Identified by the app's own operation id, not by what kind of work it is: a
+/// cancel travels over XPC while the queue keeps moving, so a kind-scoped one
+/// could arrive after the *next* run of the same kind had registered and kill
+/// that innocent child — which is exactly what "cancel, then retry" does.
+final class SteamCMDActiveProcessRegistry: Sendable {
+    private struct Active {
+        let pid: pid_t
+        let hasOwnGroup: Bool
+        let operationID: String
+    }
+
+    private let state = OSAllocatedUnfairLock<Active?>(initialState: nil)
+
+    func register(pid: pid_t, hasOwnGroup: Bool, operationID: String) {
+        state.withLock { $0 = Active(pid: pid, hasOwnGroup: hasOwnGroup, operationID: operationID) }
+    }
+
+    func clear() {
+        state.withLock { $0 = nil }
+    }
+
+    /// SIGTERM to the active child — its whole process group when it has one,
+    /// the same form as `spawn`'s timeout kill. Returns whether anything was
+    /// signalled. `spawn`'s own EOF/timeout handling reaps the child; no
+    /// SIGKILL escalation belongs here.
+    ///
+    /// `operationID` must match what the child was registered under: a cancel
+    /// for one operation must never signal a different one's child (review
+    /// finding, both models).
+    func terminateActive(operationID: String, kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) -> Bool {
+        guard let active = state.withLock({ $0 }), active.operationID == operationID else { return false }
+        _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
+        return true
+    }
 }
 
 struct SteamCMDManagedRemovalResult: Codable, Equatable, Sendable {
@@ -287,24 +342,41 @@ struct SteamCMDManagedInstallResult: Codable, Equatable, Sendable, Error {
     }
 }
 
-/// A fresh SteamCMD bootstrap can replace itself and exit before it ever prints
-/// its normal banner. That is an intermediate state, not a failed install. The
-/// replacement must still pass the signature/quarantine gates before one retry.
-enum SteamCMDSelfUpdateRetryPolicy {
-    static let markers = [
-        "Checking for available updates",
-        "Downloading update",
-        "Verifying installation"
-    ]
+/// SteamCMD signals "my self-update replaced the binary — relaunch me" by
+/// exiting 42, and a fresh install does it twice in a row before its first
+/// clean exit (measured 2026-08-28). The rewritten binary must re-pass the
+/// signature/quarantine gates before each relaunch.
+enum SteamCMDSelfUpdateRestartPolicy {
+    static let restartExitCode: Int32 = 42
+    /// Two restarts covers the measured fresh-install case; a binary still
+    /// asking after that is treated as broken rather than looped forever.
+    static let maxExecutions = 3
 
-    static func shouldRetry(
-        output: String,
-        exitCode: Int32,
-        timedOut: Bool,
-        attempt: Int
-    ) -> Bool {
-        guard attempt == 0, !timedOut, exitCode != 0 else { return false }
-        return markers.contains { output.localizedCaseInsensitiveContains($0) }
+    enum Outcome<Run> {
+        /// The last run, whatever its exit status — the caller judges it.
+        case completed(Run)
+        /// The rewritten binary failed a trust gate; it was not relaunched.
+        case gateFailed(String)
+    }
+
+    static func run<Run>(
+        execute: () -> Run,
+        exitCode: (Run) -> Int32,
+        timedOut: (Run) -> Bool,
+        revalidate: () -> String?
+    ) -> Outcome<Run> {
+        var run = execute()
+        var executions = 1
+        // A timed-out run was killed by us; whatever status the kill produced
+        // is not SteamCMD asking to be relaunched.
+        while executions < maxExecutions,
+              !timedOut(run),
+              exitCode(run) == restartExitCode {
+            if let reason = revalidate() { return .gateFailed(reason) }
+            run = execute()
+            executions += 1
+        }
+        return .completed(run)
     }
 }
 
@@ -331,6 +403,11 @@ struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
     /// Where the item landed, on success — inside the shared Steam repository.
     let itemPath: String?
     let diagnosticTail: String
+    /// Execution receipt: the canonical binary this operation actually spawned.
+    /// The connector resolves its own binary per run, so this is the only way
+    /// the app learns which one ran. Optional-with-default so a payload from an
+    /// older connector (no key) still decodes; nil means nothing was spawned.
+    var executedBinaryPath: String? = nil
 }
 
 /// Reverse channel: the app exports this so long operations can stream progress
@@ -372,6 +449,8 @@ struct SteamEngineAssetsResult: Codable, Equatable, Sendable {
     let assetsPath: String?
     let buildID: String?
     let diagnosticTail: String
+    /// Execution receipt — see `SteamWorkshopDownloadResult.executedBinaryPath`.
+    var executedBinaryPath: String? = nil
 }
 
 struct SteamDeleteResult: Codable, Equatable, Sendable {
@@ -451,6 +530,8 @@ struct SteamCachedLoginResult: Codable, Equatable, Sendable {
     let steamID64: String?
     /// Bounded tail of SteamCMD's output, for the diagnostics export only.
     let diagnosticTail: String
+    /// Execution receipt — see `SteamWorkshopDownloadResult.executedBinaryPath`.
+    var executedBinaryPath: String? = nil
 }
 
 /// Maps SteamCMD's cached-login output to a verdict.
@@ -830,6 +911,8 @@ struct SteamCMDProbeRun: Codable, Equatable, Sendable {
     let timedOut: Bool
     /// Set when the connector declined to spawn at all.
     let refusalReason: String?
+    /// Execution receipt — see `SteamWorkshopDownloadResult.executedBinaryPath`.
+    var executedBinaryPath: String? = nil
 
     static func refused(_ reason: String) -> SteamCMDProbeRun {
         SteamCMDProbeRun(output: "", exitCode: -1, timedOut: false, refusalReason: reason)
@@ -1109,6 +1192,17 @@ struct SteamCMDDiagnosis: Codable, Equatable, Sendable {
     /// The connector reached no verdict at all (queue expiry, malformed request).
     /// Distinct from a verdict of "broken".
     let unavailableReason: String?
+    /// Candidate paths that exist on disk but did not survive resolution.
+    ///
+    /// A fact, not a remedy: `remedy` is computed in the app, and the app is
+    /// sandboxed, so it cannot `stat` `/opt/homebrew` to discover this for
+    /// itself. Gathered in the connector, which can.
+    ///
+    /// Optional in storage, non-optional to read: a property default does not
+    /// make the synthesized `Codable` tolerate a missing key, and after an
+    /// update the connector on disk can be older than the app decoding it.
+    private var rejectedExisting: [String]?
+    var rejectedExistingPaths: [String] { rejectedExisting ?? [] }
 
     /// Usable means "we ran it and it came back", nothing weaker.
     ///
@@ -1124,11 +1218,16 @@ struct SteamCMDDiagnosis: Codable, Equatable, Sendable {
     /// separately can disagree with the facts it is supposed to explain.
     var remedy: String? { SteamCMDDiagnosisRemedy.advice(for: self) }
 
-    static func notFound(resolutionFailure: String?) -> SteamCMDDiagnosis {
+    /// `rejectedExisting` defaults to a live scan because the only caller is the
+    /// connector; tests and the app pass their own.
+    static func notFound(
+        resolutionFailure: String?,
+        rejectedExisting: [String] = SteamCMDDiagnosisRemedy.existingCandidates()
+    ) -> SteamCMDDiagnosis {
         SteamCMDDiagnosis(
             source: .notFound, canonicalPath: nil, resolutionFailure: resolutionFailure,
             sha256: nil, signature: nil, isQuarantined: false, launch: nil,
-            unavailableReason: nil
+            unavailableReason: nil, rejectedExisting: rejectedExisting
         )
     }
 
@@ -1143,12 +1242,35 @@ struct SteamCMDDiagnosis: Codable, Equatable, Sendable {
 
 /// The one thing the user can do about each failure, in English.
 enum SteamCMDDiagnosisRemedy {
+    /// Candidate paths that exist on disk. Callable only where `/opt/homebrew`
+    /// is readable — the connector — which is why the result travels on the
+    /// diagnosis rather than being recomputed by the sandboxed app.
+    static func existingCandidates(
+        candidates: [URL] = SteamCMDBinaryResolver.autoDetectCandidates(),
+        fileManager: FileManager = .default
+    ) -> [String] {
+        candidates
+            .map { $0.path(percentEncoded: false) }
+            .filter { fileManager.fileExists(atPath: $0) }
+    }
+
     static func advice(for diagnosis: SteamCMDDiagnosis) -> String? {
+        let unusableExisting = diagnosis.rejectedExistingPaths
         if let reason = diagnosis.unavailableReason {
             return "The Steam connector did not finish the check (\(reason)). Run it again."
         }
         guard let path = diagnosis.canonicalPath else {
             let detail = diagnosis.resolutionFailure.map { " (\($0))" } ?? ""
+            // "Install it with brew" is a dead end when brew already has it:
+            // the user runs the command, is told it is installed, and lands
+            // back here. Name the copy we found and could not use instead.
+            if let found = unusableExisting.first {
+                return """
+                SteamCMD is installed at \(found), but Loomscreen could not use it\(detail). \
+                Reinstall it with `brew reinstall --cask steamcmd`, or choose the steamcmd \
+                binary yourself in Workshop settings.
+                """
+            }
             return """
             SteamCMD was not found on this Mac\(detail). Install it with \
             `brew install --cask steamcmd`, or choose the steamcmd binary yourself in \
@@ -1659,6 +1781,12 @@ enum SteamCMDBinaryResolver {
         var homebrewPrefixes: [String]
         var macPortsPrefix: String
 
+        /// `HOMEBREW_PREFIX` deliberately absent: it lives in the user's shell
+        /// profile, and launchd starts this service without sourcing one — the
+        /// same reason `which steamcmd` is unusable here (see
+        /// `autoDetectCandidates`). Reading it would look like relocated-prefix
+        /// support while always being empty in the process that matters. A
+        /// Homebrew somewhere else is covered by the manual pick instead.
         init(
             homebrewPrefixes: [String] = ["/opt/homebrew", "/usr/local"],
             macPortsPrefix: String = "/opt/local"
@@ -1668,9 +1796,26 @@ enum SteamCMDBinaryResolver {
         }
     }
 
-    /// Every installed cask version's Mach-O, newest first.
+    /// Entry points inside one Caskroom version directory, in the order they
+    /// should be tried.
     ///
-    /// All of them rather than just the newest: Homebrew leaves older version
+    /// The wrapper comes first and the Mach-O paths after: `resolveWrapper`
+    /// already knows how to follow the cask's `steamcmd.wrapper.sh` down to
+    /// whatever the payload actually contains, so offering the wrapper covers
+    /// layouts this list has never seen. Offering only `MacOS/steamcmd` — which
+    /// is all this used to do — made discovery depend on one internal path that
+    /// Homebrew is free to change, and when it did the app reported "not found"
+    /// for an install sitting right there.
+    static let caskroomEntryPoints = [
+        "steamcmd.wrapper.sh",
+        "MacOS/steamcmd",
+        "steamcmd",
+        "osx32/steamcmd"
+    ]
+
+    /// Every installed cask version's entry points, newest version first.
+    ///
+    /// All versions rather than just the newest: Homebrew leaves older version
     /// directories behind after an upgrade, and if the newest one fails a trust
     /// gate the walk in `SteamCMDDiagnosisPlan.firstTrusted` should get to try
     /// the one that passes.
@@ -1685,7 +1830,11 @@ enum SteamCMDBinaryResolver {
 
         return versions
             .sorted { modificationDate(of: $0) > modificationDate(of: $1) }
-            .map { $0.appendingPathComponent("MacOS/steamcmd", isDirectory: false) }
+            .flatMap { version in
+                caskroomEntryPoints.map {
+                    version.appendingPathComponent($0, isDirectory: false)
+                }
+            }
     }
 
     private static func modificationDate(of url: URL) -> Date {

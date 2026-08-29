@@ -38,7 +38,7 @@ struct ExportToast: View {
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
                         .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
                 )
-                .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 6)
+                .shadow(color: .black.opacity(DesignTokens.Card.shadowOpacity), radius: 14, x: 0, y: 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: isPresented) {
                     guard isPresented else { return }
