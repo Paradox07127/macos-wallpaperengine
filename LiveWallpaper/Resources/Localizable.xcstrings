@@ -4181,29 +4181,6 @@
         }
       }
     },
-    "API key required" : {
-      "comment" : "Workshop header stat when no Steam Web API key is set.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "APIキーが必要です"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要 API 密钥"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要 API 金鑰"
-          }
-        }
-      }
-    },
     "App" : {
       "comment" : "Wallpaper Engine project type.",
       "extractionState" : "manual",
