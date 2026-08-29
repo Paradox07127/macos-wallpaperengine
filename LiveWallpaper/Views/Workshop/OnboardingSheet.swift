@@ -17,7 +17,7 @@ struct OnboardingSheet: View {
                 Text("Browse Wallpaper Engine from Steam")
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
-                Text("Paste a Workshop URL to preview it, or set up online browsing and downloading.")
+                Text("Search and download without signing in. A free Steam Web API key adds ratings, authors and faster results.")
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -25,7 +25,7 @@ struct OnboardingSheet: View {
             }
             VStack(alignment: .leading, spacing: 10) {
                 bullet(systemImage: "network", text: "Direct to Valve over HTTPS — no third-party services.")
-                bullet(systemImage: "key", text: "Online browsing uses your own free Steam Web API key.")
+                bullet(systemImage: "key", text: "Browsing needs no account and no key — a key only adds to it.")
                 bullet(systemImage: "arrow.down.circle", text: "Downloads run through Steam's official SteamCMD.")
             }
             .frame(maxWidth: 420, alignment: .leading)
@@ -36,9 +36,8 @@ struct OnboardingSheet: View {
                 Button {
                     hasShown = true
                     dismiss()
-                    onConfigureOnline()
                 } label: {
-                    Text("Set Web API key")
+                    Text("Start browsing")
                         .frame(maxWidth: 220)
                         .padding(.vertical, 4)
                 }
@@ -48,15 +47,20 @@ struct OnboardingSheet: View {
                 Button {
                     hasShown = true
                     dismiss()
+                    onConfigureOnline()
+                } label: {
+                    Text("Add a Web API key")
+                }
+                .buttonStyle(.borderless)
+
+                Button {
+                    hasShown = true
+                    dismiss()
                     onDownloadByLink()
                 } label: {
                     Text("Add from Workshop URL or ID")
                 }
                 .buttonStyle(.borderless)
-
-                Button("Maybe later") { dismiss() }
-                    .buttonStyle(.borderless)
-                    .keyboardShortcut(.cancelAction)
             }
         }
         .padding(.horizontal, 28)

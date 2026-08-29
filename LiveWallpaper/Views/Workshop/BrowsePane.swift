@@ -572,6 +572,11 @@ struct BrowsePane: View {
                 localized: "Set your Steam Web API key in Settings to browse online.",
                 comment: "Workshop browse error when no Steam Web API key is configured."
             )
+        case .keychainAccessDenied:
+            return String(
+                localized: "macOS wouldn't unlock your saved API key — allow access when it asks, or set the key again in Settings.",
+                comment: "Workshop browse error when the keychain refused to hand over the stored API key."
+            )
         case .unauthorized:
             return String(
                 localized: "Steam rejected the API key. Update it in Settings.",

@@ -304,6 +304,8 @@ private struct CachedItemPayload: Codable {
     let fileSizeBytes: UInt64?
     let timeUpdated: Date?
     let subscriptionCount: Int?
+    let viewCount: Int?
+    let favoriteCount: Int?
     let voteScore: Double?
     let tags: [String]
     let visibility: String
@@ -320,6 +322,8 @@ private struct CachedItemPayload: Codable {
         self.fileSizeBytes = item.fileSizeBytes
         self.timeUpdated = item.timeUpdated
         self.subscriptionCount = item.subscriptionCount
+        self.viewCount = item.viewCount
+        self.favoriteCount = item.favoriteCount
         self.voteScore = item.voteScore
         self.tags = item.tags
         self.visibility = item.visibility.rawValue
@@ -340,6 +344,8 @@ private struct CachedItemPayload: Codable {
             fileSizeBytes: fileSizeBytes,
             timeUpdated: timeUpdated,
             subscriptionCount: subscriptionCount,
+            viewCount: viewCount,
+            favoriteCount: favoriteCount,
             voteScore: voteScore,
             tags: tags,
             visibility: SteamWorkshopMetadata.Visibility(rawValue: visibility) ?? .unknown,

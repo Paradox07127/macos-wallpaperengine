@@ -212,6 +212,10 @@ struct WorkshopQueryItem: Identifiable, Sendable, Equatable {
     let fileSizeBytes: UInt64?
     let timeUpdated: Date?
     let subscriptionCount: Int?
+    /// Defaulted because `WorkshopQueryCache`'s stored payload carries neither,
+    /// so a cache hit rebuilds the item without them.
+    var viewCount: Int? = nil
+    var favoriteCount: Int? = nil
     let voteScore: Double?
     let tags: [String]
     let visibility: SteamWorkshopMetadata.Visibility
@@ -227,6 +231,9 @@ struct WorkshopQueryPage: Sendable, Equatable {
 
 enum WorkshopQueryError: Error, Equatable, Sendable {
     case missingAPIKey
+    /// A key is stored, but macOS refused to hand it over (ACL prompt declined,
+    /// or a locked keychain) — distinct from having no key at all.
+    case keychainAccessDenied
     case unauthorized
     case keyDisabled
     case rateLimited(retryAfter: TimeInterval?)
@@ -432,6 +439,8 @@ actor WorkshopQueryService {
             return storedKey
         } catch let error as WorkshopQueryError {
             throw error
+        } catch WorkshopKeychainStore.WorkshopKeychainError.accessDenied {
+            throw WorkshopQueryError.keychainAccessDenied
         } catch {
             throw WorkshopQueryError.missingAPIKey
         }
@@ -702,6 +711,8 @@ actor WorkshopQueryService {
             // high-lifetime / low-current item look mis-sorted ("low subs above high").
             // Fall back to current when lifetime is absent.
             subscriptionCount: payload.lifetime_subscriptions?.value ?? payload.subscriptions?.value,
+            viewCount: payload.views?.value,
+            favoriteCount: payload.lifetime_favorited?.value ?? payload.favorited?.value,
             voteScore: Self.clampedScore(payload.vote_data?.score?.value ?? payload.score?.value),
             tags: tags,
             visibility: SteamWorkshopMetadata.Visibility(rawCode: payload.visibility?.value),
@@ -803,6 +814,9 @@ private struct QueryFilesPayload: Decodable {
     let banned: LossyBoolWQ?
     let subscriptions: LossyIntWQ?
     let lifetime_subscriptions: LossyIntWQ?
+    let favorited: LossyIntWQ?
+    let lifetime_favorited: LossyIntWQ?
+    let views: LossyIntWQ?
     let score: LossyDoubleWQ?
     let vote_data: VoteData?
     let tags: [WorkshopTagPayload]?
