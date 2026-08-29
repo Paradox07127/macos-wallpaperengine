@@ -351,7 +351,7 @@ final class WeatherReactiveService {
         case .clear:        return .none
         case .partlyCloudy: return .dust
         case .cloudy:       return .none
-        case .foggy:        return .none
+        case .foggy:        return .mist
         case .drizzle:      return .rain
         case .rain:         return .rain
         case .heavyRain:    return .rain

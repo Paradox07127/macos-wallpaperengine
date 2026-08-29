@@ -296,6 +296,7 @@ private extension ParticleEffect {
         case .stars: return "star"
         case .fallingLeaves: return "leaf"
         case .sakura: return "camera.macro"
+        case .mist: return "cloud.fog"
         }
     }
 }
