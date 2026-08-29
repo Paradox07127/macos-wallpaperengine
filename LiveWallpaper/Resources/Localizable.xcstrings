@@ -112,6 +112,64 @@
         }
       }
     },
+    "Apply this overlay to every other display?" : {
+      "comment" : "Confirmation title for copying one overlay to the other displays.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply this overlay to every other display?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このオーバーレイを他のすべてのディスプレイに適用しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把这个叠加层应用到其它所有显示器？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把這個疊加層套用到其它所有顯示器？"
+          }
+        }
+      }
+    },
+    "Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone" : {
+      "comment" : "Tooltip for the Apply to All button while an overlay page is showing.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてに適用 — このディスプレイのオーバーレイを他のすべてに複製します（壁紙は変更しません）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用到全部 — 把这台显示器的叠加层复制到其它所有显示器，不改动它们的壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用到全部 — 把這台顯示器的疊加層複製到其它所有顯示器，不更動它們的桌布"
+          }
+        }
+      }
+    },
     "Authorize" : {
       "comment" : "A button that opens a dialog to authorize a folder.",
       "localizations" : {
@@ -330,6 +388,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇 Web"
+          }
+        }
+      }
+    },
+    "Copies this overlay to every other connected display; their wallpapers are not changed" : {
+      "comment" : "Accessibility hint for the Apply to All button while an overlay page is showing.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copies this overlay to every other connected display; their wallpapers are not changed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このオーバーレイを接続中の他のすべてのディスプレイに複製します。壁紙は変更されません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把这个叠加层复制到其它所有已连接的显示器，不改动它们的壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把這個疊加層複製到其它所有已連接的顯示器，不更動它們的桌布"
           }
         }
       }
@@ -695,6 +782,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登入其他帳戶"
+          }
+        }
+      }
+    },
+    "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone." : {
+      "comment" : "Confirmation message. Placeholders are the overlay's name and the number of other displays.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他の %2$lld 台のディスプレイの %1$@ オーバーレイを置き換えます。壁紙はそのままです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这会替换另外 %2$lld 台显示器上的%1$@叠加层，它们的壁纸不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這會取代另外 %2$lld 台顯示器上的%1$@疊加層，它們的桌布不受影響。"
           }
         }
       }

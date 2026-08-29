@@ -35,6 +35,17 @@ enum OverlayKind: Hashable, CaseIterable {
         }
     }
 
+    /// Name used in the "apply this overlay everywhere" confirmation. Resolved
+    /// here rather than passed as a `LocalizedStringKey` because it lands
+    /// inside an interpolated sentence.
+    var applyToAllName: String {
+        switch self {
+        case .weather: return String(localized: "Weather", comment: "Overlay name inside the apply-to-all confirmation.")
+        case .monitor: return String(localized: "Monitor", comment: "Overlay name inside the apply-to-all confirmation.")
+        case .music:   return String(localized: "Music", comment: "Overlay name inside the apply-to-all confirmation.")
+        }
+    }
+
     var feature: ProductFeature {
         switch self {
         case .weather: return .videoEffects
@@ -409,6 +420,7 @@ struct DetailView: View {
             wallpaperSessionSummary: wallpaperSessionSummary,
             reduceMotion: reduceMotion,
             showsHeaderWallpaperActions: showsHeaderWallpaperActions,
+            appliesOverlayOnly: selectedTab == .overlays,
             showBookmarks: $showBookmarks,
             onApplyToAll: requestApplyToAll,
             onClearWallpaper: clearCurrentWallpaper
@@ -724,10 +736,21 @@ struct DetailView: View {
 
     private func requestApplyToAll() {
         let others = max(0, screenManager.screens.count - 1)
+        guard selectedTab == .overlays else {
+            pendingDestructive = PendingDestructive(
+                .applyConfigurationToAllDisplays(otherCount: others)
+            ) {
+                screenManager.applyConfigurationToAllDisplays(from: screen)
+            }
+            return
+        }
+        // Overlay tab: the layer in front of the user, and not the wallpaper
+        // under it — nothing on this page even shows the wallpaper choice.
+        let kind = overlayKind
         pendingDestructive = PendingDestructive(
-            .applyConfigurationToAllDisplays(otherCount: others)
+            .applyOverlayToAllDisplays(overlayName: kind.applyToAllName, otherCount: others)
         ) {
-            screenManager.applyConfigurationToAllDisplays(from: screen)
+            screenManager.applyOverlayToAllDisplays(kind, from: screen)
         }
     }
 

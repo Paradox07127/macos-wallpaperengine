@@ -8,6 +8,8 @@ struct Header: View {
     let wallpaperSessionSummary: WallpaperSessionSummary
     let reduceMotion: Bool
     let showsHeaderWallpaperActions: Bool
+    /// The overlay tab is showing, so "Apply to All" means this overlay only.
+    var appliesOverlayOnly: Bool = false
     @Binding var showBookmarks: Bool
     let onApplyToAll: () -> Void
     let onClearWallpaper: () -> Void
@@ -111,9 +113,17 @@ struct Header: View {
             Button(action: onApplyToAll) {
                 Image(systemName: "square.on.square")
             }
-            .help(Text("Apply to All — copy this display's wallpaper and settings to every other display"))
+            // The button copies whatever tab you are on. On the overlay tab
+            // that is the layer in front of you and nothing else — taking the
+            // wallpaper along with it would replace content the user never
+            // asked about from a page that does not even show it.
+            .help(appliesOverlayOnly
+                ? Text("Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone")
+                : Text("Apply to All — copy this display's wallpaper and settings to every other display"))
             .accessibilityLabel(Text("Apply to all displays"))
-            .accessibilityHint(Text("Copies the current wallpaper and settings to every other connected display"))
+            .accessibilityHint(appliesOverlayOnly
+                ? Text("Copies this overlay to every other connected display; their wallpapers are not changed")
+                : Text("Copies the current wallpaper and settings to every other connected display"))
             .adaptiveGlassButton(.regular, shape: .circle)
             .controlSize(.large)
         }
