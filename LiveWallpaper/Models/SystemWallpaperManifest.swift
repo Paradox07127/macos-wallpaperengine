@@ -219,8 +219,17 @@ enum SystemWallpaperLibrary {
     /// `.stage-` prefix plus the timestamp already identify these. A name
     /// ending in `.partial` typed the file as a non-video for AVFoundation,
     /// which failed every staged thumbnail with "Cannot Open".
-    static func stagingFileName(itemID: String, ext: String, now: Date) -> String {
-        ".stage-\(Int(now.timeIntervalSince1970))-\(itemID)-\(UUID().uuidString).\(ext)"
+    static func stagingFileName(itemID: String, ext: String, now: Date, tag: UUID = UUID()) -> String {
+        ".stage-\(Int(now.timeIntervalSince1970))-\(itemID)-\(tag.uuidString).\(ext)"
+    }
+
+    /// Name for the copy a republish displaces and keeps until its manifest
+    /// write lands. Deliberately a staging name: this file *is* the previously
+    /// published video, so it carries that video's mtime, and the sweep's mtime
+    /// rule let the appex reclaim it mid-republish — which left the rollback
+    /// with nothing to restore. One `tag` names the video and its thumbnail.
+    static func transientBackupName(itemID: String, ext: String, tag: UUID, now: Date) -> String {
+        stagingFileName(itemID: "\(itemID)-backup", ext: ext, now: now, tag: tag)
     }
 
     /// Creation time encoded by `stagingFileName`, or nil for anything that is

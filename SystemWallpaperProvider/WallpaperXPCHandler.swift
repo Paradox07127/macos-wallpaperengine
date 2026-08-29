@@ -85,6 +85,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             // re-frame or swap the asset (contract §3.1, §9 坑 9).
             if surface.contextId != 0 {
                 surface.bridge.reframe(size: size, scale: scale)
+                // Rotation and resolution changes re-acquire the same surface.
+                // Reframing only the root layer leaves the video sublayer at
+                // the previous display's size, which crops or letterboxes the
+                // picture until something forces a full acquire.
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                surface.renderer.layer.frame = CGRect(origin: .zero, size: size)
+                CATransaction.commit()
                 let context = PrivateClassFactory.remoteContext(contextId: surface.contextId)
 
                 guard let choiceID, choiceID != surface.choiceID else {
@@ -264,12 +272,15 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         // The whole active set goes out, not just the notified choice: with two
         // displays on two videos the single-value form marks the other one idle
         // until the following acquire, and the app will delete an idle item.
-        Self.writeActiveHeartbeat(
-            registry: registry,
-            store: store,
-            including: MirrorProbe.identifierFromDescription(id)
-        )
-        reply(nil)
+        // The heartbeat walks `registry.all` and reads each surface's
+        // `choiceID`; both are confined to the lifecycle queue, and reading
+        // them from the XPC thread raced `acquire`'s insert on a second
+        // display. Probing `id` stays here so the opaque value never crosses.
+        let choiceID = MirrorProbe.identifierFromDescription(id)
+        Self.queue.async { [self] in
+            Self.writeActiveHeartbeat(registry: registry, store: store, including: choiceID)
+            reply(nil)
+        }
     }
 
     /// Kept working even though our choices now report `.none` disposability
@@ -511,7 +522,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 surface.renderer.rampRate(to: rate(for: surface, playbackMode: manifest.playbackMode))
             }
             if dropped > 0 { writeActiveHeartbeat(registry: registry, store: store) }
-            wpxLog.info("library changed — \(registry.all.count) surface(s), dropped \(dropped)")
+            wpxLog.info("policy re-applied — \(registry.all.count) surface(s), dropped \(dropped)")
         }
     }
 

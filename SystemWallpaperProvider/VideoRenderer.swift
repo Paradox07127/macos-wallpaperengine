@@ -46,6 +46,7 @@ final class VideoRenderer: @unchecked Sendable {
     /// runs on the shifted (looped) timeline, so this is `time - ptsOffset` —
     /// resuming must not feed the absolute clock back in as a file position.
     private var deepPauseResumePosition: CMTime = .zero
+    private var decoderLossObserver: (any NSObjectProtocol)?
 
     var layer: CALayer { displayLayer }
 
@@ -54,6 +55,45 @@ final class VideoRenderer: @unchecked Sendable {
         displayLayer = prepared.layer
         renderer = prepared.renderer
         timebase = prepared.timebase
+        // The system reclaims video decoder resources from background processes
+        // — "the value of this property changes to YES along with the video
+        // renderer's status changing to AVQueuedSampleBufferRenderingStatusFailed
+        // … clients must first reset the video renderer by calling flush"
+        // (AVSampleBufferVideoRenderer.h:86-87). Nothing else clears it, so
+        // without this the wallpaper stays on its last frame for the rest of
+        // the process's life while still reporting itself healthy.
+        decoderLossObserver = NotificationCenter.default.addObserver(
+            forName: AVSampleBufferVideoRenderer.requiresFlushToResumeDecodingDidChangeNotification,
+            object: renderer,
+            queue: nil
+        ) { [weak self] _ in self?.handleDecoderLoss() }
+    }
+
+    deinit {
+        if let decoderLossObserver {
+            NotificationCenter.default.removeObserver(decoderLossObserver)
+        }
+    }
+
+    private func handleDecoderLoss() {
+        queue.async { [weak self] in
+            guard let self, renderer.requiresFlushToResumeDecoding else { return }
+            renderer.flush()
+            // A flush resets decoder state, so the next buffer has to be a sync
+            // sample (AVSampleBufferVideoRenderer.h:140). Reopening the reader
+            // at the clock's in-asset position gives one: AVAssetReader backs a
+            // non-zero `timeRange.start` up to the preceding sync sample
+            // (measured 2026-08-29). A deep-paused renderer has no pipeline to
+            // rebuild — its resume already opens a fresh reader.
+            guard !isDeepPaused, let sourceURL else { return }
+            renderer.stopRequestingMediaData()
+            reader?.cancelReading()
+            reader = nil
+            output = nil
+            let inAsset = CMTimeSubtract(timebase.map { CMTimebaseGetTime($0) } ?? .zero, ptsOffset)
+            openReader(url: sourceURL, from: CMTimeCompare(inAsset, .zero) > 0 ? inAsset : .zero)
+            wpxLog.info("decoder reclaimed — flushed and rebuilt the pipeline")
+        }
     }
 
     /// The three objects leave the main actor exactly once, into the single
@@ -260,7 +300,11 @@ final class VideoRenderer: @unchecked Sendable {
     private func shift(_ sample: CMSampleBuffer) -> CMSampleBuffer? {
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
         let duration = CMSampleBufferGetDuration(sample)
-        if pts.isValid {
+        // Zero-sample buffers are edit-list markers, not frames. A file with a
+        // trailing empty edit ends with one carrying the asset's full duration
+        // (measured 2026-08-29), and letting it set `maxSampleEnd` parks the
+        // next loop that far past the last real frame — a freeze on every seam.
+        if pts.isValid, CMSampleBufferGetNumSamples(sample) > 0 {
             let end = duration.isValid ? CMTimeAdd(pts, duration) : pts
             let shiftedEnd = CMTimeAdd(end, ptsOffset)
             if CMTimeCompare(shiftedEnd, maxSampleEnd) > 0 { maxSampleEnd = shiftedEnd }
@@ -369,6 +413,12 @@ final class VideoRenderer: @unchecked Sendable {
         reader.cancelReading()
         self.reader = nil
         output = nil
+        // The clock has been parked for `deepPauseDelay`, so the renderer holds
+        // a full queue of frames ahead of it — the same frames the rebuilt
+        // reader re-reads on resume, at the same timestamps. Dropping them also
+        // releases the decoded frames deep pause exists to release; a plain
+        // flush keeps the displayed image (AVSampleBufferVideoRenderer.h:134).
+        renderer.flush()
         isDeepPaused = true
         // The timebase runs on the looped timeline (ptsOffset per completed
         // loop); the reader needs the position inside the file.
