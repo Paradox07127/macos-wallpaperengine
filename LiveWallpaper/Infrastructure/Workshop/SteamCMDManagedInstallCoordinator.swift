@@ -24,6 +24,11 @@ final class SteamCMDManagedInstallCoordinator {
         case failed(String)
     }
 
+    /// App-lifetime instance. Install/remove status is process state: when each
+    /// view owned its own coordinator, an install started in one surface showed
+    /// as idle in the others, which offered a second Install mid-flight.
+    static let shared = SteamCMDManagedInstallCoordinator()
+
     private(set) var status: Status = .idle
 
     /// Identifies the top-level operation currently allowed to commit. Bumped
@@ -111,7 +116,11 @@ final class SteamCMDManagedInstallCoordinator {
             )))
         }
         guard result.outcome == .installed, let path = result.canonicalPath else {
-            return finish(.failed(Self.message(for: result.outcome)))
+            // The connector distinguishes a timeout from a non-zero exit from a
+            // hash failure; all three used to render as one sentence, so a
+            // report of this dialog could not say which happened.
+            let detail = result.failureReason.map { " (\($0))" } ?? ""
+            return finish(.failed(Self.message(for: result.outcome) + detail))
         }
 
         record(ManagedInstallRecord(

@@ -14,14 +14,24 @@ struct ConnectionStepStateTests {
         return (service, defaults)
     }
 
+    /// A bookmark the shared resolver can actually resolve (plain bookmark to a
+    /// real folder; the live resolver falls back to plain resolution). The old
+    /// `Data([0x01])` stand-in now reads as a broken grant on purpose.
+    private func resolvableBookmark() throws -> Data {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ConnectionStepState-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return try dir.bookmarkData()
+    }
+
     /// The reported bug: after Locate found and bound SteamCMD, the bar stayed
     /// amber until the user ran the probes by hand. Nothing had failed — the
     /// cached-login probe simply had not run yet, and "unchecked" was being
     /// read as "failing".
     @Test("A step that has not been checked yet is not a failure")
-    func uncheckedStepDoesNotReadAsFailure() {
+    func uncheckedStepDoesNotReadAsFailure() throws {
         let (service, _) = makeService()
-        service.workdirBookmarkData = Data([0x01])
+        service.workdirBookmarkData = try resolvableBookmark()
         service.binaryPath = "/tmp/steamcmd"
         service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
         service.username = "someone"
@@ -129,7 +139,23 @@ struct ConnectionStepStateTests {
     }
 
     @Test("All three steps green is the only way to read ready")
-    func allStepsGreenReadsAsReady() {
+    func allStepsGreenReadsAsReady() throws {
+        let (service, _) = makeService()
+        service.workdirBookmarkData = try resolvableBookmark()
+        service.binaryPath = "/tmp/steamcmd"
+        service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
+        service.username = "someone"
+        service.setProbe(.cachedLogin, status: .green(detail: "someone"))
+
+        #expect(service.connectionStepState == .ready)
+    }
+
+    /// Deliberate rewrite of what this test used to pin: a one-byte fake
+    /// bookmark used to read as Ready because only the bytes were checked.
+    /// Bytes that no longer resolve are the "Not authorized + Ready badge"
+    /// contradiction — the badge must say attention.
+    @Test("Green probes cannot outrank a library grant that no longer resolves")
+    func unresolvableLibraryGrantIsNotReady() {
         let (service, _) = makeService()
         service.workdirBookmarkData = Data([0x01])
         service.binaryPath = "/tmp/steamcmd"
@@ -137,7 +163,8 @@ struct ConnectionStepStateTests {
         service.username = "someone"
         service.setProbe(.cachedLogin, status: .green(detail: "someone"))
 
-        #expect(service.connectionStepState == .ready)
+        #expect(service.libraryStepState == .attention)
+        #expect(service.connectionStepState == .attention)
     }
 
     @Test("Nothing set up at all reads as not started")

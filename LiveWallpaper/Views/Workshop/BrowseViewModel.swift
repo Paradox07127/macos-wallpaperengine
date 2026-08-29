@@ -192,7 +192,18 @@ final class BrowseViewModel {
     /// Set when Steam returns HTTP 429; controls stay disabled until it lapses.
     private(set) var rateLimitUntil: Date?
 
-    private static let perPage = 50
+    /// True when no Steam Web API key is stored: browse then runs off Valve's
+    /// public Workshop page (ids only) plus the key-free metadata endpoint.
+    var usesKeylessSearch: Bool { !services.hasWebAPIKey }
+
+    /// QueryFiles lets us ask for 50; the public page is fixed at 30.
+    private var perPage: Int {
+        usesKeylessSearch ? WorkshopPublicBrowseURL.itemsPerPage : 50
+    }
+
+    /// The public page publishes no result total, so "is there a next page" can
+    /// only come from the page having been full.
+    private(set) var hasMoreKeylessPages: Bool = false
 
     /// 1-based. Steam's QueryFiles `page` param lets us jump to any page directly.
     private(set) var pageIndex: Int = 1
@@ -217,13 +228,14 @@ final class BrowseViewModel {
 
     var totalPages: Int? {
         guard let total = totalAvailable, total > 0 else { return nil }
-        return Self.pageCount(totalAvailable: total, perPage: Self.perPage)
+        return Self.pageCount(totalAvailable: total, perPage: perPage)
     }
 
     var canGoNextPage: Bool {
         guard !isRateLimited, !isLoading, !isPaging else { return false }
         if let totalPages { return pageIndex < totalPages }
-        return items.count >= Self.perPage
+        if usesKeylessSearch { return hasMoreKeylessPages && pageIndex < Self.maxQueryPage }
+        return items.count >= perPage
     }
 
     var canGoPrevPage: Bool {
@@ -234,6 +246,8 @@ final class BrowseViewModel {
     @ObservationIgnored private var currentRequestToken: UInt64 = 0
     @ObservationIgnored private var autoSearchTask: Task<Void, Never>?
     @ObservationIgnored private let defaults: UserDefaults
+    /// Built on first keyless fetch — it owns a `WKWebView`, so a keyed session never makes one.
+    @ObservationIgnored private lazy var publicSource = WorkshopPublicSearchSource()
 
     /// Quiet window after the last keystroke before auto-search fires: long
     /// enough that mid-word states don't burn API quota, short enough to feel live.
@@ -279,6 +293,7 @@ final class BrowseViewModel {
         currentRequest = request
         items = []
         totalAvailable = nil
+        hasMoreKeylessPages = false
         isLoading = true
         isPaging = false
         lastError = nil
@@ -517,11 +532,16 @@ final class BrowseViewModel {
             guard let self else { return false }
             var succeeded = false
             do {
-                let page = try await self.services.queryService.fetch(request)
+                // With a key, QueryFiles stays the path: richer fields and a
+                // real result total. Without one, fall back to the public page.
+                let page = self.usesKeylessSearch
+                    ? try await self.publicSource.fetch(request)
+                    : try await self.services.queryService.fetch(request)
                 guard token == self.currentRequestToken else { return false }
                 if replacingItems {
                     self.items = Self.displayable(page.items)
                 }
+                self.hasMoreKeylessPages = self.usesKeylessSearch && page.nextCursor != nil
                 self.totalAvailable = page.totalAvailable
                 self.lastError = nil
                 self.rateLimitUntil = nil
@@ -566,7 +586,7 @@ final class BrowseViewModel {
             return WorkshopQueryRequest(
                 sort: .lastUpdated,
                 page: page,
-                numPerPage: Self.perPage,
+                numPerPage: perPage,
                 creatorSteamID: creatorFilter.steamID
             )
         }
@@ -576,7 +596,7 @@ final class BrowseViewModel {
                 sort: preferredSort,
                 searchText: "",
                 page: page,
-                numPerPage: Self.perPage,
+                numPerPage: perPage,
                 timeFrame: preferredTimeFrame,
                 requiredTags: [pinnedTag],
                 excludedTags: Self.alwaysExcludedTags
@@ -596,7 +616,7 @@ final class BrowseViewModel {
             sort: preferredSort,
             searchText: trimmed,
             page: page,
-            numPerPage: Self.perPage,
+            numPerPage: perPage,
             timeFrame: preferredTimeFrame,
             requiredTags: [],
             excludedTags: excluded

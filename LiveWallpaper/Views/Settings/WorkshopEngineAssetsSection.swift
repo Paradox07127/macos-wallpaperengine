@@ -33,7 +33,7 @@ struct WorkshopEngineAssetsSection: View {
                 iconColor: .brown,
                 title: "Wallpaper Engine assets",
                 subtitle: engineAssetsSubtitle,
-                info: "Loomscreen bundles clean-room equivalents of the common Wallpaper Engine framework files, so most scenes render without a Wallpaper Engine install. Link one only for scenes that reference uncommon shared assets — read-only access, no files are modified."
+                info: "Scenes reference textures, shaders and models that ship with Wallpaper Engine rather than with the scene. Loomscreen bundles clean-room equivalents of the most common ones, but the rest are skipped without an install — the scene still renders, so the loss is silent. Read-only access; no files are modified."
             ) {
                 engineAssetsControl
                     .frame(maxHeight: 24)
@@ -78,8 +78,8 @@ struct WorkshopEngineAssetsSection: View {
 
     private var engineAssetsSubtitle: LocalizedStringKey {
         engineInstaller.hasManagedInstall || engineAssets.isAuthorized
-            ? "Linked for extra scene coverage"
-            : "Link a Wallpaper Engine install for extra scene coverage"
+            ? "Linked — scenes can use Wallpaper Engine's shared assets"
+            : "Required for full scene support — download or link an install"
     }
 
     // MARK: - Download progress
@@ -167,6 +167,8 @@ struct WorkshopEngineAssetsSection: View {
             case .checking:
                 ProgressView().controlSize(.small)
                 Text("Checking…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
+                Button("Cancel") { engineInstaller.cancel() }
+                    .fixedSize()
             default:
                 EmptyView()
             }
@@ -233,10 +235,10 @@ struct WorkshopEngineAssetsSection: View {
                 preflightThen { engineInstaller.download(using: doctorService) }
             }
             .fixedSize()
-            .help(Text("Download the copy of Wallpaper Engine you own for extra scene coverage"))
+            .help(Text("Download the copy of Wallpaper Engine you own so scenes can use its shared assets"))
             Button("Link folder…") { Task { await requestManualEngineAssetsAccess() } }
                 .fixedSize()
-                .help(Text("Grant read-only access to a Wallpaper Engine install for extra scene coverage"))
+                .help(Text("Grant read-only access to a Wallpaper Engine install so scenes can use its shared assets"))
         }
     }
 

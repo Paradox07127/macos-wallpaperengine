@@ -447,6 +447,14 @@ final class WallpaperEngineImportService {
         )
     }
 
+    /// Dependency IDs the item at `folderURL` declares that Steam has not put
+    /// next to it — the same rule `importScene` uses to mark a scene
+    /// unsupported, exposed so the downloader can go fetch them.
+    func missingDependencyIDs(inFolder folderURL: URL) async -> [String] {
+        guard let project = try? WallpaperEngineProject.read(from: folderURL) else { return [] }
+        return await missingDependencies(declared: project.dependencyWorkshopIDs, sourceFolderURL: folderURL)
+    }
+
     /// Returns the subset of `declared` workshop IDs whose extracted payload is NOT currently available either in our cache OR as a sibling `~/Documents/Live Wallpapers/<appid>/<wid>/` folder.
     private func missingDependencies(declared: [String], sourceFolderURL: URL) async -> [String] {
         guard !declared.isEmpty else { return [] }

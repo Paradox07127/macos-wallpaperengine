@@ -13,6 +13,12 @@ final class WorkshopServices {
     @ObservationIgnored let queryService: WorkshopQueryService
 
     var hasWebAPIKey: Bool = false
+    /// True once Valve explicitly rejected the stored key on a live request
+    /// (401/403/disabled) — the key file existing no longer means "ready".
+    /// Cleared by a later keyed success, or by `refreshAPIKeyStatus` once the
+    /// stored key differs from the one that was rejected.
+    private(set) var apiKeyRejected = false
+    @ObservationIgnored private var rejectedKeyFingerprint: String?
 
     init() {
         let keychain = WorkshopKeychainStore()
@@ -21,12 +27,39 @@ final class WorkshopServices {
         self.queryCache = cache
         self.queryService = WorkshopQueryService(keychain: keychain, cache: cache)
         Task { @MainActor [weak self] in
-            await self?.refreshAPIKeyStatus()
+            guard let self else { return }
+            await self.queryService.setAuthVerdictHandler { accepted, fingerprint in
+                Task { @MainActor [weak self] in
+                    self?.noteAuthVerdict(accepted: accepted, keyFingerprint: fingerprint)
+                }
+            }
+            await self.refreshAPIKeyStatus()
         }
+    }
+
+    func noteAuthVerdict(accepted: Bool, keyFingerprint: String) {
+        // A success can only clear a rejection recorded for the SAME key: a
+        // stale in-flight 200 from a replaced key must not green-light the key
+        // that was just refused.
+        if accepted, apiKeyRejected, keyFingerprint != rejectedKeyFingerprint, !keyFingerprint.isEmpty {
+            return
+        }
+        apiKeyRejected = !accepted
+        rejectedKeyFingerprint = accepted ? nil : keyFingerprint
     }
 
     func refreshAPIKeyStatus() async {
         hasWebAPIKey = await keychain.hasWebAPIKey()
+        guard apiKeyRejected else { return }
+        if !hasWebAPIKey {
+            // Key removed — the rejection no longer describes anything.
+            noteAuthVerdict(accepted: true, keyFingerprint: "")
+        } else if let key = (try? await keychain.loadWebAPIKey()) ?? nil,
+                  WorkshopQueryService.keyFingerprint(key) != rejectedKeyFingerprint {
+            // A different key was saved since the rejection (save() validates
+            // the candidate against Valve first, so it starts trusted).
+            noteAuthVerdict(accepted: true, keyFingerprint: "")
+        }
     }
 }
 #endif

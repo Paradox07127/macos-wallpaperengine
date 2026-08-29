@@ -57,9 +57,12 @@ final class WPEEngineAssetsInstaller {
     /// Unknown-buildid marker; stored so SwiftUI observes download completion.
     private(set) var hasManagedInstall: Bool
 
-    init(operationCoordinator: SteamCMDDoctorOperationCoordinator = .shared) {
+    init(
+        operationCoordinator: SteamCMDDoctorOperationCoordinator = .shared,
+        managedStateForTesting: (hasManagedInstall: Bool, installedBuildID: String?)? = nil
+    ) {
         self.operationCoordinator = operationCoordinator
-        let state = Self.managedStateFromDefaults()
+        let state = managedStateForTesting ?? Self.managedStateFromDefaults()
         hasManagedInstall = state.hasManagedInstall
         installedBuildID = state.installedBuildID
     }
@@ -99,11 +102,26 @@ final class WPEEngineAssetsInstaller {
     func cancel() {
         task?.cancel()
         task = nil
+        // The Task cancel above only stops the app-side wait; the SteamCMD
+        // child in the connector keeps running (timeout up to 5400s) and holds
+        // its serial queue, so a retry would look wedged behind it. Scoped to
+        // this attempt's id: a cancel that lands after the retry has started
+        // must not kill the retry. Fire-and-forget — the interrupted run
+        // reports failure through its own reply, which the cleared attempt
+        // token already ignores.
+        if let cancelled = currentAttempt {
+            Task { await SteamConnectorClient.cancelActiveSteamCMD(operationID: cancelled.uuidString) }
+        }
         currentAttempt = nil
         progress = nil
         progressBytes = nil
         if isBusy {
             phase = .idle
+        }
+        // A cancelled check would otherwise keep the "Checking Steam…" status
+        // line on screen forever.
+        if updateCheckOutcome == .checking {
+            updateCheckOutcome = .notChecked
         }
     }
 
@@ -131,6 +149,7 @@ final class WPEEngineAssetsInstaller {
         }
         let result = await SteamConnectorClient.installWallpaperEngineAssets(
             accountName: account,
+            operationID: attempt.uuidString,
             onProgress: { [weak self] update in
                 Task { @MainActor [weak self] in
                     guard let self, currentAttempt == attempt else { return }
@@ -161,10 +180,14 @@ final class WPEEngineAssetsInstaller {
             ))
             return
         }
+        doctor.noteExecutionReceipt(result.executedBinaryPath)
         switch result.outcome {
         case .installed:
             await adoptInstall(result, doctor: doctor, attempt: attempt)
         case .loginRequired:
+            // Steam itself said the session is gone — demote the green probe so
+            // download readiness stops disagreeing with reality.
+            doctor.noteOperationReportedLoginRequired()
             fail(String(localized: "Sign in to Steam in Terminal, then re-check the connection.", comment: "Engine-assets install blocked: no cached Steam session."))
         case .notEntitled:
             fail(String(localized: "This Steam account doesn't own Wallpaper Engine, so its assets can't be downloaded.", comment: "Engine-assets download blocked: account doesn't own Wallpaper Engine."))
@@ -268,17 +291,30 @@ final class WPEEngineAssetsInstaller {
     // MARK: - Update check
 
     func checkForUpdate(using doctor: SteamCMDDoctorService) {
+        checkForUpdate(
+            account: doctor.username,
+            binaryResolvable: (try? doctor.resolveBinaryURL()) != nil
+        )
+    }
+
+    /// Seam for tests: doctor fields and the connector lookup are injectable.
+    func checkForUpdate(
+        account: String?,
+        binaryResolvable: Bool,
+        fetchLatestBuildID: @escaping @Sendable (String, String) async -> String? = {
+            await SteamConnectorClient.latestWallpaperEngineBuildID(accountName: $0, operationID: $1)
+        }
+    ) {
         guard !isBusy, hasManagedInstall else { return }
+        // Checked before any state is set: an early exit after `.checking` would
+        // leave `isBusy` true forever and dead-lock download/check/remove.
+        guard let account, binaryResolvable else { return }
         let attempt = UUID()
         currentAttempt = attempt
         phase = .checking
         updateCheckOutcome = .checking
         task = Task { [weak self] in
-            guard let account = doctor.username,
-                  (try? doctor.resolveBinaryURL()) != nil else { return }
-            let latest = await SteamConnectorClient.latestWallpaperEngineBuildID(
-                accountName: account
-            )
+            let latest = await fetchLatestBuildID(account, attempt.uuidString)
             guard let self, currentAttempt == attempt else { return }
             task = nil
             currentAttempt = nil

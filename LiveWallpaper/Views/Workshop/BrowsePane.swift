@@ -76,14 +76,15 @@ struct BrowsePane: View {
             viewModel.hidesDownloadedInBrowse = hidesDownloadedPref
             Task {
                 await services.refreshAPIKeyStatus()
-                if services.hasWebAPIKey { viewModel.onAppear() }
+                viewModel.onAppear()
             }
         }
         .onChange(of: hidesDownloadedPref) { _, hide in
             viewModel.hidesDownloadedInBrowse = hide
         }
-        .onChange(of: services.hasWebAPIKey) { _, hasKey in
-            guard hasKey, viewModel.items.isEmpty, !viewModel.isLoading else { return }
+        // Either direction changes which backend serves Browse, so re-run the
+        // query rather than leaving results from the other path on screen.
+        .onChange(of: services.hasWebAPIKey) { _, _ in
             Task { await viewModel.reload() }
         }
         // Guarded: this fires every second for the whole session, and writing
@@ -131,9 +132,12 @@ struct BrowsePane: View {
                     .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
                     .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
             } else {
+                // The keyless path applies the same server-side filters
+                // (browsesort / days / requiredtags / excludedtags), so the
+                // ribbon stays live without a key.
                 BrowseFilterRibbon(
                     viewModel: viewModel,
-                    hasWebAPIKey: services.hasWebAPIKey
+                    hasWebAPIKey: services.hasWebAPIKey || viewModel.usesKeylessSearch
                 )
             }
 
@@ -167,10 +171,10 @@ struct BrowsePane: View {
 
     @ViewBuilder
     private var content: some View {
-        if !services.hasWebAPIKey {
-            apiKeyRequiredState
-        } else if let error = viewModel.lastError, viewModel.items.isEmpty, !viewModel.isRateLimited {
-            errorState(error)
+        if let error = viewModel.lastError, viewModel.items.isEmpty, !viewModel.isRateLimited {
+            // A keyless failure is the public page's, not a missing key — but
+            // the key is the sturdier route, so offer it there instead.
+            if services.hasWebAPIKey { errorState(error) } else { publicSearchFailedState }
         } else if viewModel.items.isEmpty, viewModel.isLoading {
             loadingSkeleton
         } else if viewModel.items.isEmpty {
@@ -327,11 +331,18 @@ struct BrowsePane: View {
         .accessibilityLabel(Text("Loading Workshop results"))
     }
 
-    private var apiKeyRequiredState: some View {
+    /// Keyless browse failed on Valve's public page. Retrying, adding a key and
+    /// pasting a link are all ways through, so all three live here.
+    private var publicSearchFailedState: some View {
         IllustratedEmptyState(
-            symbol: "key.fill",
-            title: "Set your Steam Web API key to browse online.",
-            primary: EmptyStateButtonAction("Set Web API key") { onRequestKeyEntry() }
+            symbol: "wifi.exclamationmark",
+            verbatimTitle: String(
+                localized: "Couldn’t load results from the Steam Workshop page.",
+                comment: "Workshop Browse error shown when the key-free public search page fails to load."
+            ),
+            symbolColor: DesignTokens.Colors.Status.warning,
+            primary: EmptyStateButtonAction("Retry") { Task { await viewModel.reload() } },
+            secondary: EmptyStateButtonAction("Set Web API key") { onRequestKeyEntry() }
         ) {
             VStack(spacing: DesignTokens.Spacing.sm) {
                 Text(verbatim: WorkshopAPIKeyOwnershipInfo.prerequisitesLine)
@@ -352,7 +363,10 @@ struct BrowsePane: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        Text("Paste a Workshop URL to install it without a key. Searching is what needs one.")
+                        Text(verbatim: String(
+                            localized: "Paste a Workshop URL to install an item directly, without searching.",
+                            comment: "Workshop Browse fallback hint next to the “Or download by link” button."
+                        ))
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .multilineTextAlignment(.center)

@@ -21,7 +21,7 @@ struct WorkshopConnectionSetup<Header: View>: View {
     @State private var showsAdvancedDiagnostics = false
     @State private var isDetectingBinary = false
     @State private var discoveredAccounts: [SteamAccountSummary] = []
-    @State private var managedInstaller = SteamCMDManagedInstallCoordinator()
+    @State private var managedInstaller = SteamCMDManagedInstallCoordinator.shared
     @State private var showingInstallConsent = false
     /// The window between "the connector reported installed" and "we confirmed
     /// it launches". Without it the row falls back to `binaryDisplayPath`, which
@@ -265,8 +265,15 @@ struct WorkshopConnectionSetup<Header: View>: View {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
         // Not `homeDirectoryForCurrentUser` — sandbox maps that to the container, which also has a `Steam` folder we must not bind.
-        panel.directoryURL = AppleAerialsLibrary.realHomeDirectory()
+        let applicationSupport = AppleAerialsLibrary.realHomeDirectory()
             .appendingPathComponent("Library/Application Support", isDirectory: true)
+        // The sandbox cannot grant itself this folder — a user-initiated pick is
+        // the only way to get the bookmark — but it can open the panel already
+        // standing on it, which turns the common case into one click.
+        let defaultSteam = applicationSupport.appendingPathComponent("Steam", isDirectory: true)
+        panel.directoryURL = FileManager.default.fileExists(atPath: defaultSteam.path(percentEncoded: false))
+            ? defaultSteam
+            : applicationSupport
         panel.message = String(localized: "Choose Steam's main folder containing config/config.vdf.", comment: "Open-panel message when authorizing the official Steam Library.")
         panel.prompt = String(localized: "Use Steam Library", comment: "Open-panel confirm button when authorizing the official Steam Library.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -283,7 +290,10 @@ struct WorkshopConnectionSetup<Header: View>: View {
             let found = await service.autoDetectBinary()
             isDetectingBinary = false
             if !found {
-                setupError = String(
+                // The connector's own reason when it reached one — it names the
+                // copy it tried and what went wrong. The generic sentence is
+                // only right when nothing was found at all.
+                setupError = service.lastAutoDetectDiagnosis?.remedy ?? String(
                     localized: "No SteamCMD found in the usual places. Use Install SteamCMD… for Loomscreen's own copy, or Choose SteamCMD… to point at one yourself.",
                     comment: "Workshop setup error when auto-detection finds no SteamCMD."
                 )
@@ -519,7 +529,10 @@ struct WorkshopConnectionSetup<Header: View>: View {
                     comment: "SteamCMD step detail while the connector launches the freshly installed binary to confirm it works."
                 )
             }
-            return service.binaryDisplayPath
+            // Execution receipt wins over the stored binding: the connector
+            // re-resolves per operation, so what actually ran is the truth.
+            return service.lastExecutedBinaryPath
+                ?? service.binaryDisplayPath
                 ?? String(localized: "Not selected", comment: "SteamCMD step detail when no binary is bound.")
         }
     }
@@ -613,7 +626,7 @@ struct WorkshopConnectionSetup<Header: View>: View {
 /// the rows themselves can't disagree about what is set up.
 extension SteamCMDDoctorService {
     var isLibraryReady: Bool {
-        guard workdirBookmarkData != nil else { return false }
+        guard workdirBookmarkData != nil, !workdirResolutionFailed else { return false }
         if case .red? = probes[.workingDirectory]?.status { return false }
         return true
     }
@@ -638,6 +651,10 @@ extension SteamCMDDoctorService {
 
     var libraryStepState: WorkshopStepState {
         guard workdirBookmarkData != nil else { return .notStarted }
+        // Bytes are not access: when the bookmark no longer resolves, the row
+        // subtitle already says "Not authorized", so the badge must not say
+        // Ready next to it.
+        if workdirResolutionFailed || workdirDisplayPath == nil { return .attention }
         if case .red? = probes[.workingDirectory]?.status { return .attention }
         return .ready
     }
@@ -662,6 +679,17 @@ extension SteamCMDDoctorService {
         case .notRun, .none: return .notStarted
         default: return .attention
         }
+    }
+
+    /// Library authorization + account, which are one errand from the reader's
+    /// side: both are "point Loomscreen at the Steam you already have".
+    /// SteamCMD is reported separately because installing it is a different act.
+    var steamLibraryAndAccountState: WorkshopStepState {
+        let steps = [libraryStepState, accountStepState]
+        if steps.contains(.attention) { return .attention }
+        if steps.allSatisfy({ $0 == .ready }) { return .ready }
+        if steps.contains(.working) { return .working }
+        return .notStarted
     }
 
     /// The three steps as one reading, for the Workshop page's status bar.

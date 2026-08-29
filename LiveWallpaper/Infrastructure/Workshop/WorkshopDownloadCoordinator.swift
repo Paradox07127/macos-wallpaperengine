@@ -53,6 +53,10 @@ final class WorkshopDownloadCoordinator {
     func phase(for itemID: UInt64) -> DownloadPhase { phases[itemID] ?? .idle }
 
     func isBusy(_ itemID: UInt64) -> Bool {
+        // `tasks` outlives the phase while a root's dependencies are still
+        // downloading: without it a second Download would replace the task and
+        // leave the first dependency chain running unattended.
+        if tasks[itemID] != nil { return true }
         switch phases[itemID] {
         case .downloading, .importing: return true
         default: return false
@@ -68,17 +72,30 @@ final class WorkshopDownloadCoordinator {
         attempts[itemID] = attemptID
         clearProgress(itemID)
         phases[itemID] = .downloading
+        // The attempt token doubles as the connector-side cancel identity; a
+        // root's dependency fetches run inside this task, so they inherit it.
         tasks[itemID] = Task { [weak self] in
-            await self?.run(itemID: itemID, title: title, doctor: doctor, attemptID: attemptID)
+            await SteamCMDOperationScope.$currentID.withValue(attemptID.uuidString) {
+                await self?.run(itemID: itemID, title: title, doctor: doctor, attemptID: attemptID)
+            }
         }
     }
 
     func cancel(_ itemID: UInt64) {
         tasks[itemID]?.cancel()
         tasks[itemID] = nil
+        let cancelledAttempt = attempts[itemID]
         attempts[itemID] = nil
         phases[itemID] = .idle
         clearProgress(itemID)
+        // Task.cancel only stops the app-side wait; the SteamCMD child in the
+        // connector keeps downloading and holds its serial queue. Scoped to this
+        // attempt's id, so it signals the child only while that attempt is the
+        // one running — another item's download, or a retry of this one, is
+        // registered under a different id and survives.
+        if let cancelledAttempt {
+            Task { await SteamConnectorClient.cancelActiveSteamCMD(operationID: cancelledAttempt.uuidString) }
+        }
     }
 
     private func run(itemID: UInt64, title: String, doctor: SteamCMDDoctorService, attemptID: UUID) async {
@@ -127,11 +144,18 @@ final class WorkshopDownloadCoordinator {
         // A newer attempt may have superseded this one mid-flight; only the
         // current attempt may mutate shared state.
         guard !Task.isCancelled, attempts[itemID] == attemptID else { return }
-        tasks[itemID] = nil
 
         switch result {
         case .imported(let importResult):
             await finishImport(importResult, itemID: itemID, title: title)
+            if case .unsupported(let origin)? = importResult, !origin.missingDependencyIDs.isEmpty {
+                await fetchDependencies(
+                    rootItemID: itemID,
+                    rootTitle: title,
+                    missingIDs: origin.missingDependencyIDs,
+                    doctor: doctor
+                )
+            }
         case .notConfigured(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         case .loginRequired:
@@ -146,6 +170,12 @@ final class WorkshopDownloadCoordinator {
             finish(itemID: itemID, title: title, phase: .failed(String(localized: "The download timed out. Try again.", comment: "Workshop download timed out.")))
         case .failed(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
+        }
+        // Released here rather than in `finish` so the dependency fetch above
+        // still counts as this item's in-flight download for `cancel`.
+        if attempts[itemID] == attemptID {
+            attempts[itemID] = nil
+            tasks[itemID] = nil
         }
     }
 
@@ -203,7 +233,6 @@ final class WorkshopDownloadCoordinator {
     }
 
     private func finish(itemID: UInt64, title: String, phase: DownloadPhase) {
-        attempts[itemID] = nil
         clearProgress(itemID)
         phases[itemID] = phase
         switch phase {
@@ -241,6 +270,155 @@ final class WorkshopDownloadCoordinator {
         default:
             break
         }
+    }
+
+    // MARK: - Dependencies
+
+    /// The root item is already downloaded and recorded; a dependency that
+    /// fails or gets cut off only downgrades this toast, never the root.
+    private func fetchDependencies(
+        rootItemID: UInt64,
+        rootTitle: String,
+        missingIDs: [String],
+        doctor: SteamCMDDoctorService
+    ) async {
+        let report = await WorkshopDependencyResolver.resolve(
+            rootWorkshopID: String(rootItemID),
+            missingDependencyIDs: missingIDs,
+            fetch: { await self.fetchDependency(workshopID: $0, doctor: doctor) }
+        )
+        guard !report.wasCancelled else { return }
+
+        for failure in report.failures {
+            Logger.warning(
+                "Workshop dependency \(failure.workshopID) failed to download: \(failure.reason)",
+                category: .workshop
+            )
+        }
+        if !report.truncations.isEmpty {
+            Logger.warning(
+                "Workshop dependency fetch stopped at a limit (\(report.truncations)); still missing: \(report.skipped.joined(separator: ", "))",
+                category: .workshop
+            )
+        }
+
+        guard report.isFullyResolved else {
+            let unresolved = (report.failures.map(\.workshopID) + report.skipped).joined(separator: ", ")
+            WorkshopToastCenter.shared.post(
+                headline: String(localized: "Required items missing", comment: "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded."),
+                title: rootTitle,
+                message: report.truncations.isEmpty
+                    ? String(
+                        localized: "Couldn't download: \(unresolved)",
+                        comment: "Workshop toast subtitle listing the Workshop IDs of linked items that failed to download."
+                    )
+                    : String(
+                        localized: "Stopped at the download limit for linked items. Still missing: \(unresolved)",
+                        comment: "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; the placeholder lists the remaining Workshop IDs."
+                    ),
+                isSuccess: false
+            )
+            return
+        }
+
+        // Every dependency arrived, but the wallpaper is only usable once the
+        // re-read succeeds — claiming success before checking would leave the
+        // library entry still saying it needs them.
+        guard await reimportRoot(itemID: rootItemID, doctor: doctor) else {
+            WorkshopToastCenter.shared.post(
+                headline: String(localized: "Required items missing", comment: "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded."),
+                title: rootTitle,
+                message: String(localized: "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again.", comment: "Workshop toast subtitle when the linked items arrived but re-reading the wallpaper failed."),
+                isSuccess: false
+            )
+            return
+        }
+        WorkshopToastCenter.shared.post(
+            headline: String(localized: "Required items added", comment: "Workshop toast headline when a wallpaper's linked Workshop items were downloaded too."),
+            title: rootTitle,
+            message: String(localized: "Downloaded the other Workshop items this wallpaper needs.", comment: "Workshop toast subtitle after the linked Workshop items were downloaded."),
+            isSuccess: true
+        )
+    }
+
+    /// One dependency, through the same Doctor gate as any other download. Its
+    /// payload is left in the Steam library rather than imported: it is data the
+    /// root wallpaper reads, not a wallpaper of its own.
+    private func fetchDependency(
+        workshopID: String,
+        doctor: SteamCMDDoctorService
+    ) async -> WorkshopDependencyFetchOutcome {
+        guard let itemID = UInt64(workshopID) else {
+            return WorkshopDependencyFetchOutcome(failureReason: "not a Workshop ID")
+        }
+        let result: WorkshopItemDownloadResult<[String]>
+        do {
+            result = try await repositoryCoordinator.withExclusiveMutation(workshopID: workshopID) { [weak self] in
+                guard let self else { return .failed(reason: "coordinator released") }
+                return await doctor.downloadWorkshopItem(
+                    itemID,
+                    onProgress: nil,
+                    onContentReady: { [weak self] folderURL -> [String] in
+                        guard let self else { return [] }
+                        return await self.importService.missingDependencyIDs(inFolder: folderURL)
+                    }
+                )
+            }
+        } catch {
+            return WorkshopDependencyFetchOutcome(failureReason: error.localizedDescription)
+        }
+        switch result {
+        case .imported(let nestedDependencyIDs):
+            return WorkshopDependencyFetchOutcome(dependencyIDs: nestedDependencyIDs)
+        case .notConfigured(let reason), .failed(let reason):
+            return WorkshopDependencyFetchOutcome(failureReason: reason)
+        case .loginRequired:
+            return WorkshopDependencyFetchOutcome(failureReason: "SteamCMD login required")
+        case .untrustedBinary:
+            return WorkshopDependencyFetchOutcome(failureReason: "SteamCMD binary not verified")
+        case .notEntitled:
+            return WorkshopDependencyFetchOutcome(failureReason: "account not entitled")
+        case .removedFromSteam:
+            return WorkshopDependencyFetchOutcome(failureReason: "removed from Steam")
+        case .timedOut:
+            return WorkshopDependencyFetchOutcome(failureReason: "timed out")
+        }
+    }
+
+    /// The root was recorded as unsupported because its dependencies were
+    /// absent. Now that they are on disk, read it again so the library entry
+    /// stops saying it needs them — SteamCMD no-ops on an item that is already
+    /// current, so this is a re-read rather than a second download.
+    @discardableResult
+    private func reimportRoot(itemID: UInt64, doctor: SteamCMDDoctorService) async -> Bool {
+        let result: WorkshopItemDownloadResult<WallpaperEngineImportService.ImportResult?>
+        do {
+            result = try await repositoryCoordinator.withExclusiveMutation(workshopID: String(itemID)) { [weak self] in
+                guard let self else {
+                    return .failed(reason: String(
+                        localized: "The Workshop download stopped because its owner was released.",
+                        comment: "Workshop download failed because its app-lifetime coordinator was unexpectedly released."
+                    ))
+                }
+                return await doctor.downloadWorkshopItem(
+                    itemID,
+                    onContentReady: { [weak self] folderURL -> WallpaperEngineImportService.ImportResult? in
+                        guard let self else { return nil }
+                        return try? await self.importService.importProject(folder: folderURL)
+                    }
+                )
+            }
+        } catch {
+            return false
+        }
+        guard case .imported(let importResult) = result,
+              case .ready(_, let origin)? = importResult else { return false }
+        SettingsManager.shared.recordWPEImport(
+            WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil),
+            clearsDeleteTombstone: true
+        )
+        Logger.info("Re-imported a Workshop item once its dependencies arrived", category: .workshop)
+        return true
     }
 }
 #endif

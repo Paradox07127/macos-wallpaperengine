@@ -144,9 +144,14 @@ struct SteamCMDDiagnosisRemedyTests {
         #expect(SteamCMDDiagnosisRemedy.advice(for: diagnosis()) == nil)
     }
 
-    @Test("Not found tells the user how to get one")
+    /// `unusableExisting` is passed explicitly: its default reads the real
+    /// filesystem, so leaving it out makes the expected branch depend on whether
+    /// the machine running the tests happens to have SteamCMD installed.
+    @Test("Not found, with nothing on disk, tells the user how to get one")
     func notFoundAdvisesInstalling() {
-        let advice = SteamCMDDiagnosis.notFound(resolutionFailure: "userPicked: notMachO").remedy
+        let advice = SteamCMDDiagnosis.notFound(
+            resolutionFailure: "userPicked: notMachO", rejectedExisting: []
+        ).remedy
         #expect(advice?.contains("brew install --cask steamcmd") == true)
         #expect(advice?.contains("notMachO") == true)
     }
@@ -472,9 +477,65 @@ struct SteamCMDHomebrewDiscoveryTests {
             roots: .init(homebrewPrefixes: [prefix.path], macPortsPrefix: "/nonexistent")
         ).map(\.path).filter { $0.contains("/Caskroom/") }
 
-        #expect(caskroom.count == 2)
-        #expect(caskroom.first?.contains("/2000000000/") == true)
+        // Each version contributes every known entry point, so compare the
+        // version blocks rather than a flat count.
+        #expect(caskroom.count == 2 * SteamCMDBinaryResolver.caskroomEntryPoints.count)
+        let newestBlock = caskroom.prefix(SteamCMDBinaryResolver.caskroomEntryPoints.count)
+        #expect(newestBlock.allSatisfy { $0.contains("/2000000000/") })
         #expect(caskroom.last?.contains("/1000000000/") == true)
+    }
+
+    /// The regression behind "brew says it is installed, the app says it is not".
+    @Test("A cask version offers its wrapper as well as the Mach-O paths")
+    func caskVersionOffersEveryKnownEntryPoint() throws {
+        let prefix = try Fixture.homebrewPrefix(versions: ["1779919584"])
+        defer { Fixture.remove(prefix) }
+
+        let paths = SteamCMDBinaryResolver.autoDetectCandidates(
+            roots: .init(homebrewPrefixes: [prefix.path], macPortsPrefix: "/nonexistent")
+        ).map(\.path)
+
+        let version = prefix.appendingPathComponent("Caskroom/steamcmd/1779919584")
+        // The wrapper is what survives a payload layout this list has not seen:
+        // `resolveWrapper` follows it down to whatever the Mach-O actually is.
+        #expect(paths.contains(version.appendingPathComponent("steamcmd.wrapper.sh").path))
+        #expect(paths.contains(version.appendingPathComponent("MacOS/steamcmd").path))
+        #expect(paths.contains(version.appendingPathComponent("steamcmd").path))
+        #expect(paths.contains(version.appendingPathComponent("osx32/steamcmd").path))
+    }
+
+    /// The fact rides on the diagnosis rather than being re-derived by the
+    /// reader: `remedy` is computed in the sandboxed app, which cannot stat
+    /// `/opt/homebrew` and would always conclude "nothing installed".
+    @Test("Not-found advice names the install it could not use instead of saying to install it")
+    func notFoundAdviceDoesNotLoopBackToBrew() {
+        let nothingOnDisk = SteamCMDDiagnosis.notFound(
+            resolutionFailure: "not a Mach-O", rejectedExisting: []
+        )
+        #expect(nothingOnDisk.remedy?.contains("brew install --cask steamcmd") == true)
+
+        // With a copy on disk, telling the reader to install it is the dead end
+        // they already hit: brew answers "already installed".
+        let onDisk = SteamCMDDiagnosis.notFound(
+            resolutionFailure: "not a Mach-O",
+            rejectedExisting: ["/opt/homebrew/Caskroom/steamcmd/1779919584/MacOS/steamcmd"]
+        )
+        #expect(onDisk.remedy?.contains("/opt/homebrew/Caskroom/steamcmd/1779919584/MacOS/steamcmd") == true)
+        #expect(onDisk.remedy?.contains("brew reinstall") == true)
+        #expect(onDisk.remedy?.contains("brew install --cask steamcmd") == false)
+    }
+
+    /// The connector may be older than the app after an update.
+    @Test("A diagnosis without the new field still decodes, with no rejected paths")
+    func legacyDiagnosisDecodes() throws {
+        let legacy = """
+        {"source":"notFound","isQuarantined":false,"resolutionFailure":"not a Mach-O"}
+        """
+        let decoded = try JSONDecoder().decode(
+            SteamCMDDiagnosis.self, from: Data(legacy.utf8)
+        )
+        #expect(decoded.rejectedExistingPaths.isEmpty)
+        #expect(decoded.remedy?.contains("brew install --cask steamcmd") == true)
     }
 
     @Test("The bin symlink is still tried before the Caskroom behind it")
@@ -661,9 +722,11 @@ struct SteamCMDExecutionFenceTests {
     func runSteamCMDIsFenced() throws {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
         let start = try #require(source.range(of: "static func runSteamCMD("))
-        let body = String(source[start.upperBound...].prefix(1200))
+        let body = String(source[start.upperBound...].prefix(3500))
         let gate = try #require(body.range(of: "SteamCMDExecutionFence.refusesExecution"))
-        let spawn = try #require(body.range(of: "spawn(executable: steamCMDPath"))
+        // Formatting-insensitive: the cancel-registry argument made the call
+        // multi-line, and this scan cares about order, not line breaks.
+        let spawn = try #require(body.range(of: "executable: steamCMDPath"))
         #expect(gate.lowerBound < spawn.lowerBound)
     }
 }

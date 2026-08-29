@@ -25,6 +25,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// the only place the guarantee survives an arbitrary number of clients.
     private static let steamCMDQueue = DispatchQueue(label: "com.loomscreen.pro.SteamConnector.steamcmd")
 
+    /// Registered by `spawn` only on the SteamCMD path — codesign shares
+    /// `spawn` and must never be what a user cancel kills.
+    static let activeSteamCMD = SteamCMDActiveProcessRegistry()
+
     /// How long a queued request may wait before the client is assumed to have
     /// given up. Serializing everything means a request can sit behind a long
     /// install; without this it would still run — deleting or downloading with
@@ -101,6 +105,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         steamCMDPath: String,
         arguments: [String],
         timeout: TimeInterval,
+        operationID: String? = nil,
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil
     ) -> SteamCMDRun {
         // Every SteamCMD execution in this process funnels through here, so this
@@ -112,9 +117,54 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 timedOut: false
             )
         }
-        return spawn(executable: steamCMDPath, arguments: arguments, timeout: timeout) { line in
-            guard let onProgress, let progress = SteamCMDProgressLine.parse(line) else { return }
-            onProgress(progress)
+        // Exit 42 is SteamCMD's "my self-update replaced the binary — relaunch
+        // me"; a fresh install needs two such restarts before its first 0
+        // (measured 2026-08-28). Each attempt gets the caller's full timeout,
+        // so the worst-case wall clock is maxExecutions × timeout. The
+        // rewritten binary is re-gated before every relaunch: the trust
+        // verdicts taken before this call describe a file that no longer exists.
+        let verifySpawn: (String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool) = { path, verifyArguments, verifyTimeout in
+            let run = spawn(executable: path, arguments: verifyArguments, timeout: verifyTimeout)
+            return (run.output, run.exitCode, run.timedOut)
+        }
+        let outcome = SteamCMDSelfUpdateRestartPolicy.run(
+            execute: {
+                spawn(
+                    executable: steamCMDPath,
+                    arguments: arguments,
+                    timeout: timeout,
+                    activeOperationID: operationID
+                ) { line in
+                    guard let onProgress, let progress = SteamCMDProgressLine.parse(line) else { return }
+                    onProgress(progress)
+                }
+            },
+            exitCode: { $0.exitCode },
+            timedOut: { $0.timedOut },
+            revalidate: {
+                if case .failure(let failure) = SteamCMDManagedInstaller.verifySignature(
+                    binaryPath: steamCMDPath, spawn: verifySpawn
+                ) {
+                    return failure.failureReason ?? "code signature rejected"
+                }
+                if case .failure(let failure) = SteamCMDManagedInstaller.rejectIfQuarantined(
+                    binaryPath: steamCMDPath
+                ) {
+                    return failure.failureReason ?? "binary is quarantined"
+                }
+                return nil
+            }
+        )
+        switch outcome {
+        case .completed(let run):
+            return run
+        case .gateFailed(let reason):
+            // Reported as a failed spawn (exit -1), which is what a refused
+            // binary already looks like to every caller.
+            return SteamCMDRun(
+                output: "refused: self-update rewrote \(steamCMDPath) and the replacement failed a trust gate: \(reason)",
+                timedOut: false
+            )
         }
     }
 
@@ -128,6 +178,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         executable: String,
         arguments: [String],
         timeout: TimeInterval,
+        activeOperationID: String? = nil,
         onLine: (@Sendable (String) -> Void)? = nil
     ) -> SteamCMDRun {
         let process = Process()
@@ -151,6 +202,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // Racy by nature — the child may already have exec'd — so the signalling
         // below falls back to the bare pid when the group was never created.
         let hasOwnGroup = setpgid(pid, pid) == 0 || getpgid(pid) == pid
+        if let activeOperationID {
+            activeSteamCMD.register(pid: pid, hasOwnGroup: hasOwnGroup, operationID: activeOperationID)
+        }
 
         // Bounded, not accumulating. SteamCMD can emit hundreds of megabytes on a
         // bad run, and this process is unsandboxed; the semantic summary keeps the
@@ -216,6 +270,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         state.withLock { $0.finished = true }
         handle.readabilityHandler = nil
         process.waitUntilExit()
+        if activeOperationID != nil {
+            activeSteamCMD.clear()
+        }
         // Close deterministically rather than waiting for the Pipe to be
         // deallocated; a leaked descriptor per run adds up over a session.
         try? handle.close()
@@ -312,13 +369,15 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     func downloadWorkshopItem(
         workshopID: String,
         accountName: String,
+        operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
-        @Sendable func respond(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil) {
+        @Sendable func respond(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil, executed: String? = nil) {
             let result = SteamWorkshopDownloadResult(
                 outcome: outcome,
                 itemPath: path,
-                diagnosticTail: String(tail.suffix(500))
+                diagnosticTail: String(tail.suffix(500)),
+                executedBinaryPath: executed
             )
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }
@@ -348,21 +407,22 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     "+quit"
                 ],
                 timeout: 3600,
+                operationID: operationID,
                 onProgress: { progress in
                     guard let data = try? JSONEncoder().encode(progress) else { return }
                     sink?.connectorDidReportProgress(data)
                 }
             )
             let out = run.output
-            if run.timedOut { respond(.timedOut, tail: out); return }
+            if run.timedOut { respond(.timedOut, tail: out, executed: steamCMDPath); return }
             if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
-                respond(.loginRequired, tail: out); return
+                respond(.loginRequired, tail: out, executed: steamCMDPath); return
             }
             if out.contains("ERROR! Download item \(workshopID) failed (No Connection).") {
-                respond(.notEntitled, tail: out); return
+                respond(.notEntitled, tail: out, executed: steamCMDPath); return
             }
             if out.contains("ERROR! Download item \(workshopID) failed (No match).") {
-                respond(.removedFromSteam, tail: out); return
+                respond(.removedFromSteam, tail: out, executed: steamCMDPath); return
             }
             // Trust the tree, not the log line: SteamCMD prints the destination
             // it *intended*, and a partial run can leave that path absent.
@@ -371,15 +431,24 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             let project = folder.appendingPathComponent("project.json", isDirectory: false)
             guard out.contains("Success. Downloaded item \(workshopID)"),
                   FileManager.default.fileExists(atPath: project.path(percentEncoded: false)) else {
-                respond(.unrecognized, tail: out); return
+                respond(.unrecognized, tail: out, executed: steamCMDPath); return
             }
-            respond(.downloaded, tail: out, path: folder.path(percentEncoded: false))
+            respond(.downloaded, tail: out, path: folder.path(percentEncoded: false), executed: steamCMDPath)
         }
     }
 
     func deleteWorkshopItem(workshopID: String, with reply: @escaping @Sendable (Data) -> Void) {
         let result = SteamLibraryWriter.deleteWorkshopItem(workshopID: workshopID)
         reply((try? JSONEncoder().encode(result)) ?? Data())
+    }
+
+    /// Deliberately NOT on `steamCMDQueue`: the point is to interrupt the run
+    /// that queue is currently executing, so this must not wait behind it.
+    /// A SIGTERMed child exits with a non-42 status, which also stops the
+    /// self-update restart loop in `runSteamCMD`.
+    func cancelActiveSteamCMD(operationID: String, with reply: @escaping @Sendable (Data) -> Void) {
+        let killed = Self.activeSteamCMD.terminateActive(operationID: operationID)
+        reply((try? JSONEncoder().encode(killed)) ?? Data())
     }
 
     // MARK: - Doctor probes
@@ -733,38 +802,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             // but steamcmd still arranges its own `package/` bookkeeping here —
             // and doing it now surfaces a broken install immediately rather
             // than when the user first tries to download a wallpaper.
-            var bootstrapPath = binaryPath
-            var bootstrap = Self.runSteamCMD(
-                steamCMDPath: bootstrapPath, arguments: ["+quit"], timeout: 600
+            // The exit-42 self-update restarts (and re-gating the rewritten
+            // binary before each relaunch) happen inside `runSteamCMD` itself.
+            let bootstrap = Self.runSteamCMD(
+                steamCMDPath: binaryPath, arguments: ["+quit"], timeout: 600
             )
-            if SteamCMDSelfUpdateRetryPolicy.shouldRetry(
-                output: bootstrap.output,
-                exitCode: bootstrap.exitCode,
-                timedOut: bootstrap.timedOut,
-                attempt: 0
-            ) {
-                // The first run replaced the executable. Never launch the new
-                // bytes merely because the old copy was trusted.
-                let refreshed: URL
-                switch SteamCMDManagedInstaller.locateBinary(in: payload) {
-                case .success(let value): refreshed = value
-                case .failure(let failure): return reject(failure)
-                }
-                bootstrapPath = refreshed.path(percentEncoded: false)
-                if case .failure(let failure) = SteamCMDManagedInstaller.verifySignature(
-                    binaryPath: bootstrapPath, spawn: spawn
-                ) {
-                    return reject(failure)
-                }
-                if case .failure(let failure) = SteamCMDManagedInstaller.rejectIfQuarantined(
-                    binaryPath: bootstrapPath
-                ) {
-                    return reject(failure)
-                }
-                bootstrap = Self.runSteamCMD(
-                    steamCMDPath: bootstrapPath, arguments: ["+quit"], timeout: 600
-                )
-            }
             guard !bootstrap.timedOut else {
                 return reject(.failed(.selfUpdateFailed, "First SteamCMD run timed out"))
             }
@@ -1054,7 +1096,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 output: run.output,
                 exitCode: run.exitCode,
                 timedOut: run.timedOut,
-                refusalReason: nil
+                refusalReason: nil,
+                executedBinaryPath: steamCMDPath
             ))
         }
     }
@@ -1204,6 +1247,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
 
     func latestWallpaperEngineBuildID(
         accountName: String,
+        operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
         guard SteamAccountsFile.isValidAccountName(accountName) else {
@@ -1232,7 +1276,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     "+app_info_print", SteamLibraryPaths.wallpaperEngineAppID,
                     "+quit"
                 ],
-                timeout: 180
+                timeout: 180,
+                operationID: operationID
             )
             let build = SteamConnectorBuildInfo.parsePublicBuildID(from: run.output)
             reply((try? JSONEncoder().encode(build)) ?? Data())
@@ -1241,14 +1286,16 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
 
     func installWallpaperEngineAssets(
         accountName: String,
+        operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
-        @Sendable func respond(_ outcome: SteamEngineAssetsResult.Outcome, tail: String = "", assets: String? = nil, build: String? = nil) {
+        @Sendable func respond(_ outcome: SteamEngineAssetsResult.Outcome, tail: String = "", assets: String? = nil, build: String? = nil, executed: String? = nil) {
             let result = SteamEngineAssetsResult(
                 outcome: outcome,
                 assetsPath: assets,
                 buildID: build,
-                diagnosticTail: String(tail.suffix(500))
+                diagnosticTail: String(tail.suffix(500)),
+                executedBinaryPath: executed
             )
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }
@@ -1277,21 +1324,22 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     "+quit"
                 ],
                 timeout: 5400,
+                operationID: operationID,
                 onProgress: { progress in
                     guard let data = try? JSONEncoder().encode(progress) else { return }
                     sink?.connectorDidReportProgress(data)
                 }
             )
             let out = run.output
-            if run.timedOut { respond(.timedOut, tail: out); return }
+            if run.timedOut { respond(.timedOut, tail: out, executed: steamCMDPath); return }
             if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
-                respond(.loginRequired, tail: out); return
+                respond(.loginRequired, tail: out, executed: steamCMDPath); return
             }
             if out.contains("No subscription") || out.contains("Invalid Platform") {
-                respond(.notEntitled, tail: out); return
+                respond(.notEntitled, tail: out, executed: steamCMDPath); return
             }
             guard out.contains("Success! App '\(SteamLibraryPaths.wallpaperEngineAppID)'") else {
-                respond(.unrecognized, tail: out); return
+                respond(.unrecognized, tail: out, executed: steamCMDPath); return
             }
 
             if let data = try? JSONEncoder().encode(
@@ -1310,7 +1358,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 // SteamCMD self-update inside that window can move the wrapper's
                 // target. Every spawn resolves for itself.
                 guard let infoPath = Self.resolvedExecutablePath() else {
-                    respond(.steamCMDUnavailable, tail: Self.noExecutableReason)
+                    respond(.steamCMDUnavailable, tail: Self.noExecutableReason, executed: steamCMDPath)
                     return
                 }
                 let info = Self.runSteamCMD(
@@ -1328,10 +1376,13 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     .installed,
                     tail: out,
                     assets: assets.path(percentEncoded: false),
-                    build: SteamConnectorBuildInfo.parsePublicBuildID(from: info.output)
+                    build: SteamConnectorBuildInfo.parsePublicBuildID(from: info.output),
+                    // The info run re-resolved; that is the binary that actually
+                    // ran last, not the one app_update started with.
+                    executed: infoPath
                 )
             } catch {
-                respond(.pruneRefused, tail: out)
+                respond(.pruneRefused, tail: out, executed: steamCMDPath)
             }
         }
     }
@@ -1353,9 +1404,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return SteamCachedLoginResult(
                 outcome: .timedOut,
                 steamID64: nil,
-                diagnosticTail: String(run.output.suffix(500))
+                diagnosticTail: String(run.output.suffix(500)),
+                executedBinaryPath: steamCMDPath
             )
         }
-        return SteamCachedLoginParser.parse(stdout: run.output)
+        var result = SteamCachedLoginParser.parse(stdout: run.output)
+        result.executedBinaryPath = steamCMDPath
+        return result
     }
 }

@@ -18,8 +18,8 @@ struct WorkshopSettingsView: View {
         _pendingSearchAnchor = pendingSearchAnchor
     }
 
-    /// One page, no pushed screens and no sheets for setup. The three things
-    /// Workshop needs are three sections, and the status bar at the top is
+    /// One page, no pushed screens and no sheets for setup. Each thing
+    /// Workshop needs is a section, and the status bar at the top is
     /// where their state is read — which is why no row carries a status seal
     /// next to its title any more.
     var body: some View {
@@ -104,16 +104,30 @@ struct WorkshopSettingsView: View {
     private var facets: [WorkshopSetupFacet] {
         [
             WorkshopSetupFacet(
+                key: "apiKey",
                 anchor: .workshopSetup,
                 title: "API key",
-                state: workshopServices.hasWebAPIKey ? .ready : .notStarted
+                state: workshopServices.hasWebAPIKey
+                    ? (workshopServices.apiKeyRejected ? .attention : .ready)
+                    : .notStarted
             ),
+            // Split out of a single "Steam" segment: SteamCMD and signing in are
+            // separate things to go do, and merging them hid which one was
+            // outstanding behind one amber bar.
             WorkshopSetupFacet(
+                key: "steamcmd",
                 anchor: .workshopConnection,
-                title: "Steam",
-                state: doctorService.connectionStepState
+                title: "SteamCMD",
+                state: doctorService.binaryStepState
             ),
             WorkshopSetupFacet(
+                key: "steamSignIn",
+                anchor: .workshopConnection,
+                title: "Steam sign-in",
+                state: doctorService.steamLibraryAndAccountState
+            ),
+            WorkshopSetupFacet(
+                key: "assets",
                 anchor: .workshopAssets,
                 title: "Assets",
                 state: engineAssetsState
@@ -122,9 +136,7 @@ struct WorkshopSettingsView: View {
     }
 
     private var engineAssetsState: WorkshopStepState {
-        if engineInstaller.updateAvailable { return .attention }
-        if engineInstaller.hasManagedInstall || engineAssets.isAuthorized { return .ready }
-        return .notStarted
+        .engineAssets(library: engineAssets, installer: engineInstaller)
     }
 }
 #endif
