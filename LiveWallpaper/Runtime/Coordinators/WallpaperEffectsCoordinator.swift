@@ -58,9 +58,11 @@ final class WallpaperEffectsCoordinator {
               config.particleEffect != effect else { return }
         config.particleEffect = effect
         saveConfiguration(config)
+        let effect = resolvedParticleEffect(for: config)
         applyParticleEffect(
-            resolvedParticleEffect(for: config),
-            density: config.effectConfig.particleDensity,
+            effect,
+            density: resolvedParticleDensity(for: config),
+            tiltRadians: windTilt(for: effect, config: config),
             to: screen
         )
     }
@@ -72,7 +74,17 @@ final class WallpaperEffectsCoordinator {
         guard abs(clamped - config.effectConfig.particleDensity) > 0.001 else { return }
         config.effectConfig.particleDensity = clamped
         saveConfiguration(config)
-        applyParticleEffect(resolvedParticleEffect(for: config), density: clamped, to: screen)
+        let effect = resolvedParticleEffect(for: config)
+        applyParticleEffect(
+            effect,
+            density: WeatherReactivePolicy.resolvedParticleDensity(
+                userDensity: clamped,
+                weatherReactive: config.effectConfig.weatherReactive,
+                intensity: weatherService.currentIntensity
+            ),
+            tiltRadians: windTilt(for: effect, config: config),
+            to: screen
+        )
     }
 
     func setWeatherReactive(_ enabled: Bool, for screen: Screen) {
@@ -98,9 +110,11 @@ final class WallpaperEffectsCoordinator {
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.effectConfig.weatherReactive else { return }
 
+        let effect = resolvedParticleEffect(for: config)
         applyParticleEffect(
-            resolvedParticleEffect(for: config),
-            density: config.effectConfig.particleDensity,
+            effect,
+            density: resolvedParticleDensity(for: config),
+            tiltRadians: windTilt(for: effect, config: config),
             to: screen
         )
 
@@ -243,9 +257,11 @@ final class WallpaperEffectsCoordinator {
                 environmentOverlay.teardown(screenID: screen.id)
                 continue
             }
+            let effect = resolvedParticleEffect(for: config)
             applyParticleEffect(
-                resolvedParticleEffect(for: config),
-                density: config.effectConfig.particleDensity,
+                effect,
+                density: resolvedParticleDensity(for: config),
+                tiltRadians: windTilt(for: effect, config: config),
                 to: screen
             )
         }
@@ -283,7 +299,38 @@ final class WallpaperEffectsCoordinator {
         )
     }
 
-    private func applyParticleEffect(_ effect: ParticleEffect, density: Double, to screen: Screen) {
+    /// Weather-reactive displays lean on the live intensity; everyone else runs
+    /// the slider as set.
+    private func resolvedParticleDensity(for config: ScreenConfiguration) -> Double {
+        WeatherReactivePolicy.resolvedParticleDensity(
+            userDensity: config.effectConfig.particleDensity,
+            weatherReactive: config.effectConfig.weatherReactive,
+            intensity: weatherService.currentIntensity
+        )
+    }
+
+    /// How far the wind leans this effect on this display. Zero unless the
+    /// display is weather-reactive and the API actually sent a wind reading —
+    /// a hand-picked snow effect should not start blowing sideways because it
+    /// happens to be gusty outside.
+    private func windTilt(for effect: ParticleEffect, config: ScreenConfiguration) -> Double {
+        guard config.effectConfig.weatherReactive, effect.leansIntoWind,
+              let wind = weatherService.currentWind else { return 0 }
+        let fallSpeed: Double
+        switch effect {
+        case .rain:                       fallSpeed = WeatherWindPolicy.FallSpeed.rain
+        case .snow, .fallingLeaves, .sakura: fallSpeed = WeatherWindPolicy.FallSpeed.snow
+        default:                          fallSpeed = WeatherWindPolicy.FallSpeed.dust
+        }
+        let magnitude = WeatherWindPolicy.tiltRadians(
+            windSpeedKPH: wind.speedKPH, fallSpeedMPS: fallSpeed
+        )
+        return magnitude * WeatherWindPolicy.horizontalBias(fromDegrees: wind.fromDegrees)
+    }
+
+    private func applyParticleEffect(
+        _ effect: ParticleEffect, density: Double, tiltRadians: Double = 0, to screen: Screen
+    ) {
         // Keep the legacy player state neutral: particles now live in the common
         // per-display overlay so Video, HTML, Shader, and Scene share one path.
         screen.videoPlayer?.setParticleEffect(.none, density: density)
@@ -295,6 +342,7 @@ final class WallpaperEffectsCoordinator {
         environmentOverlay.apply(
             effect: effect,
             density: density,
+            tiltRadians: tiltRadians,
             screenID: screen.id,
             screenFrame: frame
         )

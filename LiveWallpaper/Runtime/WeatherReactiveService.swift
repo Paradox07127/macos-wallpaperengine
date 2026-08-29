@@ -11,6 +11,16 @@ final class WeatherReactiveService {
     private(set) var currentCondition: WeatherDescription?
     private(set) var currentParticleEffect: ParticleEffect = .none
     private(set) var currentEffectAdjustments: WeatherEffectAdjustments = .neutral
+    /// How hard it is coming down, kept apart from *what* is coming down so a
+    /// drizzle and a downpour can share one particle effect at two densities.
+    private(set) var currentIntensity: WeatherIntensity = .moderate
+    /// Freezing drizzle / freezing rain. Only the colour grade reads it today.
+    private(set) var currentIsFreezing = false
+    /// Live wind, for particles that should lean into it. Nil until a fetch
+    /// lands, and nil forever if the API stops sending it.
+    private(set) var currentWind: WeatherWind?
+    /// `is_day` as the API reports it for this location; nil when unavailable.
+    private(set) var currentIsDaylight: Bool?
     private(set) var locationStatus: LocationStatus = .notDetermined
     private(set) var lastError: String?
     /// `nil` until at least one resolve completes. Drives the status badge.
@@ -38,6 +48,15 @@ final class WeatherReactiveService {
         case heavySnow = "Heavy Snow"
         case thunderstorm = "Thunderstorm"
         case unknown = "Unknown"
+    }
+
+    /// Wind as the API reports it: speed in km/h at 10 m, direction in degrees
+    /// *from* which it blows (meteorological convention — 270° is a westerly,
+    /// i.e. blowing towards the east).
+    struct WeatherWind: Equatable, Sendable {
+        var speedKPH: Double
+        var gustKPH: Double?
+        var fromDegrees: Double
     }
 
     struct WeatherEffectAdjustments: Equatable {
@@ -76,8 +95,17 @@ final class WeatherReactiveService {
     // MARK: - Open-Meteo Response Model
 
     private struct OpenMeteoResponse: Decodable {
+        /// Everything past `weather_code` is optional on purpose: the extra
+        /// fields are a bonus, and a response that drops one of them must
+        /// still yield a usable condition rather than failing the decode.
         struct Current: Decodable {
             let weather_code: Int
+            let is_day: Int?
+            let wind_speed_10m: Double?
+            let wind_gusts_10m: Double?
+            let wind_direction_10m: Double?
+            let precipitation: Double?
+            let cloud_cover: Double?
         }
         let current: Current
     }
@@ -222,7 +250,14 @@ final class WeatherReactiveService {
         // Round coordinates to 2 decimal places (~1.1km precision) to preserve user location privacy.
         let lat = Double(round(coordinate.latitude * 100) / 100)
         let lon = Double(round(coordinate.longitude * 100) / 100)
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current=weather_code&timezone=auto"
+        // One request, same endpoint, no key: `weather_code` alone was leaving
+        // wind, daylight and precipitation on the table at zero extra cost.
+        let current = [
+            "weather_code", "is_day",
+            "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m",
+            "precipitation", "cloud_cover",
+        ].joined(separator: ",")
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current=\(current)&timezone=auto"
 
         guard let url = URL(string: urlString) else {
             lastError = String(localized: "Invalid URL", defaultValue: "Invalid URL", comment: "Weather fetch error.")
@@ -242,13 +277,27 @@ final class WeatherReactiveService {
             let description = mapWMOCode(weatherCode)
 
             currentCondition = description
-            currentParticleEffect = mapDescriptionToParticle(description)
-            currentEffectAdjustments = mapDescriptionToEffects(description)
+            currentIntensity = WeatherCodePolicy.intensity(forWMOCode: weatherCode)
+            currentIsFreezing = WeatherCodePolicy.isFreezing(wmoCode: weatherCode)
+            currentIsDaylight = response.current.is_day.map { $0 != 0 }
+            currentWind = response.current.wind_direction_10m.flatMap { direction in
+                response.current.wind_speed_10m.map { speed in
+                    WeatherWind(
+                        speedKPH: speed,
+                        gustKPH: response.current.wind_gusts_10m,
+                        fromDegrees: direction
+                    )
+                }
+            }
+            currentParticleEffect = mapDescriptionToParticle(
+                description, isDaylight: currentIsDaylight
+            )
+            currentEffectAdjustments = mapDescriptionToEffects(description, freezing: currentIsFreezing)
             locationStatus = .available
             lastError = nil
             lastFetchCompletedAt = Date()
 
-            Logger.info("Weather updated: \(description.rawValue), code=\(weatherCode), particle=\(currentParticleEffect.rawValue), source=\(resolution.resolvedSource?.rawValue ?? "none")", category: .screenManager)
+            Logger.info("Weather updated: \(description.rawValue), code=\(weatherCode), intensity=\(currentIntensity.rawValue), particle=\(currentParticleEffect.rawValue), wind=\(currentWind.map { "\(Int($0.speedKPH))km/h@\(Int($0.fromDegrees))°" } ?? "n/a"), source=\(resolution.resolvedSource?.rawValue ?? "none")", category: .screenManager)
         } catch is CancellationError {
             return
         } catch {
@@ -283,13 +332,21 @@ final class WeatherReactiveService {
 
     // MARK: - Weather → Particle Mapping
 
-    /// Maps a weather description to a particle effect for auto-reactive
-    /// mode. Time-of-day–dependent effects (fireflies, stars) and seasonal
-    /// effects (sakura, falling leaves) are intentionally excluded — they
-    /// belong to manual user selection because the weather API exposes
-    /// neither timestamp nor season. `lightning` likewise stays out: a
-    /// surprise full-screen flash imposed without consent is jarring.
-    private func mapDescriptionToParticle(_ desc: WeatherDescription) -> ParticleEffect {
+    /// Maps a weather description to a particle effect for auto-reactive mode.
+    ///
+    /// Seasonal effects (sakura, falling leaves) stay out: the API says nothing
+    /// about what is in bloom. `lightning` likewise stays out — a surprise
+    /// full-screen flash imposed without consent is jarring.
+    ///
+    /// Time of day is no longer in that list. The same free request returns
+    /// `is_day`, so a clear night can have the stars the effect set has always
+    /// had and never used; the old comment's "the API exposes neither
+    /// timestamp nor season" was only half true, and the half that was wrong
+    /// cost the two nicest effects on the list.
+    private func mapDescriptionToParticle(
+        _ desc: WeatherDescription, isDaylight: Bool? = nil
+    ) -> ParticleEffect {
+        if desc == .clear, isDaylight == false { return .stars }
         switch desc {
         case .clear:        return .none
         case .partlyCloudy: return .dust
@@ -307,7 +364,20 @@ final class WeatherReactiveService {
 
     // MARK: - Weather → CIFilter Mapping
 
-    private func mapDescriptionToEffects(_ desc: WeatherDescription) -> WeatherEffectAdjustments {
+    private func mapDescriptionToEffects(
+        _ desc: WeatherDescription, freezing: Bool = false
+    ) -> WeatherEffectAdjustments {
+        var base = baseEffects(desc)
+        if freezing {
+            // Freezing rain is not the same weather as rain; the grade should
+            // read colder and flatter rather than pretending it is.
+            base.warmth += 900
+            base.saturation = max(0.35, base.saturation - 0.1)
+        }
+        return base
+    }
+
+    private func baseEffects(_ desc: WeatherDescription) -> WeatherEffectAdjustments {
         switch desc {
         case .clear:
             return WeatherEffectAdjustments(

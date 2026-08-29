@@ -32,9 +32,17 @@ final class ParticleOverlayView: NSView {
 
     // MARK: - Public API
 
-    func setEffect(_ effect: ParticleEffect, density: CGFloat = 1.0) {
+    /// How far the falling particles lean, in radians from vertical, and which
+    /// way. Positive leans to the right of the screen.
+    private var tiltRadians: CGFloat = 0
+    /// Lean the live emitter was last built for.
+    private var appliedTilt: CGFloat = 0
+
+    func setEffect(_ effect: ParticleEffect, density: CGFloat = 1.0, tiltRadians: CGFloat = 0) {
+        self.tiltRadians = tiltRadians
         if effect == currentEffect {
             updateDensity(density)
+            applyTilt()
             return
         }
 
@@ -53,7 +61,7 @@ final class ParticleOverlayView: NSView {
         emitter.backgroundColor = NSColor.clear.cgColor
         emitter.frame = bounds
 
-        let preset = preset(for: effect)
+        let preset = preset(for: effect, tilt: tiltRadians)
         emitter.emitterCells = preset.cells
         emitter.emitterShape = preset.shape
         emitter.renderMode = preset.renderMode
@@ -63,11 +71,31 @@ final class ParticleOverlayView: NSView {
 
         layer?.addSublayer(emitter)
         activeEmitter = emitter
+        appliedTilt = tiltRadians
         applySuspensionState(to: emitter)
     }
 
     func updateDensity(_ density: CGFloat) {
         activeEmitter?.birthRate = Float(max(0.05, density))
+    }
+
+    /// Rebuilds the emitter for a new lean.
+    ///
+    /// Not a layer rotation: rotating the emitter swings its emission line off
+    /// the top of the screen and leaves a dry wedge down one side (measured —
+    /// at 0.45 rad the rain covered only the left ~60%). The lean lives in the
+    /// cells' heading and in the streak texture instead, so the line stays
+    /// where it is. Weather refreshes hourly, so rebuilding is cheap; the guard
+    /// keeps a no-op update from restarting the field for nothing.
+    private func applyTilt() {
+        guard let emitter = activeEmitter, currentEffect.leansIntoWind else { return }
+        guard abs(appliedTilt - tiltRadians) > 0.01 else { return }
+        appliedTilt = tiltRadians
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        emitter.emitterCells = preset(for: currentEffect, tilt: tiltRadians).cells
+        emitter.emitterSize = preset(for: currentEffect, tilt: tiltRadians).size(bounds)
+        CATransaction.commit()
     }
 
     /// Suspend emitter; resume adjusts beginTime so the pause does not fast-forward.
@@ -108,7 +136,7 @@ final class ParticleOverlayView: NSView {
         super.layout()
         guard let emitter = activeEmitter, currentEffect != .none else { return }
         emitter.frame = bounds
-        let preset = preset(for: currentEffect)
+        let preset = preset(for: currentEffect, tilt: tiltRadians)
         emitter.emitterPosition = preset.position(bounds)
         emitter.emitterSize = preset.size(bounds)
     }
@@ -123,11 +151,11 @@ final class ParticleOverlayView: NSView {
         let size: (CGRect) -> CGSize
     }
 
-    private func preset(for effect: ParticleEffect) -> EmitterPreset {
+    private func preset(for effect: ParticleEffect, tilt: CGFloat) -> EmitterPreset {
         switch effect {
         case .none:          return Self.emptyPreset
-        case .snow:          return Self.snowPreset
-        case .rain:          return Self.rainPreset
+        case .snow:          return Self.snowPreset(tilt: tilt)
+        case .rain:          return Self.rainPreset(tilt: tilt)
         case .bokeh:         return Self.bokehPreset
         case .fireflies:     return Self.firefliesPreset
         case .dust:          return Self.dustPreset
@@ -147,7 +175,7 @@ final class ParticleOverlayView: NSView {
 
     // MARK: - Snow
 
-    private static let snowPreset: EmitterPreset = {
+    private static func snowPreset(tilt: CGFloat) -> EmitterPreset {
         let createLayer = { (scale: CGFloat, velocity: CGFloat, birthRate: Float, alpha: Float, radius: CGFloat) -> CAEmitterCell in
             let cell = CAEmitterCell()
             cell.contents = ParticleTextures.softCircle(radius: radius, color: NSColor.white.cgColor)
@@ -156,8 +184,13 @@ final class ParticleOverlayView: NSView {
             cell.lifetimeRange = 5
             cell.velocity = velocity
             cell.velocityRange = velocity * 0.3
-            cell.emissionLongitude = -.pi / 2
-            cell.emissionRange = .pi / 8
+            // A flake is round, so only its heading moves with the wind —
+            // there is no shape to point the other way.
+            cell.emissionLongitude = -.pi / 2 + tilt
+            // Wide on purpose: snowflakes flutter and tumble on the way down
+            // — the behaviour that separates snow from rain at a glance — and
+            // a narrow cone made them fall like slow rain.
+            cell.emissionRange = .pi / 4
             cell.scale = scale
             cell.scaleRange = scale * 0.3
             cell.alphaRange = alpha * 0.3
@@ -176,39 +209,64 @@ final class ParticleOverlayView: NSView {
             shape: .line,
             renderMode: .unordered,
             position: { CGPoint(x: $0.midX, y: $0.maxY) },
-            size: { CGSize(width: $0.width * 1.5, height: 0) }
+            // Snow leans much further than rain for the same wind, so its line
+            // has to reach further past the upwind edge.
+            size: { CGSize(width: $0.width * 2.4, height: 0) }
         )
-    }()
+    }
 
     // MARK: - Rain
 
-    private static let rainPreset: EmitterPreset = {
-        let cell = CAEmitterCell()
-        cell.contents = ParticleTextures.softCircle(
-            radius: 2.5,
-            color: NSColor.white.withAlphaComponent(0.7).cgColor
-        )
-        cell.birthRate = 260
-        cell.lifetime = 5
-        cell.lifetimeRange = 1
-        cell.velocity = 0
-        cell.velocityRange = 0
-        cell.emissionLongitude = 0
-        cell.emissionRange = 0
-        cell.scale = 0.9
-        cell.scaleRange = 0.3
-        cell.alphaRange = 0.25
-        cell.yAcceleration = -160
-        cell.xAcceleration = 0
-        cell.color = NSColor(white: 1.0, alpha: 0.75).cgColor
+    /// Three depth layers rather than one flat sheet.
+    ///
+    /// Speeds follow the measured terminal velocities: drizzle-sized drops fall
+    /// around 2 m/s and the biggest stable drops around 9 m/s, so the near
+    /// layer runs roughly twice the far layer's speed rather than some
+    /// arbitrary spread. Far particles are smaller, slower, fainter and shorter
+    /// — which is what depth looks like — and they are also the cheapest, so
+    /// the layer that carries the most particles is the one that costs least.
+    private static func rainPreset(tilt: CGFloat) -> EmitterPreset {
+        let makeLayer = {
+            (scale: CGFloat, velocity: CGFloat, birthRate: Float,
+             alpha: CGFloat, length: CGFloat, width: CGFloat) -> CAEmitterCell in
+            let cell = CAEmitterCell()
+            cell.contents = ParticleTextures.streak(
+                length: length, width: width,
+                color: NSColor.white.withAlphaComponent(alpha).cgColor,
+                tilt: tilt
+            )
+            cell.birthRate = birthRate
+            cell.lifetime = 4
+            cell.lifetimeRange = 1
+            cell.velocity = velocity
+            cell.velocityRange = velocity * 0.18
+            // Travel direction matches the lean baked into the texture, so a
+            // drop always points the way it is going.
+            cell.emissionLongitude = -.pi / 2 + tilt
+            cell.emissionRange = .pi / 90      // rain falls in lines, not cones
+            cell.scale = scale
+            cell.scaleRange = scale * 0.25
+            cell.alphaRange = 0.2
+            cell.yAcceleration = -160
+            cell.color = NSColor(white: 1, alpha: alpha).cgColor
+            return cell
+        }
+
+        // near, mid, far — the far layer is the densest and the dimmest.
+        let near = makeLayer(1.15, 300, 55, 0.75, 26, 2.4)
+        let mid = makeLayer(0.8, 230, 95, 0.5, 18, 2.0)
+        let far = makeLayer(0.5, 165, 130, 0.3, 12, 1.6)
+
         return EmitterPreset(
-            cells: [cell],
+            cells: [near, mid, far],
             shape: .line,
             renderMode: .unordered,
             position: { CGPoint(x: $0.midX, y: $0.maxY) },
-            size: { CGSize(width: $0.width * 1.1, height: 0) }
+            // Much wider than the screen: leaning rain enters from off the
+            // upwind edge, and a screen-width line leaves that side dry.
+            size: { CGSize(width: $0.width * 2.4, height: 0) }
         )
-    }()
+    }
 
     // MARK: - Bokeh
 
@@ -460,6 +518,61 @@ private enum ParticleTextures {
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )
+    }
+
+    /// A vertical raindrop streak: soft at both ends, brightest along its
+    /// spine, drawn once and cached like every other texture here.
+    ///
+    /// Rain is drawn stretched rather than round because that is what a
+    /// raindrop looks like to anything with an exposure time — a drop falling
+    /// at 6–9 m/s crosses far more than its own diameter while the eye (or a
+    /// 1/30 s shutter) integrates it. Round dots read as falling confetti.
+    /// Real-time renderers do the same thing with velocity-stretched
+    /// billboards; `CAEmitterCell` has no per-particle stretch, so the stretch
+    /// is baked into the texture and the whole cell is rotated to match the
+    /// wind instead.
+    static func streak(
+        length: CGFloat, width: CGFloat, color: CGColor, tilt: CGFloat = 0
+    ) -> CGImage? {
+        // Drawn leaning rather than rotated at the layer: rotating the emitter
+        // swings its emission line off the top of the screen and leaves a dry
+        // wedge down one side. The canvas grows to fit the rotated streak.
+        let span = abs(length * sin(tilt)) + abs(width * cos(tilt))
+        let w = max(Int(ceil(max(span, width))), 2)
+        let h = max(Int(ceil(abs(length * cos(tilt)) + abs(width * sin(tilt)))), 4)
+        guard let ctx = makeContext(width: w, height: h) else { return nil }
+        if tilt != 0 {
+            ctx.translateBy(x: CGFloat(w) / 2, y: CGFloat(h) / 2)
+            ctx.rotate(by: tilt)
+            ctx.translateBy(x: -width / 2, y: -length / 2)
+        }
+        guard let opaque = color.copy(alpha: 1.0), let clear = color.copy(alpha: 0.0),
+              let along = CGGradient(
+                colorsSpace: colorSpace,
+                colors: [clear, opaque, opaque, clear] as CFArray,
+                // Fades in fast and trails out slowly: the tail is the part of
+                // the streak the eye reads as "this was moving downwards".
+                locations: [0.0, 0.25, 0.7, 1.0]
+              )
+        else { return nil }
+
+        // Taper across the width so the edges do not alias into hard bars.
+        let steps = max(Int(ceil(width)), 2)
+        for column in 0..<steps {
+            let t = (CGFloat(column) + 0.5) / CGFloat(steps)
+            let edge = 1 - abs(t * 2 - 1)
+            ctx.saveGState()
+            ctx.clip(to: CGRect(x: CGFloat(column), y: 0, width: 1, height: length))
+            ctx.setAlpha(edge * edge)
+            ctx.drawLinearGradient(
+                along,
+                start: CGPoint(x: 0, y: length),
+                end: CGPoint(x: 0, y: 0),
+                options: []
+            )
+            ctx.restoreGState()
+        }
+        return ctx.makeImage()
     }
 
     static func softCircle(radius: CGFloat, color: CGColor) -> CGImage? {
