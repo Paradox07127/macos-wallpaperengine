@@ -5,8 +5,14 @@ import Observation
 
 extension ScreenManager {
     /// Reconcile the Monitor overlay for every live display against its persisted config.
+    ///
+    /// The master switch counts as a reason to have none: it means "stop every
+    /// wallpaper", and these panels are drawn over the wallpaper. Particles
+    /// already stopped, because `releaseRuntimeSession` takes their layer down
+    /// on the way past — the Monitor and Now Playing panels are owned here
+    /// instead and used to keep rendering over a bare desktop.
     func reconcileMonitorOverlays() {
-        guard !isTerminating else {
+        guard !isTerminating, wallpapersGloballyEnabled else {
             OverlayController.shared.teardownAll()
             updateFullScreenFallbackPolling()
             return

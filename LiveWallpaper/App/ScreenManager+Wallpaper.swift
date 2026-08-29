@@ -314,6 +314,9 @@ extension ScreenManager {
                 effectsCoordinator.reconcileEnvironmentOverlays()
             }
         }
+        // Both directions: the reconcile reads the gate itself and tears the
+        // panels down when it is off.
+        reconcileMonitorOverlays()
     }
     
     // MARK: - On-lock Desktop Picture Capture
