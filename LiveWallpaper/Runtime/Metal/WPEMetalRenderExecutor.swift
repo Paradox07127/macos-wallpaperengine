@@ -413,6 +413,8 @@ final class WPEMetalRenderExecutor {
     var puppetClipPairsCache: [String: [PuppetClipPair]] = [:]
     /// Throttles the one-shot clip-activation diagnostic to once per objectID.
     var loggedClipActivation: Set<String> = []
+    /// One-shot per object: the clip composite was asked for but declined (see `puppetClipCompositePlan`).
+    var loggedClipBail: Set<String> = []
     lazy var staticLayerCompositeCache = WPEMetalStaticLayerCompositeCache(
         budgetBytes: WPEMetalRenderExecutor.staticLayerCacheBudgetBytes
     )

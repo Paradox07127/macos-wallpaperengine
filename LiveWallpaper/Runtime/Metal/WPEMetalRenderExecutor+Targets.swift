@@ -37,6 +37,7 @@ extension WPEMetalRenderExecutor {
         // for a different puppet/material/animation, so drop them when the graph is rebuilt.
         puppetClipPairsCache.removeAll()
         loggedClipActivation.removeAll()
+        loggedClipBail.removeAll()
         loggedComponentMapResolveFailures.removeAll()
         characterSheetWarnedReasonByObjectID.removeAll()
         puppetBoundScanDetailByObjectID.removeAll()

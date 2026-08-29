@@ -268,6 +268,142 @@ struct WPEPuppetClipRoleTests {
         #expect(pairs.map { "\($0.sourceIndex)→\($0.targetIndex)" } == ["0→2", "1→3"])
     }
 
+    @Test("A clip group with two sources clips its target against both of them")
+    func authoredClipGroupUnionsEverySource() {
+        // Every eye rig in the corpus (3558034522, 3578699777) authors one target and two sources
+        // per group: the iris is clipped by BOTH eye-whites. Pairing the two lists positionally
+        // dropped the whole group and left the irises unclipped through a blink.
+        let vertices = quad(bone: 0, minX: 20, maxX: 60, minY: -5, maxY: 5)
+            + quad(bone: 1, minX: -60, maxX: -20, minY: -5, maxY: 5)
+            + quad(bone: 2, minX: -45, maxX: -35, minY: -3, maxY: 3)
+            + quad(bone: 3, minX: 35, maxX: 45, minY: -3, maxY: 3)
+        let mesh = WPEPuppetMesh(
+            materialPath: "eyes",
+            vertices: vertices,
+            indices: quadIndices(base: 0) + quadIndices(base: 4)
+                + quadIndices(base: 8) + quadIndices(base: 12),
+            parts: [
+                WPEPuppetMeshPart(id: 1, start: 0, count: 6),
+                WPEPuppetMeshPart(id: 2, start: 6, count: 6),
+                WPEPuppetMeshPart(id: 3, start: 12, count: 6),
+                WPEPuppetMeshPart(id: 4, start: 18, count: 6),
+            ],
+            clipMaskName: "masks/clipping_mask_e5b07ba8",
+            clipGroups: [
+                WPEPuppetClipGroup(
+                    maskName: "masks/clipping_mask_e5b07ba8",
+                    sourcePartIndices: [0, 1],
+                    targetPartIndices: [2]
+                ),
+                WPEPuppetClipGroup(
+                    maskName: "masks/clipping_mask_e5b07ba8",
+                    sourcePartIndices: [0, 1],
+                    targetPartIndices: [3]
+                ),
+            ]
+        )
+
+        let pairs = WPEMetalRenderExecutor._testDetectClipPairsWithIndices(
+            mesh: mesh, animationLayers: [], bones: []
+        )
+        #expect(pairs.map { "\($0.sourceIndex)→\($0.targetIndex)" } == [
+            "0→2", "1→2", "0→3", "1→3",
+        ])
+
+        let routing = WPEMetalRenderExecutor._testClipRouting(mesh: mesh)
+        #expect(routing.sourceGroups == [[0, 1], [0, 1]])
+        #expect(routing.routeForTarget == [2: 0, 3: 1])
+    }
+
+    @Test("Each clip target routes to one silhouette built from its whole source set")
+    func clipRoutingKeepsOneRoutePerTarget() {
+        let vertices = quad(bone: 0, minX: -60, maxX: -20, minY: -5, maxY: 5)
+            + quad(bone: 1, minX: 20, maxX: 60, minY: -5, maxY: 5)
+            + quad(bone: 2, minX: -45, maxX: -35, minY: -3, maxY: 3)
+            + quad(bone: 3, minX: 35, maxX: 45, minY: -3, maxY: 3)
+        let mesh = WPEPuppetMesh(
+            materialPath: "eyes",
+            vertices: vertices,
+            indices: quadIndices(base: 0) + quadIndices(base: 4)
+                + quadIndices(base: 8) + quadIndices(base: 12),
+            parts: [
+                WPEPuppetMeshPart(id: 1, start: 0, count: 6),
+                WPEPuppetMeshPart(id: 2, start: 6, count: 6),
+                WPEPuppetMeshPart(id: 3, start: 12, count: 6),
+                WPEPuppetMeshPart(id: 4, start: 18, count: 6),
+            ],
+            clipMaskName: "masks/left",
+            clipGroups: [
+                WPEPuppetClipGroup(
+                    maskName: "masks/left", sourcePartIndices: [0], targetPartIndices: [2]),
+                WPEPuppetClipGroup(
+                    maskName: "masks/right", sourcePartIndices: [1], targetPartIndices: [3]),
+            ]
+        )
+
+        let routing = WPEMetalRenderExecutor._testClipRouting(mesh: mesh)
+        #expect(routing.sourceGroups == [[0], [1]])
+        #expect(routing.routeForTarget == [2: 0, 3: 1])
+    }
+
+    private static var workshopCorpusRoot: URL {
+        let passwd = getpwuid(getuid())
+        let realHome = passwd.map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
+        return URL(fileURLWithPath: realHome, isDirectory: true)
+            .appendingPathComponent(
+                "Library/Application Support/Steam/steamapps/workshop/content/431960",
+                isDirectory: true
+            )
+    }
+
+    private static var workshopCorpusAvailable: Bool {
+        FileManager.default.fileExists(atPath: workshopCorpusRoot.path)
+    }
+
+    @Test(
+        "No authored clip group in the Workshop corpus is silently dropped",
+        .enabled(if: workshopCorpusAvailable)
+    )
+    func workshopClipGroupsAllProduceRoutes() throws {
+        let fileManager = FileManager.default
+        let folders = try fileManager.contentsOfDirectory(
+            at: Self.workshopCorpusRoot,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+        var groupCount = 0
+        for folder in folders {
+            let packageURL = folder.appendingPathComponent("scene.pkg")
+            guard fileManager.fileExists(atPath: packageURL.path) else { continue }
+            let handle = try FileHandle(forReadingFrom: packageURL)
+            defer { try? handle.close() }
+            let package = try WallpaperEnginePackage.parseIndex(streamingFrom: handle)
+            for entry in package.entries where entry.name.lowercased().hasSuffix(".mdl") {
+                let data = try package.readEntry(entry, from: handle)
+                guard data.range(of: Data("clipping_mask".utf8)) != nil else { continue }
+                let model = try WPEMdlParser.parse(data: data)
+                for mesh in model.meshes where !mesh.clipGroups.isEmpty {
+                    let routing = WPEMetalRenderExecutor._testClipRouting(mesh: mesh)
+                    for (groupIndex, group) in mesh.clipGroups.enumerated() {
+                        groupCount += 1
+                        let label = "\(folder.lastPathComponent)/\(entry.name) group \(groupIndex)"
+                        // Every authored target must reach a silhouette built from the whole source
+                        // list. A dropped group renders as an unclipped part — 3558034522's irises
+                        // stayed visible through a blink because both its groups were discarded.
+                        for target in group.targetPartIndices where mesh.parts[target].count > 0 {
+                            let route = try #require(routing.routeForTarget[target], "\(label) target \(target)")
+                            #expect(
+                                routing.sourceGroups[route]
+                                    == group.sourcePartIndices.filter { mesh.parts[$0].count > 0 }.sorted(),
+                                "\(label) target \(target)"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        #expect(groupCount > 0)
+    }
+
     @Test(
         "Real 3704273480 uses six authored clip routes and never clips the coat",
         .enabled(if: realPuppetModelPath != nil)
@@ -292,8 +428,10 @@ struct WPEPuppetClipRoleTests {
         let pairs = WPEMetalRenderExecutor._testDetectClipPairsWithIndices(
             mesh: mesh, animationLayers: [], bones: model.bones
         )
+        // Set→set, not positional: each target is clipped by the union of the group's sources.
         #expect(pairs.map { "\($0.sourceIndex)→\($0.targetIndex)" } == [
-            "44→54", "51→57", "52→58", "43→53", "49→55", "50→56",
+            "44→54", "51→54", "52→54", "44→57", "51→57", "52→57", "44→58", "51→58", "52→58",
+            "43→53", "49→53", "50→53", "43→55", "49→55", "50→55", "43→56", "49→56", "50→56",
         ])
         #expect(!pairs.contains { $0.sourceIndex == 64 && $0.targetIndex == 65 })
     }
