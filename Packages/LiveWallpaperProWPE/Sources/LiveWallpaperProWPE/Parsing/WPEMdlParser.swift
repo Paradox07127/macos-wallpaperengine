@@ -92,7 +92,8 @@ public struct WPEPuppetMesh: Equatable, Sendable {
     public let clipMaskName: String?
     /// Authored MDLV22+ clip groups. The stored integers are mesh part-table indices, not the
     /// authored `WPEPuppetMeshPart.id` values (real files may repeat those IDs). WPE stores the
-    /// target list before the source list; corresponding entries form one source→target route.
+    /// target list before the source list, and the two are independent sets: every target is clipped
+    /// by the union of every source (eye rigs author 1 target against 2 eye-whites).
     public let clipGroups: [WPEPuppetClipGroup]
 
     public init(

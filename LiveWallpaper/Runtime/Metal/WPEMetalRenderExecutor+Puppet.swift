@@ -1274,14 +1274,26 @@ extension WPEMetalRenderExecutor {
     }
 
     private struct PuppetClipSourceKey: Hashable {
-        let partIndex: Int
+        let partIndices: [Int]
         let maskGroupIndex: Int?
     }
 
     private struct PuppetClipSourceRoute {
-        let partIndex: Int
+        /// Every source part of the authored group, rasterized into one union silhouette.
+        let partIndices: [Int]
         let maskGroupIndex: Int?
         let maskReference: WPETextureReference
+    }
+
+    /// Resolved routing: which source parts form each clip silhouette, and which silhouette a given
+    /// clip-target part samples. Extracted from the plan so it is testable without a Metal device.
+    struct PuppetClipRouting: Equatable {
+        /// Source part-table indices per route, ascending.
+        let sourceGroups: [[Int]]
+        /// Authored mask-group index per route (nil = legacy geometry inference).
+        let maskGroupIndices: [Int?]
+        /// Clip-target part-table index → index into `sourceGroups`.
+        let routeForTarget: [Int: Int]
     }
 
     private struct PuppetClipCompositePlan {
@@ -1328,53 +1340,63 @@ extension WPEMetalRenderExecutor {
               hasPuppetClipCompositeBinding(pass, layer: layer),
               WPEBuiltinShaderKind(normalizing: pass.shader) == .genericImage4,
               let clipTargetReference = pass.textures[8],
-              case .fbo(let clipTargetName) = clipTargetReference,
-              renderableMeshes.count == 1,
-              let mesh = renderableMeshes.first,
-              mesh.parts.filter({ $0.count > 0 }).count >= 2 else {
+              case .fbo(let clipTargetName) = clipTargetReference else {
             return nil
         }
+        // Past this point the builder has already committed clip bindings for this object, so every
+        // remaining exit means "asked to clip, then didn't" and falls back to an unclipped flat draw.
+        // That fallback is what made the 3558034522 blink regression invisible — name the reason.
+        func bail(_ reason: @autoclosure () -> String) -> PuppetClipCompositePlan? {
+            if loggedClipBail.insert(layer.objectID).inserted {
+                Self.clipDiagnosticLog(
+                    "[WPE clip] SKIPPED \(layer.puppetPath ?? layer.objectID): \(reason()) "
+                        + "— the puppet draws unclipped"
+                )
+            }
+            return nil
+        }
+        guard renderableMeshes.count == 1, let mesh = renderableMeshes.first else {
+            return bail("\(renderableMeshes.count) renderable meshes; the clip composite handles one")
+        }
+        guard mesh.parts.filter({ $0.count > 0 }).count >= 2 else {
+            return bail("mesh has fewer than 2 drawable parts")
+        }
         let pairs = resolvePuppetClipPairs(for: layer, model: model, mesh: mesh)
-        guard !pairs.isEmpty else { return nil }
+        guard !pairs.isEmpty else {
+            return bail("no clip pair resolved from \(mesh.clipGroups.count) authored group(s)")
+        }
 
-        // Preserve mesh draw order for source RTs. Deduplicate only the same source within the same
-        // group; 3610728777 intentionally reuses sources 0/1 in two distinct mask groups.
-        var sourceRoutes: [PuppetClipSourceRoute] = []
-        var routeIndexByKey: [PuppetClipSourceKey: Int] = [:]
-        func maskReference(for pair: PuppetClipPair) -> WPETextureReference? {
-            if let groupIndex = pair.maskGroupIndex {
-                let slot = WPERenderTargetNames.PuppetClip.maskBindingSlot(groupIndex: groupIndex)
+        func maskReference(maskGroupIndex: Int?) -> WPETextureReference? {
+            if let maskGroupIndex {
+                let slot = WPERenderTargetNames.PuppetClip.maskBindingSlot(groupIndex: maskGroupIndex)
                 return pass.textures[slot]
             }
             let internalSlot = WPERenderTargetNames.PuppetClip.maskBindingSlot(groupIndex: 0)
             return pass.textures[internalSlot] ?? pass.textures[1]
         }
-        for (partIndex, part) in mesh.parts.enumerated() where part.count > 0 {
-            for pair in pairs where pair.sourcePartIndex == partIndex {
-                guard let maskReference = maskReference(for: pair) else { continue }
-                let key = PuppetClipSourceKey(
-                    partIndex: partIndex,
-                    maskGroupIndex: pair.maskGroupIndex
-                )
-                guard routeIndexByKey[key] == nil else { continue }
-                routeIndexByKey[key] = sourceRoutes.count
-                sourceRoutes.append(PuppetClipSourceRoute(
-                    partIndex: partIndex,
-                    maskGroupIndex: pair.maskGroupIndex,
-                    maskReference: maskReference
-                ))
-            }
+        let routing = Self.clipRouting(pairs: pairs, parts: mesh.parts)
+        var sourceRoutes: [PuppetClipSourceRoute] = []
+        // A route whose mask texture is unbound is skipped, so plan indices can drift from routing
+        // indices — remap instead of reusing them.
+        var planRouteForRoutingRoute: [Int: Int] = [:]
+        for (routeIndex, partIndices) in routing.sourceGroups.enumerated() {
+            let maskGroupIndex = routing.maskGroupIndices[routeIndex]
+            guard let maskReference = maskReference(maskGroupIndex: maskGroupIndex) else { continue }
+            planRouteForRoutingRoute[routeIndex] = sourceRoutes.count
+            sourceRoutes.append(PuppetClipSourceRoute(
+                partIndices: partIndices,
+                maskGroupIndex: maskGroupIndex,
+                maskReference: maskReference
+            ))
         }
         var sourceRouteForTarget: [Int: Int] = [:]
-        for pair in pairs where sourceRouteForTarget[pair.targetPartIndex] == nil {
-            let key = PuppetClipSourceKey(
-                partIndex: pair.sourcePartIndex,
-                maskGroupIndex: pair.maskGroupIndex
-            )
-            guard let routeIndex = routeIndexByKey[key] else { continue }
-            sourceRouteForTarget[pair.targetPartIndex] = routeIndex
+        for (targetIndex, routeIndex) in routing.routeForTarget {
+            guard let planRoute = planRouteForRoutingRoute[routeIndex] else { continue }
+            sourceRouteForTarget[targetIndex] = planRoute
         }
-        guard !sourceRoutes.isEmpty, !sourceRouteForTarget.isEmpty else { return nil }
+        guard !sourceRoutes.isEmpty, !sourceRouteForTarget.isEmpty else {
+            return bail("no mask texture bound for any of \(routing.sourceGroups.count) clip route(s)")
+        }
 
         return PuppetClipCompositePlan(
             sourceRoutes: sourceRoutes,
@@ -1516,6 +1538,38 @@ extension WPEMetalRenderExecutor {
         return boxes
     }
 
+    /// Collapses source→target pairs into one silhouette route per (mask group, target): the target is
+    /// clipped by the union of every source its group lists. Targets are visited in mesh draw order so
+    /// route order is deterministic; when several groups claim the same target, the first one wins.
+    static func clipRouting(pairs: [PuppetClipPair], parts: [WPEPuppetMeshPart]) -> PuppetClipRouting {
+        var sourceGroups: [[Int]] = []
+        var maskGroupIndices: [Int?] = []
+        var routeIndexByKey: [PuppetClipSourceKey: Int] = [:]
+        var routeForTarget: [Int: Int] = [:]
+        for (targetIndex, part) in parts.enumerated() where part.count > 0 {
+            let targetPairs = pairs.filter { $0.targetPartIndex == targetIndex }
+            guard let first = targetPairs.first else { continue }
+            let maskGroupIndex = first.maskGroupIndex
+            let sources = Set(
+                targetPairs.filter { $0.maskGroupIndex == maskGroupIndex }.map(\.sourcePartIndex)
+            ).sorted()
+            let key = PuppetClipSourceKey(partIndices: sources, maskGroupIndex: maskGroupIndex)
+            if let existing = routeIndexByKey[key] {
+                routeForTarget[targetIndex] = existing
+                continue
+            }
+            routeIndexByKey[key] = sourceGroups.count
+            routeForTarget[targetIndex] = sourceGroups.count
+            sourceGroups.append(sources)
+            maskGroupIndices.append(maskGroupIndex)
+        }
+        return PuppetClipRouting(
+            sourceGroups: sourceGroups,
+            maskGroupIndices: maskGroupIndices,
+            routeForTarget: routeForTarget
+        )
+    }
+
     /// Resolves clip source→target pairs for a clip-mask puppet. MDLV22+ authored groups win; geometry
     /// inference is retained only for legacy/synthetic meshes that carry a mask name without group data.
     /// Returning [] makes unfamiliar or malformed rigs degrade to a flat draw instead of mis-clipping.
@@ -1527,30 +1581,24 @@ extension WPEMetalRenderExecutor {
         if !mesh.clipGroups.isEmpty {
             var authoredPairs: [PuppetClipPair] = []
             for (groupIndex, group) in mesh.clipGroups.enumerated() {
-                guard group.sourcePartIndices.count == group.targetPartIndices.count else {
-                    clipDiagnosticLog(
-                        "[WPE clip] ignoring malformed group \(groupIndex): source/target count mismatch"
-                    )
-                    continue
+                // A group's two lists are independent SETS, not a positional pairing: every target
+                // is clipped by the silhouette of every source. Zipping them dropped whole groups —
+                // eye rigs author one iris against both eye-whites (1 target, 2 sources), so the
+                // irises stayed visible through a blink.
+                func drawableParts(_ indices: [Int]) -> [Int] {
+                    indices.filter { mesh.parts.indices.contains($0) && mesh.parts[$0].count > 0 }
                 }
-                for (sourceIndex, targetIndex) in zip(
-                    group.sourcePartIndices,
-                    group.targetPartIndices
-                ) {
-                    guard sourceIndex != targetIndex,
-                          mesh.parts.indices.contains(sourceIndex),
-                          mesh.parts.indices.contains(targetIndex),
-                          mesh.parts[sourceIndex].count > 0,
-                          mesh.parts[targetIndex].count > 0 else {
-                        continue
+                let sources = drawableParts(group.sourcePartIndices)
+                for targetIndex in drawableParts(group.targetPartIndices) {
+                    for sourceIndex in sources where sourceIndex != targetIndex {
+                        authoredPairs.append(PuppetClipPair(
+                            sourcePartIndex: sourceIndex,
+                            targetPartIndex: targetIndex,
+                            sourceID: mesh.parts[sourceIndex].id,
+                            targetID: mesh.parts[targetIndex].id,
+                            maskGroupIndex: groupIndex
+                        ))
                     }
-                    authoredPairs.append(PuppetClipPair(
-                        sourcePartIndex: sourceIndex,
-                        targetPartIndex: targetIndex,
-                        sourceID: mesh.parts[sourceIndex].id,
-                        targetID: mesh.parts[targetIndex].id,
-                        maskGroupIndex: groupIndex
-                    ))
                 }
             }
             let summary = authoredPairs.map {
@@ -1738,6 +1786,14 @@ extension WPEMetalRenderExecutor {
             .map { ($0.sourcePartIndex, $0.targetPartIndex, $0.sourceID, $0.targetID) }
     }
 
+    /// Test seam for the silhouette routing that sits between pair detection and the clip encoders.
+    static func _testClipRouting(mesh: WPEPuppetMesh) -> PuppetClipRouting {
+        clipRouting(
+            pairs: detectClipPairs(mesh: mesh, animationLayers: [], bones: []),
+            parts: mesh.parts
+        )
+    }
+
     #endif
 
     /// Encodes the clip composite in place of the flat puppet draw: render each clip-source silhouette to
@@ -1797,7 +1853,10 @@ extension WPEMetalRenderExecutor {
         let paletteState = puppetBonePalette(for: skinningState)
         if loggedClipActivation.insert(layer.objectID).inserted {
             let sourceSummary = plan.sourceRoutes.map { route in
-                "g\(route.maskGroupIndex ?? -1):\(meshes[0].parts[route.partIndex].id)@\(route.partIndex)"
+                "g\(route.maskGroupIndex ?? -1):"
+                    + route.partIndices
+                    .map { "\(meshes[0].parts[$0].id)@\($0)" }
+                    .joined(separator: "+")
             }
             let targetSummary = plan.sourceRouteForTarget.keys.sorted().map { index in
                 "\(meshes[0].parts[index].id)@\(index)"
@@ -1846,7 +1905,7 @@ extension WPEMetalRenderExecutor {
             let clipRT = try targetTexture(for: .fbo(name: rtName), layer: layer, frameState: &frameState)
             try encodePuppetClipCompositeDraw(
                 pass: pass, layer: layer, meshes: meshes,
-                partSelection: .only([route.partIndex]),
+                partSelection: .only(Set(route.partIndices)),
                 destination: clipRT, loadAction: .clear, clearColor: transparentClear,
                 primary: primary, mask: clipMask, clipTexture: nil,
                 vertexName: "wpe_puppet_mesh_clip_vertex", fragmentName: "wpe_puppet_clippingmaskimage4_fragment",
@@ -2007,7 +2066,7 @@ extension WPEMetalRenderExecutor {
                 pass: pass,
                 layer: layer,
                 meshes: meshes,
-                partSelection: .only([route.partIndex]),
+                partSelection: .only(Set(route.partIndices)),
                 destination: clipRT,
                 loadAction: .clear,
                 clearColor: transparentClear,
