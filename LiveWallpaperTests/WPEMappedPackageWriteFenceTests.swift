@@ -194,7 +194,6 @@ struct WPEMappedPackageWriteFenceTests {
         // directory is created by this type, not opened from scene content.
         "LiveWallpaper/Infrastructure/Workshop/WorkshopPreviewDiskCache.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Workshop/WorkshopQueryCache.swift": [".write(to": 1],
-        "LiveWallpaper/Infrastructure/Workshop/WorkshopKeychainStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Platform/DesktopPictureFrameExtractor.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Diagnostics/WPESceneDebugArtifacts.swift": [
             "createFile(": 1,

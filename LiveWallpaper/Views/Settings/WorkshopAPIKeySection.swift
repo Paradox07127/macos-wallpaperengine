@@ -26,9 +26,7 @@ struct WorkshopAPIKeySection: View {
                 icon: "key",
                 iconColor: .orange,
                 title: "Steam Web API key",
-                subtitle: services.hasWebAPIKey
-                    ? "Stored on this Mac only — never synced"
-                    : "Your own free key — unlocks the full native search",
+                subtitle: subtitle,
                 info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Get one free at steamcommunity.com/dev/apikey."
             ) {
                 summaryControl
@@ -45,10 +43,6 @@ struct WorkshopAPIKeySection: View {
             .onChange(of: services.hasWebAPIKey, initial: true) { _, hasKey in
                 isEditing = !hasKey
             }
-            .task(id: isEditing) {
-                guard isEditing else { return }
-                await model.loadStoredKey()
-            }
 
             if isEditing {
                 editor
@@ -56,6 +50,18 @@ struct WorkshopAPIKeySection: View {
         } header: {
             SettingsSearchSectionHeader("Steam Web API key", anchor: .workshopSetup)
         }
+    }
+
+    /// The denial line comes first: the key is still stored, so saying
+    /// "Stored on this Mac" while every request fails reads as a lie, and
+    /// saying "not set" would send the user to Steam for a key they have.
+    private var subtitle: LocalizedStringKey {
+        if services.apiKeyAccessDenied {
+            return "macOS wouldn't unlock the stored key — allow access when it asks, or paste the key again"
+        }
+        return services.hasWebAPIKey
+            ? "Stored on this Mac only — never synced"
+            : "Your own free key — unlocks the full native search"
     }
 
     @ViewBuilder

@@ -59,8 +59,7 @@
                 .appendingPathComponent("workshop-key-rejection-\(UUID().uuidString)", isDirectory: true)
             let keychain = WorkshopKeychainStore(
                 directory: root.appendingPathComponent("keychain", isDirectory: true),
-                defaults: UserDefaults(suiteName: "workshop-key-rejection-\(UUID().uuidString)")!,
-                legacySlot: WorkshopLegacyKeychainSlot(exists: { false }, read: { .absent }, delete: {})
+                slot: WorkshopKeychainSlotSpy().slot()
             )
             try await keychain.setWebAPIKey(validKey)
             let config = URLSessionConfiguration.ephemeral
