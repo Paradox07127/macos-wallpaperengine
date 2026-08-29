@@ -195,7 +195,10 @@ struct WorkshopPublicSearchTests {
         #expect(entry.subscriptionCount == 95_000)
         #expect(entry.viewCount == 6_100)
         #expect(entry.favoriteCount == 12)
-        #expect(WorkshopPublicSearchSource.queryItem(from: entry).subscriptionCount == 95_000)
+        let item = WorkshopPublicSearchSource.queryItem(from: entry)
+        #expect(item.subscriptionCount == 95_000)
+        #expect(item.viewCount == 6_100)
+        #expect(item.favoriteCount == 12)
     }
 
     /// Control: the fields are optional on Valve's side, and their absence must
@@ -210,7 +213,10 @@ struct WorkshopPublicSearchTests {
         ).get()
 
         #expect(entry.subscriptionCount == nil)
-        #expect(WorkshopPublicSearchSource.queryItem(from: entry).subscriptionCount == nil)
+        let item = WorkshopPublicSearchSource.queryItem(from: entry)
+        #expect(item.subscriptionCount == nil)
+        #expect(item.viewCount == nil)
+        #expect(item.favoriteCount == nil)
     }
 }
 #endif

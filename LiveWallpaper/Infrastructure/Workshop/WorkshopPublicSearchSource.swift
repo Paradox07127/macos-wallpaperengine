@@ -184,6 +184,8 @@ final class WorkshopPublicSearchSource {
             fileSizeBytes: entry.fileSizeBytes,
             timeUpdated: entry.timeUpdated,
             subscriptionCount: entry.subscriptionCount,
+            viewCount: entry.viewCount,
+            favoriteCount: entry.favoriteCount,
             // Keyless `GetPublishedFileDetails` carries no vote data at all, so
             // the rating pill stays hidden rather than showing a made-up score.
             voteScore: nil,

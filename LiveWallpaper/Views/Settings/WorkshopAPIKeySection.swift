@@ -61,7 +61,7 @@ struct WorkshopAPIKeySection: View {
         }
         return services.hasWebAPIKey
             ? "Stored on this Mac only — never synced"
-            : "Your own free key — unlocks the full native search"
+            : "Optional — adds ratings, authors and faster search"
     }
 
     @ViewBuilder

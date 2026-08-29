@@ -211,7 +211,7 @@ struct OnboardingWorkshopSetupView: View {
     private var apiKeyDetail: String {
         services.hasWebAPIKey
             ? String(localized: "Ready", comment: "Workshop setup status when a Steam Web API key exists.")
-            : String(localized: "Your own free key — unlocks the full native search", comment: "Workshop settings subtitle for Steam Web API key.")
+            : String(localized: "Optional — adds ratings, authors and faster search", comment: "Workshop settings subtitle for Steam Web API key.")
     }
 
     private var downloadGroupState: WorkshopStepState {

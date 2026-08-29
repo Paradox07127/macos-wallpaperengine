@@ -421,24 +421,68 @@ struct WorkshopInspectorContent: View {
     // MARK: - Metadata
 
     private var metaRow: some View {
-        HStack(spacing: 6) {
-            if let count = item.subscriptionCount, count > 0 {
-                Text(formatSubs(count))
-                Text(verbatim: "·").foregroundStyle(.tertiary)
-            }
-            if let updated = item.timeUpdated {
-                Text("Updated \(Self.dateFormatter.string(from: updated))")
-                if item.fileSizeBytes != nil {
-                    Text(verbatim: "·").foregroundStyle(.tertiary)
+        // Two lines: the counts don't fit alongside the date and size at the
+        // sheet's width once views and favorites join the subscriber count.
+        VStack(alignment: .leading, spacing: 2) {
+            countsRow
+            HStack(spacing: 6) {
+                if let updated = item.timeUpdated {
+                    Text("Updated \(Self.dateFormatter.string(from: updated))")
+                    if item.fileSizeBytes != nil {
+                        Text(verbatim: "·").foregroundStyle(.tertiary)
+                    }
                 }
-            }
-            if let size = item.fileSizeBytes {
-                Text(verbatim: Self.byteFormatter.string(fromByteCount: Int64(clamping: size)))
+                if let size = item.fileSizeBytes {
+                    Text(verbatim: Self.byteFormatter.string(fromByteCount: Int64(clamping: size)))
+                }
             }
         }
         .font(DesignTokens.Typography.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var countsRow: some View {
+        let counts = popularityCounts
+        if !counts.isEmpty {
+            HStack(spacing: 6) {
+                ForEach(Array(counts.enumerated()), id: \.offset) { index, text in
+                    if index > 0 {
+                        Text(verbatim: "·").foregroundStyle(.tertiary)
+                    }
+                    Text(verbatim: text)
+                }
+            }
+        }
+    }
+
+    private var popularityCounts: [String] {
+        var counts: [String] = []
+        if let subs = item.subscriptionCount, subs > 0 {
+            counts.append(formatSubs(subs))
+        }
+        if let views = item.viewCount, views > 0 {
+            counts.append(String(localized: "\(compactCount(views)) views",
+                                 comment: "Workshop item view count. Placeholder is a compact number such as 6.1K."))
+        }
+        if let favorites = item.favoriteCount, favorites > 0 {
+            counts.append(String(localized: "\(compactCount(favorites)) favorites",
+                                 comment: "Workshop item favorite count. Placeholder is a compact number such as 6.1K."))
+        }
+        return counts
+    }
+
+    /// Views and favorites put the magnitude suffix inside the number, so one
+    /// catalog key covers all three magnitudes.
+    private func compactCount(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1fM", locale: .current, Double(count) / 1_000_000.0)
+        }
+        if count >= 1_000 {
+            return String(format: "%.1fK", locale: .current, Double(count) / 1_000.0)
+        }
+        return count.formatted()
     }
 
     @ViewBuilder
