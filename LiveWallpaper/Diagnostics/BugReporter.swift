@@ -22,7 +22,22 @@ enum BugReporter {
     static let englishTemplateName = "bug_report.yml"
     static let simplifiedChineseTemplateName = "bug_report_zh.yml"
 
-    /// Which template the in-app report opens.
+    /// The two issue forms that exist. Both the GitHub template and the
+    /// pre-filled body follow this one choice, so a reporter never lands on a
+    /// Chinese form holding an English body.
+    enum IssueForm: Sendable {
+        case english
+        case simplifiedChinese
+
+        var templateName: String {
+            switch self {
+            case .english: BugReporter.englishTemplateName
+            case .simplifiedChinese: BugReporter.simplifiedChineseTemplateName
+            }
+        }
+    }
+
+    /// Which form the in-app report opens.
     ///
     /// Simplified Chinese is the only language with a form of its own, so it is
     /// the only one that gets it; Traditional Chinese and Japanese readers land
@@ -30,14 +45,21 @@ enum BugReporter {
     /// Following the app's own language rather than the system's matters when
     /// someone has overridden it — the form should match the UI they are
     /// describing.
+    static func issueForm(
+        preference: AppLanguagePreference = .current,
+        systemLocalizations: [String] = Bundle.main.preferredLocalizations
+    ) -> IssueForm {
+        let language = preference == .system ? systemLocalizations.first : preference.rawValue
+        return language == AppLanguagePreference.simplifiedChinese.rawValue
+            ? .simplifiedChinese
+            : .english
+    }
+
     static func issueTemplateName(
         preference: AppLanguagePreference = .current,
         systemLocalizations: [String] = Bundle.main.preferredLocalizations
     ) -> String {
-        let language = preference == .system ? systemLocalizations.first : preference.rawValue
-        return language == AppLanguagePreference.simplifiedChinese.rawValue
-            ? simplifiedChineseTemplateName
-            : englishTemplateName
+        issueForm(preference: preference, systemLocalizations: systemLocalizations).templateName
     }
 
     private static func issueTemplateURL(named template: String) -> URL {
@@ -54,13 +76,15 @@ enum BugReporter {
     static func makeReport(activeWallpaperKinds: [String]) -> BugReport {
         let snapshot = SystemSnapshot.capture(activeWallpaperKinds: activeWallpaperKinds)
         let recentLog = sanitizedRecentLogLines()
+        let form = issueForm()
         let markdown = capped(
-            formatMarkdown(snapshot: snapshot, recentLogLines: recentLog),
-            to: maxBodyLength
+            formatMarkdown(snapshot: snapshot, recentLogLines: recentLog, form: form),
+            to: maxBodyLength,
+            form: form
         )
         return BugReport(
             diagnosticMarkdown: markdown,
-            issueURL: makeIssueURL(prefilledBody: markdown, template: issueTemplateName()),
+            issueURL: makeIssueURL(prefilledBody: markdown, template: form.templateName),
             logFileURL: Logger.persistentLogFileURL,
             logFileExists: logFileExists()
         )
@@ -68,7 +92,20 @@ enum BugReporter {
 
     // MARK: - Markdown
 
-    private static func formatMarkdown(snapshot: SystemSnapshot, recentLogLines: [String]) -> String {
+    static func formatMarkdown(
+        snapshot: SystemSnapshot,
+        recentLogLines: [String],
+        form: IssueForm
+    ) -> String {
+        switch form {
+        case .english:
+            englishMarkdown(snapshot: snapshot, recentLogLines: recentLogLines)
+        case .simplifiedChinese:
+            simplifiedChineseMarkdown(snapshot: snapshot, recentLogLines: recentLogLines)
+        }
+    }
+
+    private static func englishMarkdown(snapshot: SystemSnapshot, recentLogLines: [String]) -> String {
         var sections: [String] = []
 
         sections.append("""
@@ -77,7 +114,7 @@ enum BugReporter {
         - **App**: \(BundleIdentity.productDisplayName) \(snapshot.appVersion) (Build \(snapshot.appBuild)) — \(snapshot.sku.rawValue) SKU
         - **macOS**: \(snapshot.macOSVersion) (\(snapshot.macOSBuild))
         - **Hardware**: \(snapshot.hardwareModel) · \(snapshot.chip) · \(snapshot.physicalMemoryGiB) GB
-        - **Displays**: \(formatDisplays(snapshot.displays))
+        - **Displays**: \(formatDisplays(snapshot.displays, form: .english))
         - **Active wallpapers**: \(snapshot.activeWallpaperKinds.isEmpty ? "(none)" : snapshot.activeWallpaperKinds.joined(separator: ", "))
         - **Locale**: \(snapshot.localeIdentifier)
         - **Bundle**: `\(snapshot.bundleIdentifier)`
@@ -86,15 +123,10 @@ enum BugReporter {
         if recentLogLines.isEmpty {
             sections.append("- **Recent warnings/errors**: (none recorded)")
         } else {
-            // Fenced code block: a single ``` boundary is safer than per-line backticks because it survives `` ` `` characters embedded in the log line itself.
-            let fence = safeCodeFence(for: recentLogLines)
-            let body = recentLogLines.joined(separator: "\n")
             sections.append("""
             - **Recent warnings/errors** (last \(recentLogLines.count)):
 
-            \(fence)
-            \(body)
-            \(fence)
+            \(fencedLog(recentLogLines))
             """)
         }
 
@@ -117,12 +149,74 @@ enum BugReporter {
         return sections.joined(separator: "\n\n")
     }
 
-    private static func formatDisplays(_ displays: [SystemSnapshot.DisplayDescriptor]) -> String {
-        guard !displays.isEmpty else { return "(none detected)" }
+    /// Mirrors `englishMarkdown` line for line. Kept as a separate template
+    /// rather than a table of localized fragments because the body is prose
+    /// pasted into a GitHub form, and the two forms under
+    /// `.github/ISSUE_TEMPLATE/` are maintained the same way.
+    private static func simplifiedChineseMarkdown(snapshot: SystemSnapshot, recentLogLines: [String]) -> String {
+        var sections: [String] = []
+
+        sections.append("""
+        <details><summary>诊断信息 — 自动生成，提交前请自行过目</summary>
+
+        - **应用**：\(BundleIdentity.productDisplayName) \(snapshot.appVersion)（Build \(snapshot.appBuild)）— \(snapshot.sku.rawValue) 版
+        - **macOS**：\(snapshot.macOSVersion)（\(snapshot.macOSBuild)）
+        - **硬件**：\(snapshot.hardwareModel) · \(snapshot.chip) · \(snapshot.physicalMemoryGiB) GB
+        - **显示器**：\(formatDisplays(snapshot.displays, form: .simplifiedChinese))
+        - **正在播放的壁纸**：\(snapshot.activeWallpaperKinds.isEmpty ? "（无）" : snapshot.activeWallpaperKinds.joined(separator: "、"))
+        - **语言区域**：\(snapshot.localeIdentifier)
+        - **Bundle**：`\(snapshot.bundleIdentifier)`
+        """)
+
+        if recentLogLines.isEmpty {
+            sections.append("- **最近的警告 / 错误**：（没有记录）")
+        } else {
+            sections.append("""
+            - **最近的警告 / 错误**（最近 \(recentLogLines.count) 条）：
+
+            \(fencedLog(recentLogLines))
+            """)
+        }
+
+        sections.append("</details>")
+
+        sections.append("""
+
+        ### 发生了什么？
+        <!-- 在这里描述问题 -->
+
+        ### 复现步骤
+        1.&nbsp;
+        2.&nbsp;
+        3.&nbsp;
+
+        ### 期望结果 vs 实际结果
+        <!-- 你本来期待看到什么？实际看到的又是什么？ -->
+        """)
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    private static func formatDisplays(
+        _ displays: [SystemSnapshot.DisplayDescriptor],
+        form: IssueForm
+    ) -> String {
+        guard !displays.isEmpty else {
+            return form == .simplifiedChinese ? "（没有检测到）" : "(none detected)"
+        }
         let parts = displays.map { d in
             "\(d.pixelWidth)×\(d.pixelHeight) @\(d.backingScaleFactor)x"
         }
-        return "\(displays.count) connected (\(parts.joined(separator: " · ")))"
+        let joined = parts.joined(separator: " · ")
+        return form == .simplifiedChinese
+            ? "\(displays.count) 台（\(joined)）"
+            : "\(displays.count) connected (\(joined))"
+    }
+
+    /// Fenced code block: a single ``` boundary is safer than per-line backticks because it survives `` ` `` characters embedded in the log line itself.
+    private static func fencedLog(_ lines: [String]) -> String {
+        let fence = safeCodeFence(for: lines)
+        return "\(fence)\n\(lines.joined(separator: "\n"))\n\(fence)"
     }
 
     /// Picks the shortest fence (`` ``` ``, `` ```` ``, …) that does not appear inside any of the lines — preventing user content from prematurely closing the code block.
@@ -134,14 +228,15 @@ enum BugReporter {
         return fence
     }
 
-    private static func capped(_ text: String, to maxBytes: Int) -> String {
+    private static func capped(_ text: String, to maxBytes: Int, form: IssueForm) -> String {
         guard text.utf8.count > maxBytes else { return text }
         let limit = maxBytes - 32
         var index = text.index(text.startIndex, offsetBy: limit, limitedBy: text.endIndex) ?? text.endIndex
         while index > text.startIndex && text[..<index].utf8.count > limit {
             index = text.index(before: index)
         }
-        return String(text[..<index]) + "\n\n…(diagnostic truncated)"
+        let notice = form == .simplifiedChinese ? "…(诊断信息已截断)" : "…(diagnostic truncated)"
+        return String(text[..<index]) + "\n\n" + notice
     }
 
     // MARK: - GitHub URL

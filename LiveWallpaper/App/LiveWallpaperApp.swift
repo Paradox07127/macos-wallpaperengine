@@ -96,6 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
     func applicationDidFinishLaunching(_ notification: Notification) {
         Logger.notice("Application starting", category: .startup)
+
+        AppAppearance.stored(in: .appScoped()).apply()
         if let hint = LogFileSink.shared.tailCommandHint {
             Logger.notice("Tail the runtime log → \(hint)", category: .startup)
         }
@@ -199,7 +201,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Opt-in, and only a version read — nothing downloads until the
                 // user acts on the result.
                 guard UserDefaults.standard.bool(forKey: "loomscreen.workshop.checkAssetsUpdateAtLaunch.v1"),
-                      WPEEngineAssetsInstaller.shared.hasManagedInstall else { return }
+                      WPEEngineAssetsInstaller.shared.hasManagedInstall,
+                      workshopDoctorService.username != nil else { return }
                 WPEEngineAssetsInstaller.shared.checkForUpdate(using: workshopDoctorService)
             }
         }

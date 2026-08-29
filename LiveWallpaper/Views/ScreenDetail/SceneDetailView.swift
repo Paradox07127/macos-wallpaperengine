@@ -94,9 +94,6 @@ struct SceneDetailView: View {
             previewCard
         } controls: {
             VStack(spacing: stackSpacing) {
-                // Above the error banner: the error names the symptom, this
-                // names the one cause the user can act on from here.
-                engineAssetsBanner
                 errorBanner
                 infoBar
             }
@@ -242,7 +239,7 @@ struct SceneDetailView: View {
             return Text("A custom shader couldn't be translated. Try re-downloading the project.")
         case .sceneResourceMissing:
             // Names where the files were looked for, not what to do about it —
-            // `engineAssetsBanner` above owns the recovery.
+            // `EngineAssetsBanner` at the top of the Scene page owns the recovery.
             if engineAssets.isAuthorized {
                 return Text("Image layers couldn't be found in this project or in your Wallpaper Engine assets.")
             }
@@ -342,102 +339,6 @@ struct SceneDetailView: View {
             || !diagnostics.resolution.missedRefs.isEmpty
             || diagnostics.shaderErrors.count > 0
             || diagnostics.gpuErrors.count > 0
-    }
-
-    /// Whether to offer the engine-assets recovery, given what the renderer got
-    /// far enough to report.
-    ///
-    /// Unresolved refs are the precise signal — the refs that would have come
-    /// from a Wallpaper Engine install's shared `assets/` are exactly the ones
-    /// missing. A failure that named no refs counts only when its cause could
-    /// actually be the missing install (`mightBeMissingEngineAssets`): a scene
-    /// can die before the resolver runs, but sending someone to download
-    /// gigabytes over a Windows plugin or an undecodable texture is worse than
-    /// saying nothing.
-    static func showsEngineAssetsRecovery(
-        isEngineAssetsLinked: Bool,
-        missedRefCount: Int,
-        failureMightNeedAssets: Bool
-    ) -> Bool {
-        guard !isEngineAssetsLinked else { return false }
-        return missedRefCount > 0 || failureMightNeedAssets
-    }
-
-    private var missedRefCount: Int {
-        session?.rendererDiagnostics?.resolution.missedRefs.count ?? 0
-    }
-
-    private var failureMightNeedAssets: Bool {
-        if case .error(let reason) = state {
-            return reason.mightBeMissingEngineAssets
-        }
-        // No scene session to classify against — the display is reporting a
-        // scene rendering failure we never got a `FallbackReason` for.
-        return hasSceneRenderingError
-    }
-
-    private var showsEngineAssetsWarning: Bool {
-        guard featureCatalog.isEnabled(.wpeImport) else { return false }
-        return Self.showsEngineAssetsRecovery(
-            isEngineAssetsLinked: engineAssets.isAuthorized,
-            missedRefCount: missedRefCount,
-            failureMightNeedAssets: failureMightNeedAssets
-        )
-    }
-
-    /// Named refs are evidence; a bare load failure is a hypothesis. Say which.
-    private var engineAssetsBannerBody: Text {
-        if missedRefCount > 0 {
-            return Text("Some of this scene's references didn't resolve. Download Wallpaper Engine's shared assets from Steam, or link an install you already have.")
-        }
-        return Text("If this scene needs Wallpaper Engine's shared textures or shaders, they aren't available here. Download them from Steam, or link an install you already have.")
-    }
-
-    @ViewBuilder
-    private var engineAssetsBanner: some View {
-        if showsEngineAssetsWarning {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "shippingbox.and.arrow.backward")
-                    .font(.title3)
-                    .foregroundStyle(DesignTokens.Colors.Status.warning)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Wallpaper Engine assets aren't set up")
-                        .font(.subheadline.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                    engineAssetsBannerBody
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .accessibilityElement(children: .combine)
-                Spacer(minLength: 8)
-                Button {
-                    NotificationCenter.default.post(
-                        name: .openSettingsSection,
-                        object: nil,
-                        userInfo: [
-                            "destination": SettingsNavigation.workshopSetup.rawValue,
-                            "anchor": SettingsSearchAnchor.workshopAssets.rawValue
-                        ]
-                    )
-                } label: {
-                    Label("Get Assets", systemImage: "arrow.right")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .accessibilityHint(Text("Opens the Workshop settings page to download or link Wallpaper Engine assets"))
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.md), tint: DesignTokens.Colors.Status.warning)
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .strokeBorder(DesignTokens.Colors.Status.warning.opacity(0.30), lineWidth: 1)
-            }
-            .transition(.opacity)
-        }
     }
 
     private var fullDiagnosticText: String {

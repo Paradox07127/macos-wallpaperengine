@@ -29,8 +29,8 @@ struct WidgetDragModifier: ViewModifier {
                         height: value.startLocation.y - render.minY
                     )
                     let rawOffset = CGSize(
-                        width: offset.width + geometry.tileInsetX,
-                        height: offset.height + geometry.tileInsetY
+                        width: offset.width + geometry.tileInset,
+                        height: offset.height + geometry.tileInset
                     )
                     model.beginDrag(placement.id, grabOffset: rawOffset)
                 }
@@ -63,10 +63,10 @@ struct MonitorWidgetControlBar: View {
         }
         .padding(4)
         .background(
-            Capsule(style: .continuous).fill(Color(white: 0.14).opacity(0.95))
+            Capsule(style: .continuous).fill(DesignTokens.Colors.BoardChrome.surface.opacity(0.95))
         )
         .overlay(
-            Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            Capsule(style: .continuous).strokeBorder(DesignTokens.Colors.BoardChrome.hairline, lineWidth: 1)
         )
         .offset(x: denied ? -4 : 0)
         .animation(denied ? .default : nil, value: denied)
@@ -88,14 +88,25 @@ struct MonitorWidgetControlBar: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(
-                                Capsule().fill(placement.size == size ? Color(white: 0.3) : Color.clear)
+                                Capsule().fill(
+                                    placement.size == size
+                                        ? DesignTokens.Colors.BoardChrome.selected
+                                        : Color.clear
+                                )
                             )
+                            // Without this the hit area follows the drawn fill,
+                            // so only the already-selected segment — the one
+                            // with an opaque capsule — could be clicked, and
+                            // every actual size change was a no-op.
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text(WidgetSettingsPopover.sizeLabel(size)))
+                    .accessibilityAddTraits(placement.size == size ? .isSelected : [])
                 }
             }
             .padding(2)
-            .background(Capsule().fill(Color.black.opacity(0.3)))
+            .background(Capsule().fill(DesignTokens.Colors.BoardChrome.well))
         }
     }
 
@@ -108,7 +119,7 @@ struct MonitorWidgetControlBar: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isOpen ? Color.white : Color.white.opacity(0.7))
                 .frame(width: 26, height: 26)
-                .background(Circle().fill(Color(white: isOpen ? 0.28 : 0.14)))
+                .background(Circle().fill(isOpen ? DesignTokens.Colors.BoardChrome.selected : DesignTokens.Colors.BoardChrome.surface))
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         }
         .buttonStyle(.plain)
@@ -124,7 +135,7 @@ struct MonitorWidgetControlBar: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.7))
                 .frame(width: 26, height: 26)
-                .background(Circle().fill(Color(white: 0.14)))
+                .background(Circle().fill(DesignTokens.Colors.BoardChrome.surface))
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         }
         .buttonStyle(.plain)
@@ -188,10 +199,10 @@ struct MonitorBoardEditToolbar: View {
         }
         .padding(4)
         .background(
-            Capsule(style: .continuous).fill(Color(white: 0.13).opacity(0.95))
+            Capsule(style: .continuous).fill(DesignTokens.Colors.BoardChrome.surface.opacity(0.95))
         )
         .overlay(
-            Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            Capsule(style: .continuous).strokeBorder(DesignTokens.Colors.BoardChrome.hairline, lineWidth: 1)
         )
     }
 }
@@ -320,10 +331,10 @@ struct MonitorWidgetSettingsCard: View {
             height: min(contentSize?.height ?? 340, max(maxHeight, 120))
         )
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(white: 0.12).opacity(0.97))
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous).fill(DesignTokens.Colors.BoardChrome.panel.opacity(0.97))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous).strokeBorder(DesignTokens.Colors.BoardChrome.hairline, lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.5), radius: 24, x: 0, y: 14)
         .environment(\.colorScheme, .dark)

@@ -27,24 +27,6 @@ enum OnboardingImportCopy {
     }
 }
 
-/// Keeps the multi-display choice deterministic and testable without UI.
-enum OnboardingDisplayTargetPolicy {
-    static func defaultTargetID(from availableIDs: [CGDirectDisplayID]) -> CGDirectDisplayID? {
-        availableIDs.first
-    }
-
-    /// A nil selection explicitly means every display. A stale selection falls
-    /// back to the first available display instead of unexpectedly applying to all.
-    static func selectedIDs(
-        targetID: CGDirectDisplayID?,
-        availableIDs: [CGDirectDisplayID]
-    ) -> [CGDirectDisplayID] {
-        guard let targetID else { return availableIDs }
-        if availableIDs.contains(targetID) { return [targetID] }
-        return availableIDs.first.map { [$0] } ?? []
-    }
-}
-
 /// Onboarding source step.
 struct PickerView: View {
     @Environment(ScreenManager.self) private var screenManager
@@ -59,8 +41,6 @@ struct PickerView: View {
 
     @State private var inlineError: LocalizedStringResource?
     @State private var isDropTargeted = false
-    @State private var selectedTargetID: CGDirectDisplayID?
-    @State private var didInitializeTarget = false
     @State private var isImportingScene = false
 
     private var sceneCapable: Bool {
@@ -70,7 +50,6 @@ struct PickerView: View {
     var body: some View {
         VStack(spacing: DesignTokens.Spacing.lg) {
             header
-            destinationPicker
 
             VStack(spacing: DesignTokens.Spacing.md) {
                 ForEach(galleryActions.indices, id: \.self) { idx in
@@ -93,69 +72,37 @@ struct PickerView: View {
                     .font(DesignTokens.Typography.body)
             }
 
-            skipFooter
+            VStack(spacing: DesignTokens.Spacing.xs) {
+                skipFooter
+                // Carried over from the retired completion page: it is the one
+                // thing a first-run reader cannot discover from the app window.
+                Text("Use the menu bar icon for quick playback controls.")
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(DesignTokens.Colors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(.horizontal, DesignTokens.Spacing.xl + DesignTokens.Spacing.sm)
         .padding(.bottom, DesignTokens.Spacing.lg)
         .overlay(dropHighlight)
-        .onAppear(perform: synchronizeTargetSelection)
-        .onChange(of: availableScreenIDs) { _, _ in synchronizeTargetSelection() }
         .disabled(isImportingScene)
     }
 
     // MARK: - Subviews
 
+    /// Last step, so the copy says where each card lands rather than promising a
+    /// wallpaper: only Import applies one here, the other two open the library
+    /// you asked for.
     private var header: some View {
         VStack(spacing: DesignTokens.Spacing.xs) {
-            Text("Pick Your First Wallpaper")
+            Text("You're All Set")
                 .font(DesignTokens.Typography.pageTitle)
                 .accessibilityAddTraits(.isHeader)
-            Text("Choose how to bring your desktop to life.")
+            Text("Pick where to start. This closes setup and takes you there.")
                 .font(DesignTokens.Typography.body)
                 .foregroundStyle(.secondary)
         }
         .multilineTextAlignment(.center)
-    }
-
-    @ViewBuilder
-    private var destinationPicker: some View {
-        let screens = screenManager.screens
-        if let onlyScreen = screens.first, screens.count == 1 {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Image(systemName: "display")
-                    .foregroundStyle(DesignTokens.Colors.accent)
-                    .accessibilityHidden(true)
-                Text("Apply to")
-                    .foregroundStyle(DesignTokens.Colors.textSecondary)
-                Text(verbatim: onlyScreen.name)
-                    .font(DesignTokens.Typography.bodyEmphasized)
-                    .lineLimit(1)
-            }
-            .font(DesignTokens.Typography.body)
-        } else if screens.count > 1 {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Text("Apply to")
-                    .font(DesignTokens.Typography.body)
-                    .foregroundStyle(DesignTokens.Colors.textSecondary)
-                Picker("Apply to", selection: $selectedTargetID) {
-                    ForEach(screens, id: \.id) { screen in
-                        Text(verbatim: screen.name)
-                            .tag(Optional(screen.id))
-                    }
-                    Divider()
-                    Text("All Displays")
-                        .tag(CGDirectDisplayID?.none)
-                }
-                .labelsHidden()
-                .fixedSize(horizontal: true, vertical: false)
-            }
-            .padding(.horizontal, DesignTokens.Spacing.md)
-            .padding(.vertical, DesignTokens.Spacing.sm)
-            .background(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .fill(DesignTokens.Colors.surfaceRaised)
-            )
-        }
     }
 
     @ViewBuilder
@@ -253,7 +200,7 @@ struct PickerView: View {
         // Scene folders are rejected before routing in Lite so the user gets the
         // "needs Pro" reason instead of the generic unsupported-type message.
         if !sceneCapable, WallpaperImportRouter.isWallpaperEngineProjectFolder(url) {
-            return fail("Wallpaper Engine scenes need the Pro edition.")
+            return fail("Wallpaper Engine scenes need Loomscreen Pro, a separate free download.")
         }
 
         switch WallpaperImportRouter.route(url, sceneCapable: sceneCapable) {
@@ -277,7 +224,7 @@ struct PickerView: View {
             applyScene(folderURL, to: targets)
             return true
             #else
-            return fail("Wallpaper Engine scenes need the Pro edition.")
+            return fail("Wallpaper Engine scenes need Loomscreen Pro, a separate free download.")
             #endif
 
         case .sceneLibrary:
@@ -344,29 +291,11 @@ struct PickerView: View {
         if inlineError != nil { inlineError = nil }
     }
 
-    private var availableScreenIDs: [CGDirectDisplayID] {
-        screenManager.screens.map(\.id)
-    }
-
+    /// The primary display, which is exactly what the retired "Apply to" picker
+    /// defaulted to. Onboarding applies one wallpaper to one screen; the rest of
+    /// the displays are configured from the app, where the choice is visible.
     private var targetScreens: [Screen] {
-        let selectedIDs = Set(
-            OnboardingDisplayTargetPolicy.selectedIDs(
-                targetID: selectedTargetID,
-                availableIDs: availableScreenIDs
-            )
-        )
-        return screenManager.screens.filter { selectedIDs.contains($0.id) }
-    }
-
-    private func synchronizeTargetSelection() {
-        if !didInitializeTarget {
-            didInitializeTarget = true
-            selectedTargetID = OnboardingDisplayTargetPolicy.defaultTargetID(from: availableScreenIDs)
-            return
-        }
-        if let selectedTargetID, !availableScreenIDs.contains(selectedTargetID) {
-            self.selectedTargetID = OnboardingDisplayTargetPolicy.defaultTargetID(from: availableScreenIDs)
-        }
+        screenManager.screens.first.map { [$0] } ?? []
     }
 }
 

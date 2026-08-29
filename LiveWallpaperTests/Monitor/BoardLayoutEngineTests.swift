@@ -34,39 +34,40 @@ final class BoardLayoutEngineTests: XCTestCase {
 
     func testFixedApplePitchIndependentOfBoardWidth() {
         let g = makeGeometry()
-        XCTAssertEqual(g.cellWidth, 194, accuracy: 0.001)
-        XCTAssertEqual(g.cellHeight, 206, accuracy: 0.001)
-        XCTAssertEqual(g.tileInsetX, 12, accuracy: 0.001)
-        XCTAssertEqual(g.tileInsetY, 18, accuracy: 0.001)
+        XCTAssertEqual(g.cellWidth, 186, accuracy: 0.001)
+        XCTAssertEqual(g.cellHeight, 186, accuracy: 0.001)
+        XCTAssertEqual(g.tileInset, 8, accuracy: 0.001)
         XCTAssertEqual(g.columns, 8)
 
         let huge = MonitorBoardGeometry(boardSize: CGSize(width: 3000, height: 1875))
-        XCTAssertEqual(huge.cellWidth, 194, accuracy: 0.001)
-        XCTAssertEqual(huge.cellHeight, 206, accuracy: 0.001)
-        XCTAssertEqual(huge.columns, 15)
+        XCTAssertEqual(huge.cellWidth, 186, accuracy: 0.001)
+        XCTAssertEqual(huge.cellHeight, 186, accuracy: 0.001)
+        XCTAssertEqual(huge.columns, 16)
     }
 
-    func testRenderedFramesMatchAppleWidgetSizes() {
+    /// A SMALL widget stays exactly Apple's 170×170 — that is the size parity
+    /// worth keeping. Medium and large span cells and swallow the gutter they
+    /// cross, so they come out 356 wide and (large) 356 tall.
+    func testRenderedFramesMatchAppleSmallAndSpanTheNarrowedGutter() {
         let g = makeGeometry()
         let s = g.renderRect(forRawRect: CGRect(origin: .zero, size: g.pixelSize(for: .memory, size: .small)))
         XCTAssertEqual(s.width, 170, accuracy: 0.001)
         XCTAssertEqual(s.height, 170, accuracy: 0.001)
         let m = g.renderRect(forRawRect: CGRect(origin: .zero, size: g.pixelSize(for: .cpu, size: .medium)))
-        XCTAssertEqual(m.width, 364, accuracy: 0.001)
+        XCTAssertEqual(m.width, 356, accuracy: 0.001)
         XCTAssertEqual(m.height, 170, accuracy: 0.001)
         let l = g.renderRect(forRawRect: CGRect(origin: .zero, size: g.pixelSize(for: .cpu, size: .large)))
-        XCTAssertEqual(l.width, 364, accuracy: 0.001)
-        XCTAssertEqual(l.height, 376, accuracy: 0.001)
+        XCTAssertEqual(l.width, 356, accuracy: 0.001)
+        XCTAssertEqual(l.height, 356, accuracy: 0.001)
     }
 
     func testReferenceWidthScalesMetricsForPreview() {
         let g = MonitorBoardGeometry(
             boardSize: CGSize(width: 400, height: 250), referenceWidth: 1600
         )
-        XCTAssertEqual(g.cellWidth, 194 * 0.25, accuracy: 0.001)
-        XCTAssertEqual(g.cellHeight, 206 * 0.25, accuracy: 0.001)
-        XCTAssertEqual(g.tileInsetX, 12 * 0.25, accuracy: 0.001)
-        XCTAssertEqual(g.tileInsetY, 18 * 0.25, accuracy: 0.001)
+        XCTAssertEqual(g.cellWidth, 186 * 0.25, accuracy: 0.001)
+        XCTAssertEqual(g.cellHeight, 186 * 0.25, accuracy: 0.001)
+        XCTAssertEqual(g.tileInset, 8 * 0.25, accuracy: 0.001)
         XCTAssertEqual(g.columns, MonitorBoardGeometry(boardSize: CGSize(width: 1600, height: 1000)).columns)
     }
 
@@ -84,16 +85,38 @@ final class BoardLayoutEngineTests: XCTestCase {
         let g = makeGeometry()
         let raw = CGRect(x: 100, y: 100, width: 400, height: 200)
         let rendered = g.renderRect(forRawRect: raw)
-        XCTAssertEqual(rendered.minX, raw.minX + g.tileInsetX, accuracy: 0.001)
-        XCTAssertEqual(rendered.minY, raw.minY + g.tileInsetY, accuracy: 0.001)
-        XCTAssertEqual(rendered.width, raw.width - 2 * g.tileInsetX, accuracy: 0.001)
-        XCTAssertEqual(rendered.height, raw.height - 2 * g.tileInsetY, accuracy: 0.001)
+        XCTAssertEqual(rendered.minX, raw.minX + g.tileInset, accuracy: 0.001)
+        XCTAssertEqual(rendered.minY, raw.minY + g.tileInset, accuracy: 0.001)
+        XCTAssertEqual(rendered.width, raw.width - 2 * g.tileInset, accuracy: 0.001)
+        XCTAssertEqual(rendered.height, raw.height - 2 * g.tileInset, accuracy: 0.001)
         let rawRight = CGRect(x: raw.maxX, y: 100, width: 400, height: 200)
         let renderedRight = g.renderRect(forRawRect: rawRight)
-        XCTAssertEqual(renderedRight.minX - rendered.maxX, 24, accuracy: 0.001)
+        XCTAssertEqual(renderedRight.minX - rendered.maxX, 16, accuracy: 0.001)
+        // Same 16 pt down as across: one gutter, both axes.
         let rawBelow = CGRect(x: 100, y: raw.maxY, width: 400, height: 200)
         let renderedBelow = g.renderRect(forRawRect: rawBelow)
-        XCTAssertEqual(renderedBelow.minY - rendered.maxY, 36, accuracy: 0.001)
+        XCTAssertEqual(renderedBelow.minY - rendered.maxY, 16, accuracy: 0.001)
+    }
+
+    /// The board has no bottom chrome of its own, so the only thing keeping a
+    /// last-row card off the screen edge is the tile's own half-gutter. Pin it
+    /// against the left and right margins for every size — a large tile is the
+    /// one that reaches furthest down.
+    func testBottomMarginMatchesSideMarginsForEverySize() {
+        let g = makeGeometry()
+        let far = CGPoint(x: 10_000, y: 10_000)
+        for size in [MonitorWidgetSize.small, .medium, .large] {
+            let footprint = g.pixelSize(for: .cpu, size: size)
+            let pushed = g.renderRect(
+                forRawRect: CGRect(origin: g.clampOrigin(far, footprint: footprint), size: footprint)
+            )
+            let atOrigin = g.renderRect(
+                forRawRect: CGRect(origin: g.clampOrigin(.zero, footprint: footprint), size: footprint)
+            )
+            XCTAssertEqual(atOrigin.minX, g.tileInset, accuracy: 0.001, "\(size) left")
+            XCTAssertEqual(g.boardSize.width - pushed.maxX, g.tileInset, accuracy: 0.001, "\(size) right")
+            XCTAssertEqual(g.boardSize.height - pushed.maxY, g.tileInset, accuracy: 0.001, "\(size) bottom")
+        }
     }
 
     func testDegenerateBoardFlagged() {
@@ -104,18 +127,18 @@ final class BoardLayoutEngineTests: XCTestCase {
     func testReferenceRowAndColumnCounts() {
         let g1610 = MonitorBoardGeometry(boardSize: CGSize(width: 1600, height: 1000))
         XCTAssertEqual(g1610.columns, 8)
-        XCTAssertEqual(g1610.rows, 4)
+        XCTAssertEqual(g1610.rows, 5)
 
         let g169 = MonitorBoardGeometry(boardSize: CGSize(width: 1600, height: 900))
         XCTAssertEqual(g169.rows, 4)
 
         let gWide = MonitorBoardGeometry(boardSize: CGSize(width: 1200, height: 400))
         XCTAssertEqual(gWide.columns, 6)
-        XCTAssertEqual(gWide.rows, 1)
+        XCTAssertEqual(gWide.rows, 2)
 
         let gPortrait = MonitorBoardGeometry(boardSize: CGSize(width: 900, height: 1600))
         XCTAssertEqual(gPortrait.columns, 4)
-        XCTAssertEqual(gPortrait.rows, 7)
+        XCTAssertEqual(gPortrait.rows, 8)
     }
 
     func testCornerRadiusIsAppleRadiusScaled() {

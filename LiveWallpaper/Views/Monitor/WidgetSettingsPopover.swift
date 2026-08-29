@@ -3,14 +3,16 @@ import SwiftUI
 
 struct WidgetSettingsPopover: View {
     /// Fixed host width (segmented pickers + deterministic board-card placement).
-    static let preferredWidth: CGFloat = 360
+    /// 280 matches `TimeEditorPopover`, the other segmented-picker popover in
+    /// the app; 360 was wider than any of its content needed.
+    static let preferredWidth: CGFloat = 280
 
     let placement: MonitorWidgetPlacement
     let onUpdate: (MonitorWidgetPlacement) -> Void
     let onRemove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
             header
 
             if placement.kind.allowedSizes.count > 1 {
@@ -28,22 +30,19 @@ struct WidgetSettingsPopover: View {
     }
 
     private var header: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: DesignTokens.Spacing.sm) {
             Image(systemName: WidgetFactory.icon(placement.kind))
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
-                .frame(width: 34, height: 34)
+                .frame(width: 26, height: 26)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                         .fill(.quaternary.opacity(0.6))
                 )
-            VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: WidgetFactory.displayName(placement.kind))
-                    .font(.headline)
-                Text("Instrument settings")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            // No subtitle: "Instrument settings" restated what the panel is,
+            // which the reader already knows from having opened it.
+            Text(verbatim: WidgetFactory.displayName(placement.kind))
+                .font(.headline)
             Spacer(minLength: 0)
         }
     }
@@ -55,7 +54,7 @@ struct WidgetSettingsPopover: View {
             Label("Remove Instrument", systemImage: "trash")
                 .frame(maxWidth: .infinity)
         }
-        .controlSize(.large)
+        .controlSize(.regular)
         .buttonStyle(.borderless)
         .destructiveControlTint()
     }
@@ -73,9 +72,7 @@ struct WidgetSettingsPopover: View {
     private var sizePicker: some View {
         let allowed = placement.kind.allowedSizes
         if allowed.count > 1 {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Size")
-                    .font(.subheadline.weight(.medium))
+            optionRow("Size") {
                 Picker("", selection: Binding(
                     get: { placement.size },
                     set: { newSize in
@@ -90,7 +87,6 @@ struct WidgetSettingsPopover: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(maxWidth: .infinity)
                 .accessibilityLabel(Text("Widget size"))
             }
         }
@@ -121,7 +117,7 @@ struct WidgetSettingsPopover: View {
     // MARK: Processes
 
     private var processesOptions: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
             Stepper(
                 value: Binding(
                     get: { MonitorWidgetDraft.processCount(placement) },
@@ -144,9 +140,9 @@ struct WidgetSettingsPopover: View {
     // MARK: CPU
 
     private var cpuOptions: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             historyWindowPicker(defaultWindow: MonitorCPUDraft.defaultHistoryWindow(for: placement.size))
-            VStack(spacing: 8) {
+            VStack(spacing: DesignTokens.Spacing.xs) {
                 toggleRow("Show heatmap", isOn: boolBinding(key: MonitorCPUDraft.showHeatmapKey, default: true))
                 toggleRow("Show composition", isOn: boolBinding(key: MonitorCPUDraft.showCompositionKey, default: true))
                 toggleRow("Show sensors", isOn: boolBinding(key: MonitorCPUDraft.showSensorsKey, default: true))
@@ -160,10 +156,10 @@ struct WidgetSettingsPopover: View {
     // MARK: GPU
 
     private var gpuOptions: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             historyWindowPicker(defaultWindow: 60)
             gpuSamplingPicker
-            VStack(spacing: 8) {
+            VStack(spacing: DesignTokens.Spacing.xs) {
                 toggleRow("Show load breakdown", isOn: boolBinding(key: MonitorWidgetDraft.showLoadBreakdownKey, default: true))
                 toggleRow("Show sensors", isOn: boolBinding(key: MonitorWidgetDraft.showSensorsKey, default: true))
                 if placement.size == .small {
@@ -175,9 +171,7 @@ struct WidgetSettingsPopover: View {
 
     /// GPU IOAccelerator sample cadence (default 6s).
     private var gpuSamplingPicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Sampling interval")
-                .font(.subheadline.weight(.medium))
+        optionRow("Sampling interval") {
             Picker("", selection: Binding(
                 get: { MonitorWidgetDraft.gpuSampleSeconds(placement) ?? 6 },
                 set: { onUpdate(MonitorWidgetDraft.settingGPUSampleSeconds($0, on: placement)) }
@@ -188,7 +182,6 @@ struct WidgetSettingsPopover: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(maxWidth: .infinity)
             .accessibilityLabel(Text("GPU sampling interval"))
         }
     }
@@ -196,7 +189,7 @@ struct WidgetSettingsPopover: View {
     // MARK: Memory
 
     private var memoryOptions: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             historyWindowPicker(defaultWindow: placement.size == .large ? 120 : 60)
             breakdownPicker
             VStack(alignment: .leading, spacing: 4) {
@@ -214,7 +207,7 @@ struct WidgetSettingsPopover: View {
     // MARK: Disk
 
     private var diskOptions: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             historyWindowPicker(defaultWindow: 120)
             breakdownPicker
             VStack(alignment: .leading, spacing: 4) {
@@ -235,7 +228,7 @@ struct WidgetSettingsPopover: View {
         let fallback = placement.size == .large
             ? AgentSessionWidgetView.largeRowCap
             : AgentSessionWidgetView.mediumRowCap
-        return VStack(alignment: .leading, spacing: 14) {
+        return VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
             providerPicker(key: AgentSessionWidgetView.Option.provider)
 
             Picker(selection: Binding(
@@ -272,9 +265,7 @@ struct WidgetSettingsPopover: View {
 
     @ViewBuilder
     private func historyWindowPicker(defaultWindow: Int) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("History window")
-                .font(.subheadline.weight(.medium))
+        optionRow("History window") {
             Picker("", selection: Binding(
                 get: { MonitorWidgetDraft.historyWindowTag(placement, clearValue: defaultWindow) },
                 set: { onUpdate(MonitorWidgetDraft.settingHistoryWindow(tag: $0, clearValue: defaultWindow, on: placement)) }
@@ -285,15 +276,12 @@ struct WidgetSettingsPopover: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(maxWidth: .infinity)
             .accessibilityLabel(Text("History window"))
         }
     }
 
     private var breakdownPicker: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Breakdown")
-                .font(.subheadline.weight(.medium))
+        optionRow("Breakdown") {
             Picker("", selection: Binding(
                 get: { MonitorWidgetDraft.breakdownCompact(placement) },
                 set: { onUpdate(MonitorWidgetDraft.settingBreakdownCompact($0, on: placement)) }
@@ -303,16 +291,13 @@ struct WidgetSettingsPopover: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(maxWidth: .infinity)
             .accessibilityLabel(Text("Breakdown"))
         }
     }
 
     /// Agent Session provider filter (`all`/`claude`/`codex`).
     private func providerPicker(key: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Provider")
-                .font(.subheadline.weight(.medium))
+        optionRow("Provider") {
             Picker("", selection: Binding(
                 get: { MonitorWidgetDraft.providerTag(placement, key: key) },
                 set: { onUpdate(MonitorWidgetDraft.settingProvider($0, key: key, on: placement)) }
@@ -323,7 +308,6 @@ struct WidgetSettingsPopover: View {
             }
             .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(maxWidth: .infinity)
             .accessibilityLabel(Text("Provider"))
         }
     }
@@ -336,8 +320,30 @@ struct WidgetSettingsPopover: View {
         )
     }
 
+    /// Label beside its control on one line, stacked only when that line would
+    /// not fit — this panel floats over the board, so every row it saves is
+    /// board the user can still see while editing.
+    @ViewBuilder
+    private func optionRow<Control: View>(
+        _ title: LocalizedStringKey,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        let control = control()
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Text(title).font(.subheadline)
+                Spacer(minLength: DesignTokens.Spacing.sm)
+                control.fixedSize()
+            }
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                Text(title).font(.subheadline)
+                control.frame(maxWidth: .infinity)
+            }
+        }
+    }
+
     private func toggleRow(_ title: LocalizedStringKey, isOn: Binding<Bool>) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DesignTokens.Spacing.sm) {
             Text(title).font(.subheadline)
             Spacer(minLength: 8)
             Toggle("", isOn: isOn)

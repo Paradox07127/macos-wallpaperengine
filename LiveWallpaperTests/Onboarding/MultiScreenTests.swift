@@ -8,26 +8,6 @@ import Testing
 @MainActor
 struct OnboardingMultiScreenTests {
 
-    @Test("First-run setup defaults to one display and requires an explicit all-displays choice")
-    func targetSelectionDefaultsToOneDisplay() {
-        let displays: [CGDirectDisplayID] = [1001, 2002, 3003]
-
-        let defaultID = OnboardingDisplayTargetPolicy.defaultTargetID(from: displays)
-        #expect(defaultID == 1001)
-        #expect(OnboardingDisplayTargetPolicy.selectedIDs(targetID: defaultID, availableIDs: displays) == [1001])
-        #expect(OnboardingDisplayTargetPolicy.selectedIDs(targetID: nil, availableIDs: displays) == displays)
-    }
-
-    @Test("A disconnected onboarding target falls back to one available display")
-    func staleTargetDoesNotApplyToEveryDisplay() {
-        let displays: [CGDirectDisplayID] = [4004, 5005]
-
-        #expect(
-            OnboardingDisplayTargetPolicy.selectedIDs(targetID: 9999, availableIDs: displays)
-                == [4004]
-        )
-    }
-
     @Test("Unsupported import recovery copy follows the catalog's scene capability")
     func unsupportedImportCopyFollowsSceneCapability() {
         let liteCatalog = FeatureCatalog(capabilities: .lite)

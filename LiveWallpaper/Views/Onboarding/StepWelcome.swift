@@ -39,12 +39,11 @@ struct StepWelcome: View {
                     .foregroundStyle(DesignTokens.Colors.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, DesignTokens.Spacing.xl + DesignTokens.Spacing.sm)
-
-                Label("No account. No telemetry. Your files stay on this Mac.", systemImage: "lock.shield")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(DesignTokens.Colors.textSecondary)
-                    .padding(.top, DesignTokens.Spacing.xs)
             }
+
+            Spacer().frame(height: DesignTokens.Spacing.xl)
+
+            typeChips
 
             Spacer()
 
@@ -66,6 +65,42 @@ struct StepWelcome: View {
 
             Spacer().frame(height: DesignTokens.Spacing.xl)
         }
+    }
+
+    /// The wallpaper kinds this SKU plays, shown before any of them is asked
+    /// for. Display only — the picker two steps later is where they're chosen.
+    private var typeChips: some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            typeChip(icon: "film", title: "Video")
+            typeChip(icon: "globe", title: "Web")
+            if featureCatalog.isEnabled(.scene) {
+                typeChip(icon: "cube.transparent", title: "Scene")
+            }
+            typeChip(icon: "sparkles.tv", title: "Apple Aerials")
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Supported wallpaper types"))
+    }
+
+    private func typeChip(icon: String, title: LocalizedStringKey) -> some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(DesignTokens.Colors.accent)
+            Text(title, bundle: .main)
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(DesignTokens.Colors.textSecondary)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.md)
+        .padding(.vertical, DesignTokens.Spacing.xs + 2)
+        .background(
+            Capsule(style: .continuous)
+                .fill(DesignTokens.Colors.surfaceRaised)
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
+        )
     }
 
     @ViewBuilder

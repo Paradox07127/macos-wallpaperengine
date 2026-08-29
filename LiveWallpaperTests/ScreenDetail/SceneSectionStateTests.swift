@@ -94,37 +94,15 @@ struct WPESceneSectionStateTests {
     }
 
     @MainActor
-    @Test("Engine-assets recovery is offered on a ref-less failure whose cause fits")
-    func engineAssetsRecoveryCoversRefLessFailures() {
-        // The reported gap: a scene that failed before the resolver ran left the
-        // user with the error banner and no way to reach the assets setup.
-        #expect(SceneDetailView.showsEngineAssetsRecovery(
-            isEngineAssetsLinked: false,
-            missedRefCount: 0,
-            failureMightNeedAssets: true
-        ))
-        #expect(SceneDetailView.showsEngineAssetsRecovery(
-            isEngineAssetsLinked: false,
-            missedRefCount: 3,
-            failureMightNeedAssets: false
-        ))
-    }
-
-    @MainActor
-    @Test("Engine-assets recovery stays hidden when linked or when nothing is wrong")
-    func engineAssetsRecoveryStaysQuiet() {
-        // A linked install can't be the cause, however the scene failed.
-        #expect(!SceneDetailView.showsEngineAssetsRecovery(
-            isEngineAssetsLinked: true,
-            missedRefCount: 9,
-            failureMightNeedAssets: true
-        ))
-        // Unlinked is the normal state — most scenes use the built-in equivalents.
-        #expect(!SceneDetailView.showsEngineAssetsRecovery(
-            isEngineAssetsLinked: false,
-            missedRefCount: 0,
-            failureMightNeedAssets: false
-        ))
+    @Test("The engine-assets banner is driven by setup state, not by a failure")
+    func engineAssetsBannerFollowsSetupState() {
+        // Measured on 3558034522: with no install linked the scene leaves 144
+        // references unresolved, renders four passes short and reports no
+        // error at all. Waiting for a failure meant the warning never showed.
+        #expect(EngineAssetsBanner.shouldShow(isFeatureEnabled: true, hasEngineAssets: false))
+        #expect(!EngineAssetsBanner.shouldShow(isFeatureEnabled: true, hasEngineAssets: true))
+        // Lite has no Workshop scenes to warn about.
+        #expect(!EngineAssetsBanner.shouldShow(isFeatureEnabled: false, hasEngineAssets: false))
     }
 
     @Test("Only unresolved resources point at an engine-assets install")

@@ -11,6 +11,16 @@ extension GeneralSettingsView {
             }
 
             SettingRow(
+                icon: "circle.righthalf.filled",
+                iconColor: .indigo,
+                title: "Appearance",
+                subtitle: "Match the system, or pin the app's windows to light or dark",
+                info: "Applies to the app's own windows. Panels that float over your wallpaper — the monitor board's controls and the media previews — stay dark whichever you pick, because following a light system appearance would make them white over your wallpaper."
+            ) {
+                appearancePicker
+            }
+
+            SettingRow(
                 icon: "power.circle.fill",
                 iconColor: loginItemShowsInlineStatus ? loginItemStatusColor : .green,
                 title: "Start at login",
@@ -118,6 +128,36 @@ extension GeneralSettingsView {
         .fixedSize()
         .accessibilityLabel(Text("Language"))
         .accessibilityHint(Text("Choose the display language used by LiveWallpaper"))
+    }
+
+    private var appearancePicker: some View {
+        Picker("", selection: appearanceSelection) {
+            ForEach(AppAppearance.allCases, id: \.self) { appearance in
+                Text(Self.appearanceTitle(appearance)).tag(appearance)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .accessibilityLabel(Text("Appearance"))
+    }
+
+    static func appearanceTitle(_ appearance: AppAppearance) -> LocalizedStringKey {
+        switch appearance {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    private var appearanceSelection: Binding<AppAppearance> {
+        Binding(
+            get: { AppAppearance(rawValue: appearanceRawValue) ?? .system },
+            set: {
+                appearanceRawValue = $0.rawValue
+                $0.apply()
+            }
+        )
     }
 
     private var appLanguageSelection: Binding<AppLanguagePreference> {
