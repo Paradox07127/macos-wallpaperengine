@@ -32,7 +32,8 @@ struct OverlaysInspectorPanel: View {
                 case .music:
                     MusicOverlaySection(
                         screen: screen,
-                        screenManager: screenManager
+                        screenManager: screenManager,
+                        backdropAvailable: backdropAvailable
                     )
                 }
             }
@@ -66,6 +67,10 @@ struct OverlaysInspectorPanel: View {
                         refresh: screenManager.weatherService.refresh
                     )
                 }
+
+                Divider()
+
+                OverlayBackdropRow(available: backdropAvailable)
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())

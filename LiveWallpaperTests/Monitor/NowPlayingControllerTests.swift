@@ -51,11 +51,123 @@ final class NowPlayingControllerTests: XCTestCase {
         }
     }
 
+    /// Same shape as `Recorder`, for the read path.
+    private struct QueryRecorder: Sendable {
+        struct State: Sendable {
+            var scripts: [String] = []
+            var outcome: Result<NowPlayingScriptValue, NowPlayingScriptError> = .success(.number(0))
+        }
+        let state = Locked(State())
+        var scripts: [String] { state.value.scripts }
+
+        func answer(_ value: NowPlayingScriptValue) {
+            state.mutate { $0.outcome = .success(value) }
+        }
+        func fail(status: OSStatus) {
+            state.mutate { $0.outcome = .failure(NowPlayingScriptError(status: status, message: nil)) }
+        }
+        var executor: NowPlayingController.QueryExecutor {
+            let state = self.state
+            return { script in
+                state.mutate { current in
+                    current.scripts.append(script)
+                    return current.outcome
+                }
+            }
+        }
+    }
+
     private func makeController(
         _ recorder: Recorder,
+        queries: QueryRecorder = QueryRecorder(),
         probe: @escaping NowPlayingController.PermissionProbe = { _ in noErr }
     ) -> NowPlayingController {
-        NowPlayingController(executor: recorder.executor, probe: probe)
+        NowPlayingController(executor: recorder.executor, queryExecutor: queries.executor, probe: probe)
+    }
+
+    // MARK: - Queries
+
+    func testQueryScriptTextPerPlayer() {
+        XCTAssertEqual(
+            NowPlayingController.script(for: .playerPosition, bundleID: Self.music),
+            "tell application \"Music\" to get player position"
+        )
+        XCTAssertEqual(
+            NowPlayingController.script(for: .artworkURL, bundleID: Self.spotify),
+            "tell application \"Spotify\" to get artwork url of current track"
+        )
+        // Music exposes artwork as image data, not a URL — no vocabulary, no script.
+        XCTAssertNil(NowPlayingController.script(for: .artworkURL, bundleID: Self.music))
+        XCTAssertNil(NowPlayingController.script(for: .playerPosition, bundleID: "com.example.player"))
+        XCTAssertNil(NowPlayingController.script(for: .playerPosition, bundleID: nil))
+    }
+
+    /// The hard rule for the read path: a query is never the result of the user
+    /// clicking anything, so it must not be what first provokes the Automation
+    /// dialog. `-1744` is macOS saying "I would have to ask" — nothing may be
+    /// sent while that is the answer.
+    func testQueryStaysSilentWhileConsentWouldHaveToBeAsked() async {
+        let queries = QueryRecorder()
+        let controller = makeController(
+            Recorder(), queries: queries,
+            probe: { _ in NowPlayingController.Status.wouldRequireUserConsent }
+        )
+        queries.answer(.number(12.5))
+
+        let value = await controller.value(for: .playerPosition, from: Self.music)
+        XCTAssertNil(value)
+        XCTAssertTrue(queries.scripts.isEmpty)
+        XCTAssertEqual(controller.authorization(for: Self.music), .notDetermined)
+    }
+
+    /// Consent lives in System Settings and survives relaunches, while this
+    /// map starts empty every launch. Reading the existing answer (which never
+    /// prompts) is what lets a playhead appear for someone who granted
+    /// Automation months ago and has not touched a transport button today.
+    func testQueryUsesConsentGrantedInAnEarlierLaunch() async {
+        let queries = QueryRecorder()
+        let controller = makeController(Recorder(), queries: queries, probe: { _ in noErr })
+        queries.answer(.number(12.5))
+
+        let value = await controller.value(for: .playerPosition, from: Self.music)
+        XCTAssertEqual(value?.doubleValue, 12.5)
+        XCTAssertEqual(queries.scripts.count, 1)
+        XCTAssertEqual(controller.authorization(for: Self.music), .authorized)
+    }
+
+    /// A target the user has refused stays refused without a round trip.
+    func testQueryStaysSilentForARefusedTarget() async {
+        let queries = QueryRecorder()
+        let controller = makeController(
+            Recorder(), queries: queries,
+            probe: { _ in NowPlayingController.Status.notPermitted }
+        )
+        let value = await controller.value(for: .playerPosition, from: Self.music)
+        XCTAssertNil(value)
+        XCTAssertTrue(queries.scripts.isEmpty)
+        XCTAssertEqual(controller.authorization(for: Self.music), .denied)
+    }
+
+    func testQueryDeniedMarksTheTargetDenied() async {
+        let queries = QueryRecorder()
+        let controller = makeController(Recorder(), queries: queries)
+        _ = await controller.send(.playPause, to: Self.music)
+        queries.fail(status: NowPlayingController.Status.notPermitted)
+
+        let value = await controller.value(for: .playerPosition, from: Self.music)
+        XCTAssertNil(value)
+        XCTAssertEqual(controller.authorization(for: Self.music), .denied)
+    }
+
+    /// A real is read out of the descriptor, never off `stringValue`:
+    /// AppleScript formats reals for the current locale, so `12,5` would parse
+    /// to nil wherever the decimal separator is a comma.
+    func testNumericValuesDoNotGoThroughLocaleFormatting() {
+        XCTAssertEqual(NowPlayingScriptValue.number(12.5).doubleValue, 12.5)
+        XCTAssertNil(NowPlayingScriptValue.text("12,5").doubleValue)
+        XCTAssertEqual(NowPlayingScriptValue.text("https://i.scdn.co/image/a").stringValue,
+                       "https://i.scdn.co/image/a")
+        XCTAssertNil(NowPlayingScriptValue.text("").stringValue)
     }
 
     /// `Result<Void, _>` is not Equatable (Void is not), so outcomes are read

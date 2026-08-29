@@ -467,10 +467,13 @@ struct CPUWidgetView: View {
     @ViewBuilder
     private func sensorStrip(scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.9) {
+            // `inkMuted` for the same reason as the GPU card's sensor row:
+            // the strip sits on the darkest end of the panel falloff, where
+            // `inkFaint` (L=0.505) reads as cut off rather than as quiet.
             Text(verbatim: "SMC")
                 .font(Design.labelFont(size: scale.label))
                 .tracking(Design.labelTracking(size: scale.label))
-                .foregroundStyle(Design.inkFaint)
+                .foregroundStyle(Design.inkMuted)
             if let temp = cpuTempC { sensorReading(dot: Design.temperatureColor(temp),
                                                    value: MonitorTemperature.valueText(temp), unit: MonitorTemperature.symbol, scale: scale) }
             if cpuTempC != nil && fanRPM != nil {
@@ -499,7 +502,7 @@ struct CPUWidgetView: View {
                     .foregroundStyle(Design.inkPrimary)
                 Text(verbatim: unit)
                     .font(Design.captionFont(size: scale.caption * 0.7))
-                    .foregroundStyle(Design.inkFaint)
+                    .foregroundStyle(Design.inkMuted)
             }
         }
     }

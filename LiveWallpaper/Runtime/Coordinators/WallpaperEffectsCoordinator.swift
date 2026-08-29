@@ -58,10 +58,11 @@ final class WallpaperEffectsCoordinator {
               config.particleEffect != effect else { return }
         config.particleEffect = effect
         saveConfiguration(config)
-        let resolvedEffect = config.effectConfig.weatherReactive
-            ? weatherService.currentParticleEffect
-            : effect
-        applyParticleEffect(resolvedEffect, density: config.effectConfig.particleDensity, to: screen)
+        applyParticleEffect(
+            resolvedParticleEffect(for: config),
+            density: config.effectConfig.particleDensity,
+            to: screen
+        )
     }
 
     func updateParticleDensity(_ density: Double, for screen: Screen) {
@@ -71,10 +72,7 @@ final class WallpaperEffectsCoordinator {
         guard abs(clamped - config.effectConfig.particleDensity) > 0.001 else { return }
         config.effectConfig.particleDensity = clamped
         saveConfiguration(config)
-        let effect = config.effectConfig.weatherReactive
-            ? weatherService.currentParticleEffect
-            : config.particleEffect
-        applyParticleEffect(effect, density: clamped, to: screen)
+        applyParticleEffect(resolvedParticleEffect(for: config), density: clamped, to: screen)
     }
 
     func setWeatherReactive(_ enabled: Bool, for screen: Screen) {
@@ -101,7 +99,7 @@ final class WallpaperEffectsCoordinator {
               config.effectConfig.weatherReactive else { return }
 
         applyParticleEffect(
-            weatherService.currentParticleEffect,
+            resolvedParticleEffect(for: config),
             density: config.effectConfig.particleDensity,
             to: screen
         )
@@ -118,6 +116,27 @@ final class WallpaperEffectsCoordinator {
             var updatedConfig = config
             updatedConfig.effectConfig = weatherConfig
             applyVideoEffects(for: screen, config: updatedConfig)
+        }
+    }
+
+    /// Displays came or went.
+    ///
+    /// The weather poll used to be re-evaluated from exactly two places — the
+    /// per-display switch and launch — so unplugging the last weather-reactive
+    /// display left the hourly fetch running with nobody to render it, and
+    /// plugging one in mid-session left it inert (the service still holding
+    /// its launch-time `.none`) until the user toggled the switch by hand.
+    ///
+    /// Only displays that just arrived get the current weather pushed at them:
+    /// this also runs on resolution and arrangement changes, and rebuilding a
+    /// live emitter for those would be churn for no visible difference.
+    func screensDidChange(arrivedScreenIDs: Set<CGDirectDisplayID>) {
+        guard !isShutdown else { return }
+        refreshWeatherMonitoringState()
+        for screen in screensProvider() where arrivedScreenIDs.contains(screen.id) {
+            guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+                  config.effectConfig.weatherReactive else { continue }
+            applyWeatherEffects(for: screen)
         }
     }
 
@@ -224,10 +243,11 @@ final class WallpaperEffectsCoordinator {
                 environmentOverlay.teardown(screenID: screen.id)
                 continue
             }
-            let effect = config.effectConfig.weatherReactive
-                ? weatherService.currentParticleEffect
-                : config.particleEffect
-            applyParticleEffect(effect, density: config.effectConfig.particleDensity, to: screen)
+            applyParticleEffect(
+                resolvedParticleEffect(for: config),
+                density: config.effectConfig.particleDensity,
+                to: screen
+            )
         }
     }
 
@@ -253,6 +273,14 @@ final class WallpaperEffectsCoordinator {
             screenRefreshRate: Double(screenRefreshRate(screenID))
         )
         player.setFrameRateLimit(limit ?? 0)
+    }
+
+    private func resolvedParticleEffect(for config: ScreenConfiguration) -> ParticleEffect {
+        WeatherReactivePolicy.resolvedParticleEffect(
+            chosen: config.particleEffect,
+            weatherReactive: config.effectConfig.weatherReactive,
+            weatherEffect: weatherService.currentParticleEffect
+        )
     }
 
     private func applyParticleEffect(_ effect: ParticleEffect, density: Double, to screen: Screen) {

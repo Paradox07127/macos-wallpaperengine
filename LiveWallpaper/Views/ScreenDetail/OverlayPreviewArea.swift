@@ -28,13 +28,23 @@ struct OverlayPreviewArea: View {
         Group {
             switch kind {
             case .monitor:
-                // The board preview owns drag-to-arrange, and already draws
-                // itself on the shared canvas.
-                BoardPreviewArea(
-                    screen: screen,
-                    screenManager: screenManager,
-                    backdrop: backdrop
-                )
+                // Off means off on every page: drawing a live board for a
+                // display that is not showing one invites arranging widgets
+                // that will not appear, and left this the only overlay whose
+                // preview ignored its own switch.
+                if screenManager.monitorOverlay(for: screen).enabled {
+                    // The board preview owns drag-to-arrange, and already draws
+                    // itself on the shared canvas.
+                    BoardPreviewArea(
+                        screen: screen,
+                        screenManager: screenManager,
+                        backdrop: backdrop
+                    )
+                } else {
+                    OverlayPreviewCanvas(screen: screen, backdrop: backdrop) {
+                        OverlayOffNotice(text: "Monitor is off for this display")
+                    }
+                }
             case .weather:
                 OverlayPreviewCanvas(screen: screen, backdrop: backdrop) {
                     weatherLayer
@@ -74,13 +84,7 @@ struct OverlayPreviewArea: View {
                     }
             }
         } else {
-            Text("Music is off for this display")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                // Same recipe as the weather page's off state.
-                .thumbnailBadgeGlass(opacity: 0.45)
+            OverlayOffNotice(text: "Music is off for this display")
         }
     }
 
@@ -243,14 +247,7 @@ struct OverlayPreviewArea: View {
     @ViewBuilder
     private var weatherLayer: some View {
         if draft.selectedParticleEffect == .none {
-            Text("Weather is off for this display")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                // Same recipe as the active badge, dialled down: this is the
-                // "nothing is running" state, not a live readout.
-                .thumbnailBadgeGlass(opacity: 0.45)
+            OverlayOffNotice(text: "Weather is off for this display")
         } else {
             weatherBadge
                 .padding(18)
@@ -300,5 +297,22 @@ private extension ParticleEffect {
         case .fallingLeaves: return "leaf"
         case .sakura: return "camera.macro"
         }
+    }
+}
+
+/// What a preview shows when its overlay is switched off for this display.
+///
+/// Same recipe as the active badges, dialled down: this is the "nothing is
+/// running" state, not a live readout.
+private struct OverlayOffNotice: View {
+    let text: LocalizedStringKey
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.white.opacity(0.8))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .thumbnailBadgeGlass(opacity: 0.45)
     }
 }

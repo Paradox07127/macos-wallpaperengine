@@ -3,7 +3,7 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// Which GitHub issue form the in-app **Report a Bug…** button opens.
+/// Which GitHub issue form the in-app **Report a Bug** row's Open button uses.
 @Suite("Bug report template selection")
 struct BugReporterTemplateTests {
     @Test("Simplified Chinese is the only language with its own form")

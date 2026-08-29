@@ -245,8 +245,8 @@ struct CodexSessionModel: Sendable {
         lastToolName = toolName
         let at = timestamp?.timeIntervalSince1970 ?? lastEventAt?.timeIntervalSince1970 ?? 0
         recentTools.append(MonitorAgentToolEvent(name: toolName, at: at, ok: nil))
-        if recentTools.count > AgentSignalDeriver.recentToolCap * 3 {
-            recentTools = Array(recentTools.suffix(AgentSignalDeriver.recentToolCap * 3))
+        if recentTools.count > AgentSignalDeriver.toolLoopBuffer {
+            recentTools = Array(recentTools.suffix(AgentSignalDeriver.toolLoopBuffer))
         }
         if let timestamp {
             markTerminal(false, at: timestamp)

@@ -283,14 +283,16 @@ struct MemoryWidgetView: View {
         }
     }
 
-    /// Most-recent samples of a history series for the M/L trend, sized by `trendWindowSamples`.
+    /// The last `trendWindowSeconds` of a history series for the M/L trend.
+    /// All four series share `sampleTimes`, so windowing them independently
+    /// still leaves them the same length and aligned.
     private func recentSeries(_ series: KeyPath<MonitorHistorySnapshot, [Double]>) -> [Double] {
-        Array(context.history[keyPath: series].suffix(trendWindowSamples))
+        context.history.windowed(context.history[keyPath: series], seconds: trendWindowSeconds)
     }
 
-    private var trendWindowSamples: Int {
+    private var trendWindowSeconds: Int {
         let fallback = context.placement.size == .large ? 120 : 60
-        return MemoryWidgetView.historyWindowSamples(
+        return MemoryWidgetView.historyWindowSeconds(
             optionSeconds: context.placement.options["historyWindow"]?.numberValue,
             fallbackSeconds: fallback)
     }
@@ -335,7 +337,7 @@ struct MemoryWidgetView: View {
         return pressure(raw) != .normal
     }
 
-    nonisolated static func historyWindowSamples(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
+    nonisolated static func historyWindowSeconds(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
         guard let optionSeconds, optionSeconds.isFinite, optionSeconds > 0 else {
             return fallbackSeconds
         }

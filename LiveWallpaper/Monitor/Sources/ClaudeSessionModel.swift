@@ -259,7 +259,7 @@ struct ClaudeSessionModel {
             recentTools.append(MonitorAgentToolEvent(name: name, at: at, ok: nil))
             recentToolIDs.append(id)
         }
-        let cap = AgentSignalDeriver.recentToolCap * 3
+        let cap = AgentSignalDeriver.toolLoopBuffer
         if recentTools.count > cap {
             recentTools = Array(recentTools.suffix(cap))
             recentToolIDs = Array(recentToolIDs.suffix(cap))

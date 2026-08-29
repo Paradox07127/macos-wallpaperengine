@@ -313,7 +313,7 @@ struct WorkshopPaneHeader: View {
                 }
                 .buttonStyle(.plain)
             }
-            .help(Text("Sign In…"))
+            .help(Text("Sign In"))
             .accessibilityLabel(Text("Steam sign-in"))
         } else {
             headerAction {

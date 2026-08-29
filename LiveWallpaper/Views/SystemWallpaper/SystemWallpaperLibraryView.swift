@@ -135,7 +135,7 @@ struct SystemWallpaperLibraryView: View {
                 title: Text("Ready — pick one in System Settings"),
                 detail: Text("macOS decides which wallpaper is on screen; Loomscreen only supplies them.")
             ) {
-                Button("Open…") { service.openWallpaperSettings() }
+                Button("Open") { service.openWallpaperSettings() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .fixedSize()
@@ -294,7 +294,7 @@ struct SystemWallpaperAddMenu: View {
 
     var body: some View {
         Menu {
-            Button("Import from Files…", systemImage: "folder.badge.plus") { importFromFiles() }
+            Button("Import from Files", systemImage: "folder.badge.plus") { importFromFiles() }
             if !libraryVideos.isEmpty {
                 Section("In your library") {
                     ForEach(libraryVideos) { bookmark in

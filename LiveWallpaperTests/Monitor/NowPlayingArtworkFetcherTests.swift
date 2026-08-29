@@ -72,6 +72,15 @@ private func status(_ request: URLRequest, _ code: Int) -> (Data, URLResponse) {
     (Data(), HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: nil, headerFields: nil)!)
 }
 
+/// Thread-safe recorder for the URLs a transport was actually asked for.
+final class NowPlayingURLBox: @unchecked Sendable {
+    // Every access goes through this lock; nothing else touches `storage`.
+    private let lock = NSLock()
+    private var storage: [String] = []
+    func append(_ value: String) { lock.lock(); storage.append(value); lock.unlock() }
+    var values: [String] { lock.lock(); defer { lock.unlock() }; return storage }
+}
+
 private func oembedJSON(thumbnail: String) -> Data {
     try! JSONSerialization.data(withJSONObject: ["thumbnail_url": thumbnail, "title": "x"])
 }
@@ -114,6 +123,65 @@ private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async
 @Suite("Now Playing artwork fetcher")
 struct NowPlayingArtworkFetcherTests {
     // MARK: URL construction and scoring (pure)
+
+    /// Spotify's own dictionary carries the cover URL, so the oEmbed lookup is
+    /// a round trip spent re-deriving what the player already knows. It only
+    /// knows it once Automation consent exists, so oEmbed has to stay for
+    /// everyone who has not granted it.
+    @Test("a player-supplied cover URL is used instead of the oEmbed lookup")
+    func playerURLBeatsOEmbed() async {
+        let art = Data([0x89, 0x50, 0x4E, 0x47, 0x11])
+        let seen = NowPlayingURLBox()
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                seen.append(request.url!.absoluteString)
+                return okImage(request, art)
+            },
+            artworkURLProvider: { _ in URL(string: "https://i.scdn.co/image/direct") }
+        )
+        let data = await fetcher.artwork(for: spotifyState())
+        #expect(data == art)
+        #expect(seen.values == ["https://i.scdn.co/image/direct"])   // no oEmbed hop
+    }
+
+    @Test("without consent the oEmbed route still resolves the cover")
+    func fallsBackToOEmbedWithoutConsent() async {
+        let art = Data([0x89, 0x50, 0x4E, 0x47, 0x22])
+        let seen = NowPlayingURLBox()
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                seen.append(request.url!.absoluteString)
+                if request.url!.absoluteString.contains("oembed") {
+                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/fallback"))
+                }
+                return okImage(request, art)
+            },
+            artworkURLProvider: { _ in nil }
+        )
+        let data = await fetcher.artwork(for: spotifyState())
+        #expect(data == art)
+        #expect(seen.values.contains { $0.contains("oembed") })
+    }
+
+    /// "Spotify said so" is not a reason to fetch from an arbitrary host: the
+    /// URL crosses a process boundary like any other input.
+    @Test("a player-supplied URL off the allow-list is refused, not followed")
+    func playerURLIsStillAllowListed() async {
+        let seen = NowPlayingURLBox()
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                seen.append(request.url!.absoluteString)
+                if request.url!.absoluteString.contains("oembed") {
+                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/fallback"))
+                }
+                return okImage(request, Data([0x89, 0x50, 0x4E, 0x47]))
+            },
+            artworkURLProvider: { _ in URL(string: "https://attacker.example/image") }
+        )
+        _ = await fetcher.artwork(for: spotifyState())
+        #expect(!seen.values.contains { $0.contains("attacker.example") })
+        #expect(seen.values.contains { $0.contains("oembed") })
+    }
 
     @Test("oEmbed request URL matches the documented form character for character")
     func oembedDocumentForm() {

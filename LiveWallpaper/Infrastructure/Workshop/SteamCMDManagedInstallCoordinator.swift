@@ -133,7 +133,7 @@ final class SteamCMDManagedInstallCoordinator {
     /// Removes the install through the connector — the payload sits outside this
     /// container, so this process can neither see nor delete it. Bumps the
     /// generation first so an install still in flight cannot commit over it.
-    /// Never touches the user's own "Select…" pick or a package-manager install.
+    /// Never touches the user's own "Choose SteamCMD" pick or a package-manager install.
     ///
     /// The record is dropped only once the connector confirms the files are
     /// gone. Dropping it first meant a refused or unreachable removal left the

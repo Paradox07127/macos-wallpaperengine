@@ -120,7 +120,7 @@ extension GeneralSettingsView {
                     ? "Pause wallpapers while chosen apps are in use"
                     : "Active for \(applicationRules.count) app\(applicationRules.count == 1 ? "" : "s")"
             ) {
-                Button("Edit…") { showAppExceptions = true }
+                Button("Edit") { showAppExceptions = true }
                     .fixedSize()
                     .accessibilityLabel(Text("Edit application exceptions"))
             }

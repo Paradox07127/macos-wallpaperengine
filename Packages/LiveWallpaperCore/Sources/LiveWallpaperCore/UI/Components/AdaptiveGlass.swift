@@ -80,11 +80,61 @@ public extension View {
         modifier(ThumbnailBadgeGlassModifier(tint: tint, opacity: opacity, shape: shape))
     }
 
+    /// Liquid Glass behind content that is drawn light-on-dark.
+    ///
+    /// `.regular.tint()` shifts the material's hue but not its luminance —
+    /// measured on macOS 27, raising a tint from 0.55 to 0.82 alpha moved a
+    /// card's median luminance only 132 → 138 — so a light-on-dark readout
+    /// placed straight onto the material washes out (1.16:1 against the card,
+    /// where the same readout on a painted card sits at 2.82:1). The scrim goes
+    /// *between* the material and the content: the body stays legible while the
+    /// edge keeps the glass ring and its refraction.
+    ///
+    /// No fallback path: below macOS 26 there is no Liquid Glass to fall back
+    /// to, only an imitation. Callers gate on `AdaptiveGlass.isAvailable` and
+    /// keep their own painted treatment for everything else.
+    func adaptiveGlassScrimmed(cornerRadius: CGFloat, scrim: Color) -> some View {
+        modifier(AdaptiveGlassScrimmedModifier(cornerRadius: cornerRadius, scrim: scrim))
+    }
+
     /// Dark-tinted interactive glass circle for a single-glyph control over artwork
     /// (e.g. the hero close button). The dark tint keeps a white glyph legible over
     /// bright previews and firms up on hover.
     func floatingGlyphGlass(hovered: Bool) -> some View {
         modifier(FloatingGlyphGlassModifier(hovered: hovered))
+    }
+}
+
+/// Whether this OS has real Liquid Glass, asked once instead of spelled as an
+/// `#available` at each call site — which is the same reason every other glass
+/// API in the app lives in this file.
+public enum AdaptiveGlass {
+    public static var isAvailable: Bool {
+        if #available(macOS 26.0, *) { return true }
+        return false
+    }
+}
+
+private struct AdaptiveGlassScrimmedModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let scrim: Color
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        // Checked here as well as at the one current call site: the whole
+        // material is transparency, and the next caller should not have to know
+        // to gate it.
+        if #available(macOS 26.0, *), !reduceTransparency {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(scrim)
+                )
+                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            content
+        }
     }
 }
 

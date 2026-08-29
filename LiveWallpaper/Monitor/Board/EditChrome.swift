@@ -153,6 +153,10 @@ struct MonitorWidgetControlBar: View {
 /// Top-centre Add Widget + Done pill (Done is the exit path for menu-entered edit mode).
 struct MonitorBoardEditToolbar: View {
     @ObservedObject var model: InteractionModel
+    /// The inspector preview is permanently in edit mode — arranging is the
+    /// only thing it does — so a button whose whole job is to leave edit mode
+    /// has nothing to lead to there. On the desktop it is the only way out.
+    var showsDone: Bool = true
 
     var body: some View {
         HStack(spacing: 6) {
@@ -184,18 +188,20 @@ struct MonitorBoardEditToolbar: View {
                 }
             )
 
-            Button {
-                model.setEditing(false)
-            } label: {
-                Text(MonitorBoardStrings.doneEditing)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.82))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule(style: .continuous).fill(Color.white.opacity(0.08)))
+            if showsDone {
+                Button {
+                    model.setEditing(false)
+                } label: {
+                    Text(MonitorBoardStrings.doneEditing)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.82))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule(style: .continuous).fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help(MonitorBoardStrings.doneEditing)
             }
-            .buttonStyle(.plain)
-            .help(MonitorBoardStrings.doneEditing)
         }
         .padding(4)
         .background(
