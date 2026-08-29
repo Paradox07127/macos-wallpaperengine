@@ -215,15 +215,21 @@ enum SystemWallpaperLibrary {
     /// and a concurrent sweep deleted it mid-publish. A dot prefix does not
     /// help either — `contentsOfDirectory` returns hidden files unless asked
     /// not to.
+    /// Ends in the video's own extension, and carries no second marker: the
+    /// `.stage-` prefix plus the timestamp already identify these. A name
+    /// ending in `.partial` typed the file as a non-video for AVFoundation,
+    /// which failed every staged thumbnail with "Cannot Open".
     static func stagingFileName(itemID: String, ext: String, now: Date) -> String {
-        ".stage-\(Int(now.timeIntervalSince1970))-\(itemID)-\(UUID().uuidString).\(ext).partial"
+        ".stage-\(Int(now.timeIntervalSince1970))-\(itemID)-\(UUID().uuidString).\(ext)"
     }
 
     /// Creation time encoded by `stagingFileName`, or nil for anything that is
     /// not one of ours.
     static func stagingCreation(fileName: String) -> Date? {
         let prefix = ".stage-"
-        guard fileName.hasPrefix(prefix), fileName.hasSuffix(".partial") else { return nil }
+        // Prefix plus a parsable timestamp is the whole test — which also
+        // still matches the older `.partial`-suffixed names left on disk.
+        guard fileName.hasPrefix(prefix) else { return nil }
         let rest = fileName.dropFirst(prefix.count)
         guard let dash = rest.firstIndex(of: "-"),
               let seconds = TimeInterval(rest[rest.startIndex..<dash])

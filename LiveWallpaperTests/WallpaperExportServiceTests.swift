@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import LiveWallpaperCore
 import Testing
@@ -714,5 +715,61 @@ struct WallpaperExportServiceTests {
 
         #expect(rig.service.items.count == 1)
         #expect(rig.service.items.first?.title == "Second")
+    }
+
+    /// The real AVFoundation path, not the injected stub every other test here
+    /// uses: a staged copy is what the thumbnail is generated from, and
+    /// AVFoundation types a file by its extension. When the staging name ended
+    /// in `.partial` this failed with "Cannot Open" on every publish, and no
+    /// contract test noticed because they all stub `makeThumbnailJPEG`.
+    @Test("A staged copy is still a video AVFoundation can open")
+    func stagedCopyKeepsAThumbnailableExtension() async throws {
+        let staging = SystemWallpaperLibrary.stagingFileName(
+            itemID: "thumbnailable", ext: "mp4", now: Self.referenceNow
+        )
+        #expect((staging as NSString).pathExtension == "mp4")
+        #expect(SystemWallpaperLibrary.stagingCreation(fileName: staging) == Self.referenceNow)
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let video = directory.appendingPathComponent(staging)
+        try Self.writeSingleFrameVideo(to: video)
+
+        let jpeg = await WallpaperExportService.Dependencies.live().makeThumbnailJPEG(video)
+        #expect(jpeg != nil)
+    }
+
+    /// Smallest real MP4 the thumbnail path can be pointed at: one frame,
+    /// written by AVFoundation itself so the fixture cannot rot.
+    private static func writeSingleFrameVideo(to url: URL) throws {
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: 160,
+            AVVideoHeightKey: 90
+        ])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: input, sourcePixelBufferAttributes: nil
+        )
+        writer.add(input)
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+
+        var pixelBuffer: CVPixelBuffer?
+        CVPixelBufferCreate(kCFAllocatorDefault, 160, 90, kCVPixelFormatType_32ARGB, nil, &pixelBuffer)
+        if let pixelBuffer {
+            CVPixelBufferLockBaseAddress(pixelBuffer, [])
+            memset(CVPixelBufferGetBaseAddress(pixelBuffer), 0x40, CVPixelBufferGetDataSize(pixelBuffer))
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+            // Two seconds long: the generator samples at 0.5s.
+            adaptor.append(pixelBuffer, withPresentationTime: .zero)
+            adaptor.append(pixelBuffer, withPresentationTime: CMTime(seconds: 2, preferredTimescale: 600))
+        }
+        input.markAsFinished()
+        let done = DispatchSemaphore(value: 0)
+        writer.finishWriting { done.signal() }
+        done.wait()
     }
 }
