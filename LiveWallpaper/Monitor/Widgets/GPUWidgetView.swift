@@ -442,20 +442,26 @@ private struct GPUWidgetBody: View {
         guard t != nil else { return Optional<AnyView>.none }
         return AnyView(
             HStack(spacing: 10) {
+                // `inkMuted`, not `inkFaint`: this row sits on the darkest end
+                // of the panel's top-to-bottom falloff, and at L=0.505 it read
+                // as clipped-off rather than quiet. Measured 14pt of clearance
+                // below it, so the problem was only ever contrast.
                 Text(verbatim: "GPU")
                     .font(Design.labelFont(size: scale.label))
                     .tracking(scale.label * 0.12)
-                    .foregroundStyle(Design.inkFaint)
+                    .foregroundStyle(Design.inkMuted)
                 if let t {
                     sensorReading(dotColor: Design.temperatureColor(t),
                                   glow: true,
                                   value: MonitorTemperature.valueText(t), unit: MonitorTemperature.symbol)
                 }
                 Spacer(minLength: 0)
+                // Provenance tag: still the quietest thing in the row, but
+                // no longer faint-on-faint.
                 Text(verbatim: "SMC")
                     .font(Design.labelFont(size: scale.label))
                     .tracking(scale.label * 0.1)
-                    .foregroundStyle(Design.inkFaint.opacity(0.7))
+                    .foregroundStyle(Design.inkFaint)
             }
             .lineLimit(1)
             .padding(.top, 3)
@@ -476,7 +482,7 @@ private struct GPUWidgetBody: View {
             (Text(verbatim: value)
              + Text(verbatim: unit)
                 .font(Design.labelFont(size: scale.label * 0.7))
-                .foregroundStyle(Design.inkFaint))
+                .foregroundStyle(Design.inkMuted))
                 .font(Design.subFont(size: scale.caption))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkPrimary)

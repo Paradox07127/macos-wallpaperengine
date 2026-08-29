@@ -116,14 +116,14 @@ struct ScenePresetBar: View {
 
     private var actionsMenu: some View {
         Menu {
-            Button("Save current values as a preset…") { beginEditing(.saveAsNew) }
+            Button("Save current values as a preset") { beginEditing(.saveAsNew) }
 
             // Renaming a Workshop preset is allowed — it is a local label on a
             // local copy — but deleting one is worth separating from deleting
             // something the user authored, so both stay behind the divider.
             if let activePreset {
                 Divider()
-                Button("Rename…") { beginEditing(.rename(activePreset)) }
+                Button("Rename") { beginEditing(.rename(activePreset)) }
                 Button("Delete preset", role: .destructive) { pendingDeletion = activePreset }
             }
         } label: {

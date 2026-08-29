@@ -534,26 +534,38 @@ struct NowPlayingWidgetView: View {
     /// out from under the click, and on a one-cell-tall tile the stack
     /// overflowed the widget rect — which is precisely the region the overlay
     /// window hit-tests, so the buttons were both invisible to the pointer and
-    /// able to cancel their own hover. Centred in the tile it is always inside
-    /// that rect, and hover cannot be lost by walking towards it.
+    /// able to cancel their own hover. An overlay inset inside the tile is
+    /// always inside that rect, and hover cannot be lost by walking towards it.
+    ///
+    /// Top-trailing, not centred. All three styles put their progress line at
+    /// the bottom of their content block, and vinyl and aurora centre that
+    /// block vertically — so a centred pill landed exactly on the one control
+    /// the user might want to drag. The top edge is the only corner no style
+    /// draws a scrubbable line in.
     @ViewBuilder
     private func transportOverlay(state: MonitorNowPlayingState, in size: CGSize) -> some View {
         if layout.controlsAllowed {
             let shown = layout.visible.contains(.controls)
             let side = min(max(min(size.width, size.height) * 0.19, 22), 46)
-            HStack(spacing: side * 0.4) {
+            HStack(spacing: side * 0.24) {
                 ForEach(NowPlayingWidgetLayout.controlButtons(for: context.size), id: \.self) { button in
                     controlButton(button, state: state, side: side)
                 }
             }
-            .padding(.horizontal, side * 0.5)
-            .padding(.vertical, side * 0.28)
-            // A scrim of its own, so the buttons read over artwork, type or
-            // whatever wallpaper shows through the layer.
-            .background(
-                Capsule().fill(.black.opacity(0.34))
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .padding(.horizontal, side * 0.3)
+            .padding(.vertical, side * 0.16)
+            // One scrim, not two. The buttons used to carry a filled circle
+            // each on top of this capsule, which read as a control panel
+            // dropped onto the layer rather than part of it; a single hairline
+            // glass pill is the same language the rest of the app's floating
+            // chrome uses.
+            .background {
+                Capsule()
+                    .fill(.black.opacity(0.28))
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 0.5))
+            }
+            .padding(max(6, side * 0.26))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .opacity(shown ? 1 : 0)
             .allowsHitTesting(shown)
         }
@@ -568,10 +580,12 @@ struct NowPlayingWidgetView: View {
             send(Self.command(for: button), state: state)
         } label: {
             Image(systemName: Self.symbol(for: button, phase: state.phase))
-                .font(.system(size: side * 0.42, weight: .semibold))
-                .foregroundStyle(.white.opacity(textAlpha(0.92)))
+                .font(.system(size: side * 0.4, weight: .semibold))
+                .foregroundStyle(.white.opacity(textAlpha(0.95)))
+                // No per-button fill: the pill behind the row is the only
+                // scrim. The frame stays full-size so the target does not
+                // shrink with the glyph.
                 .frame(width: side, height: side)
-                .background(Circle().fill(.black.opacity(0.3)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -753,22 +767,7 @@ struct NowPlayingWidgetView: View {
                 )
                 .nowPlayingTextShadow()
 
-                // Spectrum bars sit right above the progress line, or take its
-                // place at the bottom of the type block when there is none.
-                #if !LITE_BUILD
-                if audioActive {
-                    NowPlayingAudioReactiveView(
-                        mode: .bars, accent: accentColor, active: true, options: options
-                    )
-                    .frame(height: max(8, titleSize * 0.6))
-                        .padding(.top, eyebrowSize * 0.3)
-                }
-                #endif
-
-                if layout.visible.contains(.progress) {
-                    posterProgress(state: state, eyebrowSize: eyebrowSize)
-                        .padding(.top, eyebrowSize * 0.3)
-                }
+                posterMeter(state: state, eyebrowSize: eyebrowSize, titleSize: titleSize)
 
                 lyricsLayer(fontSize: eyebrowSize * 1.05)
                     .padding(.top, eyebrowSize * 0.4)
@@ -798,20 +797,51 @@ struct NowPlayingWidgetView: View {
         return parts.joined(separator: " — ").uppercased()
     }
 
+    /// Spectrum and progress line share one column, so they start and end on
+    /// the same two pixels; the elapsed/total readout sits beside the pair
+    /// rather than shortening only the line. Before this the bars ran the full
+    /// width of the type block while the line stopped short of the readout,
+    /// and the two looked like unrelated parts.
     @ViewBuilder
-    private func posterProgress(state: MonitorNowPlayingState, eyebrowSize: CGFloat) -> some View {
-        HStack(spacing: eyebrowSize * 0.8) {
-            linearProgress(state: state, height: 2, trackOpacity: 0.22)
-                .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 1)
+    private func posterMeter(
+        state: MonitorNowPlayingState, eyebrowSize: CGFloat, titleSize: CGFloat
+    ) -> some View {
+        let showsProgress = layout.visible.contains(.progress)
+        #if !LITE_BUILD
+        let showsBars = audioActive
+        #else
+        let showsBars = false
+        #endif
 
-            if layout.visible.contains(.timeText), let elapsed, let duration = state.duration {
-                Text(verbatim: "\(Format.mmss(elapsed)) / \(Format.mmss(duration))")
-                    .font(.system(size: max(9, eyebrowSize * 0.9), weight: .medium, design: .default))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(textAlpha(0.68)))
-                    .fixedSize()
-                    .nowPlayingTextShadow()
+        if showsProgress || showsBars {
+            HStack(spacing: eyebrowSize * 0.8) {
+                VStack(spacing: eyebrowSize * 0.35) {
+                    #if !LITE_BUILD
+                    if showsBars {
+                        NowPlayingAudioReactiveView(
+                            mode: .bars, accent: accentColor, active: true, options: options
+                        )
+                        .frame(height: max(10, titleSize * 0.6))
+                    }
+                    #endif
+
+                    if showsProgress {
+                        linearProgress(state: state, height: 2, trackOpacity: 0.22)
+                            .shadow(color: .black.opacity(0.5), radius: 4, x: 0, y: 1)
+                    }
+                }
+
+                if showsProgress, layout.visible.contains(.timeText),
+                   let elapsed, let duration = state.duration {
+                    Text(verbatim: "\(Format.mmss(elapsed)) / \(Format.mmss(duration))")
+                        .font(.system(size: max(9, eyebrowSize * 0.9), weight: .medium, design: .default))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(textAlpha(0.68)))
+                        .fixedSize()
+                        .nowPlayingTextShadow()
+                }
             }
+            .padding(.top, eyebrowSize * 0.3)
         }
     }
 

@@ -39,7 +39,7 @@ struct AppExceptionsSheet: View {
                 symbol: "app.badge.checkmark",
                 title: "No apps added",
                 message: "Add apps like Xcode, Final Cut Pro, or a game.",
-                primary: EmptyStateButtonAction("Add Application…") { addApp() }
+                primary: EmptyStateButtonAction("Add Application") { addApp() }
             )
         } else {
             List {

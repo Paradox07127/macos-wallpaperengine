@@ -198,7 +198,7 @@ struct SlotRow: View {
                 Label("From Playlist", systemImage: "list.and.film")
             }
         }
-        Button("Choose File…", systemImage: "folder", action: onPickFromFile)
+        Button("Choose File", systemImage: "folder", action: onPickFromFile)
     }
 
     // MARK: - Visual style

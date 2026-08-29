@@ -481,6 +481,29 @@ struct WeatherReactivePolicyTests {
         #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [inactiveConfig], activeScreenIDs: [activeID]))
         #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [disabledConfig], activeScreenIDs: [activeID]))
     }
+
+    @Test("Turning the display's particles off beats Match local weather")
+    func masterSwitchOffWinsOverWeather() {
+        // The bug: with weatherReactive on, the chosen effect was discarded
+        // outright, so `.none` — which is exactly what "Show on This Display"
+        // writes when switched off — never reached the renderer.
+        #expect(WeatherReactivePolicy.resolvedParticleEffect(
+            chosen: .none, weatherReactive: true, weatherEffect: .snow
+        ) == .none)
+
+        // Weather still picks the effect while the display is switched on.
+        #expect(WeatherReactivePolicy.resolvedParticleEffect(
+            chosen: .rain, weatherReactive: true, weatherEffect: .snow
+        ) == .snow)
+
+        // And it stays out of the way when the user drives the choice.
+        #expect(WeatherReactivePolicy.resolvedParticleEffect(
+            chosen: .rain, weatherReactive: false, weatherEffect: .snow
+        ) == .rain)
+        #expect(WeatherReactivePolicy.resolvedParticleEffect(
+            chosen: .none, weatherReactive: false, weatherEffect: .snow
+        ) == .none)
+    }
 }
 
 @Suite("Monitoring reference counter")

@@ -25,7 +25,7 @@ func steamAccountMenuItems(
         }
     }
     Divider()
-    Button("Sign in to another account…", action: onSignIn)
+    Button("Sign in to another account", action: onSignIn)
     Button("Rescan", action: onRescan)
 }
 

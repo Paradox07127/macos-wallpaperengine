@@ -143,7 +143,7 @@ struct ScheduleSection: View {
                 Button {
                     addCustomSlot()
                 } label: {
-                    Label("Custom…", systemImage: "slider.horizontal.below.rectangle")
+                    Label("Custom", systemImage: "slider.horizontal.below.rectangle")
                 }
             } label: {
                 HStack(spacing: 4) {

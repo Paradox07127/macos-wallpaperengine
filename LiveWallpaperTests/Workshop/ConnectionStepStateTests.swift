@@ -94,7 +94,7 @@ struct ConnectionStepStateTests {
     /// The relaunch bug: probe results are not persisted, so a binding carried
     /// across launches arrives at `.notRun`. The prominent button was gated on
     /// the strict flag, so an already-installed SteamCMD was greeted with
-    /// "Install SteamCMD…" — clicking it reinstalls what is already there.
+    /// "Install SteamCMD" — clicking it reinstalls what is already there.
     @Test("A binding carried across launches does not offer to install again")
     func boundBinarySurvivesRelaunchWithoutOfferingInstall() {
         let (service, _) = makeService()
@@ -102,7 +102,7 @@ struct ConnectionStepStateTests {
         // Fresh launch: bound, nothing probed yet.
 
         #expect(!service.isBinaryReady)          // strict gate still says unverified
-        #expect(service.isBinaryPresumedReady)   // the UI still offers "Change…"
+        #expect(service.isBinaryPresumedReady)   // the UI still offers "Change"
     }
 
     @Test("A binary whose identity probe failed does offer to install")

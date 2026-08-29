@@ -59,6 +59,28 @@ struct MonitorHistorySnapshot: Sendable, Equatable {
     var diskWriteSessionBytes: Double = 0
 }
 
+extension MonitorHistorySnapshot {
+    /// The last `seconds` of a series aligned with `sampleTimes`.
+    ///
+    /// Not `suffix(seconds)`: that only equals N seconds while the board
+    /// samples at exactly 1 Hz, and the refresh slider spans 0.2…2 Hz — at the
+    /// slow end a chart labelled "60s" was drawing five minutes of history and
+    /// at the fast end thirty seconds of it. CPU and GPU were moved onto their
+    /// sample times when the slider landed; Memory, Disk and Network were not.
+    ///
+    /// Falls back to a sample count when the times are missing or out of step
+    /// with the series, which is the only case where nothing better is known.
+    func windowed(_ series: [Double], seconds: Int, minimumPoints: Int = 2) -> [Double] {
+        guard sampleTimes.count == series.count, let last = sampleTimes.last else {
+            return Array(series.suffix(max(seconds, minimumPoints)))
+        }
+        let cutoff = last - Double(seconds)
+        let inWindow = zip(sampleTimes, series).filter { $0.0 >= cutoff }.map(\.1)
+        // A chart needs two points to draw a segment.
+        return inWindow.count >= minimumPoints ? inWindow : Array(series.suffix(minimumPoints))
+    }
+}
+
 @MainActor
 final class MonitorHistoryStore: ObservableObject {
     @Published private(set) var current = MonitorHistorySnapshot()
@@ -67,7 +89,10 @@ final class MonitorHistoryStore: ObservableObject {
     private var lastSampleAt: Double?
     private var lastGPUSampleAt: Double?
 
-    init(capacity: Int = 120) {
+    /// 240, not 120: the longest offered window is 120 s and the refresh
+    /// slider goes down to 0.5 s per sample, so a 120-sample buffer could only
+    /// ever hand back 60 s of history for a chart labelled 120 s.
+    init(capacity: Int = 240) {
         self.capacity = max(capacity, 2)
     }
 

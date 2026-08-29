@@ -29,8 +29,11 @@ final class HostView: NSView {
     private(set) var pointerScope: PointerScope
     private var reduceMotion: Bool
     private(set) var isSuspended = false
-    /// Inspector preview: name-only tiles so arranging never pumps live data.
-    private let nameOnlyTiles: Bool
+    /// The board inside the settings inspector rather than on the desktop:
+    /// tiles are name-only (arranging must never pump live data) and the
+    /// toolbar drops "Done", because leaving edit mode is what the preview is
+    /// for — there is nothing else it could show.
+    private let isInspectorPreview: Bool
 
     private var pendingPersistTask: Task<Void, Never>?
     /// Retained with the debounced task so teardown can flush synchronously instead of losing the final edit on cancel.
@@ -48,22 +51,23 @@ final class HostView: NSView {
     init(
         frame frameRect: NSRect,
         configuration: MonitorBoardConfiguration,
-        nameOnlyTiles: Bool = false,
+        isInspectorPreview: Bool = false,
         topInsetFraction: CGFloat = 0,
-        referenceWidth: CGFloat = 0
+        referenceWidth: CGFloat = 0,
+        historyStore: MonitorHistoryStore? = nil
     ) {
         let reduceMotion = Self.effectiveReduceMotion(configuration)
         self.pointerScope = Self.pointerScope(for: configuration, isEditing: false)
-        self.nameOnlyTiles = nameOnlyTiles
+        self.isInspectorPreview = isInspectorPreview
         self.reduceMotion = reduceMotion
-        self.dataModel = DataModel()
+        self.dataModel = DataModel(historyStore: historyStore)
         self.interactionModel = InteractionModel(configuration: configuration)
         let container = MonitorBoardRootContainer(
             model: interactionModel,
             data: dataModel,
             reduceMotion: reduceMotion,
             suspended: false,
-            nameOnlyTiles: nameOnlyTiles
+            isInspectorPreview: isInspectorPreview
         )
         self.hostingView = NSHostingView(rootView: container)
 
@@ -102,11 +106,6 @@ final class HostView: NSView {
         dataModel.update(snapshot)
     }
 
-    /// Call on pump restart for a NEW session only — not on same-session suspend/resume.
-    func resetHistory() {
-        dataModel.resetHistory()
-    }
-
     // MARK: - Live configuration
 
     /// Push a new board configuration (rebuilds the SwiftUI root).
@@ -137,7 +136,7 @@ final class HostView: NSView {
             data: dataModel,
             reduceMotion: reduceMotion,
             suspended: isSuspended,
-            nameOnlyTiles: nameOnlyTiles
+            isInspectorPreview: isInspectorPreview
         )
     }
 
@@ -243,10 +242,10 @@ struct MonitorBoardRootContainer: View {
     @ObservedObject var data: DataModel
     let reduceMotion: Bool
     var suspended: Bool = false
-    var nameOnlyTiles: Bool = false
+    var isInspectorPreview: Bool = false
 
     var body: some View {
-        RootView(model: model, data: data, nameOnlyTiles: nameOnlyTiles)
+        RootView(model: model, data: data, isInspectorPreview: isInspectorPreview)
             .environment(\.monitorReduceMotion, reduceMotion)
             .environment(\.monitorSuspended, suspended)
     }

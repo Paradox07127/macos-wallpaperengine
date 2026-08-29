@@ -1,7 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Modal sheet shown when the user clicks "Report a Bug…".
+/// Modal sheet behind the "Report a Bug" row's Open button in Advanced settings.
 struct ReportBugSheet: View {
     let report: BugReport
     var onDismiss: () -> Void

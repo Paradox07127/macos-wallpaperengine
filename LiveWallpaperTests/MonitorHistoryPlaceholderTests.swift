@@ -64,3 +64,66 @@ struct MonitorHistoryPlaceholderTests {
         #expect(store.current.cpuTotal == [0])
     }
 }
+
+/// Every board host is pushed the same snapshot from the same broker, so a
+/// history store per display kept N copies of one series — and they drifted,
+/// because a display that is hidden stops being pushed while the visible one
+/// keeps accumulating. Two screens showing the same CPU widget then drew two
+/// different charts.
+@Suite("Monitor history sharing across displays")
+@MainActor
+struct MonitorHistorySharingTests {
+    private static func snapshot(at time: Double, cpuTotal: Double) -> MonitorSnapshot {
+        var snapshot = MonitorSnapshot()
+        snapshot.timestamp = time
+        var system = MonitorSystemSnapshot()
+        system.cpuTotal = cpuTotal
+        snapshot.system = system
+        return snapshot
+    }
+
+    @Test("a display fed nothing still sees the history the others accumulated")
+    func hiddenDisplayKeepsUpThroughTheSharedStore() {
+        let shared = MonitorHistoryStore()
+        let visible = DataModel(historyStore: shared)
+        let hidden = DataModel(historyStore: shared)
+
+        for step in 0..<5 {
+            visible.update(Self.snapshot(at: 1_000 + Double(step), cpuTotal: 0.1 * Double(step)))
+        }
+
+        #expect(visible.historyStore.current.cpuTotal.count == 5)
+        #expect(hidden.historyStore.current.cpuTotal == visible.historyStore.current.cpuTotal)
+    }
+
+    /// What makes sharing safe without touching the push path: N hosts each
+    /// ingesting the same snapshot must record one sample, not N.
+    @Test("the same snapshot ingested by every host is recorded once")
+    func repeatedIngestOfOneSnapshotIsIdempotent() {
+        let shared = MonitorHistoryStore()
+        let a = DataModel(historyStore: shared)
+        let b = DataModel(historyStore: shared)
+        let c = DataModel(historyStore: shared)
+
+        let frame = Self.snapshot(at: 1_000, cpuTotal: 0.42)
+        a.update(frame)
+        b.update(frame)
+        c.update(frame)
+
+        #expect(shared.current.sampleTimes == [1_000])
+        #expect(shared.current.cpuTotal == [0.42])
+    }
+
+    /// The preview builds its own board with no store handed in, and must not
+    /// end up writing into the desktop's series.
+    @Test("a model given no store gets one of its own")
+    func unsharedModelIsIndependent() {
+        let mine = DataModel()
+        let theirs = DataModel()
+        mine.update(Self.snapshot(at: 1_000, cpuTotal: 0.42))
+
+        #expect(mine.historyStore.current.cpuTotal == [0.42])
+        #expect(theirs.historyStore.current.cpuTotal.isEmpty)
+    }
+}
+

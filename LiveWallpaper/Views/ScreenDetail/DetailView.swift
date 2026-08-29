@@ -476,16 +476,16 @@ struct DetailView: View {
     private func dropFailureButtons(_ failure: DropFailure) -> some View {
         switch failure {
         case .unrecognizedDrop:
-            Button("Choose Video…") { showFilePicker() }
-            Button("Choose Web…") { showHTMLSourcePicker() }
+            Button("Choose Video") { showFilePicker() }
+            Button("Choose Web") { showHTMLSourcePicker() }
             Button("Cancel", role: .cancel) { }
 
         case .videoFormatUnsupported, .videoBookmarkFailed:
-            Button("Choose Different Video…") { showFilePicker() }
+            Button("Choose Different Video") { showFilePicker() }
             Button("Cancel", role: .cancel) { }
 
         case .htmlBookmarkFailed, .htmlPickerWrongType:
-            Button("Choose Different Source…") { showHTMLSourcePicker() }
+            Button("Choose Different Source") { showHTMLSourcePicker() }
             Button("Cancel", role: .cancel) { }
         }
     }

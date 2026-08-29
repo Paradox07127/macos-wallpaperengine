@@ -183,6 +183,11 @@ final class OverlayController: NSObject {
     }
 
     private var hosts: [MonitorOverlayHostKey: Host] = [:]
+    /// One series per metric for the whole machine, not one per display. Every
+    /// board host is pushed the same snapshot from the same broker, so a store
+    /// each meant N copies of one history — and they drifted, because a hidden
+    /// display stops being pushed while the visible one keeps accumulating.
+    private let sharedBoardHistory = MonitorHistoryStore()
 
     /// Pushes a changed capture policy onto overlays that already exist; new
     /// ones read it in `OverlayWindow.init`.
@@ -288,10 +293,12 @@ final class OverlayController: NSObject {
             let board = HostView(
                 frame: frame,
                 configuration: overlay.board,
-                topInsetFraction: topInsetFraction
+                topInsetFraction: topInsetFraction,
+                historyStore: sharedBoardHistory
             )
             board.autoresizingMask = [.width, .height]
-            board.resetHistory()
+            // No reset here: a display joining mid-session adopts the machine's
+            // existing series, which is the whole point of sharing one store.
             board.setSuspended(true)
             window.contentView = board
             host = Host(window: window, content: .monitor(board, overlay.board), level: level)
@@ -605,6 +612,11 @@ final class OverlayController: NSObject {
                 appliedRuntimeState.lease = lease
                 appliedRuntimeState.isPaused = false
                 appliedRuntimeState.options = options
+                // A new session, not a resume: the store outlives every host
+                // now, so without this the first board opened after the last
+                // one closed drew the previous session's curves as if they
+                // were current, until the new samples pushed them off.
+                sharedBoardHistory.reset()
                 return
             }
 
@@ -618,13 +630,16 @@ final class OverlayController: NSObject {
                 // added later would therefore draw a fabricated flat history,
                 // so restart the series whenever the sampled set grows. Both
                 // edit paths (overlay-side and Settings-side) funnel here.
-                if Self.historyResetRequired(
+                let resetsHistory = Self.historyResetRequired(
                     previous: appliedRuntimeState.options?.activeWidgetKinds ?? [],
                     next: options.activeWidgetKinds ?? []
-                ) {
-                    for host in hosts.values { host.board?.resetHistory() }
-                }
+                )
                 await lease.updateOptions(options).value
+                // After the await, not before: the pump can push a pre-rebuild
+                // frame while it is suspended, and that frame still carries the
+                // placeholder zeros this reset exists to remove — clearing
+                // first just let them back in.
+                if resetsHistory { sharedBoardHistory.reset() }
                 appliedRuntimeState.options = options
             }
             if appliedRuntimeState.isPaused {

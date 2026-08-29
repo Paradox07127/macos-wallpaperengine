@@ -119,7 +119,7 @@ struct HTMLOptionsInspector: View {
             Button {
                 customCSSPresented = true
             } label: {
-                Text("Edit…")
+                Text("Edit")
             }
             .fixedSize()
             .popover(isPresented: $customCSSPresented, arrowEdge: .leading) {

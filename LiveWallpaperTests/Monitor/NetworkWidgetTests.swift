@@ -57,28 +57,4 @@ struct NetworkWidgetTests {
         #expect(NetworkWidgetView.splitRate("—").value == "—")
         #expect(NetworkWidgetView.splitRate("—").unit.isEmpty)
     }
-
-    @Test("tail returns the last N samples, or the whole series when shorter")
-    func tailWindow() {
-        let series = (0..<30).map(Double.init)
-        let last20 = NetworkWidgetView.tail(series, count: 20)
-        #expect(last20.count == 20)
-        #expect(last20.first == 10)
-        #expect(last20.last == 29)
-
-        let short = [1.0, 2.0, 3.0]
-        #expect(NetworkWidgetView.tail(short, count: 20) == short)
-    }
-
-    @Test("tail also windows the L card's 120-sample un-shrunk chart")
-    func tailWindowLarge() {
-        let series = (0..<200).map(Double.init)
-        let last120 = NetworkWidgetView.tail(series, count: 120)
-        #expect(last120.count == 120)
-        #expect(last120.first == 80)
-        #expect(last120.last == 199)
-
-        let atCapacity = (0..<120).map(Double.init)
-        #expect(NetworkWidgetView.tail(atCapacity, count: 120) == atCapacity)
-    }
 }
