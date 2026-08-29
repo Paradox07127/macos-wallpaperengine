@@ -4,875 +4,6 @@
     "" : {
 
     },
-    "AI Session History Access" : {
-      "comment" : "Settings section title: grants that let the Agent Session widget read local AI coding-agent session transcripts.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI Session History Access"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI セッション履歴へのアクセス"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 会话历史访问权限"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 工作階段記錄存取權限"
-          }
-        }
-      }
-    },
-    "Add Application" : {
-      "comment" : "A button that opens a file picker to select an app.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アプリケーションを追加"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加应用程序"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加入應用程式"
-          }
-        }
-      }
-    },
-    "Apply Project" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply Project"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロジェクトを適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用專案"
-          }
-        }
-      }
-    },
-    "Apply Project Folder" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply Project Folder"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プロジェクトフォルダを適用"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用项目文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用專案資料夾"
-          }
-        }
-      }
-    },
-    "Apply this overlay to every other display?" : {
-      "comment" : "Confirmation title for copying one overlay to the other displays.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply this overlay to every other display?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このオーバーレイを他のすべてのディスプレイに適用しますか？"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把这个叠加层应用到其它所有显示器？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把這個疊加層套用到其它所有顯示器？"
-          }
-        }
-      }
-    },
-    "Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone" : {
-      "comment" : "Tooltip for the Apply to All button while an overlay page is showing.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてに適用 — このディスプレイのオーバーレイを他のすべてに複製します（壁紙は変更しません）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用到全部 — 把这台显示器的叠加层复制到其它所有显示器，不改动它们的壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用到全部 — 把這台顯示器的疊加層複製到其它所有顯示器，不更動它們的桌布"
-          }
-        }
-      }
-    },
-    "Authorize" : {
-      "comment" : "A button that opens a dialog to authorize a folder.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "許可"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "授权"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "授權"
-          }
-        }
-      }
-    },
-    "Cards refract the wallpaper behind them, the way Apple's own widgets do. Each card re-samples what is behind it every frame, so a busy live wallpaper under a full board costs more energy than the painted cards." : {
-      "comment" : "Monitor settings explanation for the Liquid Glass option, including its energy cost.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cards refract the wallpaper behind them, the way Apple's own widgets do. Each card re-samples what is behind it every frame, so a busy live wallpaper under a full board costs more energy than the painted cards."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apple 純正ウィジェットと同じように、カードが背後の壁紙を屈折させます。各カードは毎フレーム背後を再サンプリングするため、動きの多い壁紙の上に多数の計器を並べると、描画カードより電力を消費します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "卡片会像 Apple 自家小组件那样折射背后的壁纸。每张卡片每帧都会重新采样背后的内容，所以在动态壁纸上摆满仪表时，比绘制卡片更耗电。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "卡片會像 Apple 自家小工具那樣折射背後的桌布。每張卡片每一影格都會重新取樣背後的內容，所以在動態桌布上擺滿儀表時，比繪製卡片更耗電。"
-          }
-        }
-      }
-    },
-    "Choose Different Source" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Different Source"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "別のソースを選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "换一个来源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "換一個來源"
-          }
-        }
-      }
-    },
-    "Choose Different Video" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Different Video"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "別のビデオを選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "换一个视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "換一個影片"
-          }
-        }
-      }
-    },
-    "Choose File" : {
-      "comment" : "Schedule slot row menu: pick a video from disk via NSOpenPanel.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose File"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ファイルを選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇檔案"
-          }
-        }
-      }
-    },
-    "Choose SteamCMD" : {
-      "comment" : "Menu item to point Loomscreen at an existing SteamCMD install.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose SteamCMD"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD を選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择 SteamCMD"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇 SteamCMD"
-          }
-        }
-      }
-    },
-    "Choose Video" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Video"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオを選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇影片"
-          }
-        }
-      }
-    },
-    "Choose Web" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose Web"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web を選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择 Web"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇 Web"
-          }
-        }
-      }
-    },
-    "Copies this overlay to every other connected display; their wallpapers are not changed" : {
-      "comment" : "Accessibility hint for the Apply to All button while an overlay page is showing.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copies this overlay to every other connected display; their wallpapers are not changed"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このオーバーレイを接続中の他のすべてのディスプレイに複製します。壁紙は変更されません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把这个叠加层复制到其它所有已连接的显示器，不改动它们的壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "把這個疊加層複製到其它所有已連接的顯示器，不更動它們的桌布"
-          }
-        }
-      }
-    },
-    "Custom" : {
-      "comment" : "Add Slot menu: insert a slot at the next free time range, not a preset.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Custom"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "カスタム"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自定"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自訂"
-          }
-        }
-      }
-    },
-    "Edit" : {
-      "comment" : "A button label that opens a dialog for editing CSS.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edit"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "編集"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "編輯"
-          }
-        }
-      }
-    },
-    "Import from Files" : {
-      "comment" : "Primary button in the Add Video sheet; opens the file picker.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Import from Files"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ファイルから読み込む"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从文件导入"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從檔案輸入"
-          }
-        }
-      }
-    },
-    "Install SteamCMD" : {
-      "comment" : "Primary button in Workshop setup that starts the managed SteamCMD install.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Install SteamCMD"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD をインストール"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安装 SteamCMD"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安裝 SteamCMD"
-          }
-        }
-      }
-    },
-    "Link folder" : {
-      "comment" : "A button that links a Wallpaper Engine install folder.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "フォルダをリンク"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关联文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連結資料夾"
-          }
-        }
-      }
-    },
-    "Liquid Glass" : {
-      "comment" : "Monitor settings row: turn the widget cards into Apple's Liquid Glass material.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Liquid Glass"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リキッドグラス"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "液态玻璃"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "液態玻璃"
-          }
-        }
-      }
-    },
-    "Liquid Glass widget cards" : {
-      "comment" : "Accessibility label for the Liquid Glass toggle.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Liquid Glass widget cards"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リキッドグラスのウィジェットカード"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "液态玻璃组件卡片"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "液態玻璃元件卡片"
-          }
-        }
-      }
-    },
-    "Mist" : {
-      "comment" : "Particle effect name: a slow drifting fog veil.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mist"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "霧"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "雾"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "霧"
-          }
-        }
-      }
-    },
-    "Monitor is off for this display" : {
-      "comment" : "Overlay preview placeholder when the Monitor board is switched off for this display.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Monitor is off for this display"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このディスプレイではモニターがオフです"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此显示器未开启监控叠加层"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此顯示器未開啟監控疊加層"
-          }
-        }
-      }
-    },
-    "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself." : {
-      "comment" : "Workshop setup error when auto-detection finds no SteamCMD.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通常の場所に SteamCMD が見つかりませんでした。「SteamCMD をインストール…」で Loomscreen 専用のコピーを用意するか、「SteamCMD を選択…」で自分で指定してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在常见位置未找到 SteamCMD。可用“安装 SteamCMD”让 Loomscreen 安装自己的副本，或用“选择 SteamCMD”自行指定。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在常見位置找不到 SteamCMD。可用「安裝 SteamCMD」讓 Loomscreen 安裝自己的副本，或用「選擇 SteamCMD」自行指定。"
-          }
-        }
-      }
-    },
-    "Re-authorize" : {
-      "comment" : "A button that re-authorizes a folder.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再許可"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新授权"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新授權"
-          }
-        }
-      }
-    },
-    "Reduce Transparency is on, so the cards stay solid." : {
-      "comment" : "Monitor settings subtitle when the system accessibility setting overrides the Liquid Glass option.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reduce Transparency is on, so the cards stay solid."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「透明度を下げる」がオンのため、カードは不透明のままです。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统已开启「降低透明度」，卡片将保持不透明。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統已開啟「降低透明度」，卡片將維持不透明。"
-          }
-        }
-      }
-    },
-    "Save current values as a preset" : {
-      "comment" : "Scene preset menu item that saves the current settings as a new preset.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save current values as a preset"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在の値をプリセットとして保存"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将当前参数保存为预设"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將目前參數儲存為預設"
-          }
-        }
-      }
-    },
-    "Sign in to another account" : {
-      "comment" : "Steam account menu item that opens the sign-in sheet.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in to another account"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "別のアカウントにサインイン"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登录其他账户"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登入其他帳戶"
-          }
-        }
-      }
-    },
-    "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone." : {
-      "comment" : "Confirmation message. Placeholders are the overlay's name and the number of other displays.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "他の %2$lld 台のディスプレイの %1$@ オーバーレイを置き換えます。壁紙はそのままです。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这会替换另外 %2$lld 台显示器上的%1$@叠加层，它们的壁纸不受影响。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "這會取代另外 %2$lld 台顯示器上的%1$@疊加層，它們的桌布不受影響。"
-          }
-        }
-      }
-    },
-    "Trust" : {
-      "comment" : "Button in the Origin Access row that opens the trust confirmation dialog. Ellipsis signals an intermediate confirmation.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trust"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "信頼"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "信任"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "信任"
-          }
-        }
-      }
-    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -3673,6 +2804,29 @@
         }
       }
     },
+    "Add Application" : {
+      "comment" : "A button that opens a file picker to select an app.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリケーションを追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加应用程序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入應用程式"
+          }
+        }
+      }
+    },
     "Add apps like Xcode, Final Cut Pro, or a game." : {
       "comment" : "A description of the purpose of the app picker.",
       "isCommentAutoGenerated" : true,
@@ -4477,6 +3631,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI 引擎"
+          }
+        }
+      }
+    },
+    "AI Session History Access" : {
+      "comment" : "Settings section title: grants that let the Agent Session widget read local AI coding-agent session transcripts.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Session History Access"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI セッション履歴へのアクセス"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 会话历史访问权限"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 工作階段記錄存取權限"
           }
         }
       }
@@ -5355,6 +4538,92 @@
         }
       }
     },
+    "Apply Project" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply Project"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクトを適用"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用项目"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用專案"
+          }
+        }
+      }
+    },
+    "Apply Project Folder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply Project Folder"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクトフォルダを適用"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用项目文件夹"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用專案資料夾"
+          }
+        }
+      }
+    },
+    "Apply this overlay to every other display?" : {
+      "comment" : "Confirmation title for copying one overlay to the other displays.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply this overlay to every other display?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このオーバーレイを他のすべてのディスプレイに適用しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把这个叠加层应用到其它所有显示器？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把這個疊加層套用到其它所有顯示器？"
+          }
+        }
+      }
+    },
     "Apply this wallpaper to every other display?" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5465,6 +4734,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "套用到全部"
+          }
+        }
+      }
+    },
+    "Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone" : {
+      "comment" : "Tooltip for the Apply to All button while an overlay page is showing.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてに適用 — このディスプレイのオーバーレイを他のすべてに複製します（壁紙は変更しません）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用到全部 — 把这台显示器的叠加层复制到其它所有显示器，不改动它们的壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用到全部 — 把這台顯示器的疊加層複製到其它所有顯示器，不更動它們的桌布"
           }
         }
       }
@@ -6014,6 +5312,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "極光"
+          }
+        }
+      }
+    },
+    "Authorize" : {
+      "comment" : "A button that opens a dialog to authorize a folder.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許可"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授权"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授權"
           }
         }
       }
@@ -8191,6 +7512,35 @@
         }
       }
     },
+    "Cards refract the wallpaper behind them, the way Apple's own widgets do. Each card re-samples what is behind it every frame, so a busy live wallpaper under a full board costs more energy than the painted cards." : {
+      "comment" : "Monitor settings explanation for the Liquid Glass option, including its energy cost.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cards refract the wallpaper behind them, the way Apple's own widgets do. Each card re-samples what is behind it every frame, so a busy live wallpaper under a full board costs more energy than the painted cards."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 純正ウィジェットと同じように、カードが背後の壁紙を屈折させます。各カードは毎フレーム背後を再サンプリングするため、動きの多い壁紙の上に多数の計器を並べると、描画カードより電力を消費します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片会像 Apple 自家小组件那样折射背后的壁纸。每张卡片每帧都会重新采样背后的内容，所以在动态壁纸上摆满仪表时，比绘制卡片更耗电。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片會像 Apple 自家小工具那樣折射背後的桌布。每張卡片每一影格都會重新取樣背後的內容，所以在動態桌布上擺滿儀表時，比繪製卡片更耗電。"
+          }
+        }
+      }
+    },
     "Center" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8876,6 +8226,91 @@
         }
       }
     },
+    "Choose Different Source" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Different Source"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のソースを選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "换一个来源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "換一個來源"
+          }
+        }
+      }
+    },
+    "Choose Different Video" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Different Video"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のビデオを選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "换一个视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "換一個影片"
+          }
+        }
+      }
+    },
+    "Choose File" : {
+      "comment" : "Schedule slot row menu: pick a video from disk via NSOpenPanel.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose File"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルを選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇檔案"
+          }
+        }
+      }
+    },
     "Choose Steam's folder to get started." : {
       "comment" : "Steam connection header subtitle when the library is not authorized.",
       "localizations" : {
@@ -8924,6 +8359,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請選擇包含 config/config.vdf 的 Steam 主資料夾。"
+          }
+        }
+      }
+    },
+    "Choose SteamCMD" : {
+      "comment" : "Menu item to point Loomscreen at an existing SteamCMD install.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose SteamCMD"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD を選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 SteamCMD"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇 SteamCMD"
           }
         }
       }
@@ -9009,6 +8473,38 @@
         }
       }
     },
+    "Choose Video" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Video"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオを選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇影片"
+          }
+        }
+      }
+    },
+    "Choose Video…" : {
+      "comment" : "Label for a button that opens a file picker to choose a video.",
+      "isCommentAutoGenerated" : true
+    },
     "Choose wallpaper type" : {
       "comment" : "A hint for the user to choose a wallpaper type.",
       "isCommentAutoGenerated" : true,
@@ -9035,6 +8531,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇桌布類型"
+          }
+        }
+      }
+    },
+    "Choose Web" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Web"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web を選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择 Web"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇 Web"
           }
         }
       }
@@ -11134,6 +10658,35 @@
         }
       }
     },
+    "Copies this overlay to every other connected display; their wallpapers are not changed" : {
+      "comment" : "Accessibility hint for the Apply to All button while an overlay page is showing.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copies this overlay to every other connected display; their wallpapers are not changed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このオーバーレイを接続中の他のすべてのディスプレイに複製します。壁紙は変更されません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把这个叠加层复制到其它所有已连接的显示器，不改动它们的壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把這個疊加層複製到其它所有已連接的顯示器，不更動它們的桌布"
+          }
+        }
+      }
+    },
     "Copy" : {
       "localizations" : {
         "en" : {
@@ -11610,6 +11163,35 @@
         }
       }
     },
+    "Couldn't add “%@”: %@" : {
+      "comment" : "One line of the summary shown after importing several videos at once. Placeholders are the file name and the failure reason.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't add “%@”: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」を追加できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法添加“%@”:%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法加入「%@」:%@"
+          }
+        }
+      }
+    },
     "Couldn't add %@ to Bookmarks." : {
       "comment" : "Workshop installed bookmark failure. Placeholder is the wallpaper title.",
       "localizations" : {
@@ -11629,6 +11211,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法將 %@ 加入書籤。"
+          }
+        }
+      }
+    },
+    "Couldn't add the video: it was removed from System Wallpaper while it was still being copied." : {
+      "comment" : "Error shown when a publish is abandoned because the user removed that item, or cleared the library, mid-copy.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't add the video: it was removed from System Wallpaper while it was still being copied."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画を追加できませんでした。コピー中にシステム壁紙から削除されました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法添加该视频:复制过程中它已从系统壁纸中移除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法加入該影片:複製過程中它已從系統桌布中移除。"
           }
         }
       }
@@ -12547,6 +12158,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "目前使用中。點一下可重新啟用。"
+          }
+        }
+      }
+    },
+    "Custom" : {
+      "comment" : "Add Slot menu: insert a slot at the next free time range, not a preset.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カスタム"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自訂"
           }
         }
       }
@@ -15827,6 +15467,35 @@
         }
       }
     },
+    "Edit" : {
+      "comment" : "A button label that opens a dialog for editing CSS.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編集"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯"
+          }
+        }
+      }
+    },
     "Edit application exceptions" : {
       "localizations" : {
         "ja" : {
@@ -18498,6 +18167,35 @@
         }
       }
     },
+    "Export" : {
+      "comment" : "Button that writes the Monitor board layout to a file.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書き出す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匯出"
+          }
+        }
+      }
+    },
     "Export Configuration" : {
       "localizations" : {
         "en" : {
@@ -18627,35 +18325,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "匯出監控版面"
-          }
-        }
-      }
-    },
-    "Export" : {
-      "comment" : "Button that writes the Monitor board layout to a file.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Export"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "書き出す"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "导出"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "匯出"
           }
         }
       }
@@ -21595,6 +21264,35 @@
         }
       }
     },
+    "Import from Files" : {
+      "comment" : "Primary button in the Add Video sheet; opens the file picker.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import from Files"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルから読み込む"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从文件导入"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從檔案輸入"
+          }
+        }
+      }
+    },
     "Import Monitor Layout" : {
       "comment" : "Open-panel title for importing a monitor board layout.",
       "localizations" : {
@@ -21989,6 +21687,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "HTTP 不安全 — 內容無法驗證。"
+          }
+        }
+      }
+    },
+    "Install SteamCMD" : {
+      "comment" : "Primary button in Workshop setup that starts the managed SteamCMD install.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install SteamCMD"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD をインストール"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装 SteamCMD"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝 SteamCMD"
           }
         }
       }
@@ -23337,6 +23064,29 @@
         }
       }
     },
+    "Link folder" : {
+      "comment" : "A button that links a Wallpaper Engine install folder.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォルダをリンク"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关联文件夹"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連結資料夾"
+          }
+        }
+      }
+    },
     "Linked" : {
       "comment" : "Folder-link success toast headline.",
       "localizations" : {
@@ -23549,6 +23299,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已連結到 %@，用於擴充場景相容性。"
+          }
+        }
+      }
+    },
+    "Liquid Glass" : {
+      "comment" : "Monitor settings row: turn the widget cards into Apple's Liquid Glass material.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liquid Glass"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リキッドグラス"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "液态玻璃"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "液態玻璃"
+          }
+        }
+      }
+    },
+    "Liquid Glass widget cards" : {
+      "comment" : "Accessibility label for the Liquid Glass toggle.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liquid Glass widget cards"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リキッドグラスのウィジェットカード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "液态玻璃组件卡片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "液態玻璃元件卡片"
           }
         }
       }
@@ -26394,8 +26202,38 @@
         }
       }
     },
+    "Mist" : {
+      "comment" : "Particle effect name: a slow drifting fog veil.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mist"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "霧"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雾"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "霧"
+          }
+        }
+      }
+    },
     "Monitor" : {
-      "comment" : "Bookmark source label for the system monitor wallpaper.",
+      "comment" : "Overlay name inside the apply-to-all confirmation.",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -26413,6 +26251,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "監控"
+          }
+        }
+      }
+    },
+    "Monitor is off for this display" : {
+      "comment" : "Overlay preview placeholder when the Monitor board is switched off for this display.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monitor is off for this display"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイではモニターがオフです"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此显示器未开启监控叠加层"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此顯示器未開啟監控疊加層"
           }
         }
       }
@@ -28575,6 +28442,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未選擇 SteamCMD 執行檔。"
+          }
+        }
+      }
+    },
+    "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself." : {
+      "comment" : "Workshop setup error when auto-detection finds no SteamCMD.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通常の場所に SteamCMD が見つかりませんでした。「SteamCMD をインストール…」で Loomscreen 専用のコピーを用意するか、「SteamCMD を選択…」で自分で指定してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在常见位置未找到 SteamCMD。可用“安装 SteamCMD”让 Loomscreen 安装自己的副本，或用“选择 SteamCMD”自行指定。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在常見位置找不到 SteamCMD。可用「安裝 SteamCMD」讓 Loomscreen 安裝自己的副本，或用「選擇 SteamCMD」自行指定。"
           }
         }
       }
@@ -34024,6 +33920,10 @@
         }
       }
     },
+    "Preview the overlay over this display's wallpaper instead of an empty canvas" : {
+      "comment" : "Text describing the wallpaper backdrop setting.",
+      "isCommentAutoGenerated" : true
+    },
     "Preview unavailable" : {
       "localizations" : {
         "en" : {
@@ -34896,6 +34796,29 @@
         }
       }
     },
+    "Re-authorize" : {
+      "comment" : "A button that re-authorizes a folder.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再許可"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新授权"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新授權"
+          }
+        }
+      }
+    },
     "Re-decodes the scene with the current cache state" : {
       "localizations" : {
         "en" : {
@@ -35603,6 +35526,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "減少動態效果"
+          }
+        }
+      }
+    },
+    "Reduce Transparency is on, so the cards stay solid." : {
+      "comment" : "Monitor settings subtitle when the system accessibility setting overrides the Liquid Glass option.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reduce Transparency is on, so the cards stay solid."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「透明度を下げる」がオンのため、カードは不透明のままです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统已开启「降低透明度」，卡片将保持不透明。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統已開啟「降低透明度」，卡片將維持不透明。"
           }
         }
       }
@@ -39219,6 +39171,35 @@
         }
       }
     },
+    "Save current values as a preset" : {
+      "comment" : "Scene preset menu item that saves the current settings as a new preset.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save current values as a preset"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在の値をプリセットとして保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将当前参数保存为预设"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將目前參數儲存為預設"
+          }
+        }
+      }
+    },
     "Save key and close" : {
       "comment" : "A button that saves a Steam Web API key on this Mac and closes the sheet.",
       "localizations" : {
@@ -42452,6 +42433,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登入後下載將以你的帳戶進行。"
+          }
+        }
+      }
+    },
+    "Sign in to another account" : {
+      "comment" : "Steam account menu item that opens the sign-in sheet.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to another account"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のアカウントにサインイン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录其他账户"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入其他帳戶"
           }
         }
       }
@@ -48507,6 +48517,36 @@
         }
       }
     },
+    "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone." : {
+      "comment" : "Confirmation message. Placeholders are the overlay's name and the number of other displays.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他の %2$lld 台のディスプレイの %1$@ オーバーレイを置き換えます。壁紙はそのままです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这会替换另外 %2$lld 台显示器上的%1$@叠加层，它们的壁纸不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這會取代另外 %2$lld 台顯示器上的%1$@疊加層，它們的桌布不受影響。"
+          }
+        }
+      }
+    },
     "This replaces the wallpaper on %@ other displays with the same content and settings as this one." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50032,6 +50072,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放控制"
+          }
+        }
+      }
+    },
+    "Trust" : {
+      "comment" : "Button in the Origin Access row that opens the trust confirmation dialog. Ellipsis signals an intermediate confirmation.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trust"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "信頼"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "信任"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "信任"
           }
         }
       }
@@ -53250,6 +53319,7 @@
       }
     },
     "Weather" : {
+      "comment" : "Overlay name inside the apply-to-all confirmation.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -55540,64 +55610,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 工作階段已過期。請在終端機重新登入後再檢查。"
-          }
-        }
-      }
-    },
-    "Couldn't add the video: it was removed from System Wallpaper while it was still being copied." : {
-      "comment" : "Error shown when a publish is abandoned because the user removed that item, or cleared the library, mid-copy.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't add the video: it was removed from System Wallpaper while it was still being copied."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "動画を追加できませんでした。コピー中にシステム壁紙から削除されました。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法添加该视频:复制过程中它已从系统壁纸中移除。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法加入該影片:複製過程中它已從系統桌布中移除。"
-          }
-        }
-      }
-    },
-    "Couldn't add “%@”: %@" : {
-      "comment" : "One line of the summary shown after importing several videos at once. Placeholders are the file name and the failure reason.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't add “%@”: %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」を追加できませんでした: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法添加“%@”:%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法加入「%@」:%@"
           }
         }
       }
