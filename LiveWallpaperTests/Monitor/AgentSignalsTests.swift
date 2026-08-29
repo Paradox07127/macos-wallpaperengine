@@ -5,54 +5,84 @@ import Testing
 @Suite("Monitor agent-session signals")
 struct AgentSignalsTests {
 
-    @Test("toolLoop fires on 8 consecutive same-name tools within 10 min")
+    private func run(_ name: String, _ count: Int, spacing: Double = 5, base: Double = 1_000) -> [MonitorAgentToolEvent] {
+        (0..<count).map { MonitorAgentToolEvent(name: name, at: base + Double($0) * spacing, ok: true) }
+    }
+
+    @Test("toolLoop fires on a full run of same-name tools within 10 min")
     func toolLoopDetected() {
-        let base = 1_000.0
-        let tools = (0..<8).map { MonitorAgentToolEvent(name: "Bash", at: base + Double($0) * 30, ok: true) }
+        let tools = run("Bash", AgentSignalDeriver.toolLoopRun, spacing: 5)
         #expect(AgentSignalDeriver.isToolLoop(tools))
         let warning = AgentSignalDeriver.warning(
             recentTools: tools, status: .running, processAlive: true,
-            lastEventAt: base + 210, now: base + 215
+            lastEventAt: 1_200, now: 1_205
         )
         #expect(warning == "toolLoop")
     }
 
-    @Test("no loop when names differ or run is short or window too wide")
-    func toolLoopNegatives() {
-        let base = 1_000.0
-        let mixed = (0..<8).map { MonitorAgentToolEvent(name: $0 % 2 == 0 ? "Bash" : "Read", at: base + Double($0), ok: true) }
-        #expect(!AgentSignalDeriver.isToolLoop(mixed))
-        let short = (0..<7).map { MonitorAgentToolEvent(name: "Bash", at: base + Double($0), ok: true) }
-        #expect(!AgentSignalDeriver.isToolLoop(short))
-        let wide = (0..<8).map { MonitorAgentToolEvent(name: "Bash", at: base + Double($0) * 120, ok: true) }
-        #expect(!AgentSignalDeriver.isToolLoop(wide))
+    /// The threshold used to be 8, which is normal work, not a loop: 23 of the
+    /// 58 most recent local sessions tripped it, one of them on eight `Bash`
+    /// calls inside 61 seconds. Anything at or under a routine burst has to
+    /// stay quiet or the widget's warn chip means nothing.
+    @Test("a routine burst of identical tools is not a loop")
+    func routineBurstIsNotALoop() {
+        #expect(!AgentSignalDeriver.isToolLoop(run("Bash", 8, spacing: 7)))
+        #expect(!AgentSignalDeriver.isToolLoop(run("Read", 12, spacing: 3)))
+        #expect(!AgentSignalDeriver.isToolLoop(run("Bash", AgentSignalDeriver.toolLoopRun - 1, spacing: 5)))
     }
 
-    @Test("stale fires when running + alive + no event > 5 min")
+    @Test("no loop when names differ or the window is too wide")
+    func toolLoopNegatives() {
+        let n = AgentSignalDeriver.toolLoopRun
+        let mixed = (0..<n).map {
+            MonitorAgentToolEvent(name: $0 % 2 == 0 ? "Bash" : "Read", at: 1_000 + Double($0), ok: true)
+        }
+        #expect(!AgentSignalDeriver.isToolLoop(mixed))
+        // Same run, spread past the 10-minute window.
+        #expect(!AgentSignalDeriver.isToolLoop(run("Bash", n, spacing: 120)))
+    }
+
+    /// The detector can only see what the models keep, so the buffer has to be
+    /// able to hold a whole run — a cap below `toolLoopRun` would make the
+    /// warning unreachable rather than rare.
+    @Test("the retained buffer can hold a full run")
+    func bufferHoldsAFullRun() {
+        #expect(AgentSignalDeriver.toolLoopBuffer >= AgentSignalDeriver.toolLoopRun)
+    }
+
+    @Test("stale fires only past the silence window")
     func staleDetected() {
         let now = 10_000.0
-        let warning = AgentSignalDeriver.warning(
-            recentTools: [], status: .running, processAlive: true,
-            lastEventAt: now - 400, now: now
-        )
-        #expect(warning == "stale")
+        func warn(silentFor seconds: Double) -> String? {
+            AgentSignalDeriver.warning(
+                recentTools: [], status: .running, processAlive: true,
+                lastEventAt: now - seconds, now: now
+            )
+        }
+        #expect(warn(silentFor: AgentSignalDeriver.staleAfter + 60) == "stale")
+        // A long build, a full test run, or a fan-out to review subagents all
+        // sit on one pending tool call for minutes with nothing to write.
+        #expect(warn(silentFor: 9 * 60) == nil)
     }
 
     @Test("no stale when idle, dead, or recently active; loop precedes stale")
     func staleNegativesAndPrecedence() {
         let now = 10_000.0
         #expect(AgentSignalDeriver.warning(
-            recentTools: [], status: .idle, processAlive: true, lastEventAt: now - 400, now: now
+            recentTools: [], status: .idle, processAlive: true,
+            lastEventAt: now - AgentSignalDeriver.staleAfter - 60, now: now
         ) == nil)
         #expect(AgentSignalDeriver.warning(
             recentTools: [], status: .running, processAlive: true, lastEventAt: now - 60, now: now
         ) == nil)
         #expect(AgentSignalDeriver.warning(
-            recentTools: [], status: .running, processAlive: false, lastEventAt: now - 400, now: now
+            recentTools: [], status: .running, processAlive: false,
+            lastEventAt: now - AgentSignalDeriver.staleAfter - 60, now: now
         ) == nil)
-        let loop = (0..<8).map { MonitorAgentToolEvent(name: "Bash", at: now - 300 + Double($0), ok: true) }
+        let loop = run("Bash", AgentSignalDeriver.toolLoopRun, spacing: 5, base: now - 300)
         #expect(AgentSignalDeriver.warning(
-            recentTools: loop, status: .running, processAlive: true, lastEventAt: now - 400, now: now
+            recentTools: loop, status: .running, processAlive: true,
+            lastEventAt: now - AgentSignalDeriver.staleAfter - 60, now: now
         ) == "toolLoop")
     }
 

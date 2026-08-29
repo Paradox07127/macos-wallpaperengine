@@ -5,11 +5,29 @@ enum AgentSignalDeriver {
     static let recentEventCap = 60
     static let recentToolCap = 8
 
-    static let toolLoopRun = 8
+    /// A run this long is a loop; anything shorter is an agent doing its job.
+    ///
+    /// This was 8, which flagged 23 of the 58 most recent local sessions —
+    /// including ones whose entire "loop" was eight `Bash` calls in 61
+    /// seconds. Only the tool *name* is compared (arguments are never stored,
+    /// by the privacy invariant), so the run length is the only thing carrying
+    /// the signal, and 8 sits below the 90th percentile of ordinary runs
+    /// (measured over the same corpus: p50 = 1, p90 = 12, p99 = 48, max 295).
+    /// 40 is just under that p99 and takes the corpus down to 2 sessions.
+    static let toolLoopRun = 40
+    /// Events kept per session for the detector — enough to see a whole run.
+    /// Separate from `recentToolCap`, which is the display tail.
+    static let toolLoopBuffer = 48
     static let toolLoopWindow: TimeInterval = 10 * 60
 
     /// A running+alive session with no new event for longer than this is "stale".
-    static let staleAfter: TimeInterval = 5 * 60
+    ///
+    /// Five minutes was shorter than the work: a full test run here is ~2 min,
+    /// and a session that fans out to review subagents sits on one pending
+    /// tool call for 5–9 minutes with nothing to write to the transcript. The
+    /// chip fired on those every time, which is the same way `toolLoop` at 8
+    /// stopped meaning anything.
+    static let staleAfter: TimeInterval = 15 * 60
 
     static let toolNameMaxLength = 64
 

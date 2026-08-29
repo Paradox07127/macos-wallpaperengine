@@ -10,8 +10,23 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
     case stars = "Stars"
     case fallingLeaves = "Leaves"
     case sakura = "Sakura"
+    case mist = "Mist"
 
     public var id: String { rawValue }
+
+    /// Whether wind should lean this effect.
+    ///
+    /// Only the ones that fall. Bokeh, fireflies and stars have no "down" to
+    /// tilt away from — leaning them just rotates the whole field, which reads
+    /// as the screen being crooked rather than as weather.
+    public var leansIntoWind: Bool {
+        switch self {
+        case .rain, .snow, .fallingLeaves, .sakura, .dust: return true
+        // Mist does not fall, so there is no fall direction to lean; it drifts
+        // sideways on its own instead.
+        case .none, .bokeh, .fireflies, .stars, .mist:     return false
+        }
+    }
 
     /// Tolerant decoder: a configuration persisted with a particle effect
     /// that no longer exists (e.g. the rolled-back `Lightning`) decodes to
@@ -38,6 +53,7 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
         case .stars: return "Stars"
         case .fallingLeaves: return "Leaves"
         case .sakura: return "Sakura"
+        case .mist: return "Mist"
         }
     }
 
@@ -52,6 +68,7 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
         case .stars: return "star"
         case .fallingLeaves: return "leaf"
         case .sakura: return "camera.macro"
+        case .mist: return "cloud.fog"
         }
     }
 }

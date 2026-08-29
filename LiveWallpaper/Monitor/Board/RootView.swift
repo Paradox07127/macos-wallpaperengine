@@ -30,13 +30,13 @@ struct RootView: View {
     @FocusState private var boardFocused: Bool
 
     @State private var addButtonFrame: CGRect = .zero
-    private let nameOnlyTiles: Bool
+    private let isInspectorPreview: Bool
 
-    init(model: InteractionModel, data: DataModel, nameOnlyTiles: Bool = false) {
+    init(model: InteractionModel, data: DataModel, isInspectorPreview: Bool = false) {
         self.model = model
         self.data = data
         self.history = data.historyStore
-        self.nameOnlyTiles = nameOnlyTiles
+        self.isInspectorPreview = isInspectorPreview
     }
 
     var body: some View {
@@ -183,7 +183,7 @@ struct RootView: View {
         renderHeight: CGFloat,
         now: Date
     ) -> some View {
-        if nameOnlyTiles {
+        if isInspectorPreview {
             MonitorWidgetNameTile(kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius)
         } else {
             WidgetFactory.tile(
@@ -266,7 +266,7 @@ struct RootView: View {
 
     @ViewBuilder
     private func editControls(geometry: MonitorBoardGeometry, boardSize: CGSize) -> some View {
-        MonitorBoardEditToolbar(model: model)
+        MonitorBoardEditToolbar(model: model, showsDone: !isInspectorPreview)
             .padding(.top, toolbarTopInset(boardHeight: boardSize.height))
             .frame(width: boardSize.width, height: boardSize.height, alignment: .top)
             .zIndex(70)

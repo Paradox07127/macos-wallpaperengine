@@ -522,7 +522,7 @@ struct ScreenRenameMenu: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
-                Button("Rename…") {
+                Button("Rename") {
                     draft = screen.name
                     isRenaming = true
                 }

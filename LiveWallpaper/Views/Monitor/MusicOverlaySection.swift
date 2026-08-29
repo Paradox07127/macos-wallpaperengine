@@ -23,6 +23,9 @@ struct MusicOverlaySection: View {
         screenManager.monitorOverlay(for: screen)
     }
 
+    /// Whether this display's wallpaper has a still frame to preview against.
+    var backdropAvailable: Bool = false
+
     private var music: MusicOverlayConfiguration { overlay.music }
 
     private var isOn: Bool { music.enabled }
@@ -81,6 +84,8 @@ struct MusicOverlaySection: View {
                 sizeRow
                 Divider()
                 positionRow
+                Divider()
+                OverlayBackdropRow(available: backdropAvailable)
                 #if !LITE_BUILD
                 // Keyed to the switch, not the live tap: demand-driven capture is
                 // legitimately idle while music is paused, and that's not a
@@ -364,7 +369,12 @@ struct MusicOverlaySection: View {
         GroupBox {
             CollapsibleSection(
                 title: "Typography",
-                systemImage: "textformat",
+                // Not `textformat`: SF Symbols ships localized variants of it,
+                // so it renders as the words 格式 / 書式 / Аа rather than a
+                // glyph — and it follows the *system* language, which need not
+                // be the one the app is running in. Abstract rules have no
+                // locale to disagree with.
+                systemImage: "text.alignleft",
                 isExpanded: $isTypographyExpanded
             ) {
                 VStack(alignment: .leading, spacing: 8) {

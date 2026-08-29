@@ -4,44 +4,63 @@ import Foundation
 
 struct DiskWidgetTests {
 
-    @Test("tail returns the last N samples, or the whole series when shorter")
-    func tailWindow() {
-        let series = (0..<30).map(Double.init)
-        let last20 = DiskWidgetView.tail(series, count: 20)
-        #expect(last20.count == 20)
-        #expect(last20.first == 10)
-        #expect(last20.last == 29)
-
-        let short = [1.0, 2.0, 3.0]
-        #expect(DiskWidgetView.tail(short, count: 20) == short)
+    /// The whole point of the change: the same "60s" window has to mean the
+    /// same sixty seconds whether the board is sampling twice a second or once
+    /// every five. Counting samples made it mean 30s at one end of the refresh
+    /// slider and 300s at the other.
+    @Test("windowed cuts by wall clock, not by sample count")
+    func windowedIsRateIndependent() {
+        func history(step: Double, count: Int) -> MonitorHistorySnapshot {
+            var h = MonitorHistorySnapshot()
+            h.sampleTimes = (0..<count).map { 1_000 + Double($0) * step }
+            h.diskRead = (0..<count).map(Double.init)
+            return h
+        }
+        // 0.5 s/sample: sixty seconds is 121 points.
+        let fast = history(step: 0.5, count: 400)
+        #expect(fast.windowed(fast.diskRead, seconds: 60).count == 121)
+        // 5 s/sample: the same sixty seconds is 13.
+        let slow = history(step: 5, count: 400)
+        #expect(slow.windowed(slow.diskRead, seconds: 60).count == 13)
+        // Both end on the newest sample.
+        #expect(fast.windowed(fast.diskRead, seconds: 60).last == 399)
+        #expect(slow.windowed(slow.diskRead, seconds: 60).last == 399)
     }
 
-    @Test("tail also windows the L card's 120-sample default")
-    func tailWindowLarge() {
-        let series = (0..<200).map(Double.init)
-        let last120 = DiskWidgetView.tail(series, count: 120)
-        #expect(last120.count == 120)
-        #expect(last120.first == 80)
-        #expect(last120.last == 199)
-
-        let atCapacity = (0..<120).map(Double.init)
-        #expect(DiskWidgetView.tail(atCapacity, count: 120) == atCapacity)
+    @Test("windowed keeps a drawable chart and survives a short or unaligned series")
+    func windowedEdges() {
+        var h = MonitorHistorySnapshot()
+        h.sampleTimes = (0..<10).map { 1_000 + Double($0) }
+        h.diskRead = (0..<10).map(Double.init)
+        // Window shorter than one sample gap still yields two points to draw.
+        #expect(h.windowed(h.diskRead, seconds: 0).count == 2)
+        // Whole series when the window covers all of it.
+        #expect(h.windowed(h.diskRead, seconds: 600) == h.diskRead)
+        // Times out of step with the series: fall back to a count, never crash.
+        var broken = MonitorHistorySnapshot()
+        broken.sampleTimes = [1, 2, 3]
+        broken.diskRead = (0..<30).map(Double.init)
+        #expect(broken.windowed(broken.diskRead, seconds: 20).count == 20)
+        // No times at all.
+        var empty = MonitorHistorySnapshot()
+        empty.diskRead = [1, 2, 3]
+        #expect(empty.windowed(empty.diskRead, seconds: 20) == [1, 2, 3])
     }
 
     @Test("absent/invalid historyWindow falls back to the caller's default")
     func historyWindowFallsBackWhenAbsent() {
-        #expect(DiskWidgetView.historyWindowSamples(optionSeconds: nil, fallbackSeconds: 120) == 120)
-        #expect(DiskWidgetView.historyWindowSamples(optionSeconds: 0, fallbackSeconds: 120) == 120)
-        #expect(DiskWidgetView.historyWindowSamples(optionSeconds: -30, fallbackSeconds: 120) == 120)
-        #expect(DiskWidgetView.historyWindowSamples(optionSeconds: .nan, fallbackSeconds: 120) == 120)
-        #expect(DiskWidgetView.historyWindowSamples(optionSeconds: .infinity, fallbackSeconds: 120) == 120)
+        #expect(DiskWidgetView.historyWindowSeconds(optionSeconds: nil, fallbackSeconds: 120) == 120)
+        #expect(DiskWidgetView.historyWindowSeconds(optionSeconds: 0, fallbackSeconds: 120) == 120)
+        #expect(DiskWidgetView.historyWindowSeconds(optionSeconds: -30, fallbackSeconds: 120) == 120)
+        #expect(DiskWidgetView.historyWindowSeconds(optionSeconds: .nan, fallbackSeconds: 120) == 120)
+        #expect(DiskWidgetView.historyWindowSeconds(optionSeconds: .infinity, fallbackSeconds: 120) == 120)
     }
 
     @Test("a valid historyWindow override rounds to the nearest sample, floored at 2")
     func historyWindowUsesValidOverride() {
-        #expect(DiskWidgetView.historyWindowSamples(optionSeconds: 60, fallbackSeconds: 120) == 60)
-        #expect(DiskWidgetView.historyWindowSamples(optionSeconds: 59.6, fallbackSeconds: 120) == 60)
-        #expect(DiskWidgetView.historyWindowSamples(optionSeconds: 0.4, fallbackSeconds: 120) == 2)
+        #expect(DiskWidgetView.historyWindowSeconds(optionSeconds: 60, fallbackSeconds: 120) == 60)
+        #expect(DiskWidgetView.historyWindowSeconds(optionSeconds: 59.6, fallbackSeconds: 120) == 60)
+        #expect(DiskWidgetView.historyWindowSeconds(optionSeconds: 0.4, fallbackSeconds: 120) == 2)
     }
 
     @Test("only the literal 'compact' collapses the split legend")

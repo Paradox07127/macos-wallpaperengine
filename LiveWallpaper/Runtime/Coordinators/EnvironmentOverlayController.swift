@@ -22,6 +22,7 @@ final class EnvironmentOverlayController {
     func apply(
         effect: ParticleEffect,
         density: Double,
+        tiltRadians: Double = 0,
         screenID: CGDirectDisplayID,
         screenFrame: NSRect
     ) {
@@ -33,7 +34,7 @@ final class EnvironmentOverlayController {
         let host = hosts[screenID] ?? makeHost(screenID: screenID, screenFrame: screenFrame)
         host.window.setFrame(screenFrame, display: true)
         host.view.frame = NSRect(origin: .zero, size: screenFrame.size)
-        host.view.setEffect(effect, density: CGFloat(density))
+        host.view.setEffect(effect, density: CGFloat(density), tiltRadians: CGFloat(tiltRadians))
         host.view.setSuspended(host.suspended)
         if !host.suspended {
             host.window.orderFrontRegardless()

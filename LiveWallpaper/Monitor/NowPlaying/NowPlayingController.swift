@@ -22,6 +22,13 @@ struct NowPlayingControlMapping: Sendable {
     let nextPhrase: String
     let previousPhrase: String
     let seekPhrase: String?
+    /// Reads the playhead. Present even for players whose notification already
+    /// carries a position — the script is the only route for the ones that
+    /// don't, and having the row filled in keeps the two lists symmetric.
+    let positionQueryPhrase: String?
+    /// Reads a cover URL straight off the player instead of resolving one over
+    /// the network. Only some players expose it.
+    let artworkURLQueryPhrase: String?
 
     static let all: [NowPlayingControlMapping] = [
         NowPlayingControlMapping(
@@ -30,7 +37,11 @@ struct NowPlayingControlMapping: Sendable {
             playPausePhrase: "playpause",
             nextPhrase: "next track",
             previousPhrase: "previous track",
-            seekPhrase: "set player position to"
+            seekPhrase: "set player position to",
+            positionQueryPhrase: "player position",
+            // Spotify's dictionary hands out the cover URL directly, which
+            // saves the oEmbed lookup that otherwise stands between us and it.
+            artworkURLQueryPhrase: "artwork url of current track"
         ),
         NowPlayingControlMapping(
             bundleID: "com.apple.Music",
@@ -38,7 +49,16 @@ struct NowPlayingControlMapping: Sendable {
             playPausePhrase: "playpause",
             nextPhrase: "next track",
             previousPhrase: "previous track",
-            seekPhrase: "set player position to"
+            seekPhrase: "set player position to",
+            // The one field Music's notification never sends. Its dictionary
+            // has always had it (`sdef /System/Applications/Music.app`:
+            // `<property name="player position" code="pPos" type="real">`), so
+            // the missing progress bar was us not asking, not Music not telling.
+            positionQueryPhrase: "player position",
+            // Music's dictionary exposes artwork as raw image data, not a URL;
+            // pulling a picture through an Apple Event is not worth it when
+            // the iTunes Search route already works.
+            artworkURLQueryPhrase: nil
         ),
     ]
 
@@ -62,6 +82,42 @@ enum NowPlayingControlFailure: Error, Equatable, Sendable {
     case throttled
     /// The player (or the Apple Event machinery) rejected the script.
     case scriptFailed(OSStatus)
+}
+
+/// A read of a player's own state.
+///
+/// Unlike a transport command, a query is never the result of the user
+/// clicking anything, so it must never provoke the Automation consent dialog:
+/// this layer is wallpaper, and a modal nobody asked for is worse than a
+/// missing progress bar. `value(for:from:)` therefore answers nil until
+/// consent already exists for that target.
+enum NowPlayingQuery: Sendable, Hashable {
+    case playerPosition
+    case artworkURL
+}
+
+/// An AppleScript result, kept in the shape the descriptor had.
+///
+/// Reals must not come back through `stringValue`: AppleScript formats those
+/// for the current locale, so a machine reading `12,345` as a Double would get
+/// nil in half of Europe.
+enum NowPlayingScriptValue: Sendable, Equatable {
+    case text(String)
+    case number(Double)
+
+    var doubleValue: Double? {
+        switch self {
+        case let .number(value): return value
+        case let .text(text): return Double(text)
+        }
+    }
+
+    var stringValue: String? {
+        switch self {
+        case let .text(text): return text.isEmpty ? nil : text
+        case let .number(value): return String(value)
+        }
+    }
 }
 
 /// What one script execution reports back. Carries the OSStatus because the
@@ -91,6 +147,8 @@ final class NowPlayingController: ObservableObject {
     /// tests can exercise every rule without an Apple Event ever leaving the
     /// process.
     typealias Executor = @Sendable (String) -> Result<Void, NowPlayingScriptError>
+    /// Same round trip, but the descriptor's value comes back.
+    typealias QueryExecutor = @Sendable (String) -> Result<NowPlayingScriptValue, NowPlayingScriptError>
     /// Bundle ID in, `AEDeterminePermissionToAutomateTarget` status out.
     typealias PermissionProbe = @Sendable (String) -> OSStatus
 
@@ -124,6 +182,7 @@ final class NowPlayingController: ObservableObject {
     }
 
     private let executor: Executor
+    private let queryExecutor: QueryExecutor
     private let probe: PermissionProbe
     /// Keyed by the whole command, so two *different* seeks in quick succession
     /// both land while a repeated tap of the same button does not.
@@ -145,9 +204,11 @@ final class NowPlayingController: ObservableObject {
 
     init(
         executor: @escaping Executor = NowPlayingController.runAppleScript,
+        queryExecutor: @escaping QueryExecutor = NowPlayingController.runAppleScriptQuery,
         probe: @escaping PermissionProbe = NowPlayingController.determinePermission
     ) {
         self.executor = executor
+        self.queryExecutor = queryExecutor
         self.probe = probe
     }
 
@@ -171,6 +232,18 @@ final class NowPlayingController: ObservableObject {
             phrase = "\(seekPhrase) \(secondsLiteral(clampedSeek(seconds: seconds, duration: duration)))"
         }
         return "tell application \"\(mapping.applicationName)\" to \(phrase)"
+    }
+
+    /// nil when this player has no vocabulary for the query.
+    nonisolated static func script(for query: NowPlayingQuery, bundleID: String?) -> String? {
+        guard let mapping = NowPlayingControlMapping.mapping(for: bundleID) else { return nil }
+        let phrase: String?
+        switch query {
+        case .playerPosition: phrase = mapping.positionQueryPhrase
+        case .artworkURL: phrase = mapping.artworkURLQueryPhrase
+        }
+        guard let phrase else { return nil }
+        return "tell application \"\(mapping.applicationName)\" to get \(phrase)"
     }
 
     nonisolated static func clampedSeek(seconds: Double, duration: Double?) -> Double {
@@ -226,6 +299,40 @@ final class NowPlayingController: ObservableObject {
         }
     }
 
+    /// Reads one value off a player. nil whenever nothing was asked — no
+    /// vocabulary, or consent not already established — so a caller can never
+    /// tell a refusal apart from an unasked question, which is deliberate:
+    /// both mean "carry on without it".
+    ///
+    /// Unthrottled on purpose. The throttle exists to swallow double-clicks on
+    /// a button; a poller sets its own cadence and would only be silently
+    /// starved by a shared window.
+    func value(for query: NowPlayingQuery, from bundleID: String?) async -> NowPlayingScriptValue? {
+        guard let bundleID, let script = Self.script(for: query, bundleID: bundleID) else { return nil }
+        // Consent is granted per target in System Settings and survives
+        // relaunches, but this map starts empty every launch — so without this
+        // the playhead only ever appeared after the user happened to press a
+        // transport button, in a session where they had already granted it
+        // months ago. The probe reads the existing answer and never prompts.
+        if authorization(for: bundleID) == .notDetermined {
+            await refreshAuthorization(for: bundleID)
+        }
+        guard authorization(for: bundleID) == .authorized else { return nil }
+        let queryExecutor = self.queryExecutor
+        let result = await withCheckedContinuation { continuation in
+            Self.executionQueue.async { continuation.resume(returning: queryExecutor(script)) }
+        }
+        switch result {
+        case let .success(value):
+            return value
+        case let .failure(error):
+            // Consent can be revoked between calls; record it so the next
+            // command reports the real reason instead of a script failure.
+            if error.status == Status.notPermitted { authorizations[bundleID] = .denied }
+            return nil
+        }
+    }
+
     /// Reads the current Automation permission without ever asking the user, so
     /// Settings can explain a denial without provoking a prompt.
     func refreshAuthorization(for bundleID: String?) async {
@@ -274,6 +381,28 @@ extension NowPlayingController {
             status: status,
             message: errorInfo[NSAppleScript.errorMessage] as? String
         ))
+    }
+
+    nonisolated static let runAppleScriptQuery: QueryExecutor = { source in
+        guard let script = NSAppleScript(source: source) else {
+            return .failure(NowPlayingScriptError(status: Status.scriptCompileFailed, message: nil))
+        }
+        var errorInfo: NSDictionary?
+        let descriptor = script.executeAndReturnError(&errorInfo)
+        if let errorInfo {
+            let status = (errorInfo[NSAppleScript.errorNumber] as? NSNumber)?.int32Value ?? Status.notPermitted
+            return .failure(NowPlayingScriptError(
+                status: status,
+                message: errorInfo[NSAppleScript.errorMessage] as? String
+            ))
+        }
+        switch descriptor.descriptorType {
+        case typeIEEE64BitFloatingPoint, typeIEEE32BitFloatingPoint,
+             typeSInt16, typeSInt32, typeSInt64, typeUInt32:
+            return .success(.number(descriptor.doubleValue))
+        default:
+            return .success(.text(descriptor.stringValue ?? ""))
+        }
     }
 
     nonisolated static let determinePermission: PermissionProbe = { bundleID in

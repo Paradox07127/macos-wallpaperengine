@@ -37,8 +37,8 @@ struct DiskWidgetView: View {
             VStack(alignment: .leading, spacing: scale.label * 0.55) {
                 dualRate(scale: scale, heroScale: 0.58)
                 MirroredAreaChart(
-                    up: Self.tail(history.diskRead, count: chartWindowSamples),
-                    down: Self.tail(history.diskWrite, count: chartWindowSamples),
+                    up: history.windowed(history.diskRead, seconds: chartWindowSeconds),
+                    down: history.windowed(history.diskWrite, seconds: chartWindowSeconds),
                     upColor: Self.readColor,
                     downColor: Self.writeColor
                 )
@@ -88,8 +88,8 @@ struct DiskWidgetView: View {
             VStack(alignment: .leading, spacing: scale.label * 0.6) {
                 currentPairRow(scale: scale)
                 MirroredAreaChart(
-                    up: Self.tail(history.diskRead, count: chartWindowSamples),
-                    down: Self.tail(history.diskWrite, count: chartWindowSamples),
+                    up: history.windowed(history.diskRead, seconds: chartWindowSeconds),
+                    down: history.windowed(history.diskWrite, seconds: chartWindowSeconds),
                     upColor: Self.readColor,
                     downColor: Self.writeColor
                 )
@@ -169,8 +169,8 @@ struct DiskWidgetView: View {
 
     // MARK: - Settings (placement.options; read-side only)
 
-    private var chartWindowSamples: Int {
-        Self.historyWindowSamples(
+    private var chartWindowSeconds: Int {
+        Self.historyWindowSeconds(
             optionSeconds: context.placement.options["historyWindow"]?.numberValue,
             fallbackSeconds: 120)
     }
@@ -206,8 +206,8 @@ struct DiskWidgetView: View {
                 heroPairRow(scale: scale)
                 historySectionLabel(scale: scale)
                 MirroredAreaChart(
-                    up: Self.tail(history.diskRead, count: chartWindowSamples),
-                    down: Self.tail(history.diskWrite, count: chartWindowSamples),
+                    up: history.windowed(history.diskRead, seconds: chartWindowSeconds),
+                    down: history.windowed(history.diskWrite, seconds: chartWindowSeconds),
                     upColor: Self.readColor,
                     downColor: Self.writeColor
                 )
@@ -416,13 +416,7 @@ struct DiskWidgetView: View {
     }
 
     /// Last `count` samples of a series (never fewer than the series has) — the
-    /// M/L chart's `historyWindow` windowing (mirrors `NetworkWidgetView`).
-    nonisolated static func tail(_ series: [Double], count: Int) -> [Double] {
-        guard series.count > count else { return series }
-        return Array(series.suffix(count))
-    }
-
-    nonisolated static func historyWindowSamples(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
+    nonisolated static func historyWindowSeconds(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
         guard let optionSeconds, optionSeconds.isFinite, optionSeconds > 0 else {
             return fallbackSeconds
         }

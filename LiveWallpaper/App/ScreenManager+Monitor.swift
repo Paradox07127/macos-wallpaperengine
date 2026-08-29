@@ -88,6 +88,55 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.music = music }
     }
 
+    /// Copies one overlay from `source` onto every other display, leaving each
+    /// target's wallpaper — and the overlays the user is not looking at —
+    /// exactly as they were.
+    ///
+    /// Deliberately not folded into "Apply to All Displays" on the wallpaper
+    /// header: that action means "put this picture on every screen", and
+    /// quietly taking a carefully arranged board along with it would destroy
+    /// work the user never offered up. On the overlay tab the same button means
+    /// the layer in front of you, and only that one.
+    func applyOverlayToAllDisplays(_ kind: OverlayKind, from source: Screen) {
+        guard !isTerminating, screens.count > 1 else { return }
+        let targets = screens.filter { $0.id != source.id }
+        guard !targets.isEmpty else { return }
+
+        switch kind {
+        case .monitor:
+            let template = monitorOverlay(for: source)
+            mutateMonitorOverlays(of: targets) {
+                $0.enabled = template.enabled
+                $0.level = template.level
+                $0.board = template.board
+            }
+        case .music:
+            let template = monitorOverlay(for: source).music
+            mutateMonitorOverlays(of: targets) { $0.music = template }
+        case .weather:
+            // Weather is not in `monitorOverlays` — it rides on each display's
+            // own configuration, so only its three fields move.
+            guard let template = configurationStore.get(
+                for: source.id, fingerprint: source.displayFingerprint
+            ) else { return }
+            for target in targets {
+                guard var config = configurationStore.get(
+                    for: target.id, fingerprint: target.displayFingerprint
+                ) else { continue }
+                config.particleEffect = template.particleEffect
+                config.effectConfig.weatherReactive = template.effectConfig.weatherReactive
+                config.effectConfig.particleDensity = template.effectConfig.particleDensity
+                saveConfiguration(config)
+                effectsCoordinator.applyWeatherEffects(for: target)
+            }
+            effectsCoordinator.reconcileEnvironmentOverlays()
+        }
+        Logger.info(
+            "Applied \(kind) overlay from screen \(source.id) to \(targets.count) other displays",
+            category: .screenManager
+        )
+    }
+
     /// Pure configuration query used to keep FullScreenDetector's fallback poll
     /// alive whenever a desktop-level overlay depends on its occlusion cache.
     /// Either module counts: a desktop-level Music layer needs the same
