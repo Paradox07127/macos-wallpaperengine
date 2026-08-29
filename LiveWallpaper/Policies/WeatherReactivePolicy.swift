@@ -37,10 +37,13 @@ enum WeatherReactivePolicy {
         userDensity: Double,
         weatherReactive: Bool,
         intensity: WeatherIntensity,
+        intensityEnabled: Bool = true,
         range: ClosedRange<Double> = 0.2...3.0
     ) -> Double {
         let base = userDensity.isFinite ? userDensity : 1
-        guard weatherReactive else { return min(max(base, range.lowerBound), range.upperBound) }
+        guard weatherReactive, intensityEnabled else {
+            return min(max(base, range.lowerBound), range.upperBound)
+        }
         let scaled = base * intensity.densityMultiplier
         return min(max(scaled, range.lowerBound), range.upperBound)
     }

@@ -16,6 +16,8 @@ struct OverlaysInspectorPanel: View {
     let onParticleEffectChange: (ParticleEffect) -> Void
     let onParticleDensityChange: (Double) -> Void
     let onWeatherReactiveChange: (Bool) -> Void
+    let onWeatherWindChange: (Bool) -> Void
+    let onWeatherIntensityChange: (Bool) -> Void
 
     var body: some View {
         ScrollView {
@@ -62,6 +64,8 @@ struct OverlaysInspectorPanel: View {
                 weatherReactiveRow
 
                 if draft.effectConfig.weatherReactive {
+                    weatherIntensityRow
+                    weatherWindRow
                     WeatherStatusBadge(
                         weatherService: screenManager.weatherService,
                         refresh: screenManager.weatherService.refresh
@@ -182,6 +186,39 @@ struct OverlaysInspectorPanel: View {
         }
     }
 
+    /// Nested under "Match local weather" because neither means anything on
+    /// its own — with the parent off the display runs the chosen preset and
+    /// nothing about the sky reaches it.
+    private var weatherIntensityRow: some View {
+        SettingRow(
+            icon: "cloud.heavyrain",
+            iconColor: .cyan,
+            title: "Follow Intensity",
+            info: "A downpour draws more particles than a drizzle"
+        ) {
+            Toggle("", isOn: weatherIntensityBinding)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .accessibilityLabel(Text("Follow weather intensity"))
+        }
+    }
+
+    private var weatherWindRow: some View {
+        SettingRow(
+            icon: "wind",
+            iconColor: .cyan,
+            title: "Follow Wind",
+            info: "Particles lean the way the wind is blowing outside"
+        ) {
+            Toggle("", isOn: weatherWindBinding)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .accessibilityLabel(Text("Follow wind direction"))
+        }
+    }
+
     // MARK: - Bindings
 
     private var particleEffectBinding: Binding<ParticleEffect> {
@@ -210,6 +247,26 @@ struct OverlaysInspectorPanel: View {
             set: { newValue in
                 draft.effectConfig.weatherReactive = newValue
                 onWeatherReactiveChange(newValue)
+            }
+        )
+    }
+
+    private var weatherWindBinding: Binding<Bool> {
+        Binding(
+            get: { draft.effectConfig.weatherWind },
+            set: { newValue in
+                draft.effectConfig.weatherWind = newValue
+                onWeatherWindChange(newValue)
+            }
+        )
+    }
+
+    private var weatherIntensityBinding: Binding<Bool> {
+        Binding(
+            get: { draft.effectConfig.weatherIntensity },
+            set: { newValue in
+                draft.effectConfig.weatherIntensity = newValue
+                onWeatherIntensityChange(newValue)
             }
         )
     }

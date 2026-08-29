@@ -77,6 +77,16 @@ extension ScreenManager {
         effectsCoordinator.setWeatherReactive(enabled, for: screen)
     }
 
+    func setWeatherWind(_ enabled: Bool, for screen: Screen) {
+        guard !isTerminating else { return }
+        effectsCoordinator.setWeatherWind(enabled, for: screen)
+    }
+
+    func setWeatherIntensity(_ enabled: Bool, for screen: Screen) {
+        guard !isTerminating else { return }
+        effectsCoordinator.setWeatherIntensity(enabled, for: screen)
+    }
+
     func startWeatherMonitoring() {
         guard !isTerminating else { return }
         effectsCoordinator.startWeatherMonitoring()
