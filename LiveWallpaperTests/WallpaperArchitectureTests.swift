@@ -482,6 +482,103 @@ struct WeatherReactivePolicyTests {
         #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [disabledConfig], activeScreenIDs: [activeID]))
     }
 
+    /// Wind direction is reported as the direction it blows *from*, which is
+    /// the easiest thing in this file to get backwards: a westerly (270°) is
+    /// wind coming from the west, so it pushes particles to the right.
+    @Test("wind direction resolves to the side it actually blows towards")
+    func windDirectionSign() {
+        #expect(WeatherWindPolicy.horizontalBias(fromDegrees: 270) > 0.99)   // westerly → right
+        #expect(WeatherWindPolicy.horizontalBias(fromDegrees: 90) < -0.99)   // easterly → left
+        // Northerly and southerly blow along the screen's other axis.
+        #expect(abs(WeatherWindPolicy.horizontalBias(fromDegrees: 0)) < 0.001)
+        #expect(abs(WeatherWindPolicy.horizontalBias(fromDegrees: 180)) < 0.001)
+        #expect(WeatherWindPolicy.horizontalBias(fromDegrees: .nan) == 0)
+    }
+
+    /// The lean comes from `atan(wind / fall)`, so the same wind tilts snow far
+    /// more than rain — a snowflake falls about an order of magnitude slower.
+    @Test("the same wind leans snow much further than rain")
+    func windTiltsSlowParticlesMore() {
+        let wind = 25.0
+        let rain = WeatherWindPolicy.tiltRadians(
+            windSpeedKPH: wind, fallSpeedMPS: WeatherWindPolicy.FallSpeed.rain
+        )
+        let snow = WeatherWindPolicy.tiltRadians(
+            windSpeedKPH: wind, fallSpeedMPS: WeatherWindPolicy.FallSpeed.snow
+        )
+        #expect(rain > 0)
+        #expect(snow > rain)
+        // Still air is still vertical.
+        #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: 0, fallSpeedMPS: 8) == 0)
+        // A storm leans hard but never sideways.
+        let gale = WeatherWindPolicy.tiltRadians(windSpeedKPH: 200, fallSpeedMPS: 1)
+        #expect(gale <= .pi / 3 + 0.0001)
+        // Nonsense in, vertical out.
+        #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: .nan, fallSpeedMPS: 8) == 0)
+        #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: 20, fallSpeedMPS: 0) == 0)
+    }
+
+    /// WMO already grades every precipitation family slight / moderate / heavy.
+    /// The old mapping collapsed each triple onto one description, so a drizzle
+    /// and a downpour drew the same rain at the same density.
+    @Test("WMO intensity survives the mapping")
+    func wmoIntensityIsPreserved() {
+        // Drizzle 51/53/55, rain 61/63/65, snow 71/73/75, showers 80/81/82.
+        for (light, moderate, heavy) in [(51, 53, 55), (61, 63, 65), (71, 73, 75), (80, 81, 82)] {
+            #expect(WeatherCodePolicy.intensity(forWMOCode: light) == .light, "\(light)")
+            #expect(WeatherCodePolicy.intensity(forWMOCode: moderate) == .moderate, "\(moderate)")
+            #expect(WeatherCodePolicy.intensity(forWMOCode: heavy) == .heavy, "\(heavy)")
+        }
+    }
+
+    /// 77 is snow grains — the lightest snow there is — and it used to be
+    /// mapped to *heavy* snow.
+    @Test("snow grains are the lightest snow, not the heaviest")
+    func snowGrainsAreLight() {
+        #expect(WeatherCodePolicy.intensity(forWMOCode: 77) == .light)
+    }
+
+    @Test("freezing drizzle and freezing rain are flagged, plain ones are not")
+    func freezingCodesAreFlagged() {
+        for code in [56, 57, 66, 67] {
+            #expect(WeatherCodePolicy.isFreezing(wmoCode: code), "\(code)")
+        }
+        for code in [51, 55, 61, 65, 71, 75, 95] {
+            #expect(!WeatherCodePolicy.isFreezing(wmoCode: code), "\(code)")
+        }
+    }
+
+    /// A code with no intensity axis has one look, not a missing one.
+    @Test("codes without an intensity axis answer moderate")
+    func nonGradedCodesAreModerate() {
+        for code in [0, 1, 2, 3, 45, 48] {
+            #expect(WeatherCodePolicy.intensity(forWMOCode: code) == .moderate, "\(code)")
+        }
+    }
+
+    /// The slider says how much of this the user wants at all; the intensity
+    /// says what the sky is doing. Multiplying keeps both meaningful.
+    @Test("intensity scales the user's density without taking it over")
+    func intensityScalesUserDensity() {
+        func density(_ user: Double, _ intensity: WeatherIntensity, reactive: Bool = true) -> Double {
+            WeatherReactivePolicy.resolvedParticleDensity(
+                userDensity: user, weatherReactive: reactive, intensity: intensity
+            )
+        }
+        #expect(density(1.0, .light) < density(1.0, .moderate))
+        #expect(density(1.0, .moderate) < density(1.0, .heavy))
+        // Turning the slider down still calms a downpour.
+        #expect(density(0.4, .heavy) < density(1.0, .heavy))
+        // Weather off: the slider is the whole answer.
+        #expect(density(1.0, .heavy, reactive: false) == 1.0)
+        #expect(density(1.0, .light, reactive: false) == 1.0)
+        // Never outside the range the slider itself can reach.
+        #expect(density(3.0, .heavy) <= 3.0)
+        #expect(density(0.2, .light) >= 0.2)
+        // Non-finite stored value must not propagate into the emitter.
+        #expect(density(.nan, .moderate).isFinite)
+    }
+
     @Test("Turning the display's particles off beats Match local weather")
     func masterSwitchOffWinsOverWeather() {
         // The bug: with weatherReactive on, the chosen effect was discarded
