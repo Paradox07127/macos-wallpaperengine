@@ -385,6 +385,60 @@ struct WallpaperExportServiceTests {
         #expect(leftovers.isEmpty, "the restore must not leave its backup behind: \(leftovers)")
     }
 
+    @Test("A republish under a new extension keeps the thumbnail the old entry points at")
+    func failedRepublishWithNewExtensionKeepsThumbnail() async throws {
+        let rig = try makeRig()
+        let bookmark = try rig.makeVideoBookmark(named: "first.mp4", bytes: Data("original".utf8))
+        try await rig.service.publish(bookmark: bookmark)
+        let itemID = bookmark.id.uuidString
+        let publishedVideo = rig.videosDirectory.appendingPathComponent("\(itemID).mp4")
+        let thumbnail = rig.videosDirectory.appendingPathComponent("\(itemID).jpg")
+
+        // Same item, different container: the destination is `<id>.mov`, which
+        // does not exist yet, while the thumbnail keeps its one name.
+        let replacement = WallpaperBookmark(
+            label: "First",
+            content: try rig.makeVideoBookmark(
+                named: "second.mov", bytes: Data("replacement".utf8)
+            ).content,
+            id: bookmark.id
+        )
+        try denyReads(rig.manifestURL)
+        await #expect(throws: (any Error).self) {
+            try await rig.service.publish(bookmark: replacement)
+        }
+        try allowReads(rig.manifestURL)
+
+        #expect(FileManager.default.fileExists(atPath: thumbnail.path),
+                "the manifest still names this thumbnail — deleting it erases the tile from the panel")
+        #expect(try Data(contentsOf: publishedVideo) == Data("original".utf8))
+        #expect(!FileManager.default.fileExists(
+            atPath: rig.videosDirectory.appendingPathComponent("\(itemID).mov").path),
+            "the half-published new copy must be taken back")
+    }
+
+    @Test("A republish under a new extension drops the copy the old entry named")
+    func republishWithNewExtensionRemovesOldVideo() async throws {
+        let rig = try makeRig()
+        let bookmark = try rig.makeVideoBookmark(named: "first.mp4", bytes: Data("original".utf8))
+        try await rig.service.publish(bookmark: bookmark)
+        let itemID = bookmark.id.uuidString
+
+        let replacement = WallpaperBookmark(
+            label: "First",
+            content: try rig.makeVideoBookmark(
+                named: "second.mov", bytes: Data("replacement".utf8)
+            ).content,
+            id: bookmark.id
+        )
+        try await rig.service.publish(bookmark: replacement)
+
+        #expect(rig.service.items.map(\.fileName) == ["\(itemID).mov"])
+        #expect(!FileManager.default.fileExists(
+            atPath: rig.videosDirectory.appendingPathComponent("\(itemID).mp4").path),
+            "nothing references the old copy any more, and it is a whole video")
+    }
+
     @Test("A remove that lands mid-publish keeps the entry removed")
     func removeDuringPublishIsNotUndone() async throws {
         let hook = PublishHook()
@@ -686,6 +740,44 @@ struct WallpaperExportServiceTests {
         ))
         rig.service.refresh()
         #expect(rig.service.status == .systemIncompatible)
+    }
+
+    @Test("An unhealthy verdict from an older revision of the layout check is ignored")
+    func statusIgnoresStaleRuntimeCheckVerdict() async throws {
+        let rig = try makeRig()
+        let bookmark = try rig.makeVideoBookmark()
+        try await rig.service.publish(bookmark: bookmark)
+        // Same OS build, but the verdict came from a check we have since
+        // replaced — the fixed one never runs if this keeps the app locked out.
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(
+            timestamp: Self.referenceNow.addingTimeInterval(-10),
+            activeChoiceID: nil,
+            runtimeHealthy: false,
+            osVersion: SystemWallpaperHeartbeat.currentOSVersion(),
+            runtimeCheckVersion: SystemWallpaperHeartbeat.currentRuntimeCheckVersion - 1
+        ))
+        rig.service.refresh()
+        #expect(rig.service.status == .publishedNotSelected)
+    }
+
+    @Test("A heartbeat written before the check stamp existed still decodes and still counts")
+    func heartbeatWithoutRuntimeCheckVersionDecodes() throws {
+        let json = """
+        {"timestamp":0,"runtimeHealthy":false,"osVersion":"\(SystemWallpaperHeartbeat.currentOSVersion())"}
+        """
+        let heartbeat = try JSONDecoder().decode(
+            SystemWallpaperHeartbeat.self, from: Data(json.utf8)
+        )
+        #expect(heartbeat.runtimeCheckVersion == nil)
+        let stampedAsOne = SystemWallpaperHeartbeat(
+            timestamp: heartbeat.timestamp,
+            activeChoiceID: nil,
+            runtimeHealthy: false,
+            osVersion: SystemWallpaperHeartbeat.currentOSVersion(),
+            runtimeCheckVersion: 1
+        )
+        #expect(heartbeat.barsPublishing == stampedAsOne.barsPublishing,
+                "an unstamped heartbeat was written by revision 1 and must be read as one")
     }
 
     @Test("In-use covers every active choice, not just the first display's")

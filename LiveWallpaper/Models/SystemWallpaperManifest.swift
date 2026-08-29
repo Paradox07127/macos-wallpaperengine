@@ -85,18 +85,33 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     /// meaningful for the build that ran it; after an OS update a stale
     /// "unhealthy" from the old build must not keep the feature locked out.
     var osVersion: String?
+    /// Which revision of the layout check produced the verdict. Absent in
+    /// heartbeats written before this field existed, which were all written by
+    /// revision 1.
+    var runtimeCheckVersion: Int?
+
+    /// Bump this whenever the appex's private-API layout check changes.
+    ///
+    /// An unhealthy verdict hides the publish UI, and the extension only runs
+    /// once something has been published — so without a build stamp a fixed
+    /// check could never get the chance to overwrite the verdict that its own
+    /// broken predecessor wrote, and the user stayed locked out on an OS build
+    /// that had stopped being the problem.
+    static let currentRuntimeCheckVersion = 1
 
     init(timestamp: Date, activeChoiceID: String?, activeChoiceIDs: [String]? = nil,
-         runtimeHealthy: Bool = true, osVersion: String? = nil) {
+         runtimeHealthy: Bool = true, osVersion: String? = nil,
+         runtimeCheckVersion: Int? = SystemWallpaperHeartbeat.currentRuntimeCheckVersion) {
         self.timestamp = timestamp
         self.activeChoiceID = activeChoiceID
         self.activeChoiceIDs = activeChoiceIDs
         self.runtimeHealthy = runtimeHealthy
         self.osVersion = osVersion
+        self.runtimeCheckVersion = runtimeCheckVersion
     }
 
     private enum CodingKeys: String, CodingKey {
-        case timestamp, activeChoiceID, activeChoiceIDs, runtimeHealthy, osVersion
+        case timestamp, activeChoiceID, activeChoiceIDs, runtimeHealthy, osVersion, runtimeCheckVersion
     }
 
     init(from decoder: Decoder) throws {
@@ -106,6 +121,16 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         activeChoiceIDs = try c.decodeIfPresent([String].self, forKey: .activeChoiceIDs)
         runtimeHealthy = try c.decodeIfPresent(Bool.self, forKey: .runtimeHealthy) ?? true
         osVersion = try c.decodeIfPresent(String.self, forKey: .osVersion)
+        runtimeCheckVersion = try c.decodeIfPresent(Int.self, forKey: .runtimeCheckVersion)
+    }
+
+    /// Does this verdict still bar the app from publishing? Only when it was
+    /// reached on the OS build running now *and* by the revision of the layout
+    /// check that is running now — a newer check has to be allowed to try.
+    var barsPublishing: Bool {
+        guard !runtimeHealthy else { return false }
+        guard osVersion == nil || osVersion == Self.currentOSVersion() else { return false }
+        return (runtimeCheckVersion ?? 1) == Self.currentRuntimeCheckVersion
     }
 
     /// Is `itemID` on some display according to this heartbeat?

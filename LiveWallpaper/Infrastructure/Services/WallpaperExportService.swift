@@ -122,15 +122,9 @@ final class WallpaperExportService {
 
     var status: Status {
         guard dependencies.osSupported else { return .unsupported }
-        // An "incompatible" verdict is only as good as the OS build that
-        // reached it — after an update, ignore the old build's verdict until
-        // the extension has run again (nil = pre-osVersion heartbeat, honored
-        // to keep the old behaviour).
-        if let heartbeat, !heartbeat.runtimeHealthy,
-           heartbeat.osVersion == nil
-               || heartbeat.osVersion == SystemWallpaperHeartbeat.currentOSVersion() {
-            return .systemIncompatible
-        }
+        // An "incompatible" verdict is only as good as the OS build *and* the
+        // check revision that reached it — see `barsPublishing`.
+        if heartbeat?.barsPublishing == true { return .systemIncompatible }
         if let lastError { return .failed(lastError) }
         guard !items.isEmpty else { return .empty }
         // Any item on any display counts — after removing the display-1 choice,
@@ -353,30 +347,34 @@ final class WallpaperExportService {
             // swapping outside it could commit a manifest entry naming a file
             // that the removal had already deleted.
             manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
-                // A republish has an older copy the manifest still points at, so
-                // a later failure must leave it alone. A first publish owns
-                // everything it just created and has to take it back.
-                let isRepublish = manager.fileExists(atPath: destination.path)
+                // Each path is judged on its own: a republish that changes the
+                // video's extension writes a *new* destination while reusing the
+                // one thumbnail name, so "is this a republish" cannot answer both.
+                // Treating the whole publish as a first one because of the new
+                // extension let the rollback delete the thumbnail the still-live
+                // manifest entry pointed at, which erased that wallpaper from the
+                // system panel.
+                let destinationExists = manager.fileExists(atPath: destination.path)
+                let thumbnailExists = manager.fileExists(atPath: thumbnailURL.path)
 
                 /// Puts the library back exactly as it was. Without this a failed
                 /// thumbnail write or an unreadable manifest reported failure
                 /// while the old video was already gone.
                 func rollbackPublish() {
-                    guard isRepublish else {
+                    if destinationExists {
+                        if manager.fileExists(atPath: videoBackupURL.path) {
+                            _ = try? manager.replaceItemAt(destination, withItemAt: videoBackupURL)
+                        }
+                    } else {
                         try? manager.removeItem(at: destination)
-                        try? manager.removeItem(at: thumbnailURL)
-                        return
                     }
-                    if manager.fileExists(atPath: videoBackupURL.path) {
-                        _ = try? manager.replaceItemAt(destination, withItemAt: videoBackupURL)
-                    }
+                    try? manager.removeItem(at: thumbnailURL)
                     if manager.fileExists(atPath: thumbnailBackupURL.path) {
-                        try? manager.removeItem(at: thumbnailURL)
                         try? manager.moveItem(at: thumbnailBackupURL, to: thumbnailURL)
                     }
                 }
 
-                if isRepublish {
+                if destinationExists {
                     // Atomic swap — no window where the old copy is gone and the
                     // new one is not yet in place. The displaced original stays
                     // behind under `backupItemName` until this publish commits.
@@ -386,16 +384,17 @@ final class WallpaperExportService {
                         backupItemName: videoBackupURL.lastPathComponent,
                         options: [.withoutDeletingBackupItem]
                     )
-                    if manager.fileExists(atPath: thumbnailURL.path) {
-                        try? manager.moveItem(at: thumbnailURL, to: thumbnailBackupURL)
-                    }
                 } else {
                     try manager.moveItem(at: staged.url, to: destination)
+                }
+                if thumbnailExists {
+                    try? manager.moveItem(at: thumbnailURL, to: thumbnailBackupURL)
                 }
 
                 do {
                     try jpeg.write(to: thumbnailURL, options: .atomic)
                     var manifest = try loadManifestForMutation()
+                    let previousFileName = manifest.items.first { $0.id == itemID }?.fileName
                     manifest.items.removeAll { $0.id == itemID }
                     manifest.items.append(SystemWallpaperManifest.Item(
                         id: itemID,
@@ -407,6 +406,14 @@ final class WallpaperExportService {
                     try writeManifest(manifest)
                     try? manager.removeItem(at: videoBackupURL)
                     try? manager.removeItem(at: thumbnailBackupURL)
+                    // A republish under a new extension leaves the copy the old
+                    // entry named behind: nothing references it now, and waiting
+                    // for the sweep means carrying two copies of a 4K video.
+                    if let previousFileName, previousFileName != destination.lastPathComponent {
+                        try? manager.removeItem(
+                            at: videosDirectory.appendingPathComponent(previousFileName)
+                        )
+                    }
                     return manifest
                 } catch {
                     rollbackPublish()
