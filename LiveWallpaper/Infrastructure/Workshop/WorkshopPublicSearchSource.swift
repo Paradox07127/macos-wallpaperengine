@@ -1,12 +1,11 @@
 #if !LITE_BUILD
 import Foundation
-import WebKit
 
 /// URL builder for Valve's public Workshop browse page — the zero-key search
 /// path. Parameters verified live against `steamcommunity.com` on 2026-08-29:
 /// `browsesort`, `days`, `searchtext`, `requiredtags[]` and `excludedtags[]`
 /// all filter server-side, `p` pages (disjoint result sets), and `numperpage`
-/// is ignored — the page always returns 30 items.
+/// is ignored — the page returns up to 30 items.
 enum WorkshopPublicBrowseURL {
     static let itemsPerPage = 30
 
@@ -67,9 +66,22 @@ enum WorkshopPublicBrowseURL {
 /// data come from `GetPublishedFileDetails`, so the whole dependency on Valve's
 /// HTML is the details-page URL shape.
 enum WorkshopPublicIDExtractor {
-    static let hrefCollectionScript = """
-    Array.from(document.querySelectorAll('a[href*="filedetails/?id="]')).map(function (a) { return a.href; })
-    """
+
+    static func publishedFileIDs(fromHTML html: String) -> [UInt64] {
+        publishedFileIDs(fromHrefs: hrefs(inHTML: html))
+    }
+
+    /// The result anchors are in the served markup — the browse page is
+    /// server-rendered, so nothing has to run scripts to see them (verified
+    /// 2026-08-29: a plain GET returns all 30 ids).
+    ///
+    /// Values stay HTML-escaped (`?id=123&amp;searchtext=…`); harmless because
+    /// `id` is Valve's first query parameter, so an escaped separator only
+    /// mangles the parameter names after it.
+    static func hrefs(inHTML html: String) -> [String] {
+        html.matches(of: /href="(https:\/\/[^"\s]*filedetails\/\?id=[^"]*)"/)
+            .map { String($0.1) }
+    }
 
     /// De-duplicated in page order: each result contributes two anchors
     /// (thumbnail + title) pointing at the same item.
@@ -92,7 +104,8 @@ enum WorkshopPublicIDExtractor {
     }
 }
 
-/// Navigation allow-list for the offscreen web view.
+/// Host allow-list for the keyless path: the page we fetch, and the detail
+/// links we accept ids from.
 enum WorkshopPublicNavigationPolicy {
     private static let host = "steamcommunity.com"
 
@@ -102,71 +115,34 @@ enum WorkshopPublicNavigationPolicy {
     }
 }
 
-/// The single in-flight page load. `BrowseViewModel.reload()` cancels its task
-/// and starts the next fetch immediately, so a second `load` can arrive while
-/// the first is still suspended: taking the slot over settles the previous
-/// waiter with `.cancelled` rather than leaving its continuation suspended
-/// forever, and every callback is matched against the token it belongs to so a
-/// stale one cannot resume the load that replaced it.
+/// Zero-key Workshop search: one cookie-free GET of Valve's public browse page
+/// to harvest published-file ids, which are then resolved through the key-free
+/// `GetPublishedFileDetails` batch endpoint.
 @MainActor
-final class WorkshopPublicLoadSlot {
-
-    private var token: UInt64 = 0
-    private var resume: ((Result<Void, Error>) -> Void)?
-
-    /// Supersedes any in-flight load and returns the new load's token.
-    @discardableResult
-    func begin(_ resume: @escaping (Result<Void, Error>) -> Void) -> UInt64 {
-        finish(token: token, .failure(WorkshopQueryError.cancelled))
-        token &+= 1
-        self.resume = resume
-        return token
-    }
-
-    /// No-op unless `token` still owns the slot — so it also never resumes twice.
-    func finish(token: UInt64, _ result: Result<Void, Error>) {
-        guard token == self.token, let resume else { return }
-        self.resume = nil
-        resume(result)
-    }
-
-    func isCurrent(_ token: UInt64) -> Bool {
-        token == self.token && resume != nil
-    }
-
-    var currentToken: UInt64? { resume == nil ? nil : token }
-}
-
-/// Zero-key Workshop search: an offscreen, ephemeral `WKWebView` loads Valve's
-/// public browse page purely to harvest published-file ids, which are then
-/// resolved through the key-free `GetPublishedFileDetails` batch endpoint.
-@MainActor
-final class WorkshopPublicSearchSource: NSObject, WKNavigationDelegate {
+final class WorkshopPublicSearchSource {
 
     private let metadata: SteamWorkshopMetadataService
+    private let session: URLSession
     private let appID: Int
-    private var webView: WKWebView?
-    private let loadSlot = WorkshopPublicLoadSlot()
-    /// The main-document navigation of the current load. Sub-frame callbacks
-    /// carry a different object (Valve's page embeds `login.`/`store.` iframes),
-    /// and their failures must not end the search.
-    private var mainNavigation: WKNavigation?
 
-    /// Steam's page is server-rendered; this only has to cover a slow round trip.
-    private static let loadTimeout: Duration = .seconds(20)
+    /// The browse page is ~0.7 MB of HTML; this only has to bound a hostile
+    /// response, not a legitimate one.
+    static let maxResponseBytes = 8 * 1024 * 1024
 
     init(
         metadata: SteamWorkshopMetadataService = SteamWorkshopMetadataService(),
+        session: URLSession = WorkshopPublicSearchSource.defaultSession(),
         appID: Int = WorkshopQueryService.wallpaperEngineAppID
     ) {
         self.metadata = metadata
+        self.session = session
         self.appID = appID
     }
 
     func fetch(_ request: WorkshopQueryRequest) async throws -> WorkshopQueryPage {
         let url = WorkshopPublicBrowseURL.url(for: request, appID: appID)
-        let hrefs = try await collectHrefs(at: url)
-        let ids = WorkshopPublicIDExtractor.publishedFileIDs(fromHrefs: hrefs)
+        let html = try await loadHTML(at: url)
+        let ids = WorkshopPublicIDExtractor.publishedFileIDs(fromHTML: html)
         guard !ids.isEmpty else {
             return WorkshopQueryPage(items: [], nextCursor: nil, totalAvailable: nil)
         }
@@ -180,15 +156,22 @@ final class WorkshopPublicSearchSource: NSObject, WKNavigationDelegate {
         // empty result set — surface it instead of showing "no matches".
         guard !items.isEmpty else { throw WorkshopQueryError.responseParseFailure }
 
-        // The page has no machine-readable total; a full page means there is more.
-        let nextCursor = ids.count >= WorkshopPublicBrowseURL.itemsPerPage
-            ? String(request.page + 1)
-            : nil
-        return WorkshopQueryPage(items: items, nextCursor: nextCursor, totalAvailable: nil)
+        return WorkshopQueryPage(
+            items: items,
+            nextCursor: Self.nextCursor(after: request.page, idCount: ids.count),
+            totalAvailable: nil
+        )
     }
 
-    /// The keyless path's only metadata -> browse-item mapping. Static so the
-    /// tag hand-off can be pinned without a `WKWebView`: `tags` feeds
+    /// The page publishes no machine-readable total, so only an empty page ends
+    /// the result set. Comparing the id count against 30 instead cut browsing
+    /// short: a full page legitimately returns 29 (verified 2026-08-29, p=2).
+    /// The 1000-page ceiling is Steam's and is enforced by `BrowseViewModel`.
+    nonisolated static func nextCursor(after page: Int, idCount: Int) -> String? {
+        idCount > 0 ? String(page + 1) : nil
+    }
+
+    /// The keyless path's only metadata -> browse-item mapping. `tags` feeds
     /// `isMatureRated`, and dropping it silently defeats the mature blur.
     nonisolated static func queryItem(from entry: SteamWorkshopMetadata) -> WorkshopQueryItem {
         WorkshopQueryItem(
@@ -200,7 +183,9 @@ final class WorkshopPublicSearchSource: NSObject, WKNavigationDelegate {
             previewImageURL: entry.previewImageURL,
             fileSizeBytes: entry.fileSizeBytes,
             timeUpdated: entry.timeUpdated,
-            subscriptionCount: nil,
+            subscriptionCount: entry.subscriptionCount,
+            // Keyless `GetPublishedFileDetails` carries no vote data at all, so
+            // the rating pill stays hidden rather than showing a made-up score.
             voteScore: nil,
             tags: entry.tags,
             visibility: entry.visibility,
@@ -209,73 +194,51 @@ final class WorkshopPublicSearchSource: NSObject, WKNavigationDelegate {
         )
     }
 
-    // MARK: - Web view
+    // MARK: - Page fetch
 
-    private func collectHrefs(at url: URL) async throws -> [String] {
-        let view = existingOrNewWebView()
-        try await load(url, in: view)
-        let result = try? await view.evaluateJavaScript(WorkshopPublicIDExtractor.hrefCollectionScript)
-        guard let hrefs = result as? [String] else { throw WorkshopQueryError.responseParseFailure }
-        return hrefs
-    }
+    private func loadHTML(at url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
 
-    private func existingOrNewWebView() -> WKWebView {
-        if let webView { return webView }
-        let configuration = WKWebViewConfiguration()
-        // Ephemeral: nothing is written to disk and no cookie from Safari or
-        // the Steam client is ever visible to this view.
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.suppressesIncrementalRendering = true
-        let view = WKWebView(
-            frame: CGRect(x: 0, y: 0, width: 1280, height: 900),
-            configuration: configuration
-        )
-        view.navigationDelegate = self
-        webView = view
-        return view
-    }
-
-    private func load(_ url: URL, in view: WKWebView) async throws {
-        var timeout: Task<Void, Never>?
-        defer { timeout?.cancel() }
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let token = loadSlot.begin { continuation.resume(with: $0) }
-            var request = URLRequest(url: url)
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            mainNavigation = view.load(request)
-
-            timeout = Task { [weak self] in
-                try? await Task.sleep(for: Self.loadTimeout)
-                guard !Task.isCancelled, let self else { return }
-                // Only this load's timeout may stop the view — by the time a
-                // stale one fires, a newer load already owns it.
-                guard self.loadSlot.isCurrent(token) else { return }
-                self.webView?.stopLoading()
-                self.loadSlot.finish(token: token, .failure(WorkshopQueryError.timeout))
-            }
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await BoundedNetworkFetch.fetch(
+                request,
+                session: session,
+                byteCap: Self.maxResponseBytes
+            )
+        } catch let urlError as URLError {
+            throw Self.mapped(urlError)
+        } catch is BoundedNetworkFetch.ResponseTooLarge {
+            throw WorkshopQueryError.responseParseFailure
         }
-    }
 
-    /// Settles the load that owns the slot; stale callbacks find no match.
-    private func finishCurrentLoad(_ result: Result<Void, Error>) {
-        guard let token = loadSlot.currentToken else { return }
-        loadSlot.finish(token: token, result)
-    }
-
-    /// True only for the main document of the load in flight.
-    private func isMainDocument(_ navigation: WKNavigation?) -> Bool {
-        guard let navigation, let mainNavigation else { return false }
-        return navigation === mainNavigation
+        guard let http = response as? HTTPURLResponse else {
+            throw WorkshopQueryError.responseParseFailure
+        }
+        // A rate-limit or challenge response still renders as HTML with no
+        // result links, which would read as "no matches"; the status separates
+        // them. Likewise a redirect off the allow-list (login/interstitial) is
+        // a retriable failure, not an empty result set.
+        guard (200..<300).contains(http.statusCode) else {
+            throw Self.mapped(status: http.statusCode)
+        }
+        guard WorkshopPublicNavigationPolicy.allows(http.url) else {
+            throw WorkshopQueryError.responseParseFailure
+        }
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw WorkshopQueryError.responseParseFailure
+        }
+        return html
     }
 
     private static func mapped(status: Int) -> WorkshopQueryError {
         status == 429 ? .rateLimited(retryAfter: nil) : .http(status: status)
     }
 
-    private static func mapped(_ error: Error) -> WorkshopQueryError {
-        guard let urlError = error as? URLError else { return .responseParseFailure }
-        switch urlError.code {
+    private static func mapped(_ error: URLError) -> WorkshopQueryError {
+        switch error.code {
         case .timedOut: return .timeout
         case .cancelled: return .cancelled
         case .notConnectedToInternet, .networkConnectionLost, .dnsLookupFailed: return .networkUnreachable
@@ -283,60 +246,22 @@ final class WorkshopPublicSearchSource: NSObject, WKNavigationDelegate {
         }
     }
 
-    // MARK: - WKNavigationDelegate
+    // MARK: - URLSession factory
 
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-    ) {
-        guard !WorkshopPublicNavigationPolicy.allows(navigationAction.request.url) else {
-            decisionHandler(.allow)
-            return
-        }
-        decisionHandler(.cancel)
-        // Only the main document leaving the allow-list ends the search — the
-        // page's third-party iframes get cancelled on every single load.
-        if navigationAction.targetFrame?.isMainFrame == true {
-            finishCurrentLoad(.failure(WorkshopQueryError.responseParseFailure))
-        }
-    }
-
-    /// A rate-limit or challenge response still renders as HTML with no result
-    /// links, which would read as "no matches"; the status separates them.
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor navigationResponse: WKNavigationResponse,
-        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
-    ) {
-        guard navigationResponse.isForMainFrame,
-              let http = navigationResponse.response as? HTTPURLResponse,
-              !(200..<300).contains(http.statusCode)
-        else {
-            decisionHandler(.allow)
-            return
-        }
-        decisionHandler(.cancel)
-        finishCurrentLoad(.failure(Self.mapped(status: http.statusCode)))
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard isMainDocument(navigation) else { return }
-        finishCurrentLoad(.success(()))
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        guard isMainDocument(navigation) else { return }
-        finishCurrentLoad(.failure(Self.mapped(error)))
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        didFailProvisionalNavigation navigation: WKNavigation!,
-        withError error: Error
-    ) {
-        guard isMainDocument(navigation) else { return }
-        finishCurrentLoad(.failure(Self.mapped(error)))
+    /// Deliberately cookie-free: the browse page needs no session, and sending
+    /// one would tie these searches to the user's Steam login.
+    private static func defaultSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieAcceptPolicy = .never
+        config.httpShouldSetCookies = false
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 30
+        config.httpAdditionalHeaders = [
+            "User-Agent": "Loomscreen/Workshop (+https://loomscreen.app/)"
+        ]
+        return URLSession(configuration: config)
     }
 }
 #endif

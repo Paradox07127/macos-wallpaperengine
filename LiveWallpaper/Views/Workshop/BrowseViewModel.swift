@@ -202,7 +202,7 @@ final class BrowseViewModel {
     }
 
     /// The public page publishes no result total, so "is there a next page" can
-    /// only come from the page having been full.
+    /// only come from the page having yielded ids at all.
     private(set) var hasMoreKeylessPages: Bool = false
 
     /// 1-based. Steam's QueryFiles `page` param lets us jump to any page directly.
@@ -246,7 +246,7 @@ final class BrowseViewModel {
     @ObservationIgnored private var currentRequestToken: UInt64 = 0
     @ObservationIgnored private var autoSearchTask: Task<Void, Never>?
     @ObservationIgnored private let defaults: UserDefaults
-    /// Built on first keyless fetch — it owns a `WKWebView`, so a keyed session never makes one.
+    /// Built on first keyless fetch — it owns a `URLSession`, so a keyed session never makes one.
     @ObservationIgnored private lazy var publicSource = WorkshopPublicSearchSource()
 
     /// Quiet window after the last keystroke before auto-search fires: long

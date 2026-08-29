@@ -42,15 +42,6 @@ final class SteamWebAPIKeyEntryModel {
         validation == .valid && hasReadTOU
     }
 
-    /// Prefills whatever is already stored, so "Replace" starts from the
-    /// current key rather than an empty field the user has to re-derive.
-    func loadStoredKey() async {
-        guard let stored = try? await services.keychain.loadWebAPIKey() else { return }
-        apiKey = stored
-        hasReadTOU = true
-        keyChanged()
-    }
-
     func reset() {
         validationTask?.cancel()
         validationTask = nil

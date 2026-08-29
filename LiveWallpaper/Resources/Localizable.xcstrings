@@ -55613,6 +55613,35 @@
           }
         }
       }
+    },
+    "macOS wouldn't unlock the stored key — allow access when it asks, or paste the key again" : {
+      "comment" : "Steam Web API key row subtitle shown when the keychain refused to hand the stored key over.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS wouldn't unlock the stored key — allow access when it asks, or paste the key again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS が保存済みのキーを取り出せませんでした。確認ダイアログでアクセスを許可するか、キーを入力し直してください"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 未能取出已保存的 key —— 弹出询问时请允许访问,或重新粘贴一次 key"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 未能取出已儲存的 key —— 彈出詢問時請允許存取,或重新貼上一次 key"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

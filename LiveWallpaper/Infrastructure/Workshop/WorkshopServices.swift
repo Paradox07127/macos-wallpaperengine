@@ -13,6 +13,10 @@ final class WorkshopServices {
     @ObservationIgnored let queryService: WorkshopQueryService
 
     var hasWebAPIKey: Bool = false
+    /// True once a keychain read was refused — a denied ACL prompt, or a locked
+    /// keychain. `hasWebAPIKey` stays true alongside it (the item is there),
+    /// which is what lets the UI say "unlock it" instead of "set one".
+    private(set) var apiKeyAccessDenied = false
     /// True once Valve explicitly rejected the stored key on a live request
     /// (401/403/disabled) — the key file existing no longer means "ready".
     /// Cleared by a later keyed success, or by `refreshAPIKeyStatus` once the
@@ -50,6 +54,7 @@ final class WorkshopServices {
 
     func refreshAPIKeyStatus() async {
         hasWebAPIKey = await keychain.hasWebAPIKey()
+        apiKeyAccessDenied = await keychain.readWasDenied
         guard apiKeyRejected else { return }
         if !hasWebAPIKey {
             // Key removed — the rejection no longer describes anything.

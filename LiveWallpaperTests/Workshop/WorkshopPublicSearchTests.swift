@@ -139,36 +139,78 @@ struct WorkshopPublicSearchTests {
         #expect(WorkshopPublicIDExtractor.publishedFileIDs(fromHrefs: hrefs) == [2_489_045_207])
     }
 
-    /// `BrowseViewModel.reload()` fires a second search while the first page is
-    /// still loading; the first waiter has to be settled, exactly once.
-    @Test("A superseded page load ends as .cancelled, once")
-    @MainActor
-    func supersededLoadIsCancelledExactlyOnce() {
-        let slot = WorkshopPublicLoadSlot()
-        var first: [WorkshopQueryError?] = []
-        var second: [WorkshopQueryError?] = []
+    // MARK: - HTML harvesting
 
-        let firstToken = slot.begin { first.append(Self.failure(of: $0)) }
-        #expect(first.isEmpty)
+    /// Markup shape copied from a live browse response (2026-08-29): each result
+    /// is a preview anchor plus a title anchor carrying the same id, the query
+    /// separator arrives HTML-escaped, and the page also renders author-supplied
+    /// links. Steam serves all of this without running a single script, which is
+    /// why a plain GET replaced the offscreen web view.
+    private static let browseHTMLFragment = """
+    <div class="workshopBrowseItems">
+    <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=2489045207&amp;searchtext=" class="item_link">
+    <div class="workshopItemPreviewHolder"></div></a>
+    <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=2489045207&amp;searchtext=" class="workshopItemTitle">Neon City</a>
+    <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3789134978&amp;searchtext=" class="workshopItemTitle">Rainy Alley</a>
+    <a href="https://evil.example/sharedfiles/filedetails/?id=9999999999">author link</a>
+    <a href="https://steamcommunity.com.evil.example/sharedfiles/filedetails/?id=8888888888">look-alike</a>
+    <a href="https://steamcommunity.com/workshop/browse/?appid=431960">Back</a>
+    </div>
+    """
 
-        let secondToken = slot.begin { second.append(Self.failure(of: $0)) }
-        #expect(first == [.cancelled])
-
-        // A late callback from the superseded load (timeout, didFinish) is inert.
-        slot.finish(token: firstToken, .failure(WorkshopQueryError.timeout))
-        #expect(first == [.cancelled])
-        #expect(!slot.isCurrent(firstToken))
-
-        // Control: the live load still settles, and also only once.
-        #expect(slot.isCurrent(secondToken))
-        slot.finish(token: secondToken, .success(()))
-        slot.finish(token: secondToken, .failure(WorkshopQueryError.timeout))
-        #expect(second == [nil])
+    @Test("Result ids come straight out of the served HTML, de-duplicated and host-filtered")
+    func htmlYieldsOrderedUniqueOnHostIDs() {
+        #expect(
+            WorkshopPublicIDExtractor.publishedFileIDs(fromHTML: Self.browseHTMLFragment)
+                == [2_489_045_207, 3_789_134_978]
+        )
     }
 
-    private static func failure(of result: Result<Void, Error>) -> WorkshopQueryError? {
-        guard case .failure(let error) = result else { return nil }
-        return error as? WorkshopQueryError
+    // MARK: - Paging
+
+    /// A full page is not always 30 (p=2 returned 29 on 2026-08-29), so counting
+    /// ids against `itemsPerPage` ended browsing early. Only an empty page ends it.
+    @Test("A short-but-non-empty page still offers the next one")
+    func shortPageStillHasANextPage() {
+        #expect(WorkshopPublicSearchSource.nextCursor(after: 2, idCount: 29) == "3")
+        // Control: nothing on the page means the result set is exhausted.
+        #expect(WorkshopPublicSearchSource.nextCursor(after: 7, idCount: 0) == nil)
+    }
+
+    // MARK: - Keyless counts
+
+    @Test("Keyless details carry the subscription count through to the browse item")
+    func subscriptionCountReachesQueryItem() throws {
+        let payload = Data("""
+        {"response":{"result":1,"resultcount":1,"publishedfiledetails":[\
+        {"publishedfileid":"333","result":1,"consumer_app_id":431960,\
+        "title":"Counted","short_description":"summary","visibility":0,"banned":0,\
+        "subscriptions":410,"lifetime_subscriptions":95000,"favorited":12,"views":6100}]}}
+        """.utf8)
+        let entry = try #require(
+            SteamWorkshopMetadataService.decodeBatch(data: payload, requestedIDs: [333])[333]
+        ).get()
+
+        // Lifetime wins, matching what "Most Subscribed" actually ranks by.
+        #expect(entry.subscriptionCount == 95_000)
+        #expect(entry.viewCount == 6_100)
+        #expect(entry.favoriteCount == 12)
+        #expect(WorkshopPublicSearchSource.queryItem(from: entry).subscriptionCount == 95_000)
+    }
+
+    /// Control: the fields are optional on Valve's side, and their absence must
+    /// stay `nil` rather than becoming a fabricated zero.
+    @Test("Control: details without counts leave the browse item's count unset")
+    func missingCountsStayNil() throws {
+        let entry = try #require(
+            SteamWorkshopMetadataService.decodeBatch(
+                data: Self.detailsPayload(id: "444", tags: ["Scene"]),
+                requestedIDs: [444]
+            )[444]
+        ).get()
+
+        #expect(entry.subscriptionCount == nil)
+        #expect(WorkshopPublicSearchSource.queryItem(from: entry).subscriptionCount == nil)
     }
 }
 #endif

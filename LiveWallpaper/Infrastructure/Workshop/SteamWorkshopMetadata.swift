@@ -21,6 +21,12 @@ struct SteamWorkshopMetadata: Equatable, Sendable {
     /// them: without tags a keyless Browse would silently defeat a preference
     /// that defaults to on.
     let tags: [String]
+    /// Lifetime (total unique) subscriptions, falling back to current — the
+    /// same preference the keyed path applies, so the two agree on what
+    /// "Most Subscribed" ranks by.
+    let subscriptionCount: Int?
+    let viewCount: Int?
+    let favoriteCount: Int?
 
     /// Steam's documented visibility enum on `GetPublishedFileDetails`:
     /// `0` public, `1` friends-only, `2` private; anything else → `.unknown`.
@@ -255,7 +261,10 @@ final class SteamWorkshopMetadataService {
             isBanned: (payload.banned ?? 0) != 0,
             appID: appID,
             steamCommunityURL: communityURL,
-            tags: payload.tags?.compactMap(\.tag) ?? []
+            tags: payload.tags?.compactMap(\.tag) ?? [],
+            subscriptionCount: payload.lifetime_subscriptions ?? payload.subscriptions,
+            viewCount: payload.views,
+            favoriteCount: payload.lifetime_favorited ?? payload.favorited
         ))
     }
 
@@ -307,6 +316,11 @@ private struct GetPublishedFileDetailsEnvelope: Decodable {
         /// Steam sends 0/1 as Int (not Bool); non-zero ⇒ banned.
         let banned: Int?
         let tags: [Tag]?
+        let subscriptions: Int?
+        let lifetime_subscriptions: Int?
+        let favorited: Int?
+        let lifetime_favorited: Int?
+        let views: Int?
 
         struct Tag: Decodable {
             let tag: String?

@@ -3,7 +3,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores the key in the Workshop container-file slot (this Mac only, no iCloud sync).
+/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores the key in this Mac's login keychain (never synced to iCloud).
 ///
 /// Kept for the surfaces that are genuinely modal — onboarding and the Browse
 /// pane's "you need a key to do this" prompt. Settings enters the same key
@@ -27,7 +27,6 @@ struct SteamWebAPIKeyEntrySheet: View {
             footer
         }
         .frame(width: SteamSheetWidth.form)
-        .task { await model.loadStoredKey() }
     }
 
     private var innerContent: some View {

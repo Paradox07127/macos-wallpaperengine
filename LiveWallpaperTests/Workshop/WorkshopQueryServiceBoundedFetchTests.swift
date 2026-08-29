@@ -38,11 +38,9 @@
         private static func makeService() -> WorkshopQueryService {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("workshop-query-bounded-fetch-\(UUID().uuidString)", isDirectory: true)
-            let suiteName = "workshop-query-bounded-fetch-\(UUID().uuidString)"
             let keychain = WorkshopKeychainStore(
                 directory: directory,
-                defaults: UserDefaults(suiteName: suiteName)!,
-                legacySlot: WorkshopLegacyKeychainSlot(exists: { false }, read: { .absent }, delete: {})
+                slot: WorkshopKeychainSlotSpy().slot()
             )
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [WorkshopQueryURLProtocolStub.self]
