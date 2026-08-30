@@ -79,12 +79,17 @@ final class RainCoverageTests: XCTestCase {
         let thirds = try coverageByThird(effect: .rain, tilt: 0.45, settle: 4)
         XCTAssertFalse(thirds.contains(where: { $0 <= 0.0005 }),
                        "a third of the screen is dry: \(thirds)")
-        // No third may be starved relative to the busiest one. A lean biases
-        // coverage downwind, so this is deliberately loose — it is guarding
-        // against a missing wedge, not policing a gradient.
+        // Guarding against a missing wedge, not policing a gradient — the bug
+        // this pins left the downwind third with essentially NO rain. The old
+        // form asserted each third against busiest*0.35, but at 0.45 rad the
+        // downwind share legitimately sits at 34-35% of the busiest and the
+        // capture reads the real screen, so RNG/timing/another window pushed a
+        // healthy run under the line (measured 2026-08-30: red/green/green on
+        // identical code, failing at 98.3% of the threshold). A wedge failure
+        // is an order of magnitude away from either bound, not a percent.
         let busiest = thirds.max() ?? 0
         for (index, share) in thirds.enumerated() {
-            XCTAssertGreaterThan(share, busiest * 0.35, "third \(index) starved: \(thirds)")
+            XCTAssertGreaterThan(share, busiest * 0.15, "third \(index) starved: \(thirds)")
         }
     }
 
