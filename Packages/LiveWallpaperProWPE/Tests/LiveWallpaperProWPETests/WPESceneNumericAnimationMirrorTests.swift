@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import LiveWallpaperProWPE
 
@@ -75,5 +76,55 @@ struct WPESceneNumericAnimationMirrorTests {
         for time in [-10.0, 0, 0.5, 10, 1_000_000] {
             #expect(scalar(animation, at: time) == 42)
         }
+    }
+}
+
+/// Tracks are positional — c0 is x, c1 is y. A c0 that fails to parse (null,
+/// not an array, no valid keyframes) used to be compactMapped away, promoting
+/// c1 into slot 0: the y animation drove x. A broken track must instead hold
+/// its position and sample its fallback.
+@Suite("Track positional alignment")
+struct WPESceneAnimationTrackAlignmentTests {
+    private func parse(_ text: String) -> WPESceneAnimatedValue? {
+        let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        return object.flatMap { WPEValueParser.animatedValue($0) }
+    }
+
+    @Test("A null c0 does not shift c1 into the x slot")
+    func nullTrackHoldsItsPosition() throws {
+        let animated = try #require(parse(#"""
+        {
+            "value": "7 8 9",
+            "animation": {
+                "c0": null,
+                "c1": [
+                    {"frame": 0, "value": 100},
+                    {"frame": 10, "value": 100}
+                ]
+            }
+        }
+        """#))
+        let values = animated.animation.values(at: 0, fallbacks: [7, 8, 9])
+        #expect(values[0] == 7, "x samples its fallback, not c1's keyframes")
+        #expect(values[1] == 100, "y is driven by c1")
+    }
+
+    @Test("A gap in the track indices is filled, not collapsed")
+    func sparseIndicesKeepPositions() throws {
+        let animated = try #require(parse(#"""
+        {
+            "value": "1 2 3",
+            "animation": {
+                "c2": [
+                    {"frame": 0, "value": 42},
+                    {"frame": 10, "value": 42}
+                ]
+            }
+        }
+        """#))
+        let values = animated.animation.values(at: 0, fallbacks: [1, 2, 3])
+        #expect(values[0] == 1)
+        #expect(values[1] == 2)
+        #expect(values[2] == 42, "c2 drives z from slot 2, not slot 0")
     }
 }
