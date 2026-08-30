@@ -27,9 +27,22 @@ final class WPEEngineAssetsInstaller {
         case upToDate(buildID: String?)
         case unableToCompare
         case checkFailed
+        /// Steam refused the cached session. Separate from `checkFailed`
+        /// because it is the only one of these with an obvious next step, and
+        /// because it is the one the user actually hits.
+        case loginRequired
 
-        static func resolve(installedBuildID: String?, latestBuildID: String?) -> UpdateCheckOutcome {
-            guard let latestBuildID else { return .checkFailed }
+        static func resolve(
+            installedBuildID: String?,
+            lookup: SteamEngineBuildLookup?
+        ) -> UpdateCheckOutcome {
+            guard let lookup else { return .checkFailed }
+            switch lookup.outcome {
+            case .loginRequired: return .loginRequired
+            case .timedOut, .steamCMDUnavailable, .unrecognized: return .checkFailed
+            case .found: break
+            }
+            guard let latestBuildID = lookup.buildID else { return .checkFailed }
             guard let installedBuildID else { return .unableToCompare }
             return latestBuildID == installedBuildID
                 ? .upToDate(buildID: installedBuildID)
@@ -293,17 +306,24 @@ final class WPEEngineAssetsInstaller {
     func checkForUpdate(using doctor: SteamCMDDoctorService) {
         checkForUpdate(
             account: doctor.username,
-            binaryResolvable: (try? doctor.resolveBinaryURL()) != nil
+            binaryResolvable: (try? doctor.resolveBinaryURL()) != nil,
+            // Demoting the probe is the point: without it the account row keeps
+            // its green while every Steam operation is failing to log in.
+            onLoginRequired: { doctor.noteOperationReportedLoginRequired() }
         )
     }
 
     /// Seam for tests: doctor fields and the connector lookup are injectable.
+    /// `fetchLatestBuildID` stays ahead of `onLoginRequired`: Swift's forward
+    /// scan binds an unlabelled trailing closure to the first closure
+    /// parameter, and every existing caller passes the fetch that way.
     func checkForUpdate(
         account: String?,
         binaryResolvable: Bool,
-        fetchLatestBuildID: @escaping @Sendable (String, String) async -> String? = {
+        fetchLatestBuildID: @escaping @Sendable (String, String) async -> SteamEngineBuildLookup? = {
             await SteamConnectorClient.latestWallpaperEngineBuildID(accountName: $0, operationID: $1)
-        }
+        },
+        onLoginRequired: @escaping @MainActor () -> Void = {}
     ) {
         guard !isBusy, hasManagedInstall else { return }
         // Checked before any state is set: an early exit after `.checking` would
@@ -314,16 +334,17 @@ final class WPEEngineAssetsInstaller {
         phase = .checking
         updateCheckOutcome = .checking
         task = Task { [weak self] in
-            let latest = await fetchLatestBuildID(account, attempt.uuidString)
+            let lookup = await fetchLatestBuildID(account, attempt.uuidString)
             guard let self, currentAttempt == attempt else { return }
             task = nil
             currentAttempt = nil
             phase = .idle
-            latestBuildID = latest
+            latestBuildID = lookup?.buildID
             let outcome = UpdateCheckOutcome.resolve(
                 installedBuildID: installedBuildID,
-                latestBuildID: latest
+                lookup: lookup
             )
+            if outcome == .loginRequired { onLoginRequired() }
             updateCheckOutcome = outcome
             updateAvailable = {
                 if case .available = outcome {
@@ -426,6 +447,13 @@ final class WPEEngineAssetsInstaller {
                 headline: String(localized: "Couldn't compare versions", comment: "Engine-assets update check version-unknown headline."),
                 title: "",
                 message: String(localized: "Download again to refresh the managed assets.", comment: "Engine-assets update check version-unknown subtitle."),
+                isSuccess: false
+            )
+        case .loginRequired:
+            WorkshopToastCenter.shared.post(
+                headline: String(localized: "Steam sign-in expired", comment: "Engine-assets update check failure headline when Steam refused the cached session."),
+                title: "",
+                message: String(localized: "Sign in to your Steam account again, then check for updates.", comment: "Engine-assets update check failure subtitle when Steam refused the cached session."),
                 isSuccess: false
             )
         case .checkFailed:

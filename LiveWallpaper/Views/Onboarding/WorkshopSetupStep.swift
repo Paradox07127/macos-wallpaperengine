@@ -4,33 +4,33 @@ import SwiftUI
 
 /// Direct-Pro first-run Workshop setup, drawn as a dependency tree.
 ///
-/// The old layout was four flat rows, which read as four independent chores —
-/// and its subtitle even claimed all four were required. They aren't: they form
-/// two short chains and one side door. Capabilities are the folders, setup
-/// steps are the files inside, so parallel groups sit at the same indent and
-/// order-within-a-group reads top-down:
+/// Capabilities are the folders, setup steps are the files inside, so parallel
+/// groups sit at the same indent and order-within-a-group reads top-down:
 ///
-///   Browse the Workshop      ← API key, nothing else
-///   Download wallpapers      ← SteamCMD, then sign-in
-///   Every scene layer        ← link a folder (zero requirements), or
-///                              download via the group above (account must own WPE)
+///   Download wallpapers   ← SteamCMD, then the library folder, then sign-in
+///   Scene resources       ← link a folder (no requirements), or download it
+///                           (needs the group above, and an account that owns
+///                           Wallpaper Engine)
+///   Steam Web API key     ← optional, last: it only improves browsing
 ///
 /// Scenes PLAY without any of this — a missing assets install only skips the
 /// layers it would have supplied — so nothing here gates Continue.
+///
+/// Every row acts in place. There used to be a "Steam connection" sheet behind
+/// two of these buttons, which meant a modal on top of a modal to pick one
+/// folder, and a second rendering of the same three steps that could drift
+/// from this one.
 struct OnboardingWorkshopSetupView: View {
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
+    @Environment(WorkshopSetupController.self) private var controller
 
     let continueAction: () -> Void
 
-    @State private var installer = SteamCMDManagedInstallCoordinator.shared
-    @State private var engineAssets = WPEEngineAssetsLibrary.shared
-    @State private var engineInstaller = WPEEngineAssetsInstaller.shared
     @State private var showingKeyEntry = false
-    @State private var showingConnection = false
-    @State private var showingInstallConsent = false
-    @State private var setupError: String?
-    @State private var isVerifyingInstall = false
+    @State private var showingSetupSheet = false
+    @State private var showingSignIn = false
+    @State private var showingPrivacy = false
 
     var body: some View {
         VStack(spacing: DesignTokens.Spacing.lg) {
@@ -45,107 +45,9 @@ struct OnboardingWorkshopSetupView: View {
             }
 
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                TreeGroupHeader(title: "Browse the Workshop", state: apiKeyState)
-                TreeRow(
-                    isLast: true,
-                    icon: "key",
-                    title: "Steam Web API key",
-                    detail: apiKeyDetail,
-                    info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Get one free at steamcommunity.com/dev/apikey."
-                ) {
-                    if services.hasWebAPIKey {
-                        Button("Replace") { showingKeyEntry = true }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    } else {
-                        Button("Set key") { showingKeyEntry = true }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                    }
-                }
-
-                TreeGroupHeader(title: "Download wallpapers", state: downloadGroupState)
-                    .padding(.top, DesignTokens.Spacing.xs)
-                // Three rows, not two pointing at one sheet: signing in is its
-                // own signal and was invisible while it sat two levels down
-                // inside the connection sheet.
-                TreeRow(
-                    isLast: false,
-                    icon: "terminal",
-                    title: "SteamCMD",
-                    detail: steamCMDDetail,
-                    state: steamCMDState,
-                    info: "Valve's command-line downloader. Loomscreen can install it for you or locate an existing verified Homebrew or tarball install."
-                ) {
-                    steamCMDControl
-                }
-                TreeRow(
-                    isLast: false,
-                    icon: "externaldrive",
-                    title: "Steam library",
-                    detail: doctor.workdirDisplayPath
-                        ?? String(localized: "Not authorized", comment: "Steam library step detail when no folder has been picked."),
-                    state: doctor.libraryStepState,
-                    info: "Loomscreen reads installed Workshop items directly from the official Steam library after one folder authorization. The sandbox cannot grant this itself — the panel opens on Steam's default location so it is one click."
-                ) {
-                    Button("Configure") { showingConnection = true }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                }
-                TreeRow(
-                    isLast: true,
-                    icon: "person.badge.key",
-                    title: "Steam account",
-                    detail: accountDetail,
-                    state: doctor.accountStepState,
-                    info: "Downloads sign in as your own Steam account through SteamCMD. Loomscreen lists the accounts Steam has already signed in on this Mac; it never stores your password."
-                ) {
-                    Button("Sign in") { showingConnection = true }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                }
-
-                TreeGroupHeader(title: "Every scene layer", state: engineAssetsState)
-                    .padding(.top, DesignTokens.Spacing.xs)
-                if hasEngineAssets {
-                    TreeRow(
-                        isLast: true,
-                        icon: "shippingbox",
-                        title: "Wallpaper Engine assets",
-                        detail: engineAssets.engineRootDisplayName
-                            ?? String(localized: "Ready", comment: "Onboarding engine-assets step detail when the assets are available.")
-                    ) {
-                        Button("Change") { Task { await linkEngineAssetsFolder() } }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    }
-                } else {
-                    TreeRow(
-                        isLast: false,
-                        icon: "folder",
-                        title: "Link an existing install",
-                        detail: String(localized: "No sign-in needed — read-only access to a Wallpaper Engine folder", comment: "Onboarding engine-assets link-folder path detail: this path has no prerequisites.")
-                    ) {
-                        Button("Link folder") { Task { await linkEngineAssetsFolder() } }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    }
-                    TreeRow(
-                        isLast: true,
-                        icon: "arrow.down.circle",
-                        title: "Download from Steam",
-                        detail: assetsDownloadDetail
-                    ) {
-                        if engineInstaller.isBusy {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Button("Download") { engineInstaller.download(using: doctor) }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .disabled(!doctor.isDownloadReady)
-                        }
-                    }
-                }
+                downloadGroup
+                sceneResourcesGroup
+                apiKeyGroup
             }
             .padding(DesignTokens.Spacing.md)
             .background(
@@ -153,12 +55,29 @@ struct OnboardingWorkshopSetupView: View {
                     .fill(DesignTokens.Colors.surfaceRaised)
             )
 
-            if let setupError {
-                Label(setupError, systemImage: "exclamationmark.triangle.fill")
+            // Both slots: the scene-resources preflight writes its own, and
+            // rendering only the connection one left a failed download looking
+            // like a click that never happened.
+            if let message = controller.setupError ?? controller.engineAssetsError {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(DesignTokens.Colors.Status.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            // The settings page lists these statements as a section; onboarding
+            // cannot reach Settings, so the same words get a presenter here.
+            Button { showingPrivacy = true } label: {
+                Label {
+                    Text("Privacy & terms", bundle: .main)
+                } icon: {
+                    Image(systemName: "hand.raised")
+                }
+                .font(DesignTokens.Typography.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 0)
 
@@ -187,21 +106,240 @@ struct OnboardingWorkshopSetupView: View {
                 Task { await services.refreshAPIKeyStatus() }
             }
         }
-        .sheet(isPresented: $showingConnection) {
-            WorkshopDoctorView()
-                .environment(doctor)
+        .sheet(isPresented: $showingSetupSheet) {
+            SteamCMDSetupSheet(onConfirmManagedInstall: { controller.runManagedInstall() })
         }
-        .sheet(isPresented: $showingInstallConsent) {
-            SteamCMDManagedInstallSheet(onConfirm: runManagedInstall)
+        .sheet(isPresented: $showingSignIn) {
+            SteamSignInSheet { accountName in
+                controller.adoptSignedInAccount(accountName)
+            }
+        }
+        .sheet(isPresented: $showingPrivacy) {
+            WorkshopPrivacySheet()
         }
         .task {
             await services.refreshAPIKeyStatus()
-            await doctor.autoConfigureIfNeeded()
-            engineInstaller.refreshManagedInstallState()
+            await controller.prepare()
         }
     }
 
-    // MARK: - Group states
+    // MARK: - Download wallpapers
+
+    @ViewBuilder
+    private var downloadGroup: some View {
+        TreeGroupHeader(title: "Download wallpapers", state: downloadGroupState)
+
+        TreeRow(
+            isLast: false,
+            icon: "terminal",
+            title: "SteamCMD",
+            detail: controller.steamCMDDetail,
+            state: controller.steamCMDState,
+            info: "Valve's command-line downloader. Loomscreen can install its own copy, or locate an existing verified Homebrew or tarball install."
+        ) {
+            WorkshopSetupRoutes(
+                // "Change" points at a different SteamCMD; it must NOT open the
+                // install sheet, whose primary action downloads a second managed
+                // copy and displaces the Homebrew or hand-picked one already in
+                // use. Same split as the settings page.
+                primary: doctor.isBinaryPresumedReady
+                    ? WorkshopSetupRoute(id: "steamcmd.change", title: "Change") {
+                        Task { await controller.pickBinaryManually() }
+                    }
+                    : WorkshopSetupRoute(id: "steamcmd.setup", title: "Set up SteamCMD") {
+                        showingSetupSheet = true
+                    },
+                secondary: doctor.isBinaryPresumedReady ? [] : [
+                    WorkshopSetupRoute(id: "steamcmd.locate", title: "Locate automatically") {
+                        controller.autoDetectBinary()
+                    }
+                ],
+                isBusy: controller.isSteamCMDBusy,
+                emphasizesPrimary: !doctor.isBinaryPresumedReady
+            )
+            .controlSize(.small)
+        }
+
+        TreeRow(
+            isLast: false,
+            icon: "externaldrive",
+            title: "Steam library",
+            detail: controller.libraryDetail,
+            state: doctor.libraryStepState,
+            info: "Loomscreen reads installed Workshop items directly from the official Steam library after one folder authorization. macOS only grants that through a panel you confirm, so even a folder Loomscreen already located needs one click."
+        ) {
+            WorkshopSetupRoutes(
+                primary: libraryRoute,
+                secondary: librarySecondaryRoutes,
+                emphasizesPrimary: !doctor.isLibraryReady
+            )
+            .controlSize(.small)
+        }
+
+        TreeRow(
+            isLast: true,
+            icon: "person.badge.key",
+            title: "Steam account",
+            detail: controller.accountDetail,
+            state: doctor.accountStepState,
+            info: "Downloads sign in as your own Steam account through SteamCMD. Loomscreen lists the accounts Steam has already signed in on this Mac; it never stores your password."
+        ) {
+            accountControl
+        }
+    }
+
+    private var libraryRoute: WorkshopSetupRoute {
+        if doctor.isLibraryReady {
+            return WorkshopSetupRoute(id: "library.change", title: "Change") {
+                Task { await controller.authorizeSteamLibrary(startingAtScannedPath: false) }
+            }
+        }
+        if controller.hasScannedLibrary {
+            return WorkshopSetupRoute(id: "library.authorize", title: "Authorize this location") {
+                Task { await controller.authorizeSteamLibrary(startingAtScannedPath: true) }
+            }
+        }
+        return WorkshopSetupRoute(id: "library.choose", title: "Choose folder…") {
+            Task { await controller.authorizeSteamLibrary(startingAtScannedPath: false) }
+        }
+    }
+
+    /// The located folder can be the wrong one — a second Steam library, or a
+    /// leftover profile — so the manual route stays reachable here too.
+    private var librarySecondaryRoutes: [WorkshopSetupRoute] {
+        guard !doctor.isLibraryReady, controller.hasScannedLibrary else { return [] }
+        return [
+            WorkshopSetupRoute(id: "library.other", title: "Choose another folder…") {
+                Task { await controller.authorizeSteamLibrary(startingAtScannedPath: false) }
+            }
+        ]
+    }
+
+    /// A chooser is a menu, so switching accounts stays one even here; signing
+    /// in to a new one is the button beside it.
+    @ViewBuilder
+    private var accountControl: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            if !controller.discoveredAccounts.isEmpty {
+                Menu {
+                    steamAccountMenuItems(
+                        accounts: controller.discoveredAccounts,
+                        current: doctor.username,
+                        onSelect: controller.selectAccount,
+                        onSignIn: { showingSignIn = true },
+                        onRescan: { Task { await controller.loadAccounts() } }
+                    )
+                } label: {
+                    Text(doctor.username == nil ? "Choose account" : "Switch account", bundle: .main)
+                }
+                .menuStyle(.borderlessButton)
+                .controlSize(.small)
+                .fixedSize()
+            }
+
+            Button("Sign in to a new account") { showingSignIn = true }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .fixedSize()
+        }
+    }
+
+    private var downloadGroupState: WorkshopStepState {
+        controller.isSteamCMDBusy ? .working : doctor.connectionStepState
+    }
+
+    // MARK: - Scene resources
+
+    @ViewBuilder
+    private var sceneResourcesGroup: some View {
+        TreeGroupHeader(title: "Scene resources", state: controller.engineAssetsState)
+            .padding(.top, DesignTokens.Spacing.xs)
+
+        TreeRow(
+            isLast: true,
+            icon: "shippingbox",
+            title: "Wallpaper Engine assets",
+            detail: sceneResourcesDetail,
+            info: "Scenes reference textures, shaders and models that ship with Wallpaper Engine rather than with the scene. Loomscreen bundles clean-room equivalents of the most common ones, but the rest are skipped without an install — the scene still renders, so the loss is silent. Read-only access; no files are modified."
+        ) {
+            WorkshopSetupRoutes(
+                primary: sceneResourcesPrimaryRoute,
+                secondary: sceneResourcesSecondaryRoutes,
+                isBusy: controller.engineInstaller.isBusy || controller.isPreflightingDownload,
+                emphasizesPrimary: !controller.hasEngineAssets
+            )
+            .controlSize(.small)
+        }
+    }
+
+    private var sceneResourcesPrimaryRoute: WorkshopSetupRoute {
+        if controller.hasEngineAssets {
+            return WorkshopSetupRoute(id: "assets.change", title: "Change") {
+                Task { await controller.linkEngineAssetsFolder() }
+            }
+        }
+        return WorkshopSetupRoute(
+            id: "assets.download",
+            title: "Download automatically",
+            unavailableReason: controller.engineAssetsDownloadBlockReason
+        ) {
+            controller.downloadEngineAssets()
+        }
+    }
+
+    private var sceneResourcesSecondaryRoutes: [WorkshopSetupRoute] {
+        guard !controller.hasEngineAssets else { return [] }
+        return [
+            WorkshopSetupRoute(id: "assets.link", title: "Link manually") {
+                Task { await controller.linkEngineAssetsFolder() }
+            }
+        ]
+    }
+
+    private var sceneResourcesDetail: String {
+        if controller.engineInstaller.isBusy {
+            return String(localized: "Downloading from Steam…", comment: "Onboarding engine-assets step detail while the download runs.")
+        }
+        if controller.hasEngineAssets {
+            return controller.engineAssets.engineRootDisplayName
+                ?? String(localized: "Ready", comment: "Onboarding engine-assets step detail when the assets are available.")
+        }
+        // The blocked reason belongs on the line, not only in the disabled
+        // button's tooltip: a dimmed control is exactly what a pointer skips.
+        if let reason = controller.engineAssetsDownloadBlockReason {
+            return reason
+        }
+        return String(
+            localized: "Download the copy you own, or link an install you already have",
+            comment: "Onboarding scene-resources detail naming the two routes."
+        )
+    }
+
+    // MARK: - Steam Web API key
+
+    /// Last, and without a group badge: this one is genuinely optional, and a
+    /// "Not set" seal beside it read as a third thing left undone.
+    @ViewBuilder
+    private var apiKeyGroup: some View {
+        TreeGroupHeader(title: "Steam Web API key", state: apiKeyState, isOptional: true)
+            .padding(.top, DesignTokens.Spacing.xs)
+
+        TreeRow(
+            isLast: true,
+            icon: "key",
+            title: "Steam Web API key",
+            detail: apiKeyDetail,
+            info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Browsing works without it; adding one brings ratings, authors and faster search."
+        ) {
+            WorkshopSetupRoutes(
+                primary: WorkshopSetupRoute(
+                    id: "apiKey.set",
+                    title: services.hasWebAPIKey ? "Replace" : "Set key"
+                ) { showingKeyEntry = true }
+            )
+            .controlSize(.small)
+        }
+    }
 
     private var apiKeyState: WorkshopStepState {
         guard services.hasWebAPIKey else { return .notStarted }
@@ -213,114 +351,6 @@ struct OnboardingWorkshopSetupView: View {
             ? String(localized: "Ready", comment: "Workshop setup status when a Steam Web API key exists.")
             : String(localized: "Optional — adds ratings, authors and faster search", comment: "Workshop settings subtitle for Steam Web API key.")
     }
-
-    private var downloadGroupState: WorkshopStepState {
-        isSteamCMDBusy ? .working : doctor.connectionStepState
-    }
-
-    private var engineAssetsState: WorkshopStepState {
-        .engineAssets(library: engineAssets, installer: engineInstaller)
-    }
-
-    private var hasEngineAssets: Bool {
-        WorkshopStepState.hasEngineAssets(library: engineAssets, installer: engineInstaller)
-    }
-
-    private var accountDetail: String {
-        doctor.username
-            ?? String(localized: "Not signed in", comment: "Onboarding Steam account row detail when no account is selected.")
-    }
-
-    private var assetsDownloadDetail: String {
-        if engineInstaller.isBusy {
-            return String(localized: "Downloading from Steam…", comment: "Onboarding engine-assets step detail while the download runs.")
-        }
-        if doctor.isDownloadReady {
-            return String(localized: "Your Steam account must own Wallpaper Engine.", comment: "Onboarding engine-assets download-path detail once the Download group is ready.")
-        }
-        return String(localized: "Ready once the Download group above is — the account must own Wallpaper Engine.", comment: "Onboarding engine-assets download-path detail while its prerequisites are missing.")
-    }
-
-    // MARK: - SteamCMD
-
-    @ViewBuilder
-    private var steamCMDControl: some View {
-        if isSteamCMDBusy {
-            ProgressView().controlSize(.small)
-        } else if isSteamCMDReady {
-            Button("Configure") { showingConnection = true }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-        } else {
-            Button("Install SteamCMD") { showingInstallConsent = true }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-        }
-    }
-
-    private var steamCMDState: WorkshopStepState {
-        if isSteamCMDBusy { return .working }
-        if isSteamCMDReady { return .ready }
-        if case .failed = installer.status { return .attention }
-        return .notStarted
-    }
-
-    private var isSteamCMDReady: Bool {
-        doctor.hasBoundBinary && doctor.isGreen(.binaryIdentity)
-    }
-
-    private var isSteamCMDBusy: Bool {
-        if isVerifyingInstall { return true }
-        switch installer.status {
-        case .installing, .removing: return true
-        case .idle, .installed, .failed: return false
-        }
-    }
-
-    private var steamCMDDetail: String {
-        switch installer.status {
-        case .installing:
-            return String(localized: "Setting up SteamCMD…", comment: "SteamCMD step detail while the connector unpacks and verifies the install.")
-        case .removing:
-            return String(localized: "Removing SteamCMD…", comment: "SteamCMD step detail while the connector deletes the managed install.")
-        case .idle, .installed, .failed:
-            if isVerifyingInstall {
-                return String(localized: "Checking that SteamCMD runs…", comment: "SteamCMD step detail while the connector launches the freshly installed binary to confirm it works.")
-            }
-            return doctor.binaryDisplayPath
-                ?? String(localized: "Not selected", comment: "SteamCMD step detail when no binary is bound.")
-        }
-    }
-
-    private func runManagedInstall() {
-        setupError = nil
-        Task {
-            switch await installer.install() {
-            case .installed:
-                isVerifyingInstall = true
-                let bound = await doctor.autoDetectBinary()
-                isVerifyingInstall = false
-                if !bound {
-                    setupError = String(
-                        localized: "SteamCMD was installed but could not be started.",
-                        comment: "Workshop setup error after a managed SteamCMD install that will not launch."
-                    )
-                }
-            case .failed(let reason):
-                setupError = reason
-            case .idle, .installing, .removing:
-                break
-            }
-        }
-    }
-
-    private func linkEngineAssetsFolder() async {
-        setupError = nil
-        if await engineAssets.requestAccess() {
-            engineInstaller.refreshManagedInstallState()
-            engineInstaller.clearTransientStatus()
-        }
-    }
 }
 
 // MARK: - Tree furniture
@@ -330,12 +360,21 @@ struct OnboardingWorkshopSetupView: View {
 private struct TreeGroupHeader: View {
     let title: LocalizedStringKey
     let state: WorkshopStepState
+    /// Optional groups say so instead of showing "Not set", which reads as a
+    /// chore left undone.
+    var isOptional = false
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Text(title, bundle: .main)
                 .font(DesignTokens.Typography.bodyEmphasized)
-            WorkshopStateBadge(state: state)
+            if isOptional, state == .notStarted {
+                Text("Optional", bundle: .main)
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                WorkshopStateBadge(state: state)
+            }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)

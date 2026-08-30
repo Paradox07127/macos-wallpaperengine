@@ -43,7 +43,7 @@ protocol SteamConnectorProtocol {
     )
 
     /// Latest public-branch buildid for app 431960, for update checks.
-    /// Replies with a JSON `String?`.
+    /// Replies with a JSON `SteamEngineBuildLookup`.
     func latestWallpaperEngineBuildID(
         accountName: String,
         operationID: String,
@@ -314,6 +314,39 @@ enum SteamCMDManifest {
 
 /// `Error` so install steps can short-circuit through `Result`; the value is
 /// still the wire payload, not a thrown-away diagnostic.
+/// The outcome of asking Steam for Wallpaper Engine's current build id.
+///
+/// Was a bare `String?`. Five unrelated situations produced that nil — an
+/// invalid account name, a request that expired in the queue, no runnable
+/// SteamCMD, a login Steam refused, and output with no `"public"` block — and
+/// the app rendered all five as "SteamCMD did not return the latest build".
+/// An expired Steam session is by far the most common of the five, and it is
+/// the one with an obvious next step, so it has to arrive distinguishable.
+struct SteamEngineBuildLookup: Codable, Equatable, Sendable {
+    enum Outcome: String, Codable, Sendable {
+        case found
+        /// Steam refused the cached session. The caller must demote its
+        /// cached-login verdict, not just report a failed check.
+        case loginRequired
+        case timedOut
+        /// No SteamCMD to run, or the request expired waiting for the queue.
+        case steamCMDUnavailable
+        /// SteamCMD ran and said nothing we recognise.
+        case unrecognized
+    }
+
+    let outcome: Outcome
+    let buildID: String?
+
+    static func found(_ buildID: String) -> SteamEngineBuildLookup {
+        SteamEngineBuildLookup(outcome: .found, buildID: buildID)
+    }
+
+    static func failed(_ outcome: Outcome) -> SteamEngineBuildLookup {
+        SteamEngineBuildLookup(outcome: outcome, buildID: nil)
+    }
+}
+
 struct SteamCMDManagedInstallResult: Codable, Equatable, Sendable, Error {
     enum Outcome: String, Codable, Sendable {
         case installed
@@ -346,11 +379,47 @@ struct SteamCMDManagedInstallResult: Codable, Equatable, Sendable, Error {
 /// exiting 42, and a fresh install does it twice in a row before its first
 /// clean exit (measured 2026-08-28). The rewritten binary must re-pass the
 /// signature/quarantine gates before each relaunch.
+/// One retry for a package download that failed in transit.
+///
+/// The managed install pulls four packages, ~25 MB total, over a single
+/// `URLSession` download with no retry: one dropped connection anywhere in that
+/// window failed the whole install and the user saw "Could not download …",
+/// with re-running the install as their only recourse.
+///
+/// Scoped deliberately to the transport. A digest that disagrees with the
+/// manifest is `.tarballRejected` and is *not* retried here: the bytes arrived
+/// intact and were simply not the published ones, which is an integrity signal,
+/// not a transient one.
+enum SteamCMDDownloadRetryPolicy {
+    /// The original attempt plus one.
+    static let maxAttempts = 2
+    /// Long enough to outlast a link renegotiation, short enough that a real
+    /// outage still fails the install promptly.
+    static let retryDelay: TimeInterval = 2
+
+    /// Runs `attempt` until it reports success or the budget is spent, waiting
+    /// between tries. `wait` is injected so tests do not sleep.
+    static func run(
+        attempt: (Int) -> Bool,
+        wait: (TimeInterval) -> Void
+    ) -> Bool {
+        for number in 1...maxAttempts {
+            if attempt(number) { return true }
+            if number < maxAttempts { wait(retryDelay) }
+        }
+        return false
+    }
+}
+
 enum SteamCMDSelfUpdateRestartPolicy {
     static let restartExitCode: Int32 = 42
-    /// Two restarts covers the measured fresh-install case; a binary still
-    /// asking after that is treated as broken rather than looped forever.
-    static let maxExecutions = 3
+    /// A measured fresh install asks twice (42, 42, 0 — 2026-08-28), so three
+    /// executions would fit it with nothing to spare. Valve decides how many
+    /// times its bootstrap asks, and one more would surface as
+    /// "First SteamCMD run exited 42" — which reads as a broken install rather
+    /// than as a restart request we declined. Four keeps one spare; a binary
+    /// still asking after that is broken, not slow.
+    static let maxExecutions = 4
 
     enum Outcome<Run> {
         /// The last run, whatever its exit status — the caller judges it.

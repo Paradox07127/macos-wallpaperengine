@@ -10,6 +10,9 @@ enum DoctorProbeKind: String, Sendable, CaseIterable, Identifiable {
     case gatekeeperQuarantine
     case workingDirectory
     case cachedLogin
+    case workshopContent
+    case sceneResources
+    case connector
 
     var id: String { rawValue }
 
@@ -20,13 +23,20 @@ enum DoctorProbeKind: String, Sendable, CaseIterable, Identifiable {
         case .gatekeeperQuarantine: return String(localized: "Gatekeeper / quarantine", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
         case .workingDirectory: return String(localized: "Steam Library access", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
         case .cachedLogin: return String(localized: "Steam sign-in", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+        case .workshopContent: return String(localized: "Workshop content folder", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+        case .sceneResources: return String(localized: "Scene resources", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
+        case .connector: return String(localized: "Background Steam connector", comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
         }
     }
 
     /// Advisory failures remain visible without blocking Workshop operations.
+    ///
+    /// The three Workshop-wide checks are all advisory by construction:
+    /// `downloadBlocker` never reads them, so a red row here reports a problem
+    /// without taking any command away from the user.
     var isAdvisory: Bool {
         switch self {
-        case .codeSignature: return true
+        case .codeSignature, .workshopContent, .sceneResources, .connector: return true
         default: return false
         }
     }
@@ -640,6 +650,9 @@ final class SteamCMDDoctorService {
         case .gatekeeperQuarantine: await runGatekeeperProbe()
         case .workingDirectory: runWorkingDirectoryProbe()
         case .cachedLogin: await runCachedLoginProbe()
+        case .workshopContent: runWorkshopContentProbe()
+        case .sceneResources: runSceneResourcesProbe()
+        case .connector: await runConnectorProbe()
         }
     }
 

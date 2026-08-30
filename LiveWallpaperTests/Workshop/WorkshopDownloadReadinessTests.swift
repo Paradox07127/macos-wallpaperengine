@@ -82,6 +82,26 @@ struct WorkshopDownloadReadinessTests {
         }
     }
 
+    /// The Diagnostics section reports on things `downloadBlocker` deliberately
+    /// ignores. If one of them ever reached the blocker, a wallpaper-engine
+    /// folder the user never linked would start refusing Workshop downloads.
+    /// `redIdentityProbeBlocksDownloads` above is the control: it proves a red
+    /// probe *can* block, so a pass here is not just "nothing blocks anything".
+    @Test("Red Workshop-wide diagnostics never block downloads")
+    func advisoryProbesNeverBlockDownloads() throws {
+        let service = makeService()
+        configureAllGreen(service, bookmark: try resolvableBookmark())
+
+        for kind in [DoctorProbeKind.workshopContent, .sceneResources, .connector] {
+            service.setProbe(kind, status: .red(message: "failing", command: nil))
+            #expect(
+                service.downloadBlocker == nil,
+                Comment(rawValue: "\(kind.rawValue) reached downloadBlocker; it is advisory and must not gate")
+            )
+            #expect(kind.isAdvisory)
+        }
+    }
+
     @Test("Everything green with a resolvable grant is ready")
     func allGreenResolvableIsReady() throws {
         // Control: the added conditions must not block a genuinely ready setup.

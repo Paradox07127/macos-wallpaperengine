@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
@@ -123,37 +124,18 @@ struct WorkshopStateBadge: View {
     }
 }
 
-/// Opens the shared Workshop privacy sheet (what leaves this Mac).
-struct WorkshopPrivacyLink: View {
-    @State private var isPresented = false
-
-    var body: some View {
-        Button {
-            isPresented = true
-        } label: {
-            Label {
-                Text("Privacy & data", bundle: .main)
-            } icon: {
-                Image(systemName: "hand.raised")
-            }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .sheet(isPresented: $isPresented) {
-            WorkshopPrivacySheet()
-        }
-    }
-}
-
-/// Sheet (not popover): CJK privacy copy runs ~1.5–2× English and would clip in a tooltip.
-private struct WorkshopPrivacySheet: View {
+/// Sheet (not popover): CJK privacy copy runs ~1.5–2× English and would clip
+/// in a tooltip. Renders `WorkshopLegalContent`, the same statements the
+/// settings page lists — onboarding has no way to reach Settings, so it needs
+/// its own presenter, not its own copy of the words.
+struct WorkshopPrivacySheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SteamSheetHeader(
                 icon: "hand.raised",
-                title: "Privacy & data"
+                title: "Privacy & terms"
             )
             .padding(.horizontal, DesignTokens.Spacing.xl)
             .padding(.top, DesignTokens.Spacing.xl)
@@ -163,22 +145,29 @@ private struct WorkshopPrivacySheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
-                    point(
-                        title: "File access",
-                        body: "Loomscreen never asks for Full Disk Access. Library access comes from one folder you pick, stored as a security-scoped bookmark."
-                    )
-                    point(
-                        title: "Steam sign-in",
-                        body: "Your Steam password and Steam Guard codes go to SteamCMD only — sign in from Terminal, or reuse the session Steam already cached."
-                    )
-                    point(
-                        title: "Web API key",
-                        body: "The Web API key is stored privately on this Mac and is never synced. Forgetting it here does not revoke it; do that at steamcommunity.com/dev/apikey."
-                    )
-                    point(
-                        title: "Where requests go",
-                        body: "Workshop requests go straight to Valve over HTTPS. Nothing is sent to Loomscreen."
-                    )
+                    ForEach(WorkshopLegalContent.points) { point in
+                        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                            Text(point.title, bundle: .main)
+                                .font(DesignTokens.Typography.bodyEmphasized)
+                            Text(point.body, bundle: .main)
+                                .font(DesignTokens.Typography.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    HStack(spacing: DesignTokens.Spacing.md) {
+                        ForEach(WorkshopLegalContent.references) { reference in
+                            Button {
+                                NSWorkspace.shared.open(reference.url)
+                            } label: {
+                                Text(reference.title, bundle: .main)
+                            }
+                            .buttonStyle(.link)
+                            .fixedSize()
+                        }
+                        Spacer(minLength: 0)
+                    }
                 }
                 .padding(DesignTokens.Spacing.xl)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,18 +178,7 @@ private struct WorkshopPrivacySheet: View {
                 primaryAction: { dismiss() }
             )
         }
-        .frame(width: SteamSheetWidth.form, height: 420)
-    }
-
-    private func point(title: LocalizedStringKey, body: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text(title, bundle: .main)
-                .font(DesignTokens.Typography.bodyEmphasized)
-            Text(body, bundle: .main)
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        .frame(width: SteamSheetWidth.form, height: 460)
     }
 }
 #endif

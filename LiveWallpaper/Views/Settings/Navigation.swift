@@ -17,6 +17,8 @@ enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
     case workshopConnection
     case workshopAssets
     case workshopContent
+    case workshopDiagnostics
+    case workshopLegal
     case workshopBadges
 
     var id: String { rawValue }
