@@ -40,7 +40,14 @@ final class WorkshopSetupController {
     /// which is still nil, and reads "Not selected" moments after a successful
     /// install.
     private(set) var isVerifyingInstall = false
-    private(set) var isDetectingBinary = false
+    /// Counter, not a Bool: Settings, onboarding and the pane share this one
+    /// controller, so two `prepare()`s (or a prepare and a manual detect) can
+    /// overlap — the first finisher used to clear the flag while the second was
+    /// still running, re-enabling the row mid-detection.
+    private var detectionsInFlight = 0
+    var isDetectingBinary: Bool { detectionsInFlight > 0 }
+    private func beginBinaryDetection() { detectionsInFlight += 1 }
+    private func endBinaryDetection() { detectionsInFlight = max(0, detectionsInFlight - 1) }
     private(set) var discoveredAccounts: [SteamAccountSummary] = []
     /// Where the connector says Steam already lives. Display only: the sandbox
     /// still needs a user-confirmed panel before it may read anything there.
@@ -84,9 +91,9 @@ final class WorkshopSetupController {
         // `autoDetectBinary`, and without it a click landing mid-`prepare`
         // starts a second diagnose whose late "no SteamCMD found" overwrites
         // the binding the first one just made.
-        isDetectingBinary = true
+        beginBinaryDetection()
         await doctor.autoConfigureIfNeeded()
-        isDetectingBinary = false
+        endBinaryDetection()
         engineInstaller.refreshManagedInstallState()
         scanForSteamLibrary()
         await loadAccounts()
@@ -177,11 +184,15 @@ final class WorkshopSetupController {
 
     func autoDetectBinary() {
         beginSetupAction()
-        isDetectingBinary = true
+        beginBinaryDetection()
         Task {
             let found = await doctor.autoDetectBinary()
-            isDetectingBinary = false
-            if !found {
+            endBinaryDetection()
+            // `!doctor.hasBoundBinary` and not just `!found`: with three entry
+            // points sharing this controller, a parallel prepare/manual pick can
+            // bind a binary while this detect is still out — its late "not
+            // found" would then overwrite a state that is in fact bound.
+            if !found, !doctor.hasBoundBinary {
                 // The connector's own reason when it reached one — it names the
                 // copy it tried and what went wrong. The generic sentence is
                 // only right when nothing was found at all.
@@ -212,8 +223,8 @@ final class WorkshopSetupController {
         guard panel.runModal() == .OK, let url = panel.url else { return false }
 
         beginSetupAction()
-        isDetectingBinary = true
-        defer { isDetectingBinary = false }
+        beginBinaryDetection()
+        defer { endBinaryDetection() }
         let result = await SteamConnectorClient.bindManualSteamCMDBinary(
             path: url.path(percentEncoded: false)
         )
@@ -238,11 +249,11 @@ final class WorkshopSetupController {
 
     func forgetManualBinary() async {
         beginSetupAction()
-        isDetectingBinary = true
+        beginBinaryDetection()
         await SteamConnectorClient.clearManualSteamCMDBinary()
         hasManualBinding = false
         let found = await doctor.autoDetectBinary()
-        isDetectingBinary = false
+        endBinaryDetection()
         if !found { doctor.unbindBinary() }
     }
 

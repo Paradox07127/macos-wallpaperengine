@@ -33,6 +33,30 @@ struct SteamLibraryPathsTests {
         ))
     }
 
+    /// The id becomes a path component under the user's real Steam library, so
+    /// the rule is exactly ASCII `0-9`, 1...20 digits — not `Character.isNumber`,
+    /// which also passes Nd/Nl/No ("\u{FF11}", "①", "٤") and would let a fabricated
+    /// id create or delete `content/431960/①/`. The lenient `WPEPathSafety`
+    /// check is a different contract (local cache components; folder imports use
+    /// the folder name) and must NOT be tightened to match this one.
+    @Test("Workshop ids are exactly 1-20 ASCII digits on the connector boundary")
+    func workshopIDBoundaryIsASCIIDigitsOnly() {
+        #expect(SteamLibraryPaths.isSafeWorkshopID("1"))
+        #expect(SteamLibraryPaths.isSafeWorkshopID("3725117707"))
+        #expect(SteamLibraryPaths.isSafeWorkshopID(String(repeating: "9", count: 20)))
+
+        #expect(!SteamLibraryPaths.isSafeWorkshopID(""))
+        #expect(!SteamLibraryPaths.isSafeWorkshopID(String(repeating: "9", count: 21)))
+        #expect(!SteamLibraryPaths.isSafeWorkshopID("123abc"))
+        #expect(!SteamLibraryPaths.isSafeWorkshopID(" 123"))
+        #expect(!SteamLibraryPaths.isSafeWorkshopID("123\n"))
+        #expect(!SteamLibraryPaths.isSafeWorkshopID("\u{FF11}\u{FF12}\u{FF13}"), "fullwidth digits")
+        #expect(!SteamLibraryPaths.isSafeWorkshopID("\u{2460}"), "circled one")
+        #expect(!SteamLibraryPaths.isSafeWorkshopID("\u{0664}"), "Arabic-Indic four")
+        #expect(!SteamLibraryPaths.isSafeWorkshopID("-123"))
+        #expect(!SteamLibraryPaths.isSafeWorkshopID("12.3"))
+    }
+
     @Test("Nothing outside the Steam profile is writable")
     func pathsOutsideSteamAreRefused() {
         let steam = SteamLibraryPaths.steamRoot()

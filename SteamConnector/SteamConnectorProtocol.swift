@@ -1737,10 +1737,12 @@ enum SteamLibraryPaths {
         root.appendingPathComponent("steamapps/common/wallpaper_engine", isDirectory: true)
     }
 
-    /// A Workshop id must be exactly digits: it becomes a path component, and
-    /// anything else could climb out of the content root.
+    /// A Workshop id must be exactly ASCII `0-9`: it becomes a path component
+    /// under the user's real Steam library. Not `Character.isNumber` — that
+    /// also passes Nd/Nl/No (fullwidth `１２３`, `①`, `٤`), which are not Steam
+    /// ids but would still be created or deleted as directories.
     static func isSafeWorkshopID(_ id: String) -> Bool {
-        !id.isEmpty && id.count <= 20 && id.allSatisfy(\.isNumber)
+        !id.isEmpty && id.count <= 20 && id.utf8.allSatisfy { $0 >= 0x30 && $0 <= 0x39 }
     }
 
     /// True only for paths at or under one of the two writable subtrees,
