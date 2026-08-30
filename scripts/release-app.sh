@@ -34,6 +34,7 @@ VERSION=""
 DRY_RUN=0
 PLAN=0
 SKIP_CHECKS_FLAG=0
+NOTES_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -42,6 +43,9 @@ while [[ $# -gt 0 ]]; do
     --dry-run)     DRY_RUN=1; shift ;;
     --plan)        PLAN=1; shift ;;
     --skip-checks) SKIP_CHECKS_FLAG=1; shift ;;
+    # Passed straight to generate-appcast.sh so the update dialog carries this
+    # version's changelog instead of only the quarantine line.
+    --notes-file)  NOTES_FILE="${2:-}"; shift 2 ;;
     -h|--help)     sed -n '3,21p' "$0"; exit 0 ;;
     *) echo "ERROR: unknown argument '$1'" >&2; exit 64 ;;
   esac
@@ -463,7 +467,8 @@ else
     --version "$VERSION" \
     --build "$BUILD_NUMBER" \
     --dmg "$DMG_PATH" \
-    --derived-data "$DERIVED_DATA"
+    --derived-data "$DERIVED_DATA" \
+    ${NOTES_FILE:+--notes-file "$NOTES_FILE"}
 fi
 
 DMG_SIZE_MB=$(( $(stat -f%z "$DMG_PATH") / 1024 / 1024 ))
