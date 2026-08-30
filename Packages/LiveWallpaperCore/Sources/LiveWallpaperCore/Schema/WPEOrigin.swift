@@ -152,15 +152,15 @@ public enum WPEType: String, Codable, Equatable, Sendable {
     public var localizedDisplayName: String {
         switch self {
         case .video:
-            return String(localized: "Video", defaultValue: "Video", comment: "Wallpaper Engine project type.")
+            return String(localized: "Video", defaultValue: "Video", bundle: .appLanguage, comment: "Wallpaper Engine project type.")
         case .web:
-            return String(localized: "Web", defaultValue: "Web", comment: "Wallpaper Engine project type.")
+            return String(localized: "Web", defaultValue: "Web", bundle: .appLanguage, comment: "Wallpaper Engine project type.")
         case .scene:
-            return String(localized: "Scene", defaultValue: "Scene", comment: "Wallpaper Engine project type.")
+            return String(localized: "Scene", defaultValue: "Scene", bundle: .appLanguage, comment: "Wallpaper Engine project type.")
         case .application:
-            return String(localized: "App", defaultValue: "App", comment: "Wallpaper Engine project type.")
+            return String(localized: "App", defaultValue: "App", bundle: .appLanguage, comment: "Wallpaper Engine project type.")
         case .unknown:
-            return String(localized: "Unknown", defaultValue: "Unknown", comment: "Wallpaper Engine project type.")
+            return String(localized: "Unknown", defaultValue: "Unknown", bundle: .appLanguage, comment: "Wallpaper Engine project type.")
         }
     }
 }

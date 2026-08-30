@@ -80,87 +80,87 @@ public enum DestructiveAction: Identifiable, Equatable {
             return isLast
                 ? String(
                     localized: "This is the only wallpaper in the playlist. Removing it will clear the wallpaper on \(displayName).",
-                    comment: "Destructive confirm message. Placeholder is the display name."
+                    bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name."
                 )
                 : String(
                     localized: "The item will be removed from the playlist. Other displays using this video keep their copy.",
-                    comment: "Destructive confirm message for removing a non-last playlist item."
+                    bundle: .appLanguage, comment: "Destructive confirm message for removing a non-last playlist item."
                 )
         case .removeSystemWallpaper(let title, let isInUse):
             return isInUse
                 ? String(
                     localized: "“\(title)” is on screen right now. It stops playing and its file is deleted immediately; the desktop keeps the last frame until you pick another wallpaper in System Settings.",
-                    comment: "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title."
+                    bundle: .appLanguage, comment: "Destructive confirm message for removing the system wallpaper that is currently displayed. Placeholder is the video title."
                 )
                 : String(
                     localized: "“\(title)” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched.",
-                    comment: "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title."
+                    bundle: .appLanguage, comment: "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title."
                 )
         case .removeSceneHistory(let sceneName):
             return String(
                 localized: "\(sceneName) won't appear in your recent history anymore. The local cache is kept.",
-                comment: "Destructive confirm message. Placeholder is the scene name."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the scene name."
             )
         case .deleteBookmark(let name):
             return String(
                 localized: "'\(name)' will be removed from your library. Displays using this bookmark fall back to their saved wallpaper.",
-                comment: "Destructive confirm message. Placeholder is the bookmark name."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the bookmark name."
             )
         case .removeScheduleSlot(let slotLabel):
             return String(
                 localized: "The \(slotLabel) slot will be removed. Wallpapers outside this window keep their schedules.",
-                comment: "Destructive confirm message. Placeholder is the schedule slot label."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the schedule slot label."
             )
         case .disableSchedule(let count):
             return String(
                 localized: "All \(count) time-based wallpaper rules will be cleared. The current wallpaper stays applied.",
-                comment: "Destructive confirm message. Placeholder is the number of schedule rules."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the number of schedule rules."
             )
         case .clearSystemWallpaperLibrary(let itemCount, let formattedSize):
             return String(
                 localized: "\(itemCount) video(s) and \(formattedSize) are deleted from the folder macOS reads. Your originals in Loomscreen are untouched.",
-                comment: "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk."
+                bundle: .appLanguage, comment: "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk."
             )
         case .clearAllStorageCaches(let byteSize):
             return String(
                 localized: "Removes \(byteSize) of reclaimable cache files. Active wallpapers keep their source assignments and rebuild cached files when needed.",
-                comment: "Destructive confirm message. Placeholder is a formatted byte size."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is a formatted byte size."
             )
         case .clearSceneVideoCache(let byteSize):
             return String(
                 localized: "Deletes \(byteSize) of extracted scene video files. Scenes re-extract the video textures the next time they render.",
-                comment: "Destructive confirm message. Placeholder is a formatted byte size."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is a formatted byte size."
             )
         case .applyConfigurationToAllDisplays(let count):
             return String(
                 localized: "This replaces the wallpaper on \(count) other displays with the same content and settings as this one.",
-                comment: "Destructive confirm message. Placeholder is the number of other displays."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the number of other displays."
             )
         case .applyOverlayToAllDisplays(let overlayName, let count):
             return String(
                 localized: "This replaces the \(overlayName) overlay on \(count) other displays. Their wallpapers are left alone.",
-                comment: "Destructive confirm message. Placeholders are the overlay's name and the number of other displays."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholders are the overlay's name and the number of other displays."
             )
         case .clearCurrentWallpaper(let displayName):
             return String(
                 localized: "Only removes the current wallpaper from \(displayName). Source files, bookmarks, and library items are not deleted.",
-                comment: "Destructive confirm message. Placeholder is the display name."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name."
             )
         case .resetDisplaySettings(let displayName):
             return String(
                 localized: "Restores playback, color, particle, audio, and layout settings on \(displayName) to defaults. The wallpaper itself, playlist bookmarks, and library items stay.",
-                comment: "Destructive confirm message. Placeholder is the display name."
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name."
             )
         case .disconnectAerialsLibrary:
             return String(
                 localized: "LiveWallpaper will release its read access to the local Apple Aerials folder. Existing aerial wallpapers stay applied; you'll need to reconnect to browse the library again.",
-                comment: "Destructive confirm message for disconnecting the Aerials library."
+                bundle: .appLanguage, comment: "Destructive confirm message for disconnecting the Aerials library."
             )
         #if DEBUG
         case .clearTestTempArtifacts(let itemCount, let formattedSize):
             return String(
                 localized: "Deletes \(itemCount) scratch items · \(formattedSize) created by test runs in the container's tmp folder. Nothing else reads them.",
-                comment: "DEBUG destructive confirm. Placeholders are item count and formatted size."
+                bundle: .appLanguage, comment: "DEBUG destructive confirm. Placeholders are item count and formatted size."
             )
         #endif
         }

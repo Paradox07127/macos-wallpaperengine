@@ -49,26 +49,26 @@ final class WallpaperExportService {
         var errorDescription: String? {
             switch self {
             case .unsupportedContent:
-                return String(localized: "Only video wallpapers can be added to System Wallpaper.")
+                return String(localized: "Only video wallpapers can be added to System Wallpaper.", bundle: .appLanguage)
             case .packageEntryMissing(let name):
                 return String(
                     localized: "The video “\(name)” is missing from its Workshop package.",
-                    comment: "Error shown when a Workshop wallpaper's packaged video cannot be located."
+                    bundle: .appLanguage, comment: "Error shown when a Workshop wallpaper's packaged video cannot be located."
                 )
             case .thumbnailFailed:
                 return String(
                     localized: "Couldn't create a preview image for this video.",
-                    comment: "Error shown when publishing to System Wallpaper fails because no thumbnail could be generated."
+                    bundle: .appLanguage, comment: "Error shown when publishing to System Wallpaper fails because no thumbnail could be generated."
                 )
             case .manifestUnreadable:
                 return String(
                     localized: "The System Wallpaper library index is damaged, so it wasn't changed.",
-                    comment: "Error shown when the system wallpaper manifest cannot be decoded and the operation is refused."
+                    bundle: .appLanguage, comment: "Error shown when the system wallpaper manifest cannot be decoded and the operation is refused."
                 )
             case .supersededByRemoval:
                 return String(
                     localized: "Couldn't add the video: it was removed from System Wallpaper while it was still being copied.",
-                    comment: "Error shown when a publish is abandoned because the user removed that item, or cleared the library, mid-copy."
+                    bundle: .appLanguage, comment: "Error shown when a publish is abandoned because the user removed that item, or cleared the library, mid-copy."
                 )
             }
         }
@@ -205,7 +205,7 @@ final class WallpaperExportService {
     private static func publishFailureLine(name: String, reason: String) -> String {
         String(
             localized: "Couldn't add “\(name)”: \(reason)",
-            comment: "One line of the summary shown after importing several videos at once. Placeholders are the file name and the failure reason."
+            bundle: .appLanguage, comment: "One line of the summary shown after importing several videos at once. Placeholders are the file name and the failure reason."
         )
     }
 
@@ -245,12 +245,8 @@ final class WallpaperExportService {
         activePublishes[token] = itemID
         defer { activePublishes[token] = nil }
 
-        // Copy off the main actor — a 4K source can be hundreds of MB. Bookmarks
-        // are resolved fresh every time and the URL is never cached (resolver contract).
-        // Everything lands in a uniquely-named staging file first: the live copy
-        // (a republish target) is only touched by the atomic swap below, after
-        // the thumbnail has succeeded — so no failure mode can leave a manifest
-        // entry pointing at a missing or half-written file.
+        // Copy off the main actor — a 4K source can be hundreds of MB. Bookmarks are resolved fresh every time and the URL is never cached (resolver contract).
+        // Everything lands in a uniquely-named staging file first: the live copy (a republish target) is only touched by the atomic swap below, after the thumbnail has succeeded, so no failure mode can leave a manifest entry pointing at a missing or half-written file.
         struct Staged { let url: URL; let ext: String }
         let staged: Staged = try await Task.detached(priority: .userInitiated) {
             let sourceURL: URL
@@ -323,11 +319,8 @@ final class WallpaperExportService {
         let thumbnailURL = videosDirectory.appendingPathComponent("\(itemID).jpg")
         let thumbnailFileName = thumbnailURL.lastPathComponent
         let manager = FileManager.default
-        // A republish overwrites files the manifest still points at, so the old
-        // copies are renamed aside (cheap, no second copy of a 4K video) and
-        // only dropped once the manifest write lands. They carry staging names
-        // so a sweep in the other process judges them by that timestamp rather
-        // than by the displaced file's own, possibly ancient, mtime.
+        // A republish overwrites files the manifest still points at, so the old copies are renamed aside (cheap, no second copy of a 4K video) and only dropped once the manifest write lands.
+        // They carry staging names so a sweep in the other process judges them by that timestamp rather than by the displaced file's own, possibly ancient, mtime.
         let backupTag = UUID()
         let videoBackupURL = videosDirectory.appendingPathComponent(
             SystemWallpaperLibrary.transientBackupName(
@@ -347,13 +340,8 @@ final class WallpaperExportService {
             // swapping outside it could commit a manifest entry naming a file
             // that the removal had already deleted.
             manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
-                // Each path is judged on its own: a republish that changes the
-                // video's extension writes a *new* destination while reusing the
-                // one thumbnail name, so "is this a republish" cannot answer both.
-                // Treating the whole publish as a first one because of the new
-                // extension let the rollback delete the thumbnail the still-live
-                // manifest entry pointed at, which erased that wallpaper from the
-                // system panel.
+                // Each path is judged on its own: a republish that changes the video's extension writes a *new* destination while reusing the one thumbnail name, so "is this a republish" cannot answer both.
+                // Treating the whole publish as a first one because of the new extension let the rollback delete the thumbnail the still-live manifest entry pointed at, which erased that wallpaper from the system panel.
                 let destinationExists = manager.fileExists(atPath: destination.path)
                 let thumbnailExists = manager.fileExists(atPath: thumbnailURL.path)
 
@@ -530,7 +518,7 @@ final class WallpaperExportService {
     private static func undeletedMessage(_ names: [String]) -> String {
         String(
             localized: "Some files could not be deleted: \(names.joined(separator: ", "))",
-            comment: "Error after clearing the System Wallpaper library. Placeholder is a file name list."
+            bundle: .appLanguage, comment: "Error after clearing the System Wallpaper library. Placeholder is a file name list."
         )
     }
 
@@ -584,11 +572,8 @@ final class WallpaperExportService {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension")!)
     }
 
-    /// Workshop videos live inside `scene.pkg` as one contiguous, uncompressed
-    /// byte range (the player windows into it the same way rather than
-    /// extracting). Streamed in chunks through the already-open handle:
-    /// `.mappedIfSafe` degrades to a whole-file heap read on removable and
-    /// network volumes, and Steam libraries live on exactly those.
+    /// Workshop videos live inside `scene.pkg` as one contiguous, uncompressed byte range (the player windows into it the same way rather than extracting).
+    /// Streamed in chunks through the already-open handle: `.mappedIfSafe` degrades to a whole-file heap read on removable and network volumes, and Steam libraries live on exactly those.
     nonisolated private static func extractPackagedVideo(
         packageURL: URL,
         entryName: String,

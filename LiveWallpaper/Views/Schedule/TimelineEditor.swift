@@ -312,12 +312,12 @@ struct TimelineEditor: View {
         let activeLabel = active?.localizedLabel ?? String(
             localized: "no active slot",
             defaultValue: "no active slot",
-            comment: "VoiceOver fallback when no schedule slot is currently active."
+            bundle: .appLanguage, comment: "VoiceOver fallback when no schedule slot is currently active."
         )
         let format = String(
             localized: "Schedule timeline, %lld slots, currently %lld:00, active slot: %@",
             defaultValue: "Schedule timeline, %lld slots, currently %lld:00, active slot: %@",
-            comment: "VoiceOver label for the schedule timeline bar. Placeholders: slot count, current hour, active slot label."
+            bundle: .appLanguage, comment: "VoiceOver label for the schedule timeline bar. Placeholders: slot count, current hour, active slot label."
         )
         return Text(String(format: format, slots.count, currentHour, activeLabel))
     }

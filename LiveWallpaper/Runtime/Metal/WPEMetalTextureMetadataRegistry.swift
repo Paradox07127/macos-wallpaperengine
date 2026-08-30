@@ -14,12 +14,9 @@ struct WPEMetalTextureResolution: Equatable, Sendable {
     let clampUVs: Bool
     /// TEXI NoInterpolation flag → sample with nearest filtering. Default `false` (linear).
     let noInterpolation: Bool
-    /// The AUTHORED image size in world pixels — unlike `imageWidth`/`imageHeight`,
-    /// which describe the uploaded level (and shrink with it when the loader
-    /// uploads a reduced mip under render scaling). World-layout consumers (the
-    /// object-quad size fallback) must use this, never the texture's own
-    /// dimensions; shader UV math keeps using `imageWidth`/`textureWidth`, whose
-    /// ratio stays level-consistent.
+    /// The AUTHORED image size in world pixels — unlike `imageWidth`/`imageHeight`, which
+    /// describe the uploaded level (shrinking with it under render scaling). World-layout
+    /// consumers (the object-quad size fallback) must use this, never the texture's own dimensions; shader UV math keeps using `imageWidth`/`textureWidth`, whose ratio stays level-consistent.
     let worldWidth: Int
     let worldHeight: Int
 
@@ -142,17 +139,14 @@ final class WPEMetalTextureMetadataRegistry: @unchecked Sendable {
         lock.unlock()
     }
 
-    /// Live GPU-texture census, grouped by the `label` prefix each allocation
-    /// site sets. Answers "where did the gigabytes go" with measured bytes
-    /// instead of estimates.
+    /// Live GPU-texture census grouped by the `label` prefix each allocation site sets,
+    /// answering "where did the gigabytes go" with measured bytes instead of estimates.
     ///
-    /// NOT a complete inventory: it sees only what calls `register`, which is
-    /// the scene textures and the render-target pool. Notably absent are the
-    /// video `CVMetalTexture`s, the bloom chain (which has its OWN shared heap),
-    /// the refraction background, the executor's output pool, `.previous`
-    /// snapshots, depth textures, and the hidden-text placeholders. Always read
-    /// `device.currentAllocatedSize` alongside it — the census explains the
-    /// composition of what it can see, not the total.
+    /// NOT a complete inventory — only what calls `register` (scene textures, render-target
+    /// pool). Absent: video `CVMetalTexture`s, the bloom chain (its own shared heap), the
+    /// refraction background, the executor's output pool, `.previous` snapshots, depth
+    /// textures, hidden-text placeholders. Always read `device.currentAllocatedSize`
+    /// alongside it — this explains composition, not the total.
     /// Enable with `defaults write com.loomscreen.pro WPEMemoryAuditLog -bool YES`.
     struct Census {
         /// Bytes each texture owns outright. EXCLUDES heap-aliased render

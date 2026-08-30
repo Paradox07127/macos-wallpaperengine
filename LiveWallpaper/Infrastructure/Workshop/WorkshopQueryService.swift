@@ -64,11 +64,8 @@ enum WorkshopTimeFrame: String, Sendable, Equatable, Hashable, CaseIterable, Ide
 struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
     let sort: WorkshopSortMode
     let searchText: String
-    /// 1-based page index. Steam's QueryFiles supports BOTH cursor and `page`;
-    /// using `page` lets us jump to an arbitrary page and show "Page N of M"
-    /// (cursor can only walk forward). Steam's docs cap `page` at 1000 —
-    /// beyond that it returns empty pages; deeper pagination needs the cursor,
-    /// which we don't wire up.
+    /// 1-based page index. Steam's QueryFiles supports BOTH cursor and `page`; using `page` lets us jump to an arbitrary page and show "Page N of M" (cursor can only walk forward).
+    /// Steam's docs cap `page` at 1000 — beyond that it returns empty pages; deeper pagination needs the cursor, which we don't wire up.
     let page: Int
     let numPerPage: Int
     let language: String?
@@ -80,11 +77,8 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
     let returnTags: Bool
     let returnMetadata: Bool
     let returnShortDescription: Bool
-    /// When set, the query lists this creator's published files via
-    /// `IPublishedFileService/GetUserFiles` instead of the global `QueryFiles`
-    /// browse. GetUserFiles has `sortmethod`/`requiredtags`/`excludedtags`
-    /// fields (we don't wire them up beyond the default sort) but no text
-    /// search, so `searchText` can't apply in this mode.
+    /// When set, the query lists this creator's published files via `IPublishedFileService/GetUserFiles` instead of the global `QueryFiles` browse.
+    /// GetUserFiles has `sortmethod`/`requiredtags`/`excludedtags` fields (we don't wire them up beyond the default sort) but no text search, so `searchText` can't apply in this mode.
     let creatorSteamID: String?
     /// When set, restricts the query to published files that reference this
     /// item. Steam's own wording for `child_publishedfileid` is "Find all items
@@ -144,11 +138,8 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         return trimmed.lowercased(with: Locale(identifier: "en_US_POSIX"))
     }
 
-    /// Steam matches `requiredtags`/`excludedtags` against the item's EXACT
-    /// display-name tags (e.g. `Scene`, `Anime`, `3840 x 2160`, `Dual 3840 x 1080`).
-    /// Lower-casing them — as this used to — made every tag filter silently
-    /// match nothing. So we only trim, de-duplicate, and sort (sorting just keeps
-    /// the cache key stable; tag order is irrelevant to Steam).
+    /// Steam matches `requiredtags`/`excludedtags` against the item's EXACT display-name tags (e.g. `Scene`, `Anime`, `3840 x 2160`, `Dual 3840 x 1080`). Lower-casing them — as this used to — made every tag filter silently match nothing.
+    /// So we only trim, de-duplicate, and sort (sorting just keeps the cache key stable; tag order is irrelevant to Steam).
     private static func canonicalTags(_ tags: [String]) -> [String] {
         var seen = Set<String>()
         return tags
@@ -339,11 +330,8 @@ actor WorkshopQueryService {
     private var inflight: [String: Task<WorkshopQueryPage, Error>] = [:]
     private var tokenBucket = tokenCapacity
     private var tokenRefilledAt = Date()
-    /// Reports each keyed Valve verdict so `WorkshopServices` can surface a
-    /// stored key that Valve later revoked: `false` only on an explicit auth
-    /// rejection (401/403/disabled-key body), `true` on a successful keyed
-    /// response. Network failures report nothing — offline must not mark a
-    /// known-good key bad.
+    /// Reports each keyed Valve verdict so `WorkshopServices` can surface a stored key that Valve later revoked: `false` only on an explicit auth rejection (401/403/disabled-key body), `true` on a successful keyed response.
+    /// Network failures report nothing — offline must not mark a known-good key bad.
     private var authVerdictHandler: (@Sendable (Bool, String) -> Void)?
 
     init(
@@ -705,10 +693,7 @@ actor WorkshopQueryService {
             previewImageURL: previewURL,
             fileSizeBytes: payload.file_size?.value,
             timeUpdated: payload.time_updated?.dateValue,
-            // Prefer lifetime (total unique) subscriptions — that's the key Steam's
-            // "Most Subscribed" sort (query_type=9, RankedByTotalUniqueSubscriptions)
-            // actually ranks by. Showing `subscriptions` (current) instead made a
-            // high-lifetime / low-current item look mis-sorted ("low subs above high").
+            // Prefer lifetime (total unique) subscriptions — that's the key Steam's "Most Subscribed" sort (query_type=9, RankedByTotalUniqueSubscriptions) actually ranks by; showing `subscriptions` (current) instead made a high-lifetime / low-current item look mis-sorted ("low subs above high").
             // Fall back to current when lifetime is absent.
             subscriptionCount: payload.lifetime_subscriptions?.value ?? payload.subscriptions?.value,
             viewCount: payload.views?.value,

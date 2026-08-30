@@ -17,12 +17,10 @@ final class EnvironmentOverlayController {
         }
     }
 
-    /// The same band the Monitor board uses: above every wallpaper window,
-    /// below every application window.
-    ///
-    /// Not the plain desktop level — an HTML wallpaper with mouse interaction
-    /// on climbs to `desktopIconWindow + 1` and would then be drawn straight
-    /// over the particles, which are opaque enough to hide completely.
+    /// The same band the Monitor board uses: above every wallpaper window, below every
+    /// application window. Not the plain desktop level — an HTML wallpaper with mouse
+    /// interaction on climbs to `desktopIconWindow + 1` and would draw straight over the
+    /// particles, which are opaque enough to hide them completely.
     static let overlayLevel = NSWindow.Level(
         rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2
     )

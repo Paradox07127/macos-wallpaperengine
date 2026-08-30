@@ -282,12 +282,14 @@ struct WorkshopInspectorContent: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .popover(isPresented: $showingApplyPopover, arrowEdge: .bottom) {
-                    WorkshopApplyTargetPicker(
-                        screens: screens,
-                        activeScreenIDs: activeScreenIDs,
-                        onPick: { apply(entry, to: $0); showingApplyPopover = false },
-                        onAll: { for screen in screens { apply(entry, to: screen) }; showingApplyPopover = false }
-                    )
+                    AppLanguageScope(defaults: .appScoped()) {
+                        WorkshopApplyTargetPicker(
+                            screens: screens,
+                            activeScreenIDs: activeScreenIDs,
+                            onPick: { apply(entry, to: $0); showingApplyPopover = false },
+                            onAll: { for screen in screens { apply(entry, to: screen) }; showingApplyPopover = false }
+                        )
+                    }
                 }
         }
     }
@@ -374,7 +376,7 @@ struct WorkshopInspectorContent: View {
             actionNote(message, color: DesignTokens.Colors.Status.danger)
         } else if !doctor.isDownloadReady, downloadPhase == .idle {
             actionNote(
-                String(localized: "Installed items remain available from your official Steam library. New SteamCMD downloads need Loomscreen's background Steam connector.", comment: "Hint in the Workshop detail inspector when the Steam download connector is unavailable."),
+                String(localized: "Installed items remain available from your official Steam library. New SteamCMD downloads need Loomscreen's background Steam connector.", bundle: .appLanguage, comment: "Hint in the Workshop detail inspector when the Steam download connector is unavailable."),
                 color: .secondary
             )
         }
@@ -403,8 +405,8 @@ struct WorkshopInspectorContent: View {
 
         let estimatedDownloaded = UInt64((Double(Int64(clamping: totalBytes)) * fraction).rounded())
         let downloadedBytes = downloadProgressBytes?.downloaded ?? estimatedDownloaded
-        let downloadedText = Self.progressByteFormatter.string(fromByteCount: Int64(clamping: downloadedBytes))
-        let totalText = Self.progressByteFormatter.string(fromByteCount: Int64(clamping: totalBytes))
+        let downloadedText = Self.byteFormatter.string(fromByteCount: Int64(clamping: downloadedBytes))
+        let totalText = Self.byteFormatter.string(fromByteCount: Int64(clamping: totalBytes))
         return "\(percent)% · \(downloadedText) / \(totalText)"
     }
 
@@ -464,11 +466,11 @@ struct WorkshopInspectorContent: View {
         }
         if let views = item.viewCount, views > 0 {
             counts.append(String(localized: "\(compactCount(views)) views",
-                                 comment: "Workshop item view count. Placeholder is a compact number such as 6.1K."))
+                                 bundle: .appLanguage, comment: "Workshop item view count. Placeholder is a compact number such as 6.1K."))
         }
         if let favorites = item.favoriteCount, favorites > 0 {
             counts.append(String(localized: "\(compactCount(favorites)) favorites",
-                                 comment: "Workshop item favorite count. Placeholder is a compact number such as 6.1K."))
+                                 bundle: .appLanguage, comment: "Workshop item favorite count. Placeholder is a compact number such as 6.1K."))
         }
         return counts
     }
@@ -520,7 +522,7 @@ struct WorkshopInspectorContent: View {
 
     private var descriptionSection: some View {
         let text = item.shortDescription
-        let placeholder = String(localized: "No description provided.", comment: "Placeholder when a Workshop item has no description.")
+        let placeholder = String(localized: "No description provided.", bundle: .appLanguage, comment: "Placeholder when a Workshop item has no description.")
         return VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             Text("Description")
                 .font(.headline)
@@ -544,13 +546,13 @@ struct WorkshopInspectorContent: View {
         // "%@M subs" — a %.1f inside a localized key would fight per-locale decimals.
         if count >= 1_000_000 {
             let scaled = String(format: "%.1f", locale: .current, Double(count) / 1_000_000.0)
-            return String(localized: "\(scaled)M subs", comment: "Workshop item subscriber count, millions.")
+            return String(localized: "\(scaled)M subs", bundle: .appLanguage, comment: "Workshop item subscriber count, millions.")
         }
         if count >= 1_000 {
             let scaled = String(format: "%.1f", locale: .current, Double(count) / 1_000.0)
-            return String(localized: "\(scaled)K subs", comment: "Workshop item subscriber count, thousands.")
+            return String(localized: "\(scaled)K subs", bundle: .appLanguage, comment: "Workshop item subscriber count, thousands.")
         }
-        return String(localized: "\(count) subs", comment: "Workshop item subscriber count.")
+        return String(localized: "\(count) subs", bundle: .appLanguage, comment: "Workshop item subscriber count.")
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -561,13 +563,6 @@ struct WorkshopInspectorContent: View {
     }()
 
     private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter
-    }()
-
-    private static let progressByteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useMB, .useGB]
         formatter.countStyle = .file

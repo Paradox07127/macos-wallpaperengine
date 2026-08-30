@@ -1,11 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 
-/// URL builder for Valve's public Workshop browse page — the zero-key search
-/// path. Parameters verified live against `steamcommunity.com` on 2026-08-29:
-/// `browsesort`, `days`, `searchtext`, `requiredtags[]` and `excludedtags[]`
-/// all filter server-side, `p` pages (disjoint result sets), and `numperpage`
-/// is ignored — the page returns up to 30 items.
+/// URL builder for Valve's public Workshop browse page — the zero-key search path. Parameters verified live against `steamcommunity.com` on 2026-08-29: `browsesort`, `days`, `searchtext`, `requiredtags[]` and `excludedtags[]` all filter server-side, `p` pages (disjoint result sets), and `numperpage` is ignored — the page returns up to 30 items.
 enum WorkshopPublicBrowseURL {
     static let itemsPerPage = 30
 
@@ -71,13 +67,8 @@ enum WorkshopPublicIDExtractor {
         publishedFileIDs(fromHrefs: hrefs(inHTML: html))
     }
 
-    /// The result anchors are in the served markup — the browse page is
-    /// server-rendered, so nothing has to run scripts to see them (verified
-    /// 2026-08-29: a plain GET returns all 30 ids).
-    ///
-    /// Values stay HTML-escaped (`?id=123&amp;searchtext=…`); harmless because
-    /// `id` is Valve's first query parameter, so an escaped separator only
-    /// mangles the parameter names after it.
+    /// The result anchors are in the served markup — the browse page is server-rendered, so nothing has to run scripts to see them (verified 2026-08-29: a plain GET returns all 30 ids).
+    /// Values stay HTML-escaped (`?id=123&amp;searchtext=…`); harmless because `id` is Valve's first query parameter, so an escaped separator only mangles the parameter names after it.
     static func hrefs(inHTML html: String) -> [String] {
         html.matches(of: /href="(https:\/\/[^"\s]*filedetails\/\?id=[^"]*)"/)
             .map { String($0.1) }

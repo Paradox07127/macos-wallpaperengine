@@ -1,11 +1,9 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The picker is the last step on purpose: it *is* the finish line. A separate
-/// "You're All Set" page claimed a wallpaper was on screen even when the reader
-/// had chosen Workshop or Aerials, which configure nothing — the browsing they
-/// asked for happens in the app. Each card now closes onboarding straight into
-/// the place it names.
+/// The picker is the last step on purpose: it *is* the finish line. A separate "You're All Set"
+/// page claimed a wallpaper was on screen even when the reader had chosen Workshop or Aerials,
+/// which configure nothing — the browsing they asked for happens in the app. Each card now closes onboarding straight into the place it names.
 private enum OnboardingStep: Hashable {
     case welcome
     case workshopSetup
@@ -37,15 +35,18 @@ struct Flow: View {
             background
 
             VStack(spacing: 0) {
+                // Clears the top chrome (back / skip) so a page's title does
+                // not start level with them.
+                Spacer().frame(height: DesignTokens.Spacing.xl + DesignTokens.Spacing.md)
                 stepContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 progressIndicator
                     .padding(.bottom, DesignTokens.Spacing.xl + DesignTokens.Spacing.sm)
             }
 
-            backButton
+            navigationChrome
         }
-        .frame(width: 520, height: 540)
+        .frame(width: 520, height: 560)
         .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.4, dampingFraction: 0.85)), value: index)
     }
 
@@ -72,7 +73,7 @@ struct Flow: View {
         Group {
             switch currentStep {
             case .welcome:
-                StepWelcome(nextStep: nextStep, skip: skip)
+                StepWelcome(nextStep: nextStep)
             case .workshopSetup:
                 #if !LITE_BUILD
                 OnboardingWorkshopSetupView(continueAction: nextStep)
@@ -83,7 +84,7 @@ struct Flow: View {
                 PickerView(
                     galleryActions: policy.galleryActions,
                     didConfigure: didConfigure,
-                    skip: skip,
+                    start: skip,
                     chooseAppleAerials: chooseAppleAerials,
                     chooseSteamWorkshop: chooseSteamWorkshop
                 )
@@ -117,13 +118,13 @@ struct Flow: View {
         .accessibilityLabel(stepLabel)
     }
 
-    /// Every step after the first can go back. A gallery card finishes
-    /// onboarding, so back exists for the steps that precede it.
-    @ViewBuilder
-    private var backButton: some View {
-        if index > 0 {
-            VStack {
-                HStack {
+    /// Back on the left, skip on the right, both pinned to the top.
+    /// Skip used to sit under the primary button on every page, where it read as a second thing
+    /// to consider before continuing. Up here it is chrome: available on every step, competing with nothing.
+    private var navigationChrome: some View {
+        VStack {
+            HStack {
+                if index > 0 {
                     Button(action: previousStep) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 15, weight: .semibold))
@@ -133,12 +134,19 @@ struct Flow: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text("Back"))
-                    Spacer()
                 }
                 Spacer()
+                Button(action: skip) {
+                    Text("Skip for Now", comment: "Skip first-run wallpaper setup and open the app.")
+                        .font(DesignTokens.Typography.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityHint(Text("Close setup and open the app"))
             }
-            .padding(DesignTokens.Spacing.lg)
+            Spacer()
         }
+        .padding(DesignTokens.Spacing.lg)
     }
 
     private func nextStep() {

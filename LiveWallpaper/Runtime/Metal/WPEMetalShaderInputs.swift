@@ -51,27 +51,21 @@ enum WPEMetalShaderInputs {
                 return texture
             }
             if WPETextureReference.isSceneAliasName(name) {
-                // WPE's `_rt_FullFrameBuffer` (and the other scene aliases) means
-                // "what is CURRENTLY rendered to the background's output" — never
-                // the previous frame. `currentFrameSceneTexture` is non-nil only
-                // once a scene-target pass has written this frame; before that we
-                // fall back to `output`, which the executor clears to the scene
-                // clear color at frame start. Using last frame's content here
-                // would create a positive-feedback loop (shine_combine COPYBG +
-                // `albedo.a = saturate(albedo.a + rays.a)` ramps the layer white).
+                // WPE's `_rt_FullFrameBuffer` (and other scene aliases) means "what is
+                // CURRENTLY rendered to the background's output" — never the previous frame.
+                // `currentFrameSceneTexture` is non-nil only once a scene-target pass has
+                // written this frame; before that we fall back to `output`, cleared to the
+                // scene clear color at frame start. Using last frame's content would create a positive-feedback loop (shine_combine COPYBG + `albedo.a = saturate(albedo.a + rays.a)` ramps the layer white).
                 return frameState.currentFrameSceneTexture ?? frameState.output
             }
             if let aliased = resolveAliasedNamedTexture(name: name, frameState: frameState) {
                 return aliased
             }
-            // First-frame read of a declared-but-unwritten local FBO: WPE reads a
-            // freshly created RT as all-zero (motionblur pass0 samples its own
-            // `_rt_FullCompoBuffer1` history before pass1 writes it). Hand back a
-            // cached zero stand-in so `performLoad` prewarm doesn't kill the scene.
-            // NOTE: no `registerWrite` here — `frameState` is passed by value, and
-            // the pool caches the stand-in, so a same-frame re-miss reuses it and the
-            // real self-heal lands when the producing pass writes the target. Only
-            // pool-DECLARED names take this path; anything else still throws below.
+            // First-frame read of a declared-but-unwritten local FBO: WPE reads a freshly
+            // created RT as all-zero (motionblur pass0 samples its own `_rt_FullCompoBuffer1`
+            // history before pass1 writes it). Hand back a cached zero stand-in so
+            // `performLoad` prewarm doesn't kill the scene. NOTE: no `registerWrite` here —
+            // `frameState` is passed by value, so the pool caches the stand-in and the real self-heal lands when the producing pass writes the target. Only pool-DECLARED names take this path; anything else still throws below.
             if let zero = frameState.renderTargetPool?.zeroFilledPlaceholderTexture(forDeclaredFBO: name) {
                 return zero
             }

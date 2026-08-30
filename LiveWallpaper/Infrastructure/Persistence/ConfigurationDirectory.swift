@@ -12,11 +12,8 @@ struct ConfigurationDirectory {
 
     /// Standard container-aware production location.
     init(fileManager: FileManager = .default) {
-        // Unit tests are hosted inside the real app, so this default path is the
-        // user's live container. A full suite run wiped global-settings.json and
-        // planted garbage screen configs (screen 77, bookmark 0x0304) through
-        // SettingsManager.shared — under a test process, every default-constructed
-        // directory shares one throwaway per-process root instead.
+        // Unit tests are hosted inside the real app, so this default path is the user's live container. A full suite run wiped global-settings.json and planted garbage screen configs (screen 77, bookmark 0x0304) through SettingsManager.shared.
+        // Under a test process, every default-constructed directory shares one throwaway per-process root instead.
         if NSClassFromString("XCTestCase") != nil {
             _ = Self.reapStaleTestRootsOnce
             self.root = fileManager.temporaryDirectory

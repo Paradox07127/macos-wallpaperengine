@@ -201,12 +201,11 @@ final class VideoEffectsManager {
     }
 }
 
-/// Per-composition CIFilter chain, built once and reused across frames instead
-/// of reconstructing filters via `CIFilter(name:)` on every decoded frame.
-/// AVFoundation does not document serial delivery for the per-frame filtering
-/// callbacks and `CIFilter` is not thread-safe, so input mutation is guarded by
-/// a lock; `outputImage` snapshots inputs into the returned `CIImage`, so the
-/// lock never spans actual rendering.
+/// Per-composition CIFilter chain, reused across frames rather than rebuilt via
+/// `CIFilter(name:)` each frame. AVFoundation doesn't guarantee serial delivery of the
+/// per-frame filtering callback and `CIFilter` isn't thread-safe, so a lock guards input
+/// mutation; `outputImage` snapshots inputs into the returned `CIImage`, so the lock never
+/// spans rendering.
 private final class VideoFilterChain: @unchecked Sendable {
     private let params: FilterParameters
     private let lock = NSLock()

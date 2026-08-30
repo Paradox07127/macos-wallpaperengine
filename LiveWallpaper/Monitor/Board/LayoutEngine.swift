@@ -18,11 +18,10 @@ struct MonitorBoardGeometry: Equatable {
     /// Menu-bar avoidance floor for widget origins (0 if host passes no inset).
     let topInset: CGFloat
 
-    /// Pitch = tile + one gutter, so `tile == pitch - 2 * inset` holds and a
-    /// small widget stays exactly Apple's 170×170. Spans absorb the gutter they
-    /// cross: medium 356×170, large 356×356. Numbers live in
-    /// `MonitorBoardMetrics` so the schema's default packer measures in the
-    /// same cell the renderer draws in.
+    /// Pitch = tile + one gutter (`tile == pitch - 2 * inset`), so a small widget stays exactly Apple's
+    /// 170×170; spans absorb the gutter they cross (medium 356×170, large 356×356). Numbers live in
+    /// `MonitorBoardMetrics` so the schema's default packer measures in the same cell the renderer draws
+    /// in.
     static let appleCellPitch = CGSize(
         width: MonitorBoardMetrics.cellPitch, height: MonitorBoardMetrics.cellPitch
     )

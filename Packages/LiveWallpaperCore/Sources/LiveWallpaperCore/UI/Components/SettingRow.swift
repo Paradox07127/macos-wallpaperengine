@@ -12,17 +12,13 @@ public struct SettingRowTitleBadge {
     }
 }
 
-/// Inspector row pairing an icon-prefixed title with a trailing control.
-///
-/// The title and value subtitle crawl on hover and also carry a tooltip. The
-/// crawl was once dropped for scroll cost; it costs nothing — swapping the two
-/// moves a 64-row inspector by 0.16 ms per scroll step (5.18 vs 5.02, measured
-/// 2026-08-22), and `marqueeOnHover` mounts its measuring copy only while
-/// hovered. The tooltip stays because the crawl stops at `guard !reduceMotion`,
-/// which would otherwise leave a truncated label with no way to read its tail.
-///
-/// Use `info` for "what does this do" explanations and keep `subtitle` for
-/// live state ("Browsing data is cleared on each session") so the two roles
+/// Inspector row pairing an icon-prefixed title with a trailing control. The title and value
+/// subtitle crawl on hover and also carry a tooltip. The crawl was once dropped for scroll cost; it
+/// costs nothing — swapping the two moves a 64-row inspector by 0.16 ms per scroll step (5.18 vs
+/// 5.02, measured 2026-08-22), and `marqueeOnHover` mounts its measuring copy only while hovered.
+/// The tooltip stays because the crawl stops at `guard !reduceMotion`, which would otherwise leave a
+/// truncated label with no way to read its tail. Use `info` for "what does this do" explanations and
+/// keep `subtitle` for live state ("Browsing data is cleared on each session") so the two roles
 /// don't bleed into each other.
 public struct SettingRow<Content: View>: View {
     let icon: String
@@ -50,9 +46,9 @@ public struct SettingRow<Content: View>: View {
     ) {
         self.icon = icon
         self.iconColor = iconColor
-        self.title = Text(title, bundle: .main)
+        self.title = Text(title)
         self.titleBadge = titleBadge
-        self.subtitle = subtitle.map { Text($0, bundle: .main) }
+        self.subtitle = subtitle.map { Text($0) }
         self.info = info
         self.content = content()
         self.subtitleIsValue = false
@@ -73,7 +69,7 @@ public struct SettingRow<Content: View>: View {
     ) {
         self.icon = icon
         self.iconColor = iconColor
-        self.title = Text(title, bundle: .main)
+        self.title = Text(title)
         self.titleBadge = titleBadge
         self.subtitle = valueSubtitle.map { Text(verbatim: $0) }
         self.info = info
@@ -122,7 +118,7 @@ public struct SettingRow<Content: View>: View {
         self.iconColor = iconColor
         self.title = Text(verbatim: verbatimTitle)
         self.titleBadge = titleBadge
-        self.subtitle = Text(subtitle, bundle: .main)
+        self.subtitle = Text(subtitle)
         self.info = info
         self.content = content()
         self.subtitleIsValue = false
@@ -209,15 +205,17 @@ public struct InfoTooltipButton: View {
         }
         .buttonStyle(.plain)
         .help(localizedText)
-        .accessibilityLabel(Text("More information", bundle: .main))
+        .accessibilityLabel(Text("More information"))
         .accessibilityHint(Text(verbatim: localizedText))
         .popover(isPresented: $isPresentingPopover, arrowEdge: .top) {
-            Text(verbatim: localizedText)
-                .font(.callout)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 280, alignment: .leading)
-                .padding(12)
+            AppLanguageScope(defaults: .standard) {
+                Text(verbatim: localizedText)
+                    .font(.callout)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 280, alignment: .leading)
+                    .padding(12)
+            }
         }
     }
 

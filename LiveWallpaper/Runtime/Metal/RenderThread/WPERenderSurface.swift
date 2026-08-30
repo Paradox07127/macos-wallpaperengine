@@ -23,12 +23,10 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
 
     // MARK: - Display-link Frame Driver
     //
-    // In `.renderThread` mode the surface stops being the pacing source (its MTKView
-    // stays paused) and instead owns the per-display `CADisplayLink`'s main-thread
-    // lifecycle: create it for the view's current screen, rebuild it on display
-    // reconfiguration, and invalidate it at teardown. The link itself lives on the
-    // render thread (see `WPEDisplayRenderActor`); the surface only orchestrates
-    // create/replace/stop from main. All three fields stay nil in `.main` mode.
+    // In `.renderThread` mode the surface stops being the pacing source (MTKView stays
+    // paused) and instead owns the per-display `CADisplayLink`'s main-thread lifecycle
+    // (create for the current screen, rebuild on reconfiguration, invalidate at teardown).
+    // The link lives on the render thread (`WPEDisplayRenderActor`); the surface only orchestrates create/replace/stop from main. All three fields stay nil in `.main` mode.
     private weak var displayLinkActor: WPEDisplayRenderActor?
     private var displayLinkTarget: WPEDisplayLinkTarget?
     private var screenParamsObserver: NSObjectProtocol?
@@ -159,10 +157,8 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
 
     // MARK: - Pacing (driven by the renderer, via `WPESurfaceControl`)
     //
-    // These are the main-thread bodies. The renderer reaches them only through
-    // the nonisolated `WPESurfaceControl` seam below, which delivers each call to
-    // the main thread. Kept private so every renderer call site goes through the
-    // seam so all renderer access remains thread-safe.
+    // Main-thread bodies. The renderer reaches them only through the nonisolated
+    // `WPESurfaceControl` seam below, which delivers each call to the main thread; kept private so every renderer call site goes through the seam, keeping access thread-safe.
 
     private func applyPacingOnMain(_ update: WPERenderPacingUpdate) {
         if let paused = update.isPaused { mtkView.isPaused = paused }
@@ -219,14 +215,11 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
     }
 }
 
-/// Sendable handle to the wallpaper's present layer. `@unchecked Sendable`
-/// because `CAMetalLayer` is not `Sendable`, yet `nextDrawable()`/present are
-/// documented safe off the main thread and the render actor is the layer's only
-/// present-time caller. Wrapping it lets the renderer hold the layer WITHOUT its
-/// object graph reaching the main-thread `WPERenderSurface` — the isolation
-/// pre-req for `sending` the renderer into `WPEDisplayRenderActor`. Falsifiable:
-/// if present ever races the surface's own main-thread layer mutations, this seam
-/// is where the sharing is deliberately unchecked.
+/// Sendable handle to the wallpaper's present layer. `@unchecked Sendable` because
+/// `CAMetalLayer` isn't `Sendable`, yet `nextDrawable()`/present are documented safe off
+/// the main thread and the render actor is the layer's only present-time caller. Wrapping
+/// it lets the renderer hold the layer WITHOUT reaching the main-thread `WPERenderSurface`
+/// — the isolation pre-req for `sending` it into `WPEDisplayRenderActor`. Falsifiable: unsound if present ever races the surface's own main-thread layer mutations.
 struct WPEPresentLayer: @unchecked Sendable {
     let layer: CAMetalLayer
 }

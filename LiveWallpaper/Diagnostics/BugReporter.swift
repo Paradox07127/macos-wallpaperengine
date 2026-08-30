@@ -37,13 +37,10 @@ enum BugReporter {
         }
     }
 
-    /// Which form the in-app report opens.
-    ///
-    /// Simplified Chinese is the only language with a form of its own, so it is
-    /// the only one that gets it; Traditional Chinese and Japanese readers land
-    /// on the English form because that is the only other one that exists.
-    /// Following the app's own language rather than the system's matters when
-    /// someone has overridden it — the form should match the UI they are
+    /// Which form the in-app report opens. Simplified Chinese is the only language with a form of its own,
+    /// so it is the only one that gets it; Traditional Chinese and Japanese readers land on the English
+    /// form because that is the only other one that exists. Following the app's own language rather than
+    /// the system's matters when someone has overridden it — the form should match the UI they are
     /// describing.
     static func issueForm(
         preference: AppLanguagePreference = .current,
@@ -53,13 +50,6 @@ enum BugReporter {
         return language == AppLanguagePreference.simplifiedChinese.rawValue
             ? .simplifiedChinese
             : .english
-    }
-
-    static func issueTemplateName(
-        preference: AppLanguagePreference = .current,
-        systemLocalizations: [String] = Bundle.main.preferredLocalizations
-    ) -> String {
-        issueForm(preference: preference, systemLocalizations: systemLocalizations).templateName
     }
 
     private static func issueTemplateURL(named template: String) -> URL {
@@ -73,8 +63,8 @@ enum BugReporter {
     private static let maxBodyLength = 6 * 1024
 
     @MainActor
-    static func makeReport(activeWallpaperKinds: [String]) -> BugReport {
-        let snapshot = SystemSnapshot.capture(activeWallpaperKinds: activeWallpaperKinds)
+    static func makeReport(activeWallpapers: [String]) -> BugReport {
+        let snapshot = SystemSnapshot.capture(activeWallpapers: activeWallpapers)
         let recentLog = sanitizedRecentLogLines()
         let form = issueForm()
         let markdown = capped(
@@ -115,16 +105,16 @@ enum BugReporter {
         - **macOS**: \(snapshot.macOSVersion) (\(snapshot.macOSBuild))
         - **Hardware**: \(snapshot.hardwareModel) · \(snapshot.chip) · \(snapshot.physicalMemoryGiB) GB
         - **Displays**: \(formatDisplays(snapshot.displays, form: .english))
-        - **Active wallpapers**: \(snapshot.activeWallpaperKinds.isEmpty ? "(none)" : snapshot.activeWallpaperKinds.joined(separator: ", "))
+        - **Active wallpapers**: \(snapshot.activeWallpapers.isEmpty ? "(none)" : snapshot.activeWallpapers.joined(separator: ", "))
         - **Locale**: \(snapshot.localeIdentifier)
         - **Bundle**: `\(snapshot.bundleIdentifier)`
         """)
 
         if recentLogLines.isEmpty {
-            sections.append("- **Recent warnings/errors**: (none recorded)")
+            sections.append("- **Recent activity**: (none recorded)")
         } else {
             sections.append("""
-            - **Recent warnings/errors** (last \(recentLogLines.count)):
+            - **Recent activity — wallpapers applied, then warnings/errors** (last \(recentLogLines.count)):
 
             \(fencedLog(recentLogLines))
             """)
@@ -163,16 +153,16 @@ enum BugReporter {
         - **macOS**：\(snapshot.macOSVersion)（\(snapshot.macOSBuild)）
         - **硬件**：\(snapshot.hardwareModel) · \(snapshot.chip) · \(snapshot.physicalMemoryGiB) GB
         - **显示器**：\(formatDisplays(snapshot.displays, form: .simplifiedChinese))
-        - **正在播放的壁纸**：\(snapshot.activeWallpaperKinds.isEmpty ? "（无）" : snapshot.activeWallpaperKinds.joined(separator: "、"))
+        - **正在播放的壁纸**：\(snapshot.activeWallpapers.isEmpty ? "（无）" : snapshot.activeWallpapers.joined(separator: "、"))
         - **语言区域**：\(snapshot.localeIdentifier)
         - **Bundle**：`\(snapshot.bundleIdentifier)`
         """)
 
         if recentLogLines.isEmpty {
-            sections.append("- **最近的警告 / 错误**：（没有记录）")
+            sections.append("- **最近活动**：（没有记录）")
         } else {
             sections.append("""
-            - **最近的警告 / 错误**（最近 \(recentLogLines.count) 条）：
+            - **最近活动 — 先是应用的壁纸，然后是警告 / 错误**（最近 \(recentLogLines.count) 条）：
 
             \(fencedLog(recentLogLines))
             """)

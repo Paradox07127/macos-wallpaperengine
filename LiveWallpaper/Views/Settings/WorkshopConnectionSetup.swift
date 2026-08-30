@@ -4,12 +4,9 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// The three Steam connection steps as one settings section.
-///
-/// Each step offers the same shape: the route most people want as a button,
-/// the other ways beside it. The actions themselves live in
-/// `WorkshopSetupController`, which the onboarding step renders from too — two
-/// copies of `runManagedInstall` is what used to let the two surfaces disagree
-/// about whether SteamCMD was ready.
+/// Each step offers the same shape: the route most people want as a button, the other ways
+/// beside it. The actions live in `WorkshopSetupController`, which the onboarding step renders
+/// from too — two copies of `runManagedInstall` used to let the two surfaces disagree about whether SteamCMD was ready.
 struct WorkshopConnectionSetup: View {
     @Environment(SteamCMDDoctorService.self) private var service
     @Environment(WorkshopSetupController.self) private var controller
@@ -56,11 +53,15 @@ struct WorkshopConnectionSetup: View {
         // the section: a modified `Section` stops being a section to `Form`,
         // and a presenter only has to be somewhere in the hierarchy.
         .sheet(isPresented: $showingSetupSheet) {
-            SteamCMDSetupSheet(onConfirmManagedInstall: { controller.runManagedInstall() })
+            AppLanguageScope(defaults: .appScoped()) {
+                SteamCMDSetupSheet(onConfirmManagedInstall: { controller.runManagedInstall() })
+            }
         }
         .sheet(isPresented: $showingSignIn) {
-            SteamSignInSheet { accountName in
-                controller.adoptSignedInAccount(accountName)
+            AppLanguageScope(defaults: .appScoped()) {
+                SteamSignInSheet { accountName in
+                    controller.adoptSignedInAccount(accountName)
+                }
             }
         }
         .task { await controller.prepare() }
@@ -108,6 +109,7 @@ struct WorkshopConnectionSetup: View {
             WorkshopSetupRoutes(
                 primary: binaryPrimaryRoute,
                 secondary: binarySecondaryRoutes,
+                overflow: binaryOverflowRoutes,
                 isBusy: controller.isSteamCMDBusy,
                 emphasizesPrimary: !service.isBinaryPresumedReady
             )
@@ -128,8 +130,14 @@ struct WorkshopConnectionSetup: View {
         }
     }
 
+    /// The two verbs worth naming — find one that is already installed, or set
+    /// one up. Both used to hide behind an `⋯` that named neither.
     private var binarySecondaryRoutes: [WorkshopSetupRoute] {
-        var routes: [WorkshopSetupRoute] = []
+        var routes = [
+            WorkshopSetupRoute(id: "steamcmd.locate", title: "Locate automatically") {
+                controller.autoDetectBinary()
+            }
+        ]
         if service.isBinaryPresumedReady {
             routes.append(WorkshopSetupRoute(id: "steamcmd.reinstall", title: "Set up SteamCMD") {
                 showingSetupSheet = true
@@ -139,9 +147,14 @@ struct WorkshopConnectionSetup: View {
                 Task { await controller.pickBinaryManually() }
             })
         }
-        routes.append(WorkshopSetupRoute(id: "steamcmd.locate", title: "Locate automatically") {
-            controller.autoDetectBinary()
-        })
+        return routes
+    }
+
+    /// Undo verbs. They stay behind the menu: neither is what this row is for,
+    /// and a destructive button beside the ordinary ones invites the click it
+    /// should be discouraging.
+    private var binaryOverflowRoutes: [WorkshopSetupRoute] {
+        var routes: [WorkshopSetupRoute] = []
         if controller.hasManualBinding {
             routes.append(WorkshopSetupRoute(id: "steamcmd.forget", title: "Forget the SteamCMD I chose") {
                 Task { await controller.forgetManualBinary() }
@@ -191,9 +204,9 @@ struct WorkshopConnectionSetup: View {
                         onRescan: { Task { await controller.loadAccounts() } }
                     )
                 } label: {
-                    Text(service.username == nil ? "Choose account" : "Switch account", bundle: .main)
+                    Text(service.username == nil ? "Choose account" : "Switch account")
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
                 .fixedSize()
             }
 
@@ -219,7 +232,7 @@ struct WorkshopConnectionSetup: View {
         return SettingRowTitleBadge(
             systemImage: "exclamationmark.triangle.fill",
             tint: DesignTokens.Colors.Status.warning,
-            accessibilityLabel: Text(state.statusText, bundle: .main)
+            accessibilityLabel: Text(state.statusText)
         )
     }
 }
@@ -239,14 +252,10 @@ extension SteamCMDDoctorService {
         hasBoundBinary && isGreen(.binaryIdentity)
     }
 
-    /// What the UI should offer as the next action, which is looser than
-    /// `isBinaryReady` on purpose.
-    ///
-    /// Probe results are not persisted, so every relaunch starts at `.notRun`
-    /// and a perfectly good binding reads as unverified. Gating the prominent
-    /// button on the strict flag put "Set up SteamCMD" in front of users who
-    /// already had one bound. Matches `binaryStepState`, which already treats
-    /// bound-but-unprobed as working.
+    /// What the UI should offer as the next action, which is looser than `isBinaryReady` on purpose.
+    /// Probe results aren't persisted, so every relaunch starts at `.notRun` and a perfectly
+    /// good binding reads as unverified; gating the prominent button on the strict flag put
+    /// "Set up SteamCMD" in front of users who already had one bound. Matches `binaryStepState`, which already treats bound-but-unprobed as working.
     var isBinaryPresumedReady: Bool {
         guard hasBoundBinary else { return false }
         if case .red? = probes[.binaryIdentity]?.status { return false }
@@ -297,11 +306,9 @@ extension SteamCMDDoctorService {
     }
 
     /// The three steps as one reading, for the Workshop page's status bar.
-    ///
-    /// Amber means a probe came back failing — never "we haven't checked yet".
-    /// Treating unchecked as failing is what used to leave the bar amber after
-    /// a successful Locate: `cachedLogin` had simply never run, and only Run
-    /// all checks cleared it.
+    /// Amber means a probe came back failing — never "we haven't checked yet". Treating
+    /// unchecked as failing used to leave the bar amber after a successful Locate: `cachedLogin`
+    /// had simply never run, and only Run all checks cleared it.
     var connectionStepState: WorkshopStepState {
         let steps = [libraryStepState, binaryStepState, accountStepState]
         if steps.contains(.attention) { return .attention }

@@ -44,9 +44,9 @@ final class WorkshopFolderImportCoordinator {
         let projectFolders = discoverProjectFolders(in: folder)
         guard !projectFolders.isEmpty else {
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Import failed", comment: "Folder import failure toast headline."),
+                headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
                 title: folder.lastPathComponent,
-                message: String(localized: "No Wallpaper Engine projects were found in that folder.", comment: "Folder import failure: the chosen folder had no project.json."),
+                message: String(localized: "No Wallpaper Engine projects were found in that folder.", bundle: .appLanguage, comment: "Folder import failure: the chosen folder had no project.json."),
                 isSuccess: false
             )
             return
@@ -107,8 +107,8 @@ final class WorkshopFolderImportCoordinator {
 
         guard added > 0 || repaired > 0 else { return }
         WorkshopToastCenter.shared.post(
-            headline: String(localized: "Library synced", comment: "Toast headline after auto-importing existing SteamCMD downloads."),
-            title: String(localized: "SteamCMD downloads", comment: "Toast subject for the SteamCMD download sync."),
+            headline: String(localized: "Library synced", bundle: .appLanguage, comment: "Toast headline after auto-importing existing SteamCMD downloads."),
+            title: String(localized: "SteamCMD downloads", bundle: .appLanguage, comment: "Toast subject for the SteamCMD download sync."),
             message: Self.syncSummary(added: added, repaired: repaired),
             isSuccess: true
         )
@@ -117,10 +117,10 @@ final class WorkshopFolderImportCoordinator {
     nonisolated static func syncSummary(added: Int, repaired: Int) -> String {
         var parts: [String] = []
         if added > 0 {
-            parts.append(String(localized: "added \(added)", comment: "Library-sync summary fragment. Placeholder is the number of newly imported wallpapers."))
+            parts.append(String(localized: "added \(added)", bundle: .appLanguage, comment: "Library-sync summary fragment. Placeholder is the number of newly imported wallpapers."))
         }
         if repaired > 0 {
-            parts.append(String(localized: "relinked \(repaired)", comment: "Library-sync summary fragment. Placeholder is the number of wallpapers whose broken folder access was restored."))
+            parts.append(String(localized: "relinked \(repaired)", bundle: .appLanguage, comment: "Library-sync summary fragment. Placeholder is the number of wallpapers whose broken folder access was restored."))
         }
         return ListFormatter.localizedString(byJoining: parts)
     }
@@ -171,9 +171,9 @@ final class WorkshopFolderImportCoordinator {
     private func emitSummary(folder: URL, imported: Int, skipped: Int) {
         guard imported > 0 else {
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Import failed", comment: "Folder import failure toast headline."),
+                headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
                 title: folder.lastPathComponent,
-                message: String(localized: "None of the projects in that folder could be imported.", comment: "Folder import failure: every discovered project was rejected."),
+                message: String(localized: "None of the projects in that folder could be imported.", bundle: .appLanguage, comment: "Folder import failure: every discovered project was rejected."),
                 isSuccess: false
             )
             return
@@ -181,12 +181,12 @@ final class WorkshopFolderImportCoordinator {
 
         let message: String
         if skipped > 0 {
-            message = String(localized: "Linked \(imported), skipped \(skipped) unsupported.", comment: "Folder-link success summary with skipped count. Placeholders are linked and skipped counts.")
+            message = String(localized: "Linked \(imported), skipped \(skipped) unsupported.", bundle: .appLanguage, comment: "Folder-link success summary with skipped count. Placeholders are linked and skipped counts.")
         } else {
-            message = String(localized: "Linked \(imported) project folders to your library.", comment: "Folder-link success summary. Placeholder is the linked project count; source folders remain in place.")
+            message = String(localized: "Linked \(imported) project folders to your library.", bundle: .appLanguage, comment: "Folder-link success summary. Placeholder is the linked project count; source folders remain in place.")
         }
         WorkshopToastCenter.shared.post(
-            headline: String(localized: "Linked", comment: "Folder-link success toast headline."),
+            headline: String(localized: "Linked", bundle: .appLanguage, comment: "Folder-link success toast headline."),
             title: folder.lastPathComponent,
             message: message,
             isSuccess: true

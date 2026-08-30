@@ -33,12 +33,6 @@ final class WPEMetalTextureSlotTable {
 }
 
 enum WPEMetalSceneCaptureUtilityModels {
-    /// `fullscreenlayer.json` / `projectlayer.json` always render full-frame;
-    /// a spatial `composelayer.json` may be `.subregion` (see `outputGeometry`).
-    static func isSceneCaptureUtilityModelPath(_ path: String) -> Bool {
-        WPEUtilityModelKind.isUtilityModelPath(path)
-    }
-
     enum OutputGeometry { case fullscreen, subregion }
 
     /// Fullscreen/project always cover the frame. A composelayer stays fullscreen

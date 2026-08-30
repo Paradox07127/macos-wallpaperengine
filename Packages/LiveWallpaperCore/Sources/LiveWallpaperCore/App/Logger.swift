@@ -168,7 +168,29 @@ public final class Logger {
 
     // MARK: - Domain-Specific Logging
 
+    /// Last reported screen count, so a wake/reconnect storm that re-detects the
+    /// same displays does not repeat the line into the user's runtime log.
+    private static let lastReportedScreenCount = OSAllocatedUnfairLock<Int?>(initialState: nil)
+
+    /// `true` only when `count` differs from the previous call, which also
+    /// records it. Split out from `screensDetected` so the gate is testable
+    /// without a log sink.
+    static func shouldReportScreenCount(_ count: Int) -> Bool {
+        lastReportedScreenCount.withLock { last in
+            guard last != count else { return false }
+            last = count
+            return true
+        }
+    }
+
+    #if DEBUG
+    static func resetScreenCountGateForTesting() {
+        lastReportedScreenCount.withLock { $0 = nil }
+    }
+    #endif
+
     public static func screensDetected(_ count: Int, file: String = #file, function: String = #function, line: Int = #line) {
+        guard shouldReportScreenCount(count) else { return }
         log("Detected \(count) screens", category: .screenManager, level: .notice, file: file, function: function, line: line)
     }
 

@@ -6,19 +6,13 @@ public enum CoalescedSliderSizing {
     case flexible(minimum: CGFloat, maximum: CGFloat)
 }
 
-/// A slider whose gesture samples stay inside the row.
-///
-/// Every inspector slider used to write straight through on each sample, and on
-/// the other side of those bindings sit things that are not free once per frame:
-/// persisting settings to disk, rebuilding a `CIFilter` chain, rebuilding an
-/// overlay, or reaching the render session. The knob now tracks the pointer from
-/// row-local state, and the value leaves the row on a quiet window and again
-/// when the gesture ends.
-///
-/// The WPE scene custom-settings card keeps its own plain `Slider` instead of
-/// this one: it stages into an editor that merges a preset layer underneath the
-/// user's increment, which is a different commit protocol, not a different
-/// slider.
+/// A slider whose gesture samples stay inside the row. Every inspector slider used to write straight
+/// through on each sample, and on the other side of those bindings sit things that are not free once
+/// per frame: persisting settings to disk, rebuilding a `CIFilter` chain, rebuilding an overlay, or
+/// reaching the render session. The knob now tracks the pointer from row-local state, and the value
+/// leaves the row on a quiet window and again when the gesture ends. The WPE scene custom-settings
+/// card keeps its own plain `Slider` instead of this one: it stages into an editor that merges a
+/// preset layer underneath the user's increment — a different commit protocol, not a different slider.
 public struct CoalescedSlider<Readout: View>: View {
     private let committedValue: Double
     private let range: ClosedRange<Double>
@@ -32,12 +26,11 @@ public struct CoalescedSlider<Readout: View>: View {
     private let readout: (Double) -> Readout
 
     /// - Parameters:
-    ///   - owner: what the value belongs to — typically the display, plus the
-    ///     wallpaper. A row keeps its `@State` when the surrounding list re-uses
-    ///     it for a different subject, so without this a drag started on one
-    ///     display can commit onto another.
-    ///   - quietWindow: matches the WPE inspector's 180 ms, which is the
-    ///     interval already proven to keep a live preview tracking a drag.
+    ///   - owner: what the value belongs to — typically the display, plus the wallpaper. A row keeps
+    ///     its `@State` when the surrounding list re-uses it for a different subject, so without
+    ///     this a drag started on one display can commit onto another.
+    ///   - quietWindow: matches the WPE inspector's 180 ms, the interval already proven to keep a
+    ///     live preview tracking a drag.
     public init(
         value: Double,
         in range: ClosedRange<Double>,

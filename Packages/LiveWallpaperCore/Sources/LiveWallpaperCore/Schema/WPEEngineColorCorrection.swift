@@ -1,28 +1,21 @@
 import Foundation
 
-/// Wallpaper Engine's per-wallpaper colour correction, as carried in a preset.
+/// Wallpaper Engine's per-wallpaper colour correction, as carried in a preset. A published preset
+/// holds two different things in one map: the wallpaper's own `project.json` properties, and
+/// Wallpaper Engine's application-level settings for that wallpaper. The second group is not
+/// declared in the base wallpaper's schema, so the property filter drops it — correctly, because
+/// those keys are not properties. They still describe the look the preset's author published.
 ///
-/// A published preset holds two different things in one map: the wallpaper's own
-/// `project.json` properties, and Wallpaper Engine's application-level settings
-/// for that wallpaper. The second group is not declared in the base wallpaper's
-/// schema, so the property filter drops it — correctly, because those keys are
-/// not properties. They still describe the look the preset's author published.
+/// **How the key names and ranges were established**: not documented publicly, so they were read
+/// off two real presets by different authors for different wallpapers. The same fifteen undeclared
+/// keys appear in both, which is what identifies them as engine-written rather than author-authored.
+/// One preset has `wec_e: false` with every `wec_*` at 50; the other has `wec_e: true` with
+/// 50/80/46/80 — that pairing is what fixes **50 as neutral** and `wec_e` as the enable flag.
 ///
-/// **How the key names and ranges were established.** They are not documented
-/// publicly, so they were read off two real presets by different authors for
-/// different wallpapers:
-///
-/// - The same fifteen undeclared keys appear in both, which is what identifies
-///   them as engine-written rather than author-authored.
-/// - One preset has `wec_e: false` with every `wec_*` at 50; the other has
-///   `wec_e: true` with 50/80/46/80. That pairing is what fixes **50 as neutral**
-///   and `wec_e` as the enable flag.
-///
-/// **What is inferred rather than known**: the transfer functions. The observed
-/// data pins the neutral point and the enable flag, not the curve. These map onto
-/// the same semantics our video path already uses (`CIColorControls`), so one
-/// slider position means the same thing whichever wallpaper type it lands on —
-/// consistency inside this app, not bit-parity with Wallpaper Engine.
+/// **What is inferred rather than known**: the transfer functions. The observed data pins the
+/// neutral point and the enable flag, not the curve. These map onto the same semantics our video
+/// path already uses (`CIColorControls`), so one slider position means the same thing whichever
+/// wallpaper type it lands on — consistency inside this app, not bit-parity with Wallpaper Engine.
 public struct WPEEngineColorCorrection: Equatable, Sendable {
     /// Additive, −1...1, 0 neutral.
     public let brightness: Double
@@ -62,11 +55,9 @@ public struct WPEEngineColorCorrection: Equatable, Sendable {
         static let hue = "wec_hue"
     }
 
-    /// Reads the correction out of a preset's value map.
-    ///
-    /// Returns `nil` when the map carries no correction block at all, which is
-    /// every wallpaper that was never touched by a preset — distinct from a block
-    /// that is present and switched off.
+    /// Reads the correction out of a preset's value map. Returns `nil` when the map carries no
+    /// correction block at all, which is every wallpaper that was never touched by a preset —
+    /// distinct from a block that is present and switched off.
     public static func parse(
         _ values: [String: WallpaperEngineProjectPropertyValue]
     ) -> WPEEngineColorCorrection? {

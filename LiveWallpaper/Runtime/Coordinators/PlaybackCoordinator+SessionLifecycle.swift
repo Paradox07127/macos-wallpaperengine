@@ -8,7 +8,7 @@ extension PlaybackCoordinator {
 
     func setVideo(url: URL, bookmarkData: Data, packageEntryName: String? = nil, for screen: Screen) {
         guard isRuntimeInstallationAllowed() else { return }
-        Logger.info("Setting video for screen \(screen.id): \(url.lastPathComponent)", category: .screenManager)
+        Logger.notice("Setting video for screen \(screen.id): \(LogPrivacyRedactor.sanitizedTitle(url.lastPathComponent))", category: .screenManager)
 
         let existing = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint)
         // In-flight config writes are newer intent; candidate fails closed at commit.
@@ -245,6 +245,9 @@ extension PlaybackCoordinator {
             }
             // Trailing applyPolicy owns play/pause so re-apply never unpauses the user.
         } else {
+            // Only identity line on the startup-restore path — `setVideo` never
+            // runs when a saved video is brought back at launch.
+            Logger.notice("Preparing video wallpaper for screen \(screen.id): \(LogPrivacyRedactor.sanitizedTitle(url.lastPathComponent))", category: .screenManager)
             let generation = transition.bumpTransition(for: screen.id)
             beginPreparedVideoSession(
                 url: url,

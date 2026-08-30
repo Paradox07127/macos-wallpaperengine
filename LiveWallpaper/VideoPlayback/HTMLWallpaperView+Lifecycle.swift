@@ -53,12 +53,11 @@ protocol HTMLWallpaperFrameRateTargeting: AnyObject {
     func setTargetFrameRate(_ limit: FrameRateLimit)
 }
 
-/// The user frame-rate ceiling translated for the web runtime.
-///
-/// It has to be an interval rather than a divisor of the display refresh:
-/// WebKit exposes no frame-rate knob at all (no `WKWebpagePreferences` property,
-/// and the media-suspension API only reaches `<video>`/`<audio>`), so the ceiling
-/// lands on our own rAF gate, and 30 fps is not a whole divisor of a 136 Hz panel.
+/// The user frame-rate ceiling translated for the web runtime: it has to be an
+/// interval, not a divisor of the display refresh, because WebKit exposes no
+/// frame-rate knob at all (no `WKWebpagePreferences` property, and the
+/// media-suspension API only reaches `<video>`/`<audio>`) — so the ceiling lands
+/// on our own rAF gate, and 30 fps is not a whole divisor of a 136 Hz panel.
 enum HTMLFramePacingPolicy {
     /// Milliseconds between allowed rAF callbacks; 0 = run at the display rate.
     static func minimumFrameIntervalMilliseconds(for limit: FrameRateLimit?) -> Double {
@@ -333,12 +332,10 @@ extension HTMLWallpaperView {
         }
     }
 
-    /// Only `didFinish` drops the cover, and several `loadSource` exits report an
-    /// error without starting a navigation at all (a folder bookmark that went
-    /// stale while the volume was unmounted during the absence). Without a bound
-    /// the desktop stays frozen on the pre-absence snapshot, and because
-    /// `setHibernationEligible` requires `.live`, the screen also never
-    /// hibernates again. Mirrors the still-frame deadline on the video player.
+    /// Only `didFinish` drops the cover; several `loadSource` exits report an error without navigating
+    /// (e.g. stale folder bookmark, volume unmounted during the absence) — so without a bound, the
+    /// desktop freezes on the pre-absence snapshot and, since `setHibernationEligible` needs `.live`,
+    /// never hibernates again. Mirrors the video player's still-frame deadline.
     private func armRestoreCoverDeadline() {
         restoreCoverDeadlineTask?.cancel()
         let generation = hibernationState.generation
@@ -365,13 +362,11 @@ extension HTMLWallpaperView {
 
     // MARK: - Absence-dwell hibernation
 
-    /// `ScreenManager` marks the view eligible while it is suspended for an
-    /// absence-like reason (lock, display sleep, full-screen cover/occlusion) —
-    /// the same signal `SceneWallpaperSession.setHibernationEligible` takes. An
-    /// app-rule or battery pause stays a warm suspend.
-    /// `immediately` is the manual-pause handover: that countdown has already
-    /// run its full term in the session, and re-running this one after it made
-    /// a paused HTML wallpaper hold its resources longer than a paused scene.
+    /// `ScreenManager` marks the view eligible while suspended for an absence-like reason (lock,
+    /// display sleep, full-screen cover/occlusion) — the signal
+    /// `SceneWallpaperSession.setHibernationEligible` takes; an app-rule/battery pause stays a warm
+    /// suspend. `immediately` is the manual-pause handover: that countdown already ran its full term,
+    /// and re-running it made a paused HTML wallpaper outlive a paused scene's resources.
     func setHibernationEligible(_ eligible: Bool, immediately: Bool = false) {
         hibernationEligible = eligible
         guard eligible,
@@ -391,10 +386,9 @@ extension HTMLWallpaperView {
         }
     }
 
-    /// Re-read when the cover reply lands, not captured when it was requested:
-    /// the snapshot is asynchronous, and a pressure clear arriving inside that
-    /// window used to release a manually paused wallpaper that still had most of
-    /// its 300s warm dwell left. `generation` already rejects a reply that
+    /// Re-read when the cover reply lands, not captured when requested: the snapshot is asynchronous,
+    /// and a pressure clear arriving inside that window used to release a manually paused wallpaper
+    /// that still had most of its 300s warm dwell left. `generation` already rejects a reply that
     /// crossed a wake; eligibility is the dimension it does not cover.
     var stillWantsHibernation: Bool {
         !isCleaningUp && mediaPlaybackSuspended && hibernationEligible

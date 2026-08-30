@@ -33,15 +33,12 @@
             let work: @Sendable () -> Void
         }
 
-        /// An engine's lifetime execution slot: a serial queue plus the
-        /// `JSVirtualMachine` every context on that queue is built in.
-        ///
-        /// One VM per WORKER, not per context. A `JSVirtualMachine` owns a GC
-        /// heap (measured ~1.15 MB), so a VM per script cost 1104 x 1.15 MB =
-        /// 1.27 GB across two scenes — more than every GPU texture combined.
-        /// Sharing is safe precisely because the lane is serial: JSC serialises
-        /// contexts that share a VM, and these already never run concurrently,
-        /// so the VM lock is uncontended and no parallelism is lost.
+        /// An engine's lifetime execution slot: a serial queue plus the `JSVirtualMachine`
+        /// every context on it is built in. One VM per WORKER, not per context: a
+        /// `JSVirtualMachine` owns a GC heap (measured ~1.15 MB), so a VM per script cost
+        /// 1104 x 1.15 MB = 1.27 GB across two scenes — more than every GPU texture combined.
+        /// Sharing is safe: the lane is serial, JSC serialises contexts sharing a VM, and these
+        /// never run concurrently, so the VM lock is uncontended and no parallelism is lost.
         struct Lane: @unchecked Sendable {
             let queue: DispatchQueue
             let virtualMachine: JSVirtualMachine
@@ -132,11 +129,10 @@
         }
 
         private static func makeLaneRecord(slot: Int, generation: UInt64) -> LaneRecord {
-            // `.workItem` pops the autorelease pool after EVERY dispatched block.
-            // The default (.inherit → "unspecified times, when the thread idles")
-            // never fires under a continuous 30 fps tick stream, so per-tick ObjC
-            // temporaries (JSValue boxing in the audio bridge, exception objects)
-            // accumulated for the whole session — sampled at 6.3 GB on 2955378002.
+            // `.workItem` pops the autorelease pool after EVERY dispatched block. The default
+            // (.inherit → "unspecified times, when the thread idles") never fires under a
+            // continuous 30 fps tick stream, so per-tick ObjC temporaries (JSValue boxing, audio
+            // bridge exception objects) accumulated for the whole session — 6.3 GB sampled on 2955378002.
             LaneRecord(
                 queue: DispatchQueue(
                     label: "com.livewallpaper.wpe-script-batch.\(slot).\(generation)",

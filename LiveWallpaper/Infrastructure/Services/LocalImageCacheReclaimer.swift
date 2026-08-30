@@ -5,10 +5,7 @@ import os
 
 /// The image caches whose every entry can be rebuilt from a file this app
 /// already holds on disk, so dropping one costs a re-decode and never a
-/// re-download. Network-backed caches deliberately stay out.
-///
-/// `Sendable`: the only stored property is an `OSAllocatedUnfairLock`, which
-/// serialises every read and write of the state it wraps.
+/// re-download. Network-backed caches deliberately stay out. `Sendable`: the only stored property is an `OSAllocatedUnfairLock`, which serialises every read and write of the state it wraps.
 final class LocalImageCacheRegistry: Sendable {
 
     static let shared = LocalImageCacheRegistry()
@@ -35,17 +32,8 @@ final class LocalImageCacheRegistry: Sendable {
     var registeredCacheCount: Int { purges.withLock { $0.count } }
 }
 
-/// Drops the local-source image caches once the app's last user-visible window
-/// has stayed closed for `delay`.
-///
-/// The trigger has to be the *transition*, not the condition: this is a
-/// menu-bar agent, so "no window open" is its ordinary resting state. Windows
-/// are therefore registered explicitly by whoever presents them instead of
-/// being discovered from `NSApp.windows` — the wallpaper surfaces are
-/// `NSWindow`s too, living at `desktopWindow` level, and enumerating would
-/// either pin the caches for as long as a wallpaper is on screen or fire the
-/// purge when a display is unplugged. A window this type was never told about
-/// takes no part in the decision.
+/// Drops the local-source image caches once the app's last user-visible window has stayed closed for `delay`. The trigger has to be the *transition*, not the condition: this is a menu-bar agent, so "no window open" is its ordinary resting state.
+/// Windows are therefore registered explicitly by whoever presents them instead of being discovered from `NSApp.windows` — the wallpaper surfaces are `NSWindow`s too, living at `desktopWindow` level, and enumerating would either pin the caches for as long as a wallpaper is on screen or fire the purge when a display is unplugged. A window this type was never told about takes no part in the decision.
 @MainActor
 final class LocalImageCacheReclaimer {
 
@@ -90,11 +78,8 @@ final class LocalImageCacheReclaimer {
             }
             // Redundant today, kept as a backstop. A superseded task cannot get
             // here: cancelling after the sleep has already elapsed still makes
-            // the resumption throw, so the `catch` above returns first — probed
-            // on macOS 27 by blocking the main actor past the deadline, then
-            // cancelling. That is a runtime detail of `Task.sleep`, not a
-            // documented guarantee, and if it ever changes the stale task would
-            // purge early AND null out its replacement's handle. One line.
+            // the resumption throw, so the `catch` above returns first —
+            // probed on macOS 27 by blocking the main actor past the deadline, then cancelling. That's a runtime detail of `Task.sleep`, not a documented guarantee; if it ever changes, the stale task would purge early AND null out its replacement's handle, so this one-line guard stays.
             guard !Task.isCancelled else { return }
             self?.purgeIfStillIdle()
         }

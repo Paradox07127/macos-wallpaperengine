@@ -1,13 +1,9 @@
 import AppKit
 
-/// Decides, per overlay window, whether it may take mouse events *right now*.
-///
-/// `NSView.hitTest` returning nil only says "no view in this window wants the
-/// click" — the window still consumes it, so a full-screen overlay running with
-/// `ignoresMouseEvents = false` swallows every desktop click, including the ones
-/// it draws nothing under. Only `ignoresMouseEvents` lets a click reach Finder,
-/// and that flag is per-window, not per-rect. So a window that wants the pointer
-/// for one control has to stay click-through until the pointer is over it.
+/// Whether an overlay window may take mouse events *right now*. `hitTest` returning nil means no view wants the click,
+/// but the window still consumes it — so `ignoresMouseEvents = false` on a full-screen overlay swallows every desktop
+/// click, including where nothing is drawn. Only `ignoresMouseEvents` reaches Finder, and it's per-window not
+/// per-rect, so a window wanting the pointer for one control stays click-through until the pointer is over it.
 enum OverlayPointerGate {
     /// `pointerIsOverLiveArea` comes from the host view's own hit-region test,
     /// so the window flag and the view filter can never disagree.

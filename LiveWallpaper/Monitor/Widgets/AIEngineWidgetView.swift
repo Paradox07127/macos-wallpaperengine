@@ -95,7 +95,7 @@ private struct AIEngineContent: View {
             Spacer(minLength: 0)
             footprintIndicator(heroFactor: 0.72)
             topApp
-            Text("ri_neural_footprint · no util", bundle: .main)
+            Text("ri_neural_footprint · no util")
                 .font(Design.captionFont(size: scale.caption * 0.92))
                 .tracking(scale.caption * 0.05)
                 .foregroundStyle(Design.inkFaint)
@@ -115,7 +115,7 @@ private struct AIEngineContent: View {
                 Circle()
                     .fill(Design.signalIdle.opacity(0.6))
                     .frame(width: 9, height: 9)
-                Text("ANE Memory", bundle: .main)
+                Text("ANE Memory")
                     .font(Design.heroFont(size: scale.hero * 0.5))
                     .tracking(scale.label * 0.12)
                     .foregroundStyle(Design.inkMuted)
@@ -206,7 +206,7 @@ private struct AIEngineContent: View {
     private var idlePlaceholder: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            Text("ri_neural_footprint · no util", bundle: .main)
+            Text("ri_neural_footprint · no util")
                 .font(Design.captionFont(size: scale.caption * 0.92))
                 .tracking(scale.caption * 0.05)
                 .foregroundStyle(Design.inkFaint)
@@ -225,7 +225,7 @@ private struct AIEngineContent: View {
                     .fill(Design.neuralDim)
                     .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
                     .opacity(0.8)
-                Text("ri_neural_footprint · no util", bundle: .main)
+                Text("ri_neural_footprint · no util")
                     .font(Design.captionFont(size: scale.caption * 0.9))
                     .foregroundStyle(Design.inkFaint)
                     .lineLimit(1)
@@ -264,7 +264,7 @@ private struct AIEngineContent: View {
                     footprintValue(busiest.footprintBytes, size: scale.caption)
                 }
             } else {
-                Text("No attributed memory", bundle: .main)
+                Text("No attributed memory")
                     .font(Design.captionFont(size: scale.caption))
                     .foregroundStyle(Design.inkFaint)
             }

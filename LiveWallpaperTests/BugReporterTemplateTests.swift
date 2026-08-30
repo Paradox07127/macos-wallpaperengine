@@ -9,7 +9,7 @@ struct BugReporterTemplateTests {
     @Test("Simplified Chinese is the only language with its own form")
     func simplifiedChineseGetsItsOwnTemplate() {
         #expect(
-            BugReporter.issueTemplateName(preference: .simplifiedChinese, systemLocalizations: ["en"])
+            BugReporter.issueForm(preference: .simplifiedChinese, systemLocalizations: ["en"]).templateName
                 == BugReporter.simplifiedChineseTemplateName
         )
     }
@@ -22,7 +22,7 @@ struct BugReporterTemplateTests {
             .japanese
         ] {
             #expect(
-                BugReporter.issueTemplateName(preference: preference, systemLocalizations: ["zh-Hans"])
+                BugReporter.issueForm(preference: preference, systemLocalizations: ["zh-Hans"]).templateName
                     == BugReporter.englishTemplateName,
                 "\(preference.rawValue) should use the English form"
             )
@@ -34,11 +34,11 @@ struct BugReporterTemplateTests {
     @Test("An explicit override outranks the system localization")
     func explicitPreferenceBeatsSystemLocalization() {
         #expect(
-            BugReporter.issueTemplateName(preference: .english, systemLocalizations: ["zh-Hans"])
+            BugReporter.issueForm(preference: .english, systemLocalizations: ["zh-Hans"]).templateName
                 == BugReporter.englishTemplateName
         )
         #expect(
-            BugReporter.issueTemplateName(preference: .simplifiedChinese, systemLocalizations: ["ja"])
+            BugReporter.issueForm(preference: .simplifiedChinese, systemLocalizations: ["ja"]).templateName
                 == BugReporter.simplifiedChineseTemplateName
         )
     }
@@ -46,16 +46,16 @@ struct BugReporterTemplateTests {
     @Test("Following the system resolves through the bundle's localizations")
     func systemPreferenceFollowsResolvedLocalization() {
         #expect(
-            BugReporter.issueTemplateName(preference: .system, systemLocalizations: ["zh-Hans", "en"])
+            BugReporter.issueForm(preference: .system, systemLocalizations: ["zh-Hans", "en"]).templateName
                 == BugReporter.simplifiedChineseTemplateName
         )
         #expect(
-            BugReporter.issueTemplateName(preference: .system, systemLocalizations: ["zh-Hant", "en"])
+            BugReporter.issueForm(preference: .system, systemLocalizations: ["zh-Hant", "en"]).templateName
                 == BugReporter.englishTemplateName
         )
         // No resolved localization at all must not crash into the Chinese form.
         #expect(
-            BugReporter.issueTemplateName(preference: .system, systemLocalizations: [])
+            BugReporter.issueForm(preference: .system, systemLocalizations: []).templateName
                 == BugReporter.englishTemplateName
         )
     }
@@ -80,7 +80,7 @@ struct BugReporterBodyLanguageTests {
         displays: [SystemSnapshot.DisplayDescriptor] = [
             SystemSnapshot.DisplayDescriptor(pixelWidth: 3456, pixelHeight: 2234, backingScaleFactor: 2)
         ],
-        activeWallpaperKinds: [String] = ["scene"]
+        activeWallpapers: [String] = ["scene"]
     ) -> SystemSnapshot {
         SystemSnapshot(
             appVersion: "0.6.0",
@@ -92,7 +92,7 @@ struct BugReporterBodyLanguageTests {
             chip: "Apple M4 Pro",
             physicalMemoryGiB: 24,
             displays: displays,
-            activeWallpaperKinds: activeWallpaperKinds,
+            activeWallpapers: activeWallpapers,
             bundleIdentifier: "com.loomscreen.pro",
             localeIdentifier: "zh_CN"
         )
@@ -108,9 +108,9 @@ struct BugReporterBodyLanguageTests {
         #expect(body.contains("### 发生了什么？"))
         #expect(body.contains("### 复现步骤"))
         #expect(body.contains("### 期望结果 vs 实际结果"))
-        #expect(body.contains("**最近的警告 / 错误**（最近 1 条）"))
+        #expect(body.contains("**最近活动 — 先是应用的壁纸，然后是警告 / 错误**（最近 1 条）"))
         #expect(!body.contains("### What happened?"))
-        #expect(!body.contains("Recent warnings/errors"))
+        #expect(!body.contains("Recent activity"))
     }
 
     @Test("The English form is unchanged")
@@ -123,7 +123,7 @@ struct BugReporterBodyLanguageTests {
         #expect(body.contains("### What happened?"))
         #expect(body.contains("### Steps to reproduce"))
         #expect(body.contains("### Expected vs actual"))
-        #expect(body.contains("**Recent warnings/errors** (last 1)"))
+        #expect(body.contains("**Recent activity — wallpapers applied, then warnings/errors** (last 1)"))
         #expect(!body.contains("发生了什么"))
     }
 
@@ -131,12 +131,12 @@ struct BugReporterBodyLanguageTests {
     /// the outline, so they can go stale on their own.
     @Test("Empty states follow the form's language too")
     func emptyStatesAreLocalized() {
-        let empty = Self.snapshot(displays: [], activeWallpaperKinds: [])
+        let empty = Self.snapshot(displays: [], activeWallpapers: [])
 
         let chinese = BugReporter.formatMarkdown(snapshot: empty, recentLogLines: [], form: .simplifiedChinese)
         #expect(chinese.contains("（没有检测到）"))
         #expect(chinese.contains("**正在播放的壁纸**：（无）"))
-        #expect(chinese.contains("**最近的警告 / 错误**：（没有记录）"))
+        #expect(chinese.contains("**最近活动**：（没有记录）"))
 
         let english = BugReporter.formatMarkdown(snapshot: empty, recentLogLines: [], form: .english)
         #expect(english.contains("(none detected)"))

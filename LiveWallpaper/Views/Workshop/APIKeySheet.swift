@@ -3,13 +3,10 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores
-/// the key in this Mac's login keychain (never synced to iCloud).
-///
-/// Kept for the surfaces that are genuinely modal — onboarding and the Browse
-/// pane's "you need a key to do this" prompt. Settings shows the same
-/// `SteamWebAPIKeyEditor` inline; the sheet is only a title and a Done button
-/// around it, so the two cannot lay the same field out differently.
+/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores the key in this
+/// Mac's login keychain (never synced to iCloud).
+/// Kept for the surfaces that are genuinely modal — onboarding and the Browse pane's "you need
+/// a key to do this" prompt. Settings shows the same `SteamWebAPIKeyEditor` inline; the sheet is only a title and Done button around it, so the two can't lay the same field out differently.
 struct SteamWebAPIKeyEntrySheet: View {
     let services: WorkshopServices
     let onSaved: () -> Void
@@ -64,11 +61,9 @@ struct SteamWebAPIKeyEntrySheet: View {
 // MARK: - Shared editor
 
 /// The key field and everything that has to sit next to it.
-///
-/// This was two cards with tinted fills and four bordered buttons, laid out
-/// twice. In a settings form the cards read as panels inside panels, and four
-/// bordered buttons read as four more chores; the sentences they carried are
-/// the part that matters, so they stayed and the chrome went.
+/// Was two cards with tinted fills and four bordered buttons, laid out twice. In a settings
+/// form the cards read as panels inside panels, and four bordered buttons read as four more
+/// chores; the sentences they carried are what matters, so they stayed and the chrome went.
 struct SteamWebAPIKeyEditor: View {
     @Bindable var model: SteamWebAPIKeyEntryModel
     /// Off inside a sheet, whose footer bar carries the primary action instead.
@@ -80,7 +75,7 @@ struct SteamWebAPIKeyEditor: View {
             // Kept as plain text rather than a warning panel: it is a standing
             // instruction about where keys come from, not an alert about
             // something that just happened.
-            Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.", bundle: .main)
+            Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -111,7 +106,7 @@ struct SteamWebAPIKeyEditor: View {
         Button {
             NSWorkspace.shared.open(url)
         } label: {
-            Text(title, bundle: .main)
+            Text(title)
         }
         .buttonStyle(.link)
         .fixedSize()
@@ -119,6 +114,9 @@ struct SteamWebAPIKeyEditor: View {
 }
 
 /// The masked field plus its reveal button.
+/// An ordinary bordered field, not a `.plain` one dressed in a hand-drawn background: inside a
+/// `Form` the plain style inherits the row's trailing alignment, pushing the text to the right
+/// edge and leaving the placeholder sitting under it instead of clearing on the first keystroke.
 struct SteamWebAPIKeyField: View {
     @Bindable var model: SteamWebAPIKeyEntryModel
     let onSubmit: () -> Void
@@ -128,15 +126,14 @@ struct SteamWebAPIKeyField: View {
             Group {
                 if model.isShowingKey {
                     TextField("Paste your 32-character key", text: $model.apiKey)
-                        .textFieldStyle(.plain)
-                        .font(DesignTokens.Typography.code)
                         .textSelection(.enabled)
                 } else {
                     SecureField("Paste your 32-character key", text: $model.apiKey)
-                        .textFieldStyle(.plain)
-                        .font(DesignTokens.Typography.code)
                 }
             }
+            .textFieldStyle(.roundedBorder)
+            .font(DesignTokens.Typography.code)
+            .multilineTextAlignment(.leading)
             .onChange(of: model.apiKey) { _, _ in model.keyChanged() }
             .onSubmit(onSubmit)
 
@@ -146,16 +143,9 @@ struct SteamWebAPIKeyField: View {
                 Image(systemName: model.isShowingKey ? "eye.slash" : "eye")
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .help(model.isShowingKey ? Text("Hide key") : Text("Show key"))
             .accessibilityLabel(model.isShowingKey ? Text("Hide key") : Text("Show key"))
-        }
-        .padding(.horizontal, DesignTokens.Spacing.sm)
-        .padding(.vertical, DesignTokens.Spacing.xs)
-        .background(Color(.controlBackgroundColor), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
-        .overlay {
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm)
-                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5)
         }
     }
 }

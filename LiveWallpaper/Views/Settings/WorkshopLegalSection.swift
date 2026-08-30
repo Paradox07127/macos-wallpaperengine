@@ -4,14 +4,10 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// What leaves this Mac, and the terms the Steam side is used under.
-///
-/// These sentences used to live in three places — a privacy sheet, the API key
-/// sheet's warning card, and a tooltip on the assets row — so the reader could
-/// only assemble the whole picture by opening all three. Held here as data,
-/// rendered by both the settings section and the onboarding sheet, so there is
-/// one copy of each statement.
-/// Main-actor isolated because `LocalizedStringKey` is not `Sendable`; both
-/// renderers are views, so the isolation costs nothing.
+/// Used to live in three places — a privacy sheet, the API key sheet's warning card, a tooltip
+/// on the assets row — so the reader could only assemble the picture by opening all three. Held
+/// here as data, rendered by both the settings section and onboarding sheet: one copy each.
+/// Main-actor isolated because `LocalizedStringKey` isn't `Sendable`; both renderers are views, so it costs nothing.
 @MainActor
 enum WorkshopLegalContent {
     struct Point: Identifiable {
@@ -66,9 +62,9 @@ struct WorkshopLegalSection: View {
         Section {
             ForEach(WorkshopLegalContent.points) { point in
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                    Text(point.title, bundle: .main)
+                    Text(point.title)
                         .font(DesignTokens.Typography.bodyEmphasized)
-                    Text(point.body, bundle: .main)
+                    Text(point.body)
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -83,7 +79,7 @@ struct WorkshopLegalSection: View {
                     Button {
                         NSWorkspace.shared.open(reference.url)
                     } label: {
-                        Text(reference.title, bundle: .main)
+                        Text(reference.title)
                     }
                     .buttonStyle(.link)
                     .fixedSize()

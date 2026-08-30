@@ -2,15 +2,11 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// One diagnostic probe, as a row that states its conclusion and hides its
-/// evidence until asked.
-///
-/// The previous row laid everything out at once — name, monospaced value, a
-/// paragraph of description, a terminal panel, and a button strip — so five of
-/// them stacked read as a log rather than a checklist. Here the collapsed row
-/// is a single line (status, name, result), and the description, the command
-/// and the fix only appear when the row is expanded. Failing probes expand
-/// themselves, because a checklist nobody opens is not a diagnostic.
+/// One diagnostic probe, as a row that states its conclusion and hides its evidence until asked.
+/// The previous row laid everything out at once — name, monospaced value, description paragraph,
+/// terminal panel, button strip — so five stacked read as a log, not a checklist. Now the collapsed
+/// row is one line (status, name, result); the description, command and fix show only when expanded.
+/// Failing probes expand themselves — a checklist nobody opens is not a diagnostic.
 struct WorkshopProbeRow: View {
     let report: DoctorProbeReport
     let service: SteamCMDDoctorService
@@ -158,9 +154,9 @@ struct WorkshopProbeRow: View {
             if report.id == .cachedLogin, let user = service.username { return user }
             return detail
         case .running:
-            return String(localized: "Checking…", comment: "Workshop Doctor probe is running.")
+            return String(localized: "Checking…", bundle: .appLanguage, comment: "Workshop Doctor probe is running.")
         case .notRun:
-            return String(localized: "Not run", comment: "Workshop Doctor probe has not been run.")
+            return String(localized: "Not run", bundle: .appLanguage, comment: "Workshop Doctor probe has not been run.")
         case .yellow, .red:
             return nil
         }

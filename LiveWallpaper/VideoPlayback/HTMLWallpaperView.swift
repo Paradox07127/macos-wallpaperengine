@@ -81,10 +81,8 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     /// Drops stale `takeSnapshot` replies after a later resume/suspend flip.
     var snapshotGeneration: UInt64 = 0
     /// Drives `.fair` RAF throttle independent of ScreenManager suspend/quality.
-    ///
-    /// `nonisolated(unsafe)`: only mutated from MainActor code, but deinit
-    /// (released on an arbitrary queue) also removes the observer, which Swift 6
-    /// can't prove safe.
+    /// `nonisolated(unsafe)`: only mutated from MainActor code, but deinit (released on an
+    /// arbitrary queue) also removes the observer, which Swift 6 can't prove safe.
     nonisolated(unsafe) var thermalObserver: NSObjectProtocol?
     var lastRafThrottleRatio: Int = 1
     /// User ceiling, independent of the thermal ratio above and of suspend.
@@ -803,12 +801,10 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         switch navigationType {
         case .other, .reload:
             guard let url else { return .cancel }
-            // `about:blank` is what WebKit reports for `loadHTMLString` (every
-            // inline wallpaper) and for the hibernation teardown. Cancelling it
-            // left inline sources as a permanently empty document, silently:
-            // the resulting `NSURLErrorCancelled` is swallowed by
-            // `shouldIgnoreNavigationFailure`. Exact match, not the `about:`
-            // scheme — a page navigating itself blank is the worst it allows.
+            // `about:blank` is what WebKit reports for `loadHTMLString` (every inline wallpaper) and
+            // hibernation teardown. Cancelling it silently left inline sources permanently empty —
+            // `NSURLErrorCancelled` gets swallowed by `shouldIgnoreNavigationFailure`. Exact match, not the
+            // `about:` scheme: a page navigating itself blank is the worst it allows.
             if url == Self.aboutBlank { return .allow }
             if url.isFileURL {
                 return fileURL(url, isContainedIn: localReadAccessRoot) ? .allow : .cancel
@@ -1118,7 +1114,7 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             code: nil,
             description: String(
                 localized: "The web renderer process crashed repeatedly.",
-                comment: "Runtime error detail shown when an HTML wallpaper's WebKit content process keeps crashing and the retry budget is exhausted."
+                bundle: .appLanguage, comment: "Runtime error detail shown when an HTML wallpaper's WebKit content process keeps crashing and the retry budget is exhausted."
             )
         ))
     }

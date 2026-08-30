@@ -52,12 +52,11 @@ actor WPEDisplayRenderActor {
     private var scenePropertyRendererGeneration: UInt64 = 0
     private var displayLinkLifecycle = WPEDisplayLinkLifecycleState()
 
-    /// FIFO delivery channel for fire-and-forget config/geometry setters. Replaces
-    /// the old per-setter `Task { await … }` deliveries whose scheduling order was
-    /// undefined — two rapid `setAudioVolume` posts could apply out of order and
-    /// leave the renderer on the stale value. A single continuation + single
-    /// consumer applies every command in submission order, so the last write always
-    /// wins. `nonisolated let` so setters on any thread can `yield` without a hop.
+    /// FIFO delivery channel for fire-and-forget config/geometry setters. Replaces the old
+    /// per-setter `Task { await … }` deliveries whose scheduling order was undefined (two
+    /// rapid `setAudioVolume` posts could apply out of order, leaving the renderer on a stale
+    /// value); a single continuation + single consumer applies every command in submission
+    /// order, so the last write always wins. `nonisolated let` lets setters on any thread yield without a hop.
     private nonisolated let configContinuation: AsyncStream<WPERendererConfigCommand>.Continuation
     /// The consumer side, drained by `configConsumerTask` (started in `adopt`, since
     /// config is meaningless before a renderer is present; commands submitted before
@@ -232,14 +231,13 @@ actor WPEDisplayRenderActor {
 
     // MARK: - CADisplayLink Frame Driver
     //
-    // The link is created on the main thread (the `NSScreen.displayLink` API is
-    // main-only) and handed here through a one-shot carrier. From that point ALL
-    // access — runloop registration, `isPaused`, `preferredFrameRateRange`,
-    // `invalidate` — happens on the render thread (this actor's isolation), the
-    // same thread its selector fires on. `isPaused` is the only knob Apple
-    // documents as thread-safe; `preferredFrameRateRange` is not, so neither is
-    // ever touched off the render thread. In `.main` mode the renderer still paces
-    // the MTKView and none of this runs.
+    // The link is created on the main thread (`NSScreen.displayLink` is main-only) and
+    // handed here through a one-shot carrier; from then on ALL access — runloop
+    // registration, `isPaused`, `preferredFrameRateRange`, `invalidate` — happens on the
+    // render thread (this actor's isolation), the same thread its selector fires on.
+    // `isPaused` is the only knob Apple documents as thread-safe; `preferredFrameRateRange`
+    // is not, so neither is ever touched off the render thread. In `.main` mode the
+    // renderer still paces the MTKView and none of this runs.
 
     /// The live per-display link. Isolated state: only the render thread reads or
     /// writes it. Nil until installed / after invalidation.
@@ -634,14 +632,11 @@ enum WPERendererConfigCommand: Sendable {
     case surfaceGeometry(CGSize)
 }
 
-/// One-shot Sendable carrier for handing the main-thread-constructed renderer to
-/// its actor. `@unchecked Sendable`: the renderer is built on the main thread and
-/// transferred into the actor exactly once, before any frame or async surface
-/// runs, and is never touched on the constructing thread again. Region isolation
-/// cannot see through the renderer's fresh-but-isolated construction to prove the
-/// hand-off is race-free, so it is asserted here. Falsifiable: if the builder ever
-/// uses the renderer after wrapping it, or hands the same renderer to two actors,
-/// this carrier is unsound.
+/// One-shot Sendable carrier for handing the main-thread-constructed renderer to its
+/// actor. `@unchecked Sendable`: the renderer is built on main, transferred into the actor
+/// exactly once before any frame runs, and never touched on the constructing thread again —
+/// region isolation can't prove the hand-off race-free, so it's asserted here. Falsifiable:
+/// unsound if the builder uses the renderer after wrapping, or hands the same renderer to two actors.
 struct WPERendererHandoff: @unchecked Sendable {
     let renderer: WPEMetalSceneRenderer
 }

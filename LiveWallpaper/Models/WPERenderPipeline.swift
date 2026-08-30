@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 
 /// Render graph IR: passes preserved; shader passes carry expanded GLSL.
@@ -242,13 +243,11 @@ extension WPEPreparedRenderPipeline {
         return WPEPreparedRenderPipeline(layers: newLayers)
     }
 
-    /// Solid passes bind `g_Color` from `uniformValues`, never from geometry —
-    /// and a script override clears the authored animation, which also removes
-    /// the layer from `addingMetalRuntimeUniforms`' rebuild condition. Without
-    /// writing the tint through here, an overridden solid layer stays frozen at
-    /// its load-time color. Component-wise on purpose: an alpha override must
-    /// not clobber an authored rgb that differs from the layer tint (and vice
-    /// versa).
+    /// Solid passes bind `g_Color` from `uniformValues`, never from geometry — and a script override clears
+    /// the authored animation, which also removes the layer from `addingMetalRuntimeUniforms`' rebuild
+    /// condition. Without writing the tint through here, an overridden solid layer stays frozen at its
+    /// load-time color. Component-wise on purpose: an alpha override must not clobber an authored rgb that
+    /// differs from the layer tint (and vice versa).
     private static func passesApplyingLayerTint(
         _ passes: [WPEPreparedRenderPass],
         geometry: WPERenderLayerGeometry,
@@ -456,11 +455,10 @@ extension WPEPreparedRenderPipeline {
         // in `WPEFrameUniformContext` (old merge inserted them last, so they win).
         let runtimeUniformValues = runtimeUniforms.uniformValues
         let cameraUniformValues = camera.uniformValues
-        // g_ModelMatrix is object-scoped (one per layer, shared by its passes)
-        // and depends only on origin/scale/angles — `resolved(at:)` moves alpha
-        // and color, so the pre-resolve geometry read here is the same one the
-        // resolve would produce. The cache turns that into per-layer work only
-        // when a layer actually moved.
+        // g_ModelMatrix is object-scoped (one per layer, shared by its passes) and depends only on
+        // origin/scale/angles — `resolved(at:)` moves alpha and color, so the pre-resolve geometry read here
+        // is the same one the resolve would produce. The cache turns that into per-layer work only when a
+        // layer actually moved.
         let objectUniformValuesByPassID = (objectUniformCache ?? WPEObjectUniformCache())
             .objectUniformValuesByPassID(for: layers)
         let needsRebuild = layers.contains { layer in
@@ -527,11 +525,9 @@ extension WPEPreparedRenderPipeline {
                     // (the frame context wins for frame-global names at read time).
                     if let scripted {
                         for (key, value) in scripted {
-                            // Scripts address a constant by its AUTHORED name
-                            // (`multiply1`); the pass is keyed by the SHADER name
-                            // (`g_Multiply`), same translation the static
-                            // `pass.constants` seed already does. Without it the
-                            // value lands in a slot no shader reads.
+                            // Scripts address a constant by its AUTHORED name (`multiply1`); the pass is keyed by the SHADER name
+                            // (`g_Multiply`), same translation the static `pass.constants` seed already does. Without it the value
+                            // lands in a slot no shader reads.
                             let uniformName = pass.materialUniformNames[key] ?? key
                             values[uniformName] = value
                         }
@@ -887,25 +883,25 @@ enum WPERenderPipelineError: Error, Equatable, LocalizedError, Sendable {
             return String(
                 localized: "error.render.pipeline.shader_missing",
                 defaultValue: "WPE shader \(name) is missing \(stage) source at \(path)",
-                comment: "Error shown when a Wallpaper Engine shader source file is missing."
+                bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine shader source file is missing."
             )
         case .includeMissing(let path, let requestedBy):
             return String(
                 localized: "error.render.pipeline.include_missing",
                 defaultValue: "WPE shader include \(path) requested by \(requestedBy) is missing",
-                comment: "Error shown when a Wallpaper Engine shader include file is missing."
+                bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine shader include file is missing."
             )
         case .includeCycle(let path):
             return String(
                 localized: "error.render.pipeline.include_cycle",
                 defaultValue: "WPE shader include cycle detected at \(path)",
-                comment: "Error shown when a Wallpaper Engine shader include cycle is detected."
+                bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine shader include cycle is detected."
             )
         case .invalidSourceEncoding(let path):
             return String(
                 localized: "error.render.pipeline.invalid_source_encoding",
                 defaultValue: "WPE shader source is not UTF-8: \(path)",
-                comment: "Error shown when a Wallpaper Engine shader source file is not UTF-8."
+                bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine shader source file is not UTF-8."
             )
         }
     }

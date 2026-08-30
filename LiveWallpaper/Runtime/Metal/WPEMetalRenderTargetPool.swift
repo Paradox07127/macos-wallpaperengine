@@ -69,25 +69,20 @@ struct WPEMetalRenderTargetKey: Hashable {
     }
 }
 
-/// Persistent FBO/layer-composite allocation pool used by
-/// `WPEMetalRenderExecutor`. Allocations live across `render(...)` calls and are
-/// released on `applyPerformanceProfile(.suspended)`, `reload()`, `cleanup()`.
-///
-/// `MTLHeap` is preferred when `heapTextureSizeAndAlign` reports non-zero;
-/// otherwise falls back to discrete `makeTexture`. The heap reference is held
-/// next to the texture so the heap is not deallocated while the texture is
-/// still in the pool.
+/// Persistent FBO/layer-composite allocation pool used by `WPEMetalRenderExecutor`.
+/// Allocations live across `render(...)` calls and are released on
+/// `applyPerformanceProfile(.suspended)`, `reload()`, `cleanup()`. `MTLHeap` is
+/// preferred when `heapTextureSizeAndAlign` reports non-zero, otherwise falls back to
+/// discrete `makeTexture`; the heap reference is held next to the texture so the heap isn't deallocated while the texture is still in the pool.
 final class WPEMetalRenderTargetPool {
     /// Set per scene by the executor: HDR scenes promote 8-bit FBOs to
     /// half-float (see `pixelFormat(forFBOFormat:promoteLDRToHDR:)`).
     var promotesLDRFormatsToHDR = false
 
-    /// World-canvas → render-target pixel ratio, set per frame by the executor
-    /// (its `outputPixelScale`). 1 = bit-identical to the pre-scaling pool.
-    /// Applied uniformly to EVERY canvas the key derivation sees — partial
-    /// scaling is forbidden (`wpe_blend_composite_fragment` maps `[[position]]`
-    /// onto snapshot texels 1:1, and off-size targets fall out of the shared
-    /// alias heap; see the `WPEMetalLayerLocalFBOScale` note above).
+    /// World-canvas → render-target pixel ratio, set per frame by the executor (its
+    /// `outputPixelScale`). 1 = bit-identical to the pre-scaling pool. Applied uniformly to
+    /// EVERY canvas the key derivation sees — partial scaling is forbidden
+    /// (`wpe_blend_composite_fragment` maps `[[position]]` onto snapshot texels 1:1, and off-size targets fall out of the shared alias heap; see the `WPEMetalLayerLocalFBOScale` note above).
     var pixelScale: Double = 1
 
     /// Register a pooled target with the WORLD size it stands for. Without this
@@ -128,14 +123,11 @@ final class WPEMetalRenderTargetPool {
         let lastPass: Int
     }
 
-    /// Pixel footprint for a layer-private effect FBO: the layer's own footprint
-    /// instead of the full scene. Used by BOTH `targetKey` (allocation) and
-    /// `diagnosticKey` (alias planning) so they can never mis-key.
-    /// nil → keep the full-scene default (scene alias or cross-layer declared FBO).
-    /// Only `layer.localFBOs` entries qualify (no other layer reads them).
-    /// (A `WPEMetalLayerLocalFBOScale` downsample knob was tried + removed: shrinking a
-    /// scene-sized FBO to a distinct half-scene size took it OUT of the shared FBO-aliasing
-    /// heap → separate allocation → device-measured memory went UP, not down.)
+    /// Pixel footprint for a layer-private effect FBO: the layer's own footprint instead of
+    /// the full scene. Used by BOTH `targetKey` (allocation) and `diagnosticKey` (alias
+    /// planning) so they can never mis-key. nil → keep the full-scene default (scene alias or
+    /// cross-layer declared FBO); only `layer.localFBOs` entries qualify. (A
+    /// `WPEMetalLayerLocalFBOScale` downsample knob was tried + removed: shrinking a scene-sized FBO took it OUT of the shared FBO-aliasing heap → separate allocation → device-measured memory went UP, not down.)
     static func layerLocalFBOPixelSize(
         fboName: String,
         layer: WPERenderLayer,
@@ -171,12 +163,10 @@ final class WPEMetalRenderTargetPool {
     private var aliasFrameTextures: [WPEMetalRenderTargetKey: (texture: MTLTexture, lastPass: Int)] = [:]
     private var aliasPlanSignature: Int?
 
-    /// Everything `prepare` derives its work from. Comparing INPUTS instead of
-    /// the post-descriptor plan signature is what lets a structurally stable
-    /// frame skip the `declaredFBOs` rebuild AND the per-interval
-    /// `heapTextureSizeAndAlign` driver queries — the old signature was hashed
-    /// only AFTER both had already run, so it saved the heap and nothing else.
-    /// Full equality (not a hash) so a collision cannot serve a stale plan.
+    /// Everything `prepare` derives its work from. Comparing INPUTS instead of the
+    /// post-descriptor plan signature is what lets a structurally stable frame skip the
+    /// `declaredFBOs` rebuild AND the per-interval `heapTextureSizeAndAlign` driver queries —
+    /// the old signature was hashed only AFTER both had already run. Full equality (not a hash) so a collision cannot serve a stale plan.
     private struct PrepareInputs: Equatable {
         let pipelineIdentity: Int
         /// Both are pool state the caller sets before `prepare`, and neither is
@@ -262,14 +252,11 @@ final class WPEMetalRenderTargetPool {
         releaseAliasState()
     }
 
-    /// Non-nil ONLY when `name` is a declared local FBO. Returns a cached, CPU-zeroed
-    /// stand-in so a first-frame read of an unwritten declared target resolves to
-    /// all-zero (WPE's semantics for a freshly created RT) instead of throwing.
-    /// Undeclared names return nil so the caller still raises `missingTexture` — a
-    /// genuine graph/transpile bug must stay loud.
-    ///
-    /// `declaredFBOs` is scene-wide, so equal FBO names share a stand-in across layers.
-    /// Per-layer scoping requires a corpus case with colliding unwritten names before changing this behavior.
+    /// Non-nil ONLY when `name` is a declared local FBO. Returns a cached, CPU-zeroed stand-in
+    /// so a first-frame read of an unwritten declared target resolves to all-zero (WPE's
+    /// semantics for a freshly created RT) instead of throwing; undeclared names return nil so
+    /// the caller still raises `missingTexture` — a genuine graph/transpile bug must stay loud.
+    /// `declaredFBOs` is scene-wide, so equal FBO names share a stand-in across layers; per-layer scoping requires a corpus case with colliding unwritten names before changing this.
     func zeroFilledPlaceholderTexture(forDeclaredFBO name: String) -> MTLTexture? {
         let lookupName = WPERenderTargetNames.PuppetClip.baseName(of: name) ?? name
         guard let spec = declaredFBOs[lookupName] else { return nil }
@@ -335,14 +322,11 @@ final class WPEMetalRenderTargetPool {
         return texture
     }
 
-    /// Start of each `render()`. Drops the prior frame's aliasable textures so
-    /// this frame allocates fresh. What makes that safe across the two frames the
-    /// executor keeps in flight is the heap's `.tracked` hazard mode, NOT the
-    /// serial queue: `MTLHeap.h` has the driver delay reads and writes on every
-    /// resource suballocated from a tracked heap until in-flight access finishes.
-    /// The objects must be dropped rather than reused — Apple documents reading or
-    /// writing through an already-aliased instance as undefined behaviour, so
-    /// keeping them across frames to skip `makeTexture` is not available here.
+    /// Start of each `render()`. Drops the prior frame's aliasable textures so this frame
+    /// allocates fresh. What makes that safe across the two frames the executor keeps in
+    /// flight is the heap's `.tracked` hazard mode, NOT the serial queue: `MTLHeap.h` has the
+    /// driver delay reads/writes on every tracked-heap resource until in-flight access
+    /// finishes. The objects must be dropped rather than reused — Apple documents reading/writing through an already-aliased instance as undefined behaviour, so keeping them to skip `makeTexture` isn't available here.
     func beginAliasFrame() {
         guard !aliasFrameTextures.isEmpty else { return }
         for entry in aliasFrameTextures.values {
@@ -440,13 +424,10 @@ final class WPEMetalRenderTargetPool {
     }
 
     /// The single pixel-dimension derivation shared by `targetKey` (allocation),
-    /// `diagnosticKey` (alias planning) and `worldCanvasSize` (world geometry) —
-    /// three consumers that mis-render the frame the moment they disagree.
-    /// `pixelScale` converts each world canvas through
-    /// `WPEMetalFXSpatialUpscaler.scaledCanvasSize` BEFORE the authored
-    /// scale-divisor / fit derivation, so a downsample chain keeps WPE's
-    /// truncation semantics relative to its (scaled) chain head; authored `fit`
-    /// (an absolute pixel edge) scales linearly.
+    /// `diagnosticKey` (alias planning) and `worldCanvasSize` (world geometry) — three
+    /// consumers that mis-render the frame the moment they disagree. `pixelScale` converts
+    /// each world canvas through `WPEMetalFXSpatialUpscaler.scaledCanvasSize` BEFORE the
+    /// authored scale-divisor/fit derivation, so a downsample chain keeps WPE's truncation semantics relative to its (scaled) chain head; authored `fit` (an absolute pixel edge) scales linearly.
     private func keyDimensions(
         for target: WPERenderTarget,
         spec: WPERenderFBO,
@@ -583,29 +564,9 @@ final class WPEMetalRenderTargetPool {
         return primary.texture
     }
 
+    /// `diagnosticSpec` against this pool's own declarations; the executor passes its own.
     private func targetSpec(for target: WPERenderTarget, layer: WPERenderLayer) -> WPERenderFBO {
-        switch target {
-        case .scene:
-            return WPERenderFBO(name: "scene", scale: 1, format: "rgba8888")
-        case .layerComposite(let name):
-            return WPERenderFBO(name: name, scale: 1, format: "rgba8888")
-        case .fbo(let name):
-            if WPERenderTargetNames.PuppetClip.isDeferredSource(name) {
-                return WPERenderFBO(name: name, scale: 2, format: "rgba8888")
-            }
-            let lookupName = WPERenderTargetNames.PuppetClip.baseName(of: name) ?? name
-            if let inherited = declaredFBOs[lookupName] ?? layer.localFBOs.first(where: { $0.name == lookupName }) {
-                return WPERenderFBO(
-                    name: name,
-                    scale: inherited.scale,
-                    fit: inherited.fit,
-                    format: inherited.format,
-                    unique: inherited.unique,
-                    pixelSize: inherited.pixelSize
-                )
-            }
-            return WPERenderFBO(name: name, scale: 1, format: "rgba8888")
-        }
+        diagnosticSpec(for: target, layer: layer, declaredFBOs: declaredFBOs)
     }
 
     private func targetKey(

@@ -282,7 +282,7 @@
                 if failed {
                     errorMessage = String(
                         localized: "Couldn't apply \(entry.origin.title).",
-                        comment: "Workshop installed apply failure. Placeholder is the wallpaper title."
+                        bundle: .appLanguage, comment: "Workshop installed apply failure. Placeholder is the wallpaper title."
                     )
                 }
                 reload()
@@ -339,7 +339,7 @@
                 if expectedToFree, !repositoryDeleted {
                     errorMessage = String(
                         localized: "Removed \(entry.origin.title) from the library, but its files couldn't be deleted.",
-                        comment: "Workshop delete: history removed but managed files couldn't be deleted."
+                        bundle: .appLanguage, comment: "Workshop delete: history removed but managed files couldn't be deleted."
                     )
                 }
             }
@@ -352,11 +352,9 @@
         func deletesFiles(_ entry: WPEHistoryEntry) -> Bool {
             let id = entry.origin.workshopID
             guard WPEPathSafety.isSafeWorkshopID(id) else { return false }
-            // A numeric id is a Steam Workshop item, whose files live in the
-            // shared repository; the connector reports `.notFound` harmlessly if
-            // it is already gone.
-            // Only Workshop items have files of ours to free; folder imports
-            // point at the user's own directory, which we never delete.
+            // A numeric id is a Steam Workshop item, whose files live in the shared repository
+            // (the connector reports `.notFound` harmlessly if already gone). Only Workshop items
+            // have files of ours to free; folder imports point at the user's own directory, which we never delete.
             return id.allSatisfy(\.isNumber)
         }
 
@@ -383,7 +381,7 @@
             guard let content = WPECachedContentResolver().content(for: entry.origin) else {
                 errorMessage = String(
                     localized: "Couldn't add \(entry.origin.title) to Bookmarks.",
-                    comment: "Workshop installed bookmark failure. Placeholder is the wallpaper title."
+                    bundle: .appLanguage, comment: "Workshop installed bookmark failure. Placeholder is the wallpaper title."
                 )
                 return
             }

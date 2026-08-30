@@ -9,11 +9,8 @@ enum WPESceneAssetProviderError: Error, Equatable, Sendable {
     case stagingUnavailable(String)
 }
 
-/// Single boundary through which the scene runtime reads project assets. Two
-/// backends implement it: a directory of extracted files, and a packed
-/// `scene.pkg` read in place. Reads are data-first so packed scenes never need
-/// extraction; only consumers that genuinely require a file URL (video, audio,
-/// some ImageIO paths) go through `stagedURL`.
+/// Single boundary through which the scene runtime reads project assets. Two backends implement it: a directory of extracted files, and a packed `scene.pkg` read in place.
+/// Reads are data-first so packed scenes never need extraction; only consumers that genuinely require a file URL (video, audio, some ImageIO paths) go through `stagedURL`.
 protocol WPESceneAssetProvider: Sendable {
     /// Directory backends map large files via `.mappedIfSafe` so the RSS profile
     /// matches the historical extracted-cache path; package backends read the slice.

@@ -48,16 +48,8 @@ struct WPESceneCapabilityClassifier: Sendable {
         }
 
         // Renders something, or renders nothing — that is the whole judgement now.
-        //
-        // There used to be a middle "Limited Compatibility" tier, gated on any
-        // parser diagnostic whose message didn't contain ".tex texture". It never
-        // looked at severity, and 29 of the parser's 40 diagnostics are `.info`
-        // *success* notes ("Particle object … parsed; rendered by the Metal
-        // particle simulator"), so every scene carrying a particle, text, or
-        // sound object was flagged — the label fired on richness, not on damage.
-        // What actually went wrong at runtime is reported by the render
-        // diagnostics (unresolved refs, shader failures, GPU errors), which are
-        // collected in Release too.
+        // There used to be a middle "Limited Compatibility" tier, gated on any parser diagnostic whose message didn't contain ".tex texture". It never looked at severity, and 29 of the parser's 40 diagnostics are `.info` *success* notes ("Particle object … parsed; rendered by the Metal particle simulator"), so every scene carrying a particle, text, or sound object was flagged — the label fired on richness, not on damage.
+        // What actually went wrong at runtime is reported by the render diagnostics (unresolved refs, shader failures, GPU errors), which are collected in Release too.
         return rendersSomething ? .imageOnly : .unsupported
     }
 

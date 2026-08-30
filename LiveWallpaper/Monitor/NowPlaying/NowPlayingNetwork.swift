@@ -1,11 +1,9 @@
 import Foundation
 
-/// Origin policy and bounded transport for the Now Playing layer's two fetchers.
-///
-/// Both talk to a fixed set of third-party endpoints, so every URL that comes
-/// *back* from one of them — an oEmbed `thumbnail_url`, an iTunes `artworkUrl100`,
-/// a redirect — is untrusted input. It is checked before the request goes out and
-/// again against the response URL, which is what catches a redirect.
+/// Origin policy and bounded transport for the Now Playing layer's two fetchers. Both talk to a fixed
+/// set of third-party endpoints, so every URL that comes *back* from one — an oEmbed `thumbnail_url`,
+/// an iTunes `artworkUrl100`, a redirect — is untrusted input, checked before the request goes out and
+/// again against the response URL (which is what catches a redirect).
 enum NowPlayingNetwork {
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 

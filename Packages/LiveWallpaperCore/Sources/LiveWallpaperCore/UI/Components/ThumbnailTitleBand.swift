@@ -1,18 +1,13 @@
 import SwiftUI
 
-/// A gallery tile's title, laid over the bottom edge of its thumbnail.
-///
-/// One line at rest; hovering opens the window to two and `MarqueeText` crawls
-/// the rest into view. The window is what grows — the text is always laid out
-/// as two lines. Swapping the line limit instead changes the text's *content*,
-/// which SwiftUI can only cross-fade: the first line jumps up and a second
-/// materialises below it rather than scrolling in.
-///
-/// The scrim is a gradient rather than a blur because these thumbnails play
-/// video and GIF on hover, and a backdrop filter re-samples every decoded frame.
-/// Its 0.86 floor is what a pure-white preview needs to clear WCAG AA — white
-/// type over 14% residual luminance is 5.5:1 — and a white preview is the worst
-/// case a wallpaper grid actually serves.
+/// A gallery tile's title, laid over the bottom edge of its thumbnail. One line at rest; hovering
+/// opens the window to two and `MarqueeText` crawls the rest into view. The window is what grows —
+/// the text is always laid out as two lines. Swapping the line limit instead changes the text's
+/// *content*, which SwiftUI can only cross-fade: the first line jumps up and a second materialises
+/// below it rather than scrolling in. The scrim is a gradient rather than a blur because these
+/// thumbnails play video and GIF on hover, and a backdrop filter re-samples every decoded frame. Its
+/// 0.86 floor is what a pure-white preview needs to clear WCAG AA — white type over 14% residual
+/// luminance is 5.5:1 — and a white preview is the worst case a wallpaper grid actually serves.
 public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
     private let title: String
     private let isHovering: Bool

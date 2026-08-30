@@ -104,18 +104,4 @@ struct WPESceneSectionStateTests {
         // Lite has no Workshop scenes to warn about.
         #expect(!EngineAssetsBanner.shouldShow(isFeatureEnabled: false, hasEngineAssets: false))
     }
-
-    @Test("Only unresolved resources point at an engine-assets install")
-    func onlyResourceMissesBlameEngineAssets() {
-        #expect(FallbackReason.sceneResourceMissing.mightBeMissingEngineAssets)
-        // Downloading gigabytes fixes none of these, so none may advertise it.
-        #expect(!FallbackReason.requiresWindowsPlugin.mightBeMissingEngineAssets)
-        #expect(!FallbackReason.texContainerUnsupported(magic: "TEXV9999").mightBeMissingEngineAssets)
-        #expect(!FallbackReason.texUnsupportedFormat(code: 8).mightBeMissingEngineAssets)
-        #expect(!FallbackReason.texDecodeFailed(detail: "truncated").mightBeMissingEngineAssets)
-        #expect(!FallbackReason.sceneParseFailed("no camera").mightBeMissingEngineAssets)
-        #expect(!FallbackReason.sceneShaderUnsupported.mightBeMissingEngineAssets)
-        #expect(!FallbackReason.missingDependency(workshopIDs: ["1"]).mightBeMissingEngineAssets)
-        #expect(!FallbackReason.unsupportedType.mightBeMissingEngineAssets)
-    }
 }

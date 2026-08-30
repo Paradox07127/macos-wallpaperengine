@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// Which badges the library and Workshop grids draw on their thumbnails.
-///
-/// Kept in `UserDefaults` rather than `GlobalSettings` to match the app's other
-/// card-display preference (`loomscreen.workshop.blurMatureThumbnails.v1`):
-/// these change what one Mac's grid looks like, not how a wallpaper runs.
+/// Which badges the library and Workshop grids draw on their thumbnails. Kept in `UserDefaults`
+/// rather than `GlobalSettings` to match the app's other card-display preference
+/// (`loomscreen.workshop.blurMatureThumbnails.v1`): these change what one Mac's grid looks like, not
+/// how a wallpaper runs.
 public enum CardBadgeSettings {
     public static let showsRating = "loomscreen.cards.badge.rating.v1"
     public static let showsType = "loomscreen.cards.badge.type.v1"
@@ -15,13 +14,11 @@ public enum CardBadgeSettings {
     public static let typeStyle = "loomscreen.cards.badge.typeStyle.v1"
 }
 
-/// The card-chrome defaults resolved once for a whole grid.
-///
-/// These used to be `@AppStorage` on the card itself. Each one installs a KVO
-/// observation on the defaults suite when its view is installed, so a 50-tile
-/// Workshop page registered — and, as tiles recycled under the scroller,
-/// repeatedly re-registered — hundreds of them. Reading them once per pane and
-/// handing the result down through the environment costs each card nothing.
+/// The card-chrome defaults resolved once for a whole grid. These used to be `@AppStorage` on the
+/// card itself. Each one installs a KVO observation on the defaults suite when its view is
+/// installed, so a 50-tile Workshop page registered — and, as tiles recycled under the scroller,
+/// repeatedly re-registered — hundreds of them. Reading them once per pane and handing the result
+/// down through the environment costs each card nothing.
 public struct GalleryCardPreferences: Equatable, Sendable {
     public var showsRating: Bool
     public var showsType: Bool
@@ -79,12 +76,10 @@ public enum CardTypeBadgeStyle: String, CaseIterable, Identifiable, Sendable {
     public var showsText: Bool { self != .icon }
 }
 
-/// Type badge floating on a thumbnail, honoring the user's icon/text choice.
-///
-/// The badge is `accessibilityHidden` — it is a glyph on artwork, and the cards
-/// combine their children into one element. **The hosting card must restate the
-/// type in its own accessibility label**, or the `.icon` style leaves VoiceOver
-/// with no way to reach it. Sighted users get the word from `help`.
+/// Type badge floating on a thumbnail, honoring the user's icon/text choice. The badge is
+/// `accessibilityHidden` — it is a glyph on artwork, and the cards combine their children into one
+/// element. **The hosting card must restate the type in its own accessibility label**, or the
+/// `.icon` style leaves VoiceOver with no way to reach it. Sighted users get the word from `help`.
 public struct ThumbnailTypeBadge: View {
     private let systemImage: String
     private let title: String

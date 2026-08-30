@@ -4,15 +4,11 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Grid card for the online browse view.
-///
-/// `Equatable` so a parent state change that says nothing about this card — the
-/// pager's rate-limit countdown, another card's selection — cannot re-run its
-/// body. Without it SwiftUI had no choice: the parent hands every card a fresh
-/// `onSelect` closure on each pass, and a closure never compares equal.
-///
-/// Ignoring the closures in `==` is what makes that work, and is safe: they read
-/// `@State` through its storage box, not through a snapshot of the parent
-/// struct, so a stale one still sees current values.
+/// `Equatable` so a parent state change unrelated to this card — the pager's rate-limit
+/// countdown, another card's selection — cannot re-run its body; without it SwiftUI had no
+/// choice, since the parent hands every card a fresh `onSelect` closure each pass and a closure
+/// never compares equal. Ignoring closures in `==` is safe: they read `@State` through its
+/// storage box, not a snapshot of the parent struct, so a stale one still sees current values.
 struct BrowseCard: View, Equatable {
     nonisolated static func == (lhs: BrowseCard, rhs: BrowseCard) -> Bool {
         lhs.item == rhs.item
@@ -25,13 +21,10 @@ struct BrowseCard: View, Equatable {
     let item: WorkshopQueryItem
     var isInLibrary: Bool = false
     var isSelected: Bool = false
-    /// Read once per pane and handed down, not six `@AppStorage` per tile —
-    /// see `GalleryCardPreferences`.
-    ///
-    /// Passed in rather than read from the environment here: `EquatableView`
-    /// short-circuits `body`, and an environment value read *inside* body would
-    /// then go stale — turning on Reduce Motion with the grid open would leave
-    /// every tile animating until something else happened to change.
+    /// Read once per pane and handed down, not six `@AppStorage` per tile — see `GalleryCardPreferences`.
+    /// Passed in, not read from the environment: `EquatableView` short-circuits `body`, so an
+    /// environment value read inside it would go stale — turning on Reduce Motion with the grid
+    /// open would leave every tile animating until something else changed it.
     let cardPreferences: GalleryCardPreferences
     let reduceMotion: Bool
     var onSelect: () -> Void = {}
@@ -272,24 +265,24 @@ struct BrowseCard: View, Equatable {
     /// Single source for the restricted/banned badge, reused by VoiceOver.
     private var statusInfo: (text: String, tint: Color, symbol: String)? {
         if item.isBanned {
-            return (String(localized: "Unavailable", comment: "Workshop item removed or hidden on Steam."), DesignTokens.Colors.Status.danger, "xmark.octagon.fill")
+            return (String(localized: "Unavailable", bundle: .appLanguage, comment: "Workshop item removed or hidden on Steam."), DesignTokens.Colors.Status.danger, "xmark.octagon.fill")
         }
         switch item.visibility {
         case .friendsOnly:
-            return (String(localized: "Friends-only", comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
+            return (String(localized: "Friends-only", bundle: .appLanguage, comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
         case .private:
-            return (String(localized: "Private", comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
+            return (String(localized: "Private", bundle: .appLanguage, comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
         case .public, .unknown:
             return nil
         @unknown default:
-            return (String(localized: "Restricted", comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
+            return (String(localized: "Restricted", bundle: .appLanguage, comment: "Workshop item visibility."), DesignTokens.Colors.Status.warning, "exclamationmark.triangle.fill")
         }
     }
 
     private var accessibilityLabelText: String {
         var parts: [String] = [item.title]
         if let rating = ratingValue {
-            parts.append(String(localized: "\(rating.formatted(.number.precision(.fractionLength(1)))) stars", comment: "Workshop card VoiceOver rating. Placeholder is a number 0–5."))
+            parts.append(String(localized: "\(rating.formatted(.number.precision(.fractionLength(1)))) stars", bundle: .appLanguage, comment: "Workshop card VoiceOver rating. Placeholder is a number 0–5."))
         }
         if let type = contentType {
             parts.append(type.displayName)
@@ -298,13 +291,13 @@ struct BrowseCard: View, Equatable {
             parts.append(resolutionLabel)
         }
         if let subs = item.subscriptionCount, subs > 0 {
-            parts.append(String(localized: "\(formatSubs(subs)) subscribers", comment: "Workshop card VoiceOver subscriber count."))
+            parts.append(String(localized: "\(formatSubs(subs)) subscribers", bundle: .appLanguage, comment: "Workshop card VoiceOver subscriber count."))
         }
         if let size = formattedSize {
             parts.append(size)
         }
         if isInLibrary {
-            parts.append(String(localized: "In Library", comment: "Workshop card VoiceOver: item is already downloaded to the local library."))
+            parts.append(String(localized: "In Library", bundle: .appLanguage, comment: "Workshop card VoiceOver: item is already downloaded to the local library."))
         }
         if let status = statusInfo {
             parts.append(status.text)

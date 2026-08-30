@@ -310,12 +310,14 @@ struct WPEInstalledInspectorContent: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)
             .popover(isPresented: $showingApplyPopover, arrowEdge: .bottom) {
-                WorkshopApplyTargetPicker(
-                    screens: screens,
-                    activeScreenIDs: activeScreenIDs,
-                    onPick: { actions.onApply($0); showingApplyPopover = false },
-                    onAll: { actions.onApplyToAll(); showingApplyPopover = false }
-                )
+                AppLanguageScope(defaults: .appScoped()) {
+                    WorkshopApplyTargetPicker(
+                        screens: screens,
+                        activeScreenIDs: activeScreenIDs,
+                        onPick: { actions.onApply($0); showingApplyPopover = false },
+                        onAll: { actions.onApplyToAll(); showingApplyPopover = false }
+                    )
+                }
             }
         }
     }

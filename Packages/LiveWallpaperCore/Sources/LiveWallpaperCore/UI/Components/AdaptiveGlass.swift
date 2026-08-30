@@ -66,11 +66,9 @@ public extension View {
     }
 
     /// Liquid-glass chrome for a small badge floating over a thumbnail/preview. The
-    /// legibility-preserving tint keeps white/coloured glyphs readable over bright
-    /// previews; Reduce Transparency forces an opaque fill. Adds zero padding so it
-    /// never changes a badge's footprint — only its backing.
-    ///
-    /// `in:` takes a rounded rectangle for panels that carry more than one line —
+    /// legibility-preserving tint keeps white/coloured glyphs readable over bright previews; Reduce
+    /// Transparency forces an opaque fill. Adds zero padding so it never changes a badge's footprint
+    /// — only its backing. `in:` takes a rounded rectangle for panels that carry more than one line —
     /// a capsule's end caps waste the corners and read as an oversized pill.
     func thumbnailBadgeGlass(
         tint: Color = .black,
@@ -80,19 +78,14 @@ public extension View {
         modifier(ThumbnailBadgeGlassModifier(tint: tint, opacity: opacity, shape: shape))
     }
 
-    /// Liquid Glass behind content that is drawn light-on-dark.
-    ///
-    /// `.regular.tint()` shifts the material's hue but not its luminance —
-    /// measured on macOS 27, raising a tint from 0.55 to 0.82 alpha moved a
-    /// card's median luminance only 132 → 138 — so a light-on-dark readout
-    /// placed straight onto the material washes out (1.16:1 against the card,
-    /// where the same readout on a painted card sits at 2.82:1). The scrim goes
-    /// *between* the material and the content: the body stays legible while the
-    /// edge keeps the glass ring and its refraction.
-    ///
-    /// No fallback path: below macOS 26 there is no Liquid Glass to fall back
-    /// to, only an imitation. Callers gate on `AdaptiveGlass.isAvailable` and
-    /// keep their own painted treatment for everything else.
+    /// Liquid Glass behind content that is drawn light-on-dark. `.regular.tint()` shifts the
+    /// material's hue but not its luminance — measured on macOS 27, raising a tint from 0.55 to 0.82
+    /// alpha moved a card's median luminance only 132 → 138 — so a light-on-dark readout placed
+    /// straight onto the material washes out (1.16:1 against the card, where the same readout on a
+    /// painted card sits at 2.82:1). The scrim goes *between* the material and the content: the body
+    /// stays legible while the edge keeps the glass ring and its refraction. No fallback path: below
+    /// macOS 26 there is no Liquid Glass to fall back to, only an imitation. Callers gate on
+    /// `AdaptiveGlass.isAvailable` and keep their own painted treatment for everything else.
     func adaptiveGlassScrimmed(cornerRadius: CGFloat, scrim: Color) -> some View {
         modifier(AdaptiveGlassScrimmedModifier(cornerRadius: cornerRadius, scrim: scrim))
     }
@@ -153,16 +146,12 @@ private struct FloatingGlyphGlassModifier: ViewModifier {
     }
 }
 
-/// Whether badges floating over artwork use real Liquid Glass, or the cheap
-/// tinted fill.
-///
-/// Glass samples the content *behind* it every frame. One badge on a detail hero
-/// is exactly what the material is for; forty cards' worth scrolling past is not
-/// — Apple's own guidance is to limit how many glass effects are on screen at
-/// once and to reserve the material for the most important controls rather than
-/// ordinary content metadata. `GalleryTileChrome` therefore switches every card
-/// that scrolls in a gallery to `.opaque`, and the detail and inspector surfaces
-/// keep the default.
+/// Whether badges floating over artwork use real Liquid Glass, or the cheap tinted fill. Glass
+/// samples the content *behind* it every frame. One badge on a detail hero is exactly what the
+/// material is for; forty cards' worth scrolling past is not — Apple's own guidance is to limit how
+/// many glass effects are on screen at once and to reserve the material for the most important
+/// controls rather than ordinary content metadata. `GalleryTileChrome` therefore switches every card
+/// that scrolls in a gallery to `.opaque`, and the detail and inspector surfaces keep the default.
 public enum ThumbnailBadgeSurface: Sendable {
     case glass
     case opaque

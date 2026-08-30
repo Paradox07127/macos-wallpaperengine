@@ -4956,13 +4956,13 @@ private extension WPEMetalRenderExecutorTests {
 
     @Test("Scene-capture utility classifier matches compose/project models and tolerates a dependency prefix")
     func composeUtilityClassifierHandlesPathsAndDependencyPrefix() {
-        #expect(WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath("models/util/composelayer.json"))
-        #expect(WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath("models/util/projectlayer.json"))
-        #expect(WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath("models/util/fullscreenlayer.json"))
-        #expect(WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath("../3479521040/models/util/composelayer.json"))
-        #expect(WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath("models\\util\\composelayer.json"))
-        #expect(!WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath("models/util/solidlayer.json"))
-        #expect(!WPEMetalSceneCaptureUtilityModels.isSceneCaptureUtilityModelPath("materials/quadrants.png"))
+        #expect(WPEUtilityModelKind.classify("models/util/composelayer.json") != nil)
+        #expect(WPEUtilityModelKind.classify("models/util/projectlayer.json") != nil)
+        #expect(WPEUtilityModelKind.classify("models/util/fullscreenlayer.json") != nil)
+        #expect(WPEUtilityModelKind.classify("../3479521040/models/util/composelayer.json") != nil)
+        #expect(WPEUtilityModelKind.classify("models\\util\\composelayer.json") != nil)
+        #expect(WPEUtilityModelKind.classify("models/util/solidlayer.json") == nil)
+        #expect(WPEUtilityModelKind.classify("materials/quadrants.png") == nil)
     }
 
     @Test("Composelayer CLEARALPHA clears the captured alpha")

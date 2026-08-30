@@ -7,11 +7,10 @@ extension ScreenManager {
         memoryPressureWatcher.start { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, !self.isTerminating else { return }
-                // Unstructured MainActor hops are not FIFO: applying the level
-                // this callback captured lets a late `critical` land after the
-                // `normal` that cleared it and re-arm the hibernate retry
-                // cadence for an emergency that is already over. Read the live
-                // level instead, which is latest-wins by construction.
+                // Unstructured MainActor hops are not FIFO: applying the level this callback captured lets a
+                // late `critical` land after the `normal` that cleared it and re-arm the hibernate retry
+                // cadence for an emergency that is already over. Read the live level instead, which is
+                // latest-wins by construction.
                 self.applyMemoryPressureLevel(self.memoryPressureWatcher.currentLevel())
             }
         }
@@ -21,13 +20,12 @@ extension ScreenManager {
     private func applyMemoryPressureLevel(_ level: SystemMemoryPressureLevel) {
         guard !isTerminating else { return }
         setMemoryPressure(level)
-        // Critical pressure skips the hibernate dwell: the refresh above has
-        // already suspended every session, so release its resident resources
-        // now instead of waiting out a countdown the system may not survive.
-        // Pushed on EVERY level change, not just the critical edge — the
-        // session's retry cadence has to be revoked when the pressure clears.
-        // `ScreenManager+Observers` reconciles the same capability; the two
-        // casts must stay identical or a session kind hears from one path only.
+        // Critical pressure skips the hibernate dwell: the refresh above has already suspended every
+        // session, so release its resident resources now instead of waiting out a countdown the system
+        // may not survive. Pushed on EVERY level change, not just the critical edge — the session's
+        // retry cadence has to be revoked when the pressure clears. `ScreenManager+Observers` reconciles
+        // the same capability; the two casts must stay identical or a session kind hears from one path
+        // only.
         let isCritical = level == .critical
         for screen in screens {
             (screen.runtimeSession as? WallpaperCriticalMemoryPressureResponding)?

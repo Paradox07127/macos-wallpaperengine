@@ -1,16 +1,12 @@
 import Foundation
 
-/// Decides which thread each display's `WPEDisplayRenderActor` is backed by.
+/// Decides which thread each display's `WPEDisplayRenderActor` is backed by. `true`
+/// (default) = a dedicated `WPERenderThread` per display; `false` = the actor's
+/// isolation runs on the main run loop, through the *identical* code path — the only
+/// variable is the backing thread.
 ///
-/// `true` (default) = a dedicated `WPERenderThread` per display, moving
-/// per-display frame work off the main actor. `false` = the actor's isolation
-/// runs on the main run loop, so the whole per-display render path executes on
-/// the main thread — through the *identical* actor code path the `true` case
-/// uses. The only variable between the two modes is the backing thread; nothing
-/// else in the frame path branches on it.
-///
-/// The "Multithreaded rendering" setting writes this default-on key; `false`
-/// selects main-thread rendering:
+/// The "Multithreaded rendering" setting writes this default-on key; `false` selects
+/// main-thread rendering:
 ///   defaults write com.loomscreen.pro loomscreen.wallpapers.offMainRender.v1 -bool false
 /// (Lite's domain is `com.loomscreen`; `com.livewallpaper` is the Logger subsystem, not a defaults domain.)
 enum WPEOffMainRenderFlag {

@@ -24,17 +24,11 @@ struct PanelChrome: ViewModifier {
         }
     }
 
-    /// Liquid Glass draws its own material, edge highlight and refraction, so
-    /// this drops the painted gradient, the grain and the top highlight rather
-    /// than stacking them on top — layering the designed lighting over a
-    /// material that already has its own is what makes glass look like a grey
-    /// rectangle. The drop shadow stays: Apple's own widgets cast one, and it
-    /// is what separates the card from the wallpaper it is refracting.
-    ///
-    /// Verified 2026-08-29 that `.glassEffect` really does refract through a
-    /// desktop-level `OverlayWindow` onto the wallpaper behind it, rather than
-    /// only sampling its own window — a two-colour backdrop showed through the
-    /// glass with the seam bending at the edge.
+    /// Liquid Glass draws its own material, edge highlight and refraction, so this drops the painted gradient, grain, and top
+    /// highlight instead of stacking them — layered lighting over glass's own material looks like a grey rectangle. The drop
+    /// shadow stays: Apple's widgets cast one, separating the card from the wallpaper it refracts. Verified 2026-08-29:
+    /// `.glassEffect` truly refracts through a desktop-level `OverlayWindow` onto the wallpaper behind it (not just its own
+    /// window) — a two-colour backdrop showed through, seam bending at the edge.
     private func glassCard(_ content: Content) -> some View {
         content
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -157,7 +151,7 @@ struct MonitorGrain: View {
             .frame(width: 150, height: 150)
             .monitorPanelChrome()
 
-        Text("Wide Panel", bundle: .main)
+        Text("Wide Panel")
             .font(Design.labelFont(size: 11))
             .foregroundStyle(Design.inkFaint)
             .frame(width: 320, height: 150)

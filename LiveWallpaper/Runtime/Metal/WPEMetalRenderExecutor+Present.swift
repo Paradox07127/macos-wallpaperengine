@@ -45,12 +45,10 @@ extension WPEMetalRenderExecutor {
         return true
     }
 
-    /// `worldSourceSize`: the WORLD canvas the source represents when render
-    /// scaling shrank it. Only `.center` consumes it — center keeps source
-    /// pixels 1:1, and centering the reduced texture would shrink the picture
-    /// on screen by the pixel scale; the world size restores the authored
-    /// footprint (the quad upscales bilinearly). Aspect-driven modes are
-    /// resolution-independent and ignore it.
+    /// `worldSourceSize`: the WORLD canvas the source represents when render scaling
+    /// shrank it. Only `.center` consumes it — centering the reduced texture would
+    /// otherwise shrink the picture on screen by the pixel scale; the world size restores
+    /// the authored footprint (the quad upscales bilinearly). Aspect-driven modes are resolution-independent and ignore it.
     func encodePresent(
         texture source: MTLTexture,
         layer: CAMetalLayer,
@@ -102,22 +100,18 @@ extension WPEMetalRenderExecutor {
             )
         }
         if !encodedByUpscaler {
-            // The plan sized this frame down expecting the scaler to restore it.
-            // It declined anyway (a fit-mode change after load, a drawable usage
-            // shortfall, or a scaler the device claimed to support and then
-            // refused), so the resolution was spent for nothing. Give scaling up
-            // for the rest of the scene rather than shipping a permanently
-            // bilinear-stretched low-resolution frame.
+            // The plan sized this frame down expecting the scaler to restore it. It declined
+            // anyway (a fit-mode change after load, a drawable usage shortfall, or a scaler
+            // the device claimed to support and then refused), so the resolution was spent
+            // for nothing. Give up scaling for the rest of the scene rather than shipping a permanently bilinear-stretched low-resolution frame.
             if upscalePlan.isActive,
                upscalePlan.declineIsConclusive(forDrawableSize: lastPresentedDrawableSize) {
                 upscalePlan = upscalePlan.demotedToNative()
-                // Every pixel-keyed resource is stale now, exactly as on a
-                // render-scale change. `previousFrameHistory` is the dangerous
-                // one: it is validated against the WORLD size, unchanged here, so
-                // its old smaller textures would keep being served to `.previous`
-                // — and `copyTexture` sizes the blit from the DESTINATION, which
-                // is a validation error once the destination grows. The renderer
-                // drains this after the frame commits.
+                // Every pixel-keyed resource is stale now, exactly as on a render-scale
+                // change. `previousFrameHistory` is the dangerous one: it's validated against
+                // the WORLD size, unchanged here, so its old smaller textures would keep being
+                // served to `.previous` — and `copyTexture` sizes the blit from the
+                // DESTINATION, a validation error once the destination grows. The renderer drains this after the frame commits.
                 notePresentSideDemotion()
                 Logger.notice(
                     "[metalfx] scaler declined a planned frame — rendering native for this scene "
@@ -215,14 +209,11 @@ extension WPEMetalRenderExecutor {
         }
     }
 
-    /// WPE HDR bloom pyramid (RenderDoc-verified structure on 3509243656):
-    /// prefilter (soft-knee threshold + strength/17 + tint) into a half-res
-    /// chain, 4-tap box downsamples, scatter-weighted SRC_ALPHA/ONE upsamples,
-    /// additive composite back onto the scene. HDR scenes (`general.hdr`) render
-    /// to an rgba16Float output (`currentOutputPixelFormat` + FBO promotion), so
-    /// the prefilter sees real >1 overbright — oracle-verified on 3509243656
-    /// (every RT in the trace is format 115 = rgba16Float). Only `hdr:false`
-    /// scenes clamp at their 8-bit scene write, matching WPE's own LDR chain.
+    /// WPE HDR bloom pyramid (RenderDoc-verified on 3509243656): prefilter (soft-knee
+    /// threshold + strength/17 + tint) into a half-res chain, 4-tap box downsamples,
+    /// scatter-weighted SRC_ALPHA/ONE upsamples, additive composite onto the scene. HDR
+    /// scenes (`general.hdr`) render to rgba16Float (`currentOutputPixelFormat` + FBO
+    /// promotion) so the prefilter sees real >1 overbright (every RT in the 3509243656 trace is format 115); `hdr:false` scenes clamp at their 8-bit write, matching WPE's LDR chain.
     func encodeSceneBloomIfNeeded(
         cameraUniforms: WPEMetalCameraUniforms,
         output: MTLTexture,
@@ -417,13 +408,10 @@ extension WPEMetalRenderExecutor {
 
 extension WPEMetalRenderExecutor {
 
-    /// Applies Wallpaper Engine's per-wallpaper colour correction to a finished
-    /// frame, returning the texture to present.
-    ///
-    /// Returns `output` untouched when the correction is an identity — the
-    /// common case, since only a preset that adjusted the sliders carries a
-    /// non-neutral one, and a full-frame 4K pass that provably changes nothing
-    /// is not worth its bandwidth.
+    /// Applies Wallpaper Engine's per-wallpaper colour correction to a finished frame,
+    /// returning the texture to present. Returns `output` untouched when the correction is
+    /// an identity — the common case, since only a preset that adjusted the sliders carries
+    /// a non-neutral one, and a full-frame 4K pass that provably changes nothing isn't worth its bandwidth.
     func encodeColorCorrectionIfNeeded(
         _ correction: WPEEngineColorCorrection,
         output: MTLTexture,
@@ -431,12 +419,10 @@ extension WPEMetalRenderExecutor {
     ) throws -> MTLTexture {
         guard !correction.isIdentity else { return output }
 
-        // From the output pool, not a texture of its own: this one *is* the
-        // frame once it is returned, so it has to obey the same reuse rules —
-        // `makeOutputTexture` refuses to recycle anything still in flight or
-        // held as history. A private, permanently-reused scratch texture let a
-        // later frame overwrite the one a detached poster readback was still
-        // reading, and never came back on reload.
+        // From the output pool, not a texture of its own: this one *is* the frame once it's
+        // returned, so it obeys the same reuse rules — `makeOutputTexture` refuses to recycle
+        // anything still in flight or held as history. A private, permanently-reused scratch
+        // texture once let a later frame overwrite one a detached poster readback was still reading, and never came back on reload.
         let destination = try makeOutputTexture(
             size: CGSize(width: output.width, height: output.height)
         )

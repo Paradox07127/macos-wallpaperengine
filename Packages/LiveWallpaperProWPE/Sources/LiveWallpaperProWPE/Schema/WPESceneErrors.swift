@@ -1,4 +1,5 @@
 import Foundation
+import LiveWallpaperCore
 
 /// Failure modes from `WPESceneDocumentParser`.
 public enum WPESceneDocumentError: Error, LocalizedError, Equatable, Sendable {
@@ -11,15 +12,15 @@ public enum WPESceneDocumentError: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidUTF8:
-            return String(localized: "error.scene.document.invalid_utf8", defaultValue: "scene.json is not valid UTF-8.", comment: "Error shown when a Wallpaper Engine scene.json file is not valid UTF-8.")
+            return String(localized: "error.scene.document.invalid_utf8", defaultValue: "scene.json is not valid UTF-8.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine scene.json file is not valid UTF-8.")
         case .rootNotObject:
-            return String(localized: "error.scene.document.root_not_object", defaultValue: "scene.json must be a JSON object at the root.", comment: "Error shown when a Wallpaper Engine scene.json root value is not an object.")
+            return String(localized: "error.scene.document.root_not_object", defaultValue: "scene.json must be a JSON object at the root.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine scene.json root value is not an object.")
         case .missingCamera:
-            return String(localized: "error.scene.document.missing_camera", defaultValue: "scene.json is missing the required camera block.", comment: "Error shown when a Wallpaper Engine scene.json file has no camera block.")
+            return String(localized: "error.scene.document.missing_camera", defaultValue: "scene.json is missing the required camera block.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine scene.json file has no camera block.")
         case .missingGeneral:
-            return String(localized: "error.scene.document.missing_general", defaultValue: "scene.json is missing the required general block.", comment: "Error shown when a Wallpaper Engine scene.json file has no general block.")
+            return String(localized: "error.scene.document.missing_general", defaultValue: "scene.json is missing the required general block.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine scene.json file has no general block.")
         case .malformedField(let field):
-            return String(localized: "error.scene.document.malformed_field", defaultValue: "scene.json field \(field) is malformed.", comment: "Error shown when a Wallpaper Engine scene.json field is malformed.")
+            return String(localized: "error.scene.document.malformed_field", defaultValue: "scene.json field \(field) is malformed.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine scene.json field is malformed.")
         }
     }
 }
@@ -37,13 +38,13 @@ public enum SceneRenderingError: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .cacheRootMissing:
-            return String(localized: "error.scene.rendering.cache_root_missing", defaultValue: "Scene cache directory is missing.", comment: "Error shown when the extracted scene cache directory cannot be found.")
+            return String(localized: "error.scene.rendering.cache_root_missing", defaultValue: "Scene cache directory is missing.", bundle: .appLanguage, comment: "Error shown when the extracted scene cache directory cannot be found.")
         case .parseFailed(let detail):
-            return String(localized: "error.scene.rendering.parse_failed", defaultValue: "Failed to parse scene.json: \(detail)", comment: "Error shown when a Wallpaper Engine scene.json file cannot be parsed.")
+            return String(localized: "error.scene.rendering.parse_failed", defaultValue: "Failed to parse scene.json: \(detail)", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine scene.json file cannot be parsed.")
         case .resourceFailed(let diagnostic):
             return diagnostic.errorDescription
         case .metalRendererUnsupported(let reason):
-            return String(localized: "error.scene.rendering.metal_unsupported", defaultValue: "Metal renderer cannot stage this scene: \(reason)", comment: "Error shown when the Metal scene renderer cannot stage a scene because of a Metal-specific gap (shader translator, unsupported target, etc.).")
+            return String(localized: "error.scene.rendering.metal_unsupported", defaultValue: "Metal renderer cannot stage this scene: \(reason)", bundle: .appLanguage, comment: "Error shown when the Metal scene renderer cannot stage a scene because of a Metal-specific gap (shader translator, unsupported target, etc.).")
         }
     }
 }
@@ -60,17 +61,17 @@ public enum SceneLoadDiagnostic: Equatable, Sendable {
     public var errorDescription: String {
         switch self {
         case .texture(let layer, _):
-            return String(localized: "error.scene.load_diagnostic.texture", defaultValue: "The image for '\(layer)' couldn't be loaded.", comment: "Diagnostic shown when a scene image layer texture cannot be loaded.")
+            return String(localized: "error.scene.load_diagnostic.texture", defaultValue: "The image for '\(layer)' couldn't be loaded.", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer texture cannot be loaded.")
         case .legacyUnsupportedTexture(let layer):
-            return String(localized: "error.scene.load_diagnostic.legacy_unsupported_texture", defaultValue: "The image format used by '\(layer)' is no longer supported.", comment: "Diagnostic shown when a scene image layer uses a legacy unsupported texture format.")
+            return String(localized: "error.scene.load_diagnostic.legacy_unsupported_texture", defaultValue: "The image format used by '\(layer)' is no longer supported.", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer uses a legacy unsupported texture format.")
         case .fileMissing(let layer, let path):
-            return String(localized: "error.scene.load_diagnostic.file_missing.with_path", defaultValue: "A file required by the '\(layer)' layer is missing: \(path).", comment: "Diagnostic shown when a scene layer references a missing file. First placeholder is the layer name, second is the missing relative path.")
+            return String(localized: "error.scene.load_diagnostic.file_missing.with_path", defaultValue: "A file required by the '\(layer)' layer is missing: \(path).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references a missing file. First placeholder is the layer name, second is the missing relative path.")
         case .crossPackageReference(let layer, _):
-            return String(localized: "error.scene.load_diagnostic.cross_package_reference", defaultValue: "The layer '\(layer)' requires files from an external package, which is not supported.", comment: "Diagnostic shown when a scene layer references files from another Wallpaper Engine package.")
+            return String(localized: "error.scene.load_diagnostic.cross_package_reference", defaultValue: "The layer '\(layer)' requires files from an external package, which is not supported.", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references files from another Wallpaper Engine package.")
         case .materialUnresolved(let layer, _):
-            return String(localized: "error.scene.load_diagnostic.material_unresolved", defaultValue: "A rendering feature needed by '\(layer)' is not supported yet.", comment: "Diagnostic shown when a scene layer uses an unresolved material or rendering feature.")
+            return String(localized: "error.scene.load_diagnostic.material_unresolved", defaultValue: "A rendering feature needed by '\(layer)' is not supported yet.", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer uses an unresolved material or rendering feature.")
         case .other(let layer, let message):
-            return String(localized: "error.scene.load_diagnostic.other", defaultValue: "The layer '\(layer)' encountered an issue: \(message).", comment: "Diagnostic shown when a scene layer fails for an uncategorized reason.")
+            return String(localized: "error.scene.load_diagnostic.other", defaultValue: "The layer '\(layer)' encountered an issue: \(message).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer fails for an uncategorized reason.")
         }
     }
 }
@@ -80,6 +81,17 @@ public struct WPESceneDiagnostic: Equatable, Sendable {
     public enum Severity: String, Sendable, Equatable {
         case info
         case warning
+
+        /// Callers that log a collected diagnostic must not pick a level of
+        /// their own: `LogFileSink` admits `warning` to the user's runtime log,
+        /// so hard-coding it published every `info` note as a user-visible
+        /// warning. Exhaustive on purpose — a new case must choose a level.
+        public var logLevel: Logger.Level {
+            switch self {
+            case .info: return .info
+            case .warning: return .warning
+            }
+        }
     }
 
     public let severity: Severity

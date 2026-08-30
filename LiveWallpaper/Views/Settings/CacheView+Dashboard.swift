@@ -219,7 +219,13 @@ extension WPECacheManagementView {
         if let last = lastVideoFreedBytes, last > 0 {
             return Text("Freed \(Int64(last), format: .byteCount(style: .file)).", comment: "WPE video texture cache footer shown after a purge. Placeholder is the freed byte total.")
         }
-        return Text("Across \(videoStats?.fileCount ?? 0) extracted video file\((videoStats?.fileCount ?? 0) == 1 ? "" : "s")")
+        // Splitting the count instead of interpolating an English "s" — the shared
+        // key put that morpheme mid-sentence in ja/zh, gluing a Latin s onto CJK.
+        let count = videoStats?.fileCount ?? 0
+        if count == 1 {
+            return Text("Across 1 extracted video file")
+        }
+        return Text("Across \(count) extracted video files")
     }
 
     /// The Workshop tree lives in the user's Steam library, so LaunchServices

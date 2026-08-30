@@ -430,6 +430,36 @@
         }
       }
     },
+    "%@ did not match the checksum in the manifest." : {
+      "comment" : "Managed SteamCMD install error. Placeholder is the package name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ did not match the checksum in the manifest."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ がマニフェストのチェックサムと一致しませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 与清单中的校验和不一致。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 與清單中的總和檢查碼不一致。"
+          }
+        }
+      }
+    },
     "%@ favorites" : {
       "comment" : "Workshop item favorite count. Placeholder is a compact number such as 6.1K.",
       "localizations" : {
@@ -455,6 +485,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 次收藏"
+          }
+        }
+      }
+    },
+    "%@ has no `material` or `passes[].textures[]`" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ has no `material` or `passes[].textures[]`"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に `material` も `passes[].textures[]` もありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 中没有 `material`，也没有 `passes[].textures[]`"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 中沒有 `material`，也沒有 `passes[].textures[]`"
           }
         }
       }
@@ -507,6 +567,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ 已被 %2$@ 使用。"
+          }
+        }
+      }
+    },
+    "%@ is not a JSON object" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is not a JSON object"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は JSON オブジェクトではありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不是 JSON 对象"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不是 JSON 物件"
           }
         }
       }
@@ -1026,6 +1116,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@，已就緒，可在系統設定中選擇"
+          }
+        }
+      }
+    },
+    "%@; the previous install could not be restored and is at %@: %@" : {
+      "comment" : "Managed SteamCMD install error. Placeholders are the original failure, the retired install path, and the rollback error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@; the previous install could not be restored and is at %@: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@。以前のインストールを復元できず、%@ に残っています: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@；先前的安装未能恢复，已保留在 %@：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@；先前的安裝未能復原，已保留在 %@：%@"
           }
         }
       }
@@ -2357,6 +2477,36 @@
         }
       }
     },
+    "A component of the install path is a symbolic link: %@" : {
+      "comment" : "Managed SteamCMD install error. Placeholder is the offending path.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A component of the install path is a symbolic link: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストールパスの構成要素がシンボリックリンクです: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装路径中存在符号链接：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝路徑中存在符號連結：%@"
+          }
+        }
+      }
+    },
     "A custom shader couldn't be translated. Try re-downloading the project." : {
       "comment" : "A description of a scene error.",
       "isCommentAutoGenerated" : true,
@@ -2413,6 +2563,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暴雨的粒子會比毛毛雨更密"
+          }
+        }
+      }
+    },
+    "A package name in the manifest is malformed." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A package name in the manifest is malformed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マニフェスト内のパッケージ名の形式が不正です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清单中的软件包名称格式有误。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清單中的套件名稱格式有誤。"
+          }
+        }
+      }
+    },
+    "A SteamCMD path must be absolute." : {
+      "comment" : "Workshop setup error when the chosen SteamCMD path is relative.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A SteamCMD path must be absolute."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD のパスは絶対パスである必要があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 路径必须是绝对路径。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 路徑必須是絕對路徑。"
           }
         }
       }
@@ -2644,32 +2854,62 @@
         }
       }
     },
-    "Across %lld extracted video file%@" : {
-      "comment" : "A description of the size of the on-disk footprint of the `wpe-tex-video` folder.",
-      "isCommentAutoGenerated" : true,
+    "Across %lld extracted video files" : {
+      "comment" : "WPE video texture cache footer. Placeholder is the file count.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "Across %1$lld extracted video file%2$@"
+            "state" : "translated",
+            "value" : "Across %lld extracted video files"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "抽出済み動画ファイル %1$lld 件%2$@ 全体"
+            "value" : "抽出済み動画ファイル %lld 件全体"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共 %1$lld 个已提取视频文件%2$@"
+            "value" : "共 %lld 个已提取视频文件"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共 %1$lld 個已擷取影片檔案%2$@"
+            "value" : "共 %lld 個已擷取影片檔案"
+          }
+        }
+      }
+    },
+    "Across 1 extracted video file" : {
+      "comment" : "WPE video texture cache footer, singular count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Across 1 extracted video file"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "抽出済み動画ファイル 1 件全体"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共 1 个已提取视频文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共 1 個已擷取影片檔案"
           }
         }
       }
@@ -2733,32 +2973,62 @@
         }
       }
     },
-    "Active for %lld app%@" : {
-      "comment" : "\"Pause wallpapers while chosen apps are in use\"",
-      "isCommentAutoGenerated" : true,
+    "Active for %lld apps" : {
+      "comment" : "App exceptions subtitle. Placeholder is the rule count.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "Active for %1$lld app%2$@"
+            "state" : "translated",
+            "value" : "Active for %lld apps"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld 個のアプリ%2$@で有効"
+            "value" : "%lld 個のアプリで有効"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "对 %1$lld 个 App%2$@ 启用"
+            "value" : "对 %lld 个 App 启用"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "對 %1$lld 個 App%2$@ 啟用"
+            "value" : "對 %lld 個 App 啟用"
+          }
+        }
+      }
+    },
+    "Active for 1 app" : {
+      "comment" : "App exceptions subtitle, singular count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active for 1 app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 個のアプリで有効"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对 1 个 App 启用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "對 1 個 App 啟用"
           }
         }
       }
@@ -4315,6 +4585,66 @@
         }
       }
     },
+    "Anim" : {
+      "comment" : "Scene badge: the scene has an animation layer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anim"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アニメーション"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "动画"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動畫"
+          }
+        }
+      }
+    },
+    "Another SteamCMD operation was running, so the install expired." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another SteamCMD operation was running, so the install expired."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の SteamCMD 処理の実行中だったため、インストールがタイムアウトしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另一项 SteamCMD 操作正在进行，本次安装已超时。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另一項 SteamCMD 操作正在進行，本次安裝已逾時。"
+          }
+        }
+      }
+    },
     "API key" : {
       "comment" : "Short legend label for the Steam Web API key step in the Workshop status bar.",
       "extractionState" : "manual",
@@ -4732,7 +5062,7 @@
     },
     "Apply this overlay to every other display?" : {
       "comment" : "Confirmation title for copying one overlay to the other displays.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7125,6 +7455,36 @@
         }
       }
     },
+    "Built-in WPE layer %@ is not available on macOS" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the layer path.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Built-in WPE layer %@ is not available on macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "組み込み WPE レイヤー %@ は macOS では利用できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内置 WPE 图层 %@ 在 macOS 上不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "內建 WPE 圖層 %@ 在 macOS 上無法使用"
+          }
+        }
+      }
+    },
     "by %@" : {
       "comment" : "Workshop item author line. Placeholder is the creator's Steam persona name.",
       "localizations" : {
@@ -8861,7 +9221,27 @@
     },
     "Choose Video…" : {
       "comment" : "Label for a button that opens a file picker to choose a video.",
-      "isCommentAutoGenerated" : true
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオを選択…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择视频…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇影片…"
+          }
+        }
+      }
     },
     "Choose wallpaper type" : {
       "comment" : "A hint for the user to choose a wallpaper type.",
@@ -9751,6 +10131,36 @@
         }
       }
     },
+    "Clicks" : {
+      "comment" : "HTML preview badge: mouse interaction allowed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clicks"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリック"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點擊"
+          }
+        }
+      }
+    },
     "Clock" : {
       "comment" : "Monitor widget name: Clock instrument.",
       "extractionState" : "manual",
@@ -9807,6 +10217,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉"
+          }
+        }
+      }
+    },
+    "Close setup and open the app" : {
+      "comment" : "Accessibility hint for the onboarding skip and start buttons.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セットアップを閉じてアプリを開きます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭设置并打开应用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉設定並開啟應用程式"
           }
         }
       }
@@ -11434,6 +11868,126 @@
         }
       }
     },
+    "Could not create a staging directory." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not create a staging directory."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ステージング用ディレクトリを作成できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法创建暂存目录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法建立暫存目錄。"
+          }
+        }
+      }
+    },
+    "Could not create the install directory: %@" : {
+      "comment" : "Managed SteamCMD install error. Placeholder is the underlying error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not create the install directory: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストールディレクトリを作成できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法创建安装目录：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法建立安裝目錄：%@"
+          }
+        }
+      }
+    },
+    "Could not download %@ from Valve's server." : {
+      "comment" : "Managed SteamCMD install error. Placeholder is the package name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not download %@ from Valve's server."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valve のサーバーから %@ をダウンロードできませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法从 Valve 服务器下载 %@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法從 Valve 伺服器下載 %@。"
+          }
+        }
+      }
+    },
+    "Could not fetch Valve's SteamCMD manifest." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not fetch Valve's SteamCMD manifest."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valve の SteamCMD マニフェストを取得できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取 Valve 的 SteamCMD 清单。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得 Valve 的 SteamCMD 清單。"
+          }
+        }
+      }
+    },
     "Could not find that location: %@" : {
       "comment" : "Manual weather location lookup error. The placeholder is the system error.",
       "localizations" : {
@@ -11488,6 +12042,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "找不到該位置。"
+          }
+        }
+      }
+    },
+    "Could not hash the installed binary." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not hash the installed binary."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストールされた実行ファイルのハッシュを計算できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法计算已安装可执行文件的哈希值。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法計算已安裝執行檔的雜湊值。"
+          }
+        }
+      }
+    },
+    "Could not move the unpacked install into place: %@" : {
+      "comment" : "Managed SteamCMD install error. Placeholder is the underlying error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not move the unpacked install into place: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開したインストールを配置できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将解压后的安装移动到目标位置：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法將解壓縮後的安裝移動到目標位置：%@"
+          }
+        }
+      }
+    },
+    "Could not retire the previous install: %@" : {
+      "comment" : "Managed SteamCMD install error. Placeholder is the underlying error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not retire the previous install: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前のインストールを退避できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法移走先前的安装：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法移走先前的安裝：%@"
           }
         }
       }
@@ -11919,6 +12563,36 @@
         }
       }
     },
+    "Couldn't parse %@ as JSON" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the file path.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't parse %@ as JSON"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を JSON として解析できませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将 %@ 解析为 JSON"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法將 %@ 解析為 JSON"
+          }
+        }
+      }
+    },
     "Couldn't reach Steam. Check your connection." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12083,6 +12757,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法讀取此設定檔：%@"
+          }
+        }
+      }
+    },
+    "Couldn't record the choice: %@" : {
+      "comment" : "Workshop setup error when storing the manual SteamCMD binding fails. Placeholder is the underlying error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't record the choice: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択内容を保存できませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法记录该选择：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法記錄該選擇：%@"
           }
         }
       }
@@ -15045,6 +15749,30 @@
         }
       }
     },
+    "Downloaded assets linked. Your Steam sign-in expired, so the version check couldn't run." : {
+      "comment" : "Engine-assets settings status when Steam refused the cached session during an update check.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード済みアセットはリンクされています。Steam のサインインが期限切れのため、バージョン確認は実行できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下载的资源仍在关联中。Steam 登录已过期，因此无法执行版本检查。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下載的資源仍在連結中。Steam 登入已過期，因此無法執行版本檢查。"
+          }
+        }
+      }
+    },
     "Downloaded the other Workshop items this wallpaper needs." : {
       "comment" : "Workshop toast subtitle after the linked Workshop items were downloaded.",
       "localizations" : {
@@ -15758,36 +16486,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為每個顯示器分配專用算繪執行緒，將影格處理移出主執行緒以獲得更流暢的播放。關閉後將在主執行緒算繪——僅用於排查問題。變更會重新載入桌布。適用於場景（Wallpaper Engine）桌布。"
-          }
-        }
-      }
-    },
-    "Each group unlocks one capability. Set up what you want — everything can be finished later in Settings." : {
-      "comment" : "Onboarding Workshop setup subtitle: the page is a dependency tree of capability groups, all optional.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Each group unlocks one capability. Set up what you want — everything can be finished later in Settings."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各グループはひとつの機能を解放します。必要なものだけ設定してください。すべて後から設定で完了できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每一组解锁一项能力。想配多少配多少——全部都可以稍后在设置里完成。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每一組解鎖一項能力。想配多少配多少——全部都可以稍後在設定裡完成。"
           }
         }
       }
@@ -16547,7 +17245,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請嘗試重新選擇檔案"
+            "value" : "嘗試重新選擇檔案"
           }
         }
       }
@@ -16607,7 +17305,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請重新選取創意工坊資料夾後再試一次"
+            "value" : "重新選取創意工坊資料夾後再試一次"
           }
         }
       }
@@ -16667,7 +17365,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請嘗試從 Steam 創意工坊重新下載"
+            "value" : "嘗試從 Steam 創意工坊重新下載"
           }
         }
       }
@@ -16904,6 +17602,36 @@
         }
       }
     },
+    "error.render.executor.render_target_exceeds_limit_reason" : {
+      "comment" : "Scene failure reason. Placeholders are the target name, its width and height, then the device texture limit twice.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "render target '%@' is %lldx%lld, exceeding this device's %lldx%lld Metal texture limit"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レンダーターゲット「%@」は %lld×%lld で、このデバイスの Metal テクスチャ上限 %lld×%lld を超えています"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染目标“%@”尺寸为 %lld×%lld，超出该设备的 Metal 纹理上限 %lld×%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染目標「%@」尺寸為 %lld×%lld，超出該裝置的 Metal 紋理上限 %lld×%lld"
+          }
+        }
+      }
+    },
     "error.render.executor.shader_translator_unavailable" : {
       "comment" : "Error shown when a custom WPE shader cannot be translated or compiled by the Metal renderer.",
       "localizations" : {
@@ -16962,8 +17690,39 @@
         }
       }
     },
+    "error.render.executor.unsupported_shader_reason" : {
+      "comment" : "Reason line shown when a workshop scene shader cannot run on the Metal renderer. Placeholder is the shader name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "shader '%@' unsupported by Metal renderer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シェーダー '%@' は Metal レンダラーでは使用できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "着色器 '%@' 不受 Metal 渲染器支持"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "著色器 '%@' 不受 Metal 渲染器支援"
+          }
+        }
+      }
+    },
     "error.render.executor.unsupported_target" : {
       "comment" : "Error shown when the Metal renderer does not support a render target.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -20064,6 +20823,36 @@
         }
       }
     },
+    "FX" : {
+      "comment" : "Scene badge: the scene applies an image effect.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FX"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エフェクト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "特效"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "特效"
+          }
+        }
+      }
+    },
     "Gatekeeper / quarantine" : {
       "comment" : "SteamCMD diagnostic (Doctor) probe label or result message.",
       "localizations" : {
@@ -20703,7 +21492,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ヘルパー"
+            "value" : "輔助"
           }
         }
       }
@@ -21840,6 +22629,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "匯入監控版面"
+          }
+        }
+      }
+    },
+    "Import to" : {
+      "comment" : "Onboarding picker label for which display an imported file is applied to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込み先"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入到"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匯入到"
           }
         }
       }
@@ -23527,6 +24340,36 @@
         }
       }
     },
+    "Lighting" : {
+      "comment" : "Scene badge: the scene has light objects.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lighting"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "灯光"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "燈光"
+          }
+        }
+      }
+    },
     "Limited Compatibility" : {
       "comment" : "Wallpaper Engine scene capability tier.",
       "extractionState" : "manual",
@@ -25031,19 +25874,19 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "フォルダを一度許可すると、Loomscreen はインストール済み ワークショップ アイテムを公式 Steam ライブラリから直接読み取ります。認証が必要な SteamCMD ダウンロードは別機能で、Loomscreen のバックグラウンド Steam コネクタが必要です。"
+            "value" : "フォルダを一度許可すると、Loomscreen はインストール済みのワークショップアイテムを公式 Steam ライブラリから直接読み取ります。認証が必要な SteamCMD ダウンロードは別機能で、Loomscreen のバックグラウンド Steam コネクタが必要です。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "授权文件夹一次后，Loomscreen 会直接从官方 Steam 库读取已安装的 创意工坊 项目。经过身份验证的 SteamCMD 下载是独立功能，需要 Loomscreen 的后台 Steam 连接器。"
+            "value" : "授权文件夹一次后，Loomscreen 会直接从官方 Steam 库读取已安装的创意工坊项目。经过身份验证的 SteamCMD 下载是独立功能，需要 Loomscreen 的后台 Steam 连接器。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "授權資料夾一次後，Loomscreen 會直接從官方 Steam 收藏庫讀取已安裝的 創意工坊 項目。經過身分驗證的 SteamCMD 下載是獨立功能，需要 Loomscreen 的背景 Steam 連線器。"
+            "value" : "授權資料夾一次後，Loomscreen 會直接從官方 Steam 收藏庫讀取已安裝的創意工坊項目。經過身分驗證的 SteamCMD 下載是獨立功能，需要 Loomscreen 的背景 Steam 連線器。"
           }
         }
       }
@@ -25055,19 +25898,49 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "フォルダを一度許可すれば、Loomscreen は公式 Steam ライブラリからインストール済みの Workshop アイテムを直接読み取ります。macOS はこれをユーザーが確認したパネル経由でしか許可しないため、Loomscreen がすでに見つけたフォルダでも 1 回のクリックが必要です。"
+            "value" : "フォルダを一度許可すれば、Loomscreen は公式 Steam ライブラリからインストール済みのワークショップアイテムを直接読み取ります。macOS はこれをユーザーが確認したパネル経由でしか許可しないため、Loomscreen がすでに見つけたフォルダでも 1 回のクリックが必要です。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "只需授权一次文件夹，Loomscreen 就能直接从官方 Steam 库读取已安装的 Workshop 项目。macOS 只在你确认的面板里授权，所以即使 Loomscreen 已经找到了文件夹，也仍需点一次。"
+            "value" : "只需授权一次文件夹，Loomscreen 就能直接从官方 Steam 库读取已安装的创意工坊项目。macOS 只在你确认的面板里授权，所以即使 Loomscreen 已经找到了文件夹，也仍需点一次。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "只需授權一次資料夾，Loomscreen 就能直接從官方 Steam 收藏庫讀取已安裝的 Workshop 項目。macOS 只在你確認的面板裡授權，所以即使 Loomscreen 已經找到了資料夾，也仍需點一次。"
+            "value" : "只需授權一次資料夾，Loomscreen 就能直接從官方 Steam 收藏庫讀取已安裝的創意工坊項目。macOS 只在你確認的面板裡授權，所以即使 Loomscreen 已經找到了資料夾，也仍需點一次。"
+          }
+        }
+      }
+    },
+    "Loomscreen won't run a SteamCMD from inside its own container." : {
+      "comment" : "Workshop setup error when the chosen SteamCMD sits in the app's own container.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen won't run a SteamCMD from inside its own container."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen は自身のコンテナ内にある SteamCMD を実行しません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 不会运行位于自身容器内的 SteamCMD。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 不會執行位於自身容器內的 SteamCMD。"
           }
         }
       }
@@ -26329,30 +27202,6 @@
         }
       }
     },
-    "Maybe later" : {
-      "comment" : "A button that dismisses a sheet.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "あとで"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "稍后再说"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "稍後再說"
-          }
-        }
-      }
-    },
     "Medium" : {
       "comment" : "Widget size: medium.",
       "extractionState" : "manual",
@@ -26409,6 +27258,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "記憶體"
+          }
+        }
+      }
+    },
+    "Metal pipeline '%@' rejected (likely stage_in mismatch): %@" : {
+      "comment" : "Scene failure reason. Placeholders are the pipeline name and the Metal error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal pipeline '%@' rejected (likely stage_in mismatch): %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal パイプライン「%@」が拒否されました（stage_in の不一致の可能性）: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 管线“%@”被拒绝（可能是 stage_in 不匹配）：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 管線「%@」被拒絕（可能是 stage_in 不匹配）：%@"
+          }
+        }
+      }
+    },
+    "Metal pipeline for \"%@\" failed to build: %@" : {
+      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal pipeline for \"%@\" failed to build: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」の Metal パイプラインをビルドできませんでした: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”的 Metal 管线构建失败：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」的 Metal 管線建置失敗：%@"
+          }
+        }
+      }
+    },
+    "Metal renderer failed." : {
+      "comment" : "Scene load diagnostic fallback when the Metal executor error carries no description.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal renderer failed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal レンダラーが失敗しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 渲染器执行失败。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metal 渲染器執行失敗。"
           }
         }
       }
@@ -26789,7 +27728,7 @@
     },
     "Mist" : {
       "comment" : "Particle effect name: a slow drifting fog veil.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27655,6 +28594,36 @@
         }
       }
     },
+    "named FBO '%@' unresolved on Metal pass — likely cross-pass alias miss" : {
+      "comment" : "Scene failure reason. Placeholder is the framebuffer name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "named FBO '%@' unresolved on Metal pass — likely cross-pass alias miss"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前付き FBO「%@」を Metal パスで解決できません — パス間のエイリアス漏れの可能性"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "具名 FBO“%@”在 Metal 通道中未能解析 —— 可能是跨通道别名遗漏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "具名 FBO「%@」在 Metal 通道中未能解析 —— 可能是跨通道別名遺漏"
+          }
+        }
+      }
+    },
     "Native" : {
       "comment" : "Scene preflight tier label.",
       "extractionState" : "manual",
@@ -27833,7 +28802,7 @@
       }
     },
     "needs you" : {
-      "comment" : "A Chinese literal for \"running\" (e.g. \"1 running\").",
+      "comment" : "Agent Session widget state: the session is waiting on the user.",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "ja" : {
@@ -28589,6 +29558,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "沒有空閒時段，請先調整現有時段。"
+          }
+        }
+      }
+    },
+    "No JS" : {
+      "comment" : "HTML preview badge: JavaScript disabled.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No JS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JS 無効"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无 JS"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無 JS"
           }
         }
       }
@@ -29378,6 +30377,30 @@
         }
       }
     },
+    "None of this is required to start. Set up only the parts you want — the rest can wait until Settings." : {
+      "comment" : "Workshop onboarding subtitle stating nothing on the page is required.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どれも開始に必須ではありません。必要な部分だけ設定してください — 残りは設定画面で後からで大丈夫です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些都不是开始使用的前提。只配置你想要的部分——其余的可以之后在设置里完成。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這些都不是開始使用的前提。只設定你想要的部分——其餘的可以之後在設定裡完成。"
+          }
+        }
+      }
+    },
     "None saved" : {
       "comment" : "Scene preset bar: shown instead of a picker when this wallpaper has no presets.",
       "localizations" : {
@@ -29929,7 +30952,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在你选择安装之前不会下载任何内容。发现更新时，菜单栏会显示「更新」按钮，而不会弹出对话框打断你。"
+            "value" : "在你选择安装之前不会下载任何内容。发现更新时，菜单栏会显示“更新”按钮，而不会弹出对话框打断你。"
           }
         },
         "zh-Hant" : {
@@ -31611,7 +32634,7 @@
       }
     },
     "Optional — adds ratings, authors and faster search" : {
-      "comment" : "Steam Web API key row subtitle: the key is an enhancement, not a requirement.",
+      "comment" : "Workshop settings subtitle for Steam Web API key.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -31628,13 +32651,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可选 —— 增加评分、作者,搜索更快"
+            "value" : "可选 —— 增加评分、作者，搜索更快"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可選 —— 增加評分、作者,搜尋更快"
+            "value" : "可選 —— 增加評分、作者，搜尋更快"
           }
         }
       }
@@ -31866,6 +32889,36 @@
         }
       }
     },
+    "Packaged" : {
+      "comment" : "Scene badge: assets live inside the package.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packaged"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パッケージ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已打包"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已封裝"
+          }
+        }
+      }
+    },
     "Packaged scene %@ could not be read from the package" : {
       "comment" : "Wallpaper Engine import rejection reason; appears inside the invalid-package alert.",
       "localizations" : {
@@ -31955,25 +33008,25 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS requires one-time approval to read Apple's wallpaper folder. Just click \"Grant Access\" — you do not need to pick any specific file."
+            "value" : "macOS requires one-time approval to read Apple's wallpaper folder. Click \"Grant Access\" — you do not need to pick any specific file."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS では Apple の壁紙フォルダを読み取るために一度だけ承認が必要です。「アクセスを許可」をクリックするだけで、特定のファイルを選ぶ必要はありません。"
+            "value" : "macOS では Apple の壁紙フォルダを読み取るために一度だけ承認が必要です。「アクセスを許可」をクリックしてください。特定のファイルを選ぶ必要はありません。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS 需要一次性授权才能读取 Apple 的壁纸文件夹。只需点击“授予访问权限”——你无需选择任何特定文件。"
+            "value" : "macOS 需要一次性授权才能读取 Apple 的壁纸文件夹。点击“授予访问权限”即可，无需选择任何特定文件。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS 需要一次性授權才能讀取 Apple 的桌布資料夾。只要按一下「授予存取權」即可，不需要選取特定檔案。"
+            "value" : "macOS 需要一次性授權才能讀取 Apple 的桌布資料夾。按一下「授予存取權」即可，不需要選取特定檔案。"
           }
         }
       }
@@ -32402,13 +33455,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "粘贴创意工坊链接可直接安装,无需搜索。"
+            "value" : "粘贴创意工坊链接可直接安装，无需搜索。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "貼上創意工坊連結可直接安裝,無需搜尋。"
+            "value" : "貼上創意工坊連結可直接安裝，無需搜尋。"
           }
         }
       }
@@ -32432,7 +33485,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "貼上到 GitHub issue — 金鑰已被遮蔽。"
+            "value" : "貼上到 GitHub issue — 敏感資訊已遮蔽。"
           }
         }
       }
@@ -33302,6 +34355,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "效能與電池"
+          }
+        }
+      }
+    },
+    "Phys PX" : {
+      "comment" : "HTML preview badge: physical pixel layout.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phys PX"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理ピクセル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理像素"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "實體像素"
           }
         }
       }
@@ -34518,20 +35601,40 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在这块屏的壁纸上预览仪表板，而不是空白画布"
+            "value" : "在这台显示器的壁纸上预览仪表板，而不是空白画布"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在這塊螢幕的桌布上預覽儀表板，而不是空白畫布"
+            "value" : "在這台顯示器的桌布上預覽儀表板，而不是空白畫布"
           }
         }
       }
     },
     "Preview the overlay over this display's wallpaper instead of an empty canvas" : {
       "comment" : "Text describing the wallpaper backdrop setting.",
-      "isCommentAutoGenerated" : true
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空のキャンバスではなく、このディスプレイの壁紙の上にオーバーレイをプレビューします"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台显示器的壁纸上预览叠加层，而不是空白画布"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這台顯示器的桌布上預覽疊加層，而非空白畫布"
+          }
+        }
+      }
     },
     "Preview unavailable" : {
       "localizations" : {
@@ -34699,6 +35802,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上一張桌布（目前顯示器）"
+          }
+        }
+      }
+    },
+    "Previous-frame effects (motion blur, feedback) are not yet supported." : {
+      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous-frame effects (motion blur, feedback) are not yet supported."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前のフレームを参照する効果（モーションブラー、フィードバック）はまだサポートされていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支持依赖上一帧的效果（动态模糊、反馈）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚不支援依賴上一幀的效果（動態模糊、回饋）。"
+          }
+        }
+      }
+    },
+    "previous-frame texture unavailable for this pass — no prior frame was rendered for its target" : {
+      "comment" : "Scene failure reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "previous-frame texture unavailable for this pass — no prior frame was rendered for its target"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このパスの前フレームテクスチャがありません — 対象がまだ一度も描画されていません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该通道所需的上一帧纹理不可用 —— 其目标从未渲染过上一帧"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該通道所需的上一幀紋理不可用 —— 其目標從未渲染過上一幀"
           }
         }
       }
@@ -36192,6 +37355,36 @@
         }
       }
     },
+    "Reference depth exceeded for %@" : {
+      "comment" : "Scene asset resolve failure. Placeholder is the reference path.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reference depth exceeded for %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ の参照が深すぎます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的引用层级过深"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的參照層級過深"
+          }
+        }
+      }
+    },
     "Refresh" : {
       "localizations" : {
         "en" : {
@@ -37323,13 +38516,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除 Wallpaper Engine 资源?"
+            "value" : "移除 Wallpaper Engine 资源？"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除 Wallpaper Engine 資源?"
+            "value" : "移除 Wallpaper Engine 資源？"
           }
         }
       }
@@ -37600,6 +38793,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "透過 Rec.709 將 HDR 內容渲染為 SDR。會停用畫格速率限制。"
+          }
+        }
+      }
+    },
+    "Render target \"%@\" is %lldx%lld, exceeding this device's %lldx%lld Metal texture limit." : {
+      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Render target \"%@\" is %lldx%lld, exceeding this device's %lldx%lld Metal texture limit."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レンダーターゲット「%@」は %lld×%lld で、このデバイスの Metal テクスチャ上限 %lld×%lld を超えています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染目标“%@”尺寸为 %lld×%lld，超出该设备的 Metal 纹理上限 %lld×%lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染目標「%@」尺寸為 %lld×%lld，超出該裝置的 Metal 紋理上限 %lld×%lld。"
+          }
+        }
+      }
+    },
+    "Render target \"%@\" is not produced by any pass." : {
+      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Render target \"%@\" is not produced by any pass."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レンダーターゲット「%@」はどのパスからも出力されていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染目标“%@”未被任何渲染通道产出。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染目標「%@」未被任何渲染通道產出。"
           }
         }
       }
@@ -40155,6 +41408,36 @@
         }
       }
     },
+    "Scene contains no renderable passes." : {
+      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scene contains no renderable passes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンにレンダリング可能なパスがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场景中没有可渲染的通道。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "場景中沒有可渲染的通道。"
+          }
+        }
+      }
+    },
     "Scene Custom Settings" : {
       "comment" : "Title of a group box that shows the custom settings of a scene.",
       "isCommentAutoGenerated" : true,
@@ -40904,13 +42187,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无需登录即可搜索和下载。设置免费的 Steam Web API key 后,还能看到评分、作者,搜索也更快。"
+            "value" : "无需登录即可搜索和下载。设置免费的 Steam Web API key 后，还能看到评分、作者，搜索也更快。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無需登入即可搜尋和下載。設定免費的 Steam Web API key 後,還能看到評分、作者,搜尋也更快。"
+            "value" : "無需登入即可搜尋和下載。設定免費的 Steam Web API key 後，還能看到評分、作者，搜尋也更快。"
           }
         }
       }
@@ -41032,19 +42315,19 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ワークショップ を検索"
+            "value" : "ワークショップを検索"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索 创意工坊"
+            "value" : "搜索创意工坊"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜尋 創意工坊"
+            "value" : "搜尋創意工坊"
           }
         }
       }
@@ -41506,13 +42789,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先配置 SteamCMD"
+            "value" : "先配置 SteamCMD"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先設定 SteamCMD"
+            "value" : "先設定 SteamCMD"
           }
         }
       }
@@ -41646,6 +42929,30 @@
         }
       }
     },
+    "Set Web API key" : {
+      "comment" : "Button text in the Browse Online error view.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web API キーを設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置 Web API 密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 Web API 金鑰"
+          }
+        }
+      }
+    },
     "Set your Steam Web API key" : {
       "comment" : "A heading for a Steam Web API key entry sheet.",
       "isCommentAutoGenerated" : true,
@@ -41774,6 +43081,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定錯誤：%@"
+          }
+        }
+      }
+    },
+    "Shader" : {
+      "comment" : "Scene badge: the scene uses a custom shader.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shader"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シェーダー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "着色器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "著色器"
+          }
+        }
+      }
+    },
+    "shader '%@': %@" : {
+      "comment" : "Scene failure reason. Placeholders are the shader name and the translator failure.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "shader '%@': %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シェーダー「%@」: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "着色器“%@”：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "著色器「%@」：%@"
+          }
+        }
+      }
+    },
+    "Shader \"%@\" is not supported by the Metal renderer yet." : {
+      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shader \"%@\" is not supported by the Metal renderer yet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シェーダー「%@」は Metal レンダラーではまだサポートされていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "着色器“%@”尚不受 Metal 渲染器支持。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "著色器「%@」尚不受 Metal 渲染器支援。"
+          }
+        }
+      }
+    },
+    "Shader \"%@\" needs the WPE GLSL translator: %@" : {
+      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shader \"%@\" needs the WPE GLSL translator: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シェーダー「%@」には WPE GLSL トランスレーターが必要です: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "着色器“%@”需要 WPE GLSL 转译器：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "著色器「%@」需要 WPE GLSL 轉譯器：%@"
           }
         }
       }
@@ -43275,6 +44702,30 @@
         }
       }
     },
+    "Sign in to your Steam account again, then check for updates." : {
+      "comment" : "Engine-assets update check failure subtitle when Steam refused the cached session.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam アカウントにサインインし直してから、更新を確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请重新登录你的 Steam 账户，然后再检查更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請重新登入你的 Steam 帳戶，然後再檢查更新。"
+          }
+        }
+      }
+    },
     "Sign-in didn't complete. Check the connection and try again." : {
       "comment" : "In-app Steam sign-in failure.",
       "localizations" : {
@@ -43300,6 +44751,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登入未完成。請檢查連線後重試。"
+          }
+        }
+      }
+    },
+    "Signed by team %@, expected %@." : {
+      "comment" : "Managed SteamCMD install error. Placeholders are the actual and the expected team.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed by team %@, expected %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "署名チームは %@ ですが、想定は %@ です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名团队为 %@，预期为 %@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "簽章團隊為 %@，預期為 %@。"
           }
         }
       }
@@ -43480,7 +44961,7 @@
       }
     },
     "Skip for Now" : {
-      "comment" : "Secondary onboarding action that defers wallpaper setup.\nSkip first-run wallpaper setup and open the app.",
+      "comment" : "Skip first-run wallpaper setup and open the app.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -43817,13 +45298,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "对库进行排序"
+            "value" : "对库排序"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "對庫進行排序"
+            "value" : "對資料庫排序"
           }
         }
       }
@@ -44263,6 +45744,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "星點"
+          }
+        }
+      }
+    },
+    "Start" : {
+      "comment" : "Onboarding final-step primary button that closes setup and opens the app.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始"
           }
         }
       }
@@ -44861,35 +46366,6 @@
         }
       }
     },
-    "Steam is rate-limiting. Please retry in a moment." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam is rate-limiting. Please retry in a moment."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam がレート制限中です。しばらくしてから再試行してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 正在限流。请稍后重试。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 正在限流。請稍後再試。"
-          }
-        }
-      }
-    },
     "Steam is rate-limiting. Retry in %@." : {
       "comment" : "A button to retry loading content after a rate-limit error. The argument is the string “%1$d:%2$02d”.",
       "isCommentAutoGenerated" : true,
@@ -44910,6 +46386,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 正在限流。%@ 後重試。"
+          }
+        }
+      }
+    },
+    "Steam is rate-limiting. Retry in a moment." : {
+      "comment" : "Workshop browse error when Steam throttles the request.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam is rate-limiting. Retry in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam がレート制限中です。しばらくしてから再試行してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 正在限流。稍后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 正在限流。稍後再試。"
           }
         }
       }
@@ -45220,6 +46726,7 @@
     },
     "Steam Library path is not a folder: %@" : {
       "comment" : "Workshop diagnostics error; %@ is the offending path.",
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -45505,6 +47012,30 @@
         }
       }
     },
+    "Steam sign-in expired" : {
+      "comment" : "Engine-assets update check failure headline when Steam refused the cached session.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam のサインインが期限切れです"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 登录已过期"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 登入已過期"
+          }
+        }
+      }
+    },
     "Steam took too long to respond." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -45615,7 +47146,7 @@
       }
     },
     "Steam Web API key (optional)" : {
-      "comment" : "Workshop settings row title marking the key as optional.",
+      "comment" : "Workshop settings section header; the key is an enhancement, not a requirement.",
       "extractionState" : "manual",
       "localizations" : {
         "ja" : {
@@ -47504,6 +49035,36 @@
         }
       }
     },
+    "tar exited %@: %@" : {
+      "comment" : "Managed SteamCMD install error. Placeholders are tar's exit code and its output.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tar exited %@: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tar が終了コード %@ で終了しました: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tar 以退出码 %@ 结束：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tar 以結束代碼 %@ 結束：%@"
+          }
+        }
+      }
+    },
     "Temperature" : {
       "comment" : "Monitor inspector: temperature-unit row title.",
       "localizations" : {
@@ -47808,31 +49369,122 @@
         }
       }
     },
-    "Thanks for helping LiveWallpaper improve. The information below will be pre-filled into a GitHub issue. **Please review it before posting** — once an issue is created, anyone can read it." : {
-      "comment" : "Explainer body in the Report a Bug sheet.",
+    "Texture upload failed." : {
+      "comment" : "Scene load diagnostic fallback when the texture loader error carries no description.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Thanks for helping Loomscreen improve. The information below will be pre-filled into a GitHub issue. **Please review it before posting** — once an issue is created, anyone can read it."
+            "value" : "Texture upload failed."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen の改善にご協力いただきありがとうございます。下記の情報は GitHub issue に事前入力されます。**投稿前に内容をご確認ください** — issue は誰でも閲覧できます。"
+            "value" : "テクスチャのアップロードに失敗しました。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "感谢帮助 Loomscreen 改进。下方信息会预填到 GitHub issue 里。**提交前请检查一遍** — issue 一旦创建任何人都能看到。"
+            "value" : "纹理上传失败。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "感謝協助 Loomscreen 改進。下方資訊會預先填入 GitHub issue。**送出前請先檢查** — issue 一旦建立任何人都能看到。"
+            "value" : "紋理上傳失敗。"
+          }
+        }
+      }
+    },
+    "That binary is quarantined. Open it once in Finder, or remove the quarantine flag." : {
+      "comment" : "Workshop setup error when the chosen SteamCMD still carries the quarantine flag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That binary is quarantined. Open it once in Finder, or remove the quarantine flag."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この実行ファイルは検疫されています。Finder で一度開くか、検疫フラグを解除してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该可执行文件处于隔离状态。在访达中打开一次，或移除隔离标记。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該執行檔處於隔離狀態。在 Finder 中開啟一次，或移除隔離標記。"
+          }
+        }
+      }
+    },
+    "That binary isn't signed by Valve." : {
+      "comment" : "Workshop setup error when the chosen SteamCMD fails the signature check.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That binary isn't signed by Valve."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この実行ファイルは Valve の署名を持っていません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该可执行文件没有 Valve 的签名。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該執行檔沒有 Valve 的簽章。"
+          }
+        }
+      }
+    },
+    "That file isn't SteamCMD, and no SteamCMD binary was found next to it." : {
+      "comment" : "Workshop setup error when the chosen file does not resolve to SteamCMD.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That file isn't SteamCMD, and no SteamCMD binary was found next to it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このファイルは SteamCMD ではなく、同じ場所にも SteamCMD の実行ファイルが見つかりません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该文件不是 SteamCMD，其所在位置也没有找到 SteamCMD 可执行文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該檔案不是 SteamCMD，其所在位置也沒有找到 SteamCMD 執行檔。"
           }
         }
       }
@@ -48041,6 +49693,66 @@
         }
       }
     },
+    "The archive contains a symbolic link that escapes the install directory: %@" : {
+      "comment" : "Managed SteamCMD install error. Placeholder is the symlink path.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The archive contains a symbolic link that escapes the install directory: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アーカイブにインストールディレクトリの外へ抜けるシンボリックリンクが含まれています: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "归档中存在指向安装目录之外的符号链接：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封存檔中存在指向安裝目錄之外的符號連結：%@"
+          }
+        }
+      }
+    },
+    "The archive points its executable outside the install directory." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The archive points its executable outside the install directory."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アーカイブの実行ファイルがインストールディレクトリの外を指しています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "归档中的可执行文件指向安装目录之外。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封存檔中的執行檔指向安裝目錄之外。"
+          }
+        }
+      }
+    },
     "The author's scene.json couldn't be parsed: %@" : {
       "comment" : "Wallpaper Engine fallback warning body. The placeholder is parser detail.",
       "localizations" : {
@@ -48146,6 +49858,66 @@
         }
       }
     },
+    "The check expired while another SteamCMD operation was running." : {
+      "comment" : "Workshop setup error when a manual bind waited too long behind another operation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The check expired while another SteamCMD operation was running."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の SteamCMD 処理の実行中に確認がタイムアウトしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另一项 SteamCMD 操作进行期间，本次检查已超时。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另一項 SteamCMD 操作進行期間，本次檢查已逾時。"
+          }
+        }
+      }
+    },
+    "The code signature is not valid." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The code signature is not valid."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コード署名が無効です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码签名无效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "程式碼簽章無效。"
+          }
+        }
+      }
+    },
     "The download timed out. Try again." : {
       "comment" : "Engine-assets download timed out.\nWorkshop download timed out.",
       "localizations" : {
@@ -48223,6 +49995,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此檔案沒有可辨識的設定。"
+          }
+        }
+      }
+    },
+    "The first SteamCMD run exited %@." : {
+      "comment" : "Managed SteamCMD install error. Placeholder is the exit code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The first SteamCMD run exited %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD の初回実行が終了コード %@ で終了しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 首次运行以退出码 %@ 结束。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 首次執行以結束代碼 %@ 結束。"
+          }
+        }
+      }
+    },
+    "The first SteamCMD run timed out." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The first SteamCMD run timed out."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD の初回実行がタイムアウトしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 首次运行超时。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD 首次執行逾時。"
+          }
+        }
+      }
+    },
+    "The information below will be pre-filled into a GitHub issue. **Review it before posting** — once an issue is created, anyone can read it." : {
+      "comment" : "Explainer body in the Report a Bug sheet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The information below will be pre-filled into a GitHub issue. **Review it before posting** — once an issue is created, anyone can read it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下記の情報は GitHub issue に事前入力されます。**投稿前に内容をご確認ください** — issue は誰でも閲覧できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下方信息会预填到 GitHub issue 里。**提交前检查一遍** — issue 一旦创建，任何人都能看到。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下方資訊會預先填入 GitHub issue。**送出前先檢查一遍** — issue 一旦建立，任何人都能看到。"
+          }
+        }
+      }
+    },
+    "The install root is not the managed SteamCMD directory." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The install root is not the managed SteamCMD directory."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インストール先が管理対象の SteamCMD ディレクトリではありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装根目录不是受管理的 SteamCMD 目录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝根目錄不是受管理的 SteamCMD 目錄。"
           }
         }
       }
@@ -48661,6 +50553,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統桌布資料庫的索引已損毀，因此未做變更。"
+          }
+        }
+      }
+    },
+    "The unpacked archive contains no SteamCMD executable." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The unpacked archive contains no SteamCMD executable."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開したアーカイブに SteamCMD の実行ファイルがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解压后的归档中没有 SteamCMD 可执行文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解壓縮後的封存檔中沒有 SteamCMD 執行檔。"
+          }
+        }
+      }
+    },
+    "The unpacked binary is quarantined and could not be executed." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The unpacked binary is quarantined and could not be executed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開した実行ファイルは検疫されており、実行できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解压后的可执行文件处于隔离状态，无法执行。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解壓縮後的執行檔處於隔離狀態，無法執行。"
           }
         }
       }
@@ -49458,7 +51410,7 @@
     },
     "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone." : {
       "comment" : "Confirmation message. Placeholders are the overlay's name and the number of other displays.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -49701,6 +51653,36 @@
         }
       }
     },
+    "This wallpaper has no still frame to preview the overlay against" : {
+      "comment" : "Monitor overlay inspector: the wallpaper backdrop toggle is unavailable.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This wallpaper has no still frame to preview the overlay against"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この壁紙にはオーバーレイを重ねてプレビューできる静止フレームがありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这张壁纸没有可用于预览叠加层的静帧"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這張桌布沒有可用於預覽疊加層的靜態畫格"
+          }
+        }
+      }
+    },
     "This wallpaper is tagged Mature and may contain explicit adult content. By revealing it you confirm you are at least 18 years old, or of legal age in your region." : {
       "localizations" : {
         "ja" : {
@@ -49806,6 +51788,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此桌布使用了不支援的 `.tex` 容器（%@）。"
+          }
+        }
+      }
+    },
+    "This wallpaper uses an unsupported rendering target." : {
+      "comment" : "Scene load diagnostic shown in the scene detail error banner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This wallpaper uses an unsupported rendering target."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この壁紙はサポートされていないレンダーターゲットを使用しています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该壁纸使用了不受支持的渲染目标。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該桌布使用了不受支援的渲染目標。"
           }
         }
       }
@@ -51211,13 +53223,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请开启访问权限以开始系统音频采集"
+            "value" : "开启访问权限以开始系统音频采集"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請開啟取用權限以開始系統音訊擷取"
+            "value" : "開啟取用權限以開始系統音訊擷取"
           }
         }
       }
@@ -51642,6 +53654,36 @@
         }
       }
     },
+    "Unpacking timed out." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpacking timed out."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開がタイムアウトしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解压超时。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解壓縮逾時。"
+          }
+        }
+      }
+    },
     "Unsupported" : {
       "comment" : "Workshop library type filter.",
       "localizations" : {
@@ -51724,6 +53766,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支援的圖片格式"
+          }
+        }
+      }
+    },
+    "unsupported Metal render target" : {
+      "comment" : "Scene failure reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unsupported Metal render target"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サポートされていない Metal レンダーターゲット"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不受支持的 Metal 渲染目标"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不受支援的 Metal 渲染目標"
           }
         }
       }
@@ -52414,35 +54486,6 @@
         }
       }
     },
-    "Use the menu bar icon for quick playback controls." : {
-      "comment" : "Short onboarding completion hint for the menu bar controls.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use the menu bar icon for quick playback controls."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メニューバーのアイコンから再生をすばやく操作できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用菜单栏图标即可快速控制播放。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用選單列圖示即可快速控制播放。"
-          }
-        }
-      }
-    },
     "used" : {
       "comment" : "Memory widget: percent-used caption word.",
       "extractionState" : "manual",
@@ -52634,6 +54677,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Valve 的命令列下載器。可以讓 Loomscreen 裝一份自己的，也可以用 Homebrew 裝一份全系統可用的。"
+          }
+        }
+      }
+    },
+    "Valve's SteamCMD manifest did not list the expected packages." : {
+      "comment" : "Managed SteamCMD install error.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valve's SteamCMD manifest did not list the expected packages."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valve の SteamCMD マニフェストに想定したパッケージがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valve 的 SteamCMD 清单未列出预期的软件包。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valve 的 SteamCMD 清單未列出預期的套件。"
           }
         }
       }
@@ -55580,6 +57653,36 @@
         }
       }
     },
+    "Win plugin" : {
+      "comment" : "Scene badge: the scene needs a Windows-only plugin.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Win plugin"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Win プラグイン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Win 插件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Win 外掛"
+          }
+        }
+      }
+    },
     "window.title.settings" : {
       "comment" : "Title of the settings window.",
       "localizations" : {
@@ -55657,7 +57760,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "联动"
+            "value" : "常驻"
           }
         },
         "zh-Hant" : {
@@ -56635,102 +58738,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 工作階段已過期。請在終端機重新登入後再檢查。"
-          }
-        }
-      }
-    },
-    "A failing check never takes an action away from you. It reports what it found; nothing here decides whether you can browse, download or play." : {
-      "comment" : "Workshop diagnostics section footer stating the checks' verdicts are advisory.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "検査結果があなたの操作を取り上げることはありません。見つけたことを報告するだけで、ブラウズ・ダウンロード・再生の可否をここで決めることはありません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查结果绝不会拿走你的任何操作。它只报告发现的问题；能不能浏览、下载、播放，不由这里决定。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "檢查結果絕不會拿走你的任何操作。它只回報發現的問題；能不能瀏覽、下載、播放，不由這裡決定。"
-          }
-        }
-      }
-    },
-    "Downloaded assets linked. Your Steam sign-in expired, so the version check couldn't run." : {
-      "comment" : "Engine-assets settings status when Steam refused the cached session during an update check.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード済みアセットはリンクされています。Steam のサインインが期限切れのため、バージョン確認は実行できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下载的资源仍在关联中。Steam 登录已过期，因此无法执行版本检查。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下載的資源仍在連結中。Steam 登入已過期，因此無法執行版本檢查。"
-          }
-        }
-      }
-    },
-    "Sign in to your Steam account again, then check for updates." : {
-      "comment" : "Engine-assets update check failure subtitle when Steam refused the cached session.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam アカウントにサインインし直してから、更新を確認してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请重新登录你的 Steam 账户，然后再检查更新。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請重新登入你的 Steam 帳戶，然後再檢查更新。"
-          }
-        }
-      }
-    },
-    "Steam sign-in expired" : {
-      "comment" : "Engine-assets update check failure headline when Steam refused the cached session.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam のサインインが期限切れです"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 登录已过期"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 登入已過期"
           }
         }
       }

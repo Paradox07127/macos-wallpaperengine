@@ -131,17 +131,19 @@ struct SlotRow: View {
             .accessibilityLabel(Text("Time range"))
             .accessibilityValue(Text(verbatim: ScheduleTimeFormatter.rangeLabel(startHour: slot.startHour, endHour: slot.endHour)))
             .popover(isPresented: $timePopoverShown, arrowEdge: .bottom) {
-                TimeEditorPopover(
-                    slotID: slot.id,
-                    initialStart: slot.startHour,
-                    initialEnd: slot.endHour,
-                    otherSlots: otherSlots,
-                    onCommit: { start, end in
-                        timePopoverShown = false
-                        onCommitTimeChange(start, end)
-                    },
-                    onCancel: { timePopoverShown = false }
-                )
+                AppLanguageScope(defaults: .appScoped()) {
+                    TimeEditorPopover(
+                        slotID: slot.id,
+                        initialStart: slot.startHour,
+                        initialEnd: slot.endHour,
+                        otherSlots: otherSlots,
+                        onCommit: { start, end in
+                            timePopoverShown = false
+                            onCommitTimeChange(start, end)
+                        },
+                        onCancel: { timePopoverShown = false }
+                    )
+                }
             }
         }
     }
@@ -185,7 +187,7 @@ struct SlotRow: View {
                     let name = videoNameProvider(bookmark) ?? String(
                         localized: "Unknown",
                         defaultValue: "Unknown",
-                        comment: "Fallback label for a bookmark whose display name is unknown."
+                        bundle: .appLanguage, comment: "Fallback label for a bookmark whose display name is unknown."
                     )
                     Button {
                         onPickFromPlaylist(bookmark)
@@ -234,7 +236,7 @@ struct SlotRow: View {
         videoName = videoNameProvider(data) ?? String(
             localized: "Invalid bookmark",
             defaultValue: "Invalid bookmark",
-            comment: "Subtitle shown on a schedule slot whose stored bookmark can no longer be resolved."
+            bundle: .appLanguage, comment: "Subtitle shown on a schedule slot whose stored bookmark can no longer be resolved."
         )
     }
 
@@ -249,14 +251,14 @@ struct SlotRow: View {
             components.append(String(
                 localized: "No video assigned",
                 defaultValue: "No video assigned",
-                comment: "VoiceOver label for a schedule slot without a video."
+                bundle: .appLanguage, comment: "VoiceOver label for a schedule slot without a video."
             ))
         }
         if isActive {
             components.append(String(
                 localized: "Active now",
                 defaultValue: "Active now",
-                comment: "VoiceOver tag for the schedule slot whose window matches the current hour."
+                bundle: .appLanguage, comment: "VoiceOver tag for the schedule slot whose window matches the current hour."
             ))
         }
         return Text(verbatim: components.joined(separator: ", "))

@@ -165,17 +165,13 @@ final class WallpaperEffectsCoordinator {
         }
     }
 
-    /// Displays came or went.
-    ///
-    /// The weather poll used to be re-evaluated from exactly two places — the
-    /// per-display switch and launch — so unplugging the last weather-reactive
-    /// display left the hourly fetch running with nobody to render it, and
-    /// plugging one in mid-session left it inert (the service still holding
-    /// its launch-time `.none`) until the user toggled the switch by hand.
-    ///
-    /// Only displays that just arrived get the current weather pushed at them:
-    /// this also runs on resolution and arrangement changes, and rebuilding a
-    /// live emitter for those would be churn for no visible difference.
+    /// Displays came or went. The weather poll used to be re-evaluated from exactly two
+    /// places — the per-display switch and launch — so unplugging the last weather-reactive
+    /// display left the hourly fetch running unrendered, and plugging one in mid-session left
+    /// it inert (still holding its launch-time `.none`) until the user toggled the switch by
+    /// hand. Only newly-arrived displays get the current weather pushed: this also runs on
+    /// resolution/arrangement changes, where rebuilding a live emitter would be churn for no
+    /// visible difference.
     func screensDidChange(arrivedScreenIDs: Set<CGDirectDisplayID>) {
         guard !isShutdown else { return }
         refreshWeatherMonitoringState()

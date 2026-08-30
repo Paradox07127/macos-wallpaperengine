@@ -88,11 +88,8 @@ final class WorkshopDownloadCoordinator {
         attempts[itemID] = nil
         phases[itemID] = .idle
         clearProgress(itemID)
-        // Task.cancel only stops the app-side wait; the SteamCMD child in the
-        // connector keeps downloading and holds its serial queue. Scoped to this
-        // attempt's id, so it signals the child only while that attempt is the
-        // one running — another item's download, or a retry of this one, is
-        // registered under a different id and survives.
+        // Task.cancel only stops the app-side wait; the SteamCMD child in the connector keeps downloading and holds its serial queue.
+        // Scoped to this attempt's id, so it signals the child only while that attempt is the one running — another item's download, or a retry of this one, is registered under a different id and survives.
         if let cancelledAttempt {
             Task { await SteamConnectorClient.cancelActiveSteamCMD(operationID: cancelledAttempt.uuidString) }
         }
@@ -107,7 +104,7 @@ final class WorkshopDownloadCoordinator {
                 guard let self else {
                     return .failed(reason: String(
                         localized: "The Workshop download stopped because its owner was released.",
-                        comment: "Workshop download failed because its app-lifetime coordinator was unexpectedly released."
+                        bundle: .appLanguage, comment: "Workshop download failed because its app-lifetime coordinator was unexpectedly released."
                     ))
                 }
                 return await doctor.downloadWorkshopItem(
@@ -136,7 +133,7 @@ final class WorkshopDownloadCoordinator {
         } catch WorkshopRepositoryCoordinator.MutationError.itemAlreadyMutating {
             result = .failed(reason: String(
                 localized: "This Workshop item is already being updated.",
-                comment: "Workshop download rejected because the same item is already being mutated."
+                bundle: .appLanguage, comment: "Workshop download rejected because the same item is already being mutated."
             ))
         } catch {
             result = .failed(reason: error.localizedDescription)
@@ -159,15 +156,15 @@ final class WorkshopDownloadCoordinator {
         case .notConfigured(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         case .loginRequired:
-            finish(itemID: itemID, title: title, phase: .failed(String(localized: "Sign in to SteamCMD in the Doctor (Settings → Workshop) first.", comment: "Workshop download blocked: no cached SteamCMD login.")))
+            finish(itemID: itemID, title: title, phase: .failed(String(localized: "Sign in to SteamCMD in the Doctor (Settings → Workshop) first.", bundle: .appLanguage, comment: "Workshop download blocked: no cached SteamCMD login.")))
         case .untrustedBinary:
-            finish(itemID: itemID, title: title, phase: .failed(String(localized: "SteamCMD isn't a verified Valve build, so the download was blocked. Re-select the official SteamCMD in the Doctor.", comment: "Workshop download blocked: unverified SteamCMD binary.")))
+            finish(itemID: itemID, title: title, phase: .failed(String(localized: "SteamCMD isn't a verified Valve build, so the download was blocked. Re-select the official SteamCMD in the Doctor.", bundle: .appLanguage, comment: "Workshop download blocked: unverified SteamCMD binary.")))
         case .notEntitled:
-            finish(itemID: itemID, title: title, phase: .failed(String(localized: "This Steam account can't download Wallpaper Engine items — it may not own Wallpaper Engine, or downloads are region-restricted.", comment: "Workshop download blocked: account not entitled.")))
+            finish(itemID: itemID, title: title, phase: .failed(String(localized: "This Steam account can't download Wallpaper Engine items — it may not own Wallpaper Engine, or downloads are region-restricted.", bundle: .appLanguage, comment: "Workshop download blocked: account not entitled.")))
         case .removedFromSteam:
-            finish(itemID: itemID, title: title, phase: .failed(String(localized: "This item is no longer available on Steam.", comment: "Workshop download failed: item removed from Steam.")))
+            finish(itemID: itemID, title: title, phase: .failed(String(localized: "This item is no longer available on Steam.", bundle: .appLanguage, comment: "Workshop download failed: item removed from Steam.")))
         case .timedOut:
-            finish(itemID: itemID, title: title, phase: .failed(String(localized: "The download timed out. Try again.", comment: "Workshop download timed out.")))
+            finish(itemID: itemID, title: title, phase: .failed(String(localized: "The download timed out. Try again.", bundle: .appLanguage, comment: "Workshop download timed out.")))
         case .failed(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         }
@@ -203,7 +200,7 @@ final class WorkshopDownloadCoordinator {
 
     private func finishImport(_ result: WallpaperEngineImportService.ImportResult?, itemID: UInt64, title: String) async {
         guard let result else {
-            finish(itemID: itemID, title: title, phase: .failed(String(localized: "Couldn't read the downloaded files.", comment: "Workshop import failed: unreadable download.")))
+            finish(itemID: itemID, title: title, phase: .failed(String(localized: "Couldn't read the downloaded files.", bundle: .appLanguage, comment: "Workshop import failed: unreadable download.")))
             return
         }
         switch result {
@@ -238,31 +235,31 @@ final class WorkshopDownloadCoordinator {
         switch phase {
         case .succeeded:
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Downloaded", comment: "Workshop download success toast headline."),
+                headline: String(localized: "Downloaded", bundle: .appLanguage, comment: "Workshop download success toast headline."),
                 title: title,
-                message: String(localized: "Added to your library.", comment: "Workshop download success toast subtitle."),
+                message: String(localized: "Added to your library.", bundle: .appLanguage, comment: "Workshop download success toast subtitle."),
                 isSuccess: true
             )
         case .succeededAsPreset(let baseWorkshopID):
             let hasBase = SettingsManager.shared.loadGlobalSettings()
                 .recentWPEImports.contains { $0.origin.workshopID == baseWorkshopID }
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Preset added", comment: "Workshop preset download success toast headline."),
+                headline: String(localized: "Preset added", bundle: .appLanguage, comment: "Workshop preset download success toast headline."),
                 title: title,
                 message: hasBase
                     ? String(
                         localized: "Pick it under Preset in that wallpaper's scene settings.",
-                        comment: "Workshop preset download success toast subtitle when the base wallpaper is installed."
+                        bundle: .appLanguage, comment: "Workshop preset download success toast subtitle when the base wallpaper is installed."
                     )
                     : String(
                         localized: "Download wallpaper \(baseWorkshopID) to use it — a preset only restyles the wallpaper it was made for.",
-                        comment: "Workshop preset download toast subtitle when the base wallpaper is missing; %@ is its Workshop ID."
+                        bundle: .appLanguage, comment: "Workshop preset download toast subtitle when the base wallpaper is missing; %@ is its Workshop ID."
                     ),
                 isSuccess: true
             )
         case .failed(let message):
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Download failed", comment: "Workshop download failure toast headline."),
+                headline: String(localized: "Download failed", bundle: .appLanguage, comment: "Workshop download failure toast headline."),
                 title: title,
                 message: message,
                 isSuccess: false
@@ -305,16 +302,16 @@ final class WorkshopDownloadCoordinator {
         guard report.isFullyResolved else {
             let unresolved = (report.failures.map(\.workshopID) + report.skipped).joined(separator: ", ")
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Required items missing", comment: "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded."),
+                headline: String(localized: "Required items missing", bundle: .appLanguage, comment: "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded."),
                 title: rootTitle,
                 message: report.truncations.isEmpty
                     ? String(
                         localized: "Couldn't download: \(unresolved)",
-                        comment: "Workshop toast subtitle listing the Workshop IDs of linked items that failed to download."
+                        bundle: .appLanguage, comment: "Workshop toast subtitle listing the Workshop IDs of linked items that failed to download."
                     )
                     : String(
                         localized: "Stopped at the download limit for linked items. Still missing: \(unresolved)",
-                        comment: "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; the placeholder lists the remaining Workshop IDs."
+                        bundle: .appLanguage, comment: "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; the placeholder lists the remaining Workshop IDs."
                     ),
                 isSuccess: false
             )
@@ -326,17 +323,17 @@ final class WorkshopDownloadCoordinator {
         // library entry still saying it needs them.
         guard await reimportRoot(itemID: rootItemID, doctor: doctor) else {
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Required items missing", comment: "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded."),
+                headline: String(localized: "Required items missing", bundle: .appLanguage, comment: "Workshop toast headline when a wallpaper's linked Workshop items could not all be downloaded."),
                 title: rootTitle,
-                message: String(localized: "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again.", comment: "Workshop toast subtitle when the linked items arrived but re-reading the wallpaper failed."),
+                message: String(localized: "Downloaded them, but this wallpaper still couldn't be read. Try downloading it again.", bundle: .appLanguage, comment: "Workshop toast subtitle when the linked items arrived but re-reading the wallpaper failed."),
                 isSuccess: false
             )
             return
         }
         WorkshopToastCenter.shared.post(
-            headline: String(localized: "Required items added", comment: "Workshop toast headline when a wallpaper's linked Workshop items were downloaded too."),
+            headline: String(localized: "Required items added", bundle: .appLanguage, comment: "Workshop toast headline when a wallpaper's linked Workshop items were downloaded too."),
             title: rootTitle,
-            message: String(localized: "Downloaded the other Workshop items this wallpaper needs.", comment: "Workshop toast subtitle after the linked Workshop items were downloaded."),
+            message: String(localized: "Downloaded the other Workshop items this wallpaper needs.", bundle: .appLanguage, comment: "Workshop toast subtitle after the linked Workshop items were downloaded."),
             isSuccess: true
         )
     }
@@ -397,7 +394,7 @@ final class WorkshopDownloadCoordinator {
                 guard let self else {
                     return .failed(reason: String(
                         localized: "The Workshop download stopped because its owner was released.",
-                        comment: "Workshop download failed because its app-lifetime coordinator was unexpectedly released."
+                        bundle: .appLanguage, comment: "Workshop download failed because its app-lifetime coordinator was unexpectedly released."
                     ))
                 }
                 return await doctor.downloadWorkshopItem(

@@ -84,15 +84,8 @@ struct WorkshopKeychainSlot: Sendable {
     }
 }
 
-/// Stores the Steam Web API key in the login keychain.
-///
-/// Moved back out of the sandbox container file it lived in from 2026-08-12:
-/// the file was plaintext, and the legacy keychain does accept this build's
-/// add/read. The cost is that a legacy-keychain ACL is bound to the calling
-/// binary's code-directory hash, so the first read after a Sparkle update
-/// prompts once. `hasWebAPIKey` deliberately answers from an attribute-only
-/// probe that never triggers that prompt, and reads are left to the moment the
-/// key is actually needed.
+/// Stores the Steam Web API key in the login keychain. Moved back out of the sandbox container file it lived in from 2026-08-12: the file was plaintext, and the legacy keychain does accept this build's add/read.
+/// The cost is that a legacy-keychain ACL is bound to the calling binary's code-directory hash, so the first read after a Sparkle update prompts once. `hasWebAPIKey` deliberately answers from an attribute-only probe that never triggers that prompt, and reads are left to the moment the key is actually needed.
 actor WorkshopKeychainStore {
 
     private static let keyPattern = #"^[A-Fa-f0-9]{32}$"#

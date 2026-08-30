@@ -68,7 +68,7 @@ struct PasteSheet: View {
     private var queueHeader: some View {
         if !model.rows.isEmpty {
             HStack(spacing: DesignTokens.Spacing.sm) {
-                Text("\(model.rows.count) queued", bundle: .main)
+                Text("\(model.rows.count) queued")
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
 
@@ -257,13 +257,13 @@ struct PasteSheet: View {
     private func summaryString(_ summary: WorkshopPasteQueueModel.IngestionSummary) -> String {
         var fragments: [String] = []
         if summary.added > 0 {
-            fragments.append(String(localized: "\(summary.added) added", comment: "Paste queue ingestion summary fragment."))
+            fragments.append(String(localized: "\(summary.added) added", bundle: .appLanguage, comment: "Paste queue ingestion summary fragment."))
         }
         if summary.duplicates > 0 {
-            fragments.append(String(localized: "\(summary.duplicates) duplicate", comment: "Paste queue ingestion summary fragment."))
+            fragments.append(String(localized: "\(summary.duplicates) duplicate", bundle: .appLanguage, comment: "Paste queue ingestion summary fragment."))
         }
         if summary.invalid > 0 {
-            fragments.append(String(localized: "\(summary.invalid) invalid", comment: "Paste queue ingestion summary fragment."))
+            fragments.append(String(localized: "\(summary.invalid) invalid", bundle: .appLanguage, comment: "Paste queue ingestion summary fragment."))
         }
         return fragments.joined(separator: " · ")
     }

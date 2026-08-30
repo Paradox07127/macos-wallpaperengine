@@ -69,8 +69,10 @@ struct Header: View {
                             : "Bookmark this wallpaper"))
                         .accessibilityLabel(Text(isCurrentBookmarked ? "Bookmarked" : "Bookmark"))
                         .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
-                            Popover(screen: screen, candidateContent: inspectorContent)
-                                .environment(screenManager)
+                            AppLanguageScope(defaults: .appScoped()) {
+                                Popover(screen: screen, candidateContent: inspectorContent)
+                                    .environment(screenManager)
+                            }
                         }
                     }
 

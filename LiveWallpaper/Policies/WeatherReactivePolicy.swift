@@ -12,13 +12,10 @@ enum WeatherReactivePolicy {
         }
     }
 
-    /// Which particles a display should actually draw.
-    ///
-    /// `.none` is the display's master off switch and always wins: weather
-    /// chooses *which* particles fall, never *whether* they do. Resolving the
-    /// other way round left "Show on This Display" inert for as long as
-    /// "Match local weather" was on — the effect picker hid itself and the
-    /// snow kept falling until the user found the weather switch.
+    /// Which particles a display should actually draw. `.none` is the display's master off switch and
+    /// always wins: weather chooses *which* particles fall, never *whether* they do. Resolving the other
+    /// way round left "Show on This Display" inert for as long as "Match local weather" was on — the effect
+    /// picker hid itself and the snow kept falling until the user found the weather switch.
     static func resolvedParticleEffect(
         chosen: ParticleEffect, weatherReactive: Bool, weatherEffect: ParticleEffect
     ) -> ParticleEffect {
@@ -26,13 +23,10 @@ enum WeatherReactivePolicy {
         return weatherReactive ? weatherEffect : chosen
     }
 
-    /// The density the emitter actually runs at.
-    ///
-    /// The user's slider is what they want in general; the intensity is what
-    /// the sky is doing right now. Multiplying keeps both meaningful — turning
-    /// the slider down still calms a downpour — where replacing either one
-    /// would throw away the other. Clamped to the slider's own range so weather
-    /// can never push the emitter somewhere the user could not have.
+    /// The density the emitter actually runs at. The user's slider is what they want in general; the
+    /// intensity is what the sky is doing right now. Multiplying keeps both meaningful — turning the slider
+    /// down still calms a downpour — where replacing either one would throw away the other. Clamped to the
+    /// slider's own range so weather can never push the emitter somewhere the user could not have.
     static func resolvedParticleDensity(
         userDensity: Double,
         weatherReactive: Bool,

@@ -179,21 +179,21 @@ extension GeneralSettingsView {
 
     private var loginItemStatusText: String {
         if loginItemStatusRefreshPending {
-            return String(localized: "Checking…", comment: "Inline status while waiting for macOS Login Items state.")
+            return String(localized: "Checking…", bundle: .appLanguage, comment: "Inline status while waiting for macOS Login Items state.")
         }
         switch loginItemStatus {
         case .enabled:
-            return String(localized: "Enabled", comment: "Login item is enabled.")
+            return String(localized: "Enabled", bundle: .appLanguage, comment: "Login item is enabled.")
         case .requiresApproval:
-            return String(localized: "Needs Approval", comment: "Login item waiting for user approval in System Settings.")
+            return String(localized: "Needs Approval", bundle: .appLanguage, comment: "Login item waiting for user approval in System Settings.")
         case .notRegistered:
             return startOnLogin
-                ? String(localized: "Not Granted", comment: "Login item not granted yet.")
-                : String(localized: "Off", comment: "Feature is off.")
+                ? String(localized: "Not Granted", bundle: .appLanguage, comment: "Login item not granted yet.")
+                : String(localized: "Off", bundle: .appLanguage, comment: "Feature is off.")
         case .notFound:
-            return String(localized: "Unavailable", comment: "Login item service unavailable.")
+            return String(localized: "Unavailable", bundle: .appLanguage, comment: "Login item service unavailable.")
         @unknown default:
-            return String(localized: "Unknown", comment: "Unknown status value.")
+            return String(localized: "Unknown", bundle: .appLanguage, comment: "Unknown status value.")
         }
     }
 
@@ -201,33 +201,33 @@ extension GeneralSettingsView {
         if loginItemStatusRefreshPending {
             return String(
                 localized: "Waiting for macOS to update Login Items status",
-                comment: "Help text while Login Items status refreshes."
+                bundle: .appLanguage, comment: "Help text while Login Items status refreshes."
             )
         }
         switch loginItemStatus {
         case .enabled:
-            return String(localized: "Launch at login is enabled", comment: "Help text when launch-at-login is on.")
+            return String(localized: "Launch at login is enabled", bundle: .appLanguage, comment: "Help text when launch-at-login is on.")
         case .requiresApproval:
             return String(
                 localized: "Approve LiveWallpaper in Login Items",
-                comment: "Help text prompting approval in System Settings → Login Items."
+                bundle: .appLanguage, comment: "Help text prompting approval in System Settings → Login Items."
             )
         case .notRegistered:
             return startOnLogin
                 ? String(
                     localized: "Registration is pending or blocked",
-                    comment: "Help text when login item registration has not completed."
+                    bundle: .appLanguage, comment: "Help text when login item registration has not completed."
                 )
-                : String(localized: "Launch at login is off", comment: "Help text when launch-at-login is off.")
+                : String(localized: "Launch at login is off", bundle: .appLanguage, comment: "Help text when launch-at-login is off.")
         case .notFound:
             return String(
                 localized: "macOS could not find the app service",
-                comment: "Help text when SMAppService cannot find the login item."
+                bundle: .appLanguage, comment: "Help text when SMAppService cannot find the login item."
             )
         @unknown default:
             return String(
                 localized: "macOS returned an unknown login item status",
-                comment: "Help text for an unexpected Login Items status."
+                bundle: .appLanguage, comment: "Help text for an unexpected Login Items status."
             )
         }
     }

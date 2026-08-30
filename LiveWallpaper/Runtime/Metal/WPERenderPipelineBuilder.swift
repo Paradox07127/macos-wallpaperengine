@@ -624,14 +624,11 @@ private struct WPEShaderSourceLoader: Sendable {
     }
     """
 
-    /// WPE's `genericimage*` family with the SPRITESHEET combo on: the
-    /// vertex shader derives UVs from `g_Texture0Translation` (current
-    /// frame) plus `g_Texture0TranslationNext` (next frame), both sharing
-    /// the `g_Texture0Rotation` per-frame UV transform. The fragment
-    /// samples both and mixes by `g_SpriteFrameBlend` (0..1) so a 3-frame
-    /// strip animates as a smooth crossfade instead of a 25Hz strobe —
-    /// matches WPE's `common_particles.h` `ComputeSpriteFrame` pattern.
-    /// Without the combo, fall back to the trivial copy program.
+    /// WPE's `genericimage*` family with the SPRITESHEET combo on: the vertex shader
+    /// derives UVs from `g_Texture0Translation` (current frame) plus
+    /// `g_Texture0TranslationNext` (next frame), sharing the `g_Texture0Rotation` UV
+    /// transform; the fragment mixes both by `g_SpriteFrameBlend` (0..1) so a 3-frame strip
+    /// crossfades instead of strobing at 25Hz (matches `common_particles.h` `ComputeSpriteFrame`). Without the combo, falls back to the trivial copy program.
     private func genericImageProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
         let usesSpriteSheet = combos.contains { key, value in
             key.uppercased() == "SPRITESHEET" && value != 0
@@ -802,12 +799,10 @@ private struct WPEShaderSourceLoader: Sendable {
             + stageSource
     }
 
-    // WPE's runtime treats an undefined combo as `0` inside `#if/#elif`
-    // expressions; strict shader preprocessors raise "unexpected token
-    // after conditional expression" for an unknown identifier. Scan the
-    // expanded source for uppercase identifiers referenced in preprocessor
-    // conditionals and emit `#define X 0` for any that the prelude / combo
-    // values / shader body itself hasn't already defined.
+    // WPE's runtime treats an undefined combo as `0` inside `#if/#elif` expressions;
+    // strict shader preprocessors raise "unexpected token after conditional expression" for
+    // an unknown identifier. Scan the expanded source for uppercase identifiers referenced in
+    // preprocessor conditionals and emit `#define X 0` for any not already defined by the prelude/combo values/shader body.
     private func implicitConditionalDefines(
         in source: String,
         knownCombos: [String: Int]
@@ -923,13 +918,11 @@ private struct WPEShaderSourceLoader: Sendable {
         "defined", "GLSL", "GL_ES", "VERSION", "__VERSION__", "GL_FRAGMENT_PRECISION_HIGH"
     ]
 
-    // GLSL ES 3.00 treats `#define X A` after `#define X B` as a hard
-    // error when the token sequences differ. Our prelude already defines
-    // these compat symbols (HLSL aliases + math constants); workshop
-    // shaders frequently restate them with different precision (e.g.
-    // `M_PI` to 32 digits vs our 20) which the compiler rejects even
-    // though both collapse to the same single-precision float. Strip the
-    // user-side redefines and let the prelude win.
+    // GLSL ES 3.00 treats `#define X A` after `#define X B` as a hard error when the token
+    // sequences differ. Our prelude already defines these compat symbols (HLSL aliases +
+    // math constants); workshop shaders frequently restate them with different precision
+    // (e.g. `M_PI` to 32 digits vs our 20), which the compiler rejects even though both
+    // collapse to the same single-precision float. Strip the user-side redefines and let the prelude win.
     private func stripPreludeMacroRedefines(in source: String) -> String {
         let neutralized = source.components(separatedBy: .newlines).map { line -> String in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -1312,16 +1305,13 @@ private struct WPEShaderSourceLoader: Sendable {
         for (index, bind) in pass.binds {
             result[index] = bind == .previous ? pass.source : bind
         }
-        // shake/pulse slot 2 is the per-instance OPACITY mask (multiplies the
-        // effect's strength). When the scene doesn't declare one it must
-        // default to WHITE (= full effect everywhere) — a black/unbound slot
-        // silently disables the effect (oracle: 3554161528 cloud bands froze).
-        // NOT subsumable by the sampler `"default"` annotation mechanism above:
-        // pulse.frag's opacity mask declares no default (only `mode:"opacitymask"`
-        // + paintdefaultcolor), and shake.frag's slot 2 is the TIMEOFFSET map
-        // (default util/black, dormant while the TIMEOFFSET combo stays 0) —
-        // the white-mask semantics come from WPE's opacitymask runtime rule,
-        // not from a shader-comment default.
+        // shake/pulse slot 2 is the per-instance OPACITY mask (multiplies effect strength);
+        // undeclared it must default to WHITE (full effect) — black/unbound silently
+        // disables the effect (oracle: 3554161528 cloud bands froze). Not subsumable by
+        // the sampler `"default"` annotation above: pulse.frag's mask declares no default
+        // (only `mode:"opacitymask"` + paintdefaultcolor), and shake.frag's slot 2 is the
+        // TIMEOFFSET map (default util/black, dormant while TIMEOFFSET stays 0) — the
+        // white-mask rule comes from WPE's opacitymask runtime, not a shader-comment default.
         if usesWhiteOpacityMaskDefault(for: pass),
            !pass.textures.keys.contains(2), !pass.binds.keys.contains(2) {
             result[2] = .asset("util/white")
@@ -1545,20 +1535,18 @@ private struct WPEShaderSourceLoader: Sendable {
             #endif
             """
         case "common_fragment.h":
-            // WPE 2.8 `font.frag` (+ workshop text shaders) call `ConvertSampleR8`
-            // to read R8/alpha glyph coverage; an empty stub broke their translate.
-            // Mirror WPE's GLSL path (`HLSL_SM30` never set in our pipeline → `.r`).
+            // WPE 2.8 `font.frag` (+ workshop text shaders) call `ConvertSampleR8` for
+            // R8/alpha glyph coverage; an empty stub broke their translate. Mirrors
+            // WPE's GLSL path (`HLSL_SM30` never set here → `.r`).
             //
-            // FORMAT_* are WPE's texture-format enum constants (integer ABI values,
-            // matching the authoritative common_fragment.h). `formatcombo` shaders
-            // branch on them (`#if TEX2FORMAT == FORMAT_R8 || … == FORMAT_RG88` →
-            // replicate `.rrr`). Without this table `implicitConditionalDefines`
-            // auto-zeroed FORMAT_R8/FORMAT_RG88 *and* the missing TEXnFORMAT, so
-            // `0 == 0` forced every such shader down the single-channel branch —
-            // lightshafts sampled its RGBA gradient map as `.rrr` grayscale and the
-            // ×intensity beams saturated white instead of the gradient color.
-            // The source loader now injects TEXnFORMAT from each bound TEXI header;
-            // native raster/FBO/sparse slots conservatively use FORMAT_RGBA8888.
+            // FORMAT_* mirror WPE's texture-format enum ABI values (`common_fragment.h`);
+            // `formatcombo` shaders branch on them (`#if TEX2FORMAT == FORMAT_R8 || … ==
+            // FORMAT_RG88` → replicate `.rrr`). Without this table, `implicitConditionalDefines`
+            // auto-zeroed FORMAT_R8/FORMAT_RG88 *and* the missing TEXnFORMAT, so `0 == 0`
+            // forced every such shader down the single-channel branch — lightshafts sampled
+            // its RGBA gradient map as `.rrr` and the beams saturated white instead of the
+            // gradient. The loader now injects TEXnFORMAT from each bound TEXI header;
+            // native raster/FBO/sparse slots default to FORMAT_RGBA8888.
             return """
             #ifndef LIVEWALLPAPER_WPE_COMMON_FRAGMENT_H
             #define LIVEWALLPAPER_WPE_COMMON_FRAGMENT_H
@@ -1589,14 +1577,12 @@ private struct WPEShaderSourceLoader: Sendable {
             #define LIVEWALLPAPER_WPE_COMMON_BLENDING_H
             #define wpe_common_blending_included 1
 
-            // Named blend-mode constants WPE workshop shaders pass to
-            // ApplyBlending. Integer values match Wallpaper Engine's
-            // authoritative common_blending.h `#if BLENDMODE == N` chain
-            // (NOT Photoshop ordering) — scene `combos.BLENDMODE` values are
-            // emitted against this enum, so the runtime switch below must
-            // agree with it. Workshops invoke ApplyBlending(BlendLinearDodge,
-            // A, B, opacity); without these the transpiler emits 'undeclared
-            // identifier BlendLinearDodge' for the corpus vhs / sine_wave_circle
+            // Named blend-mode constants WPE workshop shaders pass to ApplyBlending. Values
+            // match Wallpaper Engine's `common_blending.h` `#if BLENDMODE == N` chain (NOT
+            // Photoshop ordering) — scene `combos.BLENDMODE` values are emitted against this
+            // enum, so the runtime switch below must agree. Workshops invoke
+            // ApplyBlending(BlendLinearDodge, A, B, opacity); without these the transpiler
+            // emits 'undeclared identifier BlendLinearDodge' for the corpus vhs/sine_wave_circle
             // shaders.
             #define BlendNormal 0
             #define BlendDarken 1
@@ -1688,12 +1674,10 @@ private struct WPEShaderSourceLoader: Sendable {
             vec3 wpe_blend_color(vec3 base, vec3 blend)      { vec3 bh = wpe_RGBToHSL(blend); return wpe_HSLToRGB(vec3(bh.r, bh.g, wpe_RGBToHSL(base).b)); }
             vec3 wpe_blend_luminosity(vec3 base, vec3 blend) { vec3 h = wpe_RGBToHSL(base); return wpe_HSLToRGB(vec3(h.r, h.g, wpe_RGBToHSL(blend).b)); }
 
-            // Runtime port of WPE common_blending.h ApplyBlending. WPE selects
-            // a single branch at compile time via `#if BLENDMODE == N`; we keep
-            // a runtime switch keyed on the same integers so one synthesized
-            // header serves every baked combo. No `in` qualifier on parameters
-            // — it's GLSL-default but the MSL backend rejects it as an unknown
-            // type name when the transpiler forwards this header verbatim.
+            // Runtime port of WPE common_blending.h ApplyBlending. WPE selects a single
+            // branch at compile time via `#if BLENDMODE == N`; we keep a runtime switch keyed
+            // on the same integers so one synthesized header serves every baked combo. No
+            // `in` qualifier on parameters — it's GLSL-default but the MSL backend rejects it as an unknown type name when the transpiler forwards this header verbatim.
             vec3 ApplyBlending(int blendMode, vec3 A, vec3 B, float opacity) {
                 // Modes that ignore opacity in WPE.
                 if (blendMode == 5)  { return min(A, B); }              // Darker Color
@@ -1775,14 +1759,12 @@ private struct WPEShaderSourceLoader: Sendable {
             """
         case "common_composite.h":
             // WPE's common_composite.h `#include "common_blending.h"` so
-            // ApplyComposite(COMPOSITE==1) can overlay via ApplyBlending(
-            // BLENDMODE, …). Keep that dependency explicit: the builtin include
-            // path now recurses through the normal resolver, choosing the
-            // official compile-time header when installed and the runtime shim
-            // only as the asset-missing fallback. g_CompositeColor
-            // / g_CompositeAlpha / g_CompositeOffset / COMPOSITEMONO are
-            // identity for default values and aren't yet collected as
-            // uniforms from headers — omitted until that wiring lands.
+            // ApplyComposite(COMPOSITE==1) can overlay via ApplyBlending(BLENDMODE, …). Keep
+            // that dependency explicit: the builtin include path recurses through the normal
+            // resolver, choosing the official compile-time header when installed and the
+            // runtime shim only as the asset-missing fallback. g_CompositeColor/
+            // g_CompositeAlpha/g_CompositeOffset/COMPOSITEMONO are identity for default values
+            // and aren't yet collected as uniforms from headers — omitted until that wiring lands.
             return """
             #include "common_blending.h"
             #ifndef LIVEWALLPAPER_WPE_COMMON_COMPOSITE_H

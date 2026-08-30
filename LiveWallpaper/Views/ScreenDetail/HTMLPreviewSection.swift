@@ -350,7 +350,7 @@ struct HTMLInformationOverlay: View {
     private func content(for source: HTMLSource) -> some View {
         HStack(spacing: 10) {
             if source.isInsecureURL {
-                tag("HTTP", background: DesignTokens.Colors.Status.warning.opacity(0.55))
+                tag(Text(verbatim: "HTTP"), background: DesignTokens.Colors.Status.warning.opacity(0.55))
             }
 
             HStack(spacing: 4) {
@@ -363,19 +363,19 @@ struct HTMLInformationOverlay: View {
 
             if case .url = source {
                 if config.allowJavaScript {
-                    tag("JS")
+                    tag(Text(verbatim: "JS"))
                 } else {
-                    tag("NO JS", background: DesignTokens.Colors.Status.danger.opacity(0.55))
+                    tag(Text("No JS"), background: DesignTokens.Colors.Status.danger.opacity(0.55))
                 }
             } else if !config.allowJavaScript {
-                tag("NO JS", background: DesignTokens.Colors.Status.danger.opacity(0.55))
+                tag(Text("No JS"), background: DesignTokens.Colors.Status.danger.opacity(0.55))
             }
 
             if config.physicalPixelLayout {
-                tag("PHYS PX")
+                tag(Text("Phys PX"))
             }
             if config.allowMouseInteraction {
-                tag("CLICKS")
+                tag(Text("Clicks"))
             }
         }
         .font(DesignTokens.Typography.code)
@@ -386,9 +386,10 @@ struct HTMLInformationOverlay: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func tag(_ text: String, background: Color = Color.white.opacity(0.18)) -> some View {
-        Text(verbatim: text)
+    private func tag(_ text: Text, background: Color = Color.white.opacity(0.18)) -> some View {
+        text
             .font(DesignTokens.Typography.badge)
+            .textCase(.uppercase)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .background(background, in: Capsule())
@@ -410,7 +411,7 @@ struct HTMLInformationOverlay: View {
         case .file, .folder:
             return source.displayName
         case .inline:
-            return String(localized: "Inline web content", comment: "HTML source identifier for inline HTML content.")
+            return String(localized: "Inline web content", bundle: .appLanguage, comment: "HTML source identifier for inline HTML content.")
         }
     }
 }

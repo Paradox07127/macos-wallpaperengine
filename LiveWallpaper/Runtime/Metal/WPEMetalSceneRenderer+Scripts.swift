@@ -260,18 +260,15 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// One deterministic "frame 0" evaluation pass over the scene's scripts, run
-    /// once at the end of load — PRODUCERS FIRST. WPE ticks every script serially
-    /// in scene-object order each frame, so a `shared`-consuming script never
-    /// evaluates before the producers that precede it. Our per-load seeding used
-    /// to run inside each loader (texts before the layer scripts even existed);
-    /// a consumer's first evaluation then read an empty `shared` — worst case
-    /// permanently corrupting its own module state (3509243656's `time` script
-    /// accumulates `undefined` arithmetic into NaN, and its self-reset keys off
-    /// `shared.xntime === undefined`, which that same broken tick already set to
-    /// NaN — "frozen at NaN Years" forever). Order here: script hosts (pure
-    /// compute producers, e.g. MAIN's n-body sim writing shared.xx*/ktime) run
-    /// one update() each, then transform + text-content consumers seed.
+    /// One deterministic "frame 0" pass over the scene's scripts, run once at the end of
+    /// load — PRODUCERS FIRST. WPE ticks scripts serially in scene-object order each
+    /// frame, so a `shared`-consumer must never evaluate before its producers; our old
+    /// per-load seeding ran inside each loader (texts before layer scripts existed), so a
+    /// consumer's first read hit empty `shared` — permanently corrupting state
+    /// (3509243656's `time` script accumulates `undefined` into NaN, and its self-reset
+    /// keys off `shared.xntime === undefined`, already NaN — "frozen at NaN Years"
+    /// forever). Order here: script hosts (pure producers, e.g. MAIN's n-body sim writing
+    /// shared.xx*/ktime) run one update() each, then transform+text-content consumers seed.
     func seedSceneScriptsAfterLoad(
         from document: WPESceneDocument,
         scriptLoadToken: WPESceneScriptInstanceLimitToken
@@ -346,16 +343,14 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Static half of the release decision: layer objectID → the video keys whose
-    /// pixels that layer can put on screen. Seeded with the layers that sample the
-    /// video, then closed transitively over the FBO/composite graph — A writes
-    /// FBO1, B samples FBO1 and writes FBO2, C samples FBO2 ⇒ all three are
-    /// consumers of A's video. `.scene` and `_rt_layerGroup_*` writes deliberately
-    /// do NOT propagate: those are exactly the two targets `WPEMetalRenderExecutor`
-    /// skips for a hidden layer, so a hidden layer's pixels never reach them, and a
-    /// VISIBLE layer that writes them already counts as a consumer on its own.
-    /// Visibility is absent here on purpose — it changes every frame, this graph
-    /// does not. Pure + static for unit testing.
+    /// Static half of the release decision: layer objectID → video keys whose pixels that
+    /// layer can put on screen. Seeded with layers that sample the video, then closed
+    /// transitively over the FBO/composite graph (A writes FBO1, B samples FBO1/writes
+    /// FBO2, C samples FBO2 ⇒ all three consume A's video). `.scene`/`_rt_layerGroup_*`
+    /// writes deliberately do NOT propagate — those are the two targets
+    /// `WPEMetalRenderExecutor` skips for a hidden layer, so its pixels never reach them,
+    /// and a visible layer writing them already counts as a consumer. Visibility is absent
+    /// on purpose (it changes every frame, this graph does not). Pure + static for testing.
     nonisolated static func onDemandVideoKeysByConsumerLayer(
         layers: [WPEPreparedRenderLayer],
         videoKeyByLayerID: [String: Set<String>]
@@ -394,16 +389,14 @@ extension WPEMetalSceneRenderer {
         return result
     }
 
-    /// Both sides of the graph key on this. `WPEMetalShaderInputs`
-    /// `resolveAliasedNamedTexture` matches an `.fbo(name)` against the frame's
-    /// named textures after stripping `_rt_`/leading `_` and ignoring case, so
-    /// comparing raw strings here loses edges the executor actually draws
-    /// (author writes `_rt_Blur`, a visible layer samples `blur`). Merging more
-    /// names than the executor would only over-retains; missing an edge
-    /// releases a texture a visible layer still samples.
-    /// Stripping repeats, because the executor strips one `_rt_` and then matches:
-    /// a reader asking for `_rt__rt_Foo` resolves a writer's `_rt_Foo`, so keying
-    /// those to `rt_foo` and `foo` would lose that edge.
+    /// Both sides of the graph key on this. `WPEMetalShaderInputs.resolveAliasedNamedTexture`
+    /// matches an `.fbo(name)` against the frame's named textures after stripping `_rt_`/
+    /// leading `_` and ignoring case, so comparing raw strings here loses edges the executor
+    /// actually draws (author writes `_rt_Blur`, a visible layer samples `blur`). Merging
+    /// more names than the executor only over-retains; missing an edge releases a texture a
+    /// visible layer still samples. Stripping repeats because the executor strips one
+    /// `_rt_` and matches: a reader asking for `_rt__rt_Foo` resolves a writer's `_rt_Foo`,
+    /// so keying those to `rt_foo` and `foo` would lose that edge.
     private nonisolated static func normalizedTargetKey(_ name: String) -> String {
         var key = name.lowercased()
         while true {
@@ -516,12 +509,10 @@ extension WPEMetalSceneRenderer {
         return templates
     }
 
-    /// Per-frame: an on-demand video source is resident iff some CONSUMER of it is
-    /// visible this frame — the layer sampling it, or any layer downstream of the
-    /// FBOs that layer feeds (`onDemandVideoKeysByConsumerID`, built at load).
-    /// Otherwise it's released (freeing its resident MP4 + buffers) and rebuilt on
-    /// the next reveal. Aggregated by texture key, so two layers sharing one video
-    /// keep it while either is visible.
+    /// Per-frame: an on-demand video source is resident iff some CONSUMER of it is visible
+    /// this frame — the layer sampling it, or any downstream layer via the FBOs it feeds
+    /// (`onDemandVideoKeysByConsumerID`, built at load). Otherwise released (freeing its
+    /// resident MP4 + buffers) and rebuilt on the next reveal; aggregated by texture key, so two layers sharing one video keep it while either is visible.
     func reconcileVideoResidency(_ framePipeline: WPEPreparedRenderPipeline) {
         guard !onDemandVideoKeyByID.isEmpty else { return }
         let neededKeys = Self.neededOnDemandVideoKeys(
@@ -607,12 +598,11 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Pointer events
 
-    /// Per-layer hover transitions (`cursorEnter`/`cursorLeave`): hit-tests the
-    /// pointer against each scripted layer's screen rect (axis-aligned; ortho =
-    /// origin-centered size×scale, perspective = projected center + depth-scaled
-    /// size) and dispatches only on state change. `pointer` nil (follow-cursor
-    /// off / outside the view) counts as leaving everything. WPE fires these
-    /// without click capture — hover only needs the cursor position.
+    /// Per-layer hover transitions (`cursorEnter`/`cursorLeave`): hit-tests the pointer
+    /// against each scripted layer's screen rect (axis-aligned; ortho = origin-centered
+    /// size×scale, perspective = projected center + depth-scaled size) and dispatches only
+    /// on state change. `pointer` nil (follow-cursor off / outside the view) counts as
+    /// leaving everything; WPE fires these without click capture — hover only needs the cursor position.
     func dispatchLayerHoverEvents(
         pointer: SIMD2<Double>?,
         pipeline: WPEPreparedRenderPipeline,
@@ -792,17 +782,15 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Static-cache exclusion & ancestor visibility
 
-    /// Layer IDs the static-layer cache must never admit. Origin/scale/angles
-    /// scripts and live-created layers move geometry the classifier can't see.
-    /// Layer/alpha scripts are excluded because `applyingLayerAlpha` bakes the
-    /// script value into `geometry.alpha` and clears `alphaAnimation` BEFORE
-    /// classification — a script-alpha layer would otherwise classify as static
-    /// and freeze at its first-cached alpha. `scriptAlphaOverriddenIDs` (the live
-    /// alpha override map's keys) additionally catches cross-layer writes: a layer
-    /// script may set any other named layer's alpha via its `others` output, which
-    /// is unknowable statically; passed per frame, so the target layer stops
-    /// classifying as static the moment it is first written. Pure + static for
-    /// unit testing.
+    /// Layer IDs the static-layer cache must never admit. Origin/scale/angles scripts
+    /// and live-created layers move geometry the classifier can't see. Layer/alpha
+    /// scripts are excluded because `applyingLayerAlpha` bakes the script value into
+    /// `geometry.alpha` and clears `alphaAnimation` BEFORE classification — a
+    /// script-alpha layer would otherwise classify as static and freeze at its
+    /// first-cached alpha. `scriptAlphaOverriddenIDs` additionally catches cross-layer
+    /// writes: a layer script may set any other named layer's alpha via `others`,
+    /// unknowable statically; passed per frame, so the target layer stops classifying
+    /// as static the moment it is first written. Pure + static for unit testing.
     nonisolated static func staticCacheExcludedLayerIDs(
         originScriptIDs: some Sequence<String>,
         originAnimationIDs: some Sequence<String>,

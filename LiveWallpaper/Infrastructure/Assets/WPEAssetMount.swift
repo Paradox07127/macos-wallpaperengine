@@ -1,11 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 
-/// A dependency workshop item mounted for in-place asset resolution.
-///
-/// A dependency can be backed either by a real on-disk directory (an unpacked
-/// sibling Steam Workshop folder) or by a `scene.pkg` read in place — the latter
-/// lets packaged dependencies resolve without ever extracting them to a cache.
+/// A dependency workshop item mounted for in-place asset resolution. A dependency can be backed either by a real on-disk directory (an unpacked sibling Steam Workshop folder) or by a `scene.pkg` read in place — the latter lets packaged dependencies resolve without ever extracting them to a cache.
 struct WPEAssetMount: Equatable, Sendable {
     enum Backing: Equatable, Sendable {
         case directory(URL)

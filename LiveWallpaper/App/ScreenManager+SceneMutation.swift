@@ -59,14 +59,12 @@ extension ScreenManager {
         }
     }
 
-    /// A preset was added, edited or deleted somewhere else in the app. Each
-    /// running session and each open inspector holds a descriptor with the
-    /// preset's values baked in, and neither is reachable from the library
-    /// write, so both have to be pushed the reconciled descriptor here.
-    ///
-    /// The pre-reconcile copies are captured before the cache is dropped:
-    /// they are what the sessions are actually rendering, so they are the only
-    /// correct baseline for the incremental property patch.
+    /// A preset was added, edited or deleted somewhere else in the app. Each running session and
+    /// each open inspector holds a descriptor with the preset's values baked in, and neither is
+    /// reachable from the library write, so both have to be pushed the reconciled descriptor here.
+    /// The pre-reconcile copies are captured before the cache is dropped: they are what the
+    /// sessions are actually rendering, so they are the only correct baseline for the incremental
+    /// property patch.
     func handleScenePresetLibraryChange() {
         guard !isTerminating else { return }
         var rendering: [CGDirectDisplayID: SceneDescriptor] = [:]
@@ -101,11 +99,10 @@ extension ScreenManager {
         await updateSceneDescriptor(descriptor, previous: nil, for: screen)
     }
 
-    /// `previous` is the descriptor the running session was last handed. It
-    /// differs from the stored one only when something already wrote the new
-    /// value to the store without going through a session — preset reconcile
-    /// does exactly that — and the patch has to diff against what is on screen,
-    /// not against what is on disk.
+    /// `previous` is the descriptor the running session was last handed. It differs from the stored
+    /// one only when something already wrote the new value to the store without going through a
+    /// session — preset reconcile does exactly that — and the patch has to diff against what is on
+    /// screen, not against what is on disk.
     private func updateSceneDescriptor(
         _ descriptor: SceneDescriptor,
         previous: SceneDescriptor?,
@@ -137,12 +134,10 @@ extension ScreenManager {
                     expectedSession: expectedSession,
                     for: screen
                 ) else { return }
-                // Engine-level keys (`wec_*`, `volume`) are stripped by the
-                // property filter before the patch is built, so they can never
-                // reach `changedKeys`. An engine-only preset change therefore
-                // produced a *successful empty patch* — persisted and shown in
-                // the inspector, while the live frame kept grading and playing
-                // from the descriptor it was loaded with. The renderer holds
+                // Engine-level keys (`wec_*`, `volume`) are stripped by the property filter before the patch
+                // is built, so they can never reach `changedKeys`. An engine-only preset change therefore
+                // produced a *successful empty patch* — persisted and shown in the inspector, while the live
+                // frame kept grading and playing from the descriptor it was loaded with. The renderer holds
                 // that descriptor immutably, so a remount is what re-reads them.
                 let engineSettingsChanged =
                     WPEEngineColorCorrection.parse(current.presetSnapshot)

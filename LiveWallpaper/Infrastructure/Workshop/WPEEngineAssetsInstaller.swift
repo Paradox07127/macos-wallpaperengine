@@ -115,13 +115,8 @@ final class WPEEngineAssetsInstaller {
     func cancel() {
         task?.cancel()
         task = nil
-        // The Task cancel above only stops the app-side wait; the SteamCMD
-        // child in the connector keeps running (timeout up to 5400s) and holds
-        // its serial queue, so a retry would look wedged behind it. Scoped to
-        // this attempt's id: a cancel that lands after the retry has started
-        // must not kill the retry. Fire-and-forget — the interrupted run
-        // reports failure through its own reply, which the cleared attempt
-        // token already ignores.
+        // The Task cancel above only stops the app-side wait; the SteamCMD child in the connector keeps running (timeout up to 5400s) and holds its serial queue, so a retry would look wedged behind it.
+        // Scoped to this attempt's id: a cancel that lands after the retry has started must not kill the retry. Fire-and-forget — the interrupted run reports failure through its own reply, which the cleared attempt token already ignores.
         if let cancelled = currentAttempt {
             Task { await SteamConnectorClient.cancelActiveSteamCMD(operationID: cancelled.uuidString) }
         }
@@ -156,7 +151,7 @@ final class WPEEngineAssetsInstaller {
         guard let account = doctor.username, (try? doctor.resolveBinaryURL()) != nil else {
             fail(String(
                 localized: "Choose your Steam account and SteamCMD in Settings → Workshop → Steam connection first.",
-                comment: "Engine-assets install blocked because the Steam connection is not configured."
+                bundle: .appLanguage, comment: "Engine-assets install blocked because the Steam connection is not configured."
             ))
             return
         }
@@ -189,7 +184,7 @@ final class WPEEngineAssetsInstaller {
         guard let result else {
             fail(String(
                 localized: "Loomscreen's Steam connector did not respond.",
-                comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
+                bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
             ))
             return
         }
@@ -201,17 +196,17 @@ final class WPEEngineAssetsInstaller {
             // Steam itself said the session is gone — demote the green probe so
             // download readiness stops disagreeing with reality.
             doctor.noteOperationReportedLoginRequired()
-            fail(String(localized: "Sign in to Steam in Terminal, then re-check the connection.", comment: "Engine-assets install blocked: no cached Steam session."))
+            fail(String(localized: "Sign in to Steam in Terminal, then re-check the connection.", bundle: .appLanguage, comment: "Engine-assets install blocked: no cached Steam session."))
         case .notEntitled:
-            fail(String(localized: "This Steam account doesn't own Wallpaper Engine, so its assets can't be downloaded.", comment: "Engine-assets download blocked: account doesn't own Wallpaper Engine."))
+            fail(String(localized: "This Steam account doesn't own Wallpaper Engine, so its assets can't be downloaded.", bundle: .appLanguage, comment: "Engine-assets download blocked: account doesn't own Wallpaper Engine."))
         case .pruneRefused:
-            fail(String(localized: "Downloaded Wallpaper Engine, but trimming it to the assets folder failed.", comment: "Engine-assets download succeeded but pruning failed."))
+            fail(String(localized: "Downloaded Wallpaper Engine, but trimming it to the assets folder failed.", bundle: .appLanguage, comment: "Engine-assets download succeeded but pruning failed."))
         case .timedOut:
-            fail(String(localized: "The download timed out. Try again.", comment: "Engine-assets download timed out."))
+            fail(String(localized: "The download timed out. Try again.", bundle: .appLanguage, comment: "Engine-assets download timed out."))
         case .steamCMDUnavailable:
-            fail(String(localized: "SteamCMD could not be launched. Re-select it in the setup list.", comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."))
+            fail(String(localized: "SteamCMD could not be launched. Re-select it in the setup list.", bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."))
         case .steamUnreachable, .unrecognized:
-            fail(String(localized: "Steam returned an unrecognized response while installing Wallpaper Engine.", comment: "Engine-assets install failed with unparsed SteamCMD output."))
+            fail(String(localized: "Steam returned an unrecognized response while installing Wallpaper Engine.", bundle: .appLanguage, comment: "Engine-assets install failed with unparsed SteamCMD output."))
         }
     }
 
@@ -245,9 +240,9 @@ final class WPEEngineAssetsInstaller {
         currentAttempt = nil
         phase = .idle
         WorkshopToastCenter.shared.post(
-            headline: String(localized: "Wallpaper Engine assets ready", comment: "Engine-assets download success toast headline."),
+            headline: String(localized: "Wallpaper Engine assets ready", bundle: .appLanguage, comment: "Engine-assets download success toast headline."),
             title: "",
-            message: String(localized: "Linked the install already in your Steam library.", comment: "Toast when an existing Wallpaper Engine install was linked instead of downloaded."),
+            message: String(localized: "Linked the install already in your Steam library.", bundle: .appLanguage, comment: "Toast when an existing Wallpaper Engine install was linked instead of downloaded."),
             isSuccess: true
         )
         return true
@@ -260,14 +255,14 @@ final class WPEEngineAssetsInstaller {
         attempt: UUID
     ) async {
         guard let assetsPath = result.assetsPath else {
-            fail(String(localized: "Downloaded Wallpaper Engine, but trimming it to the assets folder failed.", comment: "Engine-assets download succeeded but pruning failed."))
+            fail(String(localized: "Downloaded Wallpaper Engine, but trimming it to the assets folder failed.", bundle: .appLanguage, comment: "Engine-assets download succeeded but pruning failed."))
             return
         }
         // Bookmark the install root (parent of `assets/`), matching what a
         // manual link stores.
         let installRoot = URL(fileURLWithPath: assetsPath, isDirectory: true).deletingLastPathComponent()
         guard let steamRoot = try? doctor.resolveWorkdirURL() else {
-            fail(String(localized: "No Steam Library is authorized.", comment: "Workshop diagnostics error."))
+            fail(String(localized: "No Steam Library is authorized.", bundle: .appLanguage, comment: "Workshop diagnostics error."))
             return
         }
         let scope = steamRoot.startAccessingSecurityScopedResource()
@@ -281,7 +276,7 @@ final class WPEEngineAssetsInstaller {
             )
         }
         guard WPEEngineAssetsLibrary.adoptManagedInstall(at: installRoot, buildID: result.buildID) else {
-            fail(String(localized: "Installed Wallpaper Engine, but Loomscreen could not keep access to it.", comment: "Engine-assets install succeeded but the bookmark could not be created."))
+            fail(String(localized: "Installed Wallpaper Engine, but Loomscreen could not keep access to it.", bundle: .appLanguage, comment: "Engine-assets install succeeded but the bookmark could not be created."))
             return
         }
         hasManagedInstall = true
@@ -294,9 +289,9 @@ final class WPEEngineAssetsInstaller {
         currentAttempt = nil
         phase = .idle
         WorkshopToastCenter.shared.post(
-            headline: String(localized: "Wallpaper Engine assets ready", comment: "Engine-assets download success toast headline."),
+            headline: String(localized: "Wallpaper Engine assets ready", bundle: .appLanguage, comment: "Engine-assets download success toast headline."),
             title: "",
-            message: String(localized: "Linked for extra scene coverage.", comment: "Engine-assets download success toast subtitle."),
+            message: String(localized: "Linked for extra scene coverage.", bundle: .appLanguage, comment: "Engine-assets download success toast subtitle."),
             isSuccess: true
         )
     }
@@ -409,7 +404,7 @@ final class WPEEngineAssetsInstaller {
         progressBytes = nil
         phase = .failed(message)
         WorkshopToastCenter.shared.post(
-            headline: String(localized: "Download failed", comment: "Engine-assets download failure toast headline."),
+            headline: String(localized: "Download failed", bundle: .appLanguage, comment: "Engine-assets download failure toast headline."),
             title: "",
             message: message,
             isSuccess: false
@@ -430,37 +425,37 @@ final class WPEEngineAssetsInstaller {
         switch outcome {
         case .available:
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Wallpaper Engine update available", comment: "Engine-assets update check found an update."),
+                headline: String(localized: "Wallpaper Engine update available", bundle: .appLanguage, comment: "Engine-assets update check found an update."),
                 title: "",
-                message: String(localized: "Click Update to download and relink the latest assets.", comment: "Engine-assets update available toast subtitle."),
+                message: String(localized: "Click Update to download and relink the latest assets.", bundle: .appLanguage, comment: "Engine-assets update available toast subtitle."),
                 isSuccess: true
             )
         case .upToDate:
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Wallpaper Engine assets are up to date", comment: "Engine-assets update check success headline."),
+                headline: String(localized: "Wallpaper Engine assets are up to date", bundle: .appLanguage, comment: "Engine-assets update check success headline."),
                 title: "",
-                message: String(localized: "No download is needed.", comment: "Engine-assets update check up-to-date subtitle."),
+                message: String(localized: "No download is needed.", bundle: .appLanguage, comment: "Engine-assets update check up-to-date subtitle."),
                 isSuccess: true
             )
         case .unableToCompare:
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Couldn't compare versions", comment: "Engine-assets update check version-unknown headline."),
+                headline: String(localized: "Couldn't compare versions", bundle: .appLanguage, comment: "Engine-assets update check version-unknown headline."),
                 title: "",
-                message: String(localized: "Download again to refresh the managed assets.", comment: "Engine-assets update check version-unknown subtitle."),
+                message: String(localized: "Download again to refresh the managed assets.", bundle: .appLanguage, comment: "Engine-assets update check version-unknown subtitle."),
                 isSuccess: false
             )
         case .loginRequired:
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Steam sign-in expired", comment: "Engine-assets update check failure headline when Steam refused the cached session."),
+                headline: String(localized: "Steam sign-in expired", bundle: .appLanguage, comment: "Engine-assets update check failure headline when Steam refused the cached session."),
                 title: "",
-                message: String(localized: "Sign in to your Steam account again, then check for updates.", comment: "Engine-assets update check failure subtitle when Steam refused the cached session."),
+                message: String(localized: "Sign in to your Steam account again, then check for updates.", bundle: .appLanguage, comment: "Engine-assets update check failure subtitle when Steam refused the cached session."),
                 isSuccess: false
             )
         case .checkFailed:
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Couldn't check for updates", comment: "Engine-assets update check failure headline."),
+                headline: String(localized: "Couldn't check for updates", bundle: .appLanguage, comment: "Engine-assets update check failure headline."),
                 title: "",
-                message: String(localized: "SteamCMD did not return the latest Wallpaper Engine build.", comment: "Engine-assets update check failure subtitle."),
+                message: String(localized: "SteamCMD did not return the latest Wallpaper Engine build.", bundle: .appLanguage, comment: "Engine-assets update check failure subtitle."),
                 isSuccess: false
             )
         case .notChecked, .checking:

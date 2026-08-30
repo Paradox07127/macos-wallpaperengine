@@ -133,12 +133,10 @@ struct PlaybackInspector: View {
     private static let audioDeadZone: Double = 0.04
 
     private var audioRow: some View {
-        // The readout follows the drag; this icon follows the committed value, so
-        // mid-drag it can lag the word next to it by up to one quiet window.
-        // Deliberate: the icon is a parameter of `SettingRow`, so making it live
-        // means re-rendering this row on every gesture sample — which is the
-        // cost the coalescing exists to remove, spent to fix a transient
-        // cosmetic mismatch.
+        // The readout follows the drag; this icon follows the committed value, so mid-drag it
+        // can lag the word next to it by up to one quiet window. Deliberate: the icon is a
+        // parameter of `SettingRow`, so making it live means re-rendering this row on every
+        // gesture sample — the cost coalescing exists to remove, spent on a transient cosmetic mismatch.
         let isMuted = audioMutedBinding.wrappedValue
         return SettingRow(
             icon: isMuted ? "speaker.slash" : "speaker.wave.2",
@@ -379,11 +377,9 @@ struct PlaybackInspector: View {
         )
     }
 
-    /// The track is not a plain 0…1 volume: the bottom `audioDeadZone` of it is
-    /// the mute region, and the rest is remapped onto the volume. The readout
-    /// follows the drag from the slider's own state, so it has to undo the same
-    /// mapping `unifiedAudioBinding.set` applies — reading it as a raw
-    /// percentage showed the wrong number and muted at the wrong point.
+    /// The track is not a plain 0…1 volume: the bottom `audioDeadZone` is the mute region, the
+    /// rest remapped onto volume. The readout follows the drag from the slider's own state, so
+    /// it must undo the same mapping `unifiedAudioBinding.set` applies — reading it as a raw percentage showed the wrong number and muted at the wrong point.
     static func audioIsMuted(atSliderValue value: Double) -> Bool {
         value <= audioDeadZone
     }

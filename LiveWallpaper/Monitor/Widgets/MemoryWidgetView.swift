@@ -205,13 +205,13 @@ struct MemoryWidgetView: View {
     @ViewBuilder
     private func topByMemoryBlock(scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading, spacing: scale.caption * 0.32) {
-            Text("TOP BY MEMORY", bundle: .main)
+            Text("TOP BY MEMORY")
                 .font(Design.labelFont(size: scale.label))
                 .tracking(Design.labelTracking(size: scale.label))
                 .foregroundStyle(Design.inkFaint)
             let procs = topMemoryProcesses
             if procs.isEmpty {
-                Text("no process readings", bundle: .main)
+                Text("no process readings")
                     .font(Design.captionFont(size: scale.caption))
                     .foregroundStyle(Design.inkFaint)
             } else {

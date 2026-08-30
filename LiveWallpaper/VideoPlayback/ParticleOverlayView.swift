@@ -79,14 +79,10 @@ final class ParticleOverlayView: NSView {
         activeEmitter?.birthRate = Float(max(0.05, density))
     }
 
-    /// Rebuilds the emitter for a new lean.
-    ///
-    /// Not a layer rotation: rotating the emitter swings its emission line off
-    /// the top of the screen and leaves a dry wedge down one side (measured —
-    /// at 0.45 rad the rain covered only the left ~60%). The lean lives in the
-    /// cells' heading and in the streak texture instead, so the line stays
-    /// where it is. Weather refreshes hourly, so rebuilding is cheap; the guard
-    /// keeps a no-op update from restarting the field for nothing.
+    /// Rebuilds for a new lean, not a rotation: rotating swings the emission line off the
+    /// top, leaving a dry wedge down one side (measured: 0.45 rad left rain covering only
+    /// the left ~60%). Lean lives in the cells' heading and streak texture instead.
+    /// Weather refreshes hourly (cheap to rebuild); the guard skips no-op updates.
     private func applyTilt() {
         guard let emitter = activeEmitter, currentEffect.leansIntoWind else { return }
         guard abs(appliedTilt - tiltRadians) > 0.01 else { return }
@@ -226,24 +222,18 @@ final class ParticleOverlayView: NSView {
 
     // MARK: - Rain
 
-    /// Three depth layers rather than one flat sheet.
-    ///
-    /// Speeds follow the measured terminal velocities: drizzle-sized drops
-    /// fall around 3 m/s and the biggest stable drops around 9 m/s, so the
-    /// near layer runs roughly twice the far layer's speed rather than some
-    /// arbitrary spread. Far particles are smaller, slower, fainter and
-    /// shorter — which is what depth looks like — and they are also the
-    /// cheapest, so the layer that carries the most particles is the one that
-    /// costs least. Counts follow the same relation the other way: small drops
-    /// vastly outnumber large ones, which is the shape of the Marshall–Palmer
-    /// distribution and the reason the far layer is the densest.
+    /// Three depth layers, not one flat sheet. Speeds follow measured terminal
+    /// velocities (drizzle ~3 m/s, biggest stable drops ~9 m/s), so the near layer
+    /// runs ~2x the far layer's speed, not an arbitrary spread. Far particles are
+    /// smaller/slower/fainter/shorter (what depth looks like) and cheapest, so the
+    /// layer with the most particles costs least — counts mirror that (small drops
+    /// vastly outnumber large, the Marshall–Palmer shape), which is why the far layer
+    /// is densest.
     private static func rainPreset(tilt: CGFloat) -> EmitterPreset {
-        // The lean a drop takes is `atan(wind / itsOwnFallSpeed)`, so a slow
-        // small drop leans much further than a fast large one in the same
-        // wind. `tilt` arrives worked out for the middle layer; each layer
-        // re-derives its own from its own speed. Without this the whole field
-        // slants in lockstep, which is the tell that it is a sprite sheet
-        // rather than weather.
+        // Lean per drop is `atan(wind / itsOwnFallSpeed)`: a slow small drop leans much
+        // further than a fast large one in the same wind. `tilt` is worked out for the
+        // middle layer; each layer re-derives its own from its own speed, else the whole
+        // field slants in lockstep — the sprite-sheet tell.
         let reference: CGFloat = 460
         let leanFor: (CGFloat) -> CGFloat = { speed in
             guard tilt != 0, speed > 0 else { return 0 }
@@ -275,11 +265,10 @@ final class ParticleOverlayView: NSView {
             cell.scale = scale
             cell.scaleRange = scale * 0.25
             cell.alphaRange = 0.2
-            // No gravity: a drop is already at terminal velocity, so its path
-            // is a straight line. Accelerating it swung the heading from 0.5
-            // rad at birth to 0.10 rad at death (measured) while the streak
-            // bitmap stayed at 0.5 — the drop spent most of its life drawn
-            // pointing 20° away from where it was actually going.
+            // No gravity: a drop is already at terminal velocity, so its path is a straight
+            // line. Accelerating it swung the heading from 0.5 rad at birth to 0.10 rad at
+            // death (measured) while the streak bitmap stayed at 0.5 — the drop spent most of
+            // its life drawn pointing 20° away from where it was actually going.
             cell.yAcceleration = 0
             cell.color = NSColor(white: 1, alpha: alpha).cgColor
             return cell
@@ -306,17 +295,14 @@ final class ParticleOverlayView: NSView {
 
     // MARK: - Mist
 
-    /// Fog, as a handful of very large, very faint, very slow sprites.
-    ///
-    /// Deliberately not a full-screen noise shader: that is a per-pixel cost
-    /// paid every frame forever, and this layer is up for hours. Apple lists
-    /// fog among `CAEmitterLayer`'s own use cases, and for "a slowly drifting
-    /// translucent veil" — as opposed to fog that has to weave between objects
-    /// and self-shadow — big soft billboards are the cheap way to get there.
-    ///
-    /// Very few particles on purpose: each sprite covers a large area, so the
-    /// look comes from overlap rather than from count. Three sizes at three
-    /// speeds keep it from reading as one sliding sheet.
+    /// Fog, as a handful of very large, very faint, very slow sprites — deliberately
+    /// not a full-screen noise shader, which is a per-pixel cost paid every frame
+    /// forever while this layer is up for hours. Apple lists fog among
+    /// `CAEmitterLayer`'s own use cases, for "a slowly drifting translucent veil" (as
+    /// opposed to fog that weaves between objects and self-shadows) — big soft
+    /// billboards are the cheap way there. Very few particles on purpose: each sprite
+    /// covers a large area, so the look comes from overlap rather than count; three
+    /// sizes at three speeds keep it from reading as one sliding sheet.
     private static let mistPreset: EmitterPreset = {
         let makeBank = {
             (radius: CGFloat, velocity: CGFloat, birthRate: Float, alpha: CGFloat) -> CAEmitterCell in
@@ -358,15 +344,12 @@ final class ParticleOverlayView: NSView {
 
     // MARK: - Embers
 
-    /// Sparks lifting off an unseen fire below the screen.
-    ///
-    /// The colour ramp is the whole effect: a spark leaves the fire yellow-hot
-    /// and cools through orange to a dull red before it goes out, so green and
-    /// blue are driven down over its life while red is held. A spark that
-    /// keeps its birth colour the whole way up reads as confetti.
-    ///
-    /// Buoyancy, not gravity: hot gas is still rising when the spark reaches
-    /// the top, so the acceleration points the same way as the velocity.
+    /// Sparks lifting off an unseen fire below the screen. The colour ramp is the
+    /// whole effect: a spark leaves the fire yellow-hot and cools through orange to
+    /// dull red before going out — green and blue driven down over its life while red
+    /// is held; a spark that keeps its birth colour the whole way up reads as
+    /// confetti. Buoyancy, not gravity: hot gas is still rising when the spark
+    /// reaches the top, so the acceleration points the same way as the velocity.
     private static let embersPreset: EmitterPreset = {
         let makeLayer = {
             (scale: CGFloat, velocity: CGFloat, birthRate: Float,
@@ -411,14 +394,11 @@ final class ParticleOverlayView: NSView {
 
     // MARK: - Bubbles
 
-    /// Rising bubbles, as seen from inside the water.
-    ///
-    /// Bigger bubbles rise faster — that is the real relation, and it is also
-    /// what sells the depth: the large near ones climb past the small far
-    /// ones. `CAEmitterCell` cannot make a particle wander, so the sideways
-    /// wobble is faked across banks instead of within one: the two halves
-    /// drift in opposite directions, so the field as a whole meanders even
-    /// though no single bubble does.
+    /// Rising bubbles, as seen from inside the water. Bigger bubbles rise faster —
+    /// the real relation, and what sells the depth: large near ones climb past small
+    /// far ones. `CAEmitterCell` can't make a particle wander, so the sideways wobble
+    /// is faked across banks instead of within one — the two halves drift in opposite
+    /// directions, so the field as a whole meanders though no single bubble does.
     private static let bubblesPreset: EmitterPreset = {
         let makeLayer = {
             (scale: CGFloat, velocity: CGFloat, birthRate: Float,
@@ -457,12 +437,10 @@ final class ParticleOverlayView: NSView {
 
     // MARK: - Meteors
 
-    /// A sparse shower of shooting stars across the upper sky.
-    ///
-    /// Deliberately rare and fast: a meteor that is always on screen is a
-    /// streak of rain. The slant is fixed rather than wind-driven — meteors
-    /// come in on their own path, and the whole field sharing one angle is
-    /// what makes it read as a radiant shower rather than as noise.
+    /// A sparse shower of shooting stars across the upper sky. Deliberately rare and
+    /// fast: a meteor always on screen is a streak of rain. The slant is fixed rather
+    /// than wind-driven — meteors come in on their own path, and the whole field
+    /// sharing one angle is what reads as a radiant shower rather than noise.
     private static let meteorsPreset: EmitterPreset = {
         // Shallow enough to read as "across the sky" rather than "falling".
         let slant: CGFloat = 1.0
@@ -656,10 +634,9 @@ final class ParticleOverlayView: NSView {
     }()
 
     // MARK: - Dust
-    //
-    // Sun-shaft motes: tiny warm specks drifting in all directions with a
-    // very slow lift. Three depth layers (near / mid / far) so it reads as
-    // volumetric rather than a flat sprite sheet.
+    // Sun-shaft motes: tiny warm specks drifting in all directions with a very slow
+    // lift. Three depth layers (near/mid/far) so it reads as volumetric rather than
+    // a flat sprite sheet.
 
     private static let dustPreset: EmitterPreset = {
         let warmColor = NSColor(calibratedRed: 1.0, green: 0.94, blue: 0.78, alpha: 1.0).cgColor
@@ -696,10 +673,9 @@ final class ParticleOverlayView: NSView {
     }()
 
     // MARK: - Stars
-    //
-    // Nearly stationary points with strong alpha-pulse so the field reads
-    // as a slow twinkle. Cool palette (white-blue) sits well against night
-    // wallpapers without forcing a specific color theme.
+    // Nearly stationary points with strong alpha-pulse so the field reads as a slow
+    // twinkle. Cool palette (white-blue) sits well against night wallpapers without
+    // forcing a specific color theme.
 
     private static let starsPreset: EmitterPreset = {
         let warmWhite = NSColor(calibratedRed: 1.0, green: 0.98, blue: 0.92, alpha: 1.0).cgColor
@@ -757,17 +733,14 @@ private enum ParticleTextures {
         )
     }
 
-    /// A vertical raindrop streak: soft at both ends, brightest along its
-    /// spine, drawn once and cached like every other texture here.
-    ///
-    /// Rain is drawn stretched rather than round because that is what a
-    /// raindrop looks like to anything with an exposure time — a drop falling
-    /// at 6–9 m/s crosses far more than its own diameter while the eye (or a
-    /// 1/30 s shutter) integrates it. Round dots read as falling confetti.
-    /// Real-time renderers do the same thing with velocity-stretched
-    /// billboards; `CAEmitterCell` has no per-particle stretch, so the stretch
-    /// is baked into the texture and the whole cell is rotated to match the
-    /// wind instead.
+    /// A vertical raindrop streak: soft at both ends, brightest along its spine,
+    /// drawn once and cached like every other texture here. Rain is drawn stretched
+    /// rather than round because that is what a raindrop looks like to anything with
+    /// an exposure time — a drop falling at 6–9 m/s crosses far more than its own
+    /// diameter while the eye (or a 1/30 s shutter) integrates it; round dots read as
+    /// falling confetti. Real-time renderers do the same with velocity-stretched
+    /// billboards; `CAEmitterCell` has no per-particle stretch, so the stretch is
+    /// baked into the texture and the whole cell rotated to match the wind instead.
     static func streak(
         length: CGFloat, width: CGFloat, color: CGColor, tilt: CGFloat = 0
     ) -> CGImage? {
@@ -787,21 +760,18 @@ private enum ParticleTextures {
               let along = CGGradient(
                 colorsSpace: colorSpace,
                 colors: [clear, opaque, opaque, clear] as CFArray,
-                // The long fade sits on the trailing end and the leading end
-                // is cut short. That is what a motion-blurred drop looks like,
-                // and it is the only cue in the sprite for which way it is
-                // going — it used to be the other way round, so the streak
-                // trailed off ahead of the drop.
+                // The long fade sits on the trailing end and the leading end is cut
+                // short — what a motion-blurred drop looks like, and the only cue for
+                // which way it is going; it used to be the other way round, so the
+                // streak trailed off ahead of the drop.
                 locations: [0.0, 0.55, 0.9, 1.0]
               )
         else { return nil }
 
-        // The streak narrows toward its tail rather than being a parallel bar.
-        // Garg & Nayar's streak model (Columbia CAVE, TOG 2006) and the game
-        // implementations that follow it draw a drop as an uneven capsule —
-        // the falling drop keeps its width, the blur behind it thins out — and
-        // a constant-width bar is the single thing that most makes rain read
-        // as scratches on the screen.
+        // The streak narrows toward its tail, not a parallel bar: Garg & Nayar's streak
+        // model (Columbia CAVE, TOG 2006), and games following it, draw a drop as an
+        // uneven capsule (width held, blur thinning behind) — a constant-width bar is
+        // what most makes rain read as scratches on the screen.
         let taper = CGMutablePath()
         let tailInset = width * 0.35
         taper.move(to: CGPoint(x: 0, y: 0))
@@ -950,13 +920,11 @@ private enum ParticleTextures {
         return ctx.makeImage()
     }
 
-    /// A meteor: a hot round head with a long tail behind it.
-    ///
-    /// Same lean-baked-into-the-bitmap trick as ``streak`` — rotating the
-    /// emitter would swing its emission line off the screen — but the
-    /// brightness runs the other way. A raindrop is a uniform blur; a meteor
-    /// is a burning object with a trail, so nearly all the light is at the
-    /// leading end and the tail is what is left behind it.
+    /// A meteor: a hot round head with a long tail behind it. Same lean-baked-into-the-
+    /// bitmap trick as ``streak`` — rotating the emitter would swing its emission line
+    /// off the screen — but the brightness runs the other way: a raindrop is a uniform
+    /// blur, a meteor is a burning object with a trail, so nearly all the light is at
+    /// the leading end and the tail is what is left behind it.
     static func comet(
         length: CGFloat, width: CGFloat, color: CGColor, tilt: CGFloat
     ) -> CGImage? {

@@ -99,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservationIgnored private lazy var workshopSetupController = WorkshopSetupController(doctor: workshopDoctorService)
     #endif
     func applicationDidFinishLaunching(_ notification: Notification) {
-        Logger.notice("Application starting", category: .startup)
+        Logger.notice("Application starting — \(SystemSnapshot.launchBanner)", category: .startup)
 
         AppAppearance.stored(in: .appScoped()).apply()
         if let hint = LogFileSink.shared.tailCommandHint {
@@ -212,14 +212,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
-        // Sparkle owns update checking. It runs its own scheduled checks; the
-        // gentle-reminder delegate keeps a finding off-screen and lights up the
-        // menu bar button instead.
-        //
-        // Started unconditionally rather than skipped during onboarding: this is
-        // the only call site, so skipping it left a first-run session — possibly
-        // weeks long — with no checks at all and a disabled manual-check button.
-        // Sparkle's own first-launch prompt is pre-answered by
+        // Sparkle owns update checking; it runs its own scheduled checks, and the gentle-reminder
+        // delegate keeps a finding off-screen and lights up the menu bar button instead. Started
+        // unconditionally rather than skipped during onboarding: this is the only call site, so
+        // skipping it left a first-run session — possibly weeks long — with no checks at all and a
+        // disabled manual-check button. Sparkle's own first-launch prompt is pre-answered by
         // SUEnableAutomaticChecks, so there is nothing to collide with.
         if !runtimeOptions.isTesting {
             SparkleUpdaterController.shared.start()
@@ -417,11 +414,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // double-releasing it.
         window.isReleasedWhenClosed = false
         window.delegate = self
-        // The saved frame has to land BEFORE the hosting view goes in. With the
-        // old order SwiftUI laid the whole tree out at the 1180pt default and
-        // then again at the restored width, which the user sees as everything
-        // reflowing the moment the window opens. `center()` is only the
-        // first-run fallback — a successful restore replaces it.
+        // The saved frame has to land BEFORE the hosting view goes in. With the old order SwiftUI laid
+        // the whole tree out at the 1180pt default and then again at the restored width, which the
+        // user sees as everything reflowing the moment the window opens. `center()` is only the first-
+        // run fallback — a successful restore replaces it.
         window.setFrameAutosaveName("LiveWallpaperSettingsWindow")
         if !window.setFrameUsingName("LiveWallpaperSettingsWindow") {
             window.center()
@@ -585,11 +581,10 @@ extension AppDelegate: NSWindowDelegate {
         return true
     }
 
-    /// Destroys the settings window on close: a background app must not keep
-    /// the whole SwiftUI settings tree (previews, Workshop pages, caches)
-    /// resident. Long-running work (Workshop downloads, SteamCMD installs)
-    /// lives in app-lifetime services and survives; `showSettings` cold-builds
-    /// the next window.
+    /// Destroys the settings window on close: a background app must not keep the whole SwiftUI
+    /// settings tree (previews, Workshop pages, caches) resident. Long-running work (Workshop
+    /// downloads, SteamCMD installs) lives in app-lifetime services and survives; `showSettings`
+    /// cold-builds the next window.
     func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow else { return }
         LocalImageCacheReclaimer.shared.windowWillClose(closingWindow)

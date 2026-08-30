@@ -3,12 +3,8 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Pre-render capability gate for a single scene project.
-///
-/// The tier reflects what the SCENE asks for, not what the renderer currently
-/// supports. The dispatch layer downgrades `nativePlayable` to
-/// `degradedPlayable` when a feature hasn't shipped yet, so scenes never need
-/// re-classifying as features land.
+/// Pre-render capability gate for a single scene project. The tier reflects what the SCENE asks for, not what the renderer currently supports.
+/// The dispatch layer downgrades `nativePlayable` to `degradedPlayable` when a feature hasn't shipped yet, so scenes never need re-classifying as features land.
 enum WPEScenePreflight {
     static func classify(
         document: WPESceneDocument,

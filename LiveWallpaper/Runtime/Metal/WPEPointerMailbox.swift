@@ -94,13 +94,10 @@ final class WPEPointerMailbox: Sendable {
     // MARK: - Pure mapping
 
     /// NSView-free re-implementation of `WPEMetalPointerSampler.sampleSceneUV`
-    /// (WPEMetalRuntimeUniforms.swift), so the render thread can resolve the
-    /// sample without touching AppKit. The screen frame is a rigid translation of
-    /// the view's bounds, so `rect.contains(location)` is exactly the original
-    /// `bounds.contains(localPoint)` and the UV math below is identical.
-    /// Assumes the wallpaper view fills its window with an identity bounds↔frame
-    /// transform (no scaling) — the wallpaper invariant; if a view ever scales,
-    /// carry the bounds size in `Geometry` and divide by it here.
+    /// (WPEMetalRuntimeUniforms.swift), so the render thread can resolve the sample without
+    /// touching AppKit. The screen frame is a rigid translation of the view's bounds, so
+    /// `rect.contains(location)` exactly equals `bounds.contains(localPoint)` and the UV math
+    /// below is identical. Assumes the wallpaper view fills its window with an identity bounds↔frame transform (no scaling); if a view ever scales, carry the bounds size in `Geometry` and divide by it here.
     static func pointerSample(
         forScreenLocation location: CGPoint,
         geometry: Geometry

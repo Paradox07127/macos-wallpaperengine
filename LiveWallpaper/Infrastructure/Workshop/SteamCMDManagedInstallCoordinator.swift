@@ -2,13 +2,10 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Drives a managed SteamCMD install and records where it landed. The whole
-/// install — manifest fetch, downloads, verification, unpack, first run —
-/// happens in the connector; this side only asks for it and stores the result.
-///
-/// A managed install is additive. Nothing here replaces the existing
-/// package-manager detection; if any step fails the app falls back to the
-/// manual instructions unchanged.
+/// Drives a managed SteamCMD install and records where it landed; the connector
+/// does the work (fetch, download, verify, unpack, first run), this side only
+/// asks and stores the result. Additive: doesn't replace package-manager
+/// detection, and any failed step falls back to manual instructions unchanged.
 @MainActor
 @Observable
 final class SteamCMDManagedInstallCoordinator {
@@ -31,11 +28,10 @@ final class SteamCMDManagedInstallCoordinator {
 
     private(set) var status: Status = .idle
 
-    /// Identifies the top-level operation currently allowed to commit. Bumped
-    /// whenever one supersedes another, so a call that was mid-`await` when the
-    /// user did something else declines to write its result: `@MainActor`
-    /// serialises access between suspension points but does not make `install()`
-    /// or `forget()` atomic across them.
+    /// Identifies the top-level operation allowed to commit. Bumped when one op
+    /// supersedes another, so a call still mid-`await` declines to write its
+    /// result — `@MainActor` serialises access between suspension points but
+    /// doesn't make `install()`/`forget()` atomic across them.
     private var generation: UInt64 = 0
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -76,12 +72,9 @@ final class SteamCMDManagedInstallCoordinator {
     private(set) var managedInstall: ManagedInstallRecord?
 
     /// Readable without owning a coordinator, so a fresh coordinator restores
-    /// the same install state.
-    /// Deliberately does not stat `canonicalPath`: it lives outside the
-    /// container, so every filesystem check from this process answers "no"
-    /// regardless of what is really there. Whether the binary still works is the
-    /// connector's question, and the connector answers it from its own derived
-    /// install root — this record never travels there as an executable path.
+    /// the same state. Deliberately doesn't stat `canonicalPath` — it lives
+    /// outside the container, so a filesystem check here would always say "no";
+    /// whether the binary works is the connector's question, from its own install root.
     static func recordedInstall(defaults: UserDefaults = .standard) -> ManagedInstallRecord? {
         guard let data = defaults.data(forKey: managedInstallDefaultsKey) else { return nil }
         return try? JSONDecoder().decode(ManagedInstallRecord.self, from: data)
@@ -112,14 +105,14 @@ final class SteamCMDManagedInstallCoordinator {
         guard let result else {
             return finish(.failed(String(
                 localized: "The Steam connector did not respond.",
-                comment: "Managed SteamCMD install failure: the XPC service was unreachable."
+                bundle: .appLanguage, comment: "Managed SteamCMD install failure: the XPC service was unreachable."
             )))
         }
         guard result.outcome == .installed, let path = result.canonicalPath else {
             // The connector distinguishes a timeout from a non-zero exit from a
             // hash failure; all three used to render as one sentence, so a
             // report of this dialog could not say which happened.
-            let detail = result.failureReason.map { " (\($0))" } ?? ""
+            let detail = result.localizedFailureReason.map { " (\($0))" } ?? ""
             return finish(.failed(Self.message(for: result.outcome) + detail))
         }
 
@@ -130,16 +123,8 @@ final class SteamCMDManagedInstallCoordinator {
         return finish(.installed(path: path))
     }
 
-    /// Removes the install through the connector — the payload sits outside this
-    /// container, so this process can neither see nor delete it. Bumps the
-    /// generation first so an install still in flight cannot commit over it.
-    /// Never touches the user's own "Choose SteamCMD" pick or a package-manager install.
-    ///
-    /// The record is dropped only once the connector confirms the files are
-    /// gone. Dropping it first meant a refused or unreachable removal left the
-    /// copy on disk with nothing pointing at it: the Remove command disappears
-    /// with `managedInstall`, and resolution no longer offers the path, so the
-    /// user could neither retry nor rediscover it.
+    /// Removes through the connector (payload sits outside this container, so we can't see or delete it directly). Bumps generation first so an in-flight install can't commit over it; never touches the user's own "Choose SteamCMD" pick or a package-manager install.
+    /// Record drops only once the connector confirms deletion — dropping it first orphaned the copy on disk, since Remove disappears with `managedInstall`, leaving the user unable to retry or rediscover it.
     @discardableResult
     func forget() async -> Bool {
         generation &+= 1
@@ -166,37 +151,37 @@ final class SteamCMDManagedInstallCoordinator {
         case .installed:
             return String(
                 localized: "SteamCMD was installed.",
-                comment: "Managed SteamCMD install outcome (not normally shown as an error)."
+                bundle: .appLanguage, comment: "Managed SteamCMD install outcome (not normally shown as an error)."
             )
         case .tarballRejected:
             return String(
                 localized: "The downloaded SteamCMD archive didn't match its published checksum, so it was discarded.",
-                comment: "Managed SteamCMD install failure: the connector's own re-hash disagreed."
+                bundle: .appLanguage, comment: "Managed SteamCMD install failure: the connector's own re-hash disagreed."
             )
         case .extractionFailed:
             return String(
                 localized: "The SteamCMD archive couldn't be unpacked.",
-                comment: "Managed SteamCMD install failure: extraction failed."
+                bundle: .appLanguage, comment: "Managed SteamCMD install failure: extraction failed."
             )
         case .binaryNotFound:
             return String(
                 localized: "The unpacked files didn't contain the SteamCMD program.",
-                comment: "Managed SteamCMD install failure: no executable in the payload."
+                bundle: .appLanguage, comment: "Managed SteamCMD install failure: no executable in the payload."
             )
         case .signatureRejected:
             return String(
                 localized: "The unpacked program isn't signed by Valve, so it was not installed.",
-                comment: "Managed SteamCMD install failure: code signature check failed."
+                bundle: .appLanguage, comment: "Managed SteamCMD install failure: code signature check failed."
             )
         case .selfUpdateFailed:
             return String(
                 localized: "SteamCMD was installed but its first run didn't finish.",
-                comment: "Managed SteamCMD install failure: the first +quit run did not complete."
+                bundle: .appLanguage, comment: "Managed SteamCMD install failure: the first +quit run did not complete."
             )
         case .unavailable:
             return String(
                 localized: "SteamCMD can't be installed automatically right now.",
-                comment: "Managed SteamCMD install failure: the connector refused the request."
+                bundle: .appLanguage, comment: "Managed SteamCMD install failure: the connector refused the request."
             )
         }
     }

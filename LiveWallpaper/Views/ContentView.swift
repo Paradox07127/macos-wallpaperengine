@@ -233,7 +233,7 @@ struct ContentView: View {
         panel.prompt = L10n.Panel.useAsWallpaper
         panel.message = String(
             localized: "Choose a video, a web page or folder, or a Wallpaper Engine project folder.",
-            comment: "Message for the unified add-wallpaper picker."
+            bundle: .appLanguage, comment: "Message for the unified add-wallpaper picker."
         )
         guard panel.runModal() == .OK, let url = panel.url else { return }
         SettingsManager.shared.saveLastUsedDirectory(url.deletingLastPathComponent())
@@ -248,7 +248,7 @@ struct ContentView: View {
                     url: videoURL,
                     message: String(
                         localized: "macOS didn't grant access to that file. Try one in a folder you own.",
-                        comment: "Add-wallpaper failure when a security-scoped bookmark can't be made."
+                        bundle: .appLanguage, comment: "Add-wallpaper failure when a security-scoped bookmark can't be made."
                     )
                 )
                 return
@@ -274,7 +274,7 @@ struct ContentView: View {
                 url: url,
                 message: String(
                     localized: "Choose a video, a web page or folder, or a Wallpaper Engine project folder.",
-                    comment: "Message for the unified add-wallpaper picker."
+                    bundle: .appLanguage, comment: "Message for the unified add-wallpaper picker."
                 )
             )
         }
@@ -287,10 +287,10 @@ struct ContentView: View {
         alert.alertStyle = .warning
         alert.messageText = String(
             localized: "Can't use \(url.lastPathComponent)",
-            comment: "Add-wallpaper failure alert title. The placeholder is the chosen file name."
+            bundle: .appLanguage, comment: "Add-wallpaper failure alert title. The placeholder is the chosen file name."
         )
         alert.informativeText = message
-        alert.addButton(withTitle: String(localized: "OK", comment: "Dismiss button on the add-wallpaper failure alert."))
+        alert.addButton(withTitle: String(localized: "OK", bundle: .appLanguage, comment: "Dismiss button on the add-wallpaper failure alert."))
         alert.runModal()
     }
 

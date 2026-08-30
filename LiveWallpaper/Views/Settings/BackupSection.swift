@@ -116,12 +116,12 @@ extension GeneralSettingsView {
         }
     }
 
-    /// Individual `String(localized:)` per section so each gets its own xcstrings pluralization rule (no manual "(s)", no concatenation).
+    /// Individual `String(localized:, bundle: .appLanguage)` per section so each gets its own xcstrings pluralization rule (no manual "(s)", no concatenation).
     private func importFeedbackMessage(for summary: ConfigurationPorter.ApplySummary) -> String {
         guard !summary.isEmpty else {
             return String(
                 localized: "Imported file contained no recognizable settings.",
-                comment: "Toast shown after importing an empty configuration bundle."
+                bundle: .appLanguage, comment: "Toast shown after importing an empty configuration bundle."
             )
         }
 
@@ -129,19 +129,19 @@ extension GeneralSettingsView {
         if let count = summary.displayCount {
             lines.append(String(
                 localized: "Restored \(count) display configurations.",
-                comment: "Import success line: how many displays were restored. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, comment: "Import success line: how many displays were restored. xcstrings provides a pluralized variant."
             ))
         }
         if summary.didRestoreGlobalSettings {
             lines.append(String(
                 localized: "Restored global preferences, display defaults, schedule, and shortcuts.",
-                comment: "Import success line: global settings were restored."
+                bundle: .appLanguage, comment: "Import success line: global settings were restored."
             ))
         }
         if let count = summary.bookmarkCount {
             lines.append(String(
                 localized: "Restored \(count) saved bookmarks.",
-                comment: "Import success line: how many bookmarks were restored. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, comment: "Import success line: how many bookmarks were restored. xcstrings provides a pluralized variant."
             ))
         }
         return lines.joined(separator: "\n")
@@ -153,39 +153,39 @@ extension GeneralSettingsView {
         if let count = bundle.screenConfigurations?.count {
             lines.append(String(
                 localized: "• \(count) display configurations",
-                comment: "Import confirmation bullet: how many displays the bundle includes. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, comment: "Import confirmation bullet: how many displays the bundle includes. xcstrings provides a pluralized variant."
             ))
         }
         if bundle.globalSettings != nil {
             lines.append(String(
                 localized: "• Global settings (preferences, display defaults, schedule, shortcuts)",
-                comment: "Import confirmation bullet: presence of global settings."
+                bundle: .appLanguage, comment: "Import confirmation bullet: presence of global settings."
             ))
         }
         if let count = bundle.wallpaperBookmarks?.count {
             lines.append(String(
                 localized: "• \(count) saved bookmarks",
-                comment: "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, comment: "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant."
             ))
         }
 
         let summary = lines.isEmpty
             ? String(
                 localized: "The file contains no recognizable settings.",
-                comment: "Import confirmation when bundle is empty."
+                bundle: .appLanguage, comment: "Import confirmation when bundle is empty."
             )
             : lines.joined(separator: "\n")
 
         return String(
             localized: "\(summary)\n\n\(localizedBookmarkPortabilityWarning)\n\nReplace current configuration?",
-            comment: "Import confirmation alert message. First placeholder is a bulleted list of restored sections; second is the device-portability warning."
+            bundle: .appLanguage, comment: "Import confirmation alert message. First placeholder is a bulleted list of restored sections; second is the device-portability warning."
         )
     }
 
     private var localizedBookmarkPortabilityWarning: String {
         String(
             localized: "Selected files and folders will need to be re-granted on this Mac because security bookmarks are device-specific.",
-            comment: "Import confirmation footer warning about cross-device bookmark portability."
+            bundle: .appLanguage, comment: "Import confirmation footer warning about cross-device bookmark portability."
         )
     }
 }

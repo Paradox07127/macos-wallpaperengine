@@ -5,12 +5,8 @@ import Metal
 import MetalPerformanceShaders
 import os
 
-/// Reads back the renderer's offscreen `MTLTexture` into an `NSImage` for
-/// `SceneDetailView` (without it the detail view falls into
-/// `.previewUnavailable`). Runs on a dedicated utility-QoS queue so a 4K
-/// mip-chain readback never blocks the main thread on multi-display setups;
-/// `@unchecked Sendable` because every owned closure is pure or hops onto the
-/// main actor explicitly.
+/// Reads back the renderer's offscreen `MTLTexture` into an `NSImage` for `SceneDetailView` (without it the detail view falls into `.previewUnavailable`).
+/// Runs on a dedicated utility-QoS queue so a 4K mip-chain readback never blocks the main thread on multi-display setups; `@unchecked Sendable` because every owned closure is pure or hops onto the main actor explicitly.
 final class WPEMetalTextureSnapshotter: @unchecked Sendable {
     static let shared = WPEMetalTextureSnapshotter()
 
@@ -118,12 +114,8 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         )
     }
 
-    /// Bilinear-scales on GPU so the CPU readback and conversion touch a
-    /// pane-sized frame instead of the full render target. Returns nil on any
-    /// failure so the caller falls back to the full-resolution readback.
-    /// sRGB variants are scaled through non-sRGB views (raw encoded bytes):
-    /// sRGB stores are not writable on every Mac GPU family, and the downstream
-    /// switch reads raw bytes as sRGB-encoded either way.
+    /// Bilinear-scales on GPU so the CPU readback and conversion touch a pane-sized frame instead of the full render target; returns nil on any failure so the caller falls back to the full-resolution readback.
+    /// sRGB variants are scaled through non-sRGB views (raw encoded bytes): sRGB stores are not writable on every Mac GPU family, and the downstream switch reads raw bytes as sRGB-encoded either way.
     private static func downsampleOnGPU(_ texture: MTLTexture, maxDimension: Int) -> MTLTexture? {
         let device = texture.device
         guard MPSSupportsMTLDevice(device) else { return nil }
@@ -140,15 +132,8 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         } else if let view = texture.makeTextureView(pixelFormat: workingFormat) {
             source = view
         } else {
-            // Apple documents `.pixelFormatView` as required for a differing-format
-            // view, and the renderer's output textures are `[.renderTarget,
-            // .shaderRead]`. Measured on this GPU family the view is vended anyway
-            // (probe: both usages return non-nil), so the sRGB poster path really
-            // does reach the GPU downsample here — but that is undocumented
-            // tolerance. The output pool is per-frame 4K on the hot path, and
-            // adding a usage flag there can cost lossless compression, so the
-            // spec-legal degradation is this nil: the caller falls back to the
-            // full-resolution readback, which is slower but correct.
+            // Apple documents `.pixelFormatView` as required for a differing-format view, and the renderer's output textures are `[.renderTarget, .shaderRead]`. Measured on this GPU family the view is vended anyway (probe: both usages return non-nil), so the sRGB poster path really does reach the GPU downsample here — but that is undocumented tolerance.
+            // The output pool is per-frame 4K on the hot path, and adding a usage flag there can cost lossless compression, so the spec-legal degradation is this nil: the caller falls back to the full-resolution readback, which is slower but correct.
             return nil
         }
 

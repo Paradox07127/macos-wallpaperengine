@@ -4,14 +4,12 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 
-/// Data-driven dispatch for supported builtin `effect_*` shaders; the shared
-/// half (pipeline lookup, blend/format passthrough, object-quad plumbing) lives
-/// once in `WPEMetalShaderDispatcher.dispatchEffect` below.
-///
-/// The uniform layout stays code, not data: each `bind` closure constructs the
-/// concrete hand-authored Swift struct (`WPEPulseUniforms`, …) whose field order
-/// mirrors `WPEMetalBuiltins.metal`, so `MemoryLayout<U>.stride` is still a
-/// compiler guarantee — no generic byte packing, no type-erasure alignment risk.
+/// Data-driven dispatch for supported builtin `effect_*` shaders; the shared half
+/// (pipeline lookup, blend/format passthrough, object-quad plumbing) lives once in
+/// `WPEMetalShaderDispatcher.dispatchEffect` below. The uniform layout stays code, not
+/// data: each `bind` closure constructs the concrete hand-authored Swift struct
+/// (`WPEPulseUniforms`, …) whose field order mirrors `WPEMetalBuiltins.metal`, so
+/// `MemoryLayout<U>.stride` is still a compiler guarantee — no generic byte packing, no type-erasure alignment risk.
 struct WPEEffectDispatchDescriptor: Sendable {
     /// Resolves and binds this effect's fragment textures + uniform bytes
     /// (buffer 0) onto `encoder`, returning the primary (slot-0) texture the
@@ -86,12 +84,10 @@ struct WPEEffectDispatchDescriptor: Sendable {
         return SIMD2<Float>(Float(dirVec.first ?? 0), Float(dirVec.dropFirst().first ?? 0.1))
     }
 
-    /// effect_scroll's legacy `u_Speed` lookup is NOT the standard
-    /// `floatScalar(named:)` chain: runtime `uniformValues["u_Speed"]` →
-    /// authored `constants["u_Speed"]` → authored `constants["speed"]` — the
-    /// lowercase key is consulted in `constants` ONLY, never in
-    /// `uniformValues`. Preserved verbatim (B2 pixel invariant); pinned by
-    /// `WPEMetalShaderDispatcherTests`.
+    /// effect_scroll's legacy `u_Speed` lookup is NOT the standard `floatScalar(named:)`
+    /// chain: runtime `uniformValues["u_Speed"]` → authored `constants["u_Speed"]` →
+    /// authored `constants["speed"]` — the lowercase key is consulted in `constants` ONLY,
+    /// never `uniformValues`. Preserved verbatim (B2 pixel invariant); pinned by `WPEMetalShaderDispatcherTests`.
     static func scrollSpeed(for pass: WPEPreparedRenderPass) -> SIMD2<Float> {
         let speedVec = pass.uniformValues["u_Speed"]?.vectorValue
             ?? pass.pass.constants["u_Speed"]?.vectorValue
@@ -100,12 +96,10 @@ struct WPEEffectDispatchDescriptor: Sendable {
         return SIMD2<Float>(Float(speedVec.first ?? 0.1), Float(speedVec.dropFirst().first ?? 0))
     }
 
-    /// Slot-1 opacity-mask reference chain shared by effect_opacity and
-    /// effect_waterwaves: `textureBindings[1] ?? textures[1] ?? binds[1]` —
-    /// note `binds` comes LAST here, unlike the custom-shader slot chain where
-    /// binds precede textures. `nil` ⇒ the source texture is rebound at slot 1
-    /// with the has-mask uniform cleared. Preserved verbatim (B2 pixel
-    /// invariant); pinned by `WPEMetalShaderDispatcherTests`.
+    /// Slot-1 opacity-mask reference chain shared by effect_opacity and effect_waterwaves:
+    /// `textureBindings[1] ?? textures[1] ?? binds[1]` — `binds` comes LAST here, unlike the
+    /// custom-shader slot chain where binds precede textures. `nil` ⇒ the source texture is
+    /// rebound at slot 1 with the has-mask uniform cleared. Preserved verbatim (B2 pixel invariant); pinned by `WPEMetalShaderDispatcherTests`.
     static func opacityMaskReference(for pass: WPEPreparedRenderPass) -> WPETextureReference? {
         pass.textureBindings[1] ?? pass.pass.textures[1] ?? pass.pass.binds[1]
     }

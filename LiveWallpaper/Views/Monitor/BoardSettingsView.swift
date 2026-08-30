@@ -66,10 +66,8 @@ struct BoardSettingsView: View {
 
     /// Its own card: these grants exist only for the Agent Session instrument,
     /// and they are the one setting here that touches files outside the app.
-    ///
-    /// The title names what is being read, not who reads it: "Agent Access"
-    /// told a collapsed reader nothing about the transcripts on their own disk
-    /// that it opens.
+    /// The title names what is being read, not who reads it: "Agent Access" told a collapsed
+    /// reader nothing about the transcripts on their own disk that it opens.
     private var authorizationSection: some View {
         GroupBox {
             CollapsibleSection(
@@ -220,7 +218,7 @@ struct BoardSettingsView: View {
             iconColor: .teal,
             title: "Widget tint",
             valueSubtitle: widgetTintHex.isEmpty
-                ? String(localized: "Default graphite", comment: "Widget tint row value when no custom colour is set.")
+                ? String(localized: "Default graphite", bundle: .appLanguage, comment: "Widget tint row value when no custom colour is set.")
                 : widgetTintHex,
             info: "Recolours every widget card. The designed top-to-bottom falloff is kept, so the panel still reads as a lit surface rather than a flat rectangle."
         ) {
@@ -425,7 +423,7 @@ struct BoardSettingsView: View {
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "monitor-layout.json"
         panel.canCreateDirectories = true
-        panel.title = String(localized: "Export Monitor Layout", comment: "Save-panel title for exporting a monitor board layout.")
+        panel.title = String(localized: "Export Monitor Layout", bundle: .appLanguage, comment: "Save-panel title for exporting a monitor board layout.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let encoder = JSONEncoder()
@@ -441,7 +439,7 @@ struct BoardSettingsView: View {
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.title = String(localized: "Import Monitor Layout", comment: "Open-panel title for importing a monitor board layout.")
+        panel.title = String(localized: "Import Monitor Layout", bundle: .appLanguage, comment: "Open-panel title for importing a monitor board layout.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let data = try Data(contentsOf: url)
@@ -461,10 +459,10 @@ struct BoardSettingsView: View {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = isImport
-            ? String(localized: "Couldn't import that layout", comment: "Alert title when a monitor layout file fails to import.")
-            : String(localized: "Couldn't export the layout", comment: "Alert title when a monitor layout file fails to export.")
+            ? String(localized: "Couldn't import that layout", bundle: .appLanguage, comment: "Alert title when a monitor layout file fails to import.")
+            : String(localized: "Couldn't export the layout", bundle: .appLanguage, comment: "Alert title when a monitor layout file fails to export.")
         alert.informativeText = error.localizedDescription
-        alert.addButton(withTitle: String(localized: "OK", comment: "Dismiss button on the monitor layout error alert."))
+        alert.addButton(withTitle: String(localized: "OK", bundle: .appLanguage, comment: "Dismiss button on the monitor layout error alert."))
         if let window = hostWindow() {
             alert.beginSheetModal(for: window, completionHandler: nil)
         } else {

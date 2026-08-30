@@ -42,21 +42,17 @@ final actor NowPlayingSource: MonitorDataSource {
     /// Reads a player's playhead in seconds, or nil if it cannot be read.
     typealias PositionProvider = @MainActor @Sendable (String) async -> Double?
 
-    /// The widget interpolates between anchors on its own wall clock, so this
-    /// only has to correct drift and catch scrubs made inside the player. Five
-    /// seconds is one Apple Event per five seconds while a track is up — and
-    /// only while an overlay is actually alive, because this lives on the
-    /// pipeline-scoped source rather than the app-lifetime monitor.
+    /// The widget interpolates between anchors on its own wall clock, so this only corrects drift and
+    /// catches in-player scrubs. 5 s = one Apple Event per 5 s while a track is up, and only while an
+    /// overlay is alive — this lives on the pipeline-scoped source, not the app-lifetime monitor.
     static let defaultPositionPollInterval: Duration = .seconds(5)
 
     private let positionProvider: PositionProvider
     private let positionPollInterval: Duration
     private var positionTask: Task<Void, Never>?
-    /// The *track* the running poll loop is asking about, not just the player.
-    /// Keying on the player alone meant skipping to the next song inside one
-    /// app left the loop untouched — no leading tick, so the bar stayed blank
-    /// until the next interval — and let a reply that was already in flight for
-    /// the previous song be written onto the new one.
+    /// The *track* the poll loop is asking about, not just the player: keying on the player alone left the
+    /// loop untouched across an in-app skip — no leading tick, so the bar stayed blank until the next
+    /// interval — and let an in-flight reply for the previous song land on the new one.
     private var positionPollKey: String?
 
     private static let defaultPositionProvider: PositionProvider = { bundleID in
@@ -91,12 +87,10 @@ final actor NowPlayingSource: MonitorDataSource {
             // Leading tick: the bar should appear on the track change, not one
             // interval into the song.
             while !Task.isCancelled {
-                // Stamped before the round trip, not after. An Apple Event is
-                // synchronous IPC, and a reply that was already in flight when
-                // the user scrubbed would otherwise land wearing a *newer*
-                // timestamp than the scrub — which is exactly the test the
-                // widget uses to decide the player has moved on, so the bar
-                // snapped back to where it was before the drag.
+                // Stamped before the round trip, not after: an Apple Event is synchronous IPC, so a
+                // reply already in flight when the user scrubbed would otherwise land with a *newer*
+                // timestamp than the scrub — exactly the test the widget uses to decide the player moved
+                // on, snapping the bar back to before the drag.
                 let issuedAt = Date().timeIntervalSince1970
                 let seconds = await provider(bundleID)
                 guard !Task.isCancelled else { return }
@@ -180,22 +174,18 @@ final actor NowPlayingSource: MonitorDataSource {
     }
 
     private func push(_ state: MonitorNowPlayingState, ordinal: UInt64) async {
-        // The MainActor→actor hops are unordered Tasks; the ordinal keeps a
-        // stale frame from overwriting a newer one. The generation is re-read
-        // after every suspension: this actor yields at the cache lookup and at
-        // the sink call, and a stop() interleaved there must win — otherwise a
-        // stopped source publishes into a dead hub and re-retains the audio
-        // tap with nobody left to release it (both review models hit this).
+        // MainActor→actor hops are unordered Tasks; the ordinal keeps a stale frame from overwriting a newer
+        // one. Generation is re-read after every suspension (this actor yields at the cache lookup and the
+        // sink call), so an interleaved stop() must win — otherwise a stopped source publishes into a dead
+        // hub and re-retains the audio tap with nobody left to release it (both review models hit this).
         let gen = generation
         guard let sink else { return }
         if let last = lastForwardedOrdinal, ordinal <= last { return }
         lastForwardedOrdinal = ordinal
 
-        // Claiming the ordinal above is not enough: this actor suspends below,
-        // and a newer frame that publishes during the suspension has already
-        // moved the world on. Every resume re-checks that this frame is still
-        // the newest, or it would overwrite the newer state — and, worse, drive
-        // audio demand from a phase that is no longer current.
+        // Claiming the ordinal above isn't enough: this actor suspends below, and a newer frame can publish
+        // during the suspension. Every resume re-checks this frame is still the newest, or it would
+        // overwrite the newer state — and drive audio demand from a stale phase.
         func stillCurrent() -> Bool { generation == gen && lastForwardedOrdinal == ordinal }
 
         var state = state
@@ -265,11 +255,10 @@ final actor NowPlayingSource: MonitorDataSource {
         await audioDemand(wanted)
     }
 
-    /// Releases the per-track fetch token whatever the outcome. Leaving it set
-    /// on failure made a miss permanent for the process's life; clearing it is
-    /// safe only because `NowPlayingArtworkFetcher` keeps its own TTL'd negative
-    /// cache — that, not this token, is what stops a failed key from hitting the
-    /// network again on the very next frame.
+    /// Releases the per-track fetch token whatever the outcome — leaving it set on failure made a miss
+    /// permanent for the process's life. Clearing it is safe only because `NowPlayingArtworkFetcher` keeps
+    /// its own TTL'd negative cache; that, not this token, is what stops a failed key from hitting the
+    /// network again next frame.
     private func finishArtworkFetch(_ data: Data?, key: String) async {
         if artworkTaskKey == key { artworkTaskKey = nil }
         guard let data else { return }

@@ -2,6 +2,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import LiveWallpaperCore
 import LiveWallpaperProWPE
 
 /// Scene asset resolver via `WPESceneAssetProvider` (directory or in-place scene.pkg).
@@ -232,7 +233,7 @@ struct SceneResourceResolver: Sendable {
             return relativePath
         }
         if depth >= 4 {
-            throw ResolveError.materialUnresolved(reason: "Reference depth exceeded for \(relativePath)")
+            throw ResolveError.materialUnresolved(reason: String(localized: "Reference depth exceeded for \(relativePath)", bundle: .appLanguage, comment: "Scene asset resolve failure. Placeholder is the reference path."))
         }
 
         let payload: Data
@@ -244,7 +245,7 @@ struct SceneResourceResolver: Sendable {
             throw ResolveError.pathEscape
         } catch {
             if relativePath.contains("models/util/") {
-                throw ResolveError.materialUnresolved(reason: "Built-in WPE layer \(relativePath) is not available on macOS")
+                throw ResolveError.materialUnresolved(reason: String(localized: "Built-in WPE layer \(relativePath) is not available on macOS", bundle: .appLanguage, comment: "Scene asset resolve failure. Placeholder is the layer path."))
             }
             throw ResolveError.fileMissing
         }
@@ -252,10 +253,10 @@ struct SceneResourceResolver: Sendable {
         do {
             parsed = try JSONSerialization.jsonObject(with: payload, options: [.fragmentsAllowed])
         } catch {
-            throw ResolveError.materialUnresolved(reason: "Couldn't parse \(relativePath) as JSON")
+            throw ResolveError.materialUnresolved(reason: String(localized: "Couldn't parse \(relativePath) as JSON", bundle: .appLanguage, comment: "Scene asset resolve failure. Placeholder is the file path."))
         }
         guard let dict = parsed as? [String: Any] else {
-            throw ResolveError.materialUnresolved(reason: "\(relativePath) is not a JSON object")
+            throw ResolveError.materialUnresolved(reason: String(localized: "\(relativePath) is not a JSON object", bundle: .appLanguage, comment: "Scene asset resolve failure. Placeholder is the file path."))
         }
 
         if let materialPath = dict["material"] as? String, !materialPath.isEmpty {
@@ -266,7 +267,7 @@ struct SceneResourceResolver: Sendable {
             return "materials/\(textureName).tex"
         }
 
-        throw ResolveError.materialUnresolved(reason: "\(relativePath) has no `material` or `passes[].textures[]`")
+        throw ResolveError.materialUnresolved(reason: String(localized: "\(relativePath) has no `material` or `passes[].textures[]`", bundle: .appLanguage, comment: "Scene asset resolve failure. Placeholder is the file path."))
     }
 
     private func firstTextureName(in dict: [String: Any]) -> String? {
@@ -284,7 +285,8 @@ struct SceneResourceResolver: Sendable {
         return nil
     }
 
-    /// Decode-backed probe used by `WallpaperEngineImportService` during capability tier classification.
+    /// Decode-backed probe. Reached only from `probeRenderableImage` (DEBUG); the import
+    /// service classified tiers through it until that path was dropped.
     func probeImage(relativePath: String) -> Result<WPETexInfo, ResolveError> {
         guard !relativePath.isEmpty else { return .failure(.fileMissing) }
         guard provider.exists(atRelativePath: relativePath) else {

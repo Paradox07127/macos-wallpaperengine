@@ -122,11 +122,9 @@ struct WPESceneCustomSettingsCard: View {
         Task { @MainActor in await commitDescriptor(descriptor.applyingPreset(preset)) }
     }
 
-    /// Pushes a descriptor the preset controls produced. Drops any coalesced
-    /// slider commit first: it was computed against the layer being replaced.
-    /// Awaited rather than fired: callers that must have this on disk before
-    /// something else observes the change (saving over the applied preset) had
-    /// no way to know when the write landed.
+    /// Pushes a descriptor the preset controls produced. Drops any coalesced slider commit
+    /// first (it was computed against the layer being replaced). Awaited rather than fired:
+    /// callers needing this on disk before something else observes the change (saving over the applied preset) had no way to know when the write landed.
     private func commitDescriptor(_ next: SceneDescriptor) async {
         commitTask?.cancel()
         commitTask = nil
@@ -138,9 +136,7 @@ struct WPESceneCustomSettingsCard: View {
 
     /// Snapshots the preset layer *and* the increment, so the new preset alone
     /// reproduces what is on screen and the increment can be dropped.
-    ///
-    /// Reusing the id of a same-named preset for this wallpaper replaces it
-    /// rather than adding a second entry the picker cannot tell apart.
+    /// Reusing the id of a same-named preset for this wallpaper replaces it rather than adding a second entry the picker cannot tell apart.
     private func saveAsPreset(name: String) async {
         await commitPendingEditorState()
         let existing = SettingsManager.shared.existingLocalScenePreset(
@@ -157,12 +153,10 @@ struct WPESceneCustomSettingsCard: View {
         // the new snapshot back on top of the increment this is discarding, in a
         // Task that races us.
         await SettingsManager.shared.registerScenePreset(preset) {
-            // The saved preset already reproduces what is on screen, so the
-            // increment is spent. Not `applyingPreset`: overwriting the preset
-            // that is currently applied lands in its same-id branch, which keeps
-            // the increment on purpose (re-picking in the picker is not a reset) —
-            // and here that would pin this display to today's values the next time
-            // the preset is edited anywhere else.
+            // The saved preset already reproduces what's on screen, so the increment is spent.
+            // Not `applyingPreset`: overwriting the currently-applied preset lands in its
+            // same-id branch, which keeps the increment on purpose (re-picking isn't a reset)
+            // — here that would pin this display to today's values next time the preset is edited elsewhere.
             await commitDescriptor(
                 descriptor
                     .withPresetLayer(id: preset.id, snapshot: preset.values)
@@ -179,11 +173,8 @@ struct WPESceneCustomSettingsCard: View {
 
     /// Drops the preset layer from this descriptor first, so the card is not
     /// left pointing at an id the library no longer has.
-    ///
-    /// Layer only — the increment stays, which is what the confirmation
-    /// promises and what every other display gets from
-    /// `refreshingPresetSnapshot`. `applyingPreset(nil)` is the picker's "No
-    /// preset", and that one does clear the increment.
+    /// Layer only — the increment stays, matching the confirmation's promise and what every
+    /// other display gets from `refreshingPresetSnapshot`. `applyingPreset(nil)` is the picker's "No preset", and that one does clear the increment.
     private func deletePreset(_ preset: ScenePreset) {
         if descriptor.presetID == preset.id {
             Task { @MainActor in await commitDescriptor(descriptor.withPresetLayer(id: nil, snapshot: [:])) }
@@ -340,11 +331,9 @@ struct WPESceneCustomSettingsCard: View {
         )
     }
 
-    /// `screenID` is part of the identity because two displays can play the very
-    /// same scene. Without it, switching between them left `editor.overrides`
-    /// holding the first display's increment while the binding already pointed
-    /// at the second — the next commit then wrote one display's edits onto the
-    /// other.
+    /// `screenID` is part of the identity because two displays can play the very same scene.
+    /// Without it, switching between them left `editor.overrides` holding the first display's
+    /// increment while the binding pointed at the second — the next commit wrote one display's edits onto the other.
     struct SceneIdentity: Equatable {
         let screenID: CGDirectDisplayID
         let workshopID: String
@@ -602,11 +591,9 @@ struct WPESceneCustomSettingsCard: View {
         Task { @MainActor in await commitPendingEditorState() }
     }
 
-    /// Awaited like `commitDescriptor`, for the same reason: `updateSceneDescriptor`
-    /// arbitrates by the generation taken when it *starts*, so a later-starting
-    /// call always wins. An un-awaited flush here started after the preset commit
-    /// that follows it and overwrote it — the card showed the preset while the
-    /// stored configuration kept the increment and no `presetID`.
+    /// Awaited like `commitDescriptor`, for the same reason: `updateSceneDescriptor` arbitrates
+    /// by the generation taken when it *starts*, so a later-starting call always wins. An
+    /// un-awaited flush here started after the preset commit that follows it and overwrote it — the card showed the preset while the stored configuration kept the increment and no `presetID`.
     private func commitEditorState() async {
         let next = descriptor.withPropertyOverrides(editor.overrides)
         guard descriptor != next else { return }

@@ -158,11 +158,10 @@ final class WPERenderThread: @unchecked Sendable {
 
     // MARK: - Adaptive QoS
     //
-    // All three entries mutate `adaptiveQoS` and must run ON this render thread —
-    // that is where `pthread_set_qos_class_self_np` takes effect and where the
-    // serial-thread guarantee makes the lock-free state machine safe. The frame
-    // path (`WPEDisplayRenderActor.renderFrame`) and load/reload tails already run
-    // here; debug builds assert it.
+    // All three entries mutate `adaptiveQoS` and must run ON this render thread — that's
+    // where `pthread_set_qos_class_self_np` takes effect and the serial-thread guarantee
+    // makes the lock-free state machine safe. The frame path
+    // (`WPEDisplayRenderActor.renderFrame`) and load/reload tails already run here; debug builds assert it.
 
     /// True once the OS thread's QoS has been synced to the state machine's tier —
     /// deferred to the first frame so the thread's `.userInteractive` base holds

@@ -178,31 +178,31 @@ struct FallbackCard: View {
         case .unsupportedType:
             switch origin.originalType {
             case .scene:
-                return String(localized: "Unsupported scene format", defaultValue: "Unsupported scene format", comment: "Wallpaper Engine fallback warning title.")
+                return String(localized: "Unsupported scene format", defaultValue: "Unsupported scene format", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
             case .application:
-                return String(localized: "Executable wallpapers can't be imported", defaultValue: "Executable wallpapers can't be imported", comment: "Wallpaper Engine fallback warning title.")
+                return String(localized: "Executable wallpapers can't be imported", defaultValue: "Executable wallpapers can't be imported", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
             default:
-                return String(localized: "This wallpaper type is not supported", defaultValue: "This wallpaper type is not supported", comment: "Wallpaper Engine fallback warning title.")
+                return String(localized: "This wallpaper type is not supported", defaultValue: "This wallpaper type is not supported", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
             }
         case .sceneParseFailed:
-            return String(localized: "Couldn't read scene.json", defaultValue: "Couldn't read scene.json", comment: "Wallpaper Engine fallback warning title.")
+            return String(localized: "Couldn't read scene.json", defaultValue: "Couldn't read scene.json", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .sceneShaderUnsupported:
-            return String(localized: "Scene uses unsupported shaders", defaultValue: "Scene uses unsupported shaders", comment: "Wallpaper Engine fallback warning title.")
+            return String(localized: "Scene uses unsupported shaders", defaultValue: "Scene uses unsupported shaders", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .sceneResourceMissing:
-            return String(localized: "Some scene assets are missing", defaultValue: "Some scene assets are missing", comment: "Wallpaper Engine fallback warning title.")
+            return String(localized: "Some scene assets are missing", defaultValue: "Some scene assets are missing", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .missingDependency(let ids):
             if ids.count == 1 {
-                return String(localized: "Missing 1 Workshop dependency", defaultValue: "Missing 1 Workshop dependency", comment: "Wallpaper Engine fallback warning title.")
+                return String(localized: "Missing 1 Workshop dependency", defaultValue: "Missing 1 Workshop dependency", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
             }
-            return String(localized: "Missing \(ids.count) Workshop dependencies", comment: "Wallpaper Engine fallback warning title. The placeholder is the missing dependency count.")
+            return String(localized: "Missing \(ids.count) Workshop dependencies", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title. The placeholder is the missing dependency count.")
         case .requiresWindowsPlugin:
-            return String(localized: "Windows plugin required", defaultValue: "Windows plugin required", comment: "Wallpaper Engine fallback warning title.")
+            return String(localized: "Windows plugin required", defaultValue: "Windows plugin required", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .texContainerUnsupported:
-            return String(localized: "Unsupported texture container", defaultValue: "Unsupported texture container", comment: "Wallpaper Engine fallback warning title.")
+            return String(localized: "Unsupported texture container", defaultValue: "Unsupported texture container", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .texUnsupportedFormat:
-            return String(localized: "Unsupported image format", defaultValue: "Unsupported image format", comment: "Wallpaper Engine fallback warning title.")
+            return String(localized: "Unsupported image format", defaultValue: "Unsupported image format", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .texDecodeFailed:
-            return String(localized: "Couldn't read texture file", defaultValue: "Couldn't read texture file", comment: "Wallpaper Engine fallback warning title.")
+            return String(localized: "Couldn't read texture file", defaultValue: "Couldn't read texture file", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         }
     }
 
@@ -211,35 +211,35 @@ struct FallbackCard: View {
         case .unsupportedType:
             switch origin.originalType {
             case .scene:
-                return String(localized: "This scene requires rendering features that Loomscreen does not support. Other wallpapers continue playing.", defaultValue: "This scene requires rendering features that Loomscreen does not support. Other wallpapers continue playing.", comment: "Scene fallback warning body.")
+                return String(localized: "This scene requires rendering features that Loomscreen does not support. Other wallpapers continue playing.", defaultValue: "This scene requires rendering features that Loomscreen does not support. Other wallpapers continue playing.", bundle: .appLanguage, comment: "Scene fallback warning body.")
             case .application:
-                return String(localized: "For your security, LiveWallpaper does not run executable workshop projects.", defaultValue: "For your security, LiveWallpaper does not run executable workshop projects.", comment: "Wallpaper Engine fallback warning body.")
+                return String(localized: "For your security, LiveWallpaper does not run executable workshop projects.", defaultValue: "For your security, LiveWallpaper does not run executable workshop projects.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
             default:
-                return String(localized: "We couldn't recognize this project type.", defaultValue: "We couldn't recognize this project type.", comment: "Project fallback warning body.")
+                return String(localized: "We couldn't recognize this project type.", defaultValue: "We couldn't recognize this project type.", bundle: .appLanguage, comment: "Project fallback warning body.")
             }
         case .sceneParseFailed(let detail):
-            return String(localized: "The author's scene.json couldn't be parsed: \(detail)", comment: "Wallpaper Engine fallback warning body. The placeholder is parser detail.")
+            return String(localized: "The author's scene.json couldn't be parsed: \(detail)", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body. The placeholder is parser detail.")
         case .sceneShaderUnsupported:
-            return String(localized: "This scene uses a custom shader the renderer couldn't translate to Metal. Try re-downloading the project in Steam.", defaultValue: "This scene uses a custom shader the renderer couldn't translate to Metal. Try re-downloading the project in Steam.", comment: "Wallpaper Engine fallback warning body.")
+            return String(localized: "This scene uses a custom shader the renderer couldn't translate to Metal. Try re-downloading the project in Steam.", defaultValue: "This scene uses a custom shader the renderer couldn't translate to Metal. Try re-downloading the project in Steam.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
         case .sceneResourceMissing:
-            return String(localized: "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it.", defaultValue: "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it.", comment: "Wallpaper Engine fallback warning body.")
+            return String(localized: "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it.", defaultValue: "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
         case .missingDependency:
-            return String(localized: "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder.", defaultValue: "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder.", comment: "Wallpaper Engine fallback warning body.")
+            return String(localized: "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder.", defaultValue: "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
         case .requiresWindowsPlugin:
-            return String(localized: "This wallpaper bundles a Windows `.dll` plugin (e.g. an audio visualizer or screensaver runtime). macOS can't load Windows native code, so the project is permanently unsupported here.", defaultValue: "This wallpaper bundles a Windows `.dll` plugin (e.g. an audio visualizer or screensaver runtime). macOS can't load Windows native code, so the project is permanently unsupported here.", comment: "Wallpaper Engine fallback warning body.")
+            return String(localized: "This wallpaper bundles a Windows `.dll` plugin (e.g. an audio visualizer or screensaver runtime). macOS can't load Windows native code, so the project is permanently unsupported here.", defaultValue: "This wallpaper bundles a Windows `.dll` plugin (e.g. an audio visualizer or screensaver runtime). macOS can't load Windows native code, so the project is permanently unsupported here.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
         case .texContainerUnsupported(let magic):
-            return String(localized: "This wallpaper uses an unsupported `.tex` container (\(magic)).", comment: "Wallpaper Engine fallback warning body. The placeholder is a texture container magic value.")
+            return String(localized: "This wallpaper uses an unsupported `.tex` container (\(magic)).", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body. The placeholder is a texture container magic value.")
         case .texUnsupportedFormat(let code):
             switch code {
             case 8:
-                return String(localized: "Texture format 8 (RGBA1010102) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", defaultValue: "Texture format 8 (RGBA1010102) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", comment: "Texture fallback warning body.")
+                return String(localized: "Texture format 8 (RGBA1010102) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", defaultValue: "Texture format 8 (RGBA1010102) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", bundle: .appLanguage, comment: "Texture fallback warning body.")
             case -1:
-                return String(localized: "This format requires Metal-backed GPU decoding that this Mac doesn't support. Try rendering on a newer GPU.", defaultValue: "This format requires Metal-backed GPU decoding that this Mac doesn't support. Try rendering on a newer GPU.", comment: "Wallpaper Engine fallback warning body.")
+                return String(localized: "This format requires Metal-backed GPU decoding that this Mac doesn't support. Try rendering on a newer GPU.", defaultValue: "This format requires Metal-backed GPU decoding that this Mac doesn't support. Try rendering on a newer GPU.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
             default:
-                return String(localized: "Texture format \(code) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", comment: "Texture fallback warning body. The placeholder is a texture format code.")
+                return String(localized: "Texture format \(code) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", bundle: .appLanguage, comment: "Texture fallback warning body. The placeholder is a texture format code.")
             }
         case .texDecodeFailed(let detail):
-            return String(localized: "A texture failed to decode (\(detail)). Re-downloading the wallpaper in Steam usually fixes it.", comment: "Wallpaper Engine fallback warning body. The placeholder is decode detail.")
+            return String(localized: "A texture failed to decode (\(detail)). Re-downloading the wallpaper in Steam usually fixes it.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body. The placeholder is decode detail.")
         }
     }
 
@@ -272,28 +272,6 @@ extension FallbackReason {
              .sceneResourceMissing,
              .texDecodeFailed:
             return DesignTokens.Colors.Status.caution
-        }
-    }
-
-    /// Whether a Wallpaper Engine install could plausibly be what's missing.
-    ///
-    /// Only unresolved resources qualify. A Windows plugin, an undecodable
-    /// texture format, a scene we couldn't parse, or an unsubscribed Workshop
-    /// dependency are all unaffected by the shared `assets/` folder — pointing
-    /// those at a multi-gigabyte download would send the user down a dead end.
-    var mightBeMissingEngineAssets: Bool {
-        switch self {
-        case .sceneResourceMissing:
-            return true
-        case .unsupportedType,
-             .sceneParseFailed,
-             .sceneShaderUnsupported,
-             .missingDependency,
-             .requiresWindowsPlugin,
-             .texContainerUnsupported,
-             .texUnsupportedFormat,
-             .texDecodeFailed:
-            return false
         }
     }
 

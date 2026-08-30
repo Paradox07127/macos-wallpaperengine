@@ -52,23 +52,31 @@ struct PaneView: View {
             consumePendingDeepLink()
         }
         .sheet(isPresented: $isShowingOnboarding) {
-            OnboardingSheet(
-                onConfigureOnline: {
-                    if !services.hasWebAPIKey { isShowingKeyEntry = true }
-                },
-                onDownloadByLink: { isShowingPasteSheet = true }
-            )
+            AppLanguageScope(defaults: .appScoped()) {
+                OnboardingSheet(
+                    onConfigureOnline: {
+                        if !services.hasWebAPIKey { isShowingKeyEntry = true }
+                    },
+                    onDownloadByLink: { isShowingPasteSheet = true }
+                )
+            }
         }
         .sheet(isPresented: $isShowingPasteSheet) {
-            PasteSheet()
+            AppLanguageScope(defaults: .appScoped()) {
+                PasteSheet()
+            }
         }
         .sheet(isPresented: $isShowingKeyEntry) {
-            SteamWebAPIKeyEntrySheet(services: services) {
-                Task { await services.refreshAPIKeyStatus() }
+            AppLanguageScope(defaults: .appScoped()) {
+                SteamWebAPIKeyEntrySheet(services: services) {
+                    Task { await services.refreshAPIKeyStatus() }
+                }
             }
         }
         .sheet(isPresented: $isShowingInstallConsent) {
-            SteamCMDSetupSheet(onConfirmManagedInstall: { setupController.runManagedInstall() })
+            AppLanguageScope(defaults: .appScoped()) {
+                SteamCMDSetupSheet(onConfirmManagedInstall: { setupController.runManagedInstall() })
+            }
         }
         // Presented off local state, not off `setupError != nil`: a Binding
         // whose setter clears the error runs on *every* dismissal, including
@@ -197,11 +205,9 @@ struct PaneView: View {
     /// to drop its progress state during that window.
     private var isInstallingSteamCMD: Bool { setupController.isSteamCMDBusy }
 
-    /// `anchor` defaults to the API-key section, which is where the Installed
-    /// tab's "Configure" wants to land. A setup failure passes
-    /// `.workshopConnection` instead: `.workshopSetup` is the key section, and
-    /// with the key moved to the bottom of the page it scrolled past the rows
-    /// the error was about.
+    /// `anchor` defaults to the API-key section, where the Installed tab's "Configure" wants to
+    /// land. A setup failure passes `.workshopConnection` instead: `.workshopSetup` is the key
+    /// section, and with the key moved to the bottom of the page it scrolled past the rows the error was about.
     private func openWorkshopSettings(anchor: SettingsSearchAnchor = .workshopSetup) {
         NotificationCenter.default.post(
             name: .openSettingsSection,
@@ -223,9 +229,9 @@ enum WorkshopPaneTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .installed:
-            return String(localized: "Installed", comment: "Workshop pane tab for the locally installed library.")
+            return String(localized: "Installed", bundle: .appLanguage, comment: "Workshop pane tab for the locally installed library.")
         case .browseOnline:
-            return String(localized: "Workshop", comment: "Workshop pane tab for the online Steam Workshop catalog (zh: 创意工坊).")
+            return String(localized: "Workshop", bundle: .appLanguage, comment: "Workshop pane tab for the online Steam Workshop catalog (zh: 创意工坊).")
         }
     }
 }
@@ -271,8 +277,10 @@ struct WorkshopPaneHeader: View {
         )
         .task { await setupController.loadAccounts() }
         .sheet(isPresented: $showingSignIn) {
-            SteamSignInSheet { accountName in
-                setupController.adoptSignedInAccount(accountName)
+            AppLanguageScope(defaults: .appScoped()) {
+                SteamSignInSheet { accountName in
+                    setupController.adoptSignedInAccount(accountName)
+                }
             }
         }
     }
@@ -340,14 +348,14 @@ struct WorkshopPaneHeader: View {
     private var headerStat: String {
         switch selectedTab {
         case .installed:
-            return String(localized: "\(installedCount) installed", comment: "Workshop header stat: number of installed wallpapers.")
+            return String(localized: "\(installedCount) installed", bundle: .appLanguage, comment: "Workshop header stat: number of installed wallpapers.")
         case .browseOnline:
             if !services.hasWebAPIKey {
                 // Browse still works without a key — it just runs off Valve's
                 // public page, which issues no Web API requests to count.
-                return String(localized: "Browsing without an API key", comment: "Workshop header stat when no Steam Web API key is set and Browse uses Valve's public search page.")
+                return String(localized: "Browsing without an API key", bundle: .appLanguage, comment: "Workshop header stat when no Steam Web API key is set and Browse uses Valve's public search page.")
             }
-            return String(localized: "\(WorkshopRequestCounter.countForToday()) API requests today", comment: "Workshop header stat: Steam Web API requests issued today.")
+            return String(localized: "\(WorkshopRequestCounter.countForToday()) API requests today", bundle: .appLanguage, comment: "Workshop header stat: Steam Web API requests issued today.")
         }
     }
 
@@ -361,11 +369,9 @@ struct WorkshopPaneHeader: View {
             .contentShape(Circle())
     }
 
-    /// The glass disc is a sibling layer behind the control rather than a
-    /// modifier on it. `Menu` is an AppKit popup: it swallows `glassEffect`
-    /// applied to the menu *and* applied inside the menu's label, so the
-    /// account control kept coming out a bare glyph beside its glass twin.
-    /// Drawn on plain content here, one disc serves button and menu alike.
+    /// The glass disc is a sibling layer behind the control, not a modifier on it: `Menu` is an
+    /// AppKit popup that swallows `glassEffect` applied to it or to its label, so the account
+    /// control kept coming out a bare glyph beside its glass twin. One disc, drawn on plain content, serves button and menu alike.
     private func headerAction<C: View>(@ViewBuilder _ control: () -> C) -> some View {
         ZStack {
             Color.clear

@@ -161,12 +161,10 @@ final class WPEMetalFXSpatialUpscaler {
         self.library = library
     }
 
-    /// Drops the cached scaler and its internal working textures (4K-class once
-    /// the drawable is). The cache is keyed by input/output pixel size, so a
-    /// render-scale change or a demote to native never overwrites it — nothing
-    /// asks for the old key again and `encodeIfEligible` returns at
-    /// `preScalerRejection` before it could. `failedAttempts` and
-    /// `alphaFixPipelines` stay: both are tiny and expensive to relearn.
+    /// Drops the cached scaler and its internal working textures (4K-class once the
+    /// drawable is). The cache is keyed by input/output pixel size, so a render-scale
+    /// change or a demote to native never overwrites it — nothing asks for the old key
+    /// again, and `encodeIfEligible` returns at `preScalerRejection` first. `failedAttempts`/`alphaFixPipelines` stay: both are tiny and expensive to relearn.
     func releaseCachedScaler() { cachedScaler = nil }
 
     /// Returns false (encoded nothing) on any rejection so the caller runs the present pass.

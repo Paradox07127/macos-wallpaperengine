@@ -208,10 +208,10 @@ struct MenuBarContent: View {
     /// Thermal pressure has no percent — short word; over-wide localized values truncate.
     private func thermalShortLabel(for state: ProcessInfo.ThermalState) -> String {
         switch state {
-        case .nominal:  return AppLanguagePreference.localizedString("Normal", defaultValue: "Normal")
-        case .fair:     return AppLanguagePreference.localizedString("Warm", defaultValue: "Warm")
-        case .serious:  return AppLanguagePreference.localizedString("Hot", defaultValue: "Hot")
-        case .critical: return AppLanguagePreference.localizedString("Crit", defaultValue: "Crit")
+        case .nominal:  return String(localized: "Normal", bundle: .appLanguage)
+        case .fair:     return String(localized: "Warm", bundle: .appLanguage)
+        case .serious:  return String(localized: "Hot", bundle: .appLanguage)
+        case .critical: return String(localized: "Crit", bundle: .appLanguage)
         @unknown default: return "—"
         }
     }
@@ -310,7 +310,7 @@ struct MenuBarContent: View {
 
         guard let typeText = wallpaperTypeText(for: summary.wallpaperType) else {
             return AttributedString(source.isEmpty
-                ? AppLanguagePreference.localizedString("Not configured")
+                ? String(localized: "Not configured", bundle: .appLanguage)
                 : source)
         }
 
@@ -340,7 +340,7 @@ struct MenuBarContent: View {
 
         guard let typeText = wallpaperTypeText(for: summary.wallpaperType) else {
             return source.isEmpty
-                ? AppLanguagePreference.localizedString("Not configured")
+                ? String(localized: "Not configured", bundle: .appLanguage)
                 : source
         }
 
@@ -379,11 +379,11 @@ struct MenuBarContent: View {
     private func wallpaperTypeText(for type: WallpaperType?) -> String? {
         switch type {
         case .video:
-            return AppLanguagePreference.localizedString("Video")
+            return String(localized: "Video", bundle: .appLanguage)
         case .html:
-            return AppLanguagePreference.localizedString("Web")
+            return String(localized: "Web", bundle: .appLanguage)
         case .scene:
-            return AppLanguagePreference.localizedString("Scene")
+            return String(localized: "Scene", bundle: .appLanguage)
         case nil:
             return nil
         }
@@ -548,19 +548,19 @@ private enum DisplayVisualState: Equatable {
     var accessibilityLabel: String {
         switch self {
         case .active:
-            return AppLanguagePreference.localizedString("active")
+            return String(localized: "active", bundle: .appLanguage)
         case .paused:
-            return AppLanguagePreference.localizedString("paused")
+            return String(localized: "paused", bundle: .appLanguage)
         case .policySuspended:
-            return AppLanguagePreference.localizedString("Paused by system")
+            return String(localized: "Paused by system", bundle: .appLanguage)
         case .restoring:
-            return AppLanguagePreference.localizedString("Restoring")
+            return String(localized: "Restoring", bundle: .appLanguage)
         case .off:
-            return AppLanguagePreference.localizedString("off")
+            return String(localized: "off", bundle: .appLanguage)
         case .error:
-            return AppLanguagePreference.localizedString("error")
+            return String(localized: "error", bundle: .appLanguage)
         case .inactive:
-            return AppLanguagePreference.localizedString("idle")
+            return String(localized: "idle", bundle: .appLanguage)
         }
     }
 }
@@ -840,12 +840,10 @@ private struct MenuBarWindowChromeClearer: NSViewRepresentable {
         window.isOpaque = false
         window.backgroundColor = .clear
 
-        // The chrome is a sibling of our content inside the window's frame view; the
-        // previous recursive walk started at `contentView` and so only ever searched
-        // our own SwiftUI subtree. Whatever it missed drew a second rounded backdrop
-        // under the glass shell — a non-concentric arc at the four corners.
-        // Matched by position, not by class, so it holds however AppKit backs the
-        // popover: everything outside `contentView` is chrome.
+        // The chrome is a sibling of our content inside the window's frame view; the previous
+        // recursive walk started at `contentView` and only searched our own SwiftUI subtree —
+        // what it missed drew a second rounded backdrop under the glass shell (a non-concentric
+        // arc at the four corners). Matched by position, not class: everything outside `contentView` is chrome, however AppKit backs the popover.
         guard let content = window.contentView, let frameView = content.superview else { return }
         frameView.wantsLayer = true
         frameView.layer?.backgroundColor = NSColor.clear.cgColor

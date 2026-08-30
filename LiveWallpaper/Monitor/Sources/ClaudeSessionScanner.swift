@@ -28,11 +28,10 @@ struct ClaudeSessionScanner {
     /// `startedAt` by more than this — cheap defense against PID reuse.
     private static let pidReuseSlack: TimeInterval = 5
 
-    /// A directory's own mtime moves when an entry is added, removed or renamed,
-    /// but NOT when a file already inside it is appended to. So it may gate
-    /// re-*listing* the directory and nothing else — every listed transcript is
-    /// still stat'd on every pass, or a resumed session older than `lookback`
-    /// would never come back into view.
+    /// A directory's mtime moves when an entry is added, removed, or renamed, but not when a file inside it
+    /// is appended to — so it may gate re-*listing* the directory and nothing else. Every listed transcript
+    /// is still stat'd on every pass, or a resumed session older than `lookback` would never come back into
+    /// view.
     private struct DirectoryListing {
         var modifiedAt: Date
         var transcriptPaths: [String]
@@ -123,12 +122,10 @@ struct ClaudeSessionScanner {
         return candidates
     }
 
-    /// `stat(2)` and not `URLResourceValues`: an `NSURL` memoizes every resource
-    /// value it has been asked for, so re-reading a URL held across passes hands
-    /// back the mtime from when the listing was built — and a transcript being
-    /// appended to is precisely what must not be missed. `stat` also follows
-    /// symlinks, so a linked project directory reports its target's mtime rather
-    /// than the link's (which never moves).
+    /// `stat(2)`, not `URLResourceValues`: an `NSURL` memoizes every resource value it's asked for, so
+    /// re-reading a URL held across passes hands back the mtime from when the listing was built — exactly what
+    /// must not be missed when a transcript is being appended to. `stat` also follows symlinks, so a linked
+    /// project directory reports its target's mtime, not the link's (which never moves).
     private static func status(ofPath path: String) -> (modifiedAt: Date, sizeBytes: UInt64)? {
         var info = Darwin.stat()
         guard stat(path, &info) == 0 else { return nil }

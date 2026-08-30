@@ -94,13 +94,8 @@ struct WallpaperEngineProject: Sendable, Equatable {
         }
         let declaresPreset = presetBase != nil && decoded.preset != nil
 
-        // A preset restyles someone else's wallpaper, so it has no renderable
-        // entry of its own. Requiring `file` here is what made downloaded
-        // presets surface as corrupt wallpapers.
-        //
-        // Only an ABSENT `file` is excused. A present-but-unsafe one ("../..",
-        // an absolute path) stays malformed for presets too: treating it as
-        // "no entry" would launder a path-traversal attempt into a valid object.
+        // A preset restyles someone else's wallpaper, so it has no renderable entry of its own. Requiring `file` here is what made downloaded presets surface as corrupt wallpapers.
+        // Only an ABSENT `file` is excused. A present-but-unsafe one ("../..", an absolute path) stays malformed for presets too: treating it as "no entry" would launder a path-traversal attempt into a valid object.
         let entryFile: String
         if let file = Self.trimmed(decoded.file) {
             guard WPEPathSafety.isSafeRelativePath(file) else {

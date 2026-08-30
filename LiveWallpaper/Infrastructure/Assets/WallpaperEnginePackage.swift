@@ -145,11 +145,8 @@ struct WallpaperEnginePackage: Sendable, Equatable {
     }
 
     #if DEBUG
-    /// Atomic extraction: writes into `<root>.inflight`, then swaps via
-    /// `<root>.replaced`, so a partially extracted directory is never observed
-    /// at `rootURL`. No production path extracts any more (imports read in
-    /// place); the only caller is `OracleCorpusCaptureTests`, which stages a
-    /// package to a scratch dir.
+    /// Atomic extraction: writes into `<root>.inflight`, then swaps via `<root>.replaced`, so a partially extracted directory is never observed at `rootURL`.
+    /// No production path extracts any more (imports read in place); the only caller is `OracleCorpusCaptureTests`, which stages a package to a scratch dir.
     func extractAll(streamingFrom handle: FileHandle, to rootURL: URL) throws {
         let fileManager = FileManager.default
         let parentURL = rootURL.deletingLastPathComponent()
@@ -338,13 +335,8 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         return canonical.isEmpty ? nil : canonical.joined(separator: "/")
     }
 
-    /// Shortens any path component that exceeds the APFS 255-byte limit so the
-    /// file extracts instead of failing the whole package. Truncation is
-    /// deterministic (char-boundary base + a stable FNV-1a suffix + original
-    /// extension), so re-extraction is idempotent. A renamed asset won't match
-    /// the scene's reference (e.g. an over-long sound path goes silent), but the
-    /// wallpaper still extracts and renders. Components within the limit pass
-    /// through untouched.
+    /// Shortens any path component that exceeds the APFS 255-byte limit so the file extracts instead of failing the whole package. Truncation is deterministic (char-boundary base + a stable FNV-1a suffix + original extension), so re-extraction is idempotent.
+    /// A renamed asset won't match the scene's reference (e.g. an over-long sound path goes silent), but the wallpaper still extracts and renders. Components within the limit pass through untouched.
     static func filesystemSafeEntryName(_ name: String) -> String {
         name.split(separator: "/", omittingEmptySubsequences: false).map { raw -> String in
             let component = String(raw)

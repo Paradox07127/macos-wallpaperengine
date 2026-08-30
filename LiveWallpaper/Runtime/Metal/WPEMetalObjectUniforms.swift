@@ -3,19 +3,17 @@ import Foundation
 import LiveWallpaperProWPE
 import simd
 
-/// Per-object (per-layer) transform uniforms for WPE 2.8 model shaders.
-///
-/// `g_ModelMatrix` and `g_NormalModelMatrix` are *object*-scoped, so unlike the
-/// per-frame `WPEMetalRuntimeUniforms` they are merged per layer in
+/// Per-object (per-layer) transform uniforms for WPE 2.8 model shaders. Unlike the
+/// per-frame `WPEMetalRuntimeUniforms`, `g_ModelMatrix`/`g_NormalModelMatrix` are
+/// object-scoped, merged per layer in
 /// `WPEPreparedRenderPipeline.addingMetalRuntimeUniforms`.
 ///
 /// 2.8's `generic4`/`chroma4`/`foliage4`/`fur4` vertex shaders switched from
-/// `CAST3X3(g_ModelMatrix)` to an explicit inverse-transpose normal matrix
-/// (`g_NormalModelMatrix`). Our custom-shader compiler is fragment-only today
-/// (it never executes those vertex shaders), so these uniforms exist so any
-/// 2.8 shader that *declares* them can pack a value instead of failing; the
-/// transpiler only packs declared uniforms, so identity defaults stay zero-cost
-/// for the existing 2D/orthographic scenes.
+/// `CAST3X3(g_ModelMatrix)` to an explicit inverse-transpose `g_NormalModelMatrix`.
+/// Our compiler is fragment-only (never executes those vertex shaders), so these
+/// uniforms just let any 2.8 shader that declares them pack a value instead of
+/// failing; the transpiler only packs declared uniforms, so identity defaults stay
+/// zero-cost for existing 2D/orthographic scenes.
 enum WPEMetalObjectUniforms {
 
     /// `g_ModelMatrix` (16, column-major) + `g_NormalModelMatrix` (9, column-major).
@@ -117,23 +115,18 @@ enum WPEMetalObjectUniforms {
     }
 }
 
-/// Cross-frame memo for `WPEMetalObjectUniforms.uniformValues`, plus the
-/// pass-id map `WPEPreparedRenderPipeline.addingMetalRuntimeUniforms` hands to
-/// `WPEFrameUniformContext`.
+/// Cross-frame memo for `WPEMetalObjectUniforms.uniformValues`, plus the pass-id map
+/// `WPEPreparedRenderPipeline.addingMetalRuntimeUniforms` hands to
+/// `WPEFrameUniformContext`. Both matrices are a pure function of
+/// `origin`/`scale`/`angles`, so an unmoved layer reuses last frame's dictionary and a
+/// fully static scene reuses the whole map — without this it paid two `[Double]`
+/// allocations, a matrix inverse per layer, and a dictionary insert per pass, every
+/// frame, before the `needsRebuild` early-out.
 ///
-/// Both matrices are a pure function of `origin`/`scale`/`angles` (see
-/// `uniformValues` above — it reads nothing else), so a layer that did not move
-/// reuses last frame's dictionary, and a scene where no layer moved reuses the
-/// whole map. Without this a fully static scene still paid two `[Double]`
-/// allocations plus a matrix inverse per layer and a dictionary insert per
-/// pass, every frame, *before* the `needsRebuild` early-out.
-///
-/// Deliberately NOT `Sendable`: one instance per `WPEMetalRenderExecutor`, and
-/// each executor is confined to its own display's off-main render thread. Being
-/// non-`Sendable` is what makes that compiler-checked — the box cannot be
-/// captured into another isolation domain, and nothing here is global or
-/// static, so two displays sharing the same immutable pipeline value still get
-/// one cache each.
+/// Deliberately NOT `Sendable`: one instance per `WPEMetalRenderExecutor`, each
+/// confined to its own display's off-main render thread. Non-`Sendable` makes that
+/// compiler-checked — the box can't cross isolation domains — so two displays sharing
+/// the same immutable pipeline value still get one cache each.
 final class WPEObjectUniformCache {
 
     /// The complete input of `WPEMetalObjectUniforms.uniformValues`.
@@ -162,11 +155,6 @@ final class WPEObjectUniformCache {
     private(set) var computeCount = 0
     /// Test seam: how many times the pass-id map was rebuilt.
     private(set) var mapRebuildCount = 0
-
-    func resetCounters() {
-        computeCount = 0
-        mapRebuildCount = 0
-    }
 
     func objectUniformValuesByPassID(
         for layers: [WPEPreparedRenderLayer]

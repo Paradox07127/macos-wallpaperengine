@@ -1,13 +1,10 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Owns the eight card-chrome defaults for the whole window and publishes them
-/// as one environment value.
-///
-/// The defaults suite lives in the app target (`UserDefaults.appScoped()`), so
-/// the reader can't sit next to `GalleryCardPreferences` in the package. Applied
-/// once at the root: a badge toggle is a Settings-panel action, and the grids it
-/// affects all hang off `ContentView`.
+/// Owns the eight card-chrome defaults for the whole window and publishes them as one environment value.
+/// The defaults suite lives in the app target (`UserDefaults.appScoped()`), so the reader
+/// can't sit next to `GalleryCardPreferences` in the package. Applied once at the root: a badge
+/// toggle is a Settings-panel action, and the grids it affects all hang off `ContentView`.
 private struct GalleryCardPreferencesReader: ViewModifier {
     @AppStorage(CardBadgeSettings.showsRating, store: .appScoped()) private var showsRating = true
     @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsType = true

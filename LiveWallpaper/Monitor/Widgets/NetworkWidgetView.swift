@@ -203,7 +203,7 @@ struct NetworkWidgetView: View {
                 interfaceRow(key: "IPv4", value: ip, scale: scale)
             }
             interfaceRow(
-                key: String(localized: "Status", comment: "Network widget: connectivity status row label."),
+                key: String(localized: "Status", bundle: .appLanguage, comment: "Network widget: connectivity status row label."),
                 value: statusLine, scale: scale, chips: pathChips)
         }
         .padding(.top, scale.caption * 0.35)
@@ -345,8 +345,8 @@ struct NetworkWidgetView: View {
     /// value, since the same row helper also carries data like the IPv4 address).
     private var statusLine: String {
         isOnline
-            ? String(localized: "connected", comment: "Network widget: the active interface has connectivity.")
-            : String(localized: "offline", comment: "Network widget: the active interface has no connectivity.")
+            ? String(localized: "connected", bundle: .appLanguage, comment: "Network widget: the active interface has connectivity.")
+            : String(localized: "offline", bundle: .appLanguage, comment: "Network widget: the active interface has no connectivity.")
     }
 
     /// Path condition chips — localized words (constrained / expensive).
@@ -354,10 +354,10 @@ struct NetworkWidgetView: View {
         guard let path = system?.netPath else { return [] }
         var chips: [String] = []
         if path.isConstrained == true {
-            chips.append(String(localized: "constrained", comment: "Network widget: the network path is constrained (Low Data Mode)."))
+            chips.append(String(localized: "constrained", bundle: .appLanguage, comment: "Network widget: the network path is constrained (Low Data Mode)."))
         }
         if path.isExpensive == true {
-            chips.append(String(localized: "expensive", comment: "Network widget: the network path is expensive (cellular/metered)."))
+            chips.append(String(localized: "expensive", bundle: .appLanguage, comment: "Network widget: the network path is expensive (cellular/metered)."))
         }
         return chips
     }

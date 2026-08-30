@@ -23,10 +23,6 @@ public enum WPEUtilityModelKind: String, CaseIterable, Equatable, Sendable {
         }
     }
 
-    public static func isUtilityModelPath(_ path: String) -> Bool {
-        classify(path) != nil
-    }
-
     // MARK: - Classification memo (paths are load-time invariant)
 
     private static let kindByStrippedPath: [String: WPEUtilityModelKind] = Dictionary(

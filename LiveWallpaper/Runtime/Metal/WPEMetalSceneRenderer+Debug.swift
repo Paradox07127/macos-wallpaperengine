@@ -187,12 +187,10 @@ extension WPEMetalSceneRenderer {
     }
     #endif
 
-    /// Writes the raw post-render `outputTexture` (the scene render output
-    /// *before* present blit) to disk as a PNG via a GPU blit into a
-    /// `.storageModeShared` `MTLBuffer` — the robust readback path for
-    /// large textures where `texture.getBytes(...)` can silently return
-    /// stale bytes on some driver/storage combos. Gated on the same
-    /// `WPEMetalCaptureScene` UserDefault as the GPU trace capture.
+    /// Writes the raw post-render `outputTexture` (before present blit) to disk as a PNG via
+    /// a GPU blit into a `.storageModeShared` `MTLBuffer` — the robust readback path where
+    /// `texture.getBytes(...)` can silently return stale bytes on some driver/storage combos.
+    /// Gated on the same `WPEMetalCaptureScene` UserDefault as the GPU trace capture.
     func dumpOutputTextureIfRequested(_ texture: MTLTexture) {
         #if DEBUG
         guard gpuCaptureRequestedForCurrentScene() else { return }
@@ -307,15 +305,13 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - GPU capture
 
-    /// DEBUG-only `MTLCaptureManager` wrap around `renderCurrentFrame()`. When
-    /// `UserDefaults.standard.string(forKey: "WPEMetalCaptureScene")` matches
-    /// the active scene's workshopID, the render's `MTLCommandBuffer` is
-    /// captured to a `.gputrace` file so a maintainer can open it in Xcode and
-    /// inspect every render-pass attachment, bound texture, uniform buffer, and
-    /// translated MSL source for that scene. It lands next to the per-pass PNGs
-    /// in App Support/LiveWallpaper/gpu-traces/ — see `makeCaptureURL`, which is
-    /// the authority; this app is sandboxed, so that resolves inside the
-    /// container.
+    /// DEBUG-only `MTLCaptureManager` wrap around `renderCurrentFrame()`: when
+    /// `UserDefaults.standard.string(forKey: "WPEMetalCaptureScene")` matches the active
+    /// scene's workshopID, the render's `MTLCommandBuffer` is captured to a `.gputrace`
+    /// file for Xcode inspection (pass attachments, bound textures, uniform buffers,
+    /// translated MSL). Lands next to the per-pass PNGs in
+    /// App Support/LiveWallpaper/gpu-traces/ — see `makeCaptureURL` (sandboxed, so this
+    /// resolves inside the container).
     ///
     /// Triggered via:
     ///   defaults write com.loomscreen.pro WPEMetalCaptureScene 3669681034
@@ -431,12 +427,10 @@ extension WPEMetalSceneRenderer {
         WPESceneDebugArtifacts.shared.appendLog("[\(stage)] \(detail)")
     }
 
-    /// Whether the executor should submit frames synchronously (block on GPU
-    /// completion) for this scene. True only when a CPU read-back of the rendered
-    /// frame will happen — scene-debug artifacts (first-frame snapshot / stats),
-    /// GPU capture, per-pass dumps — or the operator pins it via
-    /// `WPEMetalSerializeFrames`. Production has none of these, so frames submit
-    /// asynchronously and the CPU never stalls on the GPU per frame.
+    /// Whether the executor should submit frames synchronously (block on GPU completion) for
+    /// this scene. True only when a CPU read-back will happen (scene-debug artifacts,
+    /// GPU capture, per-pass dumps) or the operator pins it via `WPEMetalSerializeFrames`.
+    /// Production has none of these, so frames submit async and the CPU never stalls per frame.
     func shouldSynchronizeFrames() -> Bool {
         if UserDefaults.standard.bool(forKey: "WPEMetalSerializeFrames") { return true }
         if WPESceneDebugArtifacts.shared.isEnabled { return true }

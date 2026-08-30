@@ -74,17 +74,8 @@ final class WallpaperThumbnailService {
         return cacheGeneratedPoster(generated, forKey: cacheKey)
     }
 
-    /// The only place a video poster enters the cache, and deliberately on the
-    /// requester's side of the `await`.
-    ///
-    /// The generator task is unstructured, so it neither inherits the
-    /// requester's cancellation nor ends with it; inserting from inside it let a
-    /// poster land in the cache *after* `LocalImageCacheReclaimer` had emptied
-    /// it, and the reclaim is a one-shot armed by a window closing — with no
-    /// window left to close, nothing would ever take that entry out again.
-    /// Here the insert can only happen while a caller is still waiting for the
-    /// image, which is the rule the HTML-snapshot, scene-preview and Workshop
-    /// paths already follow.
+    /// The only place a video poster enters the cache, and deliberately on the requester's side of the `await`. The generator task is unstructured, so it neither inherits the requester's cancellation nor ends with it; inserting from inside it let a poster land in the cache *after* `LocalImageCacheReclaimer` had emptied it, and the reclaim is a one-shot armed by a window closing — with no window left to close, nothing would ever take that entry out again.
+    /// Here the insert can only happen while a caller is still waiting for the image, which is the rule the HTML-snapshot, scene-preview and Workshop paths already follow.
     private func cacheGeneratedPoster(
         _ generated: (image: NSImage, cost: Int)?,
         forKey cacheKey: String

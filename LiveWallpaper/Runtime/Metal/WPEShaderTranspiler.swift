@@ -86,9 +86,7 @@ struct WPEShaderTranspiler {
         // Sampler wrap (clamp vs repeat) and filter are NOT decided here anymore: every
         // `g_TextureN.sample` is rewritten to the per-slot runtime sampler `wpeSamplerN`
         // (`rewriteSamplersToPerSlot`), whose address/filter the executor binds from the
-        // texture's TEXI flags. The old "annotate a sampler as noise → repeatSampler"
-        // heuristic is retired — it couldn't see per-texture ClampUVs and missed
-        // water-normal / flow maps (waterripple froze).
+        // texture's TEXI flags. The old "annotate a sampler as noise → repeatSampler" heuristic is retired — it couldn't see per-texture ClampUVs and missed water-normal/flow maps (waterripple froze).
         let body = bodyLines.joined(separator: "\n")
         guard let mainRange = Self.locateMain(in: body) else {
             throw WPEShaderCompilerError.translationFailed(
@@ -120,12 +118,10 @@ struct WPEShaderTranspiler {
             uniforms: uniforms,
             functionDeclarations: preMain + "\n" + postMain
         )
-        // Convert `g_TextureN.sample(linear|repeatSampler, …)` → the per-slot runtime
-        // sampler `wpeSamplerN` in BOTH helper and main bodies BEFORE resource threading,
-        // so `rewriteHelperResourceAccess` sees `wpeSamplerN` in a helper body and wires
-        // it into that helper's signature/call (via its `samplerStateResources`). Runs
-        // after the `linearSampler`-keyed narrowing / LOD rewrites (inside the translate
-        // calls above), so those still matched the literal name.
+        // Convert `g_TextureN.sample(linear|repeatSampler, …)` → the per-slot runtime sampler
+        // `wpeSamplerN` in BOTH helper and main bodies BEFORE resource threading, so
+        // `rewriteHelperResourceAccess` sees `wpeSamplerN` in a helper body and wires it into
+        // that helper's signature/call (`samplerStateResources`). Runs after the `linearSampler`-keyed narrowing/LOD rewrites, so those still matched the literal name.
         let perSlotHelpers = Self.rewriteSamplersToPerSlot(translatedHelpers)
         let perSlotMain = Self.rewriteSamplersToPerSlot(translatedMain)
         let helperMutableGlobals = extractProgramScopeMutableDeclarations(from: perSlotHelpers)

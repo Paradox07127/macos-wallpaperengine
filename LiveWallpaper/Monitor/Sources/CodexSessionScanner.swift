@@ -355,11 +355,9 @@ enum CodexProcessProbe {
         return hasCodexBasename(buffer, length: length)
     }
 
-    /// Whether the last path component of `path[0..<length]` is exactly `codex`.
-    /// Measured 2026-08-23 over 1079 PIDs: decoding a `String` and building a
-    /// `URL` just to read `lastPathComponent` cost 5.2 ms per walk against
-    /// 0.97 ms for this comparison. Bytes past `length` are stale from the
-    /// previous PID and must never be read.
+    /// Whether the last path component of `path[0..<length]` is exactly `codex`. Measured 2026-08-23 over 1079
+    /// PIDs: decoding a `String` and building a `URL` just to read `lastPathComponent` cost 5.2 ms per walk vs
+    /// 0.97 ms for this comparison. Bytes past `length` are stale from the previous PID and must never be read.
     static func hasCodexBasename(_ path: [CChar], length: Int) -> Bool {
         let name = codexNameBytes
         guard length >= name.count, length <= path.count else { return false }

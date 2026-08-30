@@ -28,7 +28,6 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
     /// underlying error description so logs name the actual missing field
     /// instead of just the shader name.
     case pipelineStateBuildFailed(name: String, detail: String)
-    case unsupportedTarget(WPERenderTarget)
     case missingTexture(WPETextureReference)
     case renderTargetDimensionsExceedDeviceLimit(targetName: String, width: Int, height: Int, limit: Int)
     case noRenderablePasses
@@ -41,7 +40,12 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
     var untranslatableShaderReason: String? {
         switch self {
         case .shaderTranslatorUnavailable(_, let reason): return reason
-        case .unsupportedShader(let name): return "shader '\(name)' unsupported by Metal renderer"
+        case .unsupportedShader(let name):
+            return String(
+                localized: "error.render.executor.unsupported_shader_reason",
+                defaultValue: "shader '\(name)' unsupported by Metal renderer",
+                bundle: .appLanguage, comment: "Reason line shown when a workshop scene shader cannot run on the Metal renderer. Placeholder is the shader name."
+            )
         default: return nil
         }
     }
@@ -52,69 +56,62 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
             return String(
                 localized: "error.render.executor.command_queue_unavailable",
                 defaultValue: "Metal command queue is unavailable.",
-                comment: "Error shown when the Metal renderer cannot create or access a command queue."
+                bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot create or access a command queue."
             )
         case .libraryUnavailable:
             return String(
                 localized: "error.render.executor.library_unavailable",
                 defaultValue: "WPE Metal built-in shader library is unavailable.",
-                comment: "Error shown when the built-in Metal shader library is unavailable."
+                bundle: .appLanguage, comment: "Error shown when the built-in Metal shader library is unavailable."
             )
         case .pipelineUnavailable(let name):
             return String(
                 localized: "error.render.executor.pipeline_unavailable",
                 defaultValue: "WPE Metal pipeline is unavailable for \(name).",
-                comment: "Error shown when the Metal renderer cannot create a render pipeline."
+                bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot create a render pipeline."
             )
         case .unsupportedShader(let name):
             return String(
                 localized: "error.render.executor.unsupported_shader",
                 defaultValue: "WPE Metal executor does not support shader \(name).",
-                comment: "Error shown when the Metal renderer does not support a shader."
+                bundle: .appLanguage, comment: "Error shown when the Metal renderer does not support a shader."
             )
         case .shaderTranslatorUnavailable(let name, let reason):
             return String(
                 localized: "error.render.executor.shader_translator_unavailable",
                 defaultValue: "WPE shader '\(name)' is unsupported by the Metal renderer: \(reason)",
-                comment: "Error shown when a custom WPE shader cannot be translated or compiled by the Metal renderer."
+                bundle: .appLanguage, comment: "Error shown when a custom WPE shader cannot be translated or compiled by the Metal renderer."
             )
         case .pipelineStateBuildFailed(let name, let detail):
             return String(
                 localized: "error.render.executor.pipeline_state_build_failed",
                 defaultValue: "Metal pipeline build failed for '\(name)': \(detail)",
-                comment: "Error shown when Metal refuses to build a render pipeline state (typically a stage_in mismatch between the vertex output and the fragment input)."
-            )
-        case .unsupportedTarget(let target):
-            let targetDescription = String(describing: target)
-            return String(
-                localized: "error.render.executor.unsupported_target",
-                defaultValue: "WPE Metal executor does not support target \(targetDescription).",
-                comment: "Error shown when the Metal renderer does not support a render target."
+                bundle: .appLanguage, comment: "Error shown when Metal refuses to build a render pipeline state (typically a stage_in mismatch between the vertex output and the fragment input)."
             )
         case .missingTexture(let reference):
             let referenceDescription = String(describing: reference)
             return String(
                 localized: "error.render.executor.missing_texture",
                 defaultValue: "WPE Metal executor is missing texture \(referenceDescription).",
-                comment: "Error shown when the Metal renderer cannot find a required texture."
+                bundle: .appLanguage, comment: "Error shown when the Metal renderer cannot find a required texture."
             )
         case .renderTargetDimensionsExceedDeviceLimit(let targetName, let width, let height, let limit):
             return String(
                 localized: "error.render.executor.render_target_dimensions_exceed_device_limit",
                 defaultValue: "WPE Metal render target '\(targetName)' is \(width)x\(height), exceeding this device's \(limit)x\(limit) 2D texture limit.",
-                comment: "Error shown when a Wallpaper Engine render target is larger than Metal allows on the current GPU."
+                bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine render target is larger than Metal allows on the current GPU."
             )
         case .noRenderablePasses:
             return String(
                 localized: "error.render.executor.no_renderable_passes",
                 defaultValue: "WPE Metal pipeline has no renderable passes.",
-                comment: "Error shown when the Metal render pipeline has no renderable passes."
+                bundle: .appLanguage, comment: "Error shown when the Metal render pipeline has no renderable passes."
             )
         case .commandBufferFailed:
             return String(
                 localized: "error.render.executor.command_buffer_failed",
                 defaultValue: "WPE Metal command buffer failed.",
-                comment: "Error shown when a Metal command buffer reports failure."
+                bundle: .appLanguage, comment: "Error shown when a Metal command buffer reports failure."
             )
         }
     }
@@ -366,14 +363,11 @@ struct WPESceneModelMeshUniforms {
     var modeAndPadding: SIMD4<Float>
 }
 
-/// Layout MUST match `WPEPuppetSceneCompositeUniforms` in `WPEMetalBuiltins.metal`.
-/// Placement fields are copied 1:1 from `WPEObjectQuadUniforms` so the deferred-warp
-/// composite reproduces the current final object-quad placement exactly:
-/// - `objectCenterAndSize`  ← `WPEObjectQuadUniforms.centerAndSize`
-/// - `sceneSizeAndRotation` ← `WPEObjectQuadUniforms.sceneSizeAndRotation`
-/// - `meshCenterAndScaleSign.zw` ← `WPEObjectQuadUniforms.uvSignAndPadding.xy`
-/// The vertex applies that sign to mesh-local positions (mirroring geometry) instead
-/// of UVs, equivalent to the old path that mirrored an already-rasterized puppet FBO.
+/// Layout MUST match `WPEPuppetSceneCompositeUniforms` in `WPEMetalBuiltins.metal`. Placement
+/// fields copy 1:1 from `WPEObjectQuadUniforms` so the deferred-warp composite reproduces the
+/// current placement exactly: `objectCenterAndSize`←`.centerAndSize`,
+/// `sceneSizeAndRotation`←`.sceneSizeAndRotation`, `meshCenterAndScaleSign.zw`←`.uvSignAndPadding.xy`.
+/// The vertex applies that sign to mesh-local positions (mirroring geometry) instead of UVs — equivalent to the old path mirroring an already-rasterized puppet FBO.
 struct WPEPuppetSceneCompositeUniforms {
     /// x/y = atlas/local layer size, z = bone palette count, w = skinning enabled (1/0).
     var localSizeAndMode: SIMD4<Float>

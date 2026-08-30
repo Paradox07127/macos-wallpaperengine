@@ -86,15 +86,15 @@ extension GeneralSettingsView {
 
     private var weatherPermissionText: String {
         if weatherStatusRefreshPending, weatherLocation.source == .coreLocation {
-            return String(localized: "Checking…", comment: "Weather permission status while refreshing.")
+            return String(localized: "Checking…", bundle: .appLanguage, comment: "Weather permission status while refreshing.")
         }
         switch weatherLocation.source {
         case .off:
-            return String(localized: "Off", comment: "Feature is off.")
+            return String(localized: "Off", bundle: .appLanguage, comment: "Feature is off.")
         case .manual:
             return weatherLocation.manual == nil
-                ? String(localized: "Manual Needed", comment: "Weather location needs a manual place.")
-                : String(localized: "Manual", comment: "Weather uses a manual location.")
+                ? String(localized: "Manual Needed", bundle: .appLanguage, comment: "Weather location needs a manual place.")
+                : String(localized: "Manual", bundle: .appLanguage, comment: "Weather uses a manual location.")
         case .coreLocation:
             return locationAuthorizationStatus.displayTitle
         }
@@ -104,16 +104,16 @@ extension GeneralSettingsView {
         if weatherStatusRefreshPending, weatherLocation.source == .coreLocation {
             return String(
                 localized: "Waiting for macOS to update Location Services status",
-                comment: "Weather permission help while Location Services status refreshes."
+                bundle: .appLanguage, comment: "Weather permission help while Location Services status refreshes."
             )
         }
         switch weatherLocation.source {
         case .off:
-            return String(localized: "Weather effects are disabled", comment: "Weather source is off.")
+            return String(localized: "Weather effects are disabled", bundle: .appLanguage, comment: "Weather source is off.")
         case .manual:
             return weatherLocation.manual == nil
-                ? String(localized: "Choose a manual location", comment: "Prompt to pick a manual weather place.")
-                : String(localized: "Using manual location", comment: "Weather is using a manual place.")
+                ? String(localized: "Choose a manual location", bundle: .appLanguage, comment: "Prompt to pick a manual weather place.")
+                : String(localized: "Using manual location", bundle: .appLanguage, comment: "Weather is using a manual place.")
         case .coreLocation:
             return locationAuthorizationStatus.displaySubtitle
         }
@@ -144,9 +144,9 @@ extension GeneralSettingsView {
     private var weatherGrantButtonTitle: String {
         switch locationAuthorizationStatus {
         case .notDetermined:
-            return String(localized: "Re-grant Access", comment: "Button to request Location Services again.")
+            return String(localized: "Re-grant Access", bundle: .appLanguage, comment: "Button to request Location Services again.")
         default:
-            return String(localized: "Open", comment: "Open System Settings.")
+            return String(localized: "Open", bundle: .appLanguage, comment: "Open System Settings.")
         }
     }
 
@@ -184,15 +184,15 @@ private extension CLAuthorizationStatus {
     var displayTitle: String {
         switch self {
         case .authorizedAlways, .authorizedWhenInUse:
-            return String(localized: "Granted", comment: "Permission granted.")
+            return String(localized: "Granted", bundle: .appLanguage, comment: "Permission granted.")
         case .denied:
-            return String(localized: "Denied", comment: "Permission denied.")
+            return String(localized: "Denied", bundle: .appLanguage, comment: "Permission denied.")
         case .restricted:
-            return String(localized: "Restricted", comment: "Permission restricted by system policy.")
+            return String(localized: "Restricted", bundle: .appLanguage, comment: "Permission restricted by system policy.")
         case .notDetermined:
-            return String(localized: "Not Determined", comment: "Permission not requested yet.")
+            return String(localized: "Not Determined", bundle: .appLanguage, comment: "Permission not requested yet.")
         @unknown default:
-            return String(localized: "Unknown", comment: "Unknown status value.")
+            return String(localized: "Unknown", bundle: .appLanguage, comment: "Unknown status value.")
         }
     }
 
@@ -201,27 +201,27 @@ private extension CLAuthorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             return String(
                 localized: "Location Services access is granted",
-                comment: "Weather help when Location Services is authorized."
+                bundle: .appLanguage, comment: "Weather help when Location Services is authorized."
             )
         case .denied:
             return String(
                 localized: "Allow access in Location Services",
-                comment: "Weather help when Location Services was denied."
+                bundle: .appLanguage, comment: "Weather help when Location Services was denied."
             )
         case .restricted:
             return String(
                 localized: "Location Services is restricted on this Mac",
-                comment: "Weather help when Location Services is restricted."
+                bundle: .appLanguage, comment: "Weather help when Location Services is restricted."
             )
         case .notDetermined:
             return String(
                 localized: "macOS has not asked for Location Services yet",
-                comment: "Weather help when Location Services was never prompted."
+                bundle: .appLanguage, comment: "Weather help when Location Services was never prompted."
             )
         @unknown default:
             return String(
                 localized: "macOS returned an unknown location status",
-                comment: "Weather help for an unexpected Location Services status."
+                bundle: .appLanguage, comment: "Weather help for an unexpected Location Services status."
             )
         }
     }

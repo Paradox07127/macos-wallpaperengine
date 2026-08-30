@@ -307,7 +307,7 @@ private struct GPUWidgetBody: View {
             }
             if let cores = system?.gpuCoreCount {
                 Text(verbatim: String(localized: "· \(cores)-core GPU",
-                                      comment: "GPU widget identity: GPU core count; %lld is the number of cores."))
+                                      bundle: .appLanguage, comment: "GPU widget identity: GPU core count; %lld is the number of cores."))
                     .font(Design.labelFont(size: scale.label))
                     .tracking(scale.label * 0.06)
                     .foregroundStyle(Design.inkFaint)

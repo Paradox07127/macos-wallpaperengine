@@ -77,7 +77,7 @@ public extension GlassSegmentedPicker where SegmentLabel == Text {
         title: @escaping (Value) -> LocalizedStringKey
     ) {
         self.init(selection: selection, values: values, shell: shell) { value, isSelected in
-            Text(title(value), bundle: .main)
+            Text(title(value))
                 .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
         }
     }

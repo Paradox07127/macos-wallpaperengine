@@ -7,11 +7,10 @@ public struct ConfigurationBundle: Codable, Sendable {
     public static let currentSchemaVersion = 1
     public static let fileExtension = "lwconfig"
 
-    /// Host-registered UTType. Probe order: this bundle's own `*.config` (each
-    /// app exports its own id, so the self probe wins deterministically), then
-    /// the historical ids, then `.json`. The old "does the bundle id contain
-    /// loomscreen" SKU discriminator broke when Pro became `com.loomscreen.pro`
-    /// and started matching Lite's UTI, whose extension is not `lwconfig`.
+    /// Host-registered UTType. Probe order: this bundle's own `*.config` (each app exports its own
+    /// id, so the self probe wins deterministically), then the historical ids, then `.json`. The old
+    /// "does the bundle id contain loomscreen" SKU discriminator broke when Pro became
+    /// `com.loomscreen.pro` and started matching Lite's UTI, whose extension is not `lwconfig`.
     public static let contentType: UTType = {
         var candidates: [String] = []
         if let bundleID = Bundle.main.bundleIdentifier {

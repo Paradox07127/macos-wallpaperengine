@@ -1,9 +1,9 @@
 import Foundation
 
 /// Mirrors `Logger` output above a threshold into a rotated text file at
-/// `~/Library/Logs/LiveWallpaper/runtime.log`, so a maintainer can `tail -f`
-/// recent warnings/errors without setting up a Console.app `log stream` filter.
-/// info/debug stay on `os_log` only — scoped to warning+ to stay small and signal-dense.
+/// `~/Library/Logs/LiveWallpaper/runtime.log`, so a maintainer can `tail -f` recent warnings/errors
+/// without setting up a Console.app `log stream` filter. info/debug stay on `os_log` only — scoped
+/// to notice+ to stay small and signal-dense, so `notice` is exactly "shows up in a user's bug report".
 public final class LogFileSink: @unchecked Sendable {
     public static let shared = LogFileSink()
 
@@ -50,7 +50,9 @@ public final class LogFileSink: @unchecked Sendable {
     }
 
     /// Gates only the file mirror; the underlying `os.Logger` always receives the call.
-    private func shouldRecord(_ level: Logger.Level) -> Bool {
+    /// Public so callers that choose a level from data (particle diagnostics map
+    /// their own severity) can be tested against the real admission rule.
+    public static func admitsToFile(_ level: Logger.Level) -> Bool {
         switch level {
         case .warning, .error, .fault, .notice:
             return true
@@ -66,7 +68,7 @@ public final class LogFileSink: @unchecked Sendable {
         file: String,
         line: Int
     ) {
-        guard shouldRecord(level) else { return }
+        guard Self.admitsToFile(level) else { return }
         guard let url = fileURL else { return }
 
         let timestamp = formatter.string(from: Date())
@@ -146,12 +148,15 @@ public final class LogFileSink: @unchecked Sendable {
         }
     }
 
-    /// Tail recent WARNING/ERROR/FAULT lines for the bug-report sheet. Takes the
-    /// write lock to avoid observing a partial flush from concurrent `record(...)`
-    /// or racing with rotation. Lines truncated to `maxLineLength` so a pathological
-    /// stack-trace can't blow past GitHub's issue-URL body ceiling downstream.
+    /// Tail recent WARNING/ERROR/FAULT lines for the bug-report sheet. Takes the write lock to avoid
+    /// observing a partial flush from concurrent `record(...)` or racing with rotation. Lines
+    /// truncated to `maxLineLength` so a pathological stack-trace can't blow past GitHub's issue-URL
+    /// body ceiling downstream. Two separate budgets on purpose: identity notices are far more
+    /// frequent than failures, so a shared budget let a few wallpaper switches evict the very error
+    /// the report is about.
     public func recentDiagnosticLines(
         maxLines: Int = 5,
+        maxContextLines: Int = 3,
         maxReadBytes: UInt64 = 256 * 1024,
         maxLineLength: Int = 500
     ) -> [String] {
@@ -172,12 +177,9 @@ public final class LogFileSink: @unchecked Sendable {
         let data = (try? handle.readToEnd()) ?? Data()
         guard let text = String(data: data, encoding: .utf8) else { return [] }
 
-        let matching = text
+        let lines = text
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map(String.init)
-            .filter { line in
-                line.contains("[WARNING]") || line.contains("[ERROR]") || line.contains("[FAULT]")
-            }
             // Re-scrub on read so diagnostics written by older app versions
             // cannot leak when included in a new bug report.
             .map(Self.sanitizedMessage)
@@ -186,7 +188,13 @@ public final class LogFileSink: @unchecked Sendable {
                     ? String(line.prefix(maxLineLength)) + "…"
                     : line
             }
-        return Array(matching.suffix(maxLines))
+        let failures = lines.filter { line in
+            line.contains("[WARNING]") || line.contains("[ERROR]") || line.contains("[FAULT]")
+        }
+        // `[NOTICE]` carries the wallpaper-identity timeline, which is what makes
+        // the failures attributable to a scene.
+        let context = lines.filter { $0.contains("[NOTICE]") }
+        return Array(context.suffix(maxContextLines)) + Array(failures.suffix(maxLines))
     }
 
     static func sanitizedMessage(_ message: String) -> String {

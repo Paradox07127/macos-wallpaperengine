@@ -21,12 +21,9 @@ struct WorkshopSetupFacet: Identifiable {
 
 /// The page-top status bar: one segmented track plus a legend naming each
 /// segment.
-///
-/// This replaces the green seals that used to hang off each row's title. Three
-/// checkmarks scattered down a scrolling page made the reader assemble the
-/// summary themselves, and a page that is entirely green seals reads as
-/// decoration rather than status. Clicking a legend entry scrolls to the
-/// section it stands for.
+/// Replaces the green seals that used to hang off each row's title — three checkmarks
+/// scattered down a scrolling page made the reader assemble the summary themselves, and a
+/// page that's entirely green seals reads as decoration, not status. Clicking a legend entry scrolls to the section it stands for.
 struct WorkshopSetupOverview: View {
     let facets: [WorkshopSetupFacet]
     let onSelect: (SettingsSearchAnchor) -> Void
@@ -34,7 +31,7 @@ struct WorkshopSetupOverview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
-                Text("Workshop setup", bundle: .main)
+                Text("Workshop setup")
                     .font(DesignTokens.Typography.bodyEmphasized)
 
                 Spacer(minLength: 0)
@@ -86,7 +83,7 @@ struct WorkshopSetupOverview: View {
                             .frame(width: 6, height: 6)
                             .accessibilityHidden(true)
 
-                        Text(facet.title, bundle: .main)
+                        Text(facet.title)
                             .font(DesignTokens.Typography.caption)
                             .foregroundStyle(.secondary)
                             .marqueeOnHover(truncationMode: .tail)
@@ -97,10 +94,10 @@ struct WorkshopSetupOverview: View {
                 .buttonStyle(.plain)
                 // The segments differ by colour alone; the state has to be
                 // readable without seeing the colour, hover included.
-                .help(Text(facet.state.statusText, bundle: .main))
-                .accessibilityLabel(Text(facet.title, bundle: .main))
-                .accessibilityValue(Text(facet.state.statusText, bundle: .main))
-                .accessibilityHint(Text("Scroll to this section", bundle: .main))
+                .help(Text(facet.state.statusText))
+                .accessibilityLabel(Text(facet.title))
+                .accessibilityValue(Text(facet.state.statusText))
+                .accessibilityHint(Text("Scroll to this section"))
             }
         }
     }
@@ -118,12 +115,12 @@ struct WorkshopSetupOverview: View {
         if ready == required.count {
             base = String(
                 localized: "All set",
-                comment: "Workshop setup status bar summary when every required setup step is done."
+                bundle: .appLanguage, comment: "Workshop setup status bar summary when every required setup step is done."
             )
         } else {
             base = String(
                 localized: "\(ready) of \(required.count) ready",
-                comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
+                bundle: .appLanguage, comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
             )
         }
         // Named rather than counted: the reader's question about an optional
@@ -131,7 +128,7 @@ struct WorkshopSetupOverview: View {
         guard facets.contains(where: { $0.isOptional && $0.state != .ready }) else { return base }
         return String(
             localized: "\(base) · API key optional",
-            comment: "Workshop setup status bar summary suffix; %@ is the required-steps summary."
+            bundle: .appLanguage, comment: "Workshop setup status bar summary suffix; %@ is the required-steps summary."
         )
     }
 }

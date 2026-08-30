@@ -14,11 +14,10 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
     private let windowStart: Int
     private let windowLength: Int
 
-    /// `.mappedIfSafe` is advisory: Foundation refuses to map files on network and
-    /// removable volumes and silently reads them onto the heap instead, which
-    /// turns "serve it from a mapping" into "hold the whole file as dirty memory"
-    /// — the case the cache budget exists to avoid. Same predicate and same
-    /// reasoning as `WPEPackageSceneAssetProvider.isPackageVolumeMappable`.
+    /// `.mappedIfSafe` is advisory: Foundation refuses to map files on network and removable volumes and
+    /// silently reads them onto the heap instead, turning "serve it from a mapping" into "hold the whole
+    /// file as dirty memory" — the case the cache budget exists to avoid (same predicate/reasoning as
+    /// `WPEPackageSceneAssetProvider.isPackageVolumeMappable`).
     static func isVolumeMappable(_ url: URL) -> Bool {
         guard let values = try? url.resourceValues(
             forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]
@@ -67,10 +66,9 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
                 NSLocalizedDescriptionKey: "Video entry \(entryName) not found in package"
             ])
         }
-        // Same trap as `load`: on a removable or network volume `.mappedIfSafe`
-        // degrades to a whole-file heap read — of the entire multi-GB package,
-        // not just this entry. There is no file-URL fallback for an embedded
-        // entry, so read only the entry's byte range instead; that bounds the
+        // Same trap as `load`: on a removable or network volume `.mappedIfSafe` degrades to a whole-
+        // file heap read of the entire multi-GB package, not just this entry. There is no file-URL
+        // fallback for an embedded entry, so read only the entry's byte range instead, bounding the
         // heap cost at the video's own size.
         let data: Data
         let start: Int
@@ -150,14 +148,11 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
     }
 
     /// Logical (0..<windowLength) byte range one data request must be served.
-    ///
-    /// AVAssetResourceLoader.h: with `requestsAllDataToEndOfResource` set,
-    /// requestedLength must be disregarded and data fed through EOF — responding
-    /// short and then calling `finishLoading()` makes the media system assume the
-    /// resource ends there. requestedLength is NSIntegerMax only while
-    /// contentLength is unreported, and this delegate reports it on the first
-    /// request, so testing `== Int.max` alone truncated the asset mid-playback
-    /// (issue #131).
+    /// AVAssetResourceLoader.h: with `requestsAllDataToEndOfResource` set, requestedLength must
+    /// be disregarded and data fed through EOF — responding short and calling `finishLoading()`
+    /// makes the media system assume the resource ends there. requestedLength is NSIntegerMax
+    /// only while contentLength is unreported, and this delegate reports it on the first request,
+    /// so testing `== Int.max` alone truncated the asset mid-playback (issue #131).
     static func logicalRange(
         currentOffset: Int64,
         requestedLength: Int,
@@ -182,15 +177,12 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
             info.contentType = mimeType
             info.contentLength = Int64(windowLength)
             info.isByteRangeAccessSupported = true
-            // Without this, AVFoundation treats us as a streaming source it may
-            // not be able to re-reach, so it hoards what we hand over and
-            // re-pulls the whole resource every loop: measured 673 MB delivered
-            // across three loops of a 56 MB clip, with footprint swinging 26 MB.
-            // Declaring on-demand availability (true here — the bytes are an
-            // mmap) drops that to 134 MB and a 5 MB swing, at the cost of many
-            // more, much smaller requests. AVAssetResourceLoader.h names this
-            // exact case: "the custom URL scheme ultimately refers to files on
-            // local storage".
+            // Without this, AVFoundation treats us as a streaming source it may not be able to re-reach,
+            // so it hoards what we hand over and re-pulls the whole resource every loop: measured 673 MB
+            // delivered across three loops of a 56 MB clip, footprint swinging 26 MB. Declaring on-demand
+            // availability (true here — the bytes are an mmap) drops that to 134 MB and a 5 MB swing, at
+            // the cost of many more, much smaller requests. AVAssetResourceLoader.h names this exact case:
+            // "the custom URL scheme ultimately refers to files on local storage".
             info.isEntireLengthAvailableOnDemand = true
         }
 

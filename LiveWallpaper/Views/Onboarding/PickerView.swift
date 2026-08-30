@@ -35,20 +35,24 @@ struct PickerView: View {
 
     let galleryActions: [OnboardingSourceAction]
     let didConfigure: (CGDirectDisplayID?) -> Void
-    let skip: () -> Void
+    /// Finishes onboarding without picking a source and opens the app.
+    let start: () -> Void
     let chooseAppleAerials: () -> Void
     let chooseSteamWorkshop: () -> Void
 
     @State private var inlineError: LocalizedStringResource?
     @State private var isDropTargeted = false
     @State private var isImportingScene = false
+    /// Which display an imported file lands on. Only this page needs it — the
+    /// other two cards open a library rather than applying anything.
+    @State private var selectedScreenID: CGDirectDisplayID?
 
     private var sceneCapable: Bool {
         OnboardingImportCopy.sceneCapable(in: featureCatalog)
     }
 
     var body: some View {
-        VStack(spacing: DesignTokens.Spacing.lg) {
+        VStack(spacing: DesignTokens.Spacing.xl) {
             header
 
             VStack(spacing: DesignTokens.Spacing.md) {
@@ -61,6 +65,8 @@ struct PickerView: View {
                 return handleImportedURL(url)
             } isTargeted: { isDropTargeted = $0 }
 
+            displayPicker
+
             Spacer(minLength: 0)
 
             if let inlineError {
@@ -72,15 +78,13 @@ struct PickerView: View {
                     .font(DesignTokens.Typography.body)
             }
 
-            VStack(spacing: DesignTokens.Spacing.xs) {
-                skipFooter
-                // Carried over from the retired completion page: it is the one
-                // thing a first-run reader cannot discover from the app window.
-                Text("Use the menu bar icon for quick playback controls.")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(DesignTokens.Colors.textSecondary)
-                    .multilineTextAlignment(.center)
+            Button(action: start) {
+                Text("Start")
+                    .frame(minWidth: 140)
             }
+            .buttonStyle(CapsuleButtonStyle(preset: .large))
+            .keyboardShortcut(.defaultAction)
+            .accessibilityHint(Text("Close setup and open the app"))
         }
         .padding(.horizontal, DesignTokens.Spacing.xl + DesignTokens.Spacing.sm)
         .padding(.bottom, DesignTokens.Spacing.lg)
@@ -94,7 +98,7 @@ struct PickerView: View {
     /// wallpaper: only Import applies one here, the other two open the library
     /// you asked for.
     private var header: some View {
-        VStack(spacing: DesignTokens.Spacing.xs) {
+        VStack(spacing: DesignTokens.Spacing.md) {
             Text("You're All Set")
                 .font(DesignTokens.Typography.pageTitle)
                 .accessibilityAddTraits(.isHeader)
@@ -137,14 +141,25 @@ struct PickerView: View {
         }
     }
 
+    /// Shown only with more than one display: with one there is nothing to
+    /// choose, and a picker with a single entry reads as a decision the reader
+    /// has to make.
     @ViewBuilder
-    private var skipFooter: some View {
-        Button(action: skip) {
-            Text("Skip for Now", comment: "Secondary onboarding action that defers wallpaper setup.")
-                .font(DesignTokens.Typography.body)
+    private var displayPicker: some View {
+        if screenManager.screens.count > 1 {
+            Picker(selection: $selectedScreenID) {
+                ForEach(screenManager.screens) { screen in
+                    Text(verbatim: screen.name).tag(Optional(screen.id))
+                }
+            } label: {
+                Text("Import to")
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
+            .onAppear {
+                if selectedScreenID == nil { selectedScreenID = screenManager.screens.first?.id }
+            }
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
     }
 
     private var dropHighlight: some View {
@@ -291,11 +306,15 @@ struct PickerView: View {
         if inlineError != nil { inlineError = nil }
     }
 
-    /// The primary display, which is exactly what the retired "Apply to" picker
-    /// defaulted to. Onboarding applies one wallpaper to one screen; the rest of
-    /// the displays are configured from the app, where the choice is visible.
+    /// The display the picker names, or the primary one when there is only a
+    /// single display and no picker is shown. Importing writes a wallpaper to a
+    /// specific screen, so the reader has to be able to say which.
     private var targetScreens: [Screen] {
-        screenManager.screens.first.map { [$0] } ?? []
+        if let selectedScreenID,
+           let chosen = screenManager.screens.first(where: { $0.id == selectedScreenID }) {
+            return [chosen]
+        }
+        return screenManager.screens.first.map { [$0] } ?? []
     }
 }
 
@@ -312,6 +331,13 @@ private struct ActionRowCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isActive: Bool { isHovering || isFocused }
+
+    private enum Metrics {
+        /// Tighter than the gallery default: three stacked cards on a 520pt
+        /// sheet sit close enough that a 12pt blur from each one pools in the
+        /// gaps and reads as a grey band rather than as depth.
+        static let cardShadowRadius: CGFloat = 6
+    }
 
     var body: some View {
         Button(action: action) {
@@ -349,7 +375,11 @@ private struct ActionRowCard: View {
                 RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)
                     .fill(DesignTokens.Colors.surfaceRaised)
             )
-            .galleryTileChrome(isHovering: isActive, reduceMotion: reduceMotion)
+            .galleryTileChrome(
+                isHovering: isActive,
+                shadowRadius: Metrics.cardShadowRadius,
+                reduceMotion: reduceMotion
+            )
         }
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous))

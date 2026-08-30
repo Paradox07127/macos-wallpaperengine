@@ -227,13 +227,10 @@ final class GIFAnimationController {
             while !Task.isCancelled {
                 let delay = index < gif.frameDelays.count ? gif.frameDelays[index] : 0.1
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                // The task strongly holds `gif` and its `CGImageSource`, so
-                // `[weak self]` only frees the controller — the decode loop
-                // would keep running for a tile that is already gone.
-                // `onDisappear` usually calls `stop()`, but a `LazyVGrid` can
-                // drop a tile without it. A `deinit` cannot do this: the class
-                // is `@MainActor`, so a nonisolated `deinit` may not touch the
-                // task handles.
+                // The task strongly holds `gif` and its `CGImageSource`, so `[weak self]` only
+                // frees the controller — the decode loop keeps running for a tile already gone.
+                // `onDisappear` usually calls `stop()`, but `LazyVGrid` can drop a tile without it.
+                // `deinit` can't: the class is `@MainActor`, so a nonisolated `deinit` may not touch the task handles.
                 guard !Task.isCancelled, let self else {
                     // Nobody is left to call `stop()`, so release the LRU slot
                     // here or a dead client holds one of the eight until it is

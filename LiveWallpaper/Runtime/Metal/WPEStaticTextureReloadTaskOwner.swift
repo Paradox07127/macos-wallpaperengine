@@ -4,13 +4,11 @@ import LiveWallpaperCore
 
 /// Generation-scoped owner for on-demand static-texture reload tasks. Admission
 /// closes atomically with task detachment, so a reload can drain a stable set.
-///
-/// Stays `@MainActor` because its admission bookkeeping must be ordered
-/// deterministically against its callers — a caller that just `submit`ted
-/// observes `canPublish == true` before the spawned task can run (same-executor
-/// scheduling), which an owner-`actor` version cannot guarantee (the task could
-/// complete during the caller's hop back). The renderer reaches it from the
-/// render actor via `await`; the reload *operation* hops to the render actor to
+/// Stays `@MainActor` because admission bookkeeping must order deterministically
+/// against callers — a just-`submit`ted caller observes `canPublish == true` before
+/// the spawned task runs (same-executor scheduling), which an `actor` version can't
+/// guarantee (the task could complete during the caller's hop back). The renderer
+/// reaches it via `await` from the render actor; the reload *operation* hops back to
 /// touch renderer state, so the owner itself never touches the renderer.
 @MainActor
 final class WPEStaticTextureReloadTaskOwner {

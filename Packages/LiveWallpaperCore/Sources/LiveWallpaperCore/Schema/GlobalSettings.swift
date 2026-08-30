@@ -123,11 +123,10 @@ public struct GlobalSettings: Codable, Sendable {
         pauseOnFullScreen = try c.decodeIfPresent(Bool.self, forKey: .pauseOnFullScreen) ?? true
         // Predates-key installs → true; explicit false still wins once encoded.
         pauseOnWindowOcclusion = (try? c.decodeIfPresent(Bool.self, forKey: .pauseOnWindowOcclusion)) ?? true
-        // Predates-key installs → true, matching the shipping default of the
-        // retired game/Low-Power-Mode toggle this replaces. When that retired key
-        // is present, inherit it: its own subtitle read "…or macOS enters Low
-        // Power Mode", so a user who switched it off was opting out of this too.
-        // The key is read but never re-encoded, so it disappears on first save.
+        // Predates-key installs → true, matching the shipping default of the retired game/Low-Power-
+        // Mode toggle this replaces. When that retired key is present, inherit it: its own subtitle
+        // read "…or macOS enters Low Power Mode", so a user who switched it off was opting out of
+        // this too. The key is read but never re-encoded, so it disappears on first save.
         if let stored = (try? c.decodeIfPresent(Bool.self, forKey: .pauseInLowPowerMode)) ?? nil {
             pauseInLowPowerMode = stored
         } else if let legacy = try? decoder.container(keyedBy: RetiredKeys.self),

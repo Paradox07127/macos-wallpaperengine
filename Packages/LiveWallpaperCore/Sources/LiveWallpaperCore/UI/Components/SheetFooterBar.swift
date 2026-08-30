@@ -47,7 +47,7 @@ public struct SheetFooterBar<Leading: View>: View {
             HStack(spacing: DesignTokens.Spacing.md) {
                 if let destructiveTitle, let destructiveAction {
                     Button(role: .destructive, action: destructiveAction) {
-                        Text(destructiveTitle, bundle: .main)
+                        Text(destructiveTitle)
                     }
                     .buttonStyle(.borderless)
                     .destructiveControlTint()
@@ -60,7 +60,7 @@ public struct SheetFooterBar<Leading: View>: View {
                 if let cancelTitle, let cancelAction {
                     helped(
                         Button(action: cancelAction) {
-                            Text(cancelTitle, bundle: .main)
+                            Text(cancelTitle)
                         }
                         .buttonStyle(.bordered)
                         .keyboardShortcut(.cancelAction),
@@ -70,7 +70,7 @@ public struct SheetFooterBar<Leading: View>: View {
 
                 helped(
                     Button(action: primaryAction) {
-                        Text(primaryTitle, bundle: .main)
+                        Text(primaryTitle)
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
@@ -86,7 +86,7 @@ public struct SheetFooterBar<Leading: View>: View {
     @ViewBuilder
     private func helped(_ view: some View, _ key: LocalizedStringKey?) -> some View {
         if let key {
-            view.help(Text(key, bundle: .main))
+            view.help(Text(key))
         } else {
             view
         }

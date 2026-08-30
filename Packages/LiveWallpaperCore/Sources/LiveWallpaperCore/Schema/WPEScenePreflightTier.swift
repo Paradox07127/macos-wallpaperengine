@@ -13,13 +13,13 @@ public enum WPEScenePreflightTier: String, Codable, Equatable, Sendable {
     public var localizedLabel: String {
         switch self {
         case .nativePlayable:
-            return String(localized: "Native", defaultValue: "Native", comment: "Scene preflight tier label.")
+            return String(localized: "Native", defaultValue: "Native", bundle: .appLanguage, comment: "Scene preflight tier label.")
         case .degradedPlayable:
-            return String(localized: "Approximate", defaultValue: "Approximate", comment: "Scene preflight tier label.")
+            return String(localized: "Approximate", defaultValue: "Approximate", bundle: .appLanguage, comment: "Scene preflight tier label.")
         case .runtimeSystemsRequired:
-            return String(localized: "Needs runtime systems", defaultValue: "Needs runtime systems", comment: "Scene preflight tier label.")
+            return String(localized: "Needs runtime systems", defaultValue: "Needs runtime systems", bundle: .appLanguage, comment: "Scene preflight tier label.")
         case .unsupported:
-            return String(localized: "Unsupported", defaultValue: "Unsupported", comment: "Scene preflight tier label.")
+            return String(localized: "Unsupported", defaultValue: "Unsupported", bundle: .appLanguage, comment: "Scene preflight tier label.")
         }
     }
 }

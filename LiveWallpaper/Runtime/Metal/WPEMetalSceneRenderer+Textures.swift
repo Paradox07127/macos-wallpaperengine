@@ -718,15 +718,13 @@ extension WPEMetalSceneRenderer {
         throw lastError ?? WPEMetalRenderExecutorError.missingTexture(.image(relativePath))
     }
 
-    /// Hands the eager animation the mmap-backed compressed `.tex` it was built
-    /// from, so `.suspended` can drop its atlases and re-upload them on resume.
-    ///
-    /// Skipped for two payload shapes the restore path cannot reproduce:
-    /// mip-chain uploads (it only re-uploads level 0), and PNG/JPEG-in-`.tex`
-    /// animations, whose atlases are rasterized CGImages — the streaming payload
-    /// hands back the *encoded* bytes, which would upload as garbage.
-    /// `WPETexDecoder.bridgeEncodedAnimatedImagePayload` is the only animated
-    /// path that returns an empty top-level `mipmaps`, which is the tell.
+    /// Hands the eager animation the mmap-backed compressed `.tex` it was built from, so
+    /// `.suspended` can drop its atlases and re-upload them on resume. Skipped for two
+    /// payload shapes the restore path cannot reproduce: mip-chain uploads (only re-uploads
+    /// level 0), and PNG/JPEG-in-`.tex` animations, whose atlases are rasterized CGImages —
+    /// the streaming payload hands back the *encoded* bytes, which would upload as garbage.
+    /// `WPETexDecoder.bridgeEncodedAnimatedImagePayload` is the only animated path that
+    /// returns an empty top-level `mipmaps`, which is the tell.
     private func attachAtlasProvider(
         to source: WPETexAnimatedTextureSource,
         eagerPayload: WPETexTexturePayload,
@@ -1043,12 +1041,11 @@ extension WPEMetalSceneRenderer {
         pipeline: WPEPreparedRenderPipeline,
         frameSlot: Int
     ) throws -> [String: MTLTexture] {
-        // Collected in the same walk that ticks the sources: a video source
-        // that just decoded a frame hands back the texture its conversion pass
-        // will write, and that pass has to be encoded into this frame's scene
-        // command buffer before any pass samples it. Load-time decodes (a still
-        // frame published from `init`) are caught here too — they are still
-        // staged on the first frame that walks the dictionary.
+        // Collected in the same walk that ticks the sources: a video source that just
+        // decoded a frame hands back the texture its conversion pass will write, and that
+        // pass must be encoded into this frame's scene command buffer before any pass samples
+        // it. Load-time decodes (a still frame published from `init`) are caught here too —
+        // still staged on the first frame that walks the dictionary.
         var stagedWork: [any WPEDynamicTextureSource] = []
         for (path, source) in dynamicTextureSources {
             if let texture = source.texture(at: time, frameSlot: frameSlot) {
@@ -1227,23 +1224,21 @@ extension WPEMetalSceneRenderer {
         case let executorError as WPEMetalRenderExecutorError:
             switch executorError {
             case .unsupportedShader(let name):
-                return .materialUnresolved(layer: layerName, reason: "Shader \"\(name)\" is not supported by the Metal renderer yet.")
+                return .materialUnresolved(layer: layerName, reason: String(localized: "Shader \"\(name)\" is not supported by the Metal renderer yet.", bundle: .appLanguage, comment: "Scene load diagnostic. Placeholder is the shader name."))
             case .shaderTranslatorUnavailable(let name, let reason):
                 return .materialUnresolved(
                     layer: layerName,
-                    reason: "Shader \"\(name)\" needs the WPE GLSL translator: \(reason)"
+                    reason: String(localized: "Shader \"\(name)\" needs the WPE GLSL translator: \(reason)", bundle: .appLanguage, comment: "Scene load diagnostic. Placeholders are the shader name and the translator failure.")
                 )
             case .pipelineStateBuildFailed(let name, let detail):
                 return .materialUnresolved(
                     layer: layerName,
-                    reason: "Metal pipeline for \"\(name)\" failed to build: \(detail)"
+                    reason: String(localized: "Metal pipeline for \"\(name)\" failed to build: \(detail)", bundle: .appLanguage, comment: "Scene load diagnostic. Placeholders are the pipeline name and the Metal error.")
                 )
-            case .unsupportedTarget:
-                return .materialUnresolved(layer: layerName, reason: "This wallpaper uses an unsupported rendering target.")
             case .renderTargetDimensionsExceedDeviceLimit(let targetName, let width, let height, let limit):
                 return .materialUnresolved(
                     layer: layerName,
-                    reason: "Render target \"\(targetName)\" is \(width)x\(height), exceeding this device's \(limit)x\(limit) Metal texture limit."
+                    reason: String(localized: "Render target \"\(targetName)\" is \(width)x\(height), exceeding this device's \(limit)x\(limit) Metal texture limit.", bundle: .appLanguage, comment: "Scene load diagnostic. Placeholders are the target name, its width and height, then the device texture limit twice.")
                 )
             case .missingTexture(let reference):
                 switch reference {
@@ -1253,20 +1248,20 @@ extension WPEMetalSceneRenderer {
                     // Named RT, not a file. Unwritten declared FBOs are zero-filled; reaching here is an undeclared target (graph/transpile bug).
                     return .materialUnresolved(
                         layer: layerName,
-                        reason: "Render target \"\(name)\" is not produced by any pass."
+                        reason: String(localized: "Render target \"\(name)\" is not produced by any pass.", bundle: .appLanguage, comment: "Scene load diagnostic. Placeholder is the render target name.")
                     )
                 case .previous:
-                    return .materialUnresolved(layer: layerName, reason: "Previous-frame effects (motion blur, feedback) are not yet supported.")
+                    return .materialUnresolved(layer: layerName, reason: String(localized: "Previous-frame effects (motion blur, feedback) are not yet supported.", bundle: .appLanguage, comment: "Scene load diagnostic."))
                 }
             case .noRenderablePasses:
-                return .materialUnresolved(layer: layerName, reason: "Scene contains no renderable passes.")
+                return .materialUnresolved(layer: layerName, reason: String(localized: "Scene contains no renderable passes.", bundle: .appLanguage, comment: "Scene load diagnostic."))
             case .commandQueueUnavailable, .libraryUnavailable, .pipelineUnavailable, .commandBufferFailed:
-                return .other(layer: layerName, message: executorError.errorDescription ?? "Metal renderer failed.")
+                return .other(layer: layerName, message: executorError.errorDescription ?? String(localized: "Metal renderer failed.", bundle: .appLanguage, comment: "Scene load diagnostic fallback when the executor error carries no description."))
             }
         case let loaderError as WPEMetalTextureLoaderError:
             switch loaderError {
             case .unsupportedFormat, .unsupportedCompressedFormat, .malformedPayload, .textureAllocationFailed:
-                return .other(layer: layerName, message: loaderError.errorDescription ?? "Texture upload failed.")
+                return .other(layer: layerName, message: loaderError.errorDescription ?? String(localized: "Texture upload failed.", bundle: .appLanguage, comment: "Scene load diagnostic fallback when the texture loader error carries no description."))
             }
         case let resolveError as SceneResourceResolver.ResolveError:
             switch resolveError {
@@ -1286,7 +1281,7 @@ extension WPEMetalSceneRenderer {
                     message: String(
                         localized: "A texture or image file is corrupted and cannot be decoded.",
                         defaultValue: "A texture or image file is corrupted and cannot be decoded.",
-                        comment: "Wallpaper Engine fallback diagnostic when a texture decode fails because the file is corrupt."
+                        bundle: .appLanguage, comment: "Wallpaper Engine fallback diagnostic when a texture decode fails because the file is corrupt."
                     )
                 )
             }

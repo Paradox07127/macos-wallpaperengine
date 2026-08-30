@@ -1,15 +1,13 @@
 import Foundation
 
 /// Best-effort privacy scrubber shared by the logging boundary, persistent
-/// diagnostics, and user-facing error surfaces.
-///
-/// Replaces home-directory prefixes, absolute user paths, URL userinfo,
-/// URL query/fragment strings for every scheme, raw geographic coordinates,
-/// bearer / basic / token / api-key fragments, IP addresses, `.local`
-/// machine hostnames, Steam IDs / account names, and `ssfn*` sentry tokens
-/// with `<redacted>` placeholders while preserving enough structure
-/// (extensions, DNS hosts, error codes) to keep the message actionable for
-/// triage.
+/// diagnostics, and user-facing error surfaces. Replaces home-directory
+/// prefixes, absolute user paths, URL userinfo, URL query/fragment strings
+/// for every scheme, raw geographic coordinates, bearer/basic/token/api-key
+/// fragments, IP addresses, `.local` machine hostnames, Steam IDs/account
+/// names, and `ssfn*` sentry tokens with `<redacted>` placeholders — while
+/// preserving enough structure (extensions, DNS hosts, error codes) to keep
+/// the message actionable for triage.
 public enum LogPrivacyRedactor {
     public static func scrub(_ raw: String) -> String {
         var result = raw
@@ -32,6 +30,33 @@ public enum LogPrivacyRedactor {
         }
 
         return result
+    }
+
+    /// Flattens an untrusted display string (a Workshop title) for logging.
+    /// Titles are author-supplied: a CR/LF inside one would forge extra log
+    /// entries, and an overlong one would crowd out the five-line excerpt
+    /// lifted into a bug report. Control/format scalars become spaces, runs
+    /// collapse, and the result is capped.
+    public static func sanitizedTitle(_ raw: String, maxLength: Int = 80) -> String {
+        let cap = max(1, maxLength)
+        let flattened = String(String.UnicodeScalarView(raw.unicodeScalars.map { scalar in
+            CharacterSet.controlCharacters.contains(scalar)
+                || CharacterSet.whitespacesAndNewlines.contains(scalar)
+                ? " " : scalar
+        }))
+        let collapsed = flattened
+            .split(separator: " ", omittingEmptySubsequences: true)
+            .joined(separator: " ")
+        guard collapsed.count > cap else { return collapsed }
+        return String(collapsed.prefix(cap - 1)) + "…"
+    }
+
+    /// `" — <title>"` for a log line, or `""` when there is no usable title.
+    /// Keeps the branching out of the call site's string interpolation.
+    public static func titleFragment(_ raw: String?, maxLength: Int = 80) -> String {
+        guard let raw else { return "" }
+        let title = sanitizedTitle(raw, maxLength: maxLength)
+        return title.isEmpty ? "" : " — \(title)"
     }
 
     // MARK: - Precompiled rules

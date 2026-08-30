@@ -1,16 +1,14 @@
 import Foundation
 
 /// Sliding-window QoS decision logic for the render thread. The render thread runs
-/// its frame body with huge headroom (Release p95 ≈ 4.2ms vs a 16.7ms/60fps
-/// budget), so pinning it at `.userInteractive` keeps it on the P-cores and burns
-/// power for nothing. This state machine lets the thread ride the E-cores
-/// (`.utility`) by default and only climb to `.userInteractive` when a measured
-/// p95 shows it actually needs the P-cores to hold cadence.
+/// its frame body with huge headroom (Release p95 ≈ 4.2ms vs a 16.7ms/60fps budget),
+/// so pinning it at `.userInteractive` burns power for nothing — this state machine
+/// rides the E-cores (`.utility`) by default and only climbs to `.userInteractive`
+/// when a measured p95 shows it actually needs the P-cores to hold cadence.
 ///
-/// Pure logic, no `pthread` calls: the owner (`WPERenderThread`) applies the
-/// returned level. NOT thread-safe by design — every method is invoked on the one
-/// render thread that owns the instance, so no lock is needed. Falsifiable: if a
-/// method is ever called off that thread the ring buffer races.
+/// Pure logic, no `pthread` calls (the owner `WPERenderThread` applies the returned
+/// level). NOT thread-safe by design — every method runs on the one render thread
+/// that owns the instance; calling off that thread races the ring buffer.
 struct WPEAdaptiveRenderQoS {
 
     /// The two QoS tiers the thread moves between. `.economy` maps to

@@ -4,16 +4,11 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Every Steam-side check Loomscreen can run, in one place.
-///
-/// It used to be a `DisclosureGroup` nested inside the connection section,
-/// which scoped it to the three steps above it — so the checks that describe
-/// the scene resources or the connector itself had nowhere to live. As its own
-/// section it can cover all of them.
-///
-/// **Advisory only.** Nothing here gates anything: downloads are blocked by
-/// `SteamCMDDoctorService.downloadBlocker`, which reads the bindings and the
-/// binary-identity verdict and never consults the rest of these probes. A red
-/// row means "here is what looks wrong", not "you may not proceed".
+/// It used to be a `DisclosureGroup` nested inside the connection section, scoped to the three
+/// steps above it, so checks describing the scene resources or the connector had nowhere to live;
+/// as its own section it covers all of them.
+/// **Advisory only.** Downloads are blocked by `SteamCMDDoctorService.downloadBlocker` (bindings +
+/// binary-identity verdict), never these probes — a red row means "here is what looks wrong", not "you may not proceed".
 struct WorkshopDiagnosticsSection: View {
     @Binding var showingExportToast: Bool
 
@@ -36,7 +31,7 @@ struct WorkshopDiagnosticsSection: View {
                         if service.state == .probing {
                             ProgressView().controlSize(.small)
                         }
-                        Text("Run all checks", bundle: .main)
+                        Text("Run all checks")
                     }
                 }
                 .buttonStyle(.bordered)
@@ -46,7 +41,7 @@ struct WorkshopDiagnosticsSection: View {
                 // A button, not a link: this copies a payload to the
                 // pasteboard. Link styling is for things that open a web page.
                 Button(action: exportDiagnostics) {
-                    Text("Export", bundle: .main)
+                    Text("Export")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -57,14 +52,6 @@ struct WorkshopDiagnosticsSection: View {
             .padding(.top, DesignTokens.Spacing.xs)
         } header: {
             SettingsSearchSectionHeader("Diagnostics", anchor: .workshopDiagnostics)
-        } footer: {
-            // Scoped to verdicts on purpose: running the checks does briefly
-            // re-verify the Steam sign-in, and downloads wait for that — so
-            // "these never stop you" would have been false for those seconds.
-            Text("A failing check never takes an action away from you. It reports what it found; nothing here decides whether you can browse, download or play.", bundle: .main)
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

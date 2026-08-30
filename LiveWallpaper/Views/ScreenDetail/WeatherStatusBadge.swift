@@ -147,15 +147,15 @@ private extension WeatherReactiveService.LocationStatus {
     var localizedTitle: String {
         switch self {
         case .notDetermined:
-            return String(localized: "Not Determined", defaultValue: "Not Determined", comment: "Weather location status.")
+            return String(localized: "Not Determined", defaultValue: "Not Determined", bundle: .appLanguage, comment: "Weather location status.")
         case .denied:
-            return String(localized: "Location Denied", defaultValue: "Location Denied", comment: "Weather location status.")
+            return String(localized: "Location Denied", defaultValue: "Location Denied", bundle: .appLanguage, comment: "Weather location status.")
         case .fetching:
-            return String(localized: "Fetching...", defaultValue: "Fetching...", comment: "Weather location status.")
+            return String(localized: "Fetching...", defaultValue: "Fetching...", bundle: .appLanguage, comment: "Weather location status.")
         case .available:
-            return String(localized: "Available", defaultValue: "Available", comment: "Weather location status.")
+            return String(localized: "Available", defaultValue: "Available", bundle: .appLanguage, comment: "Weather location status.")
         case .error:
-            return String(localized: "Error", defaultValue: "Error", comment: "Weather location status.")
+            return String(localized: "Error", defaultValue: "Error", bundle: .appLanguage, comment: "Weather location status.")
         }
     }
 }
@@ -180,27 +180,27 @@ private extension WeatherReactiveService.WeatherDescription {
     var localizedTitle: String {
         switch self {
         case .clear:
-            return String(localized: "Clear", defaultValue: "Clear", comment: "Weather condition.")
+            return String(localized: "Clear", defaultValue: "Clear", bundle: .appLanguage, comment: "Weather condition.")
         case .partlyCloudy:
-            return String(localized: "Partly Cloudy", defaultValue: "Partly Cloudy", comment: "Weather condition.")
+            return String(localized: "Partly Cloudy", defaultValue: "Partly Cloudy", bundle: .appLanguage, comment: "Weather condition.")
         case .cloudy:
-            return String(localized: "Overcast", defaultValue: "Overcast", comment: "Weather condition.")
+            return String(localized: "Overcast", defaultValue: "Overcast", bundle: .appLanguage, comment: "Weather condition.")
         case .foggy:
-            return String(localized: "Foggy", defaultValue: "Foggy", comment: "Weather condition.")
+            return String(localized: "Foggy", defaultValue: "Foggy", bundle: .appLanguage, comment: "Weather condition.")
         case .drizzle:
-            return String(localized: "Drizzle", defaultValue: "Drizzle", comment: "Weather condition.")
+            return String(localized: "Drizzle", defaultValue: "Drizzle", bundle: .appLanguage, comment: "Weather condition.")
         case .rain:
-            return String(localized: "Rain", defaultValue: "Rain", comment: "Weather condition.")
+            return String(localized: "Rain", defaultValue: "Rain", bundle: .appLanguage, comment: "Weather condition.")
         case .heavyRain:
-            return String(localized: "Heavy Rain", defaultValue: "Heavy Rain", comment: "Weather condition.")
+            return String(localized: "Heavy Rain", defaultValue: "Heavy Rain", bundle: .appLanguage, comment: "Weather condition.")
         case .snow:
-            return String(localized: "Snow", defaultValue: "Snow", comment: "Weather condition.")
+            return String(localized: "Snow", defaultValue: "Snow", bundle: .appLanguage, comment: "Weather condition.")
         case .heavySnow:
-            return String(localized: "Heavy Snow", defaultValue: "Heavy Snow", comment: "Weather condition.")
+            return String(localized: "Heavy Snow", defaultValue: "Heavy Snow", bundle: .appLanguage, comment: "Weather condition.")
         case .thunderstorm:
-            return String(localized: "Thunderstorm", defaultValue: "Thunderstorm", comment: "Weather condition.")
+            return String(localized: "Thunderstorm", defaultValue: "Thunderstorm", bundle: .appLanguage, comment: "Weather condition.")
         case .unknown:
-            return String(localized: "Unknown", defaultValue: "Unknown", comment: "Weather condition.")
+            return String(localized: "Unknown", defaultValue: "Unknown", bundle: .appLanguage, comment: "Weather condition.")
         }
     }
 }

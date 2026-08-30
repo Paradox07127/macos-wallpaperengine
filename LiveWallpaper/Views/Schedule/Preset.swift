@@ -37,15 +37,15 @@ enum Preset: String, Identifiable, CaseIterable {
     var localized: String {
         switch self {
         case .morning:
-            return String(localized: "Morning", defaultValue: "Morning", comment: "Default schedule slot name.")
+            return String(localized: "Morning", defaultValue: "Morning", bundle: .appLanguage, comment: "Default schedule slot name.")
         case .midday:
-            return String(localized: "Midday", defaultValue: "Midday", comment: "Default schedule slot name.")
+            return String(localized: "Midday", defaultValue: "Midday", bundle: .appLanguage, comment: "Default schedule slot name.")
         case .afternoon:
-            return String(localized: "Afternoon", defaultValue: "Afternoon", comment: "Default schedule slot name.")
+            return String(localized: "Afternoon", defaultValue: "Afternoon", bundle: .appLanguage, comment: "Default schedule slot name.")
         case .evening:
-            return String(localized: "Evening", defaultValue: "Evening", comment: "Default schedule slot name.")
+            return String(localized: "Evening", defaultValue: "Evening", bundle: .appLanguage, comment: "Default schedule slot name.")
         case .night:
-            return String(localized: "Night", defaultValue: "Night", comment: "Default schedule slot name.")
+            return String(localized: "Night", defaultValue: "Night", bundle: .appLanguage, comment: "Default schedule slot name.")
         }
     }
 
@@ -98,7 +98,7 @@ enum ScheduleTimeFormatter {
             let nextDay = String(
                 localized: "next day",
                 defaultValue: "next day",
-                comment: "Suffix appended to a schedule end-time when the slot wraps past midnight."
+                bundle: .appLanguage, comment: "Suffix appended to a schedule end-time when the slot wraps past midnight."
             )
             return "\(start) — \(end) (\(nextDay))"
         }
@@ -112,7 +112,7 @@ enum ScheduleTimeFormatter {
             let nextDay = String(
                 localized: "next day",
                 defaultValue: "next day",
-                comment: "Suffix appended to a schedule end-time when the slot wraps past midnight."
+                bundle: .appLanguage, comment: "Suffix appended to a schedule end-time when the slot wraps past midnight."
             )
             return "\(base) (\(nextDay))"
         }

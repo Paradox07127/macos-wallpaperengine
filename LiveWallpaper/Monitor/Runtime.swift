@@ -471,24 +471,20 @@ actor Runtime {
         return merged
     }
 
-    /// How many base samples to skip between GPU reads.
-    ///
-    /// Must divide by the interval actually handed to `SystemMetricsSource`, not
-    /// by a constant: the base tick used to be a fixed 2s, and a board can now
-    /// pick anything in 0.5…5s. Rounding up rather than to nearest, because
-    /// sampling the GPU *more* often than asked is the expensive direction.
+    /// How many base samples to skip between GPU reads. Must divide by the interval actually handed to
+    /// `SystemMetricsSource`, not a constant — the base tick used to be a fixed 2s, a board can now pick
+    /// anything in 0.5…5s. Rounds up, not to nearest, because sampling the GPU *more* often than asked is
+    /// the expensive direction.
     static func gpuCadence(forSeconds seconds: Double?, baseInterval: Double) -> Int? {
         guard let seconds, seconds.isFinite, seconds > 0,
               baseInterval.isFinite, baseInterval > 0 else { return nil }
         return max(1, Int((seconds / baseInterval).rounded(.up)))
     }
 
-    /// Map the union of placed widget kinds to the system source's per-concern
-    /// demand gates. Each expensive walk runs only when its widget is on the board.
-    /// Kind says what a widget *could* need; the per-widget section toggles say
-    /// what it still wants. Sampling honours the narrower answer, so switching a
-    /// section off stops the SMC reads / process walk instead of only hiding the
-    /// result. `nil` demand leaves the kind baseline untouched.
+    /// Maps placed widget kinds to the system source's per-concern demand gates: an expensive walk runs only when
+    /// its widget is on the board. Kind says what a widget *could* need; per-widget toggles say what it still
+    /// wants — sampling honours the narrower one, so switching a section off stops the SMC reads / process walk,
+    /// not just hides the result. `nil` demand leaves the kind baseline untouched.
     static func narrowed(
         _ options: SystemMetricsSource.Options,
         to demand: MonitorSampleDemand?

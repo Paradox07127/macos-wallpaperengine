@@ -68,10 +68,9 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
     /// the UI shows its HTTP warning from this.
     public var isSecure: Bool { scheme == "https" }
 
-    /// W3C Secure Contexts treats loopback as a potentially trustworthy origin
-    /// even over http, which is why browsers give `http://localhost` the same
-    /// powers as https. Traffic never leaves the machine, so there is no
-    /// network position from which to tamper with it.
+    /// W3C Secure Contexts treats loopback as a potentially trustworthy origin even over http, which
+    /// is why browsers give `http://localhost` the same powers as https. Traffic never leaves the
+    /// machine, so there is no network position from which to tamper with it.
     /// <https://w3c.github.io/webappsec-secure-contexts/>
     public var isLoopback: Bool { Self.isLoopbackHost(host) }
 

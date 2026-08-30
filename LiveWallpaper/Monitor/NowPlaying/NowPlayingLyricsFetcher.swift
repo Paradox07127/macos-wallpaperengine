@@ -18,13 +18,10 @@ struct LyricLine: Equatable, Sendable {
 // MARK: - Parsing and lookup (pure)
 
 enum NowPlayingLyrics {
-    /// LRC → timed lines. Never throws and never traps: anything unparseable is
-    /// skipped, so a malformed catalogue entry yields fewer lines, not a crash.
-    ///
-    /// Handled because real catalogue rows contain them: BOM, CRLF, `[mm:ss.xx]`
-    /// and `[mm:ss.xxx]`, several time tags on one line (expanded into one line
-    /// each), `[ar:]`-style metadata, `[offset:]` (applied), blank lines,
-    /// `<mm:ss.xx>` word tags, and timestamps written out of order.
+    /// LRC → timed lines. Never throws or traps: anything unparseable is skipped, so a malformed entry
+    /// yields fewer lines, not a crash. Handles what real catalogue rows contain: BOM, CRLF,
+    /// `[mm:ss.xx]`/`[mm:ss.xxx]`, multiple time tags per line (expanded to one line each), `[ar:]`-style
+    /// metadata, applied `[offset:]`, blank lines, `<mm:ss.xx>` word tags, and out-of-order timestamps.
     nonisolated static func parseLRC(_ text: String) -> [LyricLine] {
         var body = text
         if body.hasPrefix("\u{FEFF}") { body.removeFirst() }
@@ -191,12 +188,10 @@ enum NowPlayingLyrics {
 
 // MARK: - Fetcher
 
-/// Resolves synced lyrics from LRCLIB, under the same network discipline as
-/// `NowPlayingArtworkFetcher`: positive LRU cache, in-flight merging per track
-/// key, one retry, and a TTL'd negative cache.
-///
-/// LRCLIB is keyless and needs no OAuth; it asks callers to identify themselves
-/// in `User-Agent`, which every request here carries.
+/// Resolves synced lyrics from LRCLIB, under the same network discipline as `NowPlayingArtworkFetcher`:
+/// positive LRU cache, in-flight merging per track key, one retry, and a TTL'd negative cache. LRCLIB
+/// is keyless and needs no OAuth; it asks callers to identify themselves in `User-Agent`, which every
+/// request here carries.
 actor NowPlayingLyricsFetcher {
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 

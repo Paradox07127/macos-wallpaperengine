@@ -90,11 +90,9 @@ enum NowPlayingAudioLayer {
         left.contains { $0 >= silenceThreshold } || right.contains { $0 >= silenceThreshold }
     }
 
-    /// Attack-fast / release-slow envelope, normalized to the elapsed frame:
-    /// `releaseFactor` is per 1/30 s, so a dropped frame must decay by that
-    /// many ticks' worth or the visuals slow down exactly when the machine is
-    /// busiest. A long stall is capped at 0.25 s so a resumed layer doesn't
-    /// snap to zero.
+    /// Attack-fast / release-slow envelope, normalized to the elapsed frame: `releaseFactor` is per 1/30 s, so a
+    /// dropped frame must decay by that many ticks' worth or the visuals slow down exactly when the machine is
+    /// busiest. A long stall is capped at 0.25 s so a resumed layer doesn't snap to zero.
     nonisolated static func smoothed(previous: Float, target: Float, dt: TimeInterval) -> Float {
         let ticks = Float(min(max(dt, 0), 0.25) * referenceTickRate)
         return max(target, previous * pow(releaseFactor, ticks))

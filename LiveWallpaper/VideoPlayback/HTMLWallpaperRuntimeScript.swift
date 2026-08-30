@@ -1006,11 +1006,10 @@ enum HTMLWallpaperRuntimeScript {
                 return false;
             }
 
-            // A broadcast only reaches the frames that exist when it is sent, so
-            // an iframe inserted after the last push used to run at the display
-            // rate until the next thermal/limit change. The newcomer asks
-            // instead. Reaches exactly the frames WebKit injects this script
-            // into (`forMainFrameOnly: false`), which is not every frame.
+            // A broadcast only reaches the frames that exist when it is sent, so an iframe inserted
+            // after the last push used to run at the display rate until the next thermal/limit change —
+            // the newcomer asks instead. Reaches exactly the frames WebKit injects this script into
+            // (`forMainFrameOnly: false`), which is not every frame.
             function installPacingRequestResponder() {
                 try {
                     window.addEventListener('message', function (event) {
@@ -1184,12 +1183,10 @@ enum HTMLWallpaperRuntimeScript {
                         // drops a 30 fps target to 20 on a 60 Hz display.
                         var slack = rafNativeIntervalMs > 0 ? rafNativeIntervalMs / 2 : 0;
                         if (t - rafLastDispatchMs >= rafTargetIntervalMs - slack) {
-                            // Advance the schedule instead of restamping to `t`.
-                            // Restamping folds every slack-sized early accept
-                            // into the next deadline, so the error accumulates:
-                            // 30 fps on a 75 Hz panel ran at 37.5. Advancing
-                            // leaves the deadline at most `slack` ahead of `t`,
-                            // which makes the long-run rate <= the target.
+                            // Advance the schedule instead of restamping to `t`: restamping folds every slack-sized early
+                            // accept into the next deadline, so the error accumulates (30 fps on a 75 Hz panel ran at 37.5);
+                            // advancing leaves the deadline at most `slack` ahead of `t`, keeping the long-run rate <= the
+                            // target.
                             rafLastDispatchMs += rafTargetIntervalMs;
                             // More than a whole interval behind means the page
                             // was stalled (long frame, offscreen tab). Snapping

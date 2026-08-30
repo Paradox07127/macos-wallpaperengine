@@ -95,27 +95,22 @@ extension WPEMetalRenderExecutor {
             parallax.y + system.hostOriginOffset.y,
             0, 0
         )
-        // `spritetrail` orient + stretch. WPE's `genericparticle` TRAILRENDERER path
-        // (common_particles.h `ComputeParticleTrailTangents`) does TWO things: it
-        // orients the quad's height axis ALONG velocity (`up = normalize(velocity)`),
-        // then stretches by `clamp(speed*length, minlen, maxlength)`. `g_RenderVar0 =
-        // (length, maxlength, minlen, …)`; length/maxlength carry the authored JSON
-        // values verbatim — NOT unit-converted. `trail.w > 0.5` enables the path.
+        // `spritetrail` orient+stretch mirrors WPE's `genericparticle` TRAILRENDERER path
+        // (`common_particles.h` `ComputeParticleTrailTangents`): orient height axis ALONG
+        // velocity (`up = normalize(velocity)`), stretch by `clamp(speed*length, minlen,
+        // maxlength)`. `g_RenderVar0 = (length, maxlength, minlen, …)` is authored JSON
+        // verbatim (not unit-converted); `trail.w > 0.5` enables the path.
         //
-        // The velocity orientation is load-bearing even at stretch 1×: with velocity
-        // pointing down, `ComputeParticlePosition`'s `-up*(uv.y-0.5)` puts texture-top
-        // at screen-BOTTOM — a 180° flip. rain's `particle/drop` (32×128) is authored
-        // bulb-at-top / tail-at-bottom precisely so this flip lands the bulb leading
-        // the fall. Drop the orientation and the drop renders head-up (WRONG).
-        //   - `ropetrail` (kind `.rope`) is a different shader (`genericropeparticle`)
-        //     that ribbons through position history; length is a UV segment scale, not
-        //     a velocity stretch — it draws via `usesRibbonGeometry`, never stretched.
-        //   - perspective systems (flags&4): keep the velocity orientation, but PIN the
-        //     stretch to its 1× floor (length→0 kills the speed coupling, minlen→1).
-        //     `perspectiveDepthScale` only grows near particles, never shrinks far ones,
-        //     so the full `speed*length`≈15× stretch turned every 32×128 drop into a
-        //     full-screen line. 1× keeps the bare 4:1 drop the team validated, now
-        //     correctly oriented.
+        // Orientation matters even at 1×: `ComputeParticlePosition`'s `-up*(uv.y-0.5)`
+        // puts texture-top at screen-BOTTOM when velocity points down — rain's
+        // `particle/drop` (32×128, bulb-at-top/tail-at-bottom) needs this flip to land
+        // bulb-leading; drop it and the drop renders head-up (WRONG).
+        //   - `ropetrail` (`.rope`): different shader (`genericropeparticle`), ribbons via
+        //     position history / `usesRibbonGeometry`, never stretched.
+        //   - perspective (flags&4): keep orientation, PIN stretch to 1× (length→0,
+        //     minlen→1) — `perspectiveDepthScale` only grows near particles, so the ~15×
+        //     `speed*length` stretch turned every drop into a full-screen line; 1× keeps
+        //     the validated 4:1 drop, correctly oriented.
         if let trail = system.definition.trailRenderer, trail.kind == .sprite {
             if system.definition.isPerspective {
                 projection.trail = SIMD4<Float>(0, Float(trail.maxLength), 1, 1)

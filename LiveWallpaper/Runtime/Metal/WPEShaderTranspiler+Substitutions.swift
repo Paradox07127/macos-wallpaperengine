@@ -729,12 +729,10 @@ extension WPEShaderTranspiler {
         return result
     }
 
-    /// WPE compiles scene shaders as GLSL translated to HLSL and built with fxc (shader model 3),
-    /// which downgrades two things Metal rejects outright to warnings: a wider vector passed where
-    /// a narrower one is expected is truncated, and a scalar is indexable as `float1` so a second
-    /// subscript on a `float[N]` element is a no-op. Workshop authors ship shaders that rely on
-    /// both — scene 3776778760's audio ring hits all three sites below — so emulate fxc rather
-    /// than fail the pass.
+    /// WPE compiles scene shaders as GLSL translated to HLSL and built with fxc (shader model
+    /// 3), which downgrades two things Metal rejects outright to warnings: a wider vector
+    /// passed where a narrower one is expected is truncated, and a scalar is indexable as
+    /// `float1` so a second subscript on a `float[N]` element is a no-op. Workshop authors ship shaders relying on both (scene 3776778760's audio ring hits all three sites below), so emulate fxc rather than fail the pass.
     private static func rewriteHLSLImplicitConversions(
         _ source: String,
         uniforms: [WPEUniformDecl],

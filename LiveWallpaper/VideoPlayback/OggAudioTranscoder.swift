@@ -143,11 +143,10 @@ final class OggAudioTranscoder: @unchecked Sendable {
                 )
                 let started = ProcessInfo.processInfo.systemUptime
                 var reachedEnd = false
-                // `AVAudioFile.read` THROWS at end-of-stream (Ogg `length` is only
-                // an estimate, so an exact frame count can't be read). Treat that
-                // throw as completion once audio has been decoded; a throw before
-                // any frames is a genuine decode failure (→ caught below, no cache).
-                // A `write` failure still propagates as a real error.
+                // `AVAudioFile.read` THROWS at end-of-stream (Ogg `length` is only an estimate, so an exact
+                // frame count can't be read) — treat that as completion once audio has been decoded; a throw
+                // before any frames is a genuine decode failure (caught below, no cache). A `write` failure
+                // still propagates as a real error.
                 while !reachedEnd {
                     if ProcessInfo.processInfo.systemUptime - started > deadline { throw TranscodeError.timedOut }
                     if isCancelled() { throw TranscodeError.cancelled }
@@ -230,11 +229,10 @@ final class OggAudioTranscoder: @unchecked Sendable {
         for file in files.sorted(by: { $0.modified < $1.modified }) {
             if total <= Self.maxCacheBytes { break }
             let key = file.url.deletingPathExtension().lastPathComponent
-            // Check-and-delete atomically with the caller's disk-hit promotion
-            // (which also runs under `lock`): clear the memo and unlink while
-            // holding it so a concurrent request can't re-promote the path
-            // between our check and the delete. Evicting a `.ready` entry is
-            // fine — the next request simply re-transcodes.
+            // Check-and-delete atomically with the caller's disk-hit promotion (also under `lock`):
+            // clear the memo and unlink while holding it so a concurrent request can't re-promote the
+            // path between check and delete. Evicting a `.ready` entry is fine — the next request
+            // simply re-transcodes.
             lock.lock()
             if pending[key] != nil {
                 lock.unlock()

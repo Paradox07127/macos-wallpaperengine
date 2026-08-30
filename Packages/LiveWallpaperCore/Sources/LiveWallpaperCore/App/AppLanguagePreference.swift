@@ -1,4 +1,5 @@
 import Foundation
+import os
 import SwiftUI
 
 public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable {
@@ -83,30 +84,14 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
             table: tableName
         )
     }
-
-    public static func localizedFormat(
-        _ key: String,
-        defaultValue: String? = nil,
-        tableName: String? = nil,
-        bundle: Bundle = .main,
-        _ arguments: CVarArg...
-    ) -> String {
-        let format = localizedString(
-            key,
-            defaultValue: defaultValue,
-            tableName: tableName,
-            bundle: bundle
-        )
-        return String(format: format, locale: current.locale, arguments: arguments)
-    }
 }
 
-struct AppLanguageScope<Content: View>: View {
+public struct AppLanguageScope<Content: View>: View {
     @AppStorage(AppLanguagePreference.storageKey) private var rawPreference = AppLanguagePreference.system.rawValue
 
     private let content: Content
 
-    init(defaults: UserDefaults = .standard, @ViewBuilder content: () -> Content) {
+    public init(defaults: UserDefaults = .standard, @ViewBuilder content: () -> Content) {
         _rawPreference = AppStorage(
             wrappedValue: AppLanguagePreference.system.rawValue,
             AppLanguagePreference.storageKey,
@@ -115,7 +100,7 @@ struct AppLanguageScope<Content: View>: View {
         self.content = content()
     }
 
-    var body: some View {
+    public var body: some View {
         content.environment(\.locale, preference.locale)
     }
 
@@ -123,6 +108,26 @@ struct AppLanguageScope<Content: View>: View {
         AppLanguagePreference(rawValue: rawPreference) ?? .system
     }
 }
+
+extension Bundle {
+    /// The `.lproj` for the language the user picked in Settings. `String(localized:, bundle:
+    /// .appLanguage)` resolves against `Locale.current` — the *system* language — and ignores both
+    /// SwiftUI's `\.locale` environment and its own `locale:` argument (measured; see
+    /// `AppLanguageRuntimeProbeTests`). Passing this bundle is what actually re-routes the lookup, so
+    /// every `String(localized:, bundle: .appLanguage)` site that renders user-facing copy has to
+    /// name it. Cached because the lookup runs on every call site, every render.
+    public static var appLanguage: Bundle {
+        let preference = AppLanguagePreference.current
+        return appLanguageBundleCache.withLock { cache in
+            if let cached = cache[preference.rawValue] { return cached }
+            let resolved = preference.localizationBundle()
+            cache[preference.rawValue] = resolved
+            return resolved
+        }
+    }
+}
+
+private let appLanguageBundleCache = OSAllocatedUnfairLock<[String: Bundle]>(initialState: [:])
 
 extension View {
     public func appLanguageScoped(defaults: UserDefaults = .standard) -> some View {

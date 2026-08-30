@@ -1,26 +1,20 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Board-wide widget card appearance: one tint and one opacity shared by every
-/// widget, read by `PanelChrome`.
-///
-/// Board-wide rather than per-widget on purpose — the point of the board is that
-/// the tiles read as one surface, and eight independently tinted cards read as a
-/// ransom note. Per-widget overrides can layer on later without moving this.
+/// Board-wide widget card appearance — one tint, one opacity, shared by every widget and read by `PanelChrome`.
+/// Deliberately board-wide, not per-widget: the point of the board is tiles reading as one surface, and eight
+/// independently tinted cards read as a ransom note. Per-widget overrides can layer on later without moving
+/// this.
 enum MonitorPanelAppearance {
     static let tintKey = "Monitor.WidgetTintHex"
     static let opacityKey = "Monitor.WidgetOpacity"
     static let glassKey = "Monitor.WidgetLiquidGlass"
 
-    /// Off by default, and not only because it needs macOS 26.
-    ///
-    /// Glass re-samples what is behind it every frame, and what is behind these
-    /// cards is a wallpaper that may itself be a video or a live scene — so the
-    /// cost scales with the number of tiles and never goes idle the way it does
-    /// behind a static window. Apple's own guidance is to keep the number of
-    /// glass surfaces on screen small and spend them on the most important
-    /// controls; a board of nine instruments is the opposite of that. It is
-    /// worth offering, and worth the user opting in to.
+    /// Off by default, and not only because it needs macOS 26: glass re-samples what's behind it every frame, and
+    /// what's behind these cards may itself be a video or a live scene — cost scales with tile count and never goes
+    /// idle, unlike behind a static window. Apple's own guidance is to keep glass surfaces few and spend them on the
+    /// most important controls; a board of nine instruments is the opposite of that. Still worth offering, and worth
+    /// the user opting in to.
     static let defaultGlass = false
 
     /// Empty means "use the designed graphite gradient" — a stored colour that
@@ -58,27 +52,19 @@ enum MonitorPanelAppearance {
         return String(format: "#%02X%02X%02X", r, g, b)
     }
 
-    /// Whether the cards should actually draw as Liquid Glass right now.
-    ///
-    /// Reduce Transparency is a hard no — the whole material is transparency —
-    /// and below macOS 26 there is no Liquid Glass to draw, only an imitation,
-    /// which is worse than the designed gradient this app already ships.
+    /// Whether the cards should actually draw as Liquid Glass right now. Reduce Transparency is a hard no (the
+    /// whole material is transparency), and below macOS 26 there's no Liquid Glass to draw, only an imitation —
+    /// worse than the designed gradient this app already ships.
     static func usesGlass(_ enabled: Bool, reduceTransparency: Bool) -> Bool {
         guard enabled, !reduceTransparency else { return false }
         return AdaptiveGlass.isAvailable
     }
 
-    /// Dark layer between the glass and the readouts.
-    ///
-    /// Needed because `.regular.tint()` shifts the material's hue but not its
-    /// luminance — measured on macOS 27, raising the tint alpha from 0.55 to
-    /// 0.82 moved the card's median luminance only 132 → 138, while every
-    /// widget here draws light-on-dark. With the tint alone the faint chrome
-    /// sat at 1.16:1 against the card; with this scrim it is 2.33:1, against
-    /// 2.82:1 for the painted card.
-    ///
-    /// Deliberately not opaque: the wallpaper's colour still comes through the
-    /// body, and the glass ring and its refraction still show at the edge.
+    /// Dark layer between the glass and the readouts, needed because `.regular.tint()` shifts hue but not luminance —
+    /// measured on macOS 27, raising tint alpha 0.55→0.82 moved the card's median luminance only 132→138, while every
+    /// widget here draws light-on-dark. Tint alone left the faint chrome at 1.16:1 against the card; this scrim brings
+    /// it to 2.33:1, against 2.82:1 for the painted card. Deliberately not opaque: the wallpaper's colour still comes
+    /// through the body, and the glass ring and its refraction still show at the edge.
     static func glassScrim(tintHex: String, opacity: Double) -> Color {
         let alpha = resolvedOpacity(opacity)
         let base = color(fromHex: tintHex) ?? Design.oklch(0.212, 0.013, 74)

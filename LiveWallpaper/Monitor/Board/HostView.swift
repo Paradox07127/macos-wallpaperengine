@@ -2,13 +2,10 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// How much of the board's window frame may swallow a pointer event.
-///
-/// AppKit dispatches by window frame, so a window made hit-testable for one
-/// tile would eat every desktop click across the whole display. SwiftUI's
-/// `allowsHitTesting(false)` does not hand the event back to the window below —
-/// it only declines it inside this window — so the widget-only case has to be
-/// filtered here, in `hitTest`, before AppKit ever consults the hosting view.
+/// How much of the board's window may swallow a pointer event. AppKit dispatches by window frame: one
+/// hit-testable tile eats every desktop click, and `allowsHitTesting(false)` only declines inside this
+/// window (no hand-off below) — so the widget-only case filters here, in `hitTest`, before AppKit sees
+/// the hosting view.
 enum PointerScope: Equatable, Sendable {
     /// Click-through everywhere (the board behaves as plain wallpaper).
     case none

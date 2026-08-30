@@ -9,14 +9,14 @@ import os
 import simd
 extension WPEMetalRenderExecutor {
     /// Everything whose identity includes a PIXEL dimension. Split out because a
-    /// mid-scene render-scale change invalidates exactly this set and nothing
-    /// else: the pool, bootstrap and hazard caches are keyed by width/height, so
-    /// new keys would strand the old allocations for the scene's life. Worse,
-    /// `previousFrameHistory` is validated against the WORLD size — unchanged by
-    /// a scale change — so its old-resolution textures would keep being served
-    /// to `.previous` reads. Shader/pipeline caches are deliberately NOT dropped
-    /// here: re-transpiling every pass is by far the biggest load cost, and a
-    /// scale change does not invalidate any of it.
+    /// mid-scene render-scale change invalidates exactly this set and nothing else: the
+    /// pool, bootstrap and hazard caches are keyed by width/height, so new keys would
+    /// strand the old allocations for the scene's life. Worse, `previousFrameHistory` is
+    /// validated against the WORLD size — unchanged by a scale change — so its
+    /// old-resolution textures would keep being served to `.previous` reads.
+    /// Shader/pipeline caches are deliberately NOT dropped here: re-transpiling every
+    /// pass is by far the biggest load cost, and a scale change does not invalidate any
+    /// of it.
     func releaseRenderScaleDependentResources() {
         targetPool.releaseAll()
         releaseBloomLevels()
@@ -400,12 +400,10 @@ extension WPEMetalRenderExecutor {
         }
     }
 
-    /// Snapshots every composite whose last producer is `passIndex` into a
-    /// persistent texture, redirects `frameState` so this frame already reads the
-    /// snapshot (identical pixels), and — once all of the plan's targets are
-    /// captured — commits them to the cache as one layer entry. If the layer's
-    /// total exceeds the budget, the partial snapshots are discarded and the
-    /// layer keeps re-rendering (slower, never wrong).
+    /// Snapshots every composite whose last producer is `passIndex` into a persistent texture,
+    /// redirects `frameState` so this frame already reads the snapshot (identical pixels), and
+    /// — once all of the plan's targets are captured — commits them to the cache as one layer
+    /// entry. If the layer's total exceeds the budget, partial snapshots are discarded and the layer keeps re-rendering (slower, never wrong).
     func captureStaticLayerSnapshots(
         at passIndex: Int,
         plan: WPEMetalStaticLayerCachePlan,
@@ -460,13 +458,10 @@ extension WPEMetalRenderExecutor {
         }
     }
 
-    /// Targets used by more than one depth pass (depth-write OR depth-test) — a
-    /// later pass can `.load` an earlier pass's depth (e.g. `depthTest:less` across
-    /// encoders), so their depth must stay persistent rather than transient/memoryless.
-    ///
-    /// Derived from the authored `depthWrite`/`depthTest` and the pass target
-    /// only — no per-frame input — so it is memoized on the structural topology
-    /// and recomputed exactly when the graph is rebuilt.
+    /// Targets used by more than one depth pass (depth-write OR depth-test) — a later pass can
+    /// `.load` an earlier pass's depth (e.g. `depthTest:less` across encoders), so their depth
+    /// must stay persistent rather than transient/memoryless. Derived from the authored
+    /// `depthWrite`/`depthTest` and the pass target only — no per-frame input — so it's memoized on the structural topology and recomputed exactly when the graph is rebuilt.
     func computePersistentDepthTargetIDs(
         for pipeline: WPEPreparedRenderPipeline
     ) -> Set<WPEMetalTargetID> {

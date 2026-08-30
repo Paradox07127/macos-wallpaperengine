@@ -2,11 +2,10 @@ import SwiftUI
 
 public enum EmptyStateVariant {
     case standard
-    /// Renders a solid accent-tinted drop-target frame so the affordance
-    /// is discoverable without dragging anything onto the area first.
-    /// Pairs with the active `dragHintOverlay` in `PreviewArea`
-    /// — the empty state is the ambient/idle state, the overlay is the
-    /// stronger activated state, sharing the same shape and accent.
+    /// Renders a solid accent-tinted drop-target frame so the affordance is discoverable without
+    /// dragging anything onto the area first. Pairs with the active `dragHintOverlay` in
+    /// `PreviewArea` — the empty state is the ambient/idle state, the overlay is the stronger
+    /// activated state, sharing the same shape and accent.
     case dropTarget
     /// Compact (denser padding, smaller icon) for use inside inspector rows.
     case compact
@@ -48,8 +47,8 @@ public struct IllustratedEmptyState<Extra: View>: View {
         @ViewBuilder extra: () -> Extra
     ) {
         self.symbol = symbol
-        self.title = Text(title, bundle: .main)
-        self.message = message.map { Text($0, bundle: .main) }
+        self.title = Text(title)
+        self.message = message.map { Text($0) }
         self.symbolColor = symbolColor
         self.primary = primary
         self.secondary = secondary
@@ -72,7 +71,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
     ) {
         self.symbol = symbol
         self.title = Text(verbatim: verbatimTitle)
-        self.message = message.map { Text($0, bundle: .main) }
+        self.message = message.map { Text($0) }
         self.symbolColor = symbolColor
         self.primary = primary
         self.secondary = secondary

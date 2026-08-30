@@ -4,10 +4,8 @@ import SwiftUI
 
 /// Library › System Wallpaper. Lists the videos handed to macOS, which keep
 /// playing with Loomscreen closed.
-///
-/// The status vocabulary is deliberately narrow: only what our own files prove
-/// (the manifest we write, the heartbeat the appex writes back). The page never
-/// claims a system-side state it cannot observe.
+/// The status vocabulary is deliberately narrow: only what our own files prove (the manifest
+/// we write, the heartbeat the appex writes back) — never a system-side state it can't observe.
 @available(macOS 26.0, *)
 struct SystemWallpaperLibraryView: View {
     @Environment(WallpaperExportService.self) private var service
@@ -480,14 +478,9 @@ private struct SystemWallpaperTile: View {
 }
 
 /// Tile-sized, already-decoded posters for the System Wallpaper grid.
-///
-/// The grid used to read the file off-main and then hand the bytes to
-/// `NSImage(data:)` on the main actor — which does not decode there either, it
-/// defers the pixels to whichever thread first draws the layer — with nothing
-/// cached, so scrolling a tile out and back paid for the whole thing again.
-///
-/// Internal, not private, only so `LocalImageCacheReclaimerTests` can observe
-/// the purge; every production reader stays in this file.
+/// Used to read the file off-main, then hand bytes to `NSImage(data:)` on the main actor — which
+/// doesn't decode there either, deferring pixels to whichever thread first draws the layer — with
+/// nothing cached, so scrolling a tile out and back paid for the whole thing again. Internal, not private, only so `LocalImageCacheReclaimerTests` can observe the purge.
 enum SystemWallpaperThumbnails {
     /// 220 pt (`LibraryGrid.maximumColumnWidth`) at 2×, with headroom. The tile
     /// is 16:9 and so is the poster, so `scaledToFill` never crops here.
@@ -507,11 +500,9 @@ enum SystemWallpaperThumbnails {
         init(_ image: CGImage) { self.image = image }
     }
 
-    /// Everything — the `stat`, the read, the decode and the cache probe — runs
-    /// off the main actor. `NSCache` is internally thread-safe, and doing the
-    /// lookup here is what lets the key carry the modification date: keyed by URL
-    /// alone, a regenerated thumbnail would keep serving the old pixels for the
-    /// rest of the session.
+    /// Everything — `stat`, read, decode, cache probe — runs off the main actor. `NSCache` is
+    /// internally thread-safe, and doing the lookup here lets the key carry the modification
+    /// date: keyed by URL alone, a regenerated thumbnail would serve old pixels for the rest of the session.
     static func image(for url: URL) async -> CGImage? {
         await Task.detached(priority: .userInitiated) { () -> CGImage? in
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?

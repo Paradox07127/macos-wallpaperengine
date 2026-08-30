@@ -1,13 +1,11 @@
 import os
 
 /// SPSC hand-off of the newest analysis window. The producer (audio IO thread) owns the
-/// history ring and the staging window; the sealed window lives inside the lock and the
-/// consumer copies it out while holding that lock, so no sample slot is ever reachable
-/// from both sides. A consumer that stalls therefore misses whole generations instead of
-/// reading one window assembled from two of them.
-///
-/// @unchecked Sendable: `ringLeft`/`ringRight`/`stageLeft`/`stageRight`/`producedSamples`
-/// are touched only by the single producer inside `publish`, and everything both sides
+/// history ring and staging window; the sealed window lives inside the lock, and the consumer
+/// copies it out while holding that lock, so no sample slot is ever reachable from both sides
+/// — a stalled consumer misses whole generations rather than reading a window assembled from
+/// two of them. @unchecked Sendable: `ringLeft`/`ringRight`/`stageLeft`/`stageRight`/
+/// `producedSamples` are touched only by the producer inside `publish`; everything both sides
 /// reach lives inside `sealed`'s unfair lock.
 final class AudioSpectrumWindowExchange: @unchecked Sendable {
     /// Where a sealed window sits in the stream: it covers
@@ -86,11 +84,10 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
 
     // MARK: - Producer (audio IO thread)
 
-    /// Append the callback's samples to the ring, re-seal the newest window, and hand it
-    /// over. Bounded and allocation-free: `frameCount` ring writes plus one `windowSize`
-    /// block copy per channel. Non-blocking: the hand-off takes the lock only if it is
-    /// free, and a miss just defers publication by one callback — the samples stay in the
-    /// ring, so the window sealed next time still carries them.
+    /// Append the callback's samples to the ring, re-seal the newest window, and hand it over.
+    /// Bounded and allocation-free: `frameCount` ring writes plus one `windowSize` block copy
+    /// per channel. Non-blocking: the hand-off takes the lock only if free; a miss just defers
+    /// publication by one callback — samples stay in the ring, so the next seal still carries them.
     func publish(left: [Float], right: [Float], timestampNanos: UInt64) {
         let frameCount = max(left.count, right.count)
         guard frameCount > 0 else { return }

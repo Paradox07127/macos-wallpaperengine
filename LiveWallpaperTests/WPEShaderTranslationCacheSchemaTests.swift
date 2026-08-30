@@ -36,7 +36,11 @@ struct WPEShaderTranslationCacheSchemaTests {
 
     /// Bump together with `schemaVersion`.
     static let expectedSchemaVersion = 1
-    static let expectedFingerprint = "e8d959e23940b2ffa2795a15c6412e3265a64cd7d500118c0e17cc95b86e6a25"
+    /// 2026-08-30: comment-only compression across eight of the files above moved the
+    /// fingerprint without touching a line of code, so the MSL is byte-identical and
+    /// `schemaVersion` deliberately stayed at 1 — bumping it would have thrown away every
+    /// user's warm cache to re-translate to the same output.
+    static let expectedFingerprint = "c92560371a945045c7b70606426a4e9cbb384ec8c7e36ac7aef838735dbf61cf"
 
     @Test("A translator edit forces a cache schema bump")
     func translatorFingerprintMatchesSchemaVersion() throws {

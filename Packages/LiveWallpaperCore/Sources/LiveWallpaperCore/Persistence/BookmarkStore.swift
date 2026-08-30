@@ -194,7 +194,7 @@ public final class BookmarkStore {
            !trimmed.isEmpty {
             return trimmed
         }
-        return "Video"
+        return String(localized: "Video", bundle: .appLanguage)
     }
 
     /// Content→display-name; `.video` is nil (needs label or bookmark resolve).
@@ -205,7 +205,7 @@ public final class BookmarkStore {
         case .html(let source, _):
             return source.displayName
         case .scene(let descriptor):
-            return String(localized: "Scene \(descriptor.workshopID)", comment: "Default source label for a Wallpaper Engine scene. The placeholder is the Workshop ID.")
+            return String(localized: "Scene \(descriptor.workshopID)", bundle: .appLanguage, comment: "Default source label for a Wallpaper Engine scene. The placeholder is the Workshop ID.")
         }
     }
 

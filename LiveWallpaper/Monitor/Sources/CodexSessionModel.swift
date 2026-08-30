@@ -22,11 +22,10 @@ struct CodexSessionModel: Sendable {
     private var lastApprovalClearAt: Date?
     private var lastStatusEventAt: Date?
 
-    /// Explicit because the synthesized memberwise initializer is not portable
-    /// here: Swift 6.4 gives optional and defaulted members implicit defaults so
-    /// `CodexSessionModel(sessionId:)` resolves, while 6.3.3 — the pinned
-    /// shipping toolchain — synthesizes only `init()`. Relying on the synthesized
-    /// form builds under the beta and fails the release build.
+    /// Explicit because the synthesized memberwise initializer isn't portable: Swift 6.4 gives
+    /// optional/defaulted members implicit defaults so `CodexSessionModel(sessionId:)` resolves, while 6.3.3
+    /// (the pinned shipping toolchain) synthesizes only `init()` — relying on the synthesized form builds under
+    /// the beta and fails the release build.
     init(sessionId: String? = nil) {
         self.sessionId = sessionId
     }

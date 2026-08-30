@@ -290,13 +290,10 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         activeWallpaper = .html(source: source, config: config)
     }
 
-    /// Re-syncs any carried preset values against the library, and drops the
-    /// layer when the preset is gone.
-    ///
-    /// `presetSnapshot` is a cache that rides along with the descriptor because
-    /// the renderer never sees `GlobalSettings`. Without a call to this on the
-    /// load path, editing or deleting a preset would leave every screen still
-    /// rendering the values it captured.
+    /// Re-syncs any carried preset values against the library, and drops the layer when the preset
+    /// is gone. `presetSnapshot` is a cache that rides along with the descriptor because the
+    /// renderer never sees `GlobalSettings`. Without a call to this on the load path, editing or
+    /// deleting a preset would leave every screen still rendering the values it captured.
     public func refreshingScenePresets(in library: [String: ScenePreset]) -> ScreenConfiguration {
         var refreshed = self
         if case .scene(let descriptor) = activeWallpaper {

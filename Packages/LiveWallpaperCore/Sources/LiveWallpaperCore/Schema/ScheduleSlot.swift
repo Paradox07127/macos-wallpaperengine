@@ -72,15 +72,15 @@ public struct ScheduleSlot: Codable, Equatable, Identifiable, Sendable {
     public var localizedLabel: String {
         switch label {
         case "Morning":
-            return String(localized: "Morning", defaultValue: "Morning", comment: "Default schedule slot name.")
+            return String(localized: "Morning", defaultValue: "Morning", bundle: .appLanguage, comment: "Default schedule slot name.")
         case "Midday":
-            return String(localized: "Midday", defaultValue: "Midday", comment: "Default schedule slot name.")
+            return String(localized: "Midday", defaultValue: "Midday", bundle: .appLanguage, comment: "Default schedule slot name.")
         case "Afternoon":
-            return String(localized: "Afternoon", defaultValue: "Afternoon", comment: "Default schedule slot name.")
+            return String(localized: "Afternoon", defaultValue: "Afternoon", bundle: .appLanguage, comment: "Default schedule slot name.")
         case "Evening":
-            return String(localized: "Evening", defaultValue: "Evening", comment: "Default schedule slot name.")
+            return String(localized: "Evening", defaultValue: "Evening", bundle: .appLanguage, comment: "Default schedule slot name.")
         case "Night":
-            return String(localized: "Night", defaultValue: "Night", comment: "Default schedule slot name.")
+            return String(localized: "Night", defaultValue: "Night", bundle: .appLanguage, comment: "Default schedule slot name.")
         default:
             return label
         }

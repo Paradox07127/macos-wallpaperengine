@@ -15,30 +15,30 @@ public enum WallpaperRuntimeError: Error, Equatable, Sendable {
     public var userMessage: String {
         switch self {
         case .fileAccessDenied(let url):
-            return String(localized: "Cannot access \(url.lastPathComponent). Re-pick the source to restore permission.", comment: "Runtime error message. The placeholder is a file name.")
+            return String(localized: "Cannot access \(url.lastPathComponent). Re-pick the source to restore permission.", bundle: .appLanguage, comment: "Runtime error message. The placeholder is a file name.")
         case .mediaNotPlayable(let url, let code):
             if let code {
-                return String(localized: "The video \(url.lastPathComponent) cannot be played (error \(code)).", comment: "Runtime error message. Placeholders are file name and error code.")
+                return String(localized: "The video \(url.lastPathComponent) cannot be played (error \(code)).", bundle: .appLanguage, comment: "Runtime error message. Placeholders are file name and error code.")
             }
-            return String(localized: "The video \(url.lastPathComponent) cannot be played.", comment: "Runtime error message. The placeholder is a file name.")
+            return String(localized: "The video \(url.lastPathComponent) cannot be played.", bundle: .appLanguage, comment: "Runtime error message. The placeholder is a file name.")
         case .webNavigationFailed(let url, let code, let description):
             if let code {
-                return String(localized: "The web wallpaper at \(url.absoluteString) failed to load (error \(code)): \(description)", comment: "Runtime error message. Placeholders are URL, error code, and system description.")
+                return String(localized: "The web wallpaper at \(url.absoluteString) failed to load (error \(code)): \(description)", bundle: .appLanguage, comment: "Runtime error message. Placeholders are URL, error code, and system description.")
             }
-            return String(localized: "The web wallpaper at \(url.absoluteString) failed to load: \(description)", comment: "Runtime error message. Placeholders are URL and system description.")
+            return String(localized: "The web wallpaper at \(url.absoluteString) failed to load: \(description)", bundle: .appLanguage, comment: "Runtime error message. Placeholders are URL and system description.")
         case .networkOffline:
-            return String(localized: "The network appears to be offline.", defaultValue: "The network appears to be offline.", comment: "Runtime error message.")
+            return String(localized: "The network appears to be offline.", defaultValue: "The network appears to be offline.", bundle: .appLanguage, comment: "Runtime error message.")
         case .sandboxRevoked:
-            return String(localized: "File permission expired. Re-pick the source to restore access.", defaultValue: "File permission expired. Re-pick the source to restore access.", comment: "Runtime error message.")
+            return String(localized: "File permission expired. Re-pick the source to restore access.", defaultValue: "File permission expired. Re-pick the source to restore access.", bundle: .appLanguage, comment: "Runtime error message.")
         case .wallpaperPreparationFailed(let type, let timedOut):
             let name = Self.localizedName(for: type)
             if timedOut {
-                return String(localized: "\(name) wallpaper did not become ready in time.", comment: "Runtime readiness timeout. The placeholder is the localized wallpaper type.")
+                return String(localized: "\(name) wallpaper did not become ready in time.", bundle: .appLanguage, comment: "Runtime readiness timeout. The placeholder is the localized wallpaper type.")
             }
-            return String(localized: "\(name) wallpaper could not be prepared.", comment: "Runtime preparation failure. The placeholder is the localized wallpaper type.")
+            return String(localized: "\(name) wallpaper could not be prepared.", bundle: .appLanguage, comment: "Runtime preparation failure. The placeholder is the localized wallpaper type.")
         case .sceneRenderingFailed(let description):
             if description.isEmpty {
-                return String(localized: "The scene wallpaper failed to load.", defaultValue: "The scene wallpaper failed to load.", comment: "Runtime error message.")
+                return String(localized: "The scene wallpaper failed to load.", defaultValue: "The scene wallpaper failed to load.", bundle: .appLanguage, comment: "Runtime error message.")
             }
             return description
         }
@@ -72,20 +72,20 @@ public enum WallpaperRuntimeError: Error, Equatable, Sendable {
     public var title: String {
         switch self {
         case .fileAccessDenied(let url):
-            return String(localized: "Cannot access \(url.lastPathComponent)", comment: "Runtime error title. The placeholder is the file name.")
+            return String(localized: "Cannot access \(url.lastPathComponent)", bundle: .appLanguage, comment: "Runtime error title. The placeholder is the file name.")
         case .mediaNotPlayable(let url, _):
-            return String(localized: "Video unavailable: \(url.lastPathComponent)", comment: "Runtime error title. The placeholder is the file name.")
+            return String(localized: "Video unavailable: \(url.lastPathComponent)", bundle: .appLanguage, comment: "Runtime error title. The placeholder is the file name.")
         case .webNavigationFailed(let url, _, _):
-            return String(localized: "Web wallpaper failed to load: \(url.host ?? url.absoluteString)", comment: "Runtime error title. The placeholder is the URL host or full URL.")
+            return String(localized: "Web wallpaper failed to load: \(url.host ?? url.absoluteString)", bundle: .appLanguage, comment: "Runtime error title. The placeholder is the URL host or full URL.")
         case .networkOffline:
-            return String(localized: "Network offline", defaultValue: "Network offline", comment: "Runtime error title.")
+            return String(localized: "Network offline", defaultValue: "Network offline", bundle: .appLanguage, comment: "Runtime error title.")
         case .sandboxRevoked:
-            return String(localized: "File permission expired", defaultValue: "File permission expired", comment: "Runtime error title.")
+            return String(localized: "File permission expired", defaultValue: "File permission expired", bundle: .appLanguage, comment: "Runtime error title.")
         case .wallpaperPreparationFailed(let type, _):
             let name = Self.localizedName(for: type)
-            return String(localized: "\(name) wallpaper failed to load", comment: "Runtime preparation error title. The placeholder is the localized wallpaper type.")
+            return String(localized: "\(name) wallpaper failed to load", bundle: .appLanguage, comment: "Runtime preparation error title. The placeholder is the localized wallpaper type.")
         case .sceneRenderingFailed:
-            return String(localized: "Scene wallpaper failed to load", defaultValue: "Scene wallpaper failed to load", comment: "Runtime error title.")
+            return String(localized: "Scene wallpaper failed to load", defaultValue: "Scene wallpaper failed to load", bundle: .appLanguage, comment: "Runtime error title.")
         }
     }
 
@@ -123,11 +123,11 @@ public enum WallpaperRuntimeError: Error, Equatable, Sendable {
     private static func localizedName(for type: WallpaperType) -> String {
         switch type {
         case .video:
-            return String(localized: "Video")
+            return String(localized: "Video", bundle: .appLanguage)
         case .html:
-            return String(localized: "Web")
+            return String(localized: "Web", bundle: .appLanguage)
         case .scene:
-            return String(localized: "Scene")
+            return String(localized: "Scene", bundle: .appLanguage)
         }
     }
 

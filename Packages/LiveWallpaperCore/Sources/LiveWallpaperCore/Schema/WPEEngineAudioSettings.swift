@@ -1,13 +1,11 @@
 import Foundation
 
-/// The audio half of Wallpaper Engine's per-wallpaper application settings, as
-/// carried in a preset. See `WPEEngineColorCorrection` for how these keys were
-/// identified and why they are not `project.json` properties.
-///
-/// Only `volume` is modelled. The block also carries `rate` (playback speed) and
-/// the `alignment*` family, which are deliberately absent: parsing a value that
-/// nothing applies would look like support while changing nothing, and this file
-/// already had that failure once when the preset layer reached no consumer.
+/// The audio half of Wallpaper Engine's per-wallpaper application settings, as carried in a preset.
+/// See `WPEEngineColorCorrection` for how these keys were identified and why they are not
+/// `project.json` properties. Only `volume` is modelled. The block also carries `rate` (playback
+/// speed) and the `alignment*` family, which are deliberately absent: parsing a value that nothing
+/// applies would look like support while changing nothing, and this file already had that failure
+/// once when the preset layer reached no consumer.
 public struct WPEEngineAudioSettings: Equatable, Sendable {
     /// The author's level for this wallpaper, 0...1. Multiplies with the user's
     /// own master volume rather than replacing it — a preset states how loud the

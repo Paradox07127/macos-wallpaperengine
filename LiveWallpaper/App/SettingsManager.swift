@@ -105,19 +105,15 @@ final class SettingsManager {
         persistConfigurations(configurations)
     }
 
-    /// Adds or replaces a preset in the library. Workshop presets key on their
-    /// own workshop id, so a re-download updates in place.
-    ///
-    /// `clearsDeleteTombstone`: same rule as `recordWPEImport` — `true` only
-    /// for an explicit user re-acquire, never for the passive library scan.
-    /// `thenPersist` is awaited after the library is written and *before*
-    /// observers are told about it. A caller that must also update a descriptor — saving
-    /// over the applied preset clears the increment it just absorbed — has no
-    /// safe order without this: notifying first lets
-    /// `handleScenePresetLibraryChange` republish {new snapshot + the old
-    /// increment still on disk} in a Task that races the caller's own write,
-    /// and persisting first is worse, because `refreshingPresetSnapshot` drops
-    /// a preset id the library does not have yet.
+    /// Adds or replaces a preset in the library. Workshop presets key on their own workshop id, so a
+    /// re-download updates in place. `clearsDeleteTombstone`: same rule as `recordWPEImport` — `true`
+    /// only for an explicit user re-acquire, never for the passive library scan. `thenPersist` is
+    /// awaited after the library is written and *before* observers are told about it. A caller that
+    /// must also update a descriptor — saving over the applied preset clears the increment it just
+    /// absorbed — has no safe order without this: notifying first lets
+    /// `handleScenePresetLibraryChange` republish {new snapshot + the old increment still on disk} in
+    /// a Task that races the caller's own write, and persisting first is worse, because
+    /// `refreshingPresetSnapshot` drops a preset id the library does not have yet.
     func registerScenePreset(
         _ preset: ScenePreset,
         clearsDeleteTombstone: Bool = false,
@@ -187,13 +183,11 @@ final class SettingsManager {
         reconcileScenePresetSnapshots()
     }
 
-    /// The locally saved preset a "save as" would replace, matched on the
-    /// trimmed display name within one base wallpaper. Without this, saving the
-    /// same name twice produces two entries the picker cannot tell apart.
-    ///
-    /// Workshop presets are deliberately excluded: their id *is* their workshop
-    /// id, so reusing it would overwrite a downloaded item with local values
-    /// and the next re-download would silently undo the user's work.
+    /// The locally saved preset a "save as" would replace, matched on the trimmed display name within
+    /// one base wallpaper. Without this, saving the same name twice produces two entries the picker
+    /// cannot tell apart. Workshop presets are deliberately excluded: their id *is* their workshop
+    /// id, so reusing it would overwrite a downloaded item with local values and the next re-download
+    /// would silently undo the user's work.
     func existingLocalScenePreset(named name: String, baseWorkshopID: String) -> ScenePreset? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -205,13 +199,11 @@ final class SettingsManager {
         }
     }
 
-    /// Re-maps every cached configuration's preset snapshot against the current
-    /// library — in memory, not by dropping the cache, which would force a
-    /// synchronous main-actor disk read on the next access. Two callers: the
-    /// incremental path (`registerScenePreset`) and configuration import, which
-    /// replaces `scenePresets` wholesale through `saveGlobalSettings`. The disk
-    /// copies stay stale until the next `loadConfigurations`, which reconciles
-    /// on read.
+    /// Re-maps every cached configuration's preset snapshot against the current library — in memory,
+    /// not by dropping the cache, which would force a synchronous main-actor disk read on the next
+    /// access. Two callers: the incremental path (`registerScenePreset`) and configuration import,
+    /// which replaces `scenePresets` wholesale through `saveGlobalSettings`. The disk copies stay
+    /// stale until the next `loadConfigurations`, which reconciles on read.
     func reconcileScenePresetSnapshots() {
         let library = loadGlobalSettings().scenePresets
         cachedConfigurations = cachedConfigurations?.map {
@@ -577,11 +569,10 @@ final class SettingsManager {
         defaults.removeObject(forKey: Keys.configMigrationVersion)
         defaults.removeObject(forKey: Keys.blobSchemaVersion)
         // Keys owned by other components; literals on purpose (see their owners).
-        // `WPELibrary.RootBookmark.v1` has no owner: no version ever wrote it, so its
-        // only reader was deleted from WPEDependencyMountResolver. This line stays
-        // because `sharedManagerIsIsolatedFromStandardDefaults` plants that key in the
-        // real domain to prove the wipe cannot reach it — delete it and that guard
-        // passes for the wrong reason.
+        // `WPELibrary.RootBookmark.v1` has no owner: no version ever wrote it, so its only reader was
+        // deleted from WPEDependencyMountResolver. This line stays because
+        // `sharedManagerIsIsolatedFromStandardDefaults` plants that key in the real domain to prove the
+        // wipe cannot reach it — delete it and that guard passes for the wrong reason.
         defaults.removeObject(forKey: "WPELibrary.RootBookmark.v1")
         defaults.removeObject(forKey: "loomscreen.sidebar.displayOrder.v1")  // SidebarDisplayOrder.preferencesKey
         defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // SourceAuthorization

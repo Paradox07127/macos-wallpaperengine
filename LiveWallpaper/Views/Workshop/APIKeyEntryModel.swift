@@ -4,12 +4,9 @@ import Observation
 import SwiftUI
 
 /// The state machine behind entering a Steam Web API key.
-///
-/// Two surfaces enter the same key — the onboarding/browse sheet and the
-/// inline Workshop settings section — and they differ only in how the fields
-/// are laid out. Keeping the debounce, the shape check, the Valve round-trip
-/// and the error vocabulary here is what stops the two from drifting into
-/// disagreeing about when a key is valid.
+/// Two surfaces enter the same key — the onboarding/browse sheet and the inline Workshop
+/// settings section — differing only in field layout. Keeping the debounce, shape check, Valve
+/// round-trip and error vocabulary here stops the two from disagreeing about when a key is valid.
 @MainActor
 @Observable
 final class SteamWebAPIKeyEntryModel {
@@ -87,7 +84,7 @@ final class SteamWebAPIKeyEntryModel {
                 validation = .error(
                     String(
                         localized: "Validation failed: \(error.localizedDescription)",
-                        comment: "Steam Web API key validation error with the underlying failure."
+                        bundle: .appLanguage, comment: "Steam Web API key validation error with the underlying failure."
                     )
                 )
             }
@@ -109,7 +106,7 @@ final class SteamWebAPIKeyEntryModel {
         } catch {
             savingError = String(
                 localized: "Couldn't save: \(error.localizedDescription)",
-                comment: "Steam Web API key save failure."
+                bundle: .appLanguage, comment: "Steam Web API key save failure."
             )
             return false
         }
@@ -123,7 +120,7 @@ final class SteamWebAPIKeyEntryModel {
             // key was forgotten — the one state where the user stops looking.
             savingError = String(
                 localized: "Couldn't remove the key: \(error.localizedDescription)",
-                comment: "Steam Web API key deletion failure."
+                bundle: .appLanguage, comment: "Steam Web API key deletion failure."
             )
             await services.refreshAPIKeyStatus()
             return
@@ -143,26 +140,26 @@ final class SteamWebAPIKeyEntryModel {
     static func message(for error: WorkshopQueryError) -> String {
         switch error {
         case .unauthorized:
-            return String(localized: "Steam rejected the key.", comment: "Steam Web API key validation error.")
+            return String(localized: "Steam rejected the key.", bundle: .appLanguage, comment: "Steam Web API key validation error.")
         case .keyDisabled:
             return String(
                 localized: "Your Steam API key was disabled by Valve.",
-                comment: "Steam Web API key validation error."
+                bundle: .appLanguage, comment: "Steam Web API key validation error."
             )
         case .rateLimited:
             return String(
                 localized: "Steam is rate-limiting right now. Retry in a moment.",
-                comment: "Steam Web API key validation error."
+                bundle: .appLanguage, comment: "Steam Web API key validation error."
             )
         case .networkUnreachable:
             return String(
                 localized: "Couldn't reach Steam. Check your connection.",
-                comment: "Steam Web API key validation error."
+                bundle: .appLanguage, comment: "Steam Web API key validation error."
             )
         case .timeout:
-            return String(localized: "Steam took too long to respond.", comment: "Steam Web API key validation error.")
+            return String(localized: "Steam took too long to respond.", bundle: .appLanguage, comment: "Steam Web API key validation error.")
         default:
-            return String(localized: "Validation failed.", comment: "Steam Web API key validation error.")
+            return String(localized: "Validation failed.", bundle: .appLanguage, comment: "Steam Web API key validation error.")
         }
     }
 }

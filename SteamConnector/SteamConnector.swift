@@ -15,14 +15,13 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         var exitCode: Int32 = -1
     }
 
-    /// Every SteamCMD run in this process is serialized here.
-    ///
-    /// The app used to hold one operation lease across all of them; once the
-    /// work moved behind XPC each request arrived independently, so an engine
-    /// install and a Workshop download could drive two SteamCMD processes at the
-    /// same real Steam profile. They share its lock and staging directory, and
-    /// one of them loses. Serializing at the process that owns the resource is
-    /// the only place the guarantee survives an arbitrary number of clients.
+    /// Every SteamCMD run in this process is serialized here. The app used
+    /// to hold one operation lease across all of them; once work moved
+    /// behind XPC, requests arrived independently, so an engine install and
+    /// a Workshop download could drive two SteamCMD processes at the same
+    /// real Steam profile (sharing its lock and staging directory) and one
+    /// loses. Serializing here is the only place the guarantee survives an
+    /// arbitrary number of clients.
     private static let steamCMDQueue = DispatchQueue(label: "com.loomscreen.pro.SteamConnector.steamcmd")
 
     /// Registered by `spawn` only on the SteamCMD path — codesign shares
@@ -47,29 +46,24 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         "No SteamCMD available at any location this process is willing to run"
 
     /// The binary every operation actually spawns, resolved from its own
-    /// candidate list.
-    ///
-    /// Callers used to name it and pass a digest to be re-checked before the
-    /// spawn. That gate proved nothing: the caller supplied the path *and* the
-    /// digest it was compared against, so a compromised app passed trivially by
-    /// naming its own file — and macOS offers no way to bind a verdict to the
-    /// inode that ends up executed (no `fexecve`). Deriving the path is what
-    /// closes it: everything reachable here sits outside the app's sandbox, so
-    /// there is nothing for it to replace.
-    ///
-    /// Applies the SAME trust gates the diagnosis does — Valve's signature and
-    /// no quarantine — and moves to the next candidate when one fails. Without
-    /// them this picked the first Mach-O outside a container, so a copy the
-    /// diagnosis had explicitly refused still got executed by this unsandboxed
-    /// process while the app showed a healthy Homebrew binding.
-    ///
-    /// Deliberately not cached. A managed install rewrites its own binary during
-    /// `+quit`, and any cache keyed on the path alone would answer for a file
-    /// that no longer exists; the two `codesign` spawns cost microseconds beside
-    /// the SteamCMD run they gate.
-    /// `spawn` is injected so the candidate walk can be exercised without
-    /// running `codesign` against whatever happens to be installed on the
-    /// machine running the tests.
+    /// candidate list. Callers used to name it and pass a digest to
+    /// re-check before the spawn — that gate proved nothing: the caller
+    /// supplied both the path and the digest compared against, so a
+    /// compromised app passed trivially by naming its own file (macOS has
+    /// no `fexecve` to bind a verdict to the inode that ends up executed).
+    /// Deriving the path closes it: everything reachable here sits outside
+    /// the app's sandbox, so there's nothing for it to replace. Applies the
+    /// SAME trust gates the diagnosis does — Valve's signature, no
+    /// quarantine — moving to the next candidate on failure; without them
+    /// this picked the first Mach-O outside a container, so a copy the
+    /// diagnosis had explicitly refused still executed here while the app
+    /// showed a healthy Homebrew binding. Deliberately not cached: a
+    /// managed install rewrites its own binary during `+quit`, so a cache
+    /// keyed on path alone could answer for a file that no longer exists,
+    /// and the two `codesign` spawns cost microseconds beside the SteamCMD
+    /// run they gate. `spawn` is injected so the candidate walk runs
+    /// without invoking `codesign` on whatever the test machine has
+    /// installed.
     static func resolvedExecutablePath(
         spawn: ((String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool))? = nil
     ) -> String? {
@@ -117,12 +111,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 timedOut: false
             )
         }
-        // Exit 42 is SteamCMD's "my self-update replaced the binary — relaunch
-        // me"; a fresh install needs two such restarts before its first 0
-        // (measured 2026-08-28). Each attempt gets the caller's full timeout,
-        // so the worst-case wall clock is maxExecutions × timeout. The
-        // rewritten binary is re-gated before every relaunch: the trust
-        // verdicts taken before this call describe a file that no longer exists.
+        // Exit 42 is SteamCMD's "my self-update replaced the binary —
+        // relaunch me"; a fresh install needs two restarts before its first
+        // 0 (measured 2026-08-28). Each attempt gets the full timeout, so
+        // worst-case wall clock is maxExecutions × timeout, and the
+        // rewritten binary is re-gated before every relaunch: earlier trust
+        // verdicts describe a file that no longer exists.
         let verifySpawn: (String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool) = { path, verifyArguments, verifyTimeout in
             let run = spawn(executable: path, arguments: verifyArguments, timeout: verifyTimeout)
             return (run.output, run.exitCode, run.timedOut)
@@ -168,12 +162,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
     }
 
-    /// The one place this process creates a child.
-    ///
-    /// SteamCMD and `codesign` share it: two spawn implementations would mean two
-    /// places to forget the scrubbed environment or the process-group teardown.
-    /// stdin is closed so SteamCMD's `@NoPromptForPassword` can never be bypassed
-    /// by an interactive prompt.
+    /// The one place this process creates a child. SteamCMD and `codesign`
+    /// share it: two spawn implementations would mean two places to forget
+    /// the scrubbed environment or process-group teardown. stdin is closed
+    /// so SteamCMD's `@NoPromptForPassword` can never be bypassed by an
+    /// interactive prompt.
     private static func spawn(
         executable: String,
         arguments: [String],
@@ -194,12 +187,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return SteamCMDRun(output: error.localizedDescription, timedOut: false)
         }
         let pid = process.processIdentifier
-        // Give SteamCMD its own process group so the whole tree can be signalled.
-        // Its self-update helper outlives a plain terminate() and keeps the pipe
-        // write end open, which is what previously held the reader past the
-        // deadline even though the parent was gone.
-        //
-        // Racy by nature — the child may already have exec'd — so the signalling
+        // Give SteamCMD its own process group so the whole tree can be
+        // signalled — its self-update helper outlives a plain terminate()
+        // and keeps the pipe write end open, which previously held the
+        // reader past the deadline even after the parent was gone. Racy by
+        // nature (the child may already have exec'd), so the signalling
         // below falls back to the bare pid when the group was never created.
         let hasOwnGroup = setpgid(pid, pid) == 0 || getpgid(pid) == pid
         if let activeOperationID {
@@ -506,7 +498,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         guard path.hasPrefix("/") else {
             return send(SteamCMDManualBindResult(
                 outcome: .refused, canonicalPath: nil,
-                failureReason: "A SteamCMD path must be absolute."
+                failureReason: "A SteamCMD path must be absolute.",
+                failureCode: .pathNotAbsolute
             ))
         }
         let enqueuedAt = Date()
@@ -515,7 +508,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
                 return send(SteamCMDManualBindResult(
                     outcome: .refused, canonicalPath: nil,
-                    failureReason: "bind expired while queued behind another SteamCMD operation"
+                    failureReason: "bind expired while queued behind another SteamCMD operation",
+                    failureCode: .bindExpiredInQueue
                 ))
             }
             let resolution = SteamCMDBinaryResolver.resolveCanonicalBinary(
@@ -524,7 +518,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             guard case .success(let binary) = resolution else {
                 return send(SteamCMDManualBindResult(
                     outcome: .notFound, canonicalPath: nil,
-                    failureReason: "That file isn't SteamCMD, and no SteamCMD binary was found next to it."
+                    failureReason: "That file isn't SteamCMD, and no SteamCMD binary was found next to it.",
+                    failureCode: .notSteamCMDBinary
                 ))
             }
             let canonical = binary.path(percentEncoded: false)
@@ -535,7 +530,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             guard !SteamCMDExecutionFence.refusesExecution(of: canonical) else {
                 return send(SteamCMDManualBindResult(
                     outcome: .untrusted, canonicalPath: canonical,
-                    failureReason: "Loomscreen won't run a SteamCMD from inside its own container."
+                    failureReason: "Loomscreen won't run a SteamCMD from inside its own container.",
+                    failureCode: .refusesOwnContainer
                 ))
             }
             let verify: (String, [String], TimeInterval) -> (output: String, exitCode: Int32, timedOut: Bool) = {
@@ -547,13 +543,15 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             ) else {
                 return send(SteamCMDManualBindResult(
                     outcome: .untrusted, canonicalPath: canonical,
-                    failureReason: "That binary isn't signed by Valve."
+                    failureReason: "That binary isn't signed by Valve.",
+                    failureCode: .signatureNotValve
                 ))
             }
             guard case .success = SteamCMDManagedInstaller.rejectIfQuarantined(binaryPath: canonical) else {
                 return send(SteamCMDManualBindResult(
                     outcome: .untrusted, canonicalPath: canonical,
-                    failureReason: "That binary is quarantined. Open it once in Finder, or remove the quarantine flag."
+                    failureReason: "That binary is quarantined. Open it once in Finder, or remove the quarantine flag.",
+                    failureCode: .binaryQuarantined
                 ))
             }
             do {
@@ -561,7 +559,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             } catch {
                 return send(SteamCMDManualBindResult(
                     outcome: .refused, canonicalPath: canonical,
-                    failureReason: "Couldn't record the choice: \(error.localizedDescription)"
+                    failureReason: "Couldn't record the choice: \(error.localizedDescription)",
+                    failureCode: .couldNotRecordChoice,
+                    failureArguments: [error.localizedDescription]
                 ))
             }
             send(SteamCMDManualBindResult(
@@ -608,14 +608,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     }
 
     /// Blocking fetch for the SteamCMD queue, which is serial by design — an
-    /// install already occupies it for the length of a `+quit` run, so a
-    /// download waiting synchronously changes nothing about its concurrency.
-    /// A package download, retried once if it fails in transit.
-    ///
-    /// The retry lives here rather than around the whole install: re-running
-    /// the install would re-fetch the manifest and re-download the packages
-    /// that already landed, and a failure after the digest gate is not a
-    /// transport problem to begin with.
+    /// install already occupies it for a `+quit` run's length, so waiting
+    /// synchronously changes nothing about concurrency. A package download,
+    /// retried once if it fails in transit: the retry lives here rather than
+    /// around the whole install, since re-running would re-fetch the
+    /// manifest and re-download packages that already landed, and a failure
+    /// after the digest gate isn't a transport problem to begin with.
     private static func download(
         from url: URL,
         to destination: URL,
@@ -693,7 +691,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
             guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
-                send(.failed(.unavailable, "install expired while queued behind another SteamCMD operation"))
+                send(.failed(
+                    .unavailable, "install expired while queued behind another SteamCMD operation",
+                    code: .installExpiredInQueue
+                ))
                 return
             }
 
@@ -724,7 +725,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     at: staging, withIntermediateDirectories: true
                 )
             } catch {
-                return send(.failed(.unavailable, "Could not create a staging directory"))
+                return send(.failed(
+                    .unavailable, "Could not create a staging directory",
+                    code: .stagingDirectoryFailed
+                ))
             }
 
             // Valve's manifest names the current packages and their digests.
@@ -734,12 +738,16 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             guard let manifestText = Self.fetchString(
                 from: SteamCMDManifest.url, maximumBytes: 1_048_576
             ) else {
-                return send(.failed(.unavailable, "Could not fetch Valve's SteamCMD manifest"))
+                return send(.failed(
+                    .unavailable, "Could not fetch Valve's SteamCMD manifest",
+                    code: .manifestFetchFailed
+                ))
             }
             guard let packages = SteamCMDManifest.parse(manifestText) else {
                 return send(.failed(
                     .unavailable,
-                    "Valve's SteamCMD manifest did not describe the expected packages"
+                    "Valve's SteamCMD manifest did not describe the expected packages",
+                    code: .manifestUnexpectedShape
                 ))
             }
 
@@ -752,14 +760,18 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     string: package.file,
                     relativeTo: SteamCMDManifest.url.deletingLastPathComponent()
                 )?.absoluteURL else {
-                    return send(.failed(.unavailable, "Malformed package name in manifest"))
+                    return send(.failed(
+                        .unavailable, "Malformed package name in manifest",
+                        code: .manifestMalformedPackageName
+                    ))
                 }
                 guard Self.download(
                     from: packageURL, to: destination, expectedBytes: package.byteCount
                 ) else {
                     return send(.failed(
                         .unavailable,
-                        "Could not download \(package.name) from Valve's server"
+                        "Could not download \(package.name) from Valve's server",
+                        code: .packageDownloadFailed, arguments: [package.name]
                     ))
                 }
                 // The digest gate: what was written must be what the manifest
@@ -769,7 +781,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 ), digest == package.sha256 else {
                     return send(.failed(
                         .tarballRejected,
-                        "\(package.name) did not match the manifest's checksum"
+                        "\(package.name) did not match the manifest's checksum",
+                        code: .packageChecksumMismatch, arguments: [package.name]
                     ))
                 }
                 archives.append(destination)
@@ -795,10 +808,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     // The install failed *and* the copy that used to work is not
                     // back. Reporting only the first half would tell the user to
                     // retry against a SteamCMD that is no longer there.
-                    send(.failed(
-                        failure.outcome,
-                        "\(failure.failureReason ?? "install rejected"); the previous install could not be restored and is at \(retiredPath): \(reason)"
-                    ))
+                    send(failure.withRollbackFailure(retiredPath: retiredPath, reason: reason))
                 }
             }
 
@@ -820,17 +830,18 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 return reject(failure)
             }
 
-            // First real run. The manifest already delivered current binaries,
-            // but steamcmd still arranges its own `package/` bookkeeping here —
-            // and doing it now surfaces a broken install immediately rather
-            // than when the user first tries to download a wallpaper.
-            // The exit-42 self-update restarts (and re-gating the rewritten
-            // binary before each relaunch) happen inside `runSteamCMD` itself.
+            // First real run — the manifest already delivered current
+            // binaries, but steamcmd still arranges its own `package/`
+            // bookkeeping here, surfacing a broken install now rather than
+            // later. Exit-42 self-update restarts (re-gating the rewritten
+            // binary each relaunch) happen inside `runSteamCMD` itself.
             let bootstrap = Self.runSteamCMD(
                 steamCMDPath: binaryPath, arguments: ["+quit"], timeout: 600
             )
             guard !bootstrap.timedOut else {
-                return reject(.failed(.selfUpdateFailed, "First SteamCMD run timed out"))
+                return reject(.failed(
+                    .selfUpdateFailed, "First SteamCMD run timed out", code: .firstRunTimedOut
+                ))
             }
             // A failed spawn reports exitCode -1 without timing out, and a
             // self-update that dies mid-way exits non-zero: reporting either as
@@ -838,7 +849,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             guard bootstrap.exitCode == 0 else {
                 return reject(.failed(
                     .selfUpdateFailed,
-                    "First SteamCMD run exited \(bootstrap.exitCode)"
+                    "First SteamCMD run exited \(bootstrap.exitCode)",
+                    code: .firstRunExitedNonZero, arguments: ["\(bootstrap.exitCode)"]
                 ))
             }
 
@@ -863,7 +875,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             }
 
             guard let digest = SteamCMDBinaryDigest.sha256(ofFileAt: finalPath) else {
-                return reject(.failed(.selfUpdateFailed, "Could not hash the installed binary"))
+                return reject(.failed(
+                    .selfUpdateFailed, "Could not hash the installed binary",
+                    code: .couldNotHashBinary
+                ))
             }
             SteamCMDManagedInstaller.commit(installed)
             send(SteamCMDManagedInstallResult(
@@ -900,16 +915,14 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
     }
 
-    /// The one interactive steamcmd session in this process. A PTY rather than
-    /// a pipe because steamcmd's password prompt requires a terminal; it also
-    /// lets steamcmd disable echo itself, exactly as it does in Terminal.
-    ///
-    /// Secrets hygiene: the password and guard code are written to the PTY in
-    /// answer to steamcmd's own prompts and nowhere else — not argv (visible to
-    /// every process), not the transcript we classify (prompts echo nothing),
-    /// not the reply, not a log. The final verdict does not even trust the
-    /// transcript alone: a login only counts as success if the account then
-    /// appears in the shared profile's `config.vdf`, the same ground truth
+    /// The one interactive steamcmd session in this process. A PTY, not a
+    /// pipe, because the password prompt requires a terminal and lets
+    /// steamcmd disable echo itself, as in Terminal. Secrets hygiene: the
+    /// password and guard code go to the PTY answering steamcmd's own
+    /// prompts and nowhere else — not argv, the transcript (prompts echo
+    /// nothing), the reply, or a log. The verdict doesn't trust the
+    /// transcript alone: success only if the account then appears in the
+    /// shared profile's `config.vdf`, the same ground truth
     /// `discoverAccounts` reads.
     private static func runLoginSession(
         binaryPath: String,
@@ -1203,12 +1216,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             // afterwards would describe a different file than the one launched.
             let digest = SteamCMDBinaryDigest.sha256(ofFileAt: resolved.path)
 
-            // Launching is itself a privileged act: this process is unsandboxed
-            // and the path came from a sandboxed caller. Diagnosing must not be
-            // a way to ask us to execute an arbitrary Mach-O, so the trust gates
-            // run BEFORE the spawn, not merely alongside it. A refusal still
-            // reports everything learned — `isUsable` stays false because
-            // `launch` is nil.
+            // Launching is a privileged act: this process is unsandboxed and
+            // the path came from a sandboxed caller, so diagnosing must not
+            // become a way to execute an arbitrary Mach-O — trust gates run
+            // BEFORE the spawn. A refusal still reports everything learned;
+            // `isUsable` stays false because `launch` is nil.
             guard signature.isValid,
                   signature.teamIdentifier == SteamCMDBootstrapPackage.expectedTeamIdentifier,
                   quarantined == nil else {
@@ -1385,13 +1397,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             do {
                 let assets = try SteamLibraryWriter.pruneWallpaperEngineInstall()
                 // `app_update`'s output carries a placeholder `"buildid" "0"`,
-                // so ask app_info for the branch we actually installed rather
-                // than scraping the update log.
-                //
-                // Re-resolved rather than riding the value above: that one was
-                // read before an `app_update` with a 5400s timeout, and a
-                // SteamCMD self-update inside that window can move the wrapper's
-                // target. Every spawn resolves for itself.
+                // so ask app_info for the branch actually installed instead
+                // of scraping the update log. Re-resolved rather than riding
+                // the value above: that was read before a 5400s `app_update`,
+                // and a self-update inside that window can move the
+                // wrapper's target — every spawn resolves for itself.
                 guard let infoPath = Self.resolvedExecutablePath() else {
                     respond(.steamCMDUnavailable, tail: Self.noExecutableReason, executed: steamCMDPath)
                     return

@@ -1,11 +1,8 @@
 import Foundation
 
-/// Why a wallpaper stopped or slowed down.
-///
-/// Carried alongside the profile so the UI can tell the user which condition is
-/// holding playback down. Without it every stop looks identical to a user pause,
-/// which is what made a policy-suspended wallpaper indistinguishable from one
-/// the user paused themselves.
+/// Why a wallpaper stopped or slowed down. Carried alongside the profile so the UI can tell the user
+/// which condition is holding playback down. Without it every stop looks identical to a user pause,
+/// which is what made a policy-suspended wallpaper indistinguishable from one the user paused themselves.
 public enum WallpaperSuspendReason: String, Equatable, Hashable, Sendable, CaseIterable {
     // Safety: not governed by user settings, cannot be vetoed by `.neverPause`.
     case userAbsent

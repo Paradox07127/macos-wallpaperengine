@@ -88,11 +88,11 @@ struct PasteRowCard: View {
     private var statusBadge: some View {
         switch row.state {
         case .ready:
-            StatusChip(verbatim: String(localized: "Ready", comment: "Workshop paste row status badge."), tint: DesignTokens.Colors.Status.active, systemImage: "checkmark.seal.fill")
+            StatusChip(verbatim: String(localized: "Ready", bundle: .appLanguage, comment: "Workshop paste row status badge."), tint: DesignTokens.Colors.Status.active, systemImage: "checkmark.seal.fill")
         case .fetchingMetadata:
-            StatusChip(verbatim: String(localized: "Fetching", comment: "Workshop paste row status badge."), tint: .blue, systemImage: "hourglass")
+            StatusChip(verbatim: String(localized: "Fetching", bundle: .appLanguage, comment: "Workshop paste row status badge."), tint: .blue, systemImage: "hourglass")
         case .invalidInput:
-            StatusChip(verbatim: String(localized: "Invalid", comment: "Workshop paste row status badge."), tint: DesignTokens.Colors.Status.caution, systemImage: "exclamationmark.triangle.fill")
+            StatusChip(verbatim: String(localized: "Invalid", bundle: .appLanguage, comment: "Workshop paste row status badge."), tint: DesignTokens.Colors.Status.caution, systemImage: "exclamationmark.triangle.fill")
         case .failed:
             StatusChip(verbatim: errorBadgeLabel, tint: DesignTokens.Colors.Status.danger, systemImage: "xmark.octagon.fill")
         }
@@ -191,7 +191,7 @@ struct PasteRowCard: View {
         if let id = row.publishedFileID {
             return String(
                 localized: "Workshop item \(id)",
-                comment: "Workshop paste row title when only a published file ID is known."
+                bundle: .appLanguage, comment: "Workshop paste row title when only a published file ID is known."
             )
         }
         return row.originalInput
@@ -200,27 +200,27 @@ struct PasteRowCard: View {
     private var errorBadgeLabel: String {
         switch row.error {
         case .itemPrivate:
-            return String(localized: "Private", comment: "Workshop paste error badge.")
+            return String(localized: "Private", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .itemBanned:
-            return String(localized: "Banned", comment: "Workshop paste error badge.")
+            return String(localized: "Banned", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .itemNotFound:
-            return String(localized: "Not found", comment: "Workshop paste error badge.")
+            return String(localized: "Not found", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .timeout, .networkUnreachable:
-            return String(localized: "Network", comment: "Workshop paste error badge.")
+            return String(localized: "Network", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .rateLimited:
-            return String(localized: "Rate limit", comment: "Workshop paste error badge.")
+            return String(localized: "Rate limit", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .unauthorized:
-            return String(localized: "Locked", comment: "Workshop paste error badge.")
+            return String(localized: "Locked", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .http(let status):
-            return String(localized: "HTTP \(status)", comment: "Workshop paste error badge. Placeholder is HTTP status.")
+            return String(localized: "HTTP \(status)", bundle: .appLanguage, comment: "Workshop paste error badge. Placeholder is HTTP status.")
         case .responseParseFailure, .schemaMismatch:
-            return String(localized: "Bad payload", comment: "Workshop paste error badge.")
+            return String(localized: "Bad payload", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .invalidInput:
-            return String(localized: "Invalid", comment: "Workshop paste error badge.")
+            return String(localized: "Invalid", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .cancelled:
-            return String(localized: "Cancelled", comment: "Workshop paste error badge.")
+            return String(localized: "Cancelled", bundle: .appLanguage, comment: "Workshop paste error badge.")
         case .unknown, .none:
-            return String(localized: "Failed", comment: "Workshop paste error badge.")
+            return String(localized: "Failed", bundle: .appLanguage, comment: "Workshop paste error badge.")
         }
     }
 
@@ -347,59 +347,59 @@ private struct WorkshopRowErrorStrip: View {
         case .invalidInput:
             return String(
                 localized: "Not a valid Steam Workshop URL.",
-                comment: "Workshop paste error detail."
+                bundle: .appLanguage, comment: "Workshop paste error detail."
             )
         case .itemPrivate:
             return String(
                 localized: "This item is private or friends-only and can't be previewed here.",
-                comment: "Workshop paste error detail."
+                bundle: .appLanguage, comment: "Workshop paste error detail."
             )
         case .itemBanned:
             return String(
                 localized: "Steam has flagged this item as unavailable.",
-                comment: "Workshop paste error detail."
+                bundle: .appLanguage, comment: "Workshop paste error detail."
             )
         case .itemNotFound:
             return String(
                 localized: "Workshop item not found. It may have been removed.",
-                comment: "Workshop paste error detail."
+                bundle: .appLanguage, comment: "Workshop paste error detail."
             )
         case .timeout, .networkUnreachable:
             return String(
                 localized: "Couldn't reach Steam. Check your connection.",
-                comment: "Workshop paste error detail."
+                bundle: .appLanguage, comment: "Workshop paste error detail."
             )
         case .rateLimited(let retry):
             if let retry {
                 return String(
                     localized: "Steam is rate-limiting. Retrying in \(Int(retry))s.",
-                    comment: "Workshop paste error detail. Placeholder is seconds until retry."
+                    bundle: .appLanguage, comment: "Workshop paste error detail. Placeholder is seconds until retry."
                 )
             }
             return String(
                 localized: "Steam is rate-limiting. Retrying shortly.",
-                comment: "Workshop paste error detail."
+                bundle: .appLanguage, comment: "Workshop paste error detail."
             )
         case .unauthorized:
             return String(
                 localized: "Steam couldn't load this item's details. You can still open it in Steam.",
-                comment: "Workshop paste error detail."
+                bundle: .appLanguage, comment: "Workshop paste error detail."
             )
         case .http(let status):
             return String(
                 localized: "Steam couldn't load this item (HTTP \(status)).",
-                comment: "Workshop paste error detail. Placeholder is HTTP status."
+                bundle: .appLanguage, comment: "Workshop paste error detail. Placeholder is HTTP status."
             )
         case .responseParseFailure, .schemaMismatch:
             return String(
                 localized: "Steam returned an unexpected response.",
-                comment: "Workshop paste error detail."
+                bundle: .appLanguage, comment: "Workshop paste error detail."
             )
         case .cancelled:
-            return String(localized: "Cancelled", comment: "Workshop paste request cancelled.")
+            return String(localized: "Cancelled", bundle: .appLanguage, comment: "Workshop paste request cancelled.")
         case .unknown(let detail):
             return detail.isEmpty
-                ? String(localized: "Something went wrong.", comment: "Generic workshop paste error.")
+                ? String(localized: "Something went wrong.", bundle: .appLanguage, comment: "Generic workshop paste error.")
                 : detail
         }
     }

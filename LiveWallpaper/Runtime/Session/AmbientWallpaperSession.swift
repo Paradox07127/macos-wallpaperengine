@@ -137,11 +137,10 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
             )
     }
 
-    /// Hands the already-suspended HTML view into the deep-hibernation path it
-    /// owns (snapshot cover → `about:blank`) without waiting out its absence
-    /// dwell. A session still at `.quality` is one the profile has not reached
-    /// yet: tearing that one down would override the profile rather than layer
-    /// on it.
+    /// Hands the already-suspended HTML view into the deep-hibernation path it owns (snapshot
+    /// cover → `about:blank`) without waiting out its absence dwell. A session still at
+    /// `.quality` is one the profile hasn't reached yet: tearing it down would override the
+    /// profile rather than layer on it.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         criticalMemoryPressureActive = active
         guard active else {

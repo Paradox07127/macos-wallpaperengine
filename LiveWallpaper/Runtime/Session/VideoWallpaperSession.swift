@@ -239,11 +239,10 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         absenceHibernationEligible || isManualPauseHibernating || criticalMemoryPressureActive
     }
 
-    /// Releases the player, looper items, decode pool and `lwmem://` mapping now
-    /// rather than behind a dwell, by reusing the manual-pause handover instead
-    /// of a second teardown path. That path also carries the fall-back guard:
-    /// `hibernateNow` re-validates eligibility, suspension and
-    /// `lifecycleGeneration` *after* its still-frame await, so a clear landing
+    /// Releases the player, looper items, decode pool and `lwmem://` mapping now rather than
+    /// behind a dwell, by reusing the manual-pause handover instead of a second teardown path.
+    /// That path also carries the fall-back guard: `hibernateNow` re-validates eligibility,
+    /// suspension and `lifecycleGeneration` *after* its still-frame await, so a clear landing
     /// mid-teardown wins.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         criticalMemoryPressureActive = active
@@ -257,11 +256,10 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         applyImmediateCriticalHibernation()
     }
 
-    /// Shared by `setCriticalMemoryPressureActive(true)` and `retry()`: pushes
-    /// the immediate teardown rather than `applyPerformanceProfile`'s normal
-    /// dwelled push. `retry()` calls this after installing its replacement
-    /// player so a player swapped in mid-critical-pressure goes down right
-    /// away instead of riding out a full `hibernationDelay` in an emergency.
+    /// Shared by `setCriticalMemoryPressureActive(true)` and `retry()`: pushes the immediate
+    /// teardown rather than `applyPerformanceProfile`'s normal dwelled push. `retry()` calls
+    /// this after installing its replacement player, so a player swapped in mid-critical-pressure
+    /// goes down right away instead of riding out a full `hibernationDelay` in an emergency.
     private func applyImmediateCriticalHibernation() {
         guard criticalMemoryPressureActive, currentProfile == .suspended, let player else { return }
         player.setSuspended(true)

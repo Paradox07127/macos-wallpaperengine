@@ -33,7 +33,7 @@ final class WPEEngineAssetsLibrary {
         panel.message = String(
             localized: "Choose your Wallpaper Engine install folder. It must contain an assets folder.",
             defaultValue: "Choose your Wallpaper Engine install folder. It must contain an assets folder.",
-            comment: "Wallpaper Engine assets folder access panel message."
+            bundle: .appLanguage, comment: "Wallpaper Engine assets folder access panel message."
         )
 
         guard panel.runModal() == .OK, let selectedURL = panel.url else {
@@ -44,7 +44,7 @@ final class WPEEngineAssetsLibrary {
             let message = String(
                 localized: "The selected folder doesn't contain Wallpaper Engine assets. Choose the wallpaper_engine install folder or Wallpaper Engine.app.",
                 defaultValue: "The selected folder doesn't contain Wallpaper Engine assets. Choose the wallpaper_engine install folder or Wallpaper Engine.app.",
-                comment: "Wallpaper Engine assets folder validation error."
+                bundle: .appLanguage, comment: "Wallpaper Engine assets folder validation error."
             )
             Logger.warning(message, category: .fileAccess)
             lastError = message
@@ -109,7 +109,7 @@ extension WPEEngineAssetsLibrary {
     static let managedDisplayName = String(
         localized: "Wallpaper Engine (downloaded)",
         defaultValue: "Wallpaper Engine (downloaded)",
-        comment: "Engine-assets status when the assets were downloaded in-app via SteamCMD."
+        bundle: .appLanguage, comment: "Engine-assets status when the assets were downloaded in-app via SteamCMD."
     )
 
     /// Managed install path under the shared Steam library (`app_update 431960`).
