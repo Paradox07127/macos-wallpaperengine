@@ -9,9 +9,12 @@ struct WorkshopSetupFacet: Identifiable {
     /// section), and duplicate ids in a ForEach are undefined behavior.
     let key: String
     let anchor: SettingsSearchAnchor
-    /// Short enough to sit in a three-column legend at settings width.
+    /// Short enough to sit in a four-column legend at settings width.
     let title: LocalizedStringKey
     let state: WorkshopStepState
+    /// Kept out of the "N ready" tally. Counting an optional step as missing
+    /// made a fully working setup read as incomplete forever.
+    var isOptional = false
 
     var id: String { key }
 }
@@ -62,7 +65,7 @@ struct WorkshopSetupOverview: View {
         HStack(spacing: 2) {
             ForEach(facets) { facet in
                 RoundedRectangle(cornerRadius: DesignTokens.StatusBar.corner, style: .continuous)
-                    .fill(segmentTint(facet.state))
+                    .fill(segmentTint(facet))
                     .frame(maxWidth: .infinity)
             }
         }
@@ -79,7 +82,7 @@ struct WorkshopSetupOverview: View {
                 } label: {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         Circle()
-                            .fill(segmentTint(facet.state))
+                            .fill(segmentTint(facet))
                             .frame(width: 6, height: 6)
                             .accessibilityHidden(true)
 
@@ -104,21 +107,31 @@ struct WorkshopSetupOverview: View {
 
     /// `.notStarted` gets a filled-but-quiet segment rather than `WorkshopStepState`'s
     /// text tint: an empty-looking track segment reads as a rendering glitch.
-    private func segmentTint(_ state: WorkshopStepState) -> Color {
-        state == .notStarted ? Color.secondary.opacity(0.22) : state.tint
+    private func segmentTint(_ facet: WorkshopSetupFacet) -> Color {
+        facet.state == .notStarted ? Color.secondary.opacity(0.22) : facet.state.tint
     }
 
     private var summary: String {
-        let ready = facets.filter { $0.state == .ready }.count
-        if ready == facets.count {
-            return String(
+        let required = facets.filter { !$0.isOptional }
+        let ready = required.filter { $0.state == .ready }.count
+        let base: String
+        if ready == required.count {
+            base = String(
                 localized: "All set",
-                comment: "Workshop setup status bar summary when all three setup steps are done."
+                comment: "Workshop setup status bar summary when every required setup step is done."
+            )
+        } else {
+            base = String(
+                localized: "\(ready) of \(required.count) ready",
+                comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
             )
         }
+        // Named rather than counted: the reader's question about an optional
+        // step is "do I need this", which a fraction cannot answer.
+        guard facets.contains(where: { $0.isOptional && $0.state != .ready }) else { return base }
         return String(
-            localized: "\(ready) of \(facets.count) ready",
-            comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
+            localized: "\(base) · API key optional",
+            comment: "Workshop setup status bar summary suffix; %@ is the required-steps summary."
         )
     }
 }

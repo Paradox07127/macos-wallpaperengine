@@ -610,9 +610,31 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// Blocking fetch for the SteamCMD queue, which is serial by design — an
     /// install already occupies it for the length of a `+quit` run, so a
     /// download waiting synchronously changes nothing about its concurrency.
+    /// A package download, retried once if it fails in transit.
+    ///
+    /// The retry lives here rather than around the whole install: re-running
+    /// the install would re-fetch the manifest and re-download the packages
+    /// that already landed, and a failure after the digest gate is not a
+    /// transport problem to begin with.
+    private static func download(
+        from url: URL,
+        to destination: URL,
+        expectedBytes: Int,
+        timeout: TimeInterval = 600
+    ) -> Bool {
+        SteamCMDDownloadRetryPolicy.run(
+            attempt: { _ in
+                downloadOnce(
+                    from: url, to: destination, expectedBytes: expectedBytes, timeout: timeout
+                )
+            },
+            wait: { Thread.sleep(forTimeInterval: $0) }
+        )
+    }
+
     /// `URLSession.download` streams to disk; the size gate runs on the file
     /// before a byte of it is read back.
-    private static func download(
+    private static func downloadOnce(
         from url: URL,
         to destination: URL,
         expectedBytes: Int,
@@ -1250,8 +1272,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
+        @Sendable func send(_ lookup: SteamEngineBuildLookup) {
+            reply((try? JSONEncoder().encode(lookup)) ?? Data())
+        }
         guard SteamAccountsFile.isValidAccountName(accountName) else {
-            reply((try? JSONEncoder().encode(String?.none)) ?? Data())
+            send(.failed(.steamCMDUnavailable))
             return
         }
         // Same profile, same lock: an update check must not race a queued
@@ -1259,11 +1284,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
             guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
-                reply((try? JSONEncoder().encode(String?.none)) ?? Data())
+                send(.failed(.timedOut))
                 return
             }
             guard let steamCMDPath = Self.resolvedExecutablePath() else {
-                reply((try? JSONEncoder().encode(String?.none)) ?? Data())
+                send(.failed(.steamCMDUnavailable))
                 return
             }
             let run = Self.runSteamCMD(
@@ -1279,8 +1304,18 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 timeout: 180,
                 operationID: operationID
             )
-            let build = SteamConnectorBuildInfo.parsePublicBuildID(from: run.output)
-            reply((try? JSONEncoder().encode(build)) ?? Data())
+            // Same markers the download and assets-install paths already
+            // classify on. This one used to skip the check entirely, so an
+            // expired session reached the user as "no build id".
+            if run.timedOut { return send(.failed(.timedOut)) }
+            let out = run.output
+            if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
+                return send(.failed(.loginRequired))
+            }
+            guard let build = SteamConnectorBuildInfo.parsePublicBuildID(from: out) else {
+                return send(.failed(.unrecognized))
+            }
+            send(.found(build))
         }
     }
 

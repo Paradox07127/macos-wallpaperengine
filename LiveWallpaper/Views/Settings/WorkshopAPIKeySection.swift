@@ -1,5 +1,5 @@
 #if !LITE_BUILD
-import AppKit
+
 import LiveWallpaperCore
 import SwiftUI
 
@@ -7,8 +7,8 @@ import SwiftUI
 ///
 /// Settings used to open the key sheet from here, which meant a modal window
 /// on top of a settings window to fill in one field. Once a key is stored the
-/// section is a single row; "Replace" expands the same fields the sheet shows,
-/// in the grouped-form idiom the rest of Settings uses.
+/// section is a single row; "Replace" expands `SteamWebAPIKeyEditor` — the
+/// same view the sheet wraps, so the two cannot lay one field out two ways.
 struct WorkshopAPIKeySection: View {
     let services: WorkshopServices
 
@@ -25,7 +25,7 @@ struct WorkshopAPIKeySection: View {
             SettingRow(
                 icon: "key",
                 iconColor: .orange,
-                title: "Steam Web API key",
+                title: "Steam Web API key (optional)",
                 subtitle: subtitle,
                 info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Get one free at steamcommunity.com/dev/apikey."
             ) {
@@ -88,52 +88,9 @@ struct WorkshopAPIKeySection: View {
         }
     }
 
-    @ViewBuilder
     private var editor: some View {
-        SteamWebAPIKeySafetyNotice()
-
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            SteamWebAPIKeyTermsToggle(model: model)
-            Spacer(minLength: DesignTokens.Spacing.sm)
-            // Links, not the sheet's buttons: the two references belong to the
-            // sentence next to them, and a row of bordered buttons in a
-            // grouped form reads as three more things to do.
-            Button {
-                NSWorkspace.shared.open(SteamWebAPIKeyLinks.terms)
-            } label: {
-                Text("Steam Web API TOU", bundle: .main)
-            }
-            .buttonStyle(.link)
-            .fixedSize()
-
-            Button {
-                NSWorkspace.shared.open(SteamWebAPIKeyLinks.limitedAccounts)
-            } label: {
-                Text("About Limited Accounts", bundle: .main)
-            }
-            .buttonStyle(.link)
-            .fixedSize()
-        }
-
-        SteamWebAPIKeyField(model: model, onSubmit: save)
-
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.sm) {
-            SteamWebAPIKeyValidationHint(model: model)
-
-            Button {
-                NSWorkspace.shared.open(SteamWebAPIKeyLinks.apiKey)
-            } label: {
-                Text("Get a key", bundle: .main)
-            }
-            .buttonStyle(.link)
-            .fixedSize()
-
-            Button("Save") { save() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(!model.canSave)
-                .fixedSize()
-        }
+        SteamWebAPIKeyEditor(model: model, onSubmit: save)
+            .padding(.vertical, DesignTokens.Spacing.xxs)
     }
 
     private func save() {

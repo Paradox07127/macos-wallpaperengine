@@ -194,7 +194,10 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(Bool.self, from: $0) }
     }
 
-    static func latestWallpaperEngineBuildID(accountName: String, operationID: String) async -> String? {
+    static func latestWallpaperEngineBuildID(
+        accountName: String,
+        operationID: String
+    ) async -> SteamEngineBuildLookup? {
         let data = await call { connector, reply in
             connector.latestWallpaperEngineBuildID(
                 accountName: accountName,
@@ -202,7 +205,7 @@ enum SteamConnectorClient {
                 with: reply
             )
         }
-        return data.flatMap { try? JSONDecoder().decode(String?.self, from: $0) } ?? nil
+        return data.flatMap { try? JSONDecoder().decode(SteamEngineBuildLookup.self, from: $0) }
     }
 
     // MARK: - Transport

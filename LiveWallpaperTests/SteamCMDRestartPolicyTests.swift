@@ -55,16 +55,34 @@ struct SteamCMDSelfUpdateRestartTests {
         ])
     }
 
-    @Test("The restart loop is bounded at three executions")
-    func loopIsBounded() {
+    @Test("One restart request beyond the measured case still completes")
+    func headroomAboveTheMeasuredCase() {
+        // The measured fresh install needs exactly two restarts, which a budget
+        // of three executions satisfies with nothing to spare. Valve controls
+        // how many times its bootstrap asks, so the budget carries one spare
+        // execution — otherwise a change on their side surfaces as
+        // "First SteamCMD run exited 42", which reads as a broken install
+        // rather than as "it wanted one more restart".
         let steamCMD = ScriptedSteamCMD(exitCodes: [42, 42, 42, 0])
+        guard case .completed(let final) = steamCMD.run() else {
+            Issue.record("three restart requests must not be reported as failure")
+            return
+        }
+        #expect(final.exitCode == 0)
+        #expect(steamCMD.events.filter { $0 == "execute" }.count == 4)
+    }
+
+    @Test("The restart loop is still bounded")
+    func loopIsBounded() {
+        let steamCMD = ScriptedSteamCMD(exitCodes: [42, 42, 42, 42, 0])
         guard case .completed(let final) = steamCMD.run() else {
             Issue.record("an exhausted loop reports the last run, not a gate failure")
             return
         }
-        // The fourth run (which would have succeeded) must never happen.
+        // The fifth run (which would have succeeded) must never happen: a
+        // binary still asking after four is broken, not slow.
         #expect(final.exitCode == 42)
-        #expect(steamCMD.events.filter { $0 == "execute" }.count == 3)
+        #expect(steamCMD.events.filter { $0 == "execute" }.count == 4)
     }
 
     @Test("Control: a clean first run executes once and never re-gates")

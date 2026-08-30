@@ -6,6 +6,7 @@ import SwiftUI
 struct PaneView: View {
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
+    @Environment(WorkshopSetupController.self) private var setupController
     @AppStorage("loomscreen.workshop.pane.selectedTab.v1", store: .appScoped()) private var selectedTab: WorkshopPaneTab = .installed
     @AppStorage("loomscreen.workshop.onboarding.shown.v1", store: .appScoped()) private var onboardingShown: Bool = false
 
@@ -15,9 +16,8 @@ struct PaneView: View {
     @State private var isShowingOnboarding = false
     @State private var isShowingKeyEntry = false
     @State private var isShowingInstallConsent = false
+    @State private var isShowingSetupAlert = false
     @State private var installedCount = 0
-    @State private var managedInstaller = SteamCMDManagedInstallCoordinator.shared
-    @State private var steamCMDSetupError: String?
 
     var body: some View {
         DetailPageScaffold(showsHeader: false, header: { EmptyView() }) {
@@ -68,22 +68,22 @@ struct PaneView: View {
             }
         }
         .sheet(isPresented: $isShowingInstallConsent) {
-            SteamCMDManagedInstallSheet(onConfirm: runManagedInstall)
+            SteamCMDSetupSheet(onConfirmManagedInstall: { setupController.runManagedInstall() })
         }
-        .alert(
-            "Action needed",
-            isPresented: Binding(
-                get: { steamCMDSetupError != nil },
-                set: { if !$0 { steamCMDSetupError = nil } }
-            )
-        ) {
-            Button("OK") { steamCMDSetupError = nil }
-            Button("Configure") {
-                steamCMDSetupError = nil
-                openWorkshopSettings()
-            }
+        // Presented off local state, not off `setupError != nil`: a Binding
+        // whose setter clears the error runs on *every* dismissal, including
+        // the one SwiftUI performs when "Configure" is tapped — so the error
+        // this hands over to Settings was being erased on the way there.
+        .onChange(of: setupController.setupError) { _, error in
+            isShowingSetupAlert = error != nil
+        }
+        .alert("Action needed", isPresented: $isShowingSetupAlert) {
+            Button("OK") { setupController.setupError = nil }
+            // Leaves the error set on purpose: Settings renders it inline next
+            // to the step it belongs to.
+            Button("Configure") { openWorkshopSettings(anchor: .workshopConnection) }
         } message: {
-            Text(verbatim: steamCMDSetupError ?? "")
+            Text(verbatim: setupController.setupError ?? "")
         }
     }
 
@@ -112,7 +112,7 @@ struct PaneView: View {
                 onBrowseTag: browseByTag,
                 onBrowseOnline: { selectedTab = .browseOnline },
                 onInstallSteamCMD: { isShowingInstallConsent = true },
-                onOpenWorkshopSettings: openWorkshopSettings,
+                onOpenWorkshopSettings: { openWorkshopSettings() },
                 isInstallingSteamCMD: isInstallingSteamCMD,
                 paneHeader: makePaneHeader
             )
@@ -192,39 +192,23 @@ struct PaneView: View {
         }
     }
 
-    private var isInstallingSteamCMD: Bool {
-        switch managedInstaller.status {
-        case .installing: return true
-        case .idle, .removing, .installed, .failed: return false
-        }
-    }
+    /// The controller's reading, not `installer.status` alone: the install is
+    /// not done until the connector has launched the binary, and the pane used
+    /// to drop its progress state during that window.
+    private var isInstallingSteamCMD: Bool { setupController.isSteamCMDBusy }
 
-    private func runManagedInstall() {
-        steamCMDSetupError = nil
-        Task {
-            switch await managedInstaller.install() {
-            case .installed:
-                if !(await doctor.autoDetectBinary()) {
-                    steamCMDSetupError = String(
-                        localized: "SteamCMD was installed but could not be started.",
-                        comment: "Workshop setup error after a managed SteamCMD install that will not launch."
-                    )
-                }
-            case .failed(let reason):
-                steamCMDSetupError = reason
-            case .idle, .installing, .removing:
-                break
-            }
-        }
-    }
-
-    private func openWorkshopSettings() {
+    /// `anchor` defaults to the API-key section, which is where the Installed
+    /// tab's "Configure" wants to land. A setup failure passes
+    /// `.workshopConnection` instead: `.workshopSetup` is the key section, and
+    /// with the key moved to the bottom of the page it scrolled past the rows
+    /// the error was about.
+    private func openWorkshopSettings(anchor: SettingsSearchAnchor = .workshopSetup) {
         NotificationCenter.default.post(
             name: .openSettingsSection,
             object: nil,
             userInfo: [
                 "destination": SettingsNavigation.workshopSetup.rawValue,
-                "anchor": SettingsSearchAnchor.workshopSetup.rawValue
+                "anchor": anchor.rawValue
             ]
         )
     }
@@ -271,10 +255,9 @@ struct WorkshopPaneHeader: View {
 
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
+    @Environment(WorkshopSetupController.self) private var setupController
 
-    @State private var discoveredAccounts: [SteamAccountSummary] = []
     @State private var showingSignIn = false
-    @State private var accountError: String?
 
     /// Same `DetailHeaderBar` as Bookmarks and Apple Aerials — this pane used to
     /// hand-roll an identical icon/title/metadata/actions row, so the three
@@ -286,14 +269,10 @@ struct WorkshopPaneHeader: View {
             metadata: { headerStatView },
             actions: { headerActions }
         )
-        .task { await loadAccounts() }
+        .task { await setupController.loadAccounts() }
         .sheet(isPresented: $showingSignIn) {
             SteamSignInSheet { accountName in
-                doctor.username = accountName
-                Task {
-                    await loadAccounts()
-                    await doctor.runProbe(.cachedLogin)
-                }
+                setupController.adoptSignedInAccount(accountName)
             }
         }
     }
@@ -306,7 +285,7 @@ struct WorkshopPaneHeader: View {
         // Gated on having accounts to list, not on a stored username: the name
         // outlives the Steam profile it came from, and a menu with nothing to
         // switch between is a menu that only knows how to sign in.
-        if discoveredAccounts.isEmpty {
+        if setupController.discoveredAccounts.isEmpty {
             headerAction {
                 Button { showingSignIn = true } label: {
                     headerGlyph("person.crop.circle.badge.plus")
@@ -319,11 +298,11 @@ struct WorkshopPaneHeader: View {
             headerAction {
                 Menu {
                     steamAccountMenuItems(
-                        accounts: discoveredAccounts,
+                        accounts: setupController.discoveredAccounts,
                         current: doctor.username,
-                        onSelect: selectAccount,
+                        onSelect: setupController.selectAccount,
                         onSignIn: { showingSignIn = true },
-                        onRescan: { Task { await loadAccounts() } }
+                        onRescan: { Task { await setupController.loadAccounts() } }
                     )
                 } label: {
                     headerGlyph(doctor.username == nil
@@ -333,22 +312,9 @@ struct WorkshopPaneHeader: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
             }
-            .help(Text(verbatim: accountError ?? doctor.username ?? ""))
+            .help(Text(verbatim: setupController.setupError ?? doctor.username ?? ""))
             .accessibilityLabel(Text("Steam account"))
         }
-    }
-
-    private func selectAccount(_ account: SteamAccountSummary) {
-        accountError = nil
-        do {
-            try doctor.adoptAccount(account)
-        } catch {
-            accountError = error.localizedDescription
-        }
-    }
-
-    private func loadAccounts() async {
-        discoveredAccounts = await SteamConnectorClient.discoverAccounts()
     }
 
     /// On Workshop, prefixes the request count with the API-key status seal so

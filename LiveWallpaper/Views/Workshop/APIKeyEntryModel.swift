@@ -22,7 +22,6 @@ final class SteamWebAPIKeyEntryModel {
     }
 
     var apiKey: String = ""
-    var hasReadTOU: Bool = false
     var isShowingKey: Bool = false
 
     private(set) var validation: Validation = .empty
@@ -36,18 +35,13 @@ final class SteamWebAPIKeyEntryModel {
         self.services = services
     }
 
-    var canSave: Bool {
-        // The consent checkbox gates the field, but validation outlives it: tick
-        // it, let the key validate, untick it, and Save was still lit.
-        validation == .valid && hasReadTOU
-    }
+    var canSave: Bool { validation == .valid }
 
     func reset() {
         validationTask?.cancel()
         validationTask = nil
         validatedAPIKey = nil
         apiKey = ""
-        hasReadTOU = false
         isShowingKey = false
         validation = .empty
         savingError = nil
@@ -104,7 +98,7 @@ final class SteamWebAPIKeyEntryModel {
     @discardableResult
     func save() async -> Bool {
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard hasReadTOU, validation == .valid, validatedAPIKey == trimmed else {
+        guard validation == .valid, validatedAPIKey == trimmed else {
             keyChanged()
             return false
         }

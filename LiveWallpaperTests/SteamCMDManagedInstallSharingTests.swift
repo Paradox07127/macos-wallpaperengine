@@ -8,10 +8,10 @@ import Testing
 @MainActor
 @Suite("Managed install coordinator sharing")
 struct SteamCMDManagedInstallSharingTests {
+    /// One file now, because the three views route their installs through it —
+    /// which is the strongest form of what this test was asserting.
     private static let consumerViews = [
-        "LiveWallpaper/Views/Settings/WorkshopConnectionSetup.swift",
-        "LiveWallpaper/Views/Workshop/PaneView.swift",
-        "LiveWallpaper/Views/Onboarding/WorkshopSetupStep.swift"
+        "LiveWallpaper/Views/Workshop/Setup/WorkshopSetupController.swift"
     ]
 
     @Test("Every consumer view observes the shared coordinator, not its own")

@@ -1,84 +1,112 @@
 #if !LITE_BUILD
+import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Consent gate for the managed SteamCMD install.
+/// The two ways to get SteamCMD, as one choice.
 ///
-/// Everything the user is agreeing to has to be on screen *before* the download
-/// starts: where the bytes come from, how large they really get, where they
-/// land, and that we can undo it.
-struct SteamCMDManagedInstallSheet: View {
-    let onConfirm: () -> Void
+/// These were two separate sheets reached from two different places — the
+/// managed install from a prominent button, Homebrew from an item buried in an
+/// `⋯` menu — which presented one decision as a default plus a secret. Both
+/// routes need their terms stated before anything happens (where the bytes
+/// come from, how large they get, where they land, that it can be undone), so
+/// they belong on one screen where they can be compared.
+struct SteamCMDSetupSheet: View {
+    /// Called when the user picks the managed install and confirms it.
+    let onConfirmManagedInstall: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var route: Route = .managed
+    @State private var didCopy = false
+
+    private enum Route: String, CaseIterable, Identifiable {
+        case managed
+        case homebrew
+
+        var id: String { rawValue }
+    }
+
+    private static let brewCommand = "brew install --cask steamcmd"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                 SteamSheetHeader(
-                    icon: "arrow.down.circle",
-                    title: "Install SteamCMD for me",
-                    subtitle: "Loomscreen can fetch Valve's official command-line downloader and set it up, so you don't have to install it yourself."
+                    icon: "terminal",
+                    title: "Set up SteamCMD",
+                    subtitle: "Valve's command-line downloader. Loomscreen can install its own copy, or you can install one system-wide with Homebrew."
                 )
-                factsCard
-                Text("This installs SteamCMD only. It does not sign you in to Steam, and you can remove it again from this screen.")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+
+                Picker("How to install", selection: $route) {
+                    Text("Let Loomscreen install it", bundle: .main).tag(Route.managed)
+                    Text("Install with Homebrew", bundle: .main).tag(Route.homebrew)
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                .accessibilityLabel(Text("How to install SteamCMD", bundle: .main))
+
+                switch route {
+                case .managed: managedDetail
+                case .homebrew: homebrewDetail
+                }
             }
             .padding(DesignTokens.Spacing.xl)
 
-            SheetFooterBar(
-                primaryTitle: "Download and install",
-                primaryAction: {
-                    dismiss()
-                    onConfirm()
-                },
-                primaryDisabled: false,
-                primaryHelp: "Download Valve's SteamCMD and set it up",
-                cancelTitle: "Cancel",
-                cancelAction: { dismiss() },
-                cancelHelp: "Set up SteamCMD yourself instead"
-            )
+            footer
         }
         .frame(width: SteamSheetWidth.form)
     }
 
-    private var factsCard: some View {
+    private var footer: some View {
+        SheetFooterBar(
+            primaryTitle: route == .managed ? "Download and install" : "Done",
+            primaryAction: {
+                dismiss()
+                if route == .managed { onConfirmManagedInstall() }
+            },
+            primaryDisabled: false,
+            primaryHelp: route == .managed
+                ? "Download Valve's SteamCMD and set it up"
+                : "Close these instructions",
+            cancelTitle: "Cancel",
+            cancelAction: { dismiss() },
+            cancelHelp: "Set up SteamCMD later"
+        )
+    }
+
+    // MARK: - Managed install
+
+    private var managedDetail: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             fact(
-                label: Text("Download size"),
+                label: Text("Download size", bundle: .main),
                 value: Text(verbatim: String(
                     localized: "About \(formatted(SteamCMDManifest.approximateDownloadBytes)) from Valve's server at \(SteamCMDManifest.url.host() ?? "media.steampowered.com")",
                     comment: "Managed SteamCMD install consent sheet; first %@ is an approximate download size, second is a hostname."
                 ))
             )
             fact(
-                label: Text("Size once ready"),
+                label: Text("Size once ready", bundle: .main),
                 value: Text(verbatim: String(
                     localized: "About \(formatted(SteamCMDManifest.approximateInstalledBytes))",
                     comment: "Managed SteamCMD install consent sheet; %@ is the approximate installed size."
                 ))
             )
             fact(
-                label: Text("Location"),
+                label: Text("Location", bundle: .main),
                 value: Text(verbatim: installLocationDisplayPath)
             )
             fact(
-                label: Text("Checks"),
-                value: Text("Every download must match Valve's published checksum, and the program must carry Valve's signature, before it is ever run.")
+                label: Text("Checks", bundle: .main),
+                value: Text("Every download must match Valve's published checksum, and the program must carry Valve's signature, before it is ever run.", bundle: .main)
             )
+
+            Text("This installs SteamCMD only. It does not sign you in to Steam, and you can remove it again from Settings.", bundle: .main)
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(DesignTokens.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: DesignTokens.Card.strokeWidth)
-        )
     }
 
     private func fact(label: Text, value: Text) -> some View {
@@ -107,60 +135,43 @@ struct SteamCMDManagedInstallSheet: View {
     private func formatted(_ bytes: Int) -> String {
         Int64(bytes).formatted(.byteCount(style: .file))
     }
-}
 
-/// The self-serve alternative to the managed install, for users who want a
-/// system-wide SteamCMD other tools can find. We only show the command —
-/// running Homebrew from inside an app is not something to automate.
-struct SteamCMDSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var didCopy = false
+    // MARK: - Homebrew
 
-    private static let command = "brew install --cask steamcmd"
+    /// We only show the command — running Homebrew from inside a sandboxed app
+    /// is not something to automate.
+    private var homebrewDetail: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Text("Installs system-wide, where other tools can find it too. Run this in Terminal:", bundle: .main)
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                SteamSheetHeader(
-                    icon: "terminal",
-                    title: "Install with Homebrew",
-                    subtitle: "Installs system-wide, where other tools can find it too. Run this in Terminal:"
-                )
-
-                HStack(spacing: DesignTokens.Spacing.sm) {
-                    Text(verbatim: Self.command)
-                        .font(DesignTokens.Typography.code)
-                        .textSelection(.enabled)
-                    Spacer(minLength: 0)
-                    Button(didCopy ? "Copied" : "Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(Self.command, forType: .string)
-                        didCopy = true
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Text(verbatim: Self.brewCommand)
+                    .font(DesignTokens.Typography.code)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
+                Button(didCopy ? "Copied" : "Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(Self.brewCommand, forType: .string)
+                    didCopy = true
                 }
-                .padding(DesignTokens.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                        .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-                )
-
-                Text("When it finishes, use Locate automatically and Loomscreen will pick it up.")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .padding(DesignTokens.Spacing.xl)
-
-            SheetFooterBar(
-                primaryTitle: "Done",
-                primaryAction: { dismiss() },
-                primaryDisabled: false,
-                primaryHelp: "Close these instructions"
+            .padding(DesignTokens.Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                    .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
             )
+
+            Text("When it finishes, use Locate automatically and Loomscreen will pick it up.", bundle: .main)
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(width: SteamSheetWidth.form)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 #endif

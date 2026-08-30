@@ -3,11 +3,13 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores the key in this Mac's login keychain (never synced to iCloud).
+/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores
+/// the key in this Mac's login keychain (never synced to iCloud).
 ///
 /// Kept for the surfaces that are genuinely modal — onboarding and the Browse
-/// pane's "you need a key to do this" prompt. Settings enters the same key
-/// inline through `WorkshopAPIKeySection`; both drive `SteamWebAPIKeyEntryModel`.
+/// pane's "you need a key to do this" prompt. Settings shows the same
+/// `SteamWebAPIKeyEditor` inline; the sheet is only a title and a Done button
+/// around it, so the two cannot lay the same field out differently.
 struct SteamWebAPIKeyEntrySheet: View {
     let services: WorkshopServices
     let onSaved: () -> Void
@@ -23,108 +25,30 @@ struct SteamWebAPIKeyEntrySheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            innerContent
-            footer
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                SteamSheetHeader(
+                    icon: "key",
+                    title: "Set your Steam Web API key",
+                    subtitle: "Browsing works without one. A key adds ratings, authors and faster search."
+                )
+                // No inline Save here: the sheet's footer already owns the
+                // primary action, and two Save buttons stacked in one dialog
+                // is a question about which one is real.
+                SteamWebAPIKeyEditor(model: model, showsSaveButton: false, onSubmit: save)
+            }
+            .padding(DesignTokens.Spacing.xl)
+
+            SheetFooterBar(
+                primaryTitle: "Save",
+                primaryAction: { save() },
+                primaryDisabled: !model.canSave,
+                primaryHelp: "Save key and close",
+                cancelTitle: "Cancel",
+                cancelAction: { dismiss() },
+                cancelHelp: "Discard changes"
+            )
         }
         .frame(width: SteamSheetWidth.form)
-    }
-
-    private var innerContent: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-            header
-            safetyCard
-            entryCard
-        }
-        .padding(DesignTokens.Spacing.xl)
-    }
-
-    private var footer: some View {
-        SheetFooterBar(
-            primaryTitle: "Save",
-            primaryAction: { save() },
-            primaryDisabled: !model.canSave,
-            primaryHelp: "Save key and close",
-            cancelTitle: "Cancel",
-            cancelAction: { dismiss() },
-            cancelHelp: "Discard changes"
-        )
-    }
-
-    private var header: some View {
-        SteamSheetHeader(
-            icon: "key",
-            title: "Set your Steam Web API key",
-            info: "Loomscreen uses your own Steam account's Web API key to read Workshop metadata — free, but it needs Mobile Steam Guard and a non-limited Steam account. Calls go directly to Valve over HTTPS; the key is stored only on this Mac (no iCloud sync) and is never proxied through Loomscreen."
-        )
-    }
-
-    /// Anti-phishing notice with the two external actions it talks about:
-    /// the official generate page (primary) and the revoke page.
-    private var safetyCard: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            SteamWebAPIKeySafetyNotice()
-
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Button {
-                    NSWorkspace.shared.open(SteamWebAPIKeyLinks.apiKey)
-                } label: {
-                    Label("Revoke on Steam", systemImage: "arrow.uturn.backward")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Spacer(minLength: 0)
-
-                Button {
-                    NSWorkspace.shared.open(SteamWebAPIKeyLinks.apiKey)
-                } label: {
-                    Label("Get a key", systemImage: "key.fill")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-        }
-        .padding(DesignTokens.Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DesignTokens.Colors.Status.warning.opacity(0.06), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
-    }
-
-    /// TOU consent, its reference links, and the gated key entry as one logical group.
-    private var entryCard: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            SteamWebAPIKeyTermsToggle(model: model)
-
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                Button {
-                    NSWorkspace.shared.open(SteamWebAPIKeyLinks.terms)
-                } label: {
-                    Label("Steam Web API TOU", systemImage: "doc.text")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button {
-                    NSWorkspace.shared.open(SteamWebAPIKeyLinks.limitedAccounts)
-                } label: {
-                    Label("About Limited Accounts", systemImage: "questionmark.circle")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-
-            SteamWebAPIKeyField(model: model, onSubmit: save)
-            SteamWebAPIKeyValidationHint(model: model)
-        }
-        .padding(DesignTokens.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: DesignTokens.Card.strokeWidth)
-        )
     }
 
     private func save() {
@@ -137,41 +61,64 @@ struct SteamWebAPIKeyEntrySheet: View {
     }
 }
 
-// MARK: - Shared entry controls
+// MARK: - Shared editor
 
-/// Anti-phishing line. Same words wherever a key is pasted.
-struct SteamWebAPIKeySafetyNotice: View {
+/// The key field and everything that has to sit next to it.
+///
+/// This was two cards with tinted fills and four bordered buttons, laid out
+/// twice. In a settings form the cards read as panels inside panels, and four
+/// bordered buttons read as four more chores; the sentences they carried are
+/// the part that matters, so they stayed and the chrome went.
+struct SteamWebAPIKeyEditor: View {
+    @Bindable var model: SteamWebAPIKeyEntryModel
+    /// Off inside a sheet, whose footer bar carries the primary action instead.
+    var showsSaveButton = true
+    let onSubmit: () -> Void
+
     var body: some View {
-        HStack(alignment: .top, spacing: DesignTokens.Spacing.xs) {
-            Image(systemName: "shield.lefthalf.filled")
-                .foregroundStyle(DesignTokens.Colors.Status.warning)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Official source only")
-                    .font(DesignTokens.Typography.caption.weight(.bold))
-                Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            // Kept as plain text rather than a warning panel: it is a standing
+            // instruction about where keys come from, not an alert about
+            // something that just happened.
+            Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.", bundle: .main)
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                SteamWebAPIKeyField(model: model, onSubmit: onSubmit)
+                if showsSaveButton {
+                    Button("Save") { onSubmit() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!model.canSave)
+                        .fixedSize()
+                }
+            }
+
+            SteamWebAPIKeyValidationHint(model: model)
+
+            HStack(spacing: DesignTokens.Spacing.md) {
+                link("Get a key", SteamWebAPIKeyLinks.apiKey)
+                link("Steam Web API Terms of Use", SteamWebAPIKeyLinks.terms)
+                link("About Limited Accounts", SteamWebAPIKeyLinks.limitedAccounts)
+                Spacer(minLength: 0)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
 
-struct SteamWebAPIKeyTermsToggle: View {
-    @Bindable var model: SteamWebAPIKeyEntryModel
-
-    var body: some View {
-        Toggle(isOn: $model.hasReadTOU) {
-            Text("I have read the Steam Web API Terms of Use.")
-                .font(DesignTokens.Typography.body)
+    private func link(_ title: LocalizedStringKey, _ url: URL) -> some View {
+        Button {
+            NSWorkspace.shared.open(url)
+        } label: {
+            Text(title, bundle: .main)
         }
-        .toggleStyle(.checkbox)
+        .buttonStyle(.link)
+        .fixedSize()
     }
 }
 
-/// The masked field plus its reveal button. Disabled until the TOU box is ticked.
+/// The masked field plus its reveal button.
 struct SteamWebAPIKeyField: View {
     @Bindable var model: SteamWebAPIKeyEntryModel
     let onSubmit: () -> Void
@@ -190,7 +137,6 @@ struct SteamWebAPIKeyField: View {
                         .font(DesignTokens.Typography.code)
                 }
             }
-            .disabled(!model.hasReadTOU)
             .onChange(of: model.apiKey) { _, _ in model.keyChanged() }
             .onSubmit(onSubmit)
 
@@ -201,7 +147,6 @@ struct SteamWebAPIKeyField: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .disabled(!model.hasReadTOU)
             .help(model.isShowingKey ? Text("Hide key") : Text("Show key"))
             .accessibilityLabel(model.isShowingKey ? Text("Hide key") : Text("Show key"))
         }
@@ -210,7 +155,7 @@ struct SteamWebAPIKeyField: View {
         .background(Color(.controlBackgroundColor), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm))
         .overlay {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.sm)
-                .strokeBorder(Color.primary.opacity(model.hasReadTOU ? 0.15 : 0.05), lineWidth: 0.5)
+                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5)
         }
     }
 }
@@ -234,7 +179,7 @@ struct SteamWebAPIKeyValidationHint: View {
     private var hint: some View {
         switch model.validation {
         case .empty:
-            Text("Paste your 32-character hexadecimal API key.")
+            Text("The key is stored in this Mac's keychain and never synced.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .wrongShape:

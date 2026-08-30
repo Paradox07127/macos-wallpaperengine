@@ -93,6 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservationIgnored private let workshopDoctorService = SteamCMDDoctorService()
     /// Owns the Keychain, query service, and disk cache used for Workshop browsing.
     @ObservationIgnored private let workshopServices = WorkshopServices()
+    /// The setup actions shared by the Workshop settings page, the onboarding
+    /// step and the Workshop pane. App-lifetime for the same reason the Doctor
+    /// is: an install started from one surface has to be visible from the others.
+    @ObservationIgnored private lazy var workshopSetupController = WorkshopSetupController(doctor: workshopDoctorService)
     #endif
     func applicationDidFinishLaunching(_ notification: Notification) {
         Logger.notice("Application starting", category: .startup)
@@ -386,6 +390,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let contentView = baseContentView
             .environment(workshopDoctorService)
             .environment(workshopServices)
+            .environment(workshopSetupController)
             .appLanguageScoped(defaults: .appScoped())
         #else
         let contentView = baseContentView
@@ -548,6 +553,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 rootView: base
                     .environment(workshopDoctorService)
                     .environment(workshopServices)
+                    .environment(workshopSetupController)
                     .appLanguageScoped(defaults: .appScoped())
             )
             #else

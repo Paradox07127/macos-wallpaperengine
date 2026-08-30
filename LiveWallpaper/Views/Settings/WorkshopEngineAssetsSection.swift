@@ -10,20 +10,12 @@ import SwiftUI
 /// into the trailing slot next to three buttons was the one place this page
 /// ran out of width.
 struct WorkshopEngineAssetsSection: View {
-    /// Called when an action needs the Steam connection set up first. The page
-    /// scrolls there rather than pushing a second-level screen — the steps are
-    /// now sections on this same page.
-    let onNeedsSteamConnection: () -> Void
-
-    @Environment(SteamCMDDoctorService.self) private var doctorService
+    @Environment(WorkshopSetupController.self) private var controller
 
     @AppStorage("loomscreen.workshop.checkAssetsUpdateAtLaunch.v1", store: .appScoped()) private var checksAssetsUpdateAtLaunch = false
 
     @State private var engineAssets = WPEEngineAssetsLibrary.shared
     @State private var engineInstaller = WPEEngineAssetsInstaller.shared
-    @State private var preflightingDoctor = false
-    /// Set when an action was refused for a reason the connection steps cannot fix.
-    @State private var blockedActionMessage: String?
     @State private var showingRemoveConfirm = false
 
     var body: some View {
@@ -68,11 +60,7 @@ struct WorkshopEngineAssetsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSearchSectionHeader("Wallpaper Engine assets", anchor: .workshopAssets)
-        } footer: {
-            WorkshopPrivacyLink()
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingsSearchSectionHeader("Scene resources", anchor: .workshopAssets)
         }
     }
 
@@ -132,7 +120,7 @@ struct WorkshopEngineAssetsSection: View {
 
     @ViewBuilder
     private var engineAssetsControl: some View {
-        if preflightingDoctor {
+        if controller.isPreflightingDownload {
             HStack(spacing: DesignTokens.Spacing.xs) {
                 ProgressView().controlSize(.small)
                 Text("Checking…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
@@ -179,11 +167,11 @@ struct WorkshopEngineAssetsSection: View {
     private var engineAssetsManagedControl: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             if engineInstaller.updateAvailable {
-                Button("Update") { preflightThen { engineInstaller.download(using: doctorService) } }
+                Button("Update") { controller.downloadEngineAssets() }
                     .buttonStyle(.borderedProminent)
                     .fixedSize()
             } else {
-                Button("Check for updates") { preflightThen { engineInstaller.checkForUpdate(using: doctorService) } }
+                Button("Check for updates") { controller.checkEngineAssetsUpdate() }
                     .fixedSize()
             }
             Button {
@@ -215,7 +203,7 @@ struct WorkshopEngineAssetsSection: View {
     @ViewBuilder
     private var engineAssetsManualControl: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
-            Button("Change") { Task { await requestManualEngineAssetsAccess() } }
+            Button("Change") { Task { await controller.linkEngineAssetsFolder() } }
                 .fixedSize()
                 .help(Text("Pick a different Wallpaper Engine install folder"))
             Button("Forget", role: .destructive) {
@@ -228,25 +216,22 @@ struct WorkshopEngineAssetsSection: View {
         }
     }
 
-    @ViewBuilder
+    /// The same two routes the onboarding step offers, in the same order:
+    /// download the copy you own, or point at one you already have.
     private var engineAssetsUnlinkedControl: some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
-            Button("Download from Steam") {
-                preflightThen { engineInstaller.download(using: doctorService) }
-            }
-            .fixedSize()
-            .help(Text("Download the copy of Wallpaper Engine you own so scenes can use its shared assets"))
-            Button("Link folder") { Task { await requestManualEngineAssetsAccess() } }
-                .fixedSize()
-                .help(Text("Grant read-only access to a Wallpaper Engine install so scenes can use its shared assets"))
-        }
-    }
-
-    private func requestManualEngineAssetsAccess() async {
-        if await engineAssets.requestAccess() {
-            engineInstaller.refreshManagedInstallState()
-            engineInstaller.clearTransientStatus()
-        }
+        WorkshopSetupRoutes(
+            primary: WorkshopSetupRoute(
+                id: "assets.download",
+                title: "Download automatically",
+                unavailableReason: controller.engineAssetsDownloadBlockReason
+            ) { controller.downloadEngineAssets() },
+            secondary: [
+                WorkshopSetupRoute(id: "assets.link", title: "Link manually") {
+                    Task { await controller.linkEngineAssetsFolder() }
+                }
+            ],
+            emphasizesPrimary: true
+        )
     }
 
     private func revealEngineAssetsInFinder() {
@@ -257,39 +242,7 @@ struct WorkshopEngineAssetsSection: View {
         NSWorkspace.shared.activateFileViewerSelecting([root])
     }
 
-    /// Run `action` when the connection preflight is green; scroll to the
-    /// Steam connection steps only if they can fix the blocker.
-    private func preflightThen(_ action: @escaping () -> Void) {
-        // Config + cached login required; advisory ownership must not block recovery.
-        blockedActionMessage = nil
-        if doctorService.isDownloadReady { action(); return }
-        // Unfixable blockers stay as inline copy — don't send the user to an all-green section.
-        guard doctorService.downloadBlocker?.isFixableInDoctor ?? true else {
-            blockedActionMessage = doctorService.downloadBlockerMessage
-            return
-        }
-        Task {
-            preflightingDoctor = true
-            await doctorService.runAll()
-            preflightingDoctor = false
-            if doctorService.isDownloadReady {
-                action()
-            } else if doctorService.downloadBlocker?.isFixableInDoctor ?? true {
-                onNeedsSteamConnection()
-            } else {
-                blockedActionMessage = doctorService.downloadBlockerMessage
-            }
-        }
-    }
-
     // MARK: - Status line
-
-    private var showsEngineDownloadHint: Bool {
-        !engineInstaller.isBusy
-            && !engineInstaller.hasManagedInstall
-            && !engineAssets.isAuthorized
-            && !doctorService.isDownloadReady
-    }
 
     private struct EngineAssetsStatusLine {
         let message: String
@@ -297,13 +250,13 @@ struct WorkshopEngineAssetsSection: View {
     }
 
     private var engineAssetsStatusLine: EngineAssetsStatusLine? {
-        if let blockedActionMessage {
-            return EngineAssetsStatusLine(message: blockedActionMessage, tint: DesignTokens.Colors.Status.warning)
+        if let engineAssetsError = controller.engineAssetsError {
+            return EngineAssetsStatusLine(message: engineAssetsError, tint: DesignTokens.Colors.Status.warning)
         }
         if case .failed(let message) = engineInstaller.phase {
             return EngineAssetsStatusLine(message: message, tint: DesignTokens.Colors.Status.danger)
         }
-        if preflightingDoctor {
+        if controller.isPreflightingDownload {
             return EngineAssetsStatusLine(
                 message: String(localized: "Checking SteamCMD readiness before downloading.", comment: "Engine-assets settings status while preflighting SteamCMD."),
                 tint: .secondary
@@ -344,11 +297,10 @@ struct WorkshopEngineAssetsSection: View {
                 tint: DesignTokens.Colors.Status.active
             )
         }
-        if showsEngineDownloadHint {
-            return EngineAssetsStatusLine(
-                message: String(localized: "Steam downloads need Loomscreen's background connector. You can still link an existing folder manually.", comment: "Engine-assets settings status when the Steam download connector is unavailable."),
-                tint: .secondary
-            )
+        // Names the missing prerequisite rather than the generic sentence: this
+        // is also the only non-hover way to read why Download is greyed out.
+        if let reason = controller.engineAssetsDownloadBlockReason, !controller.hasEngineAssets {
+            return EngineAssetsStatusLine(message: reason, tint: .secondary)
         }
         return EngineAssetsStatusLine(
             message: String(localized: "Not linked. Most scenes still use Loomscreen's built-in equivalents.", comment: "Engine-assets settings status when no engine assets are linked."),
@@ -371,6 +323,11 @@ struct WorkshopEngineAssetsSection: View {
         case .unableToCompare:
             return EngineAssetsStatusLine(
                 message: String(localized: "Downloaded assets linked, but their version is unknown. Download again to refresh them.", comment: "Engine-assets settings status when installed build id is unknown."),
+                tint: DesignTokens.Colors.Status.warning
+            )
+        case .loginRequired:
+            return EngineAssetsStatusLine(
+                message: String(localized: "Downloaded assets linked. Your Steam sign-in expired, so the version check couldn't run.", comment: "Engine-assets settings status when Steam refused the cached session during an update check."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case .checkFailed:

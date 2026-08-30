@@ -5,6 +5,7 @@ import SwiftUI
 struct WorkshopSettingsView: View {
     @Environment(SteamCMDDoctorService.self) private var doctorService
     @Environment(WorkshopServices.self) private var workshopServices
+    @Environment(WorkshopSetupController.self) private var setupController
 
     @AppStorage("loomscreen.workshop.blurMatureThumbnails.v1", store: .appScoped()) private var blurMatureThumbnails = true
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedInBrowse = false
@@ -33,15 +34,11 @@ struct WorkshopSettingsView: View {
                 }
             }
 
+            WorkshopConnectionSetup()
+
+            WorkshopEngineAssetsSection()
+
             WorkshopAPIKeySection(services: workshopServices)
-
-            WorkshopConnectionSetup(showingExportToast: $showingExportToast) {
-                SettingsSearchSectionHeader("Steam connection", anchor: .workshopConnection)
-            }
-
-            WorkshopEngineAssetsSection {
-                pendingSearchAnchor = .workshopConnection
-            }
 
             Section {
                 SettingRow(
@@ -70,6 +67,10 @@ struct WorkshopSettingsView: View {
                 SettingsSearchSectionHeader("Content", anchor: .workshopContent)
             }
 
+            WorkshopDiagnosticsSection(showingExportToast: $showingExportToast)
+
+            WorkshopLegalSection()
+
             WorkshopBadgeSection()
         }
         .settingsFormChrome()
@@ -80,6 +81,8 @@ struct WorkshopSettingsView: View {
                 .workshopConnection,
                 .workshopAssets,
                 .workshopContent,
+                .workshopDiagnostics,
+                .workshopLegal,
                 .workshopBadges
             ]
         )
@@ -103,14 +106,6 @@ struct WorkshopSettingsView: View {
     /// status to the top of the page didn't quietly change what "ready" means.
     private var facets: [WorkshopSetupFacet] {
         [
-            WorkshopSetupFacet(
-                key: "apiKey",
-                anchor: .workshopSetup,
-                title: "API key",
-                state: workshopServices.hasWebAPIKey
-                    ? (workshopServices.apiKeyRejected ? .attention : .ready)
-                    : .notStarted
-            ),
             // Split out of a single "Steam" segment: SteamCMD and signing in are
             // separate things to go do, and merging them hid which one was
             // outstanding behind one amber bar.
@@ -118,7 +113,10 @@ struct WorkshopSettingsView: View {
                 key: "steamcmd",
                 anchor: .workshopConnection,
                 title: "SteamCMD",
-                state: doctorService.binaryStepState
+                // The controller's reading, not the doctor's: a managed install
+                // in flight has no binding yet, so the bar said "Not set" while
+                // the row below it said "Setting up SteamCMD…".
+                state: setupController.steamCMDState
             ),
             WorkshopSetupFacet(
                 key: "steamSignIn",
@@ -129,8 +127,19 @@ struct WorkshopSettingsView: View {
             WorkshopSetupFacet(
                 key: "assets",
                 anchor: .workshopAssets,
-                title: "Assets",
+                title: "Scene resources",
                 state: engineAssetsState
+            ),
+            // Last and optional, matching the page order below it: browsing
+            // works without a key.
+            WorkshopSetupFacet(
+                key: "apiKey",
+                anchor: .workshopSetup,
+                title: "API key",
+                state: workshopServices.hasWebAPIKey
+                    ? (workshopServices.apiKeyRejected ? .attention : .ready)
+                    : .notStarted,
+                isOptional: true
             )
         ]
     }
