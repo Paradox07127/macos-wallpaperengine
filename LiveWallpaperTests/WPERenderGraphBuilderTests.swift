@@ -144,10 +144,12 @@ struct WPERenderGraphBuilderTests {
         #expect(pass.textures[2] == .asset("instance_extra"))
         #expect(pass.combos["version"] == 2)
         #expect(pass.combos["BASE"] == 1)
+        // Each locus declares its single override at array position 0, which IS
+        // texture slot 0 — the array is positional against `textures`.
         #expect(pass.userTextureBindings == WPERenderUserTextureBindings(
-            material: [WPESceneUserTextureBinding(name: "$materialSource", type: "system")],
-            pass: [WPESceneUserTextureBinding(name: "$passSource")],
-            override: [WPESceneUserTextureBinding(name: "$instanceSource", type: "usershortcut")]
+            material: [WPESceneUserTextureBinding(name: "$materialSource", type: "system", slot: 0)],
+            pass: [WPESceneUserTextureBinding(name: "$passSource", slot: 0)],
+            override: [WPESceneUserTextureBinding(name: "$instanceSource", type: "usershortcut", slot: 0)]
         ))
     }
 

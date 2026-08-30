@@ -84,23 +84,24 @@ enum NowPlayingControlFailure: Error, Equatable, Sendable {
     case scriptFailed(OSStatus)
 }
 
-/// A read of a player's own state.
-///
-/// Unlike a transport command, a query is never the result of the user
-/// clicking anything, so it must never provoke the Automation consent dialog:
-/// this layer is wallpaper, and a modal nobody asked for is worse than a
-/// missing progress bar. `value(for:from:)` therefore answers nil until
-/// consent already exists for that target.
+/// A read of a player's own state. Unlike a transport command, a query is never a result of the user
+/// clicking anything, so it must never provoke the Automation consent dialog — a modal nobody asked for
+/// is worse than a missing progress bar — so `value(for:from:)` answers nil until consent already
+/// exists for that target.
 enum NowPlayingQuery: Sendable, Hashable {
     case playerPosition
     case artworkURL
+    /// Cold-start read of the whole now-playing tuple (state, title, artist,
+    /// album) in one round trip. DNC only pushes on change, so a launch
+    /// mid-song otherwise stays blind until the next track — the one gap a
+    /// query can close. String fields only: numbers would need the descriptor
+    /// path per field, and the seed works without position/duration.
+    case launchSnapshot
 }
 
-/// An AppleScript result, kept in the shape the descriptor had.
-///
-/// Reals must not come back through `stringValue`: AppleScript formats those
-/// for the current locale, so a machine reading `12,345` as a Double would get
-/// nil in half of Europe.
+/// An AppleScript result, kept in the shape the descriptor had. Reals must not come back through
+/// `stringValue`: AppleScript formats those for the current locale, so a machine reading `12,345` as a
+/// Double would get nil in half of Europe.
 enum NowPlayingScriptValue: Sendable, Equatable {
     case text(String)
     case number(Double)
@@ -241,6 +242,24 @@ final class NowPlayingController: ObservableObject {
         switch query {
         case .playerPosition: phrase = mapping.positionQueryPhrase
         case .artworkURL: phrase = mapping.artworkURLQueryPhrase
+        case .launchSnapshot:
+            // Both current players share this vocabulary. The state is mapped
+            // with `is` comparisons, never `as text`: coercing the player-state
+            // enum constant is the one part of this phrase iTunes historically
+            // rejected. A stopped player returns "", which the parser drops.
+            return """
+            tell application "\(mapping.applicationName)"
+                if player state is playing then
+                    set stateLine to "playing"
+                else if player state is paused then
+                    set stateLine to "paused"
+                else
+                    return ""
+                end if
+                return stateLine & linefeed & (name of current track) & linefeed \
+            & (artist of current track) & linefeed & (album of current track)
+            end tell
+            """
         }
         guard let phrase else { return nil }
         return "tell application \"\(mapping.applicationName)\" to get \(phrase)"
@@ -299,21 +318,16 @@ final class NowPlayingController: ObservableObject {
         }
     }
 
-    /// Reads one value off a player. nil whenever nothing was asked — no
-    /// vocabulary, or consent not already established — so a caller can never
-    /// tell a refusal apart from an unasked question, which is deliberate:
-    /// both mean "carry on without it".
-    ///
-    /// Unthrottled on purpose. The throttle exists to swallow double-clicks on
-    /// a button; a poller sets its own cadence and would only be silently
-    /// starved by a shared window.
+    /// Reads one value off a player; nil whenever nothing was asked (no vocabulary, or consent not
+    /// established) — deliberate, so a caller can't tell a refusal from an unasked question, both meaning
+    /// "carry on without it". Unthrottled on purpose: the throttle exists to swallow button double-clicks,
+    /// and would silently starve a poller running its own cadence.
     func value(for query: NowPlayingQuery, from bundleID: String?) async -> NowPlayingScriptValue? {
         guard let bundleID, let script = Self.script(for: query, bundleID: bundleID) else { return nil }
-        // Consent is granted per target in System Settings and survives
-        // relaunches, but this map starts empty every launch — so without this
-        // the playhead only ever appeared after the user happened to press a
-        // transport button, in a session where they had already granted it
-        // months ago. The probe reads the existing answer and never prompts.
+        // Consent is granted per target in System Settings and survives relaunches, but this map
+        // starts empty every launch — without this the playhead only appeared after the user pressed
+        // a transport button in a session where consent was already granted months ago. The probe
+        // reads the existing answer and never prompts.
         if authorization(for: bundleID) == .notDetermined {
             await refreshAuthorization(for: bundleID)
         }

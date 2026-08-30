@@ -317,7 +317,7 @@
                     scales: transforms.scales,
                     angles: transforms.angles,
                     parentByID: objectParentByID,
-                    hostTransforms: transformHostLocalTransformsByID
+                    hostTransforms: layerAncestorLocalTransformsByID
                 )
             if !liveCreatedLayers.isEmpty {
                 result = result.addingCreatedLayers(

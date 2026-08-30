@@ -60,13 +60,11 @@ extension WPEMetalSceneRenderer {
             }
             WPESceneDebugArtifacts.shared.endSession()
             if ownedFailedLoad {
-                // Textures, video decoders, particle buffers and half-built
-                // targets are already on the renderer by the time most failures
-                // throw, and `didLoad = false` makes every one unreachable: no
-                // tick samples them, and `hibernate()` refuses to collect them
-                // (`guard didLoad`). Without this they live until the user
-                // retries or switches wallpaper. Bumping `loadGeneration` also
-                // fences the unstructured shader-prewarm task.
+                // Textures, video decoders, particle buffers and half-built targets are
+                // already on the renderer by the time most failures throw, and `didLoad =
+                // false` makes every one unreachable: no tick samples them, and `hibernate()`
+                // refuses to collect them (`guard didLoad`) — without this they'd live until
+                // the user retries or switches wallpaper. Bumping `loadGeneration` also fences the unstructured shader-prewarm task.
                 await retireRuntimeState(on: actor)
             } else {
                 // A newer load owns the renderer now — tearing down would kill
@@ -333,6 +331,36 @@ extension WPEMetalSceneRenderer {
         sceneSupportsAudioProcessing = document.general.supportsAudioProcessing
             || Self.pipelineRequiresAudioCapture(pipeline)
             || WPESceneScriptInstanceInventory.usesAudioAPI(in: document)
+        // Media integration has no authored opt-in — WPE just calls whatever the
+        // module exported — so the script scan IS the demand signal. A scene with
+        // no media handler must not cost a now-playing subscription.
+        if WPESceneMediaEventDispatcher.isNeeded(by: document) {
+            let dispatcher = await MainActor.run {
+                let dispatcher = WPESceneMediaEventDispatcher(source: NowPlayingMonitor.shared)
+                dispatcher.start()
+                return dispatcher
+            }
+            mediaEventDispatcher = dispatcher
+            mediaEventMailbox = dispatcher.mailbox
+        }
+        // `$mediaThumbnail` is declared in the render graph rather than in a
+        // script, so its demand gate is the pipeline scan, not the script scan —
+        // 3632513108 binds it only in a material file and exports no handler.
+        // Scanned here, off the main actor, so a scene that declares none does not
+        // even hop to fetch the monitor.
+        let mediaTextureSlots = WPEMediaTextureDemand.byPassID(in: pipeline)
+        if !mediaTextureSlots.isEmpty {
+            let store = WPEMediaTextureStore(device: executor.device, slotsByPassID: mediaTextureSlots)
+            mediaTextureSubscription = await MainActor.run {
+                let subscription = WPEMediaTextureSubscription(
+                    store: store,
+                    source: NowPlayingMonitor.shared
+                )
+                subscription.start()
+                return subscription
+            }
+            executor.mediaTextureStore = store
+        }
         cameraParallaxSmoother.reset()
         sceneRenderSize = cameraUniforms.renderSize
         debugStage("camera", "renderSize=\(Int(sceneRenderSize.width))x\(Int(sceneRenderSize.height))")

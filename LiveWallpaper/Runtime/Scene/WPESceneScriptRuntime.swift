@@ -244,12 +244,11 @@ final class WPESceneScriptAudioBridge {
         let fanOut: JSValue?
     }
 
-    /// Bound at registration to the exact `average`/`left`/`right` objects
-    /// `registerAudioBuffers` returned, so script-held captures keep observing
-    /// new values (WPE permanent link).
-    /// `n` is bound at registration, never re-read from `avg.length`: a script
-    /// that shrinks the array would otherwise make `right`/`avg` copy out of the
-    /// wrong packed slice. The pre-batch path indexed by the registered `bands`.
+    /// Bound at registration to the exact `average`/`left`/`right` objects `registerAudioBuffers`
+    /// returned, so script-held captures keep observing new values (WPE permanent link). `n` is
+    /// bound at registration, never re-read from `avg.length`: a script that shrinks the array
+    /// would otherwise copy `right`/`avg` out of the wrong packed slice (the pre-batch path
+    /// indexed by the registered `bands`).
     private static let fanOutFactory = """
     (function (avg, left, right, packed, n) { return function () {
         var twoN = n * 2, i = 0;
@@ -313,12 +312,10 @@ final class WPESceneScriptAudioBridge {
                         fanOut: fanOut
                     )
                 )
-                // A dropped buffer's JS arrays simply stop receiving updates;
-                // a per-update registrant converges on its newest registration.
-                // A scene that legitimately registers more than the cap once at
-                // init loses its FIRST registrations instead, and the symptom
-                // (a subset of elements frozen at their initial values) is
-                // otherwise invisible — so say it happened.
+                // A dropped buffer's JS arrays simply stop receiving updates; a per-update
+                // registrant converges on its newest registration. A scene that legitimately
+                // registers more than the cap once at init loses its FIRST registrations instead
+                // — the symptom (elements frozen at initial values) is otherwise invisible, so log it.
                 if self.buffers.count > Self.maxRegisteredBuffers {
                     let dropped = self.buffers.count - Self.maxRegisteredBuffers
                     self.buffers.removeFirst(dropped)
@@ -683,6 +680,10 @@ final class WPESceneScriptInstance {
     private let engineRelease: WPESceneScriptLaneRelease<Engine>
     private var engine: Engine { engineRelease.value }
     private let hasUpdateFunction: Bool
+    /// Whether the authored module exports the media handlers. Scenes that do
+    /// not must cost nothing, so dispatch never crosses onto the engine lane
+    /// for them (GitHub issue #133).
+    let mediaHandlers: WPESceneMediaHandlerSet
     private let tickBudget: TimeInterval
     private var isPoisoned = false
     private(set) var lastValue: String
@@ -743,10 +744,42 @@ final class WPESceneScriptInstance {
             switch outcome {
             case .contextUnavailable:
                 throw WPESceneScriptError.contextUnavailable
-            case let .ready(hasUpdate):
+            case let .ready(hasUpdate, initialResult, media):
                 self.hasUpdateFunction = hasUpdate
+                self.mediaHandlers = media
+                // Applied once, here, rather than by faking a per-frame tick: an
+                // init-only script has no `update` to run and must still land its
+                // value on the property. `nil` (init returned nothing) leaves the
+                // authored value untouched.
+                if let initialResult { self.lastValue = initialResult }
             }
         }
+    }
+
+    /// Deliver one media event to this script's handler. Media events fire on
+    /// track/state change (a handful per song), never per frame, so this stays
+    /// bounded-synchronous like `applyScriptProperties` rather than earning the
+    /// text engine a second async lane.
+    func dispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
+        guard !isPoisoned, handles(event), engine.allows(.event) else { return }
+        switch engine.dispatchMediaEvent(
+            event,
+            runtimeSeconds: runtimeSeconds,
+            budget: tickBudget
+        ) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning(
+                "SceneScript \(event.handlerName)() exceeded \(tickBudget)s — frozen",
+                category: .wpeRender
+            )
+        case .capacityUnavailable, .completed:
+            break
+        }
+    }
+
+    func handles(_ event: WPESceneMediaEvent) -> Bool {
+        mediaHandlers.handles(event)
     }
 
     // MARK: Synchronous Oracle (DEBUG only)
@@ -879,7 +912,7 @@ final class WPESceneScriptInstance {
     /// ever accessed on `queue`; callers exchange plain `String`s.
     private final class Engine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding {
         enum SetupOutcome {
-            case ready(hasUpdate: Bool)
+            case ready(hasUpdate: Bool, initialResult: String?, media: WPESceneMediaHandlerSet)
             case contextUnavailable
         }
 
@@ -977,6 +1010,17 @@ final class WPESceneScriptInstance {
                         runtimeSeconds: runtimeSeconds
                     )
                 )
+            }
+        }
+
+        func dispatchMediaEvent(
+            _ event: WPESceneMediaEvent,
+            runtimeSeconds: Double?,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<Bool> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .failFast) {
+                self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
             }
         }
 
@@ -1080,12 +1124,45 @@ final class WPESceneScriptInstance {
             // WPE hands `init` the property's authored value; the audio-response
             // templates stash it as `initialValue` and multiply by it every frame,
             // so calling with no argument leaves them multiplying by `undefined`.
+            // Its RETURN is "the modified value to be applied to the property"
+            // (lib.sceneScript.d.ts), exactly like `update`'s — dropping it froze
+            // init-only scripts at the authored seed.
+            var initialResult: String?
             if let initFn = context.objectForKeyedSubscript("init"),
                !initFn.isUndefined, initFn.hasProperty("call") {
                 let seed = JSValue(object: initialValue, in: context) ?? JSValue(undefinedIn: context)!
-                _ = initFn.call(withArguments: [seed as Any])
+                initialResult = Self.coercedResult(initFn.call(withArguments: [seed as Any]))
             }
-            return .ready(hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers)
+            return .ready(
+                hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers,
+                initialResult: initialResult,
+                media: WPESceneMediaHandlerSet(in: context)
+            )
+        }
+
+        /// Keyed by handler name, so a throwing `mediaPropertiesChanged` backs
+        /// off alone and never gates `update()` or the other media handler.
+        private func dispatchMediaEventOnQueue(
+            _ event: WPESceneMediaEvent,
+            runtimeSeconds: Double?
+        ) -> Bool {
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return false }
+            guard let context,
+                  let fn = context.objectForKeyedSubscript(event.handlerName),
+                  !fn.isUndefined, fn.hasProperty("call") else { return false }
+            let now = WPEScriptFaultPolicy.monotonicNow()
+            guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else {
+                return false
+            }
+            didThrow = false
+            WPEFrameOccupancyMeter.count(.jscCall)
+            _ = fn.call(withArguments: [wpeMediaEventObject(event, in: context)])
+            if didThrow {
+                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+                return false
+            }
+            faultPolicy.recordSuccess(entryPoint: event.handlerName)
+            return true
         }
 
         private func tickOnQueue(
@@ -1106,7 +1183,15 @@ final class WPESceneScriptInstance {
                 return nil
             }
             faultPolicy.recordSuccess(entryPoint: "update")
-            guard let result, !result.isUndefined && !result.isNull else {
+            return Self.coercedResult(result)
+        }
+
+        /// The one conversion from a returned JS value to a property string.
+        /// `init` and `update` both return "the modified value to be applied to
+        /// the property", so they must narrow it identically — a second, looser
+        /// path is how the two drift apart.
+        static func coercedResult(_ result: JSValue?) -> String? {
+            guard let result, !result.isUndefined, !result.isNull else {
                 return nil
             }
             if result.isString, let s = result.toString() {
@@ -1153,13 +1238,12 @@ final class WPESceneScriptInstance {
 
     }
 
-    /// Strip `export` keywords, ESM `import` lines and `'use strict'` so the script body evaluates as flat top-level declarations the JSContext can look up by name.
-    /// `nonisolated`: also called by `WPETransformScriptEvaluator` off the main actor.
-    ///
-    /// The import strip belongs HERE, not at the call sites: it used to be
-    /// duplicated at two of the four `preprocess` callers, and the text-script
-    /// caller was one of the two without it — so scene 3713073223's typewriter
-    /// scripts died on their opening `import * as WEMath from 'WEMath';`.
+    /// Strip `export` keywords, ESM `import` lines and `'use strict'` so the script body
+    /// evaluates as flat top-level declarations the JSContext can look up by name.
+    /// `nonisolated`: also called by `WPETransformScriptEvaluator` off the main actor. The strip
+    /// belongs HERE, not at call sites — it used to be duplicated at 2 of 4 `preprocess` callers,
+    /// missing from the text-script one, so scene 3713073223's typewriter scripts died on their
+    /// opening `import * as WEMath from 'WEMath';`.
     nonisolated static func preprocess(script: String) -> String {
         var s = script
         // WPE serializes some exported scripts with non-breaking spaces between
@@ -1216,15 +1300,12 @@ final class WPESceneScriptInstance {
         engine.setObject(getTimeOfDay, forKeyedSubscript: "getTimeOfDay" as NSString)
         // engine.timeOfDay property form (legacy getTimeOfDay exists); refreshed each tick.
         engine.setObject(getTimeOfDay(), forKeyedSubscript: "timeOfDay" as NSString)
-        // Project-level user properties, as WPE exposes them. The object must
-        // exist even when empty — `engine.userProperties.foo` on `undefined`
-        // throws out of update(). Leaving it permanently empty is not harmless
-        // either: 3151551777's day/night driver reads
-        // `engine.userProperties.timeofday`, and an absent key sent it down the
-        // `else { value = 0 }` branch every frame, i.e. permanent daytime.
-        //
-        // This is a DIFFERENT API from the `applyUserProperties(props)` event
-        // (see `applyScriptUserProperties`) — a scene may use either or both.
+        // Project-level user properties, as WPE exposes them. Must exist even when empty —
+        // `engine.userProperties.foo` on `undefined` throws out of update() — and staying empty
+        // isn't harmless either: 3151551777's day/night driver reads `.timeofday`, an absent key
+        // sending it down `else { value = 0 }` every frame (permanent daytime). Different API
+        // from the `applyUserProperties(props)` event (`applyScriptUserProperties`) — a scene
+        // may use either or both.
         let userPropertyObject = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
         for (key, value) in userProperties {
             switch value {
@@ -1429,14 +1510,12 @@ extension WPESceneScriptPropertyValue {
         }
     }
 
-    /// Re-type a scene override to match what the script DECLARED the property as.
-    ///
-    /// scene.json carries no types, so the parser has to guess, and it reads a
-    /// numeric-looking string as a number — 387 of the corpus's 828 string-valued
-    /// scriptproperties. That is silently lossy in one direction only: JS coerces
-    /// a string to a number for arithmetic (`"0.5" * 1920`), but a Number has no
-    /// `.trim()`, so `.addText` properties like 3460973721's `delayTime: "0.2"`
-    /// threw every tick. `createScriptProperties()` is the type authority.
+    /// Re-type a scene override to match what the script DECLARED the property as. scene.json
+    /// carries no types, so the parser guesses, reading a numeric-looking string as a number —
+    /// 387 of the corpus's 828 string-valued scriptproperties, lossy one way only: JS coerces a
+    /// string to a number for arithmetic (`"0.5" * 1920`), but a Number has no `.trim()`, so
+    /// `.addText` properties like 3460973721's `delayTime: "0.2"` threw every tick.
+    /// `createScriptProperties()` is the type authority.
     func matchingType(of declared: WPESceneScriptPropertyValue?) -> WPESceneScriptPropertyValue {
         guard let declared else { return self }
         switch (declared, self) {
@@ -1585,10 +1664,21 @@ final class WPESharedScriptState: @unchecked Sendable {
 
     func layerTransform(named name: String) -> (info: WPESceneScriptLayerInfo, transform: LiveLayerTransform)? {
         guard let info = layers.first(where: { $0.name == name }) else { return nil }
+        return (info, liveTransform(id: info.id))
+    }
+
+    /// ID-keyed variant for a script's OWN layer: the name lookup above cannot
+    /// see an unnamed object, and scene authors routinely leave text/widget
+    /// layers unnamed.
+    func layerTransform(id: String) -> (info: WPESceneScriptLayerInfo, transform: LiveLayerTransform)? {
+        guard let info = layers.first(where: { $0.id == id }) else { return nil }
+        return (info, liveTransform(id: id))
+    }
+
+    private func liveTransform(id: String) -> LiveLayerTransform {
         lock.lock()
-        let live = liveLayerTransformsByID[info.id] ?? LiveLayerTransform()
-        lock.unlock()
-        return (info, live)
+        defer { lock.unlock() }
+        return liveLayerTransformsByID[id] ?? LiveLayerTransform()
     }
 }
 
@@ -1627,10 +1717,8 @@ private func wpeDayFraction(of date: Date) -> Double {
     }
 }
 
-/// Per-tick engine clock, shared by all script families so `runtime` /
-/// `frametime` / `timeOfDay` can't drift apart between them.
-///
-/// Fallback path: the live engines go through `WPEEngineClockWriter` (one JSC
+/// Per-tick engine clock, shared by all script families so `runtime`/`frametime`/`timeOfDay`
+/// can't drift apart. Fallback path: live engines go through `WPEEngineClockWriter` (one JSC
 /// crossing per tick) and only land here when that writer could not be built.
 func wpeRefreshEngineClock(
     in context: JSContext?,
@@ -1645,26 +1733,23 @@ func wpeRefreshEngineClock(
     engine.setObject(wpeDayFraction(), forKeyedSubscript: "timeOfDay" as NSString)
 }
 
-/// Builds a cached per-tick helper function: evaluates `factory` (an
-/// expression of the form `(function (target…) { return function (…) {…}; })`)
-/// and binds it to `targets` once at setup, so each tick costs one JSC boundary
-/// crossing instead of one per written field. The bound function assigns onto
-/// the exact objects passed in `targets` — never replacing them — so script-held
-/// references (`var p = input.cursorScreenPosition`) keep observing new values.
-/// Returns nil when the evaluation fails or yields a non-callable; callers keep
-/// their per-field writes as the fallback.
+/// Builds a cached per-tick helper: evaluates `factory` (`(function (target…) { return
+/// function (…) {…}; })`) and binds it to `targets` once at setup — one JSC boundary crossing
+/// per tick instead of one per written field. Assigns onto the exact `targets` objects, never
+/// replacing them, so script-held references (`var p = input.cursorScreenPosition`) keep
+/// observing new values; nil on evaluation failure or a non-callable result, and callers keep
+/// their per-field writes as fallback.
 func wpeMakeHostTickHelper(
     in context: JSContext,
     factory: String,
     targets: [JSValue]
 ) -> JSValue? {
-    // Setup-time evaluation: don't leak a factory exception into the context
-    // state the engine's own script evaluation inspects afterwards. The handler
-    // is swapped for a no-op — `registerAudioBuffers` builds its helper while the
-    // engine's handler is live, and a factory that failed to evaluate would
-    // otherwise set `didThrow` and be read back as the user script throwing.
-    // It must be a no-op block rather than nil: JSC's `notifyException` calls the
-    // handler unconditionally, so a nil one crashes the process on the first throw.
+    // Setup-time evaluation: don't leak a factory exception into the context state the engine's
+    // own script evaluation inspects afterwards. The handler is swapped for a no-op —
+    // `registerAudioBuffers` builds its helper while the engine's handler is live, and a factory
+    // that failed to evaluate would otherwise set `didThrow` and read back as the user script
+    // throwing. Must be a no-op block, not nil: JSC's `notifyException` calls the handler
+    // unconditionally, so nil crashes the process on the first throw.
     let priorException = context.exception
     let priorHandler = context.exceptionHandler
     context.exceptionHandler = { _, _ in }
@@ -1681,12 +1766,11 @@ func wpeMakeHostTickHelper(
     return helper
 }
 
-/// Engine clock updates batched into one JSC crossing per tick, replacing a
-/// global lookup plus three `setObject` calls. The helper reaches `engine` as a
-/// FREE VARIABLE rather than a bound argument, so a script that replaces the
-/// global still gets the clock — the same late binding the per-tick
-/// `objectForKeyedSubscript` gave, at one crossing instead of four. The fallback
-/// goes through `wpeRefreshEngineClock`, which re-looks-up for the same reason.
+/// Engine clock updates batched into one JSC crossing per tick, replacing a global lookup plus
+/// three `setObject` calls. The helper reaches `engine` as a FREE VARIABLE rather than a bound
+/// argument, so a script that replaces the global still gets the clock — the same late binding
+/// per-tick `objectForKeyedSubscript` gave, at one crossing instead of four. Fallback goes
+/// through `wpeRefreshEngineClock`, which re-looks-up for the same reason.
 struct WPEEngineClockWriter {
     private let context: JSContext
     private let helper: JSValue?
@@ -1756,13 +1840,12 @@ func wpeInstallSharedState(_ store: WPESharedScriptState, in context: JSContext)
             deleteProperty: function(t, p) { delete t[p]; __sharedSet(rootKey, root); return true; }
         });
     }
-    // Functions and class instances cannot survive the host round trip: the
-    // bridge keeps own properties only, so a stored dispatcher comes back as a
-    // plain object and `shared.eventDispatcher.registerEvent(...)` throws. Each
-    // context therefore keeps the ORIGINAL for values it wrote itself.
-    // Deliberately NOT a general write cache — plain data must keep going through
-    // the host, or a producer would read back its own stale value instead of a
-    // peer's (that path is how day/night cycles talk).
+    // Functions and class instances cannot survive the host round trip: the bridge keeps own
+    // properties only, so a stored dispatcher comes back as a plain object and
+    // `shared.eventDispatcher.registerEvent(...)` throws — each context keeps the ORIGINAL for
+    // values it wrote itself. Deliberately NOT a general write cache: plain data must keep going
+    // through the host, or a producer would read back its own stale value instead of a peer's
+    // (that's how day/night cycles talk).
     var __sharedLive = {};
     function __sharedNeedsLive(v) {
         if (typeof v === 'function') { return true; }
@@ -1923,14 +2006,12 @@ final class WPETransformScriptEvaluator: @unchecked Sendable {
         self.participant = governor.makeParticipant()
     }
 
-    // No deinit teardown on purpose. `virtualMachine` is this evaluator's own
-    // property, so the whole GC heap dies with it and the cached contexts are
-    // reclaimed deterministically — unlike the batch lanes, which share a VM
-    // that outlives any one engine. Touching `contextsBySource` or collecting
-    // that VM from deinit would also break the queue contract below: a worker
-    // that overran its budget still owns `queue` and may be executing JS on
-    // this very VM (see `poisoned`), and deinit runs on whatever thread
-    // released the last reference.
+    // No deinit teardown on purpose: `virtualMachine` is this evaluator's own property, so the
+    // whole GC heap dies with it and cached contexts are reclaimed deterministically — unlike
+    // the batch lanes, which share a VM that outlives any one engine. Touching `contextsBySource`
+    // or collecting that VM from deinit would break the queue contract below: a worker that
+    // overran its budget still owns `queue` and may be executing JS on this very VM (see
+    // `poisoned`), and deinit runs on whatever thread released the last reference.
 
     /// Log unresolved origins in Release — shared authored seeds pile onto one point.
     /// thisLayer/thisScene scripts still belong here (dynamic path also has stubs only).
@@ -1961,11 +2042,10 @@ final class WPETransformScriptEvaluator: @unchecked Sendable {
         ]).first ?? nil
     }
 
-    /// In-process static origins.
-    ///
-    /// Must stay an override: `resolveVec3` above delegates *to* this, while the protocol's
-    /// default `resolveBatch` (`WPESceneDocumentParser.swift`) delegates the other way, to
-    /// `resolveVec3`. Deleting this as "redundant" closes that loop into infinite recursion.
+    /// In-process static origins. Must stay an override: `resolveVec3` above delegates *to*
+    /// this, while the protocol's default `resolveBatch` (`WPESceneDocumentParser.swift`)
+    /// delegates the other way, to `resolveVec3` — deleting this as "redundant" closes that
+    /// loop into infinite recursion.
     func resolveBatch(
         _ requests: [WPESceneTransformScriptRequest]
     ) -> [SIMD3<Double>?] {
@@ -2147,6 +2227,15 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     private let tickBudget: TimeInterval
     private var lastValue: SIMD3<Double>
     private var isPoisoned = false
+    /// A module exporting only `init` (and cursor/media handlers) has nothing to
+    /// run per frame. Ticking it anyway would publish `nil` on the next frame and
+    /// snap the layer back off the value `init` returned.
+    private let hasUpdateFunction: Bool
+    /// Corpus scenes 2955378002 / 3326873240 / 3369989878 / 3510729512 bind media handlers to
+    /// `origin`, `scale`, `color`, `constantshadervalues` and effect `visible` — every one of
+    /// those slots is hosted here, not by the text or layer runtimes, so without this the
+    /// scenes' scale/position/tint reactions stay frozen.
+    let mediaHandlers: WPESceneMediaHandlerSet
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<SIMD3<Double>?>()
     /// Latest completed inner result: nil mirrors the legacy "script returned no
     /// value this tick" contract (caller falls back to the baked transform).
@@ -2174,6 +2263,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         valueShape: WPEScriptValueShape = .vector3,
         canvasSize: SIMD2<Double>,
         ownLayerName: String? = nil,
+        ownObjectID: String? = nil,
         shared: WPESharedScriptState? = nil,
         setupBudget: TimeInterval = 2.0,
         tickBudget: TimeInterval = 0.5,
@@ -2188,6 +2278,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             valueShape: valueShape,
             canvasSize: canvasSize,
             ownLayerName: ownLayerName,
+            ownObjectID: ownObjectID,
             shared: shared,
             governor: governor,
             batchDispatcher: batchDispatcher
@@ -2220,10 +2311,52 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 throw WPESceneScriptError.contextUnavailable
             case .setupFailed:
                 throw WPESceneScriptError.scriptEvaluationFailed
-            case .ready:
-                break
+            case let .ready(hasUpdate, initialResult, media):
+                self.mediaHandlers = media
+                self.hasUpdateFunction = hasUpdate
+                // `init`'s return is the value to apply to the property. Publish it
+                // as this instance's first completed outcome so the very first
+                // frame reads it instead of the baked transform; `nil` (init
+                // returned nothing) leaves the authored seed untouched.
+                if let initialResult {
+                    lastValue = initialResult
+                    lastAsyncInner = initialResult
+                    hasAsyncOutcome = true
+                }
             }
         }
+    }
+
+    /// Bounded-synchronous media delivery, used by the load path and by tests
+    /// that need the handler's effect visible to the next tick. Mirrors
+    /// `WPELayerScriptInstance`; the handler mutates module state and the next
+    /// `update()` returns the new transform value, so nothing is published here.
+    func dispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
+        guard !isPoisoned, !engine.hasRuntimeFault,
+              mediaHandlers.handles(event), engine.allows(.event) else { return }
+        switch engine.dispatchMediaEvent(
+            event,
+            runtimeSeconds: runtimeSeconds,
+            budget: tickBudget
+        ) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning(
+                "Transform SceneScript \(event.handlerName)() exceeded \(tickBudget)s — frozen",
+                category: .wpeRender
+            )
+        case .capacityUnavailable, .completed:
+            break
+        }
+    }
+
+    /// Frame-path media delivery: fire-and-forget onto the engine queue so the
+    /// render thread never waits on a script engine, exactly like the layer
+    /// runtime's cursor and media events.
+    func liveDispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
+        guard !isPoisoned, !engine.hasRuntimeFault,
+              mediaHandlers.handles(event), engine.allows(.event) else { return }
+        _ = engine.dispatchMediaEventAsync(event, runtimeSeconds: runtimeSeconds)
     }
 
 
@@ -2234,7 +2367,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         pointerPosition: SIMD2<Double>,
         runtimeSeconds: Double? = nil
     ) -> SIMD3<Double>? {
-        guard !isPoisoned, !engine.hasRuntimeFault, engine.allows(.tick) else { return nil }
+        guard !isPoisoned, !engine.hasRuntimeFault else { return nil }
+        guard hasUpdateFunction else { return hasAsyncOutcome ? lastValue : nil }
+        guard engine.allows(.tick) else { return nil }
         switch engine.tick(
             currentValue: lastValue,
             pointerPosition: pointerPosition,
@@ -2299,7 +2434,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     /// Load-path seeding: one bounded synchronous tick so the first frame uses
     /// the scripted transform instead of popping from the baked value.
     func seedAsyncTick(pointerPosition: SIMD2<Double>, runtimeSeconds: Double? = nil) {
-        guard !isPoisoned, !engine.hasRuntimeFault, engine.allows(.tick) else { return }
+        guard !isPoisoned, !engine.hasRuntimeFault, hasUpdateFunction,
+              engine.allows(.tick) else { return }
         switch engine.tick(
             currentValue: lastValue,
             pointerPosition: pointerPosition,
@@ -2325,6 +2461,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         runtimeSeconds: Double? = nil
     ) -> (value: SIMD3<Double>?, job: WPESceneScriptBatchDispatcher.Job?) {
         guard !isPoisoned, !engine.hasRuntimeFault else { return (nil, nil) }
+        // No `update` to run: hold whatever `init` returned rather than schedule a
+        // per-frame job whose nil result would overwrite it.
+        guard hasUpdateFunction else { return (hasAsyncOutcome ? lastValue : nil, nil) }
         if let overrun = engine.quarantineAsyncIfOverdue(budget: tickBudget) {
             isPoisoned = true
             Logger.warning(
@@ -2361,7 +2500,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
     private final class Engine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding {
         enum SetupOutcome {
-            case ready
+            case ready(hasUpdate: Bool, initialResult: SIMD3<Double>?, media: WPESceneMediaHandlerSet)
             case contextUnavailable
             case setupFailed
         }
@@ -2376,6 +2515,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private let valueShape: WPEScriptValueShape
         private let canvasSize: SIMD2<Double>
         private let ownLayerName: String?
+        private let ownObjectID: String?
         private let shared: WPESharedScriptState?
         fileprivate let governor: WPESceneScriptExecutionGovernor
         fileprivate let participant: WPESceneScriptExecutionGovernor.Participant
@@ -2415,6 +2555,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             valueShape: WPEScriptValueShape,
             canvasSize: SIMD2<Double>,
             ownLayerName: String?,
+            ownObjectID: String?,
             shared: WPESharedScriptState?,
             governor: WPESceneScriptExecutionGovernor,
             batchDispatcher: WPESceneScriptBatchDispatcher
@@ -2426,6 +2567,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             self.valueShape = valueShape
             self.canvasSize = canvasSize
             self.ownLayerName = ownLayerName
+            self.ownObjectID = ownObjectID
             self.shared = shared
             self.governor = governor
             self.participant = governor.makeParticipant()
@@ -2484,6 +2626,43 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                     )
                 )
             }
+        }
+
+        func dispatchMediaEvent(
+            _ event: WPESceneMediaEvent,
+            runtimeSeconds: Double?,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<Void> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .failFast) {
+                self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
+            }
+        }
+
+        /// Async media event: same handler, no waiting caller. Nothing is
+        /// published — the transform's value only ever comes out of `update()`,
+        /// so the next `batchTick` picks up whatever the handler stored.
+        func dispatchMediaEventAsync(
+            _ event: WPESceneMediaEvent,
+            runtimeSeconds: Double?
+        ) -> Bool {
+            guard allows(.event) else { return false }
+            guard let safety = asyncExecutionSafety.begin(
+                sceneToken: instanceLimitToken,
+                operation: .event
+            ) else { return false }
+            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
+                asyncExecutionSafety.complete(safety)
+                return false
+            }
+            queue.async {
+                defer {
+                    self.asyncExecutionSafety.complete(safety)
+                    permit.release()
+                }
+                self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
+            }
+            return true
         }
 
         /// Batch work unit: no governor permit (worker count bounds concurrency); reserve inside closure.
@@ -2561,11 +2740,45 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 updateFunction = update
             }
             // Call init with authored value — without it audio templates leave initialValue undefined → NaN.
+            // Its RETURN is "the modified value to be applied to the property"
+            // (lib.sceneScript.d.ts), exactly like `update`'s; dropping it left
+            // init-only scripts (13 of 54 installed scenes carry one) with no
+            // path to their property at all.
+            var initialResult: SIMD3<Double>?
             if let initFn = context.objectForKeyedSubscript("init"),
                !initFn.isUndefined, initFn.hasProperty("call") {
-                _ = initFn.call(withArguments: [jsValue(for: seed, in: context, reuseUpdateArgument: false) as Any])
+                let returned = initFn.call(
+                    withArguments: [jsValue(for: seed, in: context, reuseUpdateArgument: false) as Any]
+                )
+                initialResult = Self.coercedResult(returned, currentValue: seed)
             }
-            return .ready
+            return .ready(
+                hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers,
+                initialResult: initialResult,
+                media: WPESceneMediaHandlerSet(in: context)
+            )
+        }
+
+        /// Keyed by handler name, so a throwing media handler backs off alone and
+        /// never gates `update()`.
+        private func dispatchMediaEventOnQueue(
+            _ event: WPESceneMediaEvent,
+            runtimeSeconds: Double?
+        ) {
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return }
+            guard let context,
+                  let fn = context.objectForKeyedSubscript(event.handlerName),
+                  !fn.isUndefined, fn.hasProperty("call") else { return }
+            let now = WPEScriptFaultPolicy.monotonicNow()
+            guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else { return }
+            didThrow = false
+            WPEFrameOccupancyMeter.count(.jscCall)
+            _ = fn.call(withArguments: [wpeMediaEventObject(event, in: context)])
+            if didThrow {
+                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+            } else {
+                faultPolicy.recordSuccess(entryPoint: event.handlerName)
+            }
         }
 
         /// The argument shape WPE gives `init`/`update`: a bare Number for a scalar
@@ -2646,6 +2859,17 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 return nil
             }
             faultPolicy.recordSuccess(entryPoint: "update")
+            return Self.coercedResult(result, currentValue: currentValue)
+        }
+
+        /// The one conversion from a returned JS value to a transform value.
+        /// `init` and `update` both return "the modified value to be applied to
+        /// the property", so they must narrow it identically — a second, looser
+        /// path is how the two drift apart.
+        static func coercedResult(
+            _ result: JSValue?,
+            currentValue: SIMD3<Double>
+        ) -> SIMD3<Double>? {
             guard let result,
                   !result.isUndefined, !result.isNull else {
                 return nil
@@ -2748,10 +2972,28 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         /// bindings return their field value, but still need real layer identity,
         /// parent traversal and live origin/scale reads during init/update.
         private func installLayerBridge(in context: JSContext) {
-            guard let ownLayerName, !ownLayerName.isEmpty else { return }
-            let own = layerHandle(named: ownLayerName, in: context)
-            context.setObject(own, forKeyedSubscript: "thisLayer" as NSString)
-            context.setObject(own, forKeyedSubscript: "thisObject" as NSString)
+            // Own identity resolves by OBJECT ID first: the layer table's name
+            // lookup cannot see an unnamed object, and `init`'s return is now
+            // applied to the property — so an unnamed layer whose script ends in
+            // `return thisLayer.origin` (the common movable-widget template,
+            // scene 3554161528 object 398) read the sandbox stub's (0,0,0) and
+            // pinned itself to the scene corner. The name path stays as the
+            // fallback for callers that never had an ID.
+            let own: JSValue?
+            if let ownObjectID, shared?.layerTransform(id: ownObjectID) != nil {
+                own = layerHandle(
+                    cacheKey: "\u{1}id:\(ownObjectID)",
+                    in: context
+                ) { [weak self] in self?.shared?.layerTransform(id: ownObjectID) }
+            } else if let ownLayerName, !ownLayerName.isEmpty {
+                own = layerHandle(named: ownLayerName, in: context)
+            } else {
+                own = nil
+            }
+            if let own {
+                context.setObject(own, forKeyedSubscript: "thisLayer" as NSString)
+                context.setObject(own, forKeyedSubscript: "thisObject" as NSString)
+            }
 
             let scene = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             let getLayer: @convention(block) (JSValue) -> JSValue? = { [weak self, weak context] value in
@@ -2765,30 +3007,40 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         }
 
         private func layerHandle(named name: String, in context: JSContext) -> JSValue {
-            if let existing = layerHandles[name] { return existing }
-            guard let layer = shared?.layerTransform(named: name) else {
+            layerHandle(cacheKey: name, in: context) { [weak self] in
+                self?.shared?.layerTransform(named: name)
+            }
+        }
+
+        private func layerHandle(
+            cacheKey: String,
+            in context: JSContext,
+            lookup: @escaping () -> (info: WPESceneScriptLayerInfo, transform: WPESharedScriptState.LiveLayerTransform)?
+        ) -> JSValue {
+            if let existing = layerHandles[cacheKey] { return existing }
+            guard let layer = lookup() else {
                 return neutralLayer(in: context)
             }
             let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
-            handle.setObject(name, forKeyedSubscript: "name" as NSString)
+            handle.setObject(layer.info.name, forKeyedSubscript: "name" as NSString)
             handle.setObject(Self.vector(
                 SIMD3<Double>(layer.info.size.x, layer.info.size.y, 0),
                 in: context
             ), forKeyedSubscript: "size" as NSString)
-            installLiveVectorAccessor("origin", on: handle, in: context) { [weak self] in
-                let current = self?.shared?.layerTransform(named: name)
+            installLiveVectorAccessor("origin", on: handle, in: context) {
+                let current = lookup()
                 return current?.transform.origin ?? SIMD3<Double>(
                     current?.info.origin.x ?? 0,
                     current?.info.origin.y ?? 0,
                     current?.info.originZ ?? 0
                 )
             }
-            installLiveVectorAccessor("scale", on: handle, in: context) { [weak self] in
-                let current = self?.shared?.layerTransform(named: name)
+            installLiveVectorAccessor("scale", on: handle, in: context) {
+                let current = lookup()
                 return current?.transform.scale ?? current?.info.scale ?? SIMD3<Double>(repeating: 1)
             }
-            installLiveVectorAccessor("angles", on: handle, in: context) { [weak self] in
-                let current = self?.shared?.layerTransform(named: name)
+            installLiveVectorAccessor("angles", on: handle, in: context) {
+                let current = lookup()
                 return (current?.transform.angles ?? current?.info.angles ?? .zero) * (180 / .pi)
             }
             let parentName = layer.info.parentName
@@ -2797,9 +3049,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 return self.layerHandle(named: parentName, in: context)
             }
             handle.setObject(getParent, forKeyedSubscript: "getParent" as NSString)
-            let getTransformMatrix: @convention(block) () -> JSValue? = { [weak self, weak context] in
-                guard let self, let context else { return nil }
-                let current = self.shared?.layerTransform(named: name)
+            let getTransformMatrix: @convention(block) () -> JSValue? = { [weak context] in
+                guard let context else { return nil }
+                let current = lookup()
                 let origin = current?.transform.origin ?? SIMD3<Double>(
                     current?.info.origin.x ?? 0,
                     current?.info.origin.y ?? 0,
@@ -2817,7 +3069,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 return result
             }
             handle.setObject(getTransformMatrix, forKeyedSubscript: "getTransformMatrix" as NSString)
-            layerHandles[name] = handle
+            layerHandles[cacheKey] = handle
             _ = neutralLayer(in: context)
             return handle
         }

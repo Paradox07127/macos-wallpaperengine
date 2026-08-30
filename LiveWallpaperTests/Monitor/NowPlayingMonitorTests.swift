@@ -291,7 +291,7 @@ struct NowPlayingMappingTests {
     // asserting the table pins what gets subscribed.
     @Test("Subscribed notification names exclude the duplicate iTunes alias")
     func subscribedNamesExcludeITunesAlias() {
-        let names = NowPlayingMonitor.subscribedNotificationNames
+        let names = NowPlayingMonitor.mappings.map(\.notificationName)
         #expect(names.contains(Fixture.spotifyName))
         #expect(names.contains(Fixture.musicName))
         #expect(!names.contains(Fixture.itunesAlias))
@@ -894,5 +894,83 @@ struct NowPlayingAudioDemandTests {
 
         await source.stop()
         #expect(counter.held == 0)
+    }
+}
+
+// MARK: - Cold-launch AppleScript seed
+
+/// DNC only pushes on change, so a launch while a song is already playing left
+/// the monitor blind until the next track — on a media wallpaper that read as
+/// "the song only renders after the scene reloads". The seed is one
+/// AppleScript read per running player, applied only where a notification has
+/// not already answered.
+@Suite("Now Playing launch seed")
+struct NowPlayingLaunchSeedTests {
+    @MainActor
+    @Test("The snapshot text parses into phase, title, artist and album")
+    func parseFullSnapshot() {
+        let seed = NowPlayingMonitor.parseLaunchSnapshot("playing\nRedbone\nChildish Gambino\nAwaken, My Love!")
+        #expect(seed == NowPlayingMonitor.LaunchSeed(
+            phase: .playing, title: "Redbone",
+            artist: "Childish Gambino", album: "Awaken, My Love!"
+        ))
+        let paused = NowPlayingMonitor.parseLaunchSnapshot("paused\nRedbone\n\n")
+        #expect(paused == NowPlayingMonitor.LaunchSeed(phase: .paused, title: "Redbone"))
+    }
+
+    @MainActor
+    @Test("A stopped player, an unknown state or a blank title yields no seed")
+    func parseRejectsUnusableSnapshots() {
+        #expect(NowPlayingMonitor.parseLaunchSnapshot("") == nil, "stopped players answer empty")
+        #expect(NowPlayingMonitor.parseLaunchSnapshot("stopped\nRedbone") == nil)
+        #expect(NowPlayingMonitor.parseLaunchSnapshot("wiedergabe\nRedbone") == nil, "unknown words never guess")
+        #expect(NowPlayingMonitor.parseLaunchSnapshot("playing\n") == nil, "a title-less seed is not media")
+    }
+
+    @MainActor
+    @Test("First subscriber triggers the seed and the state publishes")
+    func subscribeSeedsFromRunningPlayer() async {
+        let monitor = NowPlayingMonitor(
+            registersObservers: false,
+            runningBundleIDs: { ["com.spotify.client"] },
+            launchSnapshotProvider: { bundleID in
+                bundleID == "com.spotify.client" ? "playing\nRedbone\nChildish Gambino\n" : nil
+            }
+        )
+        let box = NowPlayingStateBox()
+        monitor.subscribe(id: UUID()) { _, state in box.append(state) }
+        #expect(await waitUntil { box.states.last?.phase == .playing })
+        let state = box.states.last
+        #expect(state?.title == "Redbone")
+        #expect(state?.artist == "Childish Gambino")
+        #expect(state?.album == nil)
+        #expect(state?.playerBundleID == "com.spotify.client")
+    }
+
+    @MainActor
+    @Test("A notification that raced in beats the seed")
+    func realNotificationWinsOverSeed() {
+        let monitor = makeMonitor(running: ["com.spotify.client"])
+        monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPlaying)
+        let before = monitor.currentState
+        monitor.applyLaunchSeed(
+            NowPlayingMonitor.LaunchSeed(phase: .paused, title: "Stale Seed"),
+            bundleID: "com.spotify.client"
+        )
+        #expect(monitor.currentState.title == before.title, "the seed must never rewind a live record")
+    }
+
+    @MainActor
+    @Test("A player that cannot be asked leaves the cold state untouched")
+    func unansweredSeedKeepsAwaitingFirstEvent() async {
+        let monitor = NowPlayingMonitor(
+            registersObservers: false,
+            runningBundleIDs: { ["com.spotify.client"] },
+            launchSnapshotProvider: { _ in nil }
+        )
+        monitor.subscribe(id: UUID()) { _, _ in }
+        // The provider answers immediately, so one spin of the task is enough.
+        await Task.yield()
+        #expect(monitor.currentState.phase == .awaitingFirstEvent)
     }
 }

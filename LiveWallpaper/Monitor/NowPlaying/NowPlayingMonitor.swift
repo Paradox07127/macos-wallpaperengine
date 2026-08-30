@@ -53,17 +53,15 @@ struct NowPlayingPlayerMapping: Sendable {
     ]
 }
 
-/// App-lifetime distributed-notification listener. The DNC observer deliberately
-/// outlives every `NowPlayingSource`: overlay pause tears down the whole monitor
-/// pipeline, and DNC only pushes on change, so an observer tied to source
-/// lifetime would permanently miss track changes during occlusion/lock. With no
-/// subscribers this only updates memory — it never pushes a sink.
+/// App-lifetime distributed-notification listener that deliberately outlives every `NowPlayingSource`:
+/// overlay pause tears down the whole monitor pipeline, and DNC only pushes on change, so an observer
+/// tied to source lifetime would permanently miss track changes during occlusion/lock. With no
+/// subscribers this only updates memory, never pushes a sink.
 @MainActor
 final class NowPlayingMonitor: NSObject {
     static let shared = NowPlayingMonitor()
 
     nonisolated static let mappings = NowPlayingPlayerMapping.all
-    nonisolated static var subscribedNotificationNames: [String] { mappings.map(\.notificationName) }
 
     private struct PlayerRecord {
         var state: MonitorNowPlayingState
@@ -77,14 +75,24 @@ final class NowPlayingMonitor: NSObject {
     private var ordinal: UInt64 = 0
     private var subscribers: [UUID: @Sendable (UInt64, MonitorNowPlayingState) -> Void] = [:]
     private let runningBundleIDs: () -> Set<String>
+    /// Raw launch-snapshot text for one player, or nil when nothing could be
+    /// asked (player gone, no consent, script failure). The default reads
+    /// through `NowPlayingController`, which never provokes a consent dialog.
+    typealias LaunchSnapshotProvider = @MainActor (String) async -> String?
+    private let launchSnapshotProvider: LaunchSnapshotProvider
+    private var didAttemptLaunchSeed = false
 
     init(
         registersObservers: Bool = true,
         runningBundleIDs: @escaping () -> Set<String> = {
             Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        },
+        launchSnapshotProvider: @escaping LaunchSnapshotProvider = { bundleID in
+            await NowPlayingController.shared.value(for: .launchSnapshot, from: bundleID)?.stringValue
         }
     ) {
         self.runningBundleIDs = runningBundleIDs
+        self.launchSnapshotProvider = launchSnapshotProvider
         super.init()
         guard registersObservers else { return }
         for mapping in Self.mappings {
@@ -221,6 +229,75 @@ final class NowPlayingMonitor: NSObject {
     func subscribe(id: UUID, handler: @escaping @Sendable (UInt64, MonitorNowPlayingState) -> Void) {
         subscribers[id] = handler
         handler(ordinal, currentState)
+        seedFromRunningPlayersIfNeeded()
+    }
+
+    /// DNC only pushes on change, so a launch while a song is already playing
+    /// leaves the monitor blind until the next track — the "wallpaper shows the
+    /// song only after a reload" symptom. One AppleScript read per RUNNING
+    /// player closes that gap; the query layer already refuses to prompt for
+    /// consent, so a never-authorized player just stays on the old behavior.
+    /// Demand-driven (first subscriber), once per process: later launches of a
+    /// player are covered by its own notifications.
+    private func seedFromRunningPlayersIfNeeded() {
+        guard !didAttemptLaunchSeed else { return }
+        didAttemptLaunchSeed = true
+        guard records.isEmpty else { return }
+        let running = runningBundleIDs()
+        let candidates = Self.mappings.map(\.bundleID).filter { running.contains($0) }
+        guard !candidates.isEmpty else { return }
+        Task { [weak self] in
+            for bundleID in candidates {
+                guard let self else { return }
+                guard let raw = await self.launchSnapshotProvider(bundleID),
+                      let seed = Self.parseLaunchSnapshot(raw) else { continue }
+                self.applyLaunchSeed(seed, bundleID: bundleID)
+            }
+        }
+    }
+
+    struct LaunchSeed: Equatable {
+        var phase: MonitorNowPlayingPhase
+        var title: String
+        var artist: String?
+        var album: String?
+    }
+
+    /// Lines are `state\ntitle\nartist\nalbum`; a stopped player answers "".
+    /// Unknown state words (a future player, a localization surprise) drop the
+    /// seed rather than guess — the notification path still corrects us.
+    nonisolated static func parseLaunchSnapshot(_ raw: String) -> LaunchSeed? {
+        let lines = raw.components(separatedBy: "\n")
+        guard lines.count >= 2 else { return nil }
+        let phase: MonitorNowPlayingPhase
+        switch lines[0] {
+        case "playing": phase = .playing
+        case "paused": phase = .paused
+        default: return nil
+        }
+        let title = lines[1]
+        guard !title.isEmpty else { return nil }
+        func field(_ index: Int) -> String? {
+            guard lines.count > index, !lines[index].isEmpty else { return nil }
+            return lines[index]
+        }
+        return LaunchSeed(phase: phase, title: title, artist: field(2), album: field(3))
+    }
+
+    /// Test seam for the seed path; a real notification that raced in wins.
+    func applyLaunchSeed(_ seed: LaunchSeed, bundleID: String) {
+        guard records[bundleID] == nil else { return }
+        ordinal &+= 1
+        var state = MonitorNowPlayingState(phase: seed.phase, title: seed.title)
+        state.artist = seed.artist
+        state.album = seed.album
+        state.playerBundleID = bundleID
+        records[bundleID] = PlayerRecord(
+            state: state,
+            lastEventOrdinal: ordinal,
+            lastPlayingOrdinal: seed.phase == .playing ? ordinal : nil
+        )
+        notifySubscribers()
     }
 
     func unsubscribe(id: UUID) {

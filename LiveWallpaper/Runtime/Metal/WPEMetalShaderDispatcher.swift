@@ -3,40 +3,30 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
-/// Dispatches a prepared pass onto a Metal pipeline state. Shares the executor's
-/// pipeline cache; shader-input math and texture resolution live in `WPEMetalShaderInputs`.
+/// Dispatches a prepared pass onto a Metal pipeline state (shares the executor's
+/// pipeline cache; shader-input math/texture resolution live in `WPEMetalShaderInputs`).
+/// Puppet/model and text passes never reach here — the executor encodes those directly.
 ///
-/// Ordinal texture-slot contract (fragment texture indices; each role is fixed
-/// per case — the local `*Slot` constants at multi-input call sites name that
-/// case's roles, they are not a shared vocabulary across cases):
-/// - Compose family: `solidcolor`/`solidlayer` bind no texture; `copy` binds
-///   slot 0 = pass source; `compose` binds slot 0 = first source and slot 1 =
-///   second source (an absent second binding falls back to the first
-///   reference); the scene-capture compose-layer variants bind slot 0 only.
-/// - Image family: `genericimage2` binds slot 0 = image; `genericimage4` binds
-///   slot 0 = image and slot 1 = mask (an absent mask rebinds the slot-0
-///   texture and clears the has-mask uniform).
-/// - Particle family: `genericparticle` stays a kind (snapshot + CanonicalTrace)
-///   but encode goes through the custom/transpiled fallback.
-/// - Effect family: slot 0 = effect input (`textureBindings[0] ?? textures[0]
-///   ?? source`); the masked effects (`effect_opacity`, `effect_waterwaves`)
-///   add slot 1 = opacity mask, falling back to the source texture with
-///   has-mask cleared. Per-effect fragment names, slot bindings, and uniform
-///   builders live in the B2 data table (`WPEMetalEffectDispatchTable.swift`);
-///   the switch keeps only the compose/image families and the
-///   custom/transpiled fallback as code paths.
+/// Texture slots are per-case (local `*Slot` constants, not a shared vocabulary):
+/// - Compose: `solidcolor`/`solidlayer` no texture; `copy` slot 0 = source; `compose`
+///   slot 0 = first source, slot 1 = second (absent → falls back to first); capture
+///   variants bind slot 0 only.
+/// - Image: `genericimage2` slot 0 = image; `genericimage4` slot 0 = image, slot 1 =
+///   mask (absent mask rebinds slot 0, clears has-mask uniform).
+/// - Particle: `genericparticle` stays a kind (snapshot + CanonicalTrace) but encodes
+///   via the custom/transpiled fallback.
+/// - Effect: slot 0 = input (`textureBindings[0] ?? textures[0] ?? source`); masked
+///   effects (`effect_opacity`, `effect_waterwaves`) add slot 1 = mask, falling back
+///   to source with has-mask cleared. Per-effect names/bindings/uniforms live in the
+///   data table (`WPEMetalEffectDispatchTable.swift`).
 /// - Custom/transpiled fallback: slots 0..<`WPEShaderTranspiler.customTextureSlotCount`,
-///   each resolved `textureBindings[slot] ?? binds[slot] ?? textures[slot]`;
-///   slot 0 falls back to the pass source, empty higher slots rebind the
-///   slot-0 primary, and a per-slot sampler is bound at the matching index.
-///   `godrays_combine` is fixed: slot 0 = rays, slot 1 = albedo, slot 2 = base
-///   (an absent base rebinds albedo and clears the copy-background uniform).
-/// Buffer indices are positional too: fragment uniforms at buffer 0,
-/// object/shape-quad vertex uniforms at buffer 1, skew params at buffer 2.
+///   each `textureBindings[slot] ?? binds[slot] ?? textures[slot]`; slot 0 falls back
+///   to the pass source, empty higher slots rebind slot 0. `godrays_combine` is fixed:
+///   slot 0 = rays, slot 1 = albedo, slot 2 = base (absent base rebinds albedo, clears
+///   copy-background uniform).
 ///
-/// Puppet/model and text passes never reach this dispatcher — the executor
-/// encodes them directly (scene-model / puppet-material / puppet-scene-composite
-/// and render-graph text passes), so those families have no cases here.
+/// Buffers are positional: fragment uniforms = 0, object/shape-quad vertex uniforms = 1,
+/// skew params = 2.
 struct WPEMetalShaderDispatcher {
     let executor: WPEMetalRenderExecutor
     func dispatch(
@@ -623,23 +613,29 @@ struct WPEMetalShaderDispatcher {
         var primary: MTLTexture? = nil
         let resolvedTexturesBySlot = executor.customTextureSlotScratch
         resolvedTexturesBySlot.reset()
+        // `$mediaThumbnail` / `$mediaPreviousThumbnail` album art. Resolved once
+        // per pass, not per slot: the store is nil for every scene that declares
+        // no `$media*` user texture, and its slot map is nil for every pass of a
+        // scene that does. Both are plain lookups into tables built at load, so
+        // the per-draw path stays allocation-free.
+        let mediaTextureStore = executor.mediaTextureStore
+        let mediaSlots = mediaTextureStore?.declarations(forPassID: pass.pass.id)
         #if !LITE_BUILD && DEBUG
         var canonicalTextureBindings: [WPECanonicalTraceRecorder.TextureBindingInput] = []
         #endif
         for slot in 0..<WPEShaderTranspiler.customTextureSlotCount {
-            // `textureBindings` is the pipeline-builder's *normalized* binding
-            // table: it already rewrites an effect-bind `previous` to the pass's
-            // source (the layer composite feeding this effect). The raw
-            // `pass.pass.binds` still carries the literal `.previous`, which
-            // resolves to the black "bootstrap previous" texture on a target
-            // with no prior-frame history (e.g. shine_combine's slot-1 albedo
-            // bound `{name:"previous"}` → whole layer renders black). Prefer the
-            // normalized table first, matching every other dispatch path
-            // (`textureBindings[slot] ?? textures[slot] ?? source`).
+            // `textureBindings` is the pipeline-builder's *normalized* binding table: it
+            // already rewrites an effect-bind `previous` to the pass's source (the layer
+            // composite feeding this effect). The raw `pass.pass.binds` still carries the
+            // literal `.previous`, which resolves to the black "bootstrap previous" texture
+            // on a target with no prior-frame history (e.g. shine_combine's slot-1 albedo
+            // bound `{name:"previous"}` → whole layer renders black). Prefer the normalized
+            // table first, matching every other dispatch path (`textureBindings[slot] ??
+            // textures[slot] ?? source`).
             let reference = pass.textureBindings[slot]
                 ?? pass.pass.binds[slot]
                 ?? pass.pass.textures[slot]
-            let texture: MTLTexture?
+            var texture: MTLTexture?
             let resolvedReference: WPETextureReference?
             let fallbackToPrimary: Bool
             if let reference {
@@ -684,6 +680,13 @@ struct WPEMetalShaderDispatcher {
                 texture = primary
                 resolvedReference = nil
                 fallbackToPrimary = true
+            }
+            // Substituted after the authored resolution, never instead of it: with
+            // no track playing the store returns nil and the slot keeps the
+            // author's baked-in placeholder cover, which is the intended "nothing
+            // is playing" artwork rather than a hole.
+            if let mediaSlots, let mediaTextureStore {
+                texture = mediaTextureStore.substituting(texture, slot: slot, declarations: mediaSlots)
             }
             if slot == 0, let texture { primary = texture }
             WPESceneDebugArtifacts.shared.recordTextureBinding(
