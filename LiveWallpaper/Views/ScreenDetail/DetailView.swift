@@ -353,7 +353,7 @@ struct DetailView: View {
             scheduleConfigurationLoad()
         }
         .alert(
-            dropFailure.map { Text($0.title) } ?? Text(""),
+            dropFailure.map { Text($0.title) } ?? Text(verbatim: ""),
             isPresented: dropFailurePresented,
             presenting: dropFailure
         ) { failure in

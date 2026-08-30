@@ -285,7 +285,12 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
 
         #expect(prime.contains("guard host.isVisible, host.isDeliveringSnapshots"))
         #expect(push.contains("where host.isVisible && host.isDeliveringSnapshots"))
-        #expect(push.contains("host.push(update.snapshot)"))
+        // Delivery goes through the scope-tracking wrapper: a snapshot can flip
+        // Now Playing's `wantsPointer`, and a raw `host.push` left the window's
+        // mouse-event state behind (transport unclickable / desktop clicks
+        // swallowed after the track ended).
+        #expect(push.contains("pushTrackingPointerScope(update.snapshot, to: host)"))
+        #expect(controller.contains("if host.pointerScope != scopeBefore { updateInteractive(host) }"))
     }
 
     @Test("one serialized task owns acquire update pause and release ordering")

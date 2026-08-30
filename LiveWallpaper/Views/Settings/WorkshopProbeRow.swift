@@ -81,7 +81,7 @@ struct WorkshopProbeRow: View {
         .accessibilityHint(
             hasDetail
                 ? (isExpanded ? Text("Hide details") : Text("Show details"))
-                : Text("")
+                : Text(verbatim: "")
         )
     }
 

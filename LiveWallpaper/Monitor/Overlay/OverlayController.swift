@@ -706,7 +706,20 @@ final class OverlayController: NSObject {
     private func primeHost(_ host: Host) {
         guard host.isVisible, host.isDeliveringSnapshots else { return }
         guard let update = runtime.broker.latest(after: 0) else { return }
-        host.push(update.snapshot)
+        pushTrackingPointerScope(update.snapshot, to: host)
+    }
+
+    /// Now Playing's `wantsPointer` is snapshot-driven (it needs a drawn track),
+    /// so a push can flip a host's `pointerScope` without any config change.
+    /// Skipping the refresh left two states behind: an overlay created mid-song
+    /// drew transport controls on a still click-through window, and a pointer
+    /// parked on the controls when the track ended kept the window interactive
+    /// while `hitTest` returned nil — the frozen-desktop failure `updateInteractive`
+    /// documents, resurrected through the data path.
+    private func pushTrackingPointerScope(_ snapshot: MonitorSnapshot, to host: Host) {
+        let scopeBefore = host.pointerScope
+        host.push(snapshot)
+        if host.pointerScope != scopeBefore { updateInteractive(host) }
     }
 
     private func pushLatest() {
@@ -714,7 +727,7 @@ final class OverlayController: NSObject {
         guard let update = broker.latest(after: lastGeneration) else { return }
         lastGeneration = update.generation
         for host in hosts.values where host.isVisible && host.isDeliveringSnapshots {
-            host.push(update.snapshot)
+            pushTrackingPointerScope(update.snapshot, to: host)
         }
     }
 }

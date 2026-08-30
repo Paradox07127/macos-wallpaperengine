@@ -106,11 +106,11 @@ extension WPEEngineAssetsLibrary {
     /// was unavailable (or a launch recovered the post-rename/pre-marker cut).
     nonisolated static let unknownManagedBuildMarker = "0"
 
-    static let managedDisplayName = String(
+    static var managedDisplayName: String { String(
         localized: "Wallpaper Engine (downloaded)",
         defaultValue: "Wallpaper Engine (downloaded)",
         bundle: .appLanguage, comment: "Engine-assets status when the assets were downloaded in-app via SteamCMD."
-    )
+    ) }
 
     /// Managed install path under the shared Steam library (`app_update 431960`).
     /// Bookmarked (not a hard-coded path) after the sandbox-container STEAMROOT retired.

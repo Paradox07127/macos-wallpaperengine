@@ -124,9 +124,7 @@ extension ScreenManager {
                 guard var config = configurationStore.get(
                     for: target.id, fingerprint: target.displayFingerprint
                 ) else { continue }
-                config.particleEffect = template.particleEffect
-                config.effectConfig.weatherReactive = template.effectConfig.weatherReactive
-                config.effectConfig.particleDensity = template.effectConfig.particleDensity
+                config.adoptWeatherOverlay(from: template)
                 saveConfiguration(config)
                 effectsCoordinator.applyWeatherEffects(for: target)
             }

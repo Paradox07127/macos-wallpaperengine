@@ -490,3 +490,31 @@ struct ScenePresetSnapshotTests {
         #expect(old.layeredPropertyValues() == ["windspeed": .number(0.9)])
     }
 }
+
+/// Weather's Apply-to-All copies the overlay, so every field the weather layer
+/// reads has to move — `weatherWind`/`weatherIntensity` shipped in 0.6.1 and
+/// were initially left out, leaving targets on their own defaults.
+@Suite("Weather overlay adoption")
+struct WeatherOverlayAdoptionTests {
+    @Test("Adopting copies every weather field and nothing else")
+    func adoptionCopiesAllWeatherFields() {
+        var source = ScreenConfiguration(screenID: 1, wallpaper: .video(bookmarkData: Data([1])))
+        source.particleEffect = .rain
+        source.effectConfig.weatherReactive = true
+        source.effectConfig.particleDensity = 1.8
+        source.effectConfig.weatherWind = true
+        source.effectConfig.weatherIntensity = false
+
+        var target = ScreenConfiguration(screenID: 2, wallpaper: .video(bookmarkData: Data([2])))
+        target.effectConfig.warmth = 5000  // non-weather field, must survive
+
+        target.adoptWeatherOverlay(from: source)
+
+        #expect(target.particleEffect == .rain)
+        #expect(target.effectConfig.weatherReactive)
+        #expect(target.effectConfig.particleDensity == 1.8)
+        #expect(target.effectConfig.weatherWind)
+        #expect(!target.effectConfig.weatherIntensity)
+        #expect(target.effectConfig.warmth == 5000)
+    }
+}

@@ -257,7 +257,7 @@ struct PlaybackInspector: View {
                 .disabled(!hasMultipleDisplays)
                 .accessibilityLabel(Text("Span across displays"))
                 .accessibilityHint(hasMultipleDisplays
-                    ? Text("")
+                    ? Text(verbatim: "")
                     : Text("Disabled — connect another display to enable"))
         }
     }
