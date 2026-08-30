@@ -150,11 +150,8 @@ git push origin main
 
 | Edition | Your Mac | Wallpapers |
 | --- | --- | --- |
-| [**Lite** — Intel][lite] | Intel | Video · Web |
-| [**Lite** — Apple Silicon][lite] | Apple Silicon | Video · Web |
-| [**Pro** — Apple Silicon][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
-
-The Lite DMG is universal — Intel and Apple Silicon share the same file.
+| [**Lite**][lite] | Intel or Apple Silicon | Video · Web |
+| [**Pro**][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
 
 <details>
 <summary><b>First launch</b> — one command, needed once</summary>
@@ -196,9 +193,10 @@ Requires macOS 14.6+.
 
 以下几条都是踩过的：
 
-- **两行 Lite 指向同一个链接是对的**，不是复制粘贴出错：Lite 出的是 universal
-  （`x86_64 arm64`），Pro 才是 `arm64` 单架构。表格下面那句 "universal" 说明必须留着，
-  否则重复的链接看起来像贴错了。架构结论以本次发布的 `lipo -archs` 为准，别照抄上一版。
+- **Lite 只占一行，写「Intel 或 Apple Silicon」** —— 它出的是 universal（`x86_64 arm64`），
+  一个包通吃，不要按架构拆成两行（2026-08-30 试过又撤回：同一个链接出现两次看着像贴错）。
+  Pro 是 `arm64` 单架构，所以那行只写 Apple Silicon。架构结论以本次发布的 `lipo -archs` 为准，
+  别照抄上一版。
 - **`</summary>` 后面要空一行**，否则 GitHub 不会渲染 `<details>` 里的 markdown。
 - **一键复制靠的就是围栏代码块** —— GitHub 会自动加复制按钮。Lite 与 Pro 分成两个块，
   各有各的按钮。
