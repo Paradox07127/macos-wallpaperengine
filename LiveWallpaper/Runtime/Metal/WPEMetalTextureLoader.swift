@@ -165,7 +165,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             frames.append(WPETexAnimatedFrame(
                 texture: texture,
                 sourceSubRect: frame.subRect,
-                duration: frame.duration
+                duration: frame.duration,
+                samplingDescriptor: frame.samplingDescriptor
             ))
         }
 

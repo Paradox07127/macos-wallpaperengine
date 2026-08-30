@@ -24,7 +24,7 @@ enum PropertyValueLogic {
             return property.options.first?.value ?? .string("")
         case .color:
             return .string("1 1 1")
-        case .textinput, .file, .directory, .text, .group, .unsupported:
+        case .textinput, .file, .directory, .sceneTexture, .userShortcut, .text, .group, .unsupported:
             return .string("")
         }
     }

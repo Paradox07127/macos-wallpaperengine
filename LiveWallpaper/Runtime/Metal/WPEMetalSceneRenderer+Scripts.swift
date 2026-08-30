@@ -110,6 +110,10 @@ extension WPEMetalSceneRenderer {
             max(Double(sceneRenderSize.width), 1),
             max(Double(sceneRenderSize.height), 1)
         )
+        let scriptScreenSize = SIMD2<Double>(
+            max(Double(surfaceDrawableSize.width), 1),
+            max(Double(surfaceDrawableSize.height), 1)
+        )
         for object in scriptHosts {
             do {
                 guard let instance = try constructSceneScript(for: scriptLoadToken, {
@@ -118,6 +122,7 @@ extension WPEMetalSceneRenderer {
                     scriptProperties: object.scriptProperties,
                     shared: sharedState,
                     canvasSize: scriptCanvasSize,
+                    screenSize: scriptScreenSize,
                     ownLayerName: object.name,
                     batchDispatcher: self.sceneScriptBatchDispatcher)
                 }) else { return }
@@ -140,6 +145,7 @@ extension WPEMetalSceneRenderer {
                     scriptProperties: object.scriptProperties,
                     shared: sharedState,
                     canvasSize: scriptCanvasSize,
+                    screenSize: scriptScreenSize,
                     initialVisible: object.visible,
                     initialAlpha: object.alpha,
                     ownLayerName: object.name,
@@ -164,6 +170,7 @@ extension WPEMetalSceneRenderer {
                     scriptProperties: object.alphaScriptProperties,
                     shared: sharedState,
                     canvasSize: scriptCanvasSize,
+                    screenSize: scriptScreenSize,
                     outputMode: .returnedAlpha(initialValue: object.alpha),
                     ownLayerName: object.name,
                     batchDispatcher: self.sceneScriptBatchDispatcher)
@@ -187,6 +194,7 @@ extension WPEMetalSceneRenderer {
                     scriptProperties: object.visibleScriptProperties,
                     shared: sharedState,
                     canvasSize: scriptCanvasSize,
+                    screenSize: scriptScreenSize,
                     initialVisible: object.visible,
                     initialAlpha: object.alpha,
                     ownLayerName: object.name,
@@ -211,6 +219,7 @@ extension WPEMetalSceneRenderer {
                     scriptProperties: object.alphaScriptProperties,
                     shared: sharedState,
                     canvasSize: scriptCanvasSize,
+                    screenSize: scriptScreenSize,
                     outputMode: .returnedAlpha(initialValue: object.alpha),
                     ownLayerName: object.name,
                     batchDispatcher: self.sceneScriptBatchDispatcher)
@@ -275,6 +284,9 @@ extension WPEMetalSceneRenderer {
     ) {
         guard isCurrentSceneScriptLoad(scriptLoadToken),
               scriptLoadToken.allows(.tick) else { return }
+        // WPE sends the full general-settings bag once during load, before the
+        // first update pass. `language` is the only currently documented key.
+        applyInitialSceneScriptGeneralSettings()
         // 1. Script hosts: one bounded synchronous update() each, in scene
         //    order, applied exactly like a frame tick.
         for host in document.scriptHostObjects {

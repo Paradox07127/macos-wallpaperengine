@@ -131,6 +131,10 @@
                 max(Double(sceneRenderSize.width), 1),
                 max(Double(sceneRenderSize.height), 1)
             )
+            let screenSize = SIMD2<Double>(
+                max(Double(surfaceDrawableSize.width), 1),
+                max(Double(surfaceDrawableSize.height), 1)
+            )
             let sharedState = sceneScriptSharedState
                 ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
             sceneScriptSharedState = sharedState
@@ -156,6 +160,7 @@
                                 scriptProperties: script.scriptProperties,
                                 seed: script.seed,
                                 canvasSize: canvasSize,
+                                screenSize: screenSize,
                                 ownLayerName: layerNameByID[objectID],
                                 ownObjectID: objectID,
                                 shared: sharedState,
@@ -219,6 +224,10 @@
                 max(Double(sceneRenderSize.width), 1),
                 max(Double(sceneRenderSize.height), 1)
             )
+            let screenSize = SIMD2<Double>(
+                max(Double(surfaceDrawableSize.width), 1),
+                max(Double(surfaceDrawableSize.height), 1)
+            )
             let sharedState = sceneScriptSharedState
                 ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
             sceneScriptSharedState = sharedState
@@ -235,6 +244,7 @@
                             seed: script.seed,
                             valueShape: shape,
                             canvasSize: canvasSize,
+                            screenSize: screenSize,
                             shared: sharedState,
                             batchDispatcher: self.sceneScriptBatchDispatcher
                         )
@@ -282,6 +292,10 @@
                 max(Double(sceneRenderSize.width), 1),
                 max(Double(sceneRenderSize.height), 1)
             )
+            let screenSize = SIMD2<Double>(
+                max(Double(surfaceDrawableSize.width), 1),
+                max(Double(surfaceDrawableSize.height), 1)
+            )
             let sharedState = sceneScriptSharedState
                 ?? WPESharedScriptState(sceneScriptLoadToken: scriptLoadToken)
             sceneScriptSharedState = sharedState
@@ -294,6 +308,7 @@
                             seed: gate.script.seed,
                             valueShape: .boolean,
                             canvasSize: canvasSize,
+                            screenSize: screenSize,
                             shared: sharedState,
                             batchDispatcher: self.sceneScriptBatchDispatcher
                         )
@@ -402,6 +417,7 @@
 
         func clearSceneScriptRuntimeState() {
             invalidateIntroPhaseAlign()
+            destroySceneScriptInstances()
             // A leaked subscription outlives the wallpaper: the monitor holds the
             // handler, which holds this scene's mailbox, and every track change
             // keeps posting into a scene nobody renders any more.
@@ -447,6 +463,7 @@
             layerObjectIDByName.removeAll(keepingCapacity: false)
             sceneScriptVideoCommandBuffer.discard()
             sceneScriptIntroPhaseAlignPending = false
+            sceneScriptGeneralSettings.resetGeneration()
         }
     }
 #endif

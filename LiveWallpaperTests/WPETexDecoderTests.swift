@@ -232,6 +232,15 @@ struct WPETexDecoderTests {
         #expect(track.frames.count == 2)
         #expect(track.frames[0].subRect == CGRect(x: 0, y: 0, width: 2, height: 2))
         #expect(track.frames[1].subRect == CGRect(x: 2, y: 0, width: 2, height: 2))
+        #expect(track.frames[0].samplingDescriptor == WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.5, 0, 0, 0.5),
+            translation: SIMD2<Float>(0, 0)
+        ))
+        // Cross-axis TEXS lanes must survive; CGRect cannot represent these.
+        #expect(track.frames[1].samplingDescriptor == WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.5, 0.25, -0.25, 0.5),
+            translation: SIMD2<Float>(0.5, 0)
+        ))
         #expect(track.frames[0].mipmaps.first?.bytes == track.frames[1].mipmaps.first?.bytes)
     }
 
@@ -339,6 +348,8 @@ struct WPETexDecoderTests {
         let buffer = makeStreamingTestImage(
             width: width,
             height: height,
+            declaredWidth: 8,
+            declaredHeight: 8,
             compressedPayloads: [compressed0, compressed1],
             decompressedByteCount: width * height * 4
         )
@@ -353,7 +364,13 @@ struct WPETexDecoderTests {
         #expect(payload.frames[0].imageID == 0)
         #expect(payload.frames[0].subRect == CGRect(x: 0, y: 0, width: 4, height: 2))
         #expect(payload.frames[1].imageID == 0)
-        #expect(payload.frames[1].subRect == CGRect(x: 0, y: 2, width: 4, height: 2))
+        // TEXI may describe a larger logical surface; TEXS clamps and
+        // normalizes against the selected source image's actual dimensions.
+        #expect(payload.frames[1].subRect == CGRect(x: 2, y: 2, width: 2, height: 2))
+        #expect(payload.frames[1].samplingDescriptor == WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(1, 0, 0, 0.5),
+            translation: SIMD2<Float>(0.5, 0.5)
+        ))
         #expect(payload.frames[2].imageID == 1)
         #expect(payload.frameRate > 0)
         #expect(payload.loop == true)
@@ -480,6 +497,8 @@ struct WPETexDecoderTests {
     private func makeStreamingTestImage(
         width: Int,
         height: Int,
+        declaredWidth: Int? = nil,
+        declaredHeight: Int? = nil,
         compressedPayloads: [Data],
         decompressedByteCount: Int
     ) -> Data {
@@ -488,10 +507,10 @@ struct WPETexDecoderTests {
         appendMagic(&buffer, magic: "TEXI0001")
         appendInt32(&buffer, Int32(WPETexFormat.rgba8888.rawValue))
         appendUInt32(&buffer, 0)
-        appendInt32(&buffer, Int32(width))
-        appendInt32(&buffer, Int32(height))
-        appendInt32(&buffer, Int32(width))
-        appendInt32(&buffer, Int32(height))
+        appendInt32(&buffer, Int32(declaredWidth ?? width))
+        appendInt32(&buffer, Int32(declaredHeight ?? height))
+        appendInt32(&buffer, Int32(declaredWidth ?? width))
+        appendInt32(&buffer, Int32(declaredHeight ?? height))
         appendInt32(&buffer, 0)
 
         appendMagic(&buffer, magic: "TEXB0004")
@@ -514,7 +533,7 @@ struct WPETexDecoderTests {
         appendInt32(&buffer, Int32(height))
         for (imageID, rect) in [
             (0, (Float(0), Float(0), Float(width), Float(height / 2))),
-            (0, (Float(0), Float(height / 2), Float(width), Float(height / 2))),
+            (0, (Float(width / 2), Float(height / 2), Float(width), Float(height / 2))),
             (1, (Float(0), Float(0), Float(width), Float(height / 2))),
             (1, (Float(0), Float(height / 2), Float(width), Float(height / 2)))
         ] {
@@ -558,18 +577,18 @@ struct WPETexDecoderTests {
         appendInt32(&buffer, 2)
         appendInt32(&buffer, 4)
         appendInt32(&buffer, 4)
-        for (imageID, rect) in [
-            (0, (Float(0), Float(0), Float(2), Float(2))),
-            (0, (Float(2), Float(0), Float(2), Float(2)))
+        for (imageID, transform) in [
+            (0, (Float(0), Float(0), Float(2), Float(0), Float(0), Float(2))),
+            (0, (Float(2), Float(0), Float(2), Float(1), Float(-1), Float(2)))
         ] {
             appendInt32(&buffer, Int32(imageID))
             appendFloat32(&buffer, 0.04)
-            appendFloat32(&buffer, rect.0)
-            appendFloat32(&buffer, rect.1)
-            appendFloat32(&buffer, rect.2)
-            appendFloat32(&buffer, 0)
-            appendFloat32(&buffer, 0)
-            appendFloat32(&buffer, rect.3)
+            appendFloat32(&buffer, transform.0)
+            appendFloat32(&buffer, transform.1)
+            appendFloat32(&buffer, transform.2)
+            appendFloat32(&buffer, transform.3)
+            appendFloat32(&buffer, transform.4)
+            appendFloat32(&buffer, transform.5)
         }
         return buffer
     }

@@ -186,6 +186,7 @@ actor WPEDisplayRenderActor {
         case .clickCaptureEnabled(let enabled): setClickCaptureEnabled(enabled)
         case .presentFitMode(let mode): setPresentFitMode(mode)
         case .surfaceGeometry(let size): updateSurfaceGeometry(drawableSize: size)
+        case .sceneScriptLanguage(let language): renderer?.setSceneScriptLanguage(language)
         }
     }
     #endif
@@ -202,6 +203,7 @@ actor WPEDisplayRenderActor {
         scenePropertyRendererGeneration &+= 1
         self.renderer = renderer
         renderer.displayActor = self
+        renderer.installSceneScriptLanguageObservers(on: self)
         // Start draining the config channel now that there is a renderer to apply
         // commands to. Idempotent guard: adopt runs once per actor. Weak `self` so
         // the consumer never keeps a torn-down actor alive.
@@ -630,6 +632,7 @@ enum WPERendererConfigCommand: Sendable {
     case clickCaptureEnabled(Bool)
     case presentFitMode(WPEPresentFitMode)
     case surfaceGeometry(CGSize)
+    case sceneScriptLanguage(String)
 }
 
 /// One-shot Sendable carrier for handing the main-thread-constructed renderer to its

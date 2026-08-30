@@ -26,6 +26,24 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
         localeIdentifier.map(Locale.init(identifier:)) ?? .autoupdatingCurrent
     }
 
+    /// Wallpaper Engine's SceneScript locale identifier for the language the
+    /// Loomscreen UI is actually using. The app ships exactly these four
+    /// localizations (English is the development fallback); keeping the mapping
+    /// here makes the renderer consume the same preference as SwiftUI rather
+    /// than guessing from an unrelated process locale.
+    public func wallpaperEngineLanguageCode(
+        preferredLocalization: String? = Bundle.main.preferredLocalizations.first
+    ) -> String {
+        let identifier = localeIdentifier ?? preferredLocalization ?? "en"
+        let normalized = identifier.replacingOccurrences(of: "_", with: "-").lowercased()
+        if normalized == "ja" || normalized.hasPrefix("ja-") { return "ja-jp" }
+        if normalized == "zh-hant" || normalized.hasPrefix("zh-hant-") { return "zh-cht" }
+        if normalized == "zh-hans" || normalized.hasPrefix("zh-hans-") { return "zh-chs" }
+        // English is both an explicit choice and the bundle's development-region
+        // fallback for any system language Loomscreen does not localize.
+        return "en-us"
+    }
+
     public func localizationBundle(in bundle: Bundle = .main) -> Bundle {
         guard let localeIdentifier,
               let path = bundle.path(forResource: localeIdentifier, ofType: "lproj"),

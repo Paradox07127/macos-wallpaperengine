@@ -343,6 +343,13 @@ extension WallpaperEngineProjectPropertySchema {
         case text
         case file
         case directory
+        /// Scene texture replacement. Preserved distinctly from unknown types,
+        /// but not editable until a security-scoped image/video provider reaches
+        /// every bound texture consumer.
+        case sceneTexture = "scenetexture"
+        /// Device-local file/directory/URL/command shortcut. Kept as typed
+        /// metadata while execution remains intentionally security-rejected.
+        case userShortcut = "usershortcut"
         case group
         case unsupported
 
@@ -350,7 +357,7 @@ extension WallpaperEngineProjectPropertySchema {
             switch self {
             case .bool, .slider, .combo, .color, .textinput, .file, .directory:
                 return true
-            case .text, .group, .unsupported:
+            case .text, .sceneTexture, .userShortcut, .group, .unsupported:
                 return false
             }
         }

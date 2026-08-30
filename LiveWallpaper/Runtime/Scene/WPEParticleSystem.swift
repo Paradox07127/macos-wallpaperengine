@@ -109,6 +109,27 @@ struct WPEParticleSlotIndex {
     }
 }
 
+/// Transform authored by the `children[]` chain, in the root particle object's
+/// local coordinate system. Child transforms compose as `parent * (T * S)`:
+/// the new offset is measured in the parent's scaled axes, while the new scale
+/// multiplies all descendant local coordinates component-wise.
+struct WPEParticleChildTransform: Equatable {
+    var origin: SIMD3<Double>
+    var scale: SIMD3<Double>
+
+    static let identity = WPEParticleChildTransform(
+        origin: .zero,
+        scale: SIMD3<Double>(repeating: 1)
+    )
+
+    func appending(_ child: WPEParticleChildReference) -> WPEParticleChildTransform {
+        WPEParticleChildTransform(
+            origin: origin + scale * child.originOffset,
+            scale: scale * child.scale
+        )
+    }
+}
+
 /// WPE author space is Y-up; origin, velocity, gravity, and rotation must not be flipped.
 struct WPEParticleSceneTransform {
     var renderOrigin: SIMD3<Float>
@@ -121,16 +142,31 @@ struct WPEParticleSceneTransform {
     /// Caps oversized additive sprites so a scaled emitter cannot saturate the frame.
     var sceneHeight: Float
 
-    init(sceneSize: SIMD2<Float>, objectOrigin: SIMD3<Float>, objectScale: SIMD3<Float>, objectAngleZ: Float) {
+    init(
+        sceneSize: SIMD2<Float>,
+        objectOrigin: SIMD3<Float>,
+        objectScale: SIMD3<Float>,
+        objectAngleZ: Float,
+        childOrigin: SIMD3<Float> = .zero,
+        childScale: SIMD3<Float> = SIMD3<Float>(repeating: 1)
+    ) {
+        let cosAngleZ = cos(objectAngleZ)
+        let sinAngleZ = sin(objectAngleZ)
+        let scaledChildOrigin = childOrigin * objectScale
+        let rotatedChildOrigin = SIMD3<Float>(
+            scaledChildOrigin.x * cosAngleZ - scaledChildOrigin.y * sinAngleZ,
+            scaledChildOrigin.x * sinAngleZ + scaledChildOrigin.y * cosAngleZ,
+            scaledChildOrigin.z
+        )
         self.renderOrigin = SIMD3<Float>(
             objectOrigin.x - sceneSize.x * 0.5,
             objectOrigin.y - sceneSize.y * 0.5,
             objectOrigin.z
-        )
-        self.objectScale = objectScale
+        ) + rotatedChildOrigin
+        self.objectScale = objectScale * childScale
         self.objectAngleZ = objectAngleZ
-        self.cosAngleZ = cos(objectAngleZ)
-        self.sinAngleZ = sin(objectAngleZ)
+        self.cosAngleZ = cosAngleZ
+        self.sinAngleZ = sinAngleZ
         self.sceneHeight = max(1, sceneSize.y)
     }
 
@@ -236,7 +272,8 @@ final class WPEParticleSystem {
     var overbright: Float = 1.0
     var isRefract: Bool = false
     var refractAmount: Float = 0.05
-    /// Nested child: sprite size uses child scale; spawn positions still use the model matrix.
+    /// Nested child: sprite size uses the child-system scale while spawn positions,
+    /// velocities, gravity and control-point offsets use the composed model matrix.
     var isNestedChildSystem: Bool = false
     var groupOpacityMask: MTLTexture?
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
@@ -299,6 +336,10 @@ final class WPEParticleSystem {
     private let perspectiveExtent: Float
     private let visualScaleSigns: SIMD2<Float>
     private let spawnWorldSizeMultiplier: Float
+    /// Child `scale` is distinct from the scene object's scale. Nested systems
+    /// inherit this factor for sprite size; root systems retain the established
+    /// object-scale behavior. X/Y use the same mean-absolute rule as root sprites.
+    private let childWorldSizeMultiplier: Float
 
     /// Pre-uploaded TEXS UV rects; avoids the 4 KB `setVertexBytes` limit.
     let frameRectsBuffer: MTLBuffer?
@@ -351,6 +392,7 @@ final class WPEParticleSystem {
         device: MTLDevice,
         blendMode: WPEParticleBlendMode = .translucent,
         sceneTransform: WPEParticleSceneTransform = .identity,
+        childScale: SIMD3<Float> = SIMD3<Float>(repeating: 1),
         spriteSheet: WPEParticleSpriteSheet? = nil,
         seed: UInt64? = nil
     ) {
@@ -453,6 +495,7 @@ final class WPEParticleSystem {
             definition: definition, sceneTransform: sceneTransform, gravity: gravity)
         self.visualScaleSigns = sceneTransform.visualScaleSigns()
         self.spawnWorldSizeMultiplier = sceneTransform.worldSizeMultiplier()
+        self.childWorldSizeMultiplier = max(0, (abs(childScale.x) + abs(childScale.y)) * 0.5)
         if let osc = definition.oscillatePosition {
             // Mask gates axes, does not scale them (snowperspective 1 0.5 0).
             let gate = SIMD3<Float>(
@@ -1377,7 +1420,14 @@ final class WPEParticleSystem {
             position = sceneTransform.applyModelMatrix(toLocalPoint: localPoint)
         }
         let velocity = sceneTransform.applyModelDirection(localVelocity)
-        let sizeScale = (isRefract || isNestedChildSystem) ? 1.0 : spawnWorldSizeMultiplier
+        let sizeScale: Float
+        if isNestedChildSystem {
+            sizeScale = childWorldSizeMultiplier
+        } else {
+            // Preserve the established refractive-root exception: its quad size is
+            // already resolved by the refraction path rather than object scale.
+            sizeScale = isRefract ? 1 : spawnWorldSizeMultiplier
+        }
         // `sizerandom`: min + (max-min)·rand^exp (exp>1 biases toward min).
         let sizeSample: Double
         if abs(definition.sizeExponent - 1) < 0.0001 {

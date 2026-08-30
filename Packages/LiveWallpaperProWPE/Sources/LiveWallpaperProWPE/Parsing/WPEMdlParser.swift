@@ -9,19 +9,26 @@ public struct WPEPuppetModel: Equatable, Sendable {
     public let animations: [WPEPuppetAnimation]
     /// MDAT anchors mapping a named scene attachment to a bone and bind transform.
     public let attachments: [WPEPuppetAttachment]
+    /// Complete authored MDL bytes. Parser-created models retain this as a lossless compatibility
+    /// boundary for sections whose public semantics are known but whose binary layout/runtime
+    /// behavior is not yet oracle-proven (for example morph shapes and texture channels).
+    /// This is metadata only; retaining bytes does not imply that those sections are consumed.
+    public let authoredData: Data?
 
     public init(
         version: Int,
         meshes: [WPEPuppetMesh],
         bones: [WPEPuppetBone] = [],
         animations: [WPEPuppetAnimation] = [],
-        attachments: [WPEPuppetAttachment] = []
+        attachments: [WPEPuppetAttachment] = [],
+        authoredData: Data? = nil
     ) {
         self.version = version
         self.meshes = meshes
         self.bones = bones
         self.animations = animations
         self.attachments = attachments
+        self.authoredData = authoredData
     }
 
     /// Clip-mask texture name if any mesh declares an MDLV clip section (genericimage4 clipping).
@@ -164,6 +171,10 @@ public struct WPEPuppetBone: Equatable, Sendable {
     public let simulationType: Int32
     /// Separate MDLS simulation/rig JSON cstring following the bind matrix.
     public let simulationJSON: String
+    /// Generic typed projection of `simulationJSON`, retaining unknown nested fields and JSON
+    /// scalar kinds without assigning unverified physics/IK semantics. Invalid/empty JSON remains
+    /// available through `simulationJSON` and produces `nil` here.
+    public let simulationJSONValue: WPESceneJSONValue?
 
     public init(
         index: Int,
@@ -181,6 +192,16 @@ public struct WPEPuppetBone: Equatable, Sendable {
         self.name = name
         self.simulationType = simulationType
         self.simulationJSON = simulationJSON
+        self.simulationJSONValue = Self.parseSimulationJSON(simulationJSON)
+    }
+
+    private static func parseSimulationJSON(_ source: String) -> WPESceneJSONValue? {
+        guard !source.isEmpty,
+              let data = source.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+            return nil
+        }
+        return WPESceneJSONValue(jsonValue: value)
     }
 }
 
@@ -1147,7 +1168,8 @@ public enum WPEMdlParser {
             meshes: meshes,
             bones: resolvedBones,
             animations: animations,
-            attachments: attachments
+            attachments: attachments,
+            authoredData: data
         )
     }
 

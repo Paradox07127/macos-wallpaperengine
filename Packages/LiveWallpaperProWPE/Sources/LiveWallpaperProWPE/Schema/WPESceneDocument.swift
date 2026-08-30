@@ -4,7 +4,20 @@ import LiveWallpaperCore
 
 /// Runtime model of a Wallpaper Engine `scene.json`; unsupported fields remain available as diagnostics.
 public struct WPESceneDocument: Equatable, Sendable {
+    /// Complete authored `scene.json`, including unknown and currently unsupported
+    /// fields. Typed properties below are resolved runtime views; this tree remains
+    /// unchanged so future consumers and diagnostics can inspect every parameter.
+    public let sourceJSON: WPESceneJSONValue
     public let camera: WPESceneCamera
+    /// Authored editor/root-camera metadata. This is intentionally separate from
+    /// `camera`, which is the currently selected runtime projection. In particular,
+    /// `paths` is only a lossless ordered list of asset references here; loading and
+    /// playing those files requires a package/VFS consumer and an L1 timing oracle.
+    public let authoredCamera: WPESceneAuthoredCamera
+    /// Camera assets in authored `objects` order. `sourceObjectIndex` retains their
+    /// exact interleave with non-camera objects, while every typed field distinguishes
+    /// missing, null, decoded, and unexpected JSON without inventing defaults.
+    public let authoredCameraObjects: [WPESceneAuthoredCameraObject]
     public let general: WPESceneGeneral
     /// `var` so the renderer can append the synthetic image layers it derives
     /// from `textObjects` before the render graph is built (WPETextLayerSynthesis);
@@ -29,7 +42,10 @@ public struct WPESceneDocument: Equatable, Sendable {
     public let diagnostics: [WPESceneDiagnostic]
 
     public init(
+        sourceJSON: WPESceneJSONValue = .object([:]),
         camera: WPESceneCamera,
+        authoredCamera: WPESceneAuthoredCamera = .empty,
+        authoredCameraObjects: [WPESceneAuthoredCameraObject] = [],
         general: WPESceneGeneral,
         imageObjects: [WPESceneImageObject],
         scriptHostObjects: [WPESceneScriptHostObject] = [],
@@ -44,7 +60,10 @@ public struct WPESceneDocument: Equatable, Sendable {
         ownVisibilityByID: [String: Bool] = [:],
         diagnostics: [WPESceneDiagnostic]
     ) {
+        self.sourceJSON = sourceJSON
         self.camera = camera
+        self.authoredCamera = authoredCamera
+        self.authoredCameraObjects = authoredCameraObjects
         self.general = general
         self.imageObjects = imageObjects
         self.scriptHostObjects = scriptHostObjects
@@ -864,6 +883,63 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     }
 }
 
+/// Presence-preserving metadata from the root `camera` object.
+public struct WPESceneAuthoredCamera: Equatable, Sendable {
+    public let sourceJSON: WPESceneJSONValue
+    /// Ordered camera-path asset references. No default is inferred: nil means
+    /// the key was absent, while `.value([])` means the author wrote an empty list.
+    public let paths: WPESceneAuthoredJSONField<[String]>?
+
+    public init(
+        sourceJSON: WPESceneJSONValue = .object([:]),
+        paths: WPESceneAuthoredJSONField<[String]>? = nil
+    ) {
+        self.sourceJSON = sourceJSON
+        self.paths = paths
+    }
+
+    public static let empty = WPESceneAuthoredCamera()
+}
+
+/// Presence-preserving metadata for an authored camera asset in `objects`.
+///
+/// The official docs define camera-path selection and Center/Eye/Up semantics,
+/// but do not define the serialized track format. Therefore `path` remains an
+/// asset reference and none of these fields is consumed by playback here.
+public struct WPESceneAuthoredCameraObject: Equatable, Sendable {
+    public let sourceObjectIndex: Int
+    public let sourceJSON: WPESceneJSONValue
+    public let camera: WPESceneAuthoredJSONField<String>?
+    public let path: WPESceneAuthoredJSONField<String>?
+    public let queueMode: WPESceneAuthoredJSONField<String>?
+    public let origin: WPESceneAuthoredJSONField<SIMD3<Double>>?
+    public let angles: WPESceneAuthoredJSONField<SIMD3<Double>>?
+    public let fov: WPESceneAuthoredJSONField<Double>?
+    public let zoom: WPESceneAuthoredJSONField<Double>?
+
+    public init(
+        sourceObjectIndex: Int,
+        sourceJSON: WPESceneJSONValue,
+        camera: WPESceneAuthoredJSONField<String>? = nil,
+        path: WPESceneAuthoredJSONField<String>? = nil,
+        queueMode: WPESceneAuthoredJSONField<String>? = nil,
+        origin: WPESceneAuthoredJSONField<SIMD3<Double>>? = nil,
+        angles: WPESceneAuthoredJSONField<SIMD3<Double>>? = nil,
+        fov: WPESceneAuthoredJSONField<Double>? = nil,
+        zoom: WPESceneAuthoredJSONField<Double>? = nil
+    ) {
+        self.sourceObjectIndex = sourceObjectIndex
+        self.sourceJSON = sourceJSON
+        self.camera = camera
+        self.path = path
+        self.queueMode = queueMode
+        self.origin = origin
+        self.angles = angles
+        self.fov = fov
+        self.zoom = zoom
+    }
+}
+
 public struct WPESceneCamera: Equatable, Sendable {
     public let center: SIMD3<Double>
     public let eye: SIMD3<Double>
@@ -1427,13 +1503,73 @@ public struct WPESceneEffectPassOverride: Equatable, Sendable {
     }
 }
 
+/// Presence-preserving typed JSON field. An absent dictionary key is represented
+/// by an absent (`nil`) field; an authored JSON null, a decoded typed value, and
+/// a present value with an unexpected shape remain distinct. Timeline metadata
+/// has no runtime defaults until a consumer acquires its own behavior contract.
+public enum WPESceneAuthoredJSONField<Value: Equatable & Sendable>: Equatable, Sendable {
+    case null
+    case value(Value)
+    case unparsed(WPESceneJSONValue)
+}
+
+public struct WPESceneAnimationTangent: Equatable, Sendable {
+    public let enabled: WPESceneAuthoredJSONField<Bool>?
+    public let x: WPESceneAuthoredJSONField<Double>?
+    public let y: WPESceneAuthoredJSONField<Double>?
+    /// Opaque editor marker. The current corpus authors JSON booleans while an
+    /// independent parser models an integer, so retaining the JSON type is the
+    /// only evidence-backed lossless representation.
+    public let magic: WPESceneJSONValue?
+
+    public init(
+        enabled: WPESceneAuthoredJSONField<Bool>? = nil,
+        x: WPESceneAuthoredJSONField<Double>? = nil,
+        y: WPESceneAuthoredJSONField<Double>? = nil,
+        magic: WPESceneJSONValue? = nil
+    ) {
+        self.enabled = enabled
+        self.x = x
+        self.y = y
+        self.magic = magic
+    }
+}
+
+public struct WPESceneAnimationEvent: Equatable, Sendable {
+    public let name: WPESceneAuthoredJSONField<String>?
+    public let frame: WPESceneAuthoredJSONField<Double>?
+
+    public init(
+        name: WPESceneAuthoredJSONField<String>? = nil,
+        frame: WPESceneAuthoredJSONField<Double>? = nil
+    ) {
+        self.name = name
+        self.frame = frame
+    }
+}
+
 public struct WPESceneAnimationKeyframe: Equatable, Sendable {
     public let frame: Double
     public let value: Double
+    public let lockAngle: WPESceneAuthoredJSONField<Bool>?
+    public let lockLength: WPESceneAuthoredJSONField<Bool>?
+    public let front: WPESceneAuthoredJSONField<WPESceneAnimationTangent>?
+    public let back: WPESceneAuthoredJSONField<WPESceneAnimationTangent>?
 
-    public init(frame: Double, value: Double) {
+    public init(
+        frame: Double,
+        value: Double,
+        lockAngle: WPESceneAuthoredJSONField<Bool>? = nil,
+        lockLength: WPESceneAuthoredJSONField<Bool>? = nil,
+        front: WPESceneAuthoredJSONField<WPESceneAnimationTangent>? = nil,
+        back: WPESceneAuthoredJSONField<WPESceneAnimationTangent>? = nil
+    ) {
         self.frame = frame
         self.value = value
+        self.lockAngle = lockAngle
+        self.lockLength = lockLength
+        self.front = front
+        self.back = back
     }
 }
 
@@ -1443,19 +1579,28 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
     public let length: Double
     public let mode: String
     public let wrapLoop: Bool
+    public let name: WPESceneAuthoredJSONField<String>?
+    public let startPaused: WPESceneAuthoredJSONField<Bool>?
+    public let events: WPESceneAuthoredJSONField<[WPESceneAnimationEvent]>?
 
     public init(
         tracks: [[WPESceneAnimationKeyframe]],
         fps: Double,
         length: Double,
         mode: String,
-        wrapLoop: Bool
+        wrapLoop: Bool,
+        name: WPESceneAuthoredJSONField<String>? = nil,
+        startPaused: WPESceneAuthoredJSONField<Bool>? = nil,
+        events: WPESceneAuthoredJSONField<[WPESceneAnimationEvent]>? = nil
     ) {
         self.tracks = tracks.map { $0.sorted { $0.frame < $1.frame } }
         self.fps = fps > 0 ? fps : 30
         self.length = max(0, length)
         self.mode = mode.lowercased()
         self.wrapLoop = wrapLoop
+        self.name = name
+        self.startPaused = startPaused
+        self.events = events
     }
 
     public func values(at time: Double, fallbacks: [Double]) -> [Double] {
@@ -1468,6 +1613,17 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
 
     private func effectiveFrame(at time: Double) -> Double {
         let rawFrame = max(0, time) * fps
+        // Official timeline semantics define Mirror as one full forward traversal
+        // followed by one equally long reverse traversal, repeating forever. Keep
+        // both turn-around endpoints in the phase: at `length` the last frame is
+        // sampled, and at `2 * length` the first frame is sampled before the next
+        // forward leg. A zero-length/single-frame animation bypasses the remainder
+        // calculation below and falls through to the ordinary clamped sampler.
+        if mode == "mirror", length > 0 {
+            let period = 2 * length
+            let phase = rawFrame.truncatingRemainder(dividingBy: period)
+            return phase <= length ? phase : period - phase
+        }
         if shouldLoop, length > 0 {
             let wrapped = rawFrame.truncatingRemainder(dividingBy: length)
             return wrapped >= 0 ? wrapped : wrapped + length
@@ -1480,7 +1636,7 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
     }
 
     private var shouldLoop: Bool {
-        wrapLoop || mode == "loop" || mode == "mirror"
+        wrapLoop || mode == "loop"
     }
 
     private func value(

@@ -1,9 +1,105 @@
 #if !LITE_BUILD
     import Foundation
+    import LiveWallpaperCore
     import LiveWallpaperProWPE
 
     extension WPEMetalSceneRenderer {
         // MARK: - Script Tick Dispatch
+
+        static func currentSceneScriptLanguage() -> String {
+            AppLanguagePreference.current(in: .appScoped()).wallpaperEngineLanguageCode()
+        }
+
+        /// The same defaults domain drives SwiftUI's `@AppStorage` language
+        /// picker. Foundation posts `didChangeNotification` for in-process
+        /// writes; locale changes cover the `.system` preference. Both flow
+        /// through the actor's FIFO config channel and are de-duplicated there.
+        func installSceneScriptLanguageObservers(on actor: WPEDisplayRenderActor) {
+            guard sceneScriptLanguageObservers.isEmpty else { return }
+            let center = NotificationCenter.default
+            let submitCurrent: @Sendable () -> Void = { [weak actor] in
+                actor?.submitConfig(.sceneScriptLanguage(Self.currentSceneScriptLanguage()))
+            }
+            sceneScriptLanguageObservers = [
+                center.addObserver(
+                    forName: UserDefaults.didChangeNotification,
+                    object: nil,
+                    queue: nil
+                ) { _ in submitCurrent() },
+                center.addObserver(
+                    forName: NSLocale.currentLocaleDidChangeNotification,
+                    object: nil,
+                    queue: nil
+                ) { _ in submitCurrent() },
+            ]
+        }
+
+        func setSceneScriptLanguage(_ language: String) {
+            guard sceneScriptGeneralSettings.updateLanguage(language) else { return }
+            guard didLoad else { return }
+            applySceneScriptGeneralSettingsIfChanged()
+        }
+
+        /// Official initial-full contract. Language is currently the complete
+        /// documented settings bag; future keys must be added here, not inferred
+        /// from the HTML wallpaper listener.
+        func applyInitialSceneScriptGeneralSettings() {
+            dispatchSceneScriptGeneralSettings(
+                language: sceneScriptGeneralSettings.takeInitialLanguage()
+            )
+        }
+
+        /// Subsequent contract: emit only when the language key changed. Every
+        /// JS call receives a fresh plain object with its own `language` property,
+        /// so authored `hasOwnProperty('language')` checks behave exactly as in WPE.
+        func applySceneScriptGeneralSettingsIfChanged() {
+            guard let language = sceneScriptGeneralSettings.takeChangedLanguage() else { return }
+            dispatchSceneScriptGeneralSettings(language: language)
+        }
+
+        private func dispatchSceneScriptGeneralSettings(language: String) {
+            for (objectID, instance) in layerScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.applyGeneralSettings(language: language) {
+                    applyLayerScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in layerAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.applyGeneralSettings(language: language) {
+                    applyLayerAlphaScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in textVisibleScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.applyGeneralSettings(language: language) {
+                    applyTextScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in textAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.applyGeneralSettings(language: language) {
+                    liveTextAlpha[objectID] = output.own.alpha
+                }
+            }
+            for key in textScriptInstances.keys.sorted() {
+                _ = textScriptInstances[key]?.applyGeneralSettings(language: language)
+            }
+            for instances in [
+                dynamicOriginScriptInstances,
+                dynamicScaleScriptInstances,
+                dynamicAnglesScriptInstances,
+                dynamicColorScriptInstances,
+            ] {
+                for key in instances.keys.sorted() {
+                    _ = instances[key]?.applyGeneralSettings(language: language)
+                }
+            }
+            for (_, instance) in effectConstantScriptInstances.sorted(
+                by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }
+            ) {
+                _ = instance.applyGeneralSettings(language: language)
+            }
+            for key in effectVisibilityScriptInstances.keys.sorted() {
+                _ = effectVisibilityScriptInstances[key]?.applyGeneralSettings(language: language)
+            }
+        }
 
         // Each family applies its newest completed value and contributes its next
         // tick to this frame's batch; `renderCurrentFrame` submits the batch once,
@@ -120,6 +216,104 @@
                 properties,
                 runtimeSeconds: runtimeSeconds
             )
+        }
+
+        /// The surface owns the only real screen-size producer. This is called
+        /// only after `updateSurfaceGeometry` accepts a positive changed size;
+        /// construction merely seeds `engine.screenResolution` and never emits
+        /// the startup event prohibited by WPE's contract.
+        func dispatchSceneScriptResizeScreen(_ size: SIMD2<Double>) {
+            for (objectID, instance) in layerScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.resizeScreen(size) {
+                    applyLayerScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in layerAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.resizeScreen(size) {
+                    applyLayerAlphaScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in textVisibleScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.resizeScreen(size) {
+                    applyTextScriptOutput(output, ownObjectID: objectID)
+                }
+            }
+            for (objectID, instance) in textAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
+                if let output = instance.resizeScreen(size) {
+                    liveTextAlpha[objectID] = output.own.alpha
+                }
+            }
+            for objectID in textScriptInstances.keys.sorted() {
+                _ = textScriptInstances[objectID]?.resizeScreen(size)
+            }
+            for instances in [
+                dynamicOriginScriptInstances,
+                dynamicScaleScriptInstances,
+                dynamicAnglesScriptInstances,
+                dynamicColorScriptInstances,
+            ] {
+                for objectID in instances.keys.sorted() {
+                    _ = instances[objectID]?.resizeScreen(size)
+                }
+            }
+            for (_, instance) in effectConstantScriptInstances.sorted(
+                by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }
+            ) {
+                _ = instance.resizeScreen(size)
+            }
+            for key in effectVisibilityScriptInstances.keys.sorted() {
+                _ = effectVisibilityScriptInstances[key]?.resizeScreen(size)
+            }
+        }
+
+        /// Delivers `destroy()` synchronously on each instance lane before the
+        /// dictionaries release their JSContexts. ObjectIdentifier de-duplicates
+        /// defensive aliases, while every instance also owns a one-way latch.
+        func destroySceneScriptInstances() {
+            var layerIDs = Set<ObjectIdentifier>()
+            for instances in [
+                layerScriptInstances,
+                layerAlphaScriptInstances,
+                textVisibleScriptInstances,
+                textAlphaScriptInstances,
+            ] {
+                for key in instances.keys.sorted() {
+                    guard let instance = instances[key],
+                          layerIDs.insert(ObjectIdentifier(instance)).inserted else { continue }
+                    _ = instance.destroy()
+                }
+            }
+
+            var textIDs = Set<ObjectIdentifier>()
+            for key in textScriptInstances.keys.sorted() {
+                guard let instance = textScriptInstances[key],
+                      textIDs.insert(ObjectIdentifier(instance)).inserted else { continue }
+                _ = instance.destroy()
+            }
+
+            var dynamicIDs = Set<ObjectIdentifier>()
+            for instances in [
+                dynamicOriginScriptInstances,
+                dynamicScaleScriptInstances,
+                dynamicAnglesScriptInstances,
+                dynamicColorScriptInstances,
+            ] {
+                for key in instances.keys.sorted() {
+                    guard let instance = instances[key],
+                          dynamicIDs.insert(ObjectIdentifier(instance)).inserted else { continue }
+                    _ = instance.destroy()
+                }
+            }
+            for (_, instance) in effectConstantScriptInstances.sorted(
+                by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }
+            ) where dynamicIDs.insert(ObjectIdentifier(instance)).inserted {
+                _ = instance.destroy()
+            }
+            for key in effectVisibilityScriptInstances.keys.sorted() {
+                guard let instance = effectVisibilityScriptInstances[key],
+                      dynamicIDs.insert(ObjectIdentifier(instance)).inserted else { continue }
+                _ = instance.destroy()
+            }
         }
     }
 #endif

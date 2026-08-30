@@ -11,6 +11,19 @@ struct WPETexAnimatedFrame {
     let texture: MTLTexture
     let sourceSubRect: CGRect?
     let duration: TimeInterval
+    let samplingDescriptor: WPETexSpriteSamplingDescriptor?
+
+    init(
+        texture: MTLTexture,
+        sourceSubRect: CGRect?,
+        duration: TimeInterval,
+        samplingDescriptor: WPETexSpriteSamplingDescriptor? = nil
+    ) {
+        self.texture = texture
+        self.sourceSubRect = sourceSubRect
+        self.duration = duration
+        self.samplingDescriptor = samplingDescriptor
+    }
 }
 
 /// Rebuild source for a suspended eager animation: the mmap-backed compressed `.tex` plus
@@ -143,6 +156,7 @@ final class WPETexAnimatedTextureSource: WPEDynamicTextureSource {
     private struct FrameMetadata {
         let atlasSlot: Int
         let sourceSubRect: CGRect?
+        let samplingDescriptor: WPETexSpriteSamplingDescriptor?
     }
 
     /// One entry per unique atlas texture. Dimensions are captured at init so
@@ -191,7 +205,11 @@ final class WPETexAnimatedTextureSource: WPEDynamicTextureSource {
                 ))
                 slotByTexture[key] = slot
             }
-            metadata.append(FrameMetadata(atlasSlot: slot, sourceSubRect: frame.sourceSubRect))
+            metadata.append(FrameMetadata(
+                atlasSlot: slot,
+                sourceSubRect: frame.sourceSubRect,
+                samplingDescriptor: frame.samplingDescriptor
+            ))
         }
         self.atlasSlots = slots
         self.frameMetadata = metadata
@@ -329,6 +347,14 @@ final class WPETexAnimatedTextureSource: WPEDynamicTextureSource {
         guard !frameMetadata.isEmpty else { return nil }
         if atlasesReleased { restoreAtlases() }
         return atlasSlots[frameMetadata[frameIndex(at: time)].atlasSlot].texture
+    }
+
+    func samplingDescriptor(
+        at time: TimeInterval,
+        frameSlot _: Int
+    ) -> WPETexSpriteSamplingDescriptor? {
+        guard !frameMetadata.isEmpty else { return nil }
+        return frameMetadata[frameIndex(at: time)].samplingDescriptor
     }
 
     /// TEXS frame rate for particle sprite sheets without a .tex-json sidecar.

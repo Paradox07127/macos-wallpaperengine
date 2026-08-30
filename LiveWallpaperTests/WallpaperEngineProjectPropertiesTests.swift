@@ -35,6 +35,31 @@ struct WallpaperEngineProjectPropertiesTests {
         #expect(resolution.defaultValue == .string("8k"))
     }
 
+    @Test("Preserves scene texture and user shortcut property identities without enabling them")
+    func preservesSecuritySensitiveScenePropertyTypes() throws {
+        let manifest = """
+        {
+          "general": {
+            "properties": {
+              "background": { "type": "scenetexture", "text": "Background", "value": "" },
+              "launcher": { "type": "usershortcut", "text": "Launcher", "value": "" }
+            }
+          }
+        }
+        """
+
+        let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data(manifest.utf8))
+        let types = Dictionary(uniqueKeysWithValues: schema.properties.map { ($0.key, $0.type) })
+
+        #expect(types["background"] == .sceneTexture)
+        #expect(types["launcher"] == .userShortcut)
+        #expect(!schema.hasMeaningfulSettings)
+        #expect(schema.declaredEditableValues([
+            "background": .string("/untrusted/image.png"),
+            "launcher": .string("/untrusted/command")
+        ]).isEmpty)
+    }
+
     @Test("Resolves raw WPE keys and identifiers to readable labels; keeps author text")
     func resolvesDisplayKeysAndIdentifiers() throws {
         let schema = try WallpaperEngineProjectPropertySchema.parse(

@@ -162,6 +162,10 @@ final class WPELayerScriptInstance {
     let mediaHandlers: WPESceneMediaHandlerSet
     private let tickBudget: TimeInterval
     private var isPoisoned = false
+    /// Lifecycle is one-way. The renderer may reach teardown through reload,
+    /// hibernate, cleanup, and deinit backstops; only the first path may invoke
+    /// the authored `destroy()` handler.
+    private var isDestroyed = false
     let initialOutput: WPELayerScriptOutput
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<WPELayerScriptOutput>(
         combine: { WPELayerScriptInstance.mergedOutputs(pending: $0, newer: $1) }
@@ -172,6 +176,9 @@ final class WPELayerScriptInstance {
         scriptProperties: [String: WPESceneScriptPropertyValue] = [:],
         shared: WPESharedScriptState? = nil,
         canvasSize: SIMD2<Double> = SIMD2<Double>(1920, 1080),
+        /// Real backing-pixel screen resolution. WPE keeps this separate from
+        /// the authored scene canvas and passes changes to `resizeScreen`.
+        screenSize: SIMD2<Double>? = nil,
         setupBudget: TimeInterval = 2.0,
         tickBudget: TimeInterval = 0.5,
         nowProviderMillis: (@Sendable () -> Double)? = nil,
@@ -187,6 +194,7 @@ final class WPELayerScriptInstance {
             nowProviderMillis: nowProviderMillis,
             shared: shared,
             canvasSize: canvasSize,
+            screenSize: screenSize ?? canvasSize,
             outputMode: outputMode,
             initialVisible: initialVisible,
             initialAlpha: initialAlpha,
@@ -280,7 +288,7 @@ final class WPELayerScriptInstance {
         runtimeSeconds: Double? = nil,
         pointerFrame: WPEPointerFrame? = nil
     ) -> WPELayerScriptOutput? {
-        guard hasUpdateFunction, !isPoisoned,
+        guard hasUpdateFunction, !isPoisoned, !isDestroyed,
               engine.allows(.tick) else { return nil }
         switch engine.tick(
             runtimeSeconds: runtimeSeconds,
@@ -308,7 +316,7 @@ final class WPELayerScriptInstance {
         hit: WPELayerScriptCursorHit = .init(),
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, engine.allows(.event) else { return nil }
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
         switch engine.dispatchCursorEvent(
             event,
             pointerFrame: pointerFrame,
@@ -335,7 +343,7 @@ final class WPELayerScriptInstance {
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !properties.isEmpty,
+        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return nil }
         switch engine.applyUserProperties(
             properties,
@@ -362,7 +370,7 @@ final class WPELayerScriptInstance {
         runtimeSeconds: Double? = nil,
         pointerFrame: WPEPointerFrame? = nil
     ) -> (output: WPELayerScriptOutput?, job: WPESceneScriptBatchDispatcher.Job?) {
-        guard !isPoisoned else { return (nil, nil) }
+        guard !isPoisoned, !isDestroyed else { return (nil, nil) }
         if let overrun = engine.quarantineAsyncIfOverdue(budget: tickBudget) {
             isPoisoned = true
             Logger.warning(
@@ -393,7 +401,7 @@ final class WPELayerScriptInstance {
         hit: WPELayerScriptCursorHit = .init(),
         runtimeSeconds: Double? = nil
     ) {
-        guard !isPoisoned, engine.allows(.event) else { return }
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return }
         _ = engine.dispatchCursorEventAsync(
             event,
             pointerFrame: pointerFrame,
@@ -409,7 +417,7 @@ final class WPELayerScriptInstance {
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !properties.isEmpty,
+        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return nil }
         let budget = tickBudget * 2
         switch engine.applyUserProperties(
@@ -436,7 +444,7 @@ final class WPELayerScriptInstance {
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, !properties.isEmpty,
+        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return nil }
         let budget = tickBudget * 2
         switch engine.applyScriptProperties(
@@ -457,6 +465,66 @@ final class WPELayerScriptInstance {
             guard engine.acceptsCompletion(), outcome.applied,
                   let value = outcome.value else { return nil }
             return asyncOutcomeSlot.supersede(with: value)
+        }
+    }
+
+    /// Delivers the real screen-resolution change on the instance's serial JSC
+    /// lane. Equal sizes are suppressed by the engine, so repeated AppKit
+    /// geometry notifications cannot duplicate the event.
+    @discardableResult
+    func resizeScreen(_ size: SIMD2<Double>) -> WPELayerScriptOutput? {
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
+        let budget = tickBudget * 2
+        switch engine.resizeScreen(size, budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Layer SceneScript resizeScreen() exceeded \(budget)s — frozen", category: .wpeRender)
+            return nil
+        case .capacityUnavailable:
+            return nil
+        case let .completed(output):
+            guard engine.acceptsCompletion(), let output else { return nil }
+            return asyncOutcomeSlot.supersede(with: output)
+        }
+    }
+
+    /// Initial load sends the complete currently-supported settings object;
+    /// later renderer notifications call this only when `language` changed.
+    @discardableResult
+    func applyGeneralSettings(language: String) -> WPELayerScriptOutput? {
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
+        let budget = tickBudget * 2
+        switch engine.applyGeneralSettings(language: language, budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Layer SceneScript applyGeneralSettings() exceeded \(budget)s — frozen", category: .wpeRender)
+            return nil
+        case .capacityUnavailable:
+            return nil
+        case let .completed(output):
+            guard engine.acceptsCompletion(), let output else { return nil }
+            return asyncOutcomeSlot.supersede(with: output)
+        }
+    }
+
+    /// Calls the authored handler at most once and fences all later ticks/events.
+    /// The returned output is useful to the JSC contract tests; scene teardown
+    /// normally discards it because the owning object is about to disappear.
+    @discardableResult
+    func destroy() -> WPELayerScriptOutput? {
+        guard !isDestroyed else { return nil }
+        isDestroyed = true
+        guard !isPoisoned, engine.allows(.event) else { return nil }
+        let budget = tickBudget * 2
+        switch engine.destroy(budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Layer SceneScript destroy() exceeded \(budget)s", category: .wpeRender)
+            return nil
+        case .capacityUnavailable:
+            return nil
+        case let .completed(output):
+            return engine.acceptsCompletion() ? output : nil
         }
     }
 
@@ -519,6 +587,7 @@ final class WPELayerScriptInstance {
         private var audioBridge: WPESceneScriptAudioBridge?
         private var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
+        private var screenResolution: JSValue?
         private var thisLayer: JSValue?
         /// Set by the context exception handler so `init()` failures can degrade
         /// safely (run on the engine queue, so no synchronization needed).
@@ -560,6 +629,7 @@ final class WPELayerScriptInstance {
         private let nowProviderMillis: (@Sendable () -> Double)?
         private let shared: WPESharedScriptState?
         private let canvasSize: SIMD2<Double>
+        private var screenSize: SIMD2<Double>
         private let outputMode: WPELayerScriptOutputMode
         /// Parsed visible/alpha seeds — fallback when script never assigns.
         private let initialOwnVisible: Bool
@@ -596,6 +666,7 @@ final class WPELayerScriptInstance {
             nowProviderMillis: (@Sendable () -> Double)?,
             shared: WPESharedScriptState?,
             canvasSize: SIMD2<Double>,
+            screenSize: SIMD2<Double>,
             outputMode: WPELayerScriptOutputMode,
             initialVisible: Bool,
             initialAlpha: Double,
@@ -610,6 +681,7 @@ final class WPELayerScriptInstance {
             self.nowProviderMillis = nowProviderMillis
             self.shared = shared
             self.canvasSize = SIMD2<Double>(max(canvasSize.x, 1), max(canvasSize.y, 1))
+            self.screenSize = SIMD2<Double>(max(screenSize.x, 1), max(screenSize.y, 1))
             self.outputMode = outputMode
             self.initialOwnVisible = initialVisible
             self.initialOwnAlpha = initialAlpha.isFinite ? initialAlpha : 1
@@ -736,6 +808,35 @@ final class WPELayerScriptInstance {
                         pointerFrame: nil
                     )
                 )
+            }
+        }
+
+        func resizeScreen(
+            _ size: SIMD2<Double>,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<WPELayerScriptOutput?> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.resizeScreenOnQueue(size)
+            }
+        }
+
+        func applyGeneralSettings(
+            language: String,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<WPELayerScriptOutput?> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.applyGeneralSettingsOnQueue(language: language)
+            }
+        }
+
+        func destroy(
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<WPELayerScriptOutput> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.destroyOnQueue()
             }
         }
 
@@ -1070,6 +1171,52 @@ final class WPELayerScriptInstance {
             return readOutput()
         }
 
+        private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> WPELayerScriptOutput? {
+            let size = SIMD2<Double>(max(requestedSize.x, 1), max(requestedSize.y, 1))
+            guard size != screenSize else { return nil }
+            screenSize = size
+            update(screenResolution, x: size.x, y: size.y)
+            pendingVideo.removeAll(keepingCapacity: true)
+            evaluationResourceBudget.beginEvaluation()
+            guard let context,
+                  let function = context.objectForKeyedSubscript("resizeScreen"),
+                  !function.isUndefined, function.hasProperty("call"),
+                  let vectorType = context.objectForKeyedSubscript("Vec2"),
+                  let argument = vectorType.construct(withArguments: [size.x, size.y]) else {
+                return nil
+            }
+            didThrow = false
+            _ = function.call(withArguments: [argument])
+            return didThrow ? nil : readOutput()
+        }
+
+        private func applyGeneralSettingsOnQueue(language: String) -> WPELayerScriptOutput? {
+            pendingVideo.removeAll(keepingCapacity: true)
+            evaluationResourceBudget.beginEvaluation()
+            guard let context,
+                  let function = context.objectForKeyedSubscript("applyGeneralSettings"),
+                  !function.isUndefined, function.hasProperty("call"),
+                  let settings = JSValue(newObjectIn: context) else { return nil }
+            settings.setObject(language, forKeyedSubscript: "language" as NSString)
+            didThrow = false
+            _ = function.call(withArguments: [settings])
+            return didThrow ? nil : readOutput()
+        }
+
+        private func destroyOnQueue() -> WPELayerScriptOutput {
+            pendingVideo.removeAll(keepingCapacity: true)
+            evaluationResourceBudget.beginEvaluation()
+            if let context,
+               let function = context.objectForKeyedSubscript("destroy"),
+               !function.isUndefined, function.hasProperty("call") {
+                didThrow = false
+                _ = function.call(withArguments: [])
+            }
+            timerScheduler?.invalidate()
+            updateFunction = nil
+            return readOutput()
+        }
+
         private func updateEngineRuntime(_ runtimeSeconds: Double?) -> Double? {
             guard let context else { return nil }
             let supplied = runtimeSeconds.flatMap { $0.isFinite ? $0 : nil }
@@ -1110,11 +1257,18 @@ final class WPELayerScriptInstance {
 
         private func installCanvasSize(in context: JSContext) {
             guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
-                  let size = JSValue(newObjectIn: context) else { return }
-            size.setObject(canvasSize.x, forKeyedSubscript: "x" as NSString)
-            size.setObject(canvasSize.y, forKeyedSubscript: "y" as NSString)
-            engine.setObject(size, forKeyedSubscript: "canvasSize" as NSString)
-            engine.setObject(size, forKeyedSubscript: "screenResolution" as NSString)
+                  let canvas = JSValue(newObjectIn: context),
+                  let screen = JSValue(newObjectIn: context) else { return }
+            update(canvas, x: canvasSize.x, y: canvasSize.y)
+            update(screen, x: screenSize.x, y: screenSize.y)
+            engine.setObject(canvas, forKeyedSubscript: "canvasSize" as NSString)
+            engine.setObject(screen, forKeyedSubscript: "screenResolution" as NSString)
+            screenResolution = screen
+        }
+
+        private func update(_ vector: JSValue?, x: Double, y: Double) {
+            vector?.setObject(x, forKeyedSubscript: "x" as NSString)
+            vector?.setObject(y, forKeyedSubscript: "y" as NSString)
         }
 
         private func installInput(in context: JSContext) {

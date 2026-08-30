@@ -323,6 +323,28 @@ public struct WPETexAnimationTrack: Sendable, Equatable {
     }
 }
 
+/// Sampling transform for one authored TEXS sprite frame.
+///
+/// Wallpaper Engine applies `translation + uv.x * rotation.xy
+/// + uv.y * rotation.zw` when sampling the source atlas. Values are normalized
+/// against that frame's source-image dimensions by the TEXS decoder.
+public struct WPETexSpriteSamplingDescriptor: Sendable, Equatable {
+    public let rotation: SIMD4<Float>
+    public let translation: SIMD2<Float>
+
+    public init(rotation: SIMD4<Float>, translation: SIMD2<Float>) {
+        self.rotation = rotation
+        self.translation = translation
+    }
+
+    /// Equivalent transform when the bound texture already contains only the
+    /// selected frame (the lazy source's cropped working-texture representation).
+    public static let identity = WPETexSpriteSamplingDescriptor(
+        rotation: SIMD4<Float>(1, 0, 0, 1),
+        translation: SIMD2<Float>(0, 0)
+    )
+}
+
 public struct WPETexAnimationFrame: Sendable, Equatable {
     public let imageID: Int
     public let duration: TimeInterval
@@ -331,17 +353,22 @@ public struct WPETexAnimationFrame: Sendable, Equatable {
     /// "use the whole image" (legacy/back-compat for `.tex` files that
     /// omit a TEXS block).
     public let subRect: CGRect?
+    /// Full affine sampling transform retained from TEXS. `nil` means this
+    /// frame was synthesized without TEXS metadata, not an identity fallback.
+    public let samplingDescriptor: WPETexSpriteSamplingDescriptor?
 
     public init(
         imageID: Int,
         duration: TimeInterval,
         mipmaps: [WPETexTextureMipmap],
-        subRect: CGRect? = nil
+        subRect: CGRect? = nil,
+        samplingDescriptor: WPETexSpriteSamplingDescriptor? = nil
     ) {
         self.imageID = imageID
         self.duration = duration
         self.mipmaps = mipmaps
         self.subRect = subRect
+        self.samplingDescriptor = samplingDescriptor
     }
 }
 
@@ -409,11 +436,18 @@ public struct WPETexStreamingFrame: Sendable, Equatable {
     public let imageID: Int
     public let subRect: CGRect
     public let duration: TimeInterval
+    public let samplingDescriptor: WPETexSpriteSamplingDescriptor?
 
-    public init(imageID: Int, subRect: CGRect, duration: TimeInterval) {
+    public init(
+        imageID: Int,
+        subRect: CGRect,
+        duration: TimeInterval,
+        samplingDescriptor: WPETexSpriteSamplingDescriptor? = nil
+    ) {
         self.imageID = imageID
         self.subRect = subRect
         self.duration = duration
+        self.samplingDescriptor = samplingDescriptor
     }
 }
 

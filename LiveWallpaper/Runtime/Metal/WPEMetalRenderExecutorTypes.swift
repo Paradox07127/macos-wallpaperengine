@@ -10,9 +10,12 @@ import simd
 /// Indexed fragment-texture slots for one transpiled-shader dispatch.
 final class WPEMetalTextureSlotTable {
     private var textures: ContiguousArray<MTLTexture?>
+    private var samplingDescriptors: ContiguousArray<WPETexSpriteSamplingDescriptor?>
 
     init(slotCount: Int = WPEShaderTranspiler.customTextureSlotCount) {
-        textures = ContiguousArray(repeating: nil, count: max(0, slotCount))
+        let count = max(0, slotCount)
+        textures = ContiguousArray(repeating: nil, count: count)
+        samplingDescriptors = ContiguousArray(repeating: nil, count: count)
     }
 
     var slotCount: Int { textures.count }
@@ -22,12 +25,29 @@ final class WPEMetalTextureSlotTable {
         set {
             guard textures.indices.contains(slot) else { return }
             textures[slot] = newValue
+            samplingDescriptors[slot] = nil
         }
+    }
+
+    func set(
+        texture: MTLTexture?,
+        samplingDescriptor: WPETexSpriteSamplingDescriptor?,
+        at slot: Int
+    ) {
+        guard textures.indices.contains(slot) else { return }
+        textures[slot] = texture
+        samplingDescriptors[slot] = texture == nil ? nil : samplingDescriptor
+    }
+
+    func samplingDescriptor(at slot: Int) -> WPETexSpriteSamplingDescriptor? {
+        guard textures.indices.contains(slot), textures[slot] != nil else { return nil }
+        return samplingDescriptors[slot]
     }
 
     func reset() {
         for index in textures.indices {
             textures[index] = nil
+            samplingDescriptors[index] = nil
         }
     }
 }

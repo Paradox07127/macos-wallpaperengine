@@ -77,6 +77,57 @@ struct WPEMetalShaderDispatcherTests {
         ).textureSlots == [0, 1])
     }
 
+    @Test("Canonical shader implementation labels preserve selection provenance")
+    func canonicalShaderImplementationClassification() {
+        let source = WPEShaderProgram(
+            name: "effects/custom",
+            vertexSource: "",
+            fragmentSource: "",
+            isBuiltin: false
+        )
+        let native = WPEShaderProgram(
+            name: "effects/blur",
+            vertexSource: "",
+            fragmentSource: "",
+            isBuiltin: true
+        )
+        let fallback = WPEShaderProgram(
+            name: "effect_unmapped",
+            vertexSource: "",
+            fragmentSource: "",
+            isBuiltin: true,
+            executionClassification: .copyFallback
+        )
+
+        #expect(WPECanonicalTraceRecorder.executionClassification(for: source) == .officialSource)
+        #expect(WPECanonicalTraceRecorder.executionClassification(for: native) == .nativeApproximation)
+        #expect(WPECanonicalTraceRecorder.executionClassification(for: fallback) == .copyFallback)
+        #expect(WPECanonicalTraceRecorder.executionClassification(for: nil) == nil)
+        #expect(WPEShaderExecutionClassification.unsupportedMetadataOnly.rawValue == "unsupported-metadata-only")
+
+        let inventory = WPEShaderImplementationInventoryEntry(
+            stableEffectID: "layer:effect:7",
+            stablePassID: "layer:effect:7:pass:0",
+            authoredOverrideID: 42,
+            renderPassID: "layer.2",
+            authoredEffectPath: "effects/dynamic/effect.json",
+            authoredShaderPath: "effects/dynamic",
+            classification: .unsupportedMetadataOnly,
+            consumerDisposition: .noRuntimeTextureProviderConsumer,
+            metadataKind: "usertextures",
+            metadataSources: ["effect-override"]
+        )
+        let record = WPECanonicalTraceRecorder.shaderImplementationInventoryRecord(inventory)
+        #expect(record["effectId"] as? String == inventory.stableEffectID)
+        #expect(record["passId"] as? String == inventory.stablePassID)
+        #expect(record["authoredOverrideId"] as? Int == 42)
+        #expect(record["renderPassId"] as? String == inventory.renderPassID)
+        #expect(record["effectPath"] as? String == inventory.authoredEffectPath)
+        #expect(record["shaderPath"] as? String == inventory.authoredShaderPath)
+        #expect(record["classification"] as? String == "unsupported-metadata-only")
+        #expect(record["consumerDisposition"] as? String == "no-runtime-texture-provider-consumer")
+    }
+
     @Test("Swift WPEGenericParticleUniforms is gone; the metallib struct stays")
     func swiftGenericParticleUniformsRemoved() throws {
         let uniforms = try RepositoryRoot.source(

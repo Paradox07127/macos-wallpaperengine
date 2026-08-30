@@ -153,6 +153,15 @@ final class WPEMetalSceneRenderer: NSObject {
     )
     var pendingSceneScriptBatchJobs: [WPESceneScriptBatchDispatcher.Job] = []
     let sceneScriptLoadState = WPESceneScriptLoadState()
+    /// Authoritative Loomscreen UI language, expressed in WPE's documented
+    /// SceneScript code space. `applied` is generation-local and makes live
+    /// notifications changed-only while initial load remains a full delivery.
+    var sceneScriptGeneralSettings = WPESceneScriptGeneralSettingsDeliveryState(
+        language: AppLanguagePreference.current(in: .appScoped()).wallpaperEngineLanguageCode()
+    )
+    /// Installed after actor adoption; notification callbacks retain only the
+    /// actor and submit a Sendable config command. Deinit may run nonisolated.
+    nonisolated(unsafe) var sceneScriptLanguageObservers: [NSObjectProtocol] = []
     /// Last complete cross-family presentation. A mid-family resource-ceiling latch keeps transforms/text here instead of baking them while layers freeze.
     var lastStableScriptTransforms = LiveScriptTransforms()
     var lastStableScriptTextByID: [String: String] = [:]
@@ -234,6 +243,10 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Bumped per reload so a slow async measurement from a prior scene is ignored.
     var introPhaseToken = 0
     var loadedTextures: [String: MTLTexture] = [:]
+    /// Frame-scoped TEXS transform keyed exactly like `loadedTextures`.
+    /// Rebuilt while ticking dynamic sources so an atlas reused by multiple
+    /// frames never acquires incorrect texture-global metadata.
+    var loadedTextureSamplingDescriptors: [String: WPETexSpriteSamplingDescriptor] = [:]
     /// VRAM-budget bookkeeping. Dynamic/video sources are never tracked here.
     struct StaticTextureCacheRecord: Sendable {
         let layerName: String
@@ -341,6 +354,11 @@ final class WPEMetalSceneRenderer: NSObject {
     var loadDiagnostics: SceneLoadDiagnostic?
     var renderGraph: WPERenderGraph?
     var renderPipeline: WPEPreparedRenderPipeline?
+    #if DEBUG
+    /// Authored shader/effect contract items with no runtime consumer, retained
+    /// across trace restarts used by multi-frame oracle capture.
+    var shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
+    #endif
     /// Effect / custom-shader passes animate via `g_Time` / `g_AudioSpectrum*`. Without this the view draws one frame and freezes.
     var hasAnimatedShaderPasses = false
     /// WPE `general.supportsaudioprocessing`. `pipelineHasAnimatedPasses` misses custom-path audio shaders, which would otherwise freeze on the static path.
@@ -505,6 +523,10 @@ final class WPEMetalSceneRenderer: NSObject {
         guard drawableSize.width > 0, drawableSize.height > 0 else { return }
         guard drawableSize != surfaceDrawableSize else { return }
         surfaceDrawableSize = drawableSize
+        dispatchSceneScriptResizeScreen(SIMD2(
+            max(Double(drawableSize.width), 1),
+            max(Double(drawableSize.height), 1)
+        ))
         refreshUpscalePlan(reason: "geometry")
     }
 
@@ -569,6 +591,9 @@ final class WPEMetalSceneRenderer: NSObject {
     var hoverDebugCounter = 0
 
     deinit {
+        for observer in sceneScriptLanguageObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
         sceneScriptLoadState.retireCurrent()
         stopEngineAssetsAccessIfNeeded()
         // Backstop if cleanup()/reload() never ran: AVFoundation retains AVQueuePlayer on CoreMedia threads, so ARC will not stop the decoder.

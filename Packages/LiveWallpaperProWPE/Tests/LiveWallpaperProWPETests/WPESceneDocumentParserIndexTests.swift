@@ -90,4 +90,34 @@ struct WPESceneDocumentParserIndexTests {
         #expect(child.attachment == "头部")
         #expect(child.parentObjectID == "10")
     }
+
+    @Test("Unknown nested parameters remain losslessly available after typed parsing")
+    func unknownParametersRemainAvailable() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": [
+                "orthogonalprojection": ["width": 1920, "height": 1080],
+                "futureFlag": true,
+            ],
+            "objects": [[
+                "id": 1,
+                "name": "future layer",
+                "futureObjectField": [
+                    "mode": "oracle",
+                    "weights": [0.25, 2, NSNull()],
+                ],
+            ]],
+            "futureRoot": ["revision": 7],
+        ]
+
+        let document = try parse(payload)
+
+        #expect(document.sourceJSON["general"]?["futureFlag"] == .bool(true))
+        #expect(document.sourceJSON["futureRoot"]?["revision"] == .number(7))
+        let futureField = document.sourceJSON["objects"]?[0]?["futureObjectField"]
+        #expect(futureField?["mode"] == .string("oracle"))
+        #expect(futureField?["weights"]?[0] == .number(0.25))
+        #expect(futureField?["weights"]?[1] == .number(2))
+        #expect(futureField?["weights"]?[2] == .null)
+    }
 }

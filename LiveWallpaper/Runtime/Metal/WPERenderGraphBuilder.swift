@@ -59,6 +59,7 @@ struct WPERenderGraphBuilder: Sendable {
             // particles interleave; fall back to the image-filtered index when absent.
             originalIndexByID[object.id] = document.objectPaintOrder[object.id] ?? index
         }
+        let authoredSceneObjectByID = Self.authoredSceneObjectByID(in: document.sourceJSON)
 
         let liveVisibilityIDs = Self.userToggleableVisibilityIDs(in: document)
             .union(Self.layerScriptControlledVisibilityIDs(in: document))
@@ -105,7 +106,12 @@ struct WPERenderGraphBuilder: Sendable {
                     finalUntargetedPassToScene: visibleLayerIDs.contains(object.id),
                     preserveFinalCompositeForScene: layerIDsRequiredAsComposite.contains(object.id)
                         || WPETextLayerSynthesis.isOffscreenPath(object.imageRelativePath),
-                    sortIndex: document.objectPaintOrder[object.id] ?? 0
+                    sortIndex: document.objectPaintOrder[object.id] ?? 0,
+                    authoredSceneObjects: Self.authoredSceneObjectChain(
+                        for: object.id,
+                        objectByID: authoredSceneObjectByID,
+                        parentByID: document.objectParentByID
+                    )
                 )
             }
         let parallaxAligned = Self.propagatingParallaxDepthThroughParents(
@@ -119,6 +125,52 @@ struct WPERenderGraphBuilder: Sendable {
             to: attachmentAligned,
             objectParentByID: document.objectParentByID
         )).nativized()
+    }
+
+    /// Indexes the authored (pre-user-property-resolution) objects retained by
+    /// `WPESceneDocument.sourceJSON`. Later duplicate ids win, matching the
+    /// parser's canonical typed-object index.
+    private static func authoredSceneObjectByID(
+        in sourceJSON: WPESceneJSONValue
+    ) -> [String: WPESceneJSONValue] {
+        guard case .array(let objects) = sourceJSON["objects"] else { return [:] }
+        var result: [String: WPESceneJSONValue] = [:]
+        for object in objects {
+            guard case .object(let dictionary) = object,
+                  let id = authoredObjectID(in: dictionary) else { continue }
+            result[id] = object
+        }
+        return result
+    }
+
+    private static func authoredObjectID(
+        in dictionary: [String: WPESceneJSONValue]
+    ) -> String? {
+        if case .string(let id)? = dictionary["id"], !id.isEmpty { return id }
+        if case .number(let number)? = dictionary["id"],
+           number.isFinite,
+           let id = Int(exactly: number) {
+            return String(id)
+        }
+        if case .string(let name)? = dictionary["name"], !name.isEmpty { return name }
+        return nil
+    }
+
+    /// Retains every authored transform/visibility/group contributor in stable
+    /// root-to-leaf order. Cycles stop at the first repeated id.
+    private static func authoredSceneObjectChain(
+        for objectID: String,
+        objectByID: [String: WPESceneJSONValue],
+        parentByID: [String: String]
+    ) -> [WPESceneJSONValue] {
+        var reversed: [WPESceneJSONValue] = []
+        var current: String? = objectID
+        var seen: Set<String> = []
+        while let id = current, seen.insert(id).inserted {
+            if let object = objectByID[id] { reversed.append(object) }
+            current = parentByID[id]
+        }
+        return reversed.reversed()
     }
 
     private func applyComposelayerGroups(
@@ -852,7 +904,8 @@ struct WPERenderGraphBuilder: Sendable {
         object: WPESceneImageObject,
         finalUntargetedPassToScene: Bool,
         preserveFinalCompositeForScene: Bool,
-        sortIndex: Int
+        sortIndex: Int,
+        authoredSceneObjects: [WPESceneJSONValue]
     ) throws -> WPERenderLayer {
         let model = try resolveModelDescriptor(for: object)
         let materialPath = model.materialPath
@@ -890,6 +943,7 @@ struct WPERenderGraphBuilder: Sendable {
                 material.passes,
                 phase: .material,
                 override: materialOverride,
+                materialDocument: material.sourceJSON,
                 materialUserTextures: material.userTextures,
                 overrideOwnerPath: object.imageRelativePath,
                 binds: [:],
@@ -904,11 +958,18 @@ struct WPERenderGraphBuilder: Sendable {
             context.localFBOs.append(contentsOf: asset.fbos)
             let effectDeclaredFBONames = Set(asset.fbos.map(\.name))
             var overrideIndex = 0
-            for effectPass in asset.passes {
+            for (effectPassIndex, effectPass) in asset.passes.enumerated() {
                 let override = overrideIndex < effect.passOverrides.count
                     ? effect.passOverrides[overrideIndex]
                     : nil
                 overrideIndex += 1
+                let effectIdentity = WPERenderEffectPassIdentity(
+                    objectID: object.id,
+                    authoredEffectID: effect.id,
+                    authoredEffectPath: effect.fileRelativePath,
+                    effectPassIndex: effectPassIndex,
+                    authoredOverrideID: override?.id
+                )
 
                 switch effectPass.kind {
                 case .material(let materialPath):
@@ -917,6 +978,10 @@ struct WPERenderGraphBuilder: Sendable {
                         material.passes,
                         phase: .effect(file: effect.fileRelativePath),
                         override: override,
+                        materialDocument: material.sourceJSON,
+                        effectDocument: asset.sourceJSON,
+                        effectPassJSON: effectPass.sourceJSON,
+                        effectIdentity: effectIdentity,
                         materialUserTextures: material.userTextures,
                         overrideOwnerPath: effect.fileRelativePath,
                         overrideDeclaredFBONames: effectDeclaredFBONames,
@@ -940,6 +1005,9 @@ struct WPERenderGraphBuilder: Sendable {
                         [virtualPass],
                         phase: .command(file: effect.fileRelativePath),
                         override: override,
+                        effectDocument: asset.sourceJSON,
+                        effectPassJSON: effectPass.sourceJSON,
+                        effectIdentity: effectIdentity,
                         overrideOwnerPath: effect.fileRelativePath,
                         overrideDeclaredFBONames: effectDeclaredFBONames,
                         binds: effectPass.binds,
@@ -973,6 +1041,10 @@ struct WPERenderGraphBuilder: Sendable {
             parentObjectID: object.parentObjectID,
             attachment: object.attachment,
             animationLayers: object.animationLayers,
+            authoredJSON: WPERenderLayerAuthoredJSON(
+                sceneObjects: authoredSceneObjects,
+                imageDescriptor: model.sourceJSON
+            ),
             geometry: WPERenderLayerGeometry(
                 origin: object.origin + puppetOriginOffset,
                 scale: object.scale,
@@ -1035,7 +1107,8 @@ struct WPERenderGraphBuilder: Sendable {
         return WPEMaterialAsset(
             path: material.path,
             passes: passes,
-            userTextures: material.userTextures
+            userTextures: material.userTextures,
+            sourceJSON: material.sourceJSON
         )
     }
 
@@ -1106,6 +1179,10 @@ struct WPERenderGraphBuilder: Sendable {
         _ passes: [WPEMaterialPass],
         phase: WPERenderPassPhase,
         override: WPESceneEffectPassOverride?,
+        materialDocument: WPESceneJSONValue? = nil,
+        effectDocument: WPESceneJSONValue? = nil,
+        effectPassJSON: WPESceneJSONValue? = nil,
+        effectIdentity: WPERenderEffectPassIdentity? = nil,
         materialUserTextures: [WPESceneUserTextureBinding] = [],
         overrideOwnerPath: String = "",
         overrideDeclaredFBONames: Set<String> = [],
@@ -1140,6 +1217,13 @@ struct WPERenderGraphBuilder: Sendable {
                     pass: materialPass.userTextures,
                     override: override?.userTextures ?? []
                 ),
+                authoredJSON: WPERenderPassAuthoredJSON(
+                    materialDocument: materialDocument,
+                    materialPass: materialPass.sourceJSON,
+                    effectDocument: effectDocument,
+                    effectPass: effectPassJSON,
+                    effectIdentity: effectIdentity
+                ),
                 blending: merged.blending.premultipliedRenderTargetBlendMode,
                 cullMode: merged.cullMode,
                 depthTest: merged.depthTest,
@@ -1163,7 +1247,13 @@ struct WPERenderGraphBuilder: Sendable {
             ? object.materialRelativePath
             : nil
         if Self.builtinSolidLayerDepthTest(forModelPath: object.imageRelativePath) != nil {
-            return WPEModelDescriptor(materialPath: explicitMaterial ?? object.imageRelativePath, puppetPath: nil)
+            let descriptorJSON = (try? readJSONObject(path: object.imageRelativePath))
+                .flatMap(WPESceneJSONValue.init(jsonValue:))
+            return WPEModelDescriptor(
+                materialPath: explicitMaterial ?? object.imageRelativePath,
+                puppetPath: nil,
+                sourceJSON: descriptorJSON
+            )
         }
         let extensionName = (object.imageRelativePath as NSString).pathExtension.lowercased()
         if extensionName == "mdl" {
@@ -1205,7 +1295,8 @@ struct WPERenderGraphBuilder: Sendable {
             puppetPath: puppetPath,
             autosize: dict["autosize"] as? Bool ?? false,
             cropOffset: Self.parseModelCropOffset(dict["cropoffset"]),
-            puppetClipMaskNames: clipMaskNames
+            puppetClipMaskNames: clipMaskNames,
+            sourceJSON: WPESceneJSONValue(jsonValue: dict)
         )
     }
 
@@ -1338,6 +1429,9 @@ struct WPERenderGraphBuilder: Sendable {
 
     private func loadMaterial(path: String) throws -> WPEMaterialAsset {
         let dict = try readJSONObject(path: path)
+        guard let sourceJSON = WPESceneJSONValue(jsonValue: dict) else {
+            throw WPERenderGraphError.invalidJSON(path)
+        }
         guard let rawPasses = dict["passes"] as? [Any] else {
             throw WPERenderGraphError.malformedMaterial(path)
         }
@@ -1348,12 +1442,16 @@ struct WPERenderGraphBuilder: Sendable {
         return WPEMaterialAsset(
             path: path,
             passes: passes,
-            userTextures: parseUserTextureBindings(dict["usertextures"])
+            userTextures: parseUserTextureBindings(dict["usertextures"]),
+            sourceJSON: sourceJSON
         )
     }
 
     private func loadEffect(path: String) throws -> WPEEffectAsset {
         let dict = try readJSONObject(path: path)
+        guard let sourceJSON = WPESceneJSONValue(jsonValue: dict) else {
+            throw WPERenderGraphError.invalidJSON(path)
+        }
         let fbos = ((dict["fbos"] as? [Any]) ?? []).compactMap(parseFBO)
         let declaredFBONames = Set(fbos.map(\.name))
         guard let rawPasses = dict["passes"] as? [Any] else {
@@ -1365,7 +1463,7 @@ struct WPERenderGraphBuilder: Sendable {
         guard !passes.isEmpty else {
             throw WPERenderGraphError.malformedEffect(path)
         }
-        return WPEEffectAsset(path: path, passes: passes, fbos: fbos)
+        return WPEEffectAsset(path: path, passes: passes, fbos: fbos, sourceJSON: sourceJSON)
     }
 
     private func readJSONObject(path: String) throws -> [String: Any] {
@@ -1402,7 +1500,8 @@ struct WPERenderGraphBuilder: Sendable {
             blending: (dict["blending"] as? String) ?? "normal",
             cullMode: (dict["cullmode"] as? String) ?? "nocull",
             depthTest: (dict["depthtest"] as? String) ?? "disabled",
-            depthWrite: (dict["depthwrite"] as? String) ?? "disabled"
+            depthWrite: (dict["depthwrite"] as? String) ?? "disabled",
+            sourceJSON: WPESceneJSONValue(jsonValue: dict)
         )
     }
 
@@ -1422,7 +1521,8 @@ struct WPERenderGraphBuilder: Sendable {
             return WPEEffectPass(
                 kind: .material(inheritDependencyPrefix(material, from: ownerPath)),
                 binds: binds,
-                target: target
+                target: target,
+                sourceJSON: WPESceneJSONValue(jsonValue: dict)
             )
         }
         if let command = dict["command"] as? String, !command.isEmpty {
@@ -1435,7 +1535,8 @@ struct WPERenderGraphBuilder: Sendable {
                     target: target
                 ),
                 binds: binds,
-                target: target
+                target: target,
+                sourceJSON: WPESceneJSONValue(jsonValue: dict)
             )
         }
         return nil
@@ -1708,6 +1809,7 @@ private struct WPEModelDescriptor {
     let autosize: Bool
     let cropOffset: SIMD2<Double>?
     let puppetClipMaskNames: [String]
+    let sourceJSON: WPESceneJSONValue?
     var requiresFinalSceneComposite: Bool { puppetPath != nil && !rendersAsSceneModel }
 
     init(
@@ -1716,7 +1818,8 @@ private struct WPEModelDescriptor {
         rendersAsSceneModel: Bool = false,
         autosize: Bool = false,
         cropOffset: SIMD2<Double>? = nil,
-        puppetClipMaskNames: [String] = []
+        puppetClipMaskNames: [String] = [],
+        sourceJSON: WPESceneJSONValue? = nil
     ) {
         self.materialPath = materialPath
         self.puppetPath = puppetPath
@@ -1724,6 +1827,7 @@ private struct WPEModelDescriptor {
         self.autosize = autosize
         self.cropOffset = cropOffset
         self.puppetClipMaskNames = puppetClipMaskNames
+        self.sourceJSON = sourceJSON
     }
 }
 
@@ -1786,6 +1890,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: geometry,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -1811,6 +1916,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: geometry,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -1836,6 +1942,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: geometry,
             localGeometry: self.localGeometry,
             compositeA: compositeA,
@@ -1861,6 +1968,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: geometry,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -1901,6 +2009,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: newGeometry,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -1926,6 +2035,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: geometry,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -1956,11 +2066,13 @@ private extension WPERenderPass {
             constants: constants,
             combos: combos,
             userTextureBindings: userTextureBindings,
+            authoredJSON: authoredJSON,
             blending: blending,
             cullMode: cullMode,
             depthTest: depthTest,
             depthWrite: depthWrite,
-            constantScripts: constantScripts
+            constantScripts: constantScripts,
+            visibilityGate: visibilityGate
         )
     }
 
@@ -1978,11 +2090,13 @@ private extension WPERenderPass {
             constants: constants,
             combos: combos,
             userTextureBindings: userTextureBindings,
+            authoredJSON: authoredJSON,
             blending: blending,
             cullMode: cullMode,
             depthTest: depthTest,
             depthWrite: depthWrite,
-            constantScripts: constantScripts
+            constantScripts: constantScripts,
+            visibilityGate: visibilityGate
         )
     }
 }
@@ -2077,15 +2191,18 @@ private struct WPEMaterialAsset {
     let path: String
     let passes: [WPEMaterialPass]
     let userTextures: [WPESceneUserTextureBinding]
+    let sourceJSON: WPESceneJSONValue?
 
     init(
         path: String,
         passes: [WPEMaterialPass],
-        userTextures: [WPESceneUserTextureBinding] = []
+        userTextures: [WPESceneUserTextureBinding] = [],
+        sourceJSON: WPESceneJSONValue? = nil
     ) {
         self.path = path
         self.passes = passes
         self.userTextures = userTextures
+        self.sourceJSON = sourceJSON
     }
 
     func initialTextureSource(fallback: WPETextureReference) -> WPETextureReference {
@@ -2097,12 +2214,14 @@ private struct WPEEffectAsset {
     let path: String
     let passes: [WPEEffectPass]
     let fbos: [WPERenderFBO]
+    let sourceJSON: WPESceneJSONValue?
 }
 
 private struct WPEEffectPass {
     let kind: Kind
     let binds: [Int: WPETextureReference]
     let target: String?
+    let sourceJSON: WPESceneJSONValue?
 
     enum Kind {
         case material(String)
@@ -2120,6 +2239,7 @@ private struct WPEMaterialPass {
     let cullMode: String
     let depthTest: String
     let depthWrite: String
+    let sourceJSON: WPESceneJSONValue?
 
     init(
         shader: String,
@@ -2130,7 +2250,8 @@ private struct WPEMaterialPass {
         blending: String,
         cullMode: String,
         depthTest: String,
-        depthWrite: String
+        depthWrite: String,
+        sourceJSON: WPESceneJSONValue? = nil
     ) {
         self.shader = shader
         self.textures = textures
@@ -2141,6 +2262,7 @@ private struct WPEMaterialPass {
         self.cullMode = cullMode
         self.depthTest = depthTest
         self.depthWrite = depthWrite
+        self.sourceJSON = sourceJSON
     }
 
     func merging(
@@ -2162,7 +2284,8 @@ private struct WPEMaterialPass {
             blending: blending,
             cullMode: cullMode,
             depthTest: depthTest,
-            depthWrite: depthWrite
+            depthWrite: depthWrite,
+            sourceJSON: sourceJSON
         )
     }
 
@@ -2176,7 +2299,8 @@ private struct WPEMaterialPass {
             blending: blending,
             cullMode: cullMode,
             depthTest: depthTest,
-            depthWrite: depthWrite
+            depthWrite: depthWrite,
+            sourceJSON: sourceJSON
         )
     }
 }

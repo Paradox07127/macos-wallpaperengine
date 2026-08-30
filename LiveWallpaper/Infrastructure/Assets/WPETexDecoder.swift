@@ -254,11 +254,18 @@ struct WPETexDecoder: Sendable {
                 : min(descriptor.fallbackIndex, max(parsed.bitmap.frames.count - 1, 0))
             let frameTime = frameInfo?.frameTime ?? 0
             let duration = frameTime > 0 ? frameTime : defaultDuration
+            let frameMipmaps = try mipmaps(for: sourceIndex)
+            let sourceWidth = frameMipmaps.first?.width ?? info.width
+            let sourceHeight = frameMipmaps.first?.height ?? info.height
             return WPETexAnimationFrame(
                 imageID: sourceIndex,
                 duration: duration,
-                mipmaps: try mipmaps(for: sourceIndex),
-                subRect: frameInfo?.subRect(textureWidth: info.width, textureHeight: info.height)
+                mipmaps: frameMipmaps,
+                subRect: frameInfo?.subRect(textureWidth: sourceWidth, textureHeight: sourceHeight),
+                samplingDescriptor: frameInfo?.samplingDescriptor(
+                    textureWidth: sourceWidth,
+                    textureHeight: sourceHeight
+                )
             )
         }
 
@@ -348,10 +355,18 @@ struct WPETexDecoder: Sendable {
                     ? frameInfo.imageID
                     : min(offset, max(parsed.bitmap.frames.count - 1, 0))
                 let duration = frameInfo.frameTime > 0 ? frameInfo.frameTime : defaultDuration
+                let sourceImage = compressedImages[imageID]
                 return WPETexStreamingFrame(
                     imageID: imageID,
-                    subRect: frameInfo.subRect(textureWidth: info.width, textureHeight: info.height),
-                    duration: duration
+                    subRect: frameInfo.subRect(
+                        textureWidth: sourceImage.width,
+                        textureHeight: sourceImage.height
+                    ),
+                    duration: duration,
+                    samplingDescriptor: frameInfo.samplingDescriptor(
+                        textureWidth: sourceImage.width,
+                        textureHeight: sourceImage.height
+                    )
                 )
             }
         }
@@ -405,6 +420,30 @@ struct WPETexDecoder: Sendable {
             let clampedW = min(max(rawW, 1), maxW - originX)
             let clampedH = min(max(rawH, 1), maxH - originY)
             return CGRect(x: originX, y: originY, width: clampedW, height: clampedH)
+        }
+
+        /// catsout 476347b2 `WPTexImageParser.cpp`: translation is normalized
+        /// by source width/height; both x-axis lanes divide by width and both
+        /// y-axis lanes divide by height. `WPShaderValueUpdater.cpp` publishes
+        /// the lanes in xAxis.xy, yAxis.xy order.
+        func samplingDescriptor(
+            textureWidth: Int,
+            textureHeight: Int
+        ) -> WPETexSpriteSamplingDescriptor {
+            let normalizedWidth = Float(max(textureWidth, 1))
+            let normalizedHeight = Float(max(textureHeight, 1))
+            return WPETexSpriteSamplingDescriptor(
+                rotation: SIMD4<Float>(
+                    width / normalizedWidth,
+                    widthY / normalizedWidth,
+                    heightX / normalizedHeight,
+                    height / normalizedHeight
+                ),
+                translation: SIMD2<Float>(
+                    x / normalizedWidth,
+                    y / normalizedHeight
+                )
+            )
         }
     }
 
@@ -893,7 +932,11 @@ struct WPETexDecoder: Sendable {
                 imageID: requestedID,
                 duration: duration,
                 mipmaps: [mip],
-                subRect: subRect
+                subRect: subRect,
+                samplingDescriptor: descriptor.frameInfo?.samplingDescriptor(
+                    textureWidth: mip.width,
+                    textureHeight: mip.height
+                )
             )
         }
 

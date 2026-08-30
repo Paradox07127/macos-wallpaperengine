@@ -29,6 +29,25 @@ struct WPEMdlParserAttachmentBoundsTests {
         #expect(model.attachments.isEmpty)
     }
 
+    @Test("Preserves complete MDL bytes and generic bone simulation JSON")
+    func preservesAuthoredMDLAndBoneSimulationJSON() throws {
+        let simulationJSON = #"{"enabled":true,"mass":2.5,"unset":null,"rules":[{"name":"first"},0,false]}"#
+        var data = singleTriangleMDLV23()
+        data.append(singleBoneMDLSV4(simulationJSON: simulationJSON, absoluteStart: data.count))
+
+        let model = try WPEMdlParser.parse(data: data)
+
+        #expect(model.authoredData == data)
+        #expect(model.bones.count == 1)
+        #expect(model.bones[0].simulationJSON == simulationJSON)
+        #expect(model.bones[0].simulationJSONValue?["enabled"] == .bool(true))
+        #expect(model.bones[0].simulationJSONValue?["mass"] == .number(2.5))
+        #expect(model.bones[0].simulationJSONValue?["unset"] == .null)
+        #expect(model.bones[0].simulationJSONValue?["rules"]?[0]?["name"] == .string("first"))
+        #expect(model.bones[0].simulationJSONValue?["rules"]?[1] == .number(0))
+        #expect(model.bones[0].simulationJSONValue?["rules"]?[2] == .bool(false))
+    }
+
     /// Minimal MDLV0023 single-triangle puppet (no skeleton). Byte-for-byte the
     /// known-good mesh fixture; the parser reaches attachment parsing after it.
     private func singleTriangleMDLV23() -> Data {
@@ -65,6 +84,36 @@ struct WPEMdlParserAttachmentBoundsTests {
         data.appendLE(UInt32(3))
 
         return data
+    }
+
+    private func singleBoneMDLSV4(simulationJSON: String, absoluteStart: Int) -> Data {
+        var section = Data()
+        section.append(contentsOf: Array("MDLS0004".utf8))
+        section.append(UInt8(0))
+        let endOffsetField = section.count
+        section.appendLE(UInt32(0))
+        section.appendLE(UInt16(1))
+        section.appendLE(UInt16(0))
+
+        section.appendCString("root")
+        section.appendLE(UInt32(1)) // simulationType as little-endian Int32
+        section.appendLE(UInt32.max) // no parent
+        section.appendLE(UInt32(16 * MemoryLayout<Float>.size))
+        for value in [
+            Float(1), 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1,
+        ] {
+            section.appendLE(value)
+        }
+        section.appendCString(simulationJSON)
+
+        var absoluteEnd = UInt32(absoluteStart + section.count).littleEndian
+        Swift.withUnsafeBytes(of: &absoluteEnd) {
+            section.replaceSubrange(endOffsetField..<(endOffsetField + MemoryLayout<UInt32>.size), with: $0)
+        }
+        return section
     }
 }
 

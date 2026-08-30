@@ -3,9 +3,10 @@ import Foundation
 import LiveWallpaperProWPE
 import simd
 
-/// Per-object (per-layer) transform uniforms for WPE 2.8 model shaders. Unlike the
-/// per-frame `WPEMetalRuntimeUniforms`, `g_ModelMatrix`/`g_NormalModelMatrix` are
-/// object-scoped, merged per layer in
+/// Per-object (per-layer) transform uniforms for WPE 2.8 model shaders.
+///
+/// Model, inverse-model, layer-model, and normal matrices are *object*-scoped,
+/// so unlike the per-frame `WPEMetalRuntimeUniforms` they are merged per layer in
 /// `WPEPreparedRenderPipeline.addingMetalRuntimeUniforms`.
 ///
 /// 2.8's `generic4`/`chroma4`/`foliage4`/`fur4` vertex shaders switched from
@@ -16,18 +17,59 @@ import simd
 /// zero-cost for existing 2D/orthographic scenes.
 enum WPEMetalObjectUniforms {
 
-    /// `g_ModelMatrix` (16, column-major) + `g_NormalModelMatrix` (9, column-major).
+    static let modelViewProjectionMatrixUniformName = "g_ModelViewProjectionMatrix"
+    static let modelViewProjectionMatrixInverseUniformName = "g_ModelViewProjectionMatrixInverse"
+
+    /// Camera/object counterparts are resolved by `WPEFrameUniformContext`,
+    /// where both the pass-scoped model matrix and current camera VP are
+    /// available. Keeping these names here makes the producer the ABI source of
+    /// truth without baking a camera snapshot into the cross-frame object cache.
+    static let cameraComposedUniformNames = [
+        modelViewProjectionMatrixUniformName,
+        modelViewProjectionMatrixInverseUniformName
+    ]
+
+    /// Object/layer matrices are 16-value column-major arrays;
+    /// `g_NormalModelMatrix` is a 9-value column-major array.
     static func uniformValues(
         origin: SIMD3<Double>,
         scale: SIMD3<Double>,
         angles: SIMD3<Double>
     ) -> [String: WPESceneShaderConstantValue] {
         let model = modelMatrix(origin: origin, scale: scale, angles: angles)
+        let modelInverse = safeInverse(model)
         let normal = normalMatrix(from: model)
         return [
             "g_ModelMatrix": .vector(flattenedColumnMajor(model)),
+            "g_ModelMatrixInverse": .vector(flattenedColumnMajor(modelInverse)),
+            // Official docs define this as the layer object's local↔world
+            // matrix. This producer's input is exactly that layer geometry.
+            "g_LayerModelMatrix": .vector(flattenedColumnMajor(model)),
             "g_NormalModelMatrix": .vector(flattenedColumnMajor(normal))
         ]
+    }
+
+    /// Strict column-vector counterpart of the existing producers: `VP · M`.
+    /// This is the same multiplication order used by the scene-model Metal
+    /// vertex path. The inverse name gets the mathematical inverse of that
+    /// product, with the same finite identity fallback as other inverse ABIs.
+    static func cameraComposedValue(
+        named name: String,
+        modelValue: WPESceneShaderConstantValue,
+        viewProjectionValue: WPESceneShaderConstantValue
+    ) -> WPESceneShaderConstantValue? {
+        guard cameraComposedUniformNames.contains(name),
+              let modelValues = modelValue.vectorValue,
+              let viewProjectionValues = viewProjectionValue.vectorValue,
+              let model = matrix4x4(fromColumnMajor: modelValues),
+              let viewProjection = matrix4x4(fromColumnMajor: viewProjectionValues) else {
+            return nil
+        }
+        let modelViewProjection = viewProjection * model
+        let value = name == modelViewProjectionMatrixInverseUniformName
+            ? safeInverse(modelViewProjection)
+            : modelViewProjection
+        return .vector(flattenedColumnMajor(value))
     }
 
     /// `M = T(origin) · Rz(angles.z) · Ry(angles.y) · Rx(angles.x) · S(scale)`.
@@ -53,6 +95,31 @@ enum WPEMetalObjectUniforms {
             return matrix_identity_double3x3
         }
         return upper.inverse.transpose
+    }
+
+    /// A singular matrix has no inverse. Identity is the finite fail-closed
+    /// value already used by the normal-matrix producer; malformed/non-finite
+    /// inverse results take the same path.
+    static func safeInverse(_ matrix: simd_double4x4) -> simd_double4x4 {
+        let determinant = simd_determinant(matrix)
+        guard determinant.isFinite, determinant != 0 else {
+            return matrix_identity_double4x4
+        }
+        let inverse = matrix.inverse
+        guard flattenedColumnMajor(inverse).allSatisfy(\.isFinite) else {
+            return matrix_identity_double4x4
+        }
+        return inverse
+    }
+
+    static func matrix4x4(fromColumnMajor values: [Double]) -> simd_double4x4? {
+        guard values.count == 16, values.allSatisfy(\.isFinite) else { return nil }
+        return simd_double4x4(
+            SIMD4(values[0], values[1], values[2], values[3]),
+            SIMD4(values[4], values[5], values[6], values[7]),
+            SIMD4(values[8], values[9], values[10], values[11]),
+            SIMD4(values[12], values[13], values[14], values[15])
+        )
     }
 
     static func flattenedColumnMajor(_ m: simd_double4x4) -> [Double] {

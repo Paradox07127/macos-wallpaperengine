@@ -8,7 +8,8 @@ import LiveWallpaperProWPE
 struct WPEFrameUniformContext: Sendable {
     let runtimeUniformValues: [String: WPESceneShaderConstantValue]
     let cameraUniformValues: [String: WPESceneShaderConstantValue]
-    /// `g_ModelMatrix`/`g_NormalModelMatrix` per prepared-pass id.
+    /// Direct object/layer matrices per prepared-pass id. Camera-composed MVP
+    /// counterparts are resolved from this map plus `cameraUniformValues`.
     let objectUniformValuesByPassID: [String: [String: WPESceneShaderConstantValue]]
 
     static let empty = WPEFrameUniformContext(
@@ -25,6 +26,16 @@ struct WPEFrameUniformContext: Sendable {
     /// All three key sets are disjoint.
     func value(named name: String, passID: String) -> WPESceneShaderConstantValue? {
         if let value = objectUniformValuesByPassID[passID]?[name] { return value }
+        if WPEMetalObjectUniforms.cameraComposedUniformNames.contains(name),
+           let model = objectUniformValuesByPassID[passID]?["g_ModelMatrix"],
+           let viewProjection = cameraUniformValues["g_ViewProjectionMatrix"],
+           let value = WPEMetalObjectUniforms.cameraComposedValue(
+               named: name,
+               modelValue: model,
+               viewProjectionValue: viewProjection
+           ) {
+            return value
+        }
         return frameValue(named: name)
     }
 
@@ -60,6 +71,7 @@ struct WPEFrameUniformContext: Sendable {
                 scale: SIMD3<Double>(1, 1, 1),
                 angles: SIMD3<Double>(0, 0, 0)
             ).keys)
+            + WPEMetalObjectUniforms.cameraComposedUniformNames
     }()
 }
 #endif

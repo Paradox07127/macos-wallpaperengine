@@ -577,7 +577,11 @@ private struct WPEShaderSourceLoader: Sendable {
             // copy; the isGenericImageShader OR-branch stays for strict
             // equivalence even though normalized() already folds those.
             if normalized.hasPrefix("effect_") {
-                return copyProgram(shaderName: shaderName, combos: combos)
+                return copyProgram(
+                    shaderName: shaderName,
+                    combos: combos,
+                    executionClassification: .copyFallback
+                )
             }
             guard WPEBuiltinShaderName.isGenericImageShader(shaderName) else {
                 return nil
@@ -592,7 +596,8 @@ private struct WPEShaderSourceLoader: Sendable {
         shaderName: String,
         combos: [String: Int],
         vertex: String,
-        fragment: String
+        fragment: String,
+        executionClassification: WPEShaderExecutionClassification = .nativeApproximation
     ) -> WPEShaderProgram {
         WPEShaderProgram(
             name: shaderName,
@@ -601,7 +606,8 @@ private struct WPEShaderSourceLoader: Sendable {
                 of: "gl_FragColor",
                 with: "out_FragColor"
             ),
-            isBuiltin: true
+            isBuiltin: true,
+            executionClassification: executionClassification
         )
     }
 
@@ -705,7 +711,11 @@ private struct WPEShaderSourceLoader: Sendable {
         )
     }
 
-    private func copyProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
+    private func copyProgram(
+        shaderName: String,
+        combos: [String: Int],
+        executionClassification: WPEShaderExecutionClassification = .nativeApproximation
+    ) -> WPEShaderProgram {
         makeBuiltinProgram(
             shaderName: shaderName,
             combos: combos,
@@ -717,7 +727,8 @@ private struct WPEShaderSourceLoader: Sendable {
             void main() {
                 gl_FragColor = texSample2D(g_Texture0, v_TexCoord);
             }
-            """
+            """,
+            executionClassification: executionClassification
         )
     }
 
