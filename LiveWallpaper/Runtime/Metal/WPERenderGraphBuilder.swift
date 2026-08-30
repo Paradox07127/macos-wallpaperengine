@@ -1486,16 +1486,18 @@ struct WPERenderGraphBuilder: Sendable {
         return result
     }
 
+    /// The array index is the overridden texture slot, so the `null` holes must be
+    /// counted, not compacted away.
     private func parseUserTextureBindings(_ raw: Any?) -> [WPESceneUserTextureBinding] {
-        (raw as? [Any] ?? []).compactMap { raw in
+        (raw as? [Any] ?? []).enumerated().compactMap { slot, raw in
             if let name = raw as? String, !name.isEmpty {
-                return WPESceneUserTextureBinding(name: name)
+                return WPESceneUserTextureBinding(name: name, slot: slot)
             }
             guard let entry = raw as? [String: Any],
                   let name = entry["name"] as? String,
                   !name.isEmpty else { return nil }
             let type = (entry["type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            return WPESceneUserTextureBinding(name: name, type: type)
+            return WPESceneUserTextureBinding(name: name, type: type, slot: slot)
         }
     }
 

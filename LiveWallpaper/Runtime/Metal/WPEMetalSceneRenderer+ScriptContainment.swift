@@ -70,19 +70,8 @@
             sharedScaleReadFans = [:]
             sharedAnglesReadFans = [:]
             sharedColorReadFans = [:]
-            transformHostLocalTransformsByID = Dictionary(
-                document.transformHostObjects.map { object in
-                    (
-                        object.id,
-                        WPERenderObjectTransform(
-                            origin: object.localOrigin,
-                            scale: object.localScale,
-                            angles: object.localAngles
-                        )
-                    )
-                },
-                uniquingKeysWith: { first, _ in first }
-            )
+            transformHostLocalTransformsByID = Self.transformHostLocalTransforms(in: document)
+            layerAncestorLocalTransformsByID = Self.ancestorLocalTransforms(in: document)
             let originScripts = document.imageObjects.compactMap { object -> (String, WPESceneTransformScript)? in
                 object.originScript.map { (object.id, $0) }
             } + document.transformHostObjects.compactMap { object -> (String, WPESceneTransformScript)? in
@@ -168,6 +157,7 @@
                                 seed: script.seed,
                                 canvasSize: canvasSize,
                                 ownLayerName: layerNameByID[objectID],
+                                ownObjectID: objectID,
                                 shared: sharedState,
                                 batchDispatcher: self.sceneScriptBatchDispatcher
                             )
@@ -190,12 +180,10 @@
             )
         }
 
-        /// Builds one script instance per shader constant a scene binds a script
-        /// to. Keyed by render-pass id + uniform, so the per-frame tick can hand
-        /// the executor a `[passID: [uniform: value]]` map with no further lookup.
-        ///
-        /// Separate from `loadDynamicOriginScripts` because these live on the
-        /// PIPELINE (built after the document), not on the document's objects.
+        /// Builds one script instance per shader constant a scene binds a script to. Keyed
+        /// by render-pass id + uniform, so the per-frame tick can hand the executor a
+        /// `[passID: [uniform: value]]` map with no further lookup. Separate from
+        /// `loadDynamicOriginScripts` because these live on the PIPELINE (built after the document), not the document's objects.
         func loadEffectConstantScripts(
             from pipeline: WPEPreparedRenderPipeline,
             document: WPESceneDocument,
@@ -321,20 +309,65 @@
             }
         }
 
-        /// Constant scripts on objects the render graph dropped (authored
-        /// `visible: false`).
+        /// Local transforms of the non-drawn group nodes. Particle host offsets read
+        /// this map, so it stays exactly the transform-host set.
+        nonisolated static func transformHostLocalTransforms(
+            in document: WPESceneDocument
+        ) -> [String: WPERenderObjectTransform] {
+            Dictionary(
+                document.transformHostObjects.map { object in
+                    (
+                        object.id,
+                        WPERenderObjectTransform(
+                            origin: object.localOrigin,
+                            scale: object.localScale,
+                            angles: object.localAngles
+                        )
+                    )
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
+
+        /// Every node the per-frame parent walk in `applyingLayerTransforms` can pass
+        /// through. Layers present in the pipeline supply their own `localGeometry` and
+        /// take precedence; this only has to cover the nodes that never became layers.
         ///
-        /// A script is scene semantics, not a rendering concern: WPE keeps a
-        /// hidden object alive and keeps ticking it, and authors rely on that.
-        /// 3151551777 computes its whole day/night cycle on a deliberately
-        /// invisible layer ("DAY-NIGHT") and has ten VISIBLE layers read the
-        /// result out of `shared` — collecting bindings from the pipeline alone
-        /// meant the producer never registered, so every consumer read an unset
-        /// key and the LUT strength stayed 0 forever.
+        /// Image objects are in here because `WPERenderGraphBuilder.compositesToScene`
+        /// keeps an alpha-0 container out of the graph while WPE still composes its
+        /// children through it — and a parent the walk cannot resolve made it fall back
+        /// to the child's LOCAL transform, dropping the whole ancestor chain. Scene
+        /// 3326873240's media panel hangs off object 131 (alpha 0, scale 0.4) and landed
+        /// at the scene origin at 2.5x size.
+        nonisolated static func ancestorLocalTransforms(
+            in document: WPESceneDocument
+        ) -> [String: WPERenderObjectTransform] {
+            var result = Dictionary(
+                document.imageObjects.map { object in
+                    (
+                        object.id,
+                        WPERenderObjectTransform(
+                            origin: object.localOrigin,
+                            scale: object.localScale,
+                            angles: object.localAngles
+                        )
+                    )
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+            result.merge(transformHostLocalTransforms(in: document)) { _, host in host }
+            return result
+        }
+
+        /// Constant scripts on objects the render graph dropped (authored `visible: false`).
+        /// A script is scene semantics, not a rendering concern: WPE keeps a hidden object
+        /// ticking, and authors rely on it — scene 3151551777 computes its day/night cycle on
+        /// an invisible "DAY-NIGHT" layer and has ten visible layers read the result out of
+        /// `shared`; collecting bindings from the pipeline alone meant the producer never
+        /// registered, so every consumer read an unset key and the LUT strength stayed 0.
         ///
-        /// These carry a synthetic pass id that matches no real pass: the value
-        /// goes nowhere by design, only the script's `shared` writes matter. No
-        /// render resource is allocated for the hidden object.
+        /// These carry a synthetic pass id matching no real pass — only the script's `shared`
+        /// writes matter, no render resource is allocated for the hidden object.
         nonisolated static func offscreenConstantScriptBindings(
             in document: WPESceneDocument,
             excludingObjectIDs drawn: Set<String>
@@ -369,6 +402,19 @@
 
         func clearSceneScriptRuntimeState() {
             invalidateIntroPhaseAlign()
+            // A leaked subscription outlives the wallpaper: the monitor holds the
+            // handler, which holds this scene's mailbox, and every track change
+            // keeps posting into a scene nobody renders any more.
+            if let dispatcher = mediaEventDispatcher {
+                mediaEventDispatcher = nil
+                Task { @MainActor in dispatcher.stop() }
+            }
+            mediaEventMailbox = nil
+            if let subscription = mediaTextureSubscription {
+                mediaTextureSubscription = nil
+                Task { @MainActor in subscription.stop() }
+            }
+            executor.mediaTextureStore = nil
             textScriptInstances.removeAll(keepingCapacity: false)
             layerScriptInstances.removeAll(keepingCapacity: false)
             layerTransformMutationJournal.removeAll()

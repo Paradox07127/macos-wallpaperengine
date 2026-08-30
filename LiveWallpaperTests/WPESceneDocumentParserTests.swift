@@ -743,13 +743,15 @@ struct WPESceneDocumentParserTests {
         #expect(instance.id == 820)
         #expect(instance.combos == ["version": 2, "USE_MASK": 1])
         #expect(instance.textures == [0: "util/white", 2: "masks/cover"])
+        // Array position is the overridden texture slot, so `$mediaThumbnail`
+        // here overrides slot 1, not slot 0.
         #expect(instance.userTextures == [
-            WPESceneUserTextureBinding(name: "$legacyProperty"),
-            WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system")
+            WPESceneUserTextureBinding(name: "$legacyProperty", slot: 0),
+            WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system", slot: 1)
         ])
         #expect(document.imageObjects.first?.solid == true)
         #expect(document.imageObjects.first?.effects.first?.passOverrides.first?.userTextures == [
-            WPESceneUserTextureBinding(name: "$effectMask", type: "usershortcut")
+            WPESceneUserTextureBinding(name: "$effectMask", type: "usershortcut", slot: 0)
         ])
         #expect(document.diagnostics.contains { $0.message.contains("dynamic instance user textures") })
     }

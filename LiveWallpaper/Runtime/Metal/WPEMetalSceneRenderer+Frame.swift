@@ -125,7 +125,7 @@ extension WPEMetalSceneRenderer {
                     scales: liveTransforms.scales,
                     angles: liveTransforms.angles,
                     parentByID: objectParentByID,
-                    hostTransforms: transformHostLocalTransformsByID
+                    hostTransforms: layerAncestorLocalTransformsByID
                 )
         }
         // Hover hit-testing AFTER live transforms: the pads follow the moving
@@ -137,6 +137,9 @@ extension WPEMetalSceneRenderer {
             pointerFrame: frameContext.layerScriptPointerFrame,
             runtimeSeconds: uniforms.time
         )
+        // Before the text tick: a `mediaPropertiesChanged` that landed since the
+        // last frame should reach `update()` on THIS frame, not the next one.
+        drainMediaEvents(runtimeSeconds: uniforms.time)
         tickEffectConstantScripts(pointer: frameContext.pointer, time: uniforms.time)
         tickEffectVisibilityScripts(pointer: frameContext.pointer, time: uniforms.time)
         drainScriptSoundCommands()
@@ -308,12 +311,10 @@ extension WPEMetalSceneRenderer {
                 textPayloads: textFrame.payloads,
                 frameSubmission: frameSubmission,
                 frameProduction: frameProduction,
-                // `presetSnapshot`, not the layered map: the layered map also
-                // carries `propertyOverrides`, which is whatever the user moved
-                // in the settings card. A wallpaper is free to declare its own
-                // property named `volume` or `wec_e` — the repo's own fixture
-                // declares `volume` — and reading the merged map would let an
-                // author's slider drive an engine setting.
+                // `presetSnapshot`, not the layered map: the layered map also carries
+                // `propertyOverrides`, whatever the user moved in the settings card. A
+                // wallpaper is free to declare its own property named `volume` or `wec_e`
+                // (the repo's own fixture declares `volume`) — reading the merged map would let an author's slider drive an engine setting.
                 colorCorrection: WPEEngineColorCorrection.parse(
                     descriptor.presetSnapshot
                 ) ?? .neutral,

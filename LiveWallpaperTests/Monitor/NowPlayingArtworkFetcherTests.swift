@@ -108,6 +108,12 @@ private func musicState() -> MonitorNowPlayingState {
     return state
 }
 
+/// Pins "no Automation consent". The fetcher's default provider asks the real
+/// `NowPlayingController`, so on a machine where Spotify is running and consent
+/// was granted it answers a live cover URL — which is allow-listed, downloads
+/// fine, and short-circuits the oEmbed path these tests exist to exercise.
+private let noPlayerArtworkURL: NowPlayingArtworkFetcher.ArtworkURLProvider = { _ in nil }
+
 @MainActor
 private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
@@ -260,16 +266,19 @@ struct NowPlayingArtworkFetcherTests {
         let counter = RequestCounter()
         let gate = Gate()
         let image = Data(repeating: 7, count: 64)
-        let fetcher = NowPlayingArtworkFetcher(transport: { request in
-            let url = request.url!.absoluteString
-            if url.contains("oembed") {
-                counter.bump("oembed")
-                await gate.wait()
-                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
-            }
-            counter.bump("image")
-            return okImage(request, image)
-        })
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                let url = request.url!.absoluteString
+                if url.contains("oembed") {
+                    counter.bump("oembed")
+                    await gate.wait()
+                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
+                }
+                counter.bump("image")
+                return okImage(request, image)
+            },
+            artworkURLProvider: noPlayerArtworkURL
+        )
 
         async let first = fetcher.artwork(for: spotifyState())
         async let second = fetcher.artwork(for: spotifyState())
@@ -291,6 +300,7 @@ struct NowPlayingArtworkFetcherTests {
                 counter.bump("any")
                 throw URLError(.notConnectedToInternet)
             },
+            artworkURLProvider: noPlayerArtworkURL,
             now: { clock.now }
         )
 
@@ -310,15 +320,18 @@ struct NowPlayingArtworkFetcherTests {
     func oversizeImageAbandoned() async {
         let counter = RequestCounter()
         let oversize = Data(count: NowPlayingArtworkFetcher.maxImageBytes + 1)
-        let fetcher = NowPlayingArtworkFetcher(transport: { request in
-            let url = request.url!.absoluteString
-            if url.contains("oembed") {
-                counter.bump("oembed")
-                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/big"))
-            }
-            counter.bump("image")
-            return okImage(request, oversize)
-        })
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                let url = request.url!.absoluteString
+                if url.contains("oembed") {
+                    counter.bump("oembed")
+                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/big"))
+                }
+                counter.bump("image")
+                return okImage(request, oversize)
+            },
+            artworkURLProvider: noPlayerArtworkURL
+        )
 
         #expect(await fetcher.artwork(for: spotifyState()) == nil)
         #expect(counter.count("image") == 1)
@@ -367,17 +380,20 @@ struct NowPlayingArtworkFetcherTests {
         let artB = Data(repeating: 0xB, count: 8)
         let idA = "spotify:track:AAAAAAAAAAAAAAAAAAAAAA"
         let idB = "spotify:track:BBBBBBBBBBBBBBBBBBBBBB"
-        let fetcher = NowPlayingArtworkFetcher(transport: { request in
-            let url = request.url!.absoluteString
-            if url.contains("oembed") {
-                if url.contains("AAAAAAAAAAAAAAAAAAAAAA") {
-                    await gate.wait()
-                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/A"))
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                let url = request.url!.absoluteString
+                if url.contains("oembed") {
+                    if url.contains("AAAAAAAAAAAAAAAAAAAAAA") {
+                        await gate.wait()
+                        return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/A"))
+                    }
+                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/B"))
                 }
-                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/B"))
-            }
-            return okImage(request, url.hasSuffix("/A") ? artA : artB)
-        })
+                return okImage(request, url.hasSuffix("/A") ? artA : artB)
+            },
+            artworkURLProvider: noPlayerArtworkURL
+        )
 
         let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] })
         let sink = RecordingNowPlayingSink()
@@ -407,14 +423,17 @@ struct NowPlayingArtworkFetcherTests {
     @Test("a fetch completing after stop publishes nothing")
     func fetchAfterStopPublishesNothing() async {
         let gate = Gate()
-        let fetcher = NowPlayingArtworkFetcher(transport: { request in
-            let url = request.url!.absoluteString
-            if url.contains("oembed") {
-                await gate.wait()
-                return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
-            }
-            return okImage(request, Data(repeating: 9, count: 8))
-        })
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                let url = request.url!.absoluteString
+                if url.contains("oembed") {
+                    await gate.wait()
+                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
+                }
+                return okImage(request, Data(repeating: 9, count: 8))
+            },
+            artworkURLProvider: noPlayerArtworkURL
+        )
 
         let monitor = NowPlayingMonitor(registersObservers: false, runningBundleIDs: { [] })
         let sink = RecordingNowPlayingSink()
@@ -466,15 +485,18 @@ struct NowPlayingArtworkFetcherTests {
     @Test("A thumbnail URL pointing off the CDN list is never requested")
     func offListThumbnailIsNotDownloaded() async {
         let counter = RequestCounter()
-        let fetcher = NowPlayingArtworkFetcher(transport: { request in
-            let url = request.url!.absoluteString
-            if url.contains("oembed") {
-                counter.bump("oembed")
-                return ok(request, oembedJSON(thumbnail: "https://attacker.example/cover.jpg"))
-            }
-            counter.bump("image")
-            return okImage(request, Data([1, 2, 3]))
-        })
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                let url = request.url!.absoluteString
+                if url.contains("oembed") {
+                    counter.bump("oembed")
+                    return ok(request, oembedJSON(thumbnail: "https://attacker.example/cover.jpg"))
+                }
+                counter.bump("image")
+                return okImage(request, Data([1, 2, 3]))
+            },
+            artworkURLProvider: noPlayerArtworkURL
+        )
 
         #expect(await fetcher.artwork(for: spotifyState()) == nil)
         #expect(counter.count("oembed") == 1)

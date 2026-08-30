@@ -80,12 +80,10 @@ public struct WPESceneTransformHostObject: Equatable, Sendable, Identifiable {
     public let originScript: WPESceneTransformScript?
     public let scaleScript: WPESceneTransformScript?
     public let anglesScript: WPESceneTransformScript?
-    /// Camera-parallax depth authored ON THE GROUP. WPE moves a parented
-    /// subtree rigidly by its topmost ancestor's depth, and that ancestor is
-    /// usually a group — 3448877775's clock/date/weekday assembly rides its
-    /// group's "-0.408" while the leaf texts author -0.7 / 0 / 1.0, all of
-    /// which the Windows captures prove are ignored. Dropping the field here
-    /// severed that chain.
+    /// Camera-parallax depth authored ON THE GROUP. WPE moves a parented subtree rigidly by its
+    /// topmost ancestor's depth, and that ancestor is usually a group — 3448877775's clock/date/
+    /// weekday assembly rides its group's "-0.408" while the leaf texts author -0.7 / 0 / 1.0, all of
+    /// which the Windows captures prove are ignored. Dropping the field here severed that chain.
     public let parallaxDepth: SIMD2<Double>
 
     public init(
@@ -144,14 +142,11 @@ public struct WPESceneScriptHostObject: Equatable, Sendable, Identifiable {
     }
 }
 
-/// `action` decides whether changing the property can be patched in place
-/// (`.incremental`) or requires a full pipeline reload (`.reload`).
-///
-/// `condition` carries the expected literal for *condition-form* bindings —
-/// `{"user":{"name":K,"condition":"2"},"value":...}` (WPE style selectors).
-/// When non-nil the target is visible only while `userValues[propertyKey]`
-/// matches `condition`; when nil the property drives the target directly
-/// (simple `{"user":K,"value":...}` form).
+/// `action` decides whether changing the property can be patched in place (`.incremental`) or
+/// requires a full pipeline reload (`.reload`). `condition` carries the expected literal for
+/// *condition-form* bindings — `{"user":{"name":K,"condition":"2"},"value":...}` (WPE style
+/// selectors): when non-nil the target is visible only while `userValues[propertyKey]` matches
+/// `condition`; when nil the property drives the target directly (simple `{"user":K,"value":...}` form).
 public struct WPEScenePropertyBinding: Equatable, Sendable {
     public let propertyKey: String
     public let target: WPEScenePropertyBindingTarget
@@ -576,18 +571,15 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
     /// axis scales independently, so "1 0" parallaxes horizontally only and
     /// "0 1" vertically only. `.zero` pins the layer (no parallax).
     public let parallaxDepth: SIMD2<Double>
-    /// WPE's `size`: the text FBO dimensions the EDITOR last measured, written
-    /// back into scene.json — layout OUTPUT, not input, and stale the moment a
-    /// scripted clock/date changes length. **Nothing in the render path may read
-    /// it** (glyphs are laid out at pointsize×300/72 anchored on `origin`; see
-    /// `WPETextLayoutEngine`). Kept only because SceneScript's `layer.size`
-    /// reports it.
+    /// WPE's `size`: the text FBO dimensions the EDITOR last measured, written back into scene.json
+    /// — layout OUTPUT, not input, and stale the moment a scripted clock/date changes length.
+    /// **Nothing in the render path may read it** (glyphs are laid out at pointsize×300/72 anchored
+    /// on `origin`; see `WPETextLayoutEngine`). Kept only because SceneScript's `layer.size` reports it.
     public let boxSize: SIMD2<Double>?
-    /// Transparent margin (scene pixels) the runtime adds AROUND the glyph
-    /// block when rendering text effects into an intermediate target (official
-    /// docs: "increases the geometry around the font characters"). It does NOT
-    /// shift the text anchor; the authored `size` box is an editor artifact and
-    /// is deliberately not parsed (oracle-verified, memory wpe-text-windows-model).
+    /// Transparent margin (scene pixels) the runtime adds AROUND the glyph block when rendering text
+    /// effects into an intermediate target (official docs: "increases the geometry around the font
+    /// characters"). It does NOT shift the text anchor; the authored `size` box is an editor artifact
+    /// and is deliberately not parsed (oracle-verified, memory wpe-text-windows-model).
     public let padding: Double
     /// Copies the scene region behind the text into the offscreen surface before
     /// glyph drawing. This is also an offscreen-rendering discriminator in WPE.
@@ -839,13 +831,12 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     /// the static seed, so a scene that ramps its particles in over a loop
     /// (3448877775's star field: 0.01 → 1.0) sat at full brightness without this.
     public let alphaAnimation: WPESceneAnimatedValue?
-    /// `controlpointN`: per-instance replacement for the particle definition's own
-    /// control-point offsets, keyed by N. One particle file is reused across
-    /// objects and each object moves the control points from here. Dropping them
-    /// left `controlpointattract` pulling toward the emitter itself (an authored
-    /// control point with no `offset` defaults to 0,0,0), which pins the whole
-    /// system in place — scene 3596044309's two `31.json` instances sit in a
-    /// ~15px clump because of it, with attract `scale` 1000 against a ~223 gravity.
+    /// `controlpointN`: per-instance replacement for the particle definition's own control-point
+    /// offsets, keyed by N. One particle file is reused across objects and each object moves the
+    /// control points from here. Dropping them left `controlpointattract` pulling toward the emitter
+    /// itself (an authored control point with no `offset` defaults to 0,0,0), which pins the whole
+    /// system in place — scene 3596044309's two `31.json` instances sit in a ~15px clump because of
+    /// it, with attract `scale` 1000 against a ~223 gravity.
     public let controlPointOffsets: [Int: SIMD3<Double>]
 
     public init(
@@ -1152,10 +1143,18 @@ public struct WPESceneOrthogonalProjection: Equatable, Sendable {
 public struct WPESceneUserTextureBinding: Equatable, Sendable {
     public let name: String
     public let type: String?
+    /// The `usertextures` array position, which IS the texture slot it overrides: the array is
+    /// positional against the sibling `textures` array and authors leave `null` in every slot they
+    /// do not override (2955378002 `objects[201]/effects[0]/passes[0]`: `[null,
+    /// {$mediaPreviousThumbnail}, {$mediaThumbnail}]` against three `textures` entries). Parsing used
+    /// to `compactMap` the nulls away, which collapsed slot 1/2 to 0/1. nil only for bindings
+    /// constructed outside a parsed array.
+    public let slot: Int?
 
-    public init(name: String, type: String? = nil) {
+    public init(name: String, type: String? = nil, slot: Int? = nil) {
         self.name = name
         self.type = type
+        self.slot = slot
     }
 }
 
@@ -1230,11 +1229,10 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     /// Keyframed color track; `color` remains the authored static seed.
     public let colorAnimation: WPESceneAnimatedValue?
     public let brightness: Double
-    /// A blend that reads the destination, so it cannot ride a Metal blend
-    /// descriptor and must go through the programmable composite. `blendMode`
-    /// is `.normal` for these — drawing them with it paints an opaque rectangle
-    /// over the scene (3448877775's full-screen Overlay tint erased the whole
-    /// wallpaper this way).
+    /// A blend that reads the destination, so it cannot ride a Metal blend descriptor and must go
+    /// through the programmable composite. `blendMode` is `.normal` for these — drawing them with it
+    /// paints an opaque rectangle over the scene (3448877775's full-screen Overlay tint erased the
+    /// whole wallpaper this way).
     public var usesProgrammableBlend: Bool {
         WPESceneBlendMode.fixedFunction(forWPEBlendMode: colorBlendMode) == nil
     }
@@ -1278,11 +1276,10 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     /// Resolved scriptProperty overrides for `visibleScript` (user-bound values
     /// like `ruchang` overlaid on the script's declared defaults).
     public let scriptProperties: [String: WPESceneScriptPropertyValue]
-    /// Perspective-quad corners for a `shape: "quad"` layer that has no image and
-    /// draws a DIRECTDRAW effect (e.g. lightshafts light beams). Each entry is a
-    /// normalized `point0..3` from the effect's `EffectPerspectiveUV` gizmo. When
-    /// present the renderer synthesizes a 4-corner quad from these instead of the
-    /// axis-aligned object quad. `nil` for ordinary image/model layers.
+    /// Perspective-quad corners for a `shape: "quad"` layer that has no image and draws a DIRECTDRAW
+    /// effect (e.g. lightshafts light beams). Each entry is a normalized `point0..3` from the
+    /// effect's `EffectPerspectiveUV` gizmo. When present the renderer synthesizes a 4-corner quad
+    /// from these instead of the axis-aligned object quad. `nil` for ordinary image/model layers.
     public let shapePoints: [SIMD2<Double>]?
 
     public init(
@@ -1376,11 +1373,10 @@ public struct WPESceneImageEffect: Equatable, Sendable, Identifiable {
     public let fileRelativePath: String
     public let visible: Bool
     public let passOverrides: [WPESceneEffectPassOverride]
-    /// SceneScript bound to this effect's visibility. Parsed and preserved; the
-    /// renderer does NOT yet re-gate on its live value, because the graph bakes
-    /// the composite ping-pong from the visible set at build time — skipping an
-    /// effect's passes mid-chain leaves the next pass sampling an FBO nothing
-    /// wrote. `visible` above is the authored seed and IS honoured.
+    /// SceneScript bound to this effect's visibility. Parsed and preserved; the renderer does NOT
+    /// yet re-gate on its live value, because the graph bakes the composite ping-pong from the
+    /// visible set at build time — skipping an effect's passes mid-chain leaves the next pass
+    /// sampling an FBO nothing wrote. `visible` above is the authored seed and IS honoured.
     public let visibleScript: WPESceneTransformScript?
 
     public init(
@@ -1650,16 +1646,13 @@ public enum WPESceneBlendMode: String, Equatable, Sendable {
         }
     }
 
-    /// The subset of WPE's `common_blending.h` BLENDMODE enum that a Metal
-    /// fixed-function blend descriptor can express exactly. `nil` means the mode
-    /// is a *function of the destination* (Overlay, Soft Light, Color Burn, …)
-    /// and can only be reproduced by sampling the scene and running
-    /// `ApplyBlending` in the fragment shader, exactly as WPE itself does
-    /// (`genericimage4.frag` binds `_rt_FullFrameBuffer` to `g_Texture4` under
-    /// `#if BLENDMODE` — RenderDoc-confirmed on 3448877775 pass 41).
-    ///
-    /// Returning `.normal` for an unmapped mode is NOT a safe default: a
-    /// full-screen tint layer then paints opaque over the whole wallpaper.
+    /// The subset of WPE's `common_blending.h` BLENDMODE enum that a Metal fixed-function blend
+    /// descriptor can express exactly. `nil` means the mode is a *function of the destination*
+    /// (Overlay, Soft Light, Color Burn, …) and can only be reproduced by sampling the scene and
+    /// running `ApplyBlending` in the fragment shader, exactly as WPE itself does
+    /// (`genericimage4.frag` binds `_rt_FullFrameBuffer` to `g_Texture4` under `#if BLENDMODE` —
+    /// RenderDoc-confirmed on 3448877775 pass 41). Returning `.normal` for an unmapped mode is NOT a
+    /// safe default: a full-screen tint layer then paints opaque over the whole wallpaper.
     public static func fixedFunction(forWPEBlendMode raw: Int) -> WPESceneBlendMode? {
         switch raw {
         case 0:     return .normal

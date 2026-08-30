@@ -63,14 +63,12 @@ final class WPEMetalSceneRenderer: NSObject {
     /// it during `load()` — which races the async config submit that used to be
     /// the only way it arrived.
     var presentFitMode: WPEPresentFitMode
-    /// MetalFX render-scale verdict for the loaded scene. Decided once in
-    /// `performLoad` from the world canvas, drawable, fit mode and HDR flag,
-    /// then read by the executor (target sizes) and the texture loader (upload
-    /// caps). `.inactive` before a scene loads.
-    /// The MetalFX verdict lives on the executor — the per-frame consumer, and
-    /// the place a present-time decline is discovered. Keeping a second copy
-    /// here meant a demote written by `encodePresent` never reached the
-    /// re-planning path, which then read a stale `.active` and un-stuck it.
+    /// MetalFX render-scale verdict for the loaded scene. Decided once in `performLoad`
+    /// from the world canvas, drawable, fit mode and HDR flag, then read by the executor
+    /// (target sizes) and the texture loader (upload caps); `.inactive` before a scene loads.
+    /// The verdict lives on the executor — the per-frame consumer and where a present-time
+    /// decline is discovered — because a second copy here left a demote written by
+    /// `encodePresent` unreachable from the re-planning path, reading a stale `.active`.
     var upscalePlan: WPEMetalUpscalePlan { executor.upscalePlan }
     /// Set once a plan has been decided. Distinguishes "never planned" from a
     /// real `.settingOff` verdict, which the plan value alone cannot.
@@ -139,6 +137,14 @@ final class WPEMetalSceneRenderer: NSObject {
     var textVisibleScriptInstances: [String: WPELayerScriptInstance] = [:]
     var textAlphaScriptInstances: [String: WPELayerScriptInstance] = [:]
     var liveTextAlpha: [String: Double] = [:]
+    /// Media (now-playing) event plumbing, present only for scenes whose scripts
+    /// export a media handler. The dispatcher is `@MainActor` (the source is);
+    /// the mailbox is the hand-off onto this display actor's frame path.
+    var mediaEventDispatcher: WPESceneMediaEventDispatcher?
+    var mediaEventMailbox: WPESceneMediaEventMailbox?
+    /// Separate from `mediaEventDispatcher`: `$mediaThumbnail` is declared in the
+    /// render graph, not in a script, so a scene can want one without the other.
+    var mediaTextureSubscription: WPEMediaTextureSubscription?
     var layerHoverStates: [String: Bool] = [:]
     var sceneScriptSharedState: WPESharedScriptState?
     /// Per-renderer workers so a script-heavy display cannot delay a light one's ticks.
@@ -196,6 +202,10 @@ final class WPEMetalSceneRenderer: NSObject {
     var cachedInstalledScriptLayerIDs: Set<String>?
     /// WPE `solid` groups: no pixels, but they compose into child layers.
     var transformHostLocalTransformsByID: [String: WPERenderObjectTransform] = [:]
+    /// Every node the per-frame parent walk may traverse, including scene objects the
+    /// render graph never turned into layers. Kept separate from the map above so
+    /// particle host offsets keep reading transform hosts only.
+    var layerAncestorLocalTransformsByID: [String: WPERenderObjectTransform] = [:]
     /// Video source key for `getVideoTexture()`. Populated for ALL video layers, not just scripted ones.
     var layerVideoSourceKey: [String: String] = [:]
     var layerObjectIDByName: [String: String] = [:]
@@ -498,15 +508,14 @@ final class WPEMetalSceneRenderer: NSObject {
         refreshUpscalePlan(reason: "geometry")
     }
 
-    /// The ONE place the MetalFX verdict is decided. Its three inputs arrive at
-    /// different times — the world canvas from scene parsing, the drawable size
-    /// from window layout (async), the fit mode from a runtime config submit —
-    /// so the plan is a derived value refreshed on every input change rather
-    /// than computed once and patched afterwards.
+    /// The ONE place the MetalFX verdict is decided. Its three inputs arrive at different
+    /// times — world canvas from scene parsing, drawable size from window layout (async),
+    /// fit mode from a runtime config submit — so the plan is a derived value refreshed on
+    /// every input change rather than computed once and patched afterwards.
     ///
-    /// `isInitial` marks the load-time call, the only one allowed to establish
-    /// the source-texture cap: those uploads happen during load and cannot be
-    /// redone, so every later refresh carries the original cap forward.
+    /// `isInitial` marks the load-time call, the only one allowed to establish the
+    /// source-texture cap: those uploads happen during load and can't be redone, so every
+    /// later refresh carries the original cap forward.
     func refreshUpscalePlan(reason: String, isInitial: Bool = false) {
         guard isInitial || hasPlannedUpscale else { return }
         let drawableSize = surfaceDrawableSize

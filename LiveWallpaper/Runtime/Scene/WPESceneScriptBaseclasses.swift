@@ -86,7 +86,8 @@ enum WPESceneScriptBaseclasses {
         dot(v) { v = new Vec2(v); return this.x * v.x + this.y * v.y; }
         length() { return hypot2(this.x, this.y); }
         normalize() { var l = this.length(); return l > EPSILON ? this.scale(1 / l) : new Vec2(0); }
-        lerp(v, t) { v = new Vec2(v); t = number(t, 0); return this.scale(1 - t).add(v.scale(t)); }
+        mix(v, t) { v = new Vec2(v); var a = (t instanceof Vec2) ? t : new Vec2(number(t, 0)); return new Vec2(this.x + (v.x - this.x) * a.x, this.y + (v.y - this.y) * a.y); }
+        lerp(v, t) { return this.mix(v, t); }
         static add(a, b) { return new Vec2(a).add(b); }
         static sub(a, b) { return new Vec2(a).sub(b); }
         static mul(a, b) { return new Vec2(a).mul(b); }
@@ -127,7 +128,8 @@ enum WPESceneScriptBaseclasses {
         }
         length() { return hypot3(this.x, this.y, this.z); }
         normalize() { var l = this.length(); return l > EPSILON ? this.scale(1 / l) : new Vec3(0); }
-        lerp(v, t) { v = new Vec3(v); t = number(t, 0); return this.scale(1 - t).add(v.scale(t)); }
+        mix(v, t) { v = new Vec3(v); var a = (t instanceof Vec3) ? t : new Vec3(number(t, 0)); return new Vec3(this.x + (v.x - this.x) * a.x, this.y + (v.y - this.y) * a.y, this.z + (v.z - this.z) * a.z); }
+        lerp(v, t) { return this.mix(v, t); }
         toSpherical() { return toSpherical(this); }
         refract(normal, eta) { return refract(this, normal, eta); }
         static add(a, b) { return new Vec3(a).add(b); }
@@ -165,7 +167,8 @@ enum WPESceneScriptBaseclasses {
         dot(v) { v = new Vec4(v); return this.x * v.x + this.y * v.y + this.z * v.z + this.w * v.w; }
         length() { return Math.sqrt(this.dot(this)); }
         normalize() { var l = this.length(); return l > EPSILON ? this.scale(1 / l) : new Vec4(0); }
-        lerp(v, t) { v = new Vec4(v); t = number(t, 0); return this.scale(1 - t).add(v.scale(t)); }
+        mix(v, t) { v = new Vec4(v); var a = (t instanceof Vec4) ? t : new Vec4(number(t, 0)); return new Vec4(this.x + (v.x - this.x) * a.x, this.y + (v.y - this.y) * a.y, this.z + (v.z - this.z) * a.z, this.w + (v.w - this.w) * a.w); }
+        lerp(v, t) { return this.mix(v, t); }
         static add(a, b) { return new Vec4(a).add(b); }
         static sub(a, b) { return new Vec4(a).sub(b); }
         static mul(a, b) { return new Vec4(a).mul(b); }
@@ -491,6 +494,13 @@ enum WPESceneScriptBaseclasses {
     var safeScene = createSafeObject("scene");
     var timerStub = function () { return 0; };
     var modelAccessor = createSafeCallable("modelAccessor");
+    // Scenes branch on the raw numbers (`state == 1` drives a Play icon), so
+    // these stay plain Numbers, per lib.sceneScript.d.ts.
+    var mediaPlaybackEvent = Object.freeze({
+        PLAYBACK_STOPPED: 0,
+        PLAYBACK_PLAYING: 1,
+        PLAYBACK_PAUSED: 2
+    });
 
     defineGlobal("Vec2", Vec2);
     defineGlobal("Vec3", Vec3);
@@ -517,6 +527,7 @@ enum WPESceneScriptBaseclasses {
     defineGlobal("getModelData", modelAccessor);
     defineGlobal("getLayer", createSafeCallable("getLayer"));
     defineGlobal("getScene", createSafeCallable("getScene"));
+    defineGlobal("MediaPlaybackEvent", mediaPlaybackEvent);
 
     installMethod(root.engine, "getModel", modelAccessor);
     installMethod(root.engine, "getModelData", modelAccessor);

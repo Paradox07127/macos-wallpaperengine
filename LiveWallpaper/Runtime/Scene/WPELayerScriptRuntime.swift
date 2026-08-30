@@ -38,11 +38,10 @@ enum WPEScriptValueShape: Sendable {
     case boolean
 }
 
-/// Explicit transform assignments made through a layer SceneScript's
-/// `thisLayer`. Nil means the script has never assigned that field, so the
-/// renderer must continue using the authored/keyframed value for that field.
-/// Angles stay in the JavaScript API's degree domain until the renderer merges
-/// them into its radian geometry.
+/// Explicit transform assignments made through a layer SceneScript's `thisLayer`. Nil means
+/// the script never assigned that field, so the renderer keeps using the authored/keyframed
+/// value; angles stay in the JavaScript API's degree domain until the renderer merges them
+/// into its radian geometry.
 struct WPELayerScriptTransformMutation: Sendable, Equatable {
     var origin: SIMD3<Double>? = nil
     var scale: SIMD3<Double>? = nil
@@ -159,6 +158,8 @@ final class WPELayerScriptInstance {
     /// synchronous queue round-trip for every other layer is important in scenes
     /// with many property-driven scripts.
     let handlesUserProperties: Bool
+    /// Same demand contract as `handlesUserProperties`, for the media handlers.
+    let mediaHandlers: WPESceneMediaHandlerSet
     private let tickBudget: TimeInterval
     private var isPoisoned = false
     let initialOutput: WPELayerScriptOutput
@@ -217,12 +218,59 @@ final class WPELayerScriptInstance {
             switch outcome {
             case .contextUnavailable:
                 throw WPESceneScriptError.contextUnavailable
-            case let .ready(hasUpdate, handlesUserProperties, output):
+            case let .ready(hasUpdate, handlesUserProperties, media, output):
                 self.hasUpdateFunction = hasUpdate
                 self.handlesUserProperties = handlesUserProperties
+                self.mediaHandlers = media
                 self.initialOutput = output
             }
         }
+    }
+
+    /// Bounded-synchronous media delivery, used by the load path and by tests
+    /// that need the handler's effect visible to the next `tick()`.
+    @discardableResult
+    func dispatchMediaEvent(
+        _ event: WPESceneMediaEvent,
+        runtimeSeconds: Double? = nil
+    ) -> WPELayerScriptOutput? {
+        guard !isPoisoned, handles(event), engine.allows(.event) else { return nil }
+        switch engine.dispatchMediaEvent(
+            event,
+            runtimeSeconds: runtimeSeconds,
+            budget: tickBudget
+        ) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning(
+                "Layer SceneScript \(event.handlerName)() exceeded \(tickBudget)s — frozen",
+                category: .wpeRender
+            )
+            return nil
+        case .capacityUnavailable:
+            return nil
+        case let .completed(output):
+            return engine.acceptsCompletion() ? output : nil
+        }
+    }
+
+    /// Frame-path media delivery: fire-and-forget onto the engine queue, so the
+    /// render thread never waits on a script engine. The handler's output drains
+    /// through the next frame's `batchTick`, exactly like a cursor event.
+    func liveDispatchMediaEvent(
+        _ event: WPESceneMediaEvent,
+        runtimeSeconds: Double? = nil
+    ) {
+        guard !isPoisoned, handles(event), engine.allows(.event) else { return }
+        _ = engine.dispatchMediaEventAsync(
+            event,
+            runtimeSeconds: runtimeSeconds,
+            publishTo: asyncOutcomeSlot
+        )
+    }
+
+    private func handles(_ event: WPESceneMediaEvent) -> Bool {
+        mediaHandlers.handles(event)
     }
 
     /// Tick `update()`; returns the script's new per-layer output, or nil when
@@ -445,6 +493,7 @@ final class WPELayerScriptInstance {
             case ready(
                 hasUpdate: Bool,
                 handlesUserProperties: Bool,
+                media: WPESceneMediaHandlerSet,
                 output: WPELayerScriptOutput
             )
             case contextUnavailable
@@ -613,6 +662,48 @@ final class WPELayerScriptInstance {
             }
         }
 
+        func dispatchMediaEvent(
+            _ event: WPESceneMediaEvent,
+            runtimeSeconds: Double?,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<WPELayerScriptOutput> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .failFast) {
+                self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
+            }
+        }
+
+        /// Async media event: same handler as the synchronous path, but the
+        /// output is published to the slot instead of returned to a waiting caller.
+        func dispatchMediaEventAsync(
+            _ event: WPESceneMediaEvent,
+            runtimeSeconds: Double?,
+            publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
+        ) -> Bool {
+            guard allows(.event) else { return false }
+            guard let safety = asyncExecutionSafety.begin(
+                sceneToken: instanceLimitToken,
+                operation: .event
+            ) else { return false }
+            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
+                asyncExecutionSafety.complete(safety)
+                return false
+            }
+            queue.async {
+                defer {
+                    self.asyncExecutionSafety.complete(safety)
+                    permit.release()
+                }
+                let outcome = self.dispatchMediaEventOnQueue(
+                    event,
+                    runtimeSeconds: runtimeSeconds
+                )
+                guard self.acceptsCompletion() else { return }
+                slot.publishEvent(outcome)
+            }
+            return true
+        }
+
         func applyUserProperties(
             _ properties: [String: WPESceneScriptPropertyValue],
             runtimeSeconds: Double?,
@@ -712,6 +803,25 @@ final class WPELayerScriptInstance {
             return true
         }
 
+        /// The one conversion from a returned JS value to a `visible` flag —
+        /// shared by `init` and `update` so the two cannot narrow differently.
+        static func coercedVisible(_ result: JSValue?) -> Bool? {
+            guard let result, !result.isUndefined, !result.isNull else { return nil }
+            if result.isBoolean { return result.toBool() }
+            if result.isNumber {
+                let number = result.toDouble()
+                return number.isFinite ? number != 0 : nil
+            }
+            return nil
+        }
+
+        /// The `alpha` counterpart of `coercedVisible`.
+        static func coercedAlpha(_ result: JSValue?) -> Double? {
+            guard let result, !result.isUndefined, !result.isNull, result.isNumber else { return nil }
+            let value = result.toDouble()
+            return value.isFinite ? value : nil
+        }
+
         private func setUpOnQueue(
             script: String,
             scriptProperties: [String: WPESceneScriptPropertyValue]
@@ -772,15 +882,28 @@ final class WPELayerScriptInstance {
             didThrow = false
             if let initFn = context.objectForKeyedSubscript("init"),
                !initFn.isUndefined, initFn.hasProperty("call") {
-                _ = initFn.call(withArguments: [])
+                // `init` returns "the modified value to be applied to the property"
+                // just as `update` does (lib.sceneScript.d.ts). Routed through the
+                // same setters, so `readOutput()` below reports it exactly like a
+                // ticked value; a script that assigns `thisLayer.*` instead and
+                // returns nothing is unaffected.
+                let returned = initFn.call(withArguments: [])
+                switch outputMode {
+                case .layerState:
+                    if let value = Self.coercedVisible(returned) { setOwnLayerVisible(value) }
+                case .returnedAlpha:
+                    if let value = Self.coercedAlpha(returned) { setOwnLayerAlpha(value) }
+                }
             }
             // A script that throws in init() (e.g. an API we don't yet support)
             // must NOT half-apply — degrade to "shown as authored" so a broken
             // script can't hide its layer, and don't tick its update().
+            let media = WPESceneMediaHandlerSet(in: context)
             if didThrow {
                 return .ready(
                     hasUpdate: false,
                     handlesUserProperties: handlesUserProperties,
+                    media: media,
                     output: WPELayerScriptOutput(
                         own: WPELayerScriptState(visible: true, alpha: 1, videoCommands: []),
                         others: [:]
@@ -790,8 +913,38 @@ final class WPELayerScriptInstance {
             return .ready(
                 hasUpdate: updateFunction != nil || timerScheduler.hasPendingTimers,
                 handlesUserProperties: handlesUserProperties,
+                media: media,
                 output: readOutput()
             )
+        }
+
+        /// Keyed by handler name, so a throwing media handler backs off alone
+        /// and never gates `update()` or the cursor handlers.
+        private func dispatchMediaEventOnQueue(
+            _ event: WPESceneMediaEvent,
+            runtimeSeconds: Double?
+        ) -> WPELayerScriptOutput {
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
+            pendingVideo.removeAll(keepingCapacity: true)
+            evaluationResourceBudget.beginEvaluation()
+            guard let context,
+                  let fn = context.objectForKeyedSubscript(event.handlerName),
+                  !fn.isUndefined, fn.hasProperty("call") else {
+                return readOutput()
+            }
+            let now = WPEScriptFaultPolicy.monotonicNow()
+            guard faultPolicy.shouldAttempt(entryPoint: event.handlerName, at: now) else {
+                return readOutput()
+            }
+            didThrow = false
+            WPEFrameOccupancyMeter.count(.jscCall)
+            _ = fn.call(withArguments: [wpeMediaEventObject(event, in: context)])
+            if didThrow {
+                faultPolicy.recordFailure(entryPoint: event.handlerName, at: now)
+            } else {
+                faultPolicy.recordSuccess(entryPoint: event.handlerName)
+            }
+            return readOutput()
         }
 
         private func tickOnQueue(
@@ -811,39 +964,22 @@ final class WPELayerScriptInstance {
             didThrow = false
             switch outputMode {
             case .layerState:
-                // Official contract for property-attached scripts: update(value)
-                // receives the current value and its RETURN becomes the new one.
-                // 285/392 visible scripts across the local corpus are pure
-                // `return <expr>` (2955378002's 186-sprite calendar) and were
-                // silently frozen at the authored seed. undefined/null returns
-                // keep the assignment style (`thisLayer.visible = x`) intact.
-                //
-                // The LIVE property is the argument, not the last returned value:
-                // an assignment-style script never returns one, so replaying the
-                // return pinned it to the seed forever and `thisLayer.visible =
-                // !value` re-inverted that same seed every frame. Both styles
-                // write `assignedVisible` — the return path via
-                // `setOwnLayerVisible`, which goes through the same
-                // `defineProperty` setter an assignment uses.
+                // Official contract for property-attached scripts: update(value) receives the
+                // current value; its RETURN becomes the new one. 285/392 visible corpus scripts
+                // are pure `return <expr>` (2955378002's 186-sprite calendar), silently frozen
+                // at the authored seed; undefined/null returns keep the assignment style
+                // (`thisLayer.visible = x`) intact. The LIVE property is the argument, not the
+                // last return — an assignment-style script never returns one, so replaying it
+                // pinned the seed forever, and `thisLayer.visible = !value` re-inverted that seed
+                // every frame. Both styles write `assignedVisible` via the same `defineProperty`
+                // setter (`setOwnLayerVisible` for the return path).
                 let current = assignedVisible[Self.ownKey] ?? initialOwnVisible
                 let arg = (current ? cachedTrueArgument : cachedFalseArgument)
                     ?? JSValue(bool: current, in: context)
                     ?? JSValue(nullIn: context)!
                 WPEFrameOccupancyMeter.count(.jscCall)
-                if let result = updateFunction.call(withArguments: [arg as Any]),
-                   !result.isUndefined, !result.isNull {
-                    let value: Bool?
-                    if result.isBoolean {
-                        value = result.toBool()
-                    } else if result.isNumber {
-                        let number = result.toDouble()
-                        value = number.isFinite ? number != 0 : nil
-                    } else {
-                        value = nil
-                    }
-                    if let value {
-                        setOwnLayerVisible(value)
-                    }
+                if let value = Self.coercedVisible(updateFunction.call(withArguments: [arg as Any])) {
+                    setOwnLayerVisible(value)
                 }
             case .returnedAlpha:
                 // Same contract, and the same defect, as `.layerState` above:
@@ -852,12 +988,8 @@ final class WPELayerScriptInstance {
                 let current = assignedAlpha[Self.ownKey] ?? initialOwnAlpha
                 let arg = JSValue(object: current, in: context) ?? JSValue(nullIn: context)!
                 WPEFrameOccupancyMeter.count(.jscCall)
-                if let result = updateFunction.call(withArguments: [arg as Any]),
-                   !result.isUndefined, !result.isNull, result.isNumber {
-                    let value = result.toDouble()
-                    if value.isFinite {
-                        setOwnLayerAlpha(value)
-                    }
+                if let value = Self.coercedAlpha(updateFunction.call(withArguments: [arg as Any])) {
+                    setOwnLayerAlpha(value)
                 }
             }
             if didThrow {
@@ -1205,11 +1337,10 @@ final class WPELayerScriptInstance {
                 self?.neutralAnimationStubCache
             }
             handle.setObject(getAnimationLayer, forKeyedSubscript: "getAnimationLayer" as NSString)
-            // The stub already answers setFrame/play/pause/stop; it was simply not
-            // reachable under this name, so `thisLayer.getTextureAnimation()` threw a
-            // TypeError on EVERY tick. Measured: 1039us/tick against 11us for a layer
-            // script that doesn't throw — 30 bindings of one 415-byte script were
-            // 31ms of scene 3299228616's 31.8ms per-frame script cost.
+            // The stub already answers setFrame/play/pause/stop; it was simply not reachable
+            // under this name, so `thisLayer.getTextureAnimation()` threw a TypeError on EVERY
+            // tick. Measured: 1039us/tick vs 11us for a script that doesn't throw — 30 bindings
+            // of one 415-byte script were 31ms of scene 3299228616's 31.8ms per-frame script cost.
             let getTextureAnimation: @convention(block) () -> JSValue? = { [weak self] in
                 self?.neutralAnimationStubCache
             }

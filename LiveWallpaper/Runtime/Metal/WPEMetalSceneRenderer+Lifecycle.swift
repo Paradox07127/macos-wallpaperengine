@@ -75,6 +75,7 @@ extension WPEMetalSceneRenderer {
         // atlas release a no-op.
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
+        layerAncestorLocalTransformsByID.removeAll(keepingCapacity: false)
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByConsumerID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByImagePath.removeAll(keepingCapacity: false)
@@ -99,12 +100,11 @@ extension WPEMetalSceneRenderer {
         executor.releaseTransientResources()
     }
 
-    /// Deep hibernate: the suspend path's resource-release depth, not a third
-    /// performance profile. Runs the reload teardown without the reload — the
-    /// session wakes a hibernated renderer by calling `reload()`, which rebuilds
-    /// everything from the retained descriptor/provider. Returns false when
-    /// nothing is loaded (mid-load or already hibernated), so the caller does not
-    /// mark the session hibernated on a no-op.
+    /// Deep hibernate: the suspend path's resource-release depth, not a third performance
+    /// profile. Runs the reload teardown without the reload — the session wakes a
+    /// hibernated renderer by calling `reload()`, which rebuilds everything from the
+    /// retained descriptor/provider. Returns false when nothing is loaded (mid-load or
+    /// already hibernated), so the caller doesn't mark the session hibernated on a no-op.
     func hibernate(on actor: isolated WPEDisplayRenderActor) async -> Bool {
         guard didLoad else { return false }
         await retireRuntimeState(on: actor)
@@ -570,20 +570,16 @@ extension WPEMetalSceneRenderer {
     /// after the first frame.
     var needsContinuousFrames: Bool { !frameDemand.isEmpty }
 
-    /// Per-category frame demand. Each bit answers "does this subsystem need the
-    /// loop running RIGHT NOW", not "does the scene contain this subsystem":
-    ///
-    /// - `.particles` excludes permanently finished emitters (one-shot bursts /
-    ///   duration-bounded systems whose last particle died) and pointer-locked
-    ///   emitters that are empty while the cursor is off this display. Pointer
-    ///   enter wakes one frame via `WPEPointerPublisher.onPointerEnteredView`.
-    /// - Fully released on-demand videos carry no demand: a reveal is script-
-    ///   (scripts hold `.scripts` demand) or property-patch-driven (the static
-    ///   patch path renders a frame, whose `reconcileVideoResidency` rebuild
-    ///   re-raises `.dynamicTextures` via the `dynamicTextureSources` didSet).
-    ///
-    /// Every other category is deliberately kept whole-scene conservative:
-    /// missing a shrink costs CPU, a wrong shrink freezes a live animation.
+    /// Per-category frame demand. Each bit answers "does this subsystem need the loop
+    /// running RIGHT NOW", not "does the scene contain this subsystem": `.particles`
+    /// excludes permanently finished emitters (one-shot/duration-bounded, last particle
+    /// died) and pointer-locked emitters empty while the cursor is off this display
+    /// (pointer enter wakes one frame via `WPEPointerPublisher.onPointerEnteredView`).
+    /// Fully released on-demand videos carry no demand — a reveal is script-driven
+    /// (`.scripts` demand) or property-patch-driven (the static patch renders a frame,
+    /// whose `reconcileVideoResidency` rebuild re-raises `.dynamicTextures` via the
+    /// `dynamicTextureSources` didSet). Every other category stays whole-scene
+    /// conservative: missing a shrink costs CPU, a wrong shrink freezes a live animation.
     var frameDemand: WPEFrameDemand {
         var demand: WPEFrameDemand = []
         if hasAnimatedShaderPasses { demand.insert(.animatedShaders) }
@@ -614,19 +610,17 @@ extension WPEMetalSceneRenderer {
         return demand
     }
 
-    /// The cursor moves between frames, so anything that consumes it needs a
-    /// live frame to re-sample — otherwise a static scene renders once at load
-    /// and never reacts to the mouse again (the "no interaction" bug). Camera
-    /// parallax (gated by the Follow Cursor toggle) and click capture both
-    /// qualify; pointer-only shaders are already "animated" (effects/workshop)
-    /// and covered by `hasAnimatedShaderPasses`.
+    /// The cursor moves between frames, so anything that consumes it needs a live frame to
+    /// re-sample — otherwise a static scene renders once at load and never reacts to the
+    /// mouse again (the "no interaction" bug). Camera parallax (Follow Cursor toggle) and
+    /// click capture both qualify; pointer-only shaders are already "animated"
+    /// (effects/workshop) and covered by `hasAnimatedShaderPasses`.
     private var pointerDrivenContent: Bool {
-        // `!= 0`, not `> 0`: a negative amount/influence is an INVERTED parallax
-        // (WPE multiplies the sign straight in), so it still needs the pointer.
-        // The last-pushed click-capture value takes priority over the mailbox for
-        // the same reason as in `pushPointerEventMonitoring`: the mailbox copy is
-        // written on the main thread and may not have landed when the toggle's
-        // demand re-evaluation runs on the render actor.
+        // `!= 0`, not `> 0`: a negative amount/influence is an INVERTED parallax (WPE
+        // multiplies the sign straight in), so it still needs the pointer. The last-pushed
+        // click-capture value takes priority over the mailbox for the same reason as in
+        // `pushPointerEventMonitoring`: the mailbox copy is written on the main thread and
+        // may not have landed when the toggle's demand re-evaluation runs on the render actor.
         (mouseInteractionEnabled
             && cameraParallaxSettings.enabled
             && cameraParallaxSettings.amount != 0
@@ -636,12 +630,10 @@ extension WPEMetalSceneRenderer {
     }
 
     /// Whether anything in the loaded scene could consume the mailbox pointer.
-    /// Deliberately conservative: effects/workshop shaders can sample
-    /// `g_PointerPosition*`, any script instance can read the pointer or register
-    /// cursor handlers at runtime, and particle systems can follow it through
-    /// pointer-locked control points/attractors even when `tracksPointer` is
-    /// false — all of those keep the monitors on. Only the provably pointer-free
-    /// scene gates them off.
+    /// Deliberately conservative: effects/workshop shaders can sample `g_PointerPosition*`,
+    /// any script instance can read the pointer or register cursor handlers at runtime, and
+    /// particle systems can follow it through pointer-locked control points/attractors even
+    /// when `tracksPointer` is false — all keep the monitors on. Only a provably pointer-free scene gates them off.
     private var scenePointerConsumersPossible: Bool {
         (cameraParallaxSettings.enabled
             && cameraParallaxSettings.amount != 0
@@ -661,14 +653,11 @@ extension WPEMetalSceneRenderer {
             || !effectVisibilityScriptInstances.isEmpty
     }
 
-    /// Pushes the NSEvent-monitor gate to the surface: every mouse move wakes the
-    /// main thread while monitors are installed, so they run only when the
-    /// renderer is unsuspended AND the pointer can be consumed. The config half
-    /// mirrors `sampleFrameContext`'s discard rule — with Follow Cursor and click
-    /// capture both off the sample is forced `.inactive`, so the mailbox feed is
-    /// provably unread. `clickCaptureEnabled` is passed explicitly on the toggle
-    /// path because the mailbox copy is written on the main thread and may not
-    /// have landed when this runs on the render actor.
+    /// Pushes the NSEvent-monitor gate to the surface: every mouse move wakes the main
+    /// thread while monitors are installed, so they run only when the renderer is
+    /// unsuspended AND the pointer can be consumed. Mirrors `sampleFrameContext`'s discard
+    /// rule (Follow Cursor + click capture both off forces `.inactive`, so the mailbox feed
+    /// is provably unread); `clickCaptureEnabled` is passed explicitly since the mailbox copy may lag onto the main thread.
     private func pushPointerEventMonitoring(clickCaptureEnabled: Bool? = nil) {
         if let clickCaptureEnabled { lastPushedClickCaptureEnabled = clickCaptureEnabled }
         let clickCapture = clickCaptureEnabled
@@ -696,11 +685,10 @@ extension WPEMetalSceneRenderer {
     }
 
     /// A pass consumes the system-audio spectrum when its shader text reads
-    /// `g_AudioSpectrum*` — matched case-insensitively, because the runtime
-    /// resolves frame globals through `canonicalNameByLowercased`. With every
-    /// AUDIOPROCESSING combo at 0 the guarded branches are compiled out (the
-    /// preprocessor keeps disabled `#if` branches in the retained source), but
-    /// a read outside those guards is still live.
+    /// `g_AudioSpectrum*` — matched case-insensitively, because the runtime resolves frame
+    /// globals through `canonicalNameByLowercased`. With every AUDIOPROCESSING combo at 0 the
+    /// guarded branches are compiled out (the preprocessor keeps disabled `#if` branches in
+    /// the retained source), but a read outside those guards is still live.
     static func pipelineRequiresAudioCapture(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
         pipeline.layers.contains { layer in
             layer.passes.contains { prepared in
@@ -846,6 +834,7 @@ extension WPEMetalSceneRenderer {
         // atlas release a no-op.
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
+        layerAncestorLocalTransformsByID.removeAll(keepingCapacity: false)
         onDemandVideoKeyByID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByConsumerID.removeAll(keepingCapacity: false)
         onDemandVideoKeysByImagePath.removeAll(keepingCapacity: false)
@@ -986,13 +975,11 @@ extension WPEMetalSceneRenderer {
                 }
             }
             didLogFrameFailure = false
-            // A frame can retire the last demand source (a one-shot emitter's
-            // final particle dying, a patch-hidden video releasing): settle the
-            // loop as soon as that happens instead of ticking a finished scene.
-            // Dedup'd inside, so steady continuous scenes pay two bool sweeps.
-            // Present retry keeps the link unpaused for the next vsync; do not
-            // `setNeedsRedraw()` here — the render-thread pacer would re-enter
-            // `renderFrame()` on this stack.
+            // A frame can retire the last demand source (a one-shot emitter's final particle
+            // dying, a patch-hidden video releasing): settle the loop as soon as that happens
+            // instead of ticking a finished scene. Dedup'd inside, so steady continuous scenes
+            // pay two bool sweeps. Present retry keeps the link unpaused for the next vsync;
+            // do not `setNeedsRedraw()` here — the render-thread pacer would re-enter `renderFrame()` on this stack.
             synchronizeFrameDemand()
         } catch is WPEMetalFrameInFlightBudgetExhausted {
             // GPU still busy on a prior frame — skip this vsync rather than

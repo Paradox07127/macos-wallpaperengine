@@ -62,6 +62,52 @@
             )
         }
 
+        /// Drains this scene's media mailbox onto every script that exported a handler. The
+        /// mailbox is empty on all but a handful of frames per song (the diff gate only posts
+        /// when a field moved), so a media scene costs one lock-protected `isEmpty` check per
+        /// frame. Layer scripts go through the fire-and-forget path like cursor events; text scripts are bounded-synchronous (no event lane).
+        func drainMediaEvents(runtimeSeconds: Double) {
+            guard let events = mediaEventMailbox?.drain(), !events.isEmpty else { return }
+            for event in events {
+                for instance in layerScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in layerAlphaScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in textVisibleScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in textAlphaScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in textScriptInstances.values {
+                    instance.dispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                // The dynamic-transform runtime hosts origin/scale/angles/color
+                // and the effect constant/visibility slots — where the corpus
+                // actually binds its media-driven scale, position and tint.
+                for instance in dynamicOriginScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in dynamicScaleScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in dynamicAnglesScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in dynamicColorScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in effectConstantScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+                for instance in effectVisibilityScriptInstances.values {
+                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
+                }
+            }
+        }
+
         /// Load/settings property pushes stay bounded-synchronous, and fold their
         /// result through the outcome slot so an in-flight tick can't overwrite it.
         func applyScriptUserProperties(
