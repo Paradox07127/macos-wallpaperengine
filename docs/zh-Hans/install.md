@@ -20,6 +20,9 @@ macOS Gatekeeper 会隔离 ad-hoc 签名的应用并报告为"已损坏"；执�
 `xattr -dr com.apple.quarantine` 就能清掉这个标记。之后它和其他应用一样正常启动。
 （DMG 里的 `READ ME — first launch.txt` 也写了这件事。）
 
+这条命令**一辈子只需执行一次**。Loomscreen 自动安装的更新会在安装过程中一并清掉隔离标记，
+所以通过更新装上的版本可以直接打开——只有手动下载的 DMG 才需要这条命令。
+
 你可以用随包发布的 `.dmg.sha256` 校验下载文件：
 
 ```bash

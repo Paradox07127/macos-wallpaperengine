@@ -20,6 +20,10 @@ macOS Gatekeeper quarantines ad-hoc-signed apps and reports them as "damaged";
 the one-time `xattr -dr com.apple.quarantine` clears that flag. After it, the app
 launches like any other. (The DMG's `READ ME — first launch.txt` repeats this.)
 
+You only ever do this once. Updates that Loomscreen installs for itself clear the
+quarantine flag as part of the install, so a version you updated into opens
+straight away — the command is only needed for a DMG you downloaded by hand.
+
 You can verify a download against the published `.dmg.sha256`:
 
 ```bash

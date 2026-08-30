@@ -141,13 +141,15 @@ if [[ -n "$NOTES_FILE" ]]; then
   ' "$NOTES_FILE")"
 fi
 
-# Sparkle clears com.apple.quarantine on what it installs (2.9.6 does it in
-# Installer.xpc), so this line is only for someone who grabbed the DMG by hand —
-# it stays one line at the bottom rather than leading the dialog. Nothing here is
-# notarized, so it cannot be dropped entirely.
+# Measured 2026-08-30: Sparkle really does clear com.apple.quarantine on what it
+# installs (2.9.6, in Installer.xpc) — a user who ran the command once never has
+# to run it again across updates. So this is phrased as a fallback ("if macOS
+# refuses"), not an instruction, and sits in one line at the bottom. It cannot be
+# dropped: nothing here is notarized, a hand-downloaded DMG still arrives
+# quarantined, and release_contract_check.sh asserts this command is present.
 read -r -d '' DESCRIPTION <<HTML || true
 $CHANGELOG_HTML
-<p><small>Not notarized — a hand-installed DMG needs <code>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</code> once; updates installed by $TITLE clear it for you. <a href="$NOTES_URL">Full release notes</a> · <a href="$NOTES_URL">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</code> once; updates $TITLE installs itself clear the flag. <a href="$NOTES_URL">Full release notes</a> · <a href="$NOTES_URL">完整发布说明</a></small></p>
 HTML
 
 URL="https://github.com/$REPO_SLUG/releases/download/$TAG_PREFIX$VERSION/$DMG_NAME"
