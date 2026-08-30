@@ -101,12 +101,21 @@ drop link). The window background is rendered per SKU by
 Gatekeeper command shown on the image — that is why it is generated at package
 time instead of committed as a static PNG.
 
-Expected commands:
+Expected commands, Lite first so packaging order matches upload order:
 
 ```sh
-scripts/release-app.sh --sku lite --version X.Y.Z
-scripts/release-app.sh --sku pro  --version X.Y.Z
+scripts/release-app.sh --sku lite --version X.Y.Z --skip-checks
+scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks
 ```
+
+`release-app.sh` re-runs the whole release-candidate gate for **each** SKU by
+default, so an unqualified pair of commands runs it three times on one commit.
+`--skip-checks` skips that repeat — use it only when the gate above already
+passed on this exact commit, and say so in the release report. It does **not**
+skip the per-SKU checks that matter: Sparkle helper re-signing and Team ID
+alignment, signature verification, effective-entitlement inspection of the
+signed app, bundle ID / display name / version fields, DMG mount and verify,
+sha256, and appcast regeneration. Those are unconditional.
 
 Validate the clean-clone tooling contract without building or signing:
 
@@ -129,27 +138,76 @@ first so the release page leads with the public download.
 
 Create one unified release:
 
+The order matters: Sparkle reads the feed from `main`, so an appcast that lands
+before its DMG exists points at a 404.
+
 ```sh
+# 1. Commit the appcasts both packaging runs regenerated, then tag
+git add appcast-lite.xml appcast-pro.xml
+git commit -m "Publish Sparkle appcast for X.Y.Z"
+git tag -a loomscreen-vX.Y.Z -m "Loomscreen X.Y.Z"
+git push origin loomscreen-vX.Y.Z
+
+# 2. Upload the DMGs, so the enclosure URLs resolve
 gh release create loomscreen-vX.Y.Z \
   build/release/Loomscreen-X.Y.Z.dmg \
   build/release/Loomscreen-X.Y.Z.dmg.sha256 \
   build/release/Loomscreen-Pro-X.Y.Z.dmg \
   build/release/Loomscreen-Pro-X.Y.Z.dmg.sha256 \
+  --verify-tag \
   --title "Loomscreen X.Y.Z" \
   --notes-file <notes.md>
+
+# 3. Only now publish the feed
+git push origin main
 ```
 
-Commit `appcast-lite.xml` and `appcast-pro.xml` after both SKUs package. Create
-the GitHub release (so the enclosure URLs exist) and push those appcasts to
-`main` in the same breath — Sparkle reads the feed from `main`, and a live
-appcast whose DMG is not on GitHub yet 404s.
+## Release notes
 
-Release notes should lead with the Lite download. Mention that the first launch
-of a downloaded build still needs the quarantine-clear command (no notarization),
-and that later updates install from **Settings → About** or the menu bar
-**Update** button.
+Three flat sections, one line per item, newest-facing first. Drop any section
+with nothing in it. Write the items from what actually shipped in
+`git log <previous-tag>..HEAD`, picking what a user would notice — this is a
+changelog, not a summary of every commit.
 
-## Post-release smoke
+```markdown
+## What's New
+
+- <user-visible capability that did not exist before>
+
+## Improvements
+
+- <existing behavior that got better, faster, or clearer>
+
+## Bug Fixes
+
+- <what was broken, in the user's words; reference an issue when there is one>
+
+Requires macOS 14.6+.
+```
+
+English first, then `---`, then an equivalent Simplified Chinese block using
+新功能 / 改进 / Bug 修复. Equivalent means equivalent: version numbers, command
+lines, paths, and the SKU names (Loomscreen / Loomscreen Pro) stay identical and
+untranslated, and neither side omits an item the other has.
+
+Do **not** write: a marketing tagline or lead paragraph, a "Download the DMG
+below" section, the quarantine command and no-notarization explanation, or
+per-subsystem headings. The download is the release page's own UI, and install
+instructions live in [install.md](install.md).
+
+## Post-release verification
+
+Confirm the upload survived the trip — the only evidence that GitHub holds the
+bytes that were signed here:
+
+```sh
+gh release view loomscreen-vX.Y.Z --json tagName,assets \
+  --jq '.tagName, (.assets[] | "\(.name) \(.size)")'
+gh release download loomscreen-vX.Y.Z --pattern 'Loomscreen-X.Y.Z.dmg' --clobber
+shasum -a 256 Loomscreen-X.Y.Z.dmg   # must equal build/release/Loomscreen-X.Y.Z.dmg.sha256
+```
+
+Then smoke the build itself:
 
 1. Install the Lite DMG on a clean Mac.
 2. Run:
