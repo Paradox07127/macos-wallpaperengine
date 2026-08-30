@@ -164,43 +164,47 @@
         /// frame. Layer scripts go through the fire-and-forget path like cursor events; text scripts are bounded-synchronous (no event lane).
         func drainMediaEvents(runtimeSeconds: Double) {
             guard let events = mediaEventMailbox?.drain(), !events.isEmpty else { return }
+            // The whole drain goes to each instance as ONE batch: dispatched
+            // per event, the single in-flight async slot admitted the first and
+            // silently dropped the rest of a cold-start burst.
+            for instance in layerScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            for instance in layerAlphaScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            for instance in textVisibleScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            for instance in textAlphaScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            // Text is bounded-synchronous (no event lane, nothing to drop).
             for event in events {
-                for instance in layerScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
-                for instance in layerAlphaScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
-                for instance in textVisibleScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
-                for instance in textAlphaScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
                 for instance in textScriptInstances.values {
                     instance.dispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
                 }
-                // The dynamic-transform runtime hosts origin/scale/angles/color
-                // and the effect constant/visibility slots — where the corpus
-                // actually binds its media-driven scale, position and tint.
-                for instance in dynamicOriginScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
-                for instance in dynamicScaleScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
-                for instance in dynamicAnglesScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
-                for instance in dynamicColorScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
-                for instance in effectConstantScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
-                for instance in effectVisibilityScriptInstances.values {
-                    instance.liveDispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
-                }
+            }
+            // The dynamic-transform runtime hosts origin/scale/angles/color
+            // and the effect constant/visibility slots — where the corpus
+            // actually binds its media-driven scale, position and tint.
+            for instance in dynamicOriginScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            for instance in dynamicScaleScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            for instance in dynamicAnglesScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            for instance in dynamicColorScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            for instance in effectConstantScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
+            }
+            for instance in effectVisibilityScriptInstances.values {
+                instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
             }
         }
 

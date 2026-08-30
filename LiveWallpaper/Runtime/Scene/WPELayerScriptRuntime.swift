@@ -242,7 +242,7 @@ final class WPELayerScriptInstance {
         _ event: WPESceneMediaEvent,
         runtimeSeconds: Double? = nil
     ) -> WPELayerScriptOutput? {
-        guard !isPoisoned, handles(event), engine.allows(.event) else { return nil }
+        guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return nil }
         switch engine.dispatchMediaEvent(
             event,
             runtimeSeconds: runtimeSeconds,
@@ -269,9 +269,28 @@ final class WPELayerScriptInstance {
         _ event: WPESceneMediaEvent,
         runtimeSeconds: Double? = nil
     ) {
-        guard !isPoisoned, handles(event), engine.allows(.event) else { return }
+        guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }
         _ = engine.dispatchMediaEventAsync(
             event,
+            runtimeSeconds: runtimeSeconds,
+            publishTo: asyncOutcomeSlot
+        )
+    }
+
+    /// One drain's worth of events in ONE async hop. Dispatched one at a time,
+    /// the single in-flight slot admitted only the first event — a cold start's
+    /// `[playback, properties, thumbnail]` burst delivered playback and silently
+    /// dropped the rest, so title/artist never reached the script until the
+    /// next real change (possibly never for the current song).
+    func liveDispatchMediaEvents(
+        _ events: [WPESceneMediaEvent],
+        runtimeSeconds: Double? = nil
+    ) {
+        guard !isPoisoned, !isDestroyed else { return }
+        let handled = events.filter { handles($0) }
+        guard !handled.isEmpty, engine.allows(.event) else { return }
+        _ = engine.dispatchMediaEventsAsync(
+            handled,
             runtimeSeconds: runtimeSeconds,
             publishTo: asyncOutcomeSlot
         )
@@ -776,6 +795,40 @@ final class WPELayerScriptInstance {
             return true
         }
 
+        /// Batch variant: one safety claim, one permit, one queue hop for a whole
+        /// drain. Each event still runs its own handler; each outcome publishes,
+        /// so the slot's merge sees exactly what per-event dispatch produced.
+        func dispatchMediaEventsAsync(
+            _ events: [WPESceneMediaEvent],
+            runtimeSeconds: Double?,
+            publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
+        ) -> Bool {
+            guard !events.isEmpty, allows(.event) else { return false }
+            guard let safety = asyncExecutionSafety.begin(
+                sceneToken: instanceLimitToken,
+                operation: .event
+            ) else { return false }
+            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
+                asyncExecutionSafety.complete(safety)
+                return false
+            }
+            queue.async {
+                defer {
+                    self.asyncExecutionSafety.complete(safety)
+                    permit.release()
+                }
+                for event in events {
+                    let outcome = self.dispatchMediaEventOnQueue(
+                        event,
+                        runtimeSeconds: runtimeSeconds
+                    )
+                    guard self.acceptsCompletion() else { return }
+                    slot.publishEvent(outcome)
+                }
+            }
+            return true
+        }
+
         func applyUserProperties(
             _ properties: [String: WPESceneScriptPropertyValue],
             runtimeSeconds: Double?,
@@ -988,11 +1041,15 @@ final class WPELayerScriptInstance {
                 // same setters, so `readOutput()` below reports it exactly like a
                 // ticked value; a script that assigns `thisLayer.*` instead and
                 // returns nothing is unaffected.
-                let returned = initFn.call(withArguments: [])
+                // Text and transform pass the authored value as the argument;
+                // calling with none here fed `init(value)` an `undefined`, so
+                // `return !value` showed an authored-visible layer it meant to hide.
                 switch outputMode {
                 case .layerState:
+                    let returned = initFn.call(withArguments: [initialOwnVisible])
                     if let value = Self.coercedVisible(returned) { setOwnLayerVisible(value) }
-                case .returnedAlpha:
+                case .returnedAlpha(let initialValue):
+                    let returned = initFn.call(withArguments: [initialValue])
                     if let value = Self.coercedAlpha(returned) { setOwnLayerAlpha(value) }
                 }
             }

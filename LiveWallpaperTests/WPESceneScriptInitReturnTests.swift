@@ -281,6 +281,33 @@ struct WPESceneScriptInitReturnTests {
 
     // MARK: - Layer runtime
 
+    /// Text and transform already pass the authored value into `init(value)`
+    /// (pinned above); the layer runtime called `init()` with no arguments, so
+    /// `export function init(value) { return !value; }` saw `undefined` and
+    /// kept an authored-visible layer visible instead of hiding it.
+    @Test("A layer init receives the authored visibility as its argument")
+    func layerInitReceivesAuthoredVisibleSeed() throws {
+        let instance = try WPELayerScriptInstance(
+            script: "export function init(value) { return !value; }",
+            outputMode: .layerState,
+            initialVisible: true,
+            governor: isolatedGovernor
+        )
+        #expect(instance.initialOutput.own.visible == false,
+                "!true must be false — undefined would coerce the other way")
+    }
+
+    @Test("A layer alpha init receives the authored alpha as its argument")
+    func layerInitReceivesAuthoredAlphaSeed() throws {
+        let instance = try WPELayerScriptInstance(
+            script: "export function init(value) { return value / 2; }",
+            outputMode: .returnedAlpha(initialValue: 0.8),
+            governor: isolatedGovernor
+        )
+        #expect(abs(instance.initialOutput.own.alpha - 0.4) < 0.0001,
+                "undefined / 2 is NaN, which must not become the alpha")
+    }
+
     @Test("An init-only visible script's returned boolean hides the layer")
     func initOnlyVisibleReturnDrivesVisibility() throws {
         let instance = try WPELayerScriptInstance(

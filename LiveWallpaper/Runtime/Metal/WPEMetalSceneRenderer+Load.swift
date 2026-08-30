@@ -360,9 +360,12 @@ extension WPEMetalSceneRenderer {
         // Media integration has no authored opt-in — WPE just calls whatever the
         // module exported — so the script scan IS the demand signal. A scene with
         // no media handler must not cost a now-playing subscription.
+        // The enriched feed, not the bare monitor: the monitor's states carry no
+        // artwork and no Apple Music position — only its overlay-owned enrichment
+        // source added those, and it dies with the overlay.
         if WPESceneMediaEventDispatcher.isNeeded(by: document) {
             let dispatcher = await MainActor.run {
-                let dispatcher = WPESceneMediaEventDispatcher(source: NowPlayingMonitor.shared)
+                let dispatcher = WPESceneMediaEventDispatcher(source: WPEEnrichedNowPlayingFeed.shared)
                 dispatcher.start()
                 return dispatcher
             }
@@ -377,11 +380,19 @@ extension WPEMetalSceneRenderer {
         let mediaTextureSlots = WPEMediaTextureDemand.byPassID(in: pipeline)
         if !mediaTextureSlots.isEmpty {
             let store = WPEMediaTextureStore(device: executor.device, slotsByPassID: mediaTextureSlots)
+            // Hoisted: capturing it inside the closure reads it off `self`, which
+            // region isolation counts as sending the whole renderer to the main actor.
+            let surfaceControl = surfaceControl
             mediaTextureSubscription = await MainActor.run {
                 let subscription = WPEMediaTextureSubscription(
                     store: store,
-                    source: NowPlayingMonitor.shared
+                    source: WPEEnrichedNowPlayingFeed.shared
                 )
+                // A cover change must render even on a fully static scene whose
+                // loop is parked — one frame, same wake the pointer-enter path uses.
+                subscription.onTextureChange = { [surfaceControl] in
+                    surfaceControl.setNeedsRedraw()
+                }
                 subscription.start()
                 return subscription
             }

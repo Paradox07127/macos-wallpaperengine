@@ -115,20 +115,26 @@ final class WPEMediaTextureStore: @unchecked Sendable {
     }
 
     /// Called on the main actor from the now-playing delivery, never per frame.
-    func ingest(artwork: Data?) {
+    /// Returns whether a texture actually changed, so the caller can wake a
+    /// parked frame loop — a static scene otherwise keeps the old song's cover.
+    @discardableResult
+    func ingest(artwork: Data?) -> Bool {
         guard let artwork, !artwork.isEmpty else {
             lock.lock()
             defer { lock.unlock() }
+            let changed = currentTexture != nil || currentKey != nil
+            // The cover that was playing stays in the previous slot: A → gap → B
+            // must still crossfade from A, not from the placeholder.
+            if let current = currentTexture { previousTexture = current }
             currentKey = nil
             currentTexture = nil
-            previousTexture = nil
-            return
+            return changed
         }
         let key = WPEMediaArtworkPaletteCache.identity(of: artwork)
         lock.lock()
         let unchanged = key == currentKey
         lock.unlock()
-        if unchanged { return }
+        if unchanged { return false }
 
         // Decode outside the lock: the render thread must never block behind an
         // ImageIO call, and a stale-by-one-frame cover is invisible.
@@ -139,15 +145,17 @@ final class WPEMediaTextureStore: @unchecked Sendable {
         guard let uploaded else {
             // Undecodable bytes are "no artwork": the authored placeholder is a
             // better rendering than a hole, and retrying per frame is pointless.
+            let changed = currentTexture != nil || currentKey != nil
+            if let current = currentTexture { previousTexture = current }
             currentKey = nil
             currentTexture = nil
-            previousTexture = nil
-            return
+            return changed
         }
-        previousTexture = currentTexture
+        if let current = currentTexture { previousTexture = current }
         currentTexture = uploaded
         currentKey = key
         uploads += 1
+        return true
     }
 
     func texture(for kind: WPEMediaSystemTexture) -> MTLTexture? {
@@ -242,6 +250,10 @@ final class WPEMediaTextureSubscription {
     private let source: any WPENowPlayingEventSource
     private var isSubscribed = false
     private var lastOrdinal: UInt64?
+    /// Fired when an ingest actually swapped a texture. A static scene's frame
+    /// loop is parked; without a wake the desktop keeps the old song's cover
+    /// until something else demands a frame.
+    var onTextureChange: (@Sendable () -> Void)?
 
     init(store: WPEMediaTextureStore, source: any WPENowPlayingEventSource) {
         self.store = store
@@ -272,7 +284,7 @@ final class WPEMediaTextureSubscription {
         // also corrupt `$mediaPreviousThumbnail`.
         if let lastOrdinal, ordinal < lastOrdinal { return }
         lastOrdinal = ordinal
-        store.ingest(artwork: state.artwork)
+        if store.ingest(artwork: state.artwork) { onTextureChange?() }
     }
 }
 #endif

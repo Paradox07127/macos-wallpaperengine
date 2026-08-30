@@ -119,11 +119,51 @@
         /// so claiming demand for it would subscribe and deliver nothing.
         static func usesMediaAPI(in document: WPESceneDocument) -> Bool {
             anyBoundScript(in: document) { script in
-                script.contains("mediaPlaybackChanged")
-                    || script.contains("mediaPropertiesChanged")
-                    || script.contains("mediaThumbnailChanged")
-                    || script.contains("mediaTimelineChanged")
+                // Over comment/string-stripped source: a `// TODO: wire
+                // mediaPlaybackChanged` or a string literal holding an event name
+                // used to subscribe the scene to now-playing, violating the
+                // "no handler costs nothing" contract. Still a text probe — the
+                // real gate is `wpeExportsFunction` after evaluation — so it may
+                // only over-approximate exports, never miss one: handlers are
+                // static module exports, which never live inside a comment or
+                // string.
+                let code = strippingCommentsAndStrings(script)
+                return code.contains("mediaPlaybackChanged")
+                    || code.contains("mediaPropertiesChanged")
+                    || code.contains("mediaThumbnailChanged")
+                    || code.contains("mediaTimelineChanged")
             }
+        }
+
+        /// Removes `//`/`/* */` comments and '"`-quoted literals (escape-aware).
+        /// Template-literal `${}` interpolation is treated as string text — code
+        /// inside one cannot declare a module export, which is all this feeds.
+        static func strippingCommentsAndStrings(_ source: String) -> String {
+            var out = String.UnicodeScalarView()
+            out.reserveCapacity(source.unicodeScalars.count)
+            var scalars = source.unicodeScalars[...]
+            enum Mode { case code, line, block, string(UnicodeScalar) }
+            var mode = Mode.code
+            while let c = scalars.first {
+                scalars.removeFirst()
+                switch mode {
+                case .code:
+                    if c == "/", let next = scalars.first {
+                        if next == "/" { mode = .line; scalars.removeFirst(); continue }
+                        if next == "*" { mode = .block; scalars.removeFirst(); continue }
+                    }
+                    if c == "\"" || c == "'" || c == "`" { mode = .string(c); continue }
+                    out.append(c)
+                case .line:
+                    if c == "\n" { mode = .code; out.append(c) }
+                case .block:
+                    if c == "*", scalars.first == "/" { scalars.removeFirst(); mode = .code }
+                case .string(let quote):
+                    if c == "\\" { if !scalars.isEmpty { scalars.removeFirst() }; continue }
+                    if c == quote { mode = .code }
+                }
+            }
+            return String(out)
         }
 
         /// Visits every script slot the parser binds, stopping at the first match.

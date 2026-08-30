@@ -143,6 +143,46 @@ struct WPEMediaTextureProviderTests {
         #expect(store.substituting(placeholder, slot: 2, declarations: declarations) === placeholder)
     }
 
+    /// A → player stops (nil) → B: the previous slot must still serve A at B.
+    /// Clearing previous together with current on a nil push wiped that memory,
+    /// so `$mediaPreviousThumbnail` fell back to the placeholder instead of the
+    /// cover the scene was crossfading from.
+    @Test("A no-artwork gap does not erase the previous cover")
+    func nilArtworkKeepsPreviousCoverAcrossTheGap() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let store = WPEMediaTextureStore(device: device)
+        let placeholder = try Self.placeholderTexture(device)
+        let declarations: [Int: WPEMediaSystemTexture] = [1: .previousThumbnail, 2: .thumbnail]
+
+        store.ingest(artwork: try Self.artwork(red: 0.9))
+        let coverA = try #require(store.texture(for: .thumbnail))
+
+        store.ingest(artwork: nil)
+        #expect(store.substituting(placeholder, slot: 2, declarations: declarations) === placeholder,
+                "no track playing → the authored placeholder")
+        #expect(store.substituting(placeholder, slot: 1, declarations: declarations) === coverA,
+                "the gap must not erase the cover that came before it")
+
+        store.ingest(artwork: try Self.artwork(red: 0.2))
+        #expect(store.substituting(placeholder, slot: 1, declarations: declarations) === coverA,
+                "at B the previous slot still serves A, not the placeholder")
+    }
+
+    /// The renderer's frame loop can be parked (static scene, nothing else
+    /// animating); an ingest that changed a texture reports it so the caller
+    /// can wake one frame — otherwise the desktop keeps the old song's cover.
+    @Test("Ingest reports whether it changed anything")
+    func ingestReportsChanges() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let store = WPEMediaTextureStore(device: device)
+
+        #expect(!store.ingest(artwork: nil), "empty store, nil push: nothing changed")
+        let a = try Self.artwork(red: 0.9)
+        #expect(store.ingest(artwork: a))
+        #expect(!store.ingest(artwork: a), "same bytes, same key: no change, no wake")
+        #expect(store.ingest(artwork: nil), "clearing a live cover is a visible change")
+    }
+
     @Test("A slot nobody declared is untouched even while artwork exists")
     func undeclaredSlotIsUntouched() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
