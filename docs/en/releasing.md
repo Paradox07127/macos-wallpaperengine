@@ -174,11 +174,8 @@ the very bottom of the file and are shared by both languages.
 
 | Edition | Your Mac | Wallpapers |
 | --- | --- | --- |
-| [**Lite** — Intel][lite] | Intel | Video · Web |
-| [**Lite** — Apple Silicon][lite] | Apple Silicon | Video · Web |
-| [**Pro** — Apple Silicon][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
-
-The Lite DMG is universal — Intel and Apple Silicon share the same file.
+| [**Lite**][lite] | Intel or Apple Silicon | Video · Web |
+| [**Pro**][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
 
 <details>
 <summary><b>First launch</b> — one command, needed once</summary>
@@ -220,10 +217,11 @@ Requires macOS 14.6+.
 
 Details that have bitten before:
 
-- **Both Lite rows pointing at one link is correct**, not a copy-paste slip: Lite
-  ships universal (`x86_64 arm64`) and Pro is `arm64` only. Keep the "universal"
-  sentence under the table or the duplicate link reads as a mistake. Take the
-  architecture claim from this release's `lipo -archs`, not from last release's notes.
+- **Lite gets one row reading "Intel or Apple Silicon"** — it ships universal
+  (`x86_64 arm64`), so one file covers both. Do not split it per architecture
+  (tried and reverted on 2026-08-30: the same link twice reads as a mistake).
+  Pro is `arm64` only, so its row says Apple Silicon. Take the architecture claim
+  from this release's `lipo -archs`, not from last release's notes.
 - **Leave a blank line after `</summary>`** or GitHub will not render the markdown
   inside `<details>`.
 - **One-click copy is just a fenced code block** — GitHub adds the copy button.
