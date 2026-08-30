@@ -111,6 +111,35 @@ struct WorkshopKeychainStoreTests {
         try Data(key.utf8).write(to: url)
     }
 
+    /// The keychain outranks the file: a save writes the keychain first and only
+    /// then drops the file, so whenever both exist the file is the stale side (a
+    /// failed removal, a backup restore, a half-written legacy copy).
+    @Test("A corrupt leftover file does not shadow a valid keychain key")
+    func corruptFileDoesNotShadowKeychain() async throws {
+        let spy = WorkshopKeychainSlotSpy(stored: Self.sampleKey)
+        let env = Self.makeStore(slot: spy)
+        try Self.writeContainerFile("not-a-hex-key!", at: env.fileURL)
+
+        let loaded = try await env.store.loadWebAPIKey()
+        #expect(loaded == Self.sampleKey)
+        #expect(!FileManager.default.fileExists(atPath: env.fileURL.path),
+                "the corrupt leftover is dropped, not kept to shadow the next load")
+    }
+
+    @Test("A leftover file never overwrites a newer keychain key")
+    func leftoverFileNeverOverwritesKeychain() async throws {
+        let newerKey = String(repeating: "f9e8d7c6", count: 4)
+        let spy = WorkshopKeychainSlotSpy(stored: newerKey)
+        let env = Self.makeStore(slot: spy)
+        // Same shape-valid content the pre-keychain versions persisted.
+        try Self.writeContainerFile(Self.sampleKey, at: env.fileURL)
+
+        let loaded = try await env.store.loadWebAPIKey()
+        #expect(loaded == newerKey, "the keychain value wins")
+        #expect(spy.storedKey == newerKey, "migration must not write the stale file over it")
+        #expect(!FileManager.default.fileExists(atPath: env.fileURL.path))
+    }
+
     @Test("Saving stores the key in the keychain, and Forget takes it back out")
     func saveAndForgetRoundTrip() async throws {
         let spy = WorkshopKeychainSlotSpy()

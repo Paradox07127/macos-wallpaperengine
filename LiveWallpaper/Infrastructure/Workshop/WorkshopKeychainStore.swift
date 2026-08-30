@@ -169,9 +169,20 @@ actor WorkshopKeychainStore {
     /// where it still works rather than losing it.
     private func migrateContainerFileIfPresent() throws -> String? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        // The keychain outranks the file: a save writes the keychain first and
+        // only then drops the file, so whenever both exist the file is the
+        // stale side (a failed removal, a backup restore, a half-written legacy
+        // copy). Migrating it over the keychain resurrected forgotten keys.
+        if case .found(let stored) = slot.read(), Self.isValidAPIKeyShape(stored) {
+            try? FileManager.default.removeItem(at: fileURL)
+            return nil
+        }
         guard let key = String(data: data, encoding: .utf8),
               Self.isValidAPIKeyShape(key) else {
-            throw WorkshopKeychainError.malformedData
+            // A corrupt leftover used to throw here — before the keychain was
+            // even consulted — shadowing a perfectly valid stored key.
+            try? FileManager.default.removeItem(at: fileURL)
+            return nil
         }
         guard slot.write(key) == errSecSuccess,
               case .found(let stored) = slot.read(), stored == key else { return key }
