@@ -164,12 +164,41 @@ git push origin main
 
 ## Release notes
 
-Three flat sections, one line per item, newest-facing first. Drop any section
-with nothing in it. Write the items from what actually shipped in
-`git log <previous-tag>..HEAD`, picking what a user would notice — this is a
-changelog, not a summary of every commit.
+Four blocks, in this order: a download chooser, a collapsed first-launch note,
+the three-section changelog, and the system requirement. English set first,
+then `---`, then the equivalent Simplified Chinese set. Link definitions go at
+the very bottom of the file and are shared by both languages.
 
-```markdown
+````markdown
+## Download
+
+| Edition | Your Mac | Wallpapers |
+| --- | --- | --- |
+| [**Lite** — Intel][lite] | Intel | Video · Web |
+| [**Lite** — Apple Silicon][lite] | Apple Silicon | Video · Web |
+| [**Pro** — Apple Silicon][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
+
+The Lite DMG is universal — Intel and Apple Silicon share the same file.
+
+<details>
+<summary><b>First launch</b> — one command, needed once</summary>
+
+After dragging the app to Applications, run this once so macOS will open it:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Loomscreen.app
+```
+
+For Pro:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
+```
+
+Updates after that install themselves — no need to repeat this.
+
+</details>
+
 ## What's New
 
 - <user-visible capability that did not exist before>
@@ -183,17 +212,31 @@ changelog, not a summary of every commit.
 - <what was broken, in the user's words; reference an issue when there is one>
 
 Requires macOS 14.6+.
-```
 
-English first, then `---`, then an equivalent Simplified Chinese block using
-新功能 / 改进 / Bug 修复. Equivalent means equivalent: version numbers, command
-lines, paths, and the SKU names (Loomscreen / Loomscreen Pro) stay identical and
-untranslated, and neither side omits an item the other has.
+<!-- bottom of file -->
+[lite]: https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-vX.Y.Z/Loomscreen-X.Y.Z.dmg
+[pro]: https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-vX.Y.Z/Loomscreen-Pro-X.Y.Z.dmg
+````
 
-Do **not** write: a marketing tagline or lead paragraph, a "Download the DMG
-below" section, the quarantine command and no-notarization explanation, or
-per-subsystem headings. The download is the release page's own UI, and install
-instructions live in [install.md](install.md).
+Details that have bitten before:
+
+- **Both Lite rows pointing at one link is correct**, not a copy-paste slip: Lite
+  ships universal (`x86_64 arm64`) and Pro is `arm64` only. Keep the "universal"
+  sentence under the table or the duplicate link reads as a mistake. Take the
+  architecture claim from this release's `lipo -archs`, not from last release's notes.
+- **Leave a blank line after `</summary>`** or GitHub will not render the markdown
+  inside `<details>`.
+- **One-click copy is just a fenced code block** — GitHub adds the copy button.
+  Keep Lite and Pro in separate blocks so each gets its own button.
+- Changelog items come from what actually shipped in `git log <previous-tag>..HEAD`,
+  picking what a user would notice. This is a changelog, not a summary of every
+  commit, and not a rewording of `CHANGELOG.md`. Drop any section with nothing in it.
+- Equivalent means equivalent: version numbers, command lines, paths, and the SKU
+  names (Loomscreen / Loomscreen Pro) stay identical and untranslated, and neither
+  language omits an item the other has. The Chinese headings are 新功能 / 改进 / Bug 修复.
+- Still out: a marketing tagline or lead paragraph, and per-subsystem headings.
+  The download and first-launch blocks *are* wanted — but only in the table and
+  collapsed form above, never as prose paragraphs.
 
 ## Post-release verification
 

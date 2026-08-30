@@ -142,11 +142,39 @@ git push origin main
 
 ## 发布说明
 
-三个平铺的小节，一条一件事，面向用户的在前。没内容的小节整段省略。条目取自
-`git log <上一个 tag>..HEAD` 里实际发出去的东西，挑用户会注意到的写——这是
-changelog，不是每个 commit 的汇总。
+四块，顺序固定：下载选择表 → 折叠的首次启动说明 → 三段式 changelog → 系统要求。
+英文整套在前，`---` 分隔，中文整套在后。链接定义放在文件最末尾，两种语言共用。
 
-```markdown
+````markdown
+## Download
+
+| Edition | Your Mac | Wallpapers |
+| --- | --- | --- |
+| [**Lite** — Intel][lite] | Intel | Video · Web |
+| [**Lite** — Apple Silicon][lite] | Apple Silicon | Video · Web |
+| [**Pro** — Apple Silicon][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
+
+The Lite DMG is universal — Intel and Apple Silicon share the same file.
+
+<details>
+<summary><b>First launch</b> — one command, needed once</summary>
+
+After dragging the app to Applications, run this once so macOS will open it:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Loomscreen.app
+```
+
+For Pro:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
+```
+
+Updates after that install themselves — no need to repeat this.
+
+</details>
+
 ## What's New
 
 - <之前没有的、用户可见的新能力>
@@ -160,15 +188,26 @@ changelog，不是每个 commit 的汇总。
 - <哪里坏了，用用户的说法写；有 issue 就引用>
 
 Requires macOS 14.6+.
-```
 
-英文在前，`---` 分隔，之后是等价的简体中文块，标题用 新功能 / 改进 / Bug 修复。
-等价就是等价：版本号、命令行、路径、SKU 名（Loomscreen / Loomscreen Pro）两边字面一致
-且不翻译，任何一边都不许比另一边少一条。
+<!-- 文件最末尾 -->
+[lite]: https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-vX.Y.Z/Loomscreen-X.Y.Z.dmg
+[pro]: https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-vX.Y.Z/Loomscreen-Pro-X.Y.Z.dmg
+````
 
-**不要写**：营销式标语或开场段落、"下载下方 DMG"这类指引段、清除隔离标记的命令与
-"没有公证"的说明、按子系统划分的小标题。下载是 release 页面自带的 UI，安装说明在
-[install.md](install.md) 里。
+以下几条都是踩过的：
+
+- **两行 Lite 指向同一个链接是对的**，不是复制粘贴出错：Lite 出的是 universal
+  （`x86_64 arm64`），Pro 才是 `arm64` 单架构。表格下面那句 "universal" 说明必须留着，
+  否则重复的链接看起来像贴错了。架构结论以本次发布的 `lipo -archs` 为准，别照抄上一版。
+- **`</summary>` 后面要空一行**，否则 GitHub 不会渲染 `<details>` 里的 markdown。
+- **一键复制靠的就是围栏代码块** —— GitHub 会自动加复制按钮。Lite 与 Pro 分成两个块，
+  各有各的按钮。
+- changelog 条目取自 `git log <上一个 tag>..HEAD` 里实际发出去的东西，挑用户会注意到的写。
+  这是 changelog，不是每个 commit 的汇总，也不是把 `CHANGELOG.md` 换个说法。没内容的小节整段省略。
+- 等价就是等价：版本号、命令行、路径、SKU 名（Loomscreen / Loomscreen Pro）两边字面一致
+  且不翻译，任何一边都不许比另一边少一条。中文标题用 新功能 / 改进 / Bug 修复。
+- 仍然**不要写**：营销式标语或开场段落、按子系统划分的小标题。下载与首次启动**是要写的**，
+  但只用上面的表格与折叠块形式，不要退回成散文段落。
 
 ## 发布后验证
 
