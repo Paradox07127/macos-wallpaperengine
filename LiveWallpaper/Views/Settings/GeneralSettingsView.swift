@@ -209,12 +209,16 @@ struct GeneralSettingsView: View {
             }
         }
         .sheet(item: $pendingBugReport) { report in
-            ReportBugSheet(report: report) {
-                pendingBugReport = nil
+            AppLanguageScope(defaults: .appScoped()) {
+                ReportBugSheet(report: report) {
+                    pendingBugReport = nil
+                }
             }
         }
         .sheet(isPresented: $showAppExceptions) {
-            AppExceptionsSheet(rules: $applicationRules, onChange: updateGlobalSettings)
+            AppLanguageScope(defaults: .appScoped()) {
+                AppExceptionsSheet(rules: $applicationRules, onChange: updateGlobalSettings)
+            }
         }
     }
 

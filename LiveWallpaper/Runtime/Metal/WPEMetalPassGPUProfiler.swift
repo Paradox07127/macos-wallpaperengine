@@ -6,11 +6,10 @@
 
     #if DEBUG
         /// Per-pass GPU timing via stage-boundary counter sampling. DEBUG-only, opt-in:
-        /// `defaults write com.loomscreen.pro WPEPassGPUProfileEnabled -bool YES`.
-        /// Ranks render passes by GPU cost (CSV in Caches/WPEPassGPUProfile/) to pick
-        /// pass-merge candidates. Apple GPUs only expose stage-boundary sampling, and
-        /// TBDR overlaps vertex/fragment stages across passes — per-pass durations rank
-        /// cost but must NOT be summed into a frame time (see the CSV header note).
+        /// `defaults write com.loomscreen.pro WPEPassGPUProfileEnabled -bool YES`. Ranks
+        /// render passes by GPU cost (CSV in Caches/WPEPassGPUProfile/) to pick pass-merge
+        /// candidates. Apple GPUs only expose stage-boundary sampling and TBDR overlaps
+        /// vertex/fragment stages across passes — durations rank cost but must NOT be summed into a frame time (see the CSV header note).
         final class WPEMetalPassGPUProfiler: @unchecked Sendable {
             private struct Stat {
                 var count = 0

@@ -5,6 +5,86 @@ import Testing
 struct LocalizationCoverageTests {
     private static let requiredLocales = ["zh-Hans", "zh-Hant", "ja"]
 
+    /// Every non-test Swift file under the given repository-relative roots.
+    static func projectSwiftFiles(_ roots: [String]) throws -> [String] {
+        let base = RepositoryRoot.url("")
+        var found: [String] = []
+        for root in roots {
+            let url = base.appendingPathComponent(root)
+            guard let walker = FileManager.default.enumerator(atPath: url.path) else { continue }
+            for case let relative as String in walker where relative.hasSuffix(".swift") {
+                if relative.contains("Tests") { continue }
+                found.append(url.appendingPathComponent(relative).path)
+            }
+        }
+        return found
+    }
+
+    /// Full text of each `String(localized:` call, brace-matched so a nested
+    /// call's closing paren does not end the outer one.
+    static func stringLocalizedCalls(in source: String) -> [String] {
+        var calls: [String] = []
+        let chars = Array(source)
+        var i = 0
+        let needle = Array("String(localized:")
+        while i < chars.count {
+            guard i + needle.count <= chars.count,
+                  Array(chars[i..<(i + needle.count)]) == needle else {
+                // Allow whitespace/newline between `String(` and `localized:`.
+                if chars[i] == "S", let open = Self.matchLooseOpening(chars, at: i) {
+                    let end = Self.matchClosingParen(chars, from: open)
+                    calls.append(String(chars[i..<end]))
+                    i = end
+                    continue
+                }
+                i += 1
+                continue
+            }
+            // From the `(` of `String(`, not from the trailing `:` — starting
+            // past the open paren leaves the depth counter at zero and swallows
+            // the rest of the file as one call.
+            let end = Self.matchClosingParen(chars, from: i + "String".count)
+            calls.append(String(chars[i..<end]))
+            i = end
+        }
+        return calls
+    }
+
+    /// `String(` followed by whitespace then `localized:` — the multi-line form.
+    private static func matchLooseOpening(_ chars: [Character], at index: Int) -> Int? {
+        let prefix = Array("String(")
+        guard index + prefix.count <= chars.count,
+              Array(chars[index..<(index + prefix.count)]) == prefix else { return nil }
+        var j = index + prefix.count
+        while j < chars.count, chars[j].isWhitespace { j += 1 }
+        guard j + 10 <= chars.count,
+              String(chars[j..<(j + 10)]) == "localized:" else { return nil }
+        return index + prefix.count - 1
+    }
+
+    private static func matchClosingParen(_ chars: [Character], from openParen: Int) -> Int {
+        var depth = 0
+        var i = openParen
+        var inString = false
+        while i < chars.count {
+            let ch = chars[i]
+            if inString {
+                if ch == "\\" { i += 2; continue }
+                if ch == "\"" { inString = false }
+                i += 1
+                continue
+            }
+            if ch == "\"" { inString = true }
+            else if ch == "(" { depth += 1 }
+            else if ch == ")" {
+                depth -= 1
+                if depth == 0 { return i + 1 }
+            }
+            i += 1
+        }
+        return chars.count
+    }
+
     @Test("String catalogs include supported localizations for every entry")
     func catalogsIncludeSupportedTranslations() throws {
         for catalogName in ["Localizable.xcstrings", "InfoPlist.xcstrings"] {
@@ -162,20 +242,61 @@ struct LocalizationCoverageTests {
         }
     }
 
-    @Test("Shared package UI resolves app-localized Text from the app bundle")
-    func sharedPackageUIResolvesTextFromAppBundle() throws {
+    // 2026-08-29: this used to assert an explicit `bundle: .main` on every Text.
+    // That argument is the parameter's own default, so it never changed
+    // behaviour — and the 84 sites carrying it were dropped when the app's
+    // localization writing was unified. What actually keeps a translation from
+    // being swallowed is the *parameter type*: a `String` parameter routes
+    // through Text's verbatim overload and never consults the catalog, while a
+    // `LocalizedStringKey` does. That is what this now guards.
+    @Test("Shared package UI takes localizable keys, not resolved strings")
+    func sharedPackageUITakesLocalizableKeys() throws {
         let source = try Self.projectFile("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/SettingRow.swift")
 
-        #expect(source.contains("Text(title, bundle: .main)"))
-        #expect(source.contains("Text($0, bundle: .main)"))
+        #expect(source.contains("title: LocalizedStringKey"))
+        #expect(source.contains("subtitle: LocalizedStringKey?"))
         #expect(source.contains("let info: String.LocalizationValue?"))
         #expect(source.contains("@AppStorage(AppLanguagePreference.storageKey)"))
         #expect(source.contains(".help(localizedText)"))
         #expect(source.contains("Text(verbatim: localizedText)"))
         #expect(!source.contains(".help(text)"))
-        #expect(!source.contains("self.title = Text(title)"))
-        #expect(!source.contains("self.subtitle = subtitle.map { Text($0) }"))
-        #expect(!source.contains("self.info = info.map { Text($0) }"))
+        // The failure this exists for: a title that arrives already resolved.
+        #expect(!source.contains("title: String,"))
+        #expect(!source.contains("Text(verbatim: title)"))
+    }
+
+    // `String(localized:)` resolves against `Locale.current` — the *system*
+    // language — and ignores both SwiftUI's `\.locale` environment and its own
+    // `locale:` argument (measured; see AppLanguageRuntimeProbeTests). Naming
+    // the bundle is the only form that follows the in-app language picker, so a
+    // site that forgets it renders in the system language while everything
+    // around it renders in the chosen one. Brace-matched rather than grepped:
+    // most of these calls span several lines and carry nested calls.
+    @Test("Every String(localized:) names the in-app language bundle")
+    func stringLocalizedSitesNameTheLanguageBundle() throws {
+        // Compiled into the SystemWallpaperProvider appex too, which does not
+        // link LiveWallpaperCore and ships no catalog of its own.
+        let sharedWithAppExtension = ["LiveWallpaper/Models/SystemWallpaperManifest.swift"]
+
+        var offenders: [String] = []
+        var checked = 0
+        for path in try Self.projectSwiftFiles(["LiveWallpaper", "Packages"]) {
+            if sharedWithAppExtension.contains(where: { path.hasSuffix($0) }) { continue }
+            let source = try String(contentsOfFile: path, encoding: .utf8)
+            for call in Self.stringLocalizedCalls(in: source) {
+                checked += 1
+                if !call.contains("bundle:") {
+                    let firstLine = call.split(separator: "\n").first.map(String.init) ?? call
+                    offenders.append("\(path): \(firstLine.prefix(80))")
+                }
+            }
+        }
+
+        #expect(checked > 300, "Only \(checked) call sites matched — the scan stopped working")
+        #expect(
+            offenders.isEmpty,
+            "String(localized:) without a bundle: \(offenders.prefix(10).joined(separator: "; "))"
+        )
     }
 
     @Test("Shortcut action copy remains localizable at render time")
@@ -184,8 +305,8 @@ struct LocalizationCoverageTests {
         let actionModel = try Self.projectFile("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Schema/GlobalShortcutAction.swift")
 
         #expect(!shortcutView.contains("Text(verbatim: action.displayName)"))
-        #expect(shortcutView.contains("Text(action.displayNameKey, bundle: .main)"))
-        #expect(shortcutView.contains("Text(action.displayDescriptionKey, bundle: .main)"))
+        #expect(shortcutView.contains("Text(action.displayNameKey)"))
+        #expect(shortcutView.contains("Text(action.displayDescriptionKey)"))
         #expect(actionModel.contains("var displayNameKey: LocalizedStringKey"))
         #expect(actionModel.contains("var displayDescriptionKey: LocalizedStringKey"))
     }

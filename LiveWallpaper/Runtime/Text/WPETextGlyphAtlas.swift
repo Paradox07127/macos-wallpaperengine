@@ -5,11 +5,10 @@ import Foundation
 import LiveWallpaperCore
 import Metal
 
-/// R8 coverage-glyph atlas mirroring WPE's runtime font atlas: glyphs are
-/// rasterized once at their final pixel size and sampled 1:1 by the text mesh.
-/// Rasterization is synchronous — a CoreText coverage fill is cheap, so there
-/// is no warm-up frame and no fallback path.
-/// Not `@MainActor`: lives inside the renderer's actor isolation.
+/// R8 coverage-glyph atlas mirroring WPE's runtime font atlas: glyphs are rasterized once at
+/// their final pixel size and sampled 1:1 by the text mesh. Rasterization is synchronous — a
+/// CoreText coverage fill is cheap, so there's no warm-up frame and no fallback path. Not
+/// `@MainActor`: lives inside the renderer's actor isolation.
 final class WPETextGlyphAtlas {
     struct Entry {
         let page: Int

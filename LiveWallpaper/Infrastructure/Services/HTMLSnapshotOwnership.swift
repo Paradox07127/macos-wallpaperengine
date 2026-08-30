@@ -1,11 +1,7 @@
 import AppKit
 
-/// Pure ownership state for deduplicated HTML snapshot producers.
-///
-/// Each caller owns one lease. Cancelling a lease only cancels the producer
-/// after the last waiter leaves; producer completion is identity-checked so a
-/// late completion from cancelled work cannot retire a replacement for the
-/// same cache key.
+/// Pure ownership state for deduplicated HTML snapshot producers. Each caller owns one lease.
+/// Cancelling a lease only cancels the producer after the last waiter leaves; producer completion is identity-checked so a late completion from cancelled work cannot retire a replacement for the same cache key.
 struct HTMLSnapshotLeaseState {
     struct ProducerID: Hashable, Sendable {
         fileprivate let rawValue: UInt64

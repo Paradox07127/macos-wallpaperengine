@@ -1,11 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// Turns a meteorological wind reading into something an emitter can use.
-///
-/// Kept pure and separate from both the service and the emitter so the
-/// convention — which is genuinely easy to get backwards — is stated once and
-/// tested once.
+/// Turns a meteorological wind reading into something an emitter can use. Kept pure and separate from
+/// both the service and the emitter so the convention — which is genuinely easy to get backwards — is
+/// stated once and tested once.
 enum WeatherWindPolicy {
 
     /// Wind direction is reported as the direction it blows *from*, so a 270°
@@ -16,29 +14,13 @@ enum WeatherWindPolicy {
         return -sin(fromDegrees * .pi / 180)
     }
 
-    /// How far falling particles lean, in radians from vertical.
-    ///
-    /// From the physics rather than taste: a particle at terminal velocity
-    /// drifts with the air, so its path makes `atan(windSpeed / fallSpeed)`
-    /// with the vertical. Fall speed differs per effect — a raindrop is an
-    /// order of magnitude faster than a snowflake — which is why it is a
-    /// parameter and not a constant.
-    ///
-    /// Capped, and lower than the physics alone would suggest. The drawn fall
-    /// speed is in points per second and is not calibrated to metres, so
-    /// pushing a real wind through a real terminal velocity overstates the
-    /// on-screen lean: rain no longer accelerates, so the lean now holds for
-    /// the whole fall instead of being straightened out by gravity a second
-    /// in, and an ordinary breeze came out looking like a gale. 30° is about
-    /// where a leaning field still reads as rain rather than as sleet fired
-    /// across the desktop.
-    /// Compressed rather than clipped. `atan(wind / fall)` saturates fast — an
-    /// ordinary 25 km/h breeze already puts rain past 40° — so a hard clamp at
-    /// a comfortable angle made every wind above a light one produce the exact
-    /// same lean, and the wind reading stopped mattering at all (it also made
-    /// snow and rain lean identically, which they never do). `tanh` keeps the
-    /// gentle end untouched, stays strictly increasing forever, and only
-    /// approaches the limit instead of hitting it.
+    /// How far falling particles lean, in radians from vertical: `atan(windSpeed / fallSpeed)`, the drift angle
+    /// at terminal velocity. Fall speed is a parameter, not a constant — rain falls ~10x faster than snow.
+    /// Capped at 30° via `tanh`, not a hard clamp: drawn fall speed is points/s, not metres, so a real
+    /// wind/velocity ratio overstates the on-screen lean (rain no longer accelerates, so the lean holds the
+    /// whole fall instead of being straightened by gravity); `atan` also saturates fast (25 km/h already passes
+    /// 40°), so a hard clamp flattened every wind above light to one lean — snow and rain alike, reading moot —
+    /// while `tanh` stays monotonic and only approaches the limit.
     static func tiltRadians(
         windSpeedKPH: Double,
         fallSpeedMPS: Double,

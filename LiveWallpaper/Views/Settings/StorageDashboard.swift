@@ -207,7 +207,9 @@ struct StorageInfoButton<Content: View>: View {
         .help(Text("Details"))
         .accessibilityLabel(Text("Details"))
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            content().padding(DesignTokens.Spacing.cardInset)
+            AppLanguageScope(defaults: .appScoped()) {
+                content().padding(DesignTokens.Spacing.cardInset)
+            }
         }
     }
 }

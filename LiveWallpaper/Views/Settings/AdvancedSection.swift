@@ -73,12 +73,20 @@ extension GeneralSettingsView {
     }
 
     private func makeDiagnosticsReport() -> BugReport {
-        BugReporter.makeReport(activeWallpaperKinds: activeWallpaperKinds)
+        BugReporter.makeReport(activeWallpapers: activeWallpapers)
     }
 
-    private var activeWallpaperKinds: [String] {
-        screenManager.wallpaperSessionSummaries
-            .compactMap { $0.wallpaperType?.rawValue }
+    /// Kind alone can't identify what broke. Carry the per-screen identity the
+    /// runtime log now records, so a report and its log excerpt name the same
+    /// wallpaper.
+    private var activeWallpapers: [String] {
+        screenManager.screens.compactMap { screen in
+            guard let kind = screenManager.wallpaperSummary(for: screen).wallpaperType?.rawValue else { return nil }
+            let identity = [screenManager.wallpaperDisplayName(for: screen), screenManager.wallpaperOriginTitle(for: screen)]
+                .compactMap { $0 }
+                .joined(separator: " — ")
+            return identity.isEmpty ? "screen \(screen.id): \(kind)" : "screen \(screen.id): \(kind) — \(identity)"
+        }
     }
 
     private func revealLogFolder() {

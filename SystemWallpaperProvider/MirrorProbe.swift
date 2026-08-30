@@ -59,16 +59,8 @@ enum MirrorProbe {
         return nil
     }
 
-    static func url(named name: String, in any: Any?) -> URL? {
-        value(named: name, in: any) as? URL
-    }
-
     static func data(named name: String, in any: Any?) -> Data? {
         value(named: name, in: any) as? Data
-    }
-
-    static func urlArray(named name: String, in any: Any?) -> [URL]? {
-        value(named: name, in: any) as? [URL]
     }
 
     /// Last-resort: parse `identifier: "…"` out of an object's description,

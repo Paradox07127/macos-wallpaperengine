@@ -2,13 +2,11 @@ import Foundation
 
 // MARK: - Monitor widget board configuration
 
-/// The one place the widget grid's dimensions live.
-///
-/// A small tile is Apple's 170×170; every neighbour sits exactly one `gutter`
-/// away on BOTH axes, so a large tile is 2×2 cells minus the gutter it crosses
-/// and comes out square. The board used to carry a 16 pt horizontal and a
-/// 24 pt vertical gap (large 356×364), which is what made the grid read as
-/// squashed sideways against real macOS desktop widgets.
+/// The one place the widget grid's dimensions live. A small tile is Apple's 170×170; every
+/// neighbour sits exactly one `gutter` away on BOTH axes, so a large tile is 2×2 cells minus the
+/// gutter it crosses and comes out square. The board used to carry a 16 pt horizontal and a 24 pt
+/// vertical gap (large 356×364), which is what made the grid read as squashed sideways against real
+/// macOS desktop widgets.
 public enum MonitorBoardMetrics {
     public static let tileSide: Double = 170
     /// Gap between neighbouring tiles; each tile is inset by half of it.
@@ -173,12 +171,11 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
         return min(max(value, 0.2), 2.0)
     }
 
-    /// Selectable refresh intervals in seconds. Deliberately non-uniform: 0.1 s
-    /// resolution is only useful in the sub-2 s range people actually tune, so
-    /// past 2 s the grid coarsens to whole seconds instead of adding 30 stops
-    /// nobody drags to. The bounds mirror `clampedRefreshHz` exactly
-    /// (0.5 s == 2 Hz, 5 s == 0.2 Hz); 0.5 s is also `DataHub`'s publish
-    /// throttle, so sampling faster than that would be discarded work.
+    /// Selectable refresh intervals in seconds. Deliberately non-uniform: 0.1 s resolution is only
+    /// useful in the sub-2 s range people actually tune, so past 2 s the grid coarsens to whole
+    /// seconds instead of adding 30 stops nobody drags to. The bounds mirror `clampedRefreshHz`
+    /// exactly (0.5 s == 2 Hz, 5 s == 0.2 Hz); 0.5 s is also `DataHub`'s publish throttle, so
+    /// sampling faster than that would be discarded work.
     public static let refreshIntervalSteps: [Double] =
         (5...19).map { Double($0) / 10.0 } + [2, 3, 4, 5]
 

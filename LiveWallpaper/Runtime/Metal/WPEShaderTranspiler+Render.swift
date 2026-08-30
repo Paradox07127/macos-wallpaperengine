@@ -105,13 +105,11 @@ extension WPEShaderTranspiler {
         for slot in 0..<Self.customTextureSlotCount {
             signature.append("    texture2d<float> tex\(slot) [[texture(\(slot))]],")
         }
-        // Per-slot samplers. Address mode (clamp vs repeat) and filter (linear vs
-        // nearest) are bound at runtime from each texture's TEXI flags in
-        // WPEMetalRenderExecutor's custom-shader dispatch. This replaces the old
-        // annotation heuristic that clamp-sampled every content texture — which
-        // froze scrolled tiling maps (water-normal, noise, flow) the moment their
-        // sample UVs left [0,1]. Direct `g_TextureN` reads use `wpeSamplerN`; helper
-        // samples fall back to the file-scope clamp/repeat constants.
+        // Per-slot samplers. Address mode (clamp vs repeat) and filter (linear vs nearest) are
+        // bound at runtime from each texture's TEXI flags in
+        // WPEMetalRenderExecutor's custom-shader dispatch — replacing the old annotation
+        // heuristic that clamp-sampled every content texture and froze scrolled tiling maps
+        // (water-normal, noise, flow) once their sample UVs left [0,1]. Direct `g_TextureN` reads use `wpeSamplerN`; helper samples fall back to the file-scope clamp/repeat constants.
         for slot in 0..<Self.customTextureSlotCount {
             let comma = slot < Self.customTextureSlotCount - 1 ? "," : ""
             signature.append("    sampler wpeSampler\(slot) [[sampler(\(slot))]]\(comma)")
@@ -119,12 +117,10 @@ extension WPEShaderTranspiler {
         signature.append(") {")
         out.append(signature.joined(separator: "\n"))
 
-        // Alias each sampler to its ACTUAL texture slot (`g_Texture2` → tex2),
-        // matching how the custom-shader dispatcher binds textures
-        // (`setFragmentTexture(index: slot)`). Enumeration order would mis-map
-        // any sparse / non-zero slot (`g_Texture2` → tex0) and sample the wrong
-        // texture. Non-`g_TextureN` samplers (no parsed slot) keep enumeration
-        // order as before.
+        // Alias each sampler to its ACTUAL texture slot (`g_Texture2` → tex2), matching how the
+        // custom-shader dispatcher binds textures (`setFragmentTexture(index: slot)`).
+        // Enumeration order would mis-map any sparse/non-zero slot (`g_Texture2` → tex0) and
+        // sample the wrong texture. Non-`g_TextureN` samplers (no parsed slot) keep enumeration order as before.
         for (index, sampler) in samplers.enumerated() {
             let slot = Self.textureSlot(for: sampler.name) ?? index
             out.append("    [[maybe_unused]] auto \(sampler.name) = tex\(slot);")
@@ -409,13 +405,11 @@ extension WPEShaderTranspiler {
                 );
                 return float4(uv * scale, scale);
             }
-            // swing.vert / twirl.vert v_TexCoord: .z = the layer aspect (swing reads
-            // g_Texture0Resolution.x/.y, twirl .z/.w), .w = sin(t·speed + phase·2π)·amount
-            // — the time-driven swing/twirl phase. Deliberately absent from the
-            // texCoordZWResolutionSlot family table (.zw packs aspect+phase, not a scaled
-            // UV); the float4(in.uv, in.uv) default fed screen position into both, freezing
-            // the animation into a position-dependent warp. Degenerate resolution falls
-            // back to aspect 1 (not 0): both fragments divide by .z on the way out.
+            // swing.vert/twirl.vert v_TexCoord: .z = the layer aspect (swing reads
+            // g_Texture0Resolution.x/.y, twirl .z/.w), .w = sin(t·speed + phase·2π)·amount —
+            // the time-driven phase. Deliberately absent from the texCoordZWResolutionSlot
+            // family table (.zw packs aspect+phase, not a scaled UV); the float4(in.uv, in.uv)
+            // default fed screen position into both, freezing the animation into a position-dependent warp. Degenerate resolution falls back to aspect 1 (not 0), since both fragments divide by .z.
             inline float4 wpe_swing_texcoord(float2 uv, float2 resolution, float time, float speed, float phase, float amount) {
                 float aspect = wpe_safe_ratio(resolution.x, resolution.y);
                 return float4(uv, abs(aspect) > 0.000001 ? aspect : 1.0, sin(time * speed + phase * 6.28318530718) * amount);
@@ -474,14 +468,11 @@ extension WPEShaderTranspiler {
                 float wave = sin(time * speed + (phase - 0.25) * 6.28318530717958647692) * 0.5 + 0.5;
                 return wpe_smoothstep(thresholds.x, thresholds.y, wave) * amount;
             }
-            // Vertex-stage `v_AudioShift` (WPE common.h CreateAudioResponse): the
-            // FFT bins in [freqMin, freqMax] are averaged, smoothstepped against
-            // g_AudioBounds, raised to g_AudioPower and scaled by g_AudioMultiply.
-            // `mode` is the AUDIOPROCESSING combo (1=left, 2=right, 3=both). Returns
-            // 0 when silent — matching WPE, where the effect rests until audio plays.
-            // The fragment-only transpile has no vertex stage, so without this the
-            // varying defaulted to `in.uv.x`, smearing the whole frame (chromatic
-            // aberration / hue_shift glitch across the screen even with no audio).
+            // Vertex-stage `v_AudioShift` (WPE common.h CreateAudioResponse): FFT bins in
+            // [freqMin, freqMax] averaged, smoothstepped against g_AudioBounds, raised to
+            // g_AudioPower, scaled by g_AudioMultiply. `mode` is the AUDIOPROCESSING combo
+            // (1=left, 2=right, 3=both); returns 0 when silent, matching WPE. The fragment-only
+            // transpile has no vertex stage, so without this the varying defaulted to `in.uv.x`, smearing the whole frame (chromatic aberration/hue_shift glitch even with no audio).
             inline float wpe_audio_response16(
                 thread const float (&left)[16],
                 thread const float (&right)[16],
@@ -577,14 +568,11 @@ extension WPEShaderTranspiler {
                 // WPE: mul(vec3(uv,1), inverse(squareToQuad(...))); WPE mul(x,y) == y * x.
                 return wpe_mat3_inverse(wpe_square_to_quad(p0, p1, p2, p3)) * float3(uv, 1.0);
             }
-            // reflection.vert (PERSPECTIVE=0) v_ReflectedCoord: mirror uv across the
-            // horizontal centre (offset shifts the mirror line), then rotate by
-            // g_Direction. Transcribed verbatim — no V flip — because our fullscreen
-            // in.uv already matches WPE a_TexCoord (both top-left, uv.y==0 at the top;
-            // see WPEMetalBuiltins wpe_fullscreen_vertex). Without it the varying fell
-            // back to raw in.uv, so the reflected sample == albedo (a no-op) and water
-            // showed its flat base colour instead of the mirrored sky (scene 3413921910
-            // rendered a solid pink band across the whole water surface).
+            // reflection.vert (PERSPECTIVE=0) v_ReflectedCoord: mirror uv across the horizontal
+            // centre (offset shifts the mirror line), then rotate by g_Direction. Transcribed
+            // verbatim, no V flip — our fullscreen in.uv already matches WPE a_TexCoord (both
+            // top-left, uv.y==0 at the top; `wpe_fullscreen_vertex`). Without it the varying fell
+            // back to raw in.uv, so the reflected sample == albedo (no-op) and water showed its flat base colour instead of the mirrored sky (3413921910: solid pink band across the water).
             inline float2 wpe_reflection_texcoord(float2 uv, float direction, float offset) {
                 float2 center = float2(0.5, 0.5);
                 float2 delta = uv - center;
@@ -699,18 +687,14 @@ extension WPEShaderTranspiler {
                 return "1.0 / float4(-g_Texture0Resolution.xy, g_Texture0Resolution.xy)"
             }
         case "v_SizeMultiplier":
-            // blur_gaussian.vert:30 (same bloom family):
-            // `vec2(aRatio, 1.0) * (u_radius + u_radius) * iterations * g_TexelSize`
-            // where aRatio = u_ratio under ANAMORPHIC else 1.0, and iterations =
-            // 0.675 under HIGH_QUALITY else 1.5 (compile-time #if, folded here).
-            // The in.uv default made the blur offset grow with screen position.
-            // `g_TexelSize` is now packed from the SCENE resolution
-            // (`WPEMetalRenderExecutor.texelSizeValue`), so use it directly.
-            // It used to be substituted with 1/g_Texture0Resolution.xy on the
-            // premise that "the blur input is a same-size framebuffer"; RenderDoc
-            // disproved that — WPE holds g_TexelSize at 1/(3840,2160) for every
-            // pass of a chain that runs down to 240x135, so the substitution was
-            // 2x/4x/8x/16x too wide as the chain descended.
+            // blur_gaussian.vert:30 (same bloom family): `vec2(aRatio, 1.0) * (u_radius +
+            // u_radius) * iterations * g_TexelSize`, aRatio = u_ratio under ANAMORPHIC else
+            // 1.0, iterations = 0.675 under HIGH_QUALITY else 1.5 (compile-time #if, folded
+            // here). `g_TexelSize` is now packed from the SCENE resolution
+            // (`WPEMetalRenderExecutor.texelSizeValue`); it used to be substituted with
+            // 1/g_Texture0Resolution.xy on the premise the blur input is a same-size
+            // framebuffer, but RenderDoc showed WPE holds g_TexelSize at 1/(3840,2160) for
+            // every pass of a chain descending to 240x135 — 2x/4x/8x/16x too wide.
             if varying.metalType == "float2",
                hasUniforms("g_TexelSize", "u_radius", in: availableUniforms) {
                 let aRatio = comboValues["ANAMORPHIC"] == 1 && availableUniforms.contains("u_ratio")
@@ -939,13 +923,11 @@ extension WPEShaderTranspiler {
         }
     }
 
-    /// down_sample.vert:12-15 / light_map.vert:15-18 (workshop 2822917890 bloom
-    /// family): both compute the same 4-tap diagonal box filter around a_TexCoord,
-    /// `offsets = 1.0 / g_Texture0Resolution.xy`. The generic array path below
-    /// calls `varyingInitializer` ONCE and repeats that single value across all N
-    /// slots, collapsing the box filter to a single point sample (3554161528 sky).
-    /// Matched on varying name + array shape, not shader name, so other bloom/glow
-    /// packages sharing this exact offsets convention reconstruct too.
+    /// down_sample.vert:12-15 / light_map.vert:15-18 (workshop 2822917890 bloom family): both
+    /// compute the same 4-tap diagonal box filter around a_TexCoord, `offsets = 1.0 /
+    /// g_Texture0Resolution.xy`. The generic array path below calls `varyingInitializer` ONCE
+    /// and repeats that value across all N slots, collapsing the box filter to a single point
+    /// sample (3554161528 sky). Matched on varying name + array shape, not shader name, so other bloom/glow packages sharing this offsets convention reconstruct too.
     private static func texCoordBoxFilterInitializers(
         varying: WPEVaryingDecl,
         availableUniforms: Set<String>
@@ -1028,12 +1010,10 @@ extension WPEShaderTranspiler {
             let uniform = "g_Texture\(slot)Resolution"
             return availableUniforms.contains(uniform) ? uniform : nil
         }
-        // WPE distortion shaders (waterwaves/waterripple/foliagesway…) scale
-        // `v_TexCoord.zw` by the *active auxiliary texture's* resolution,
-        // mirroring the `#if MASK / #elif TIMEOFFSET` ladder in the .vert:
-        // MASK uses the opacity-mask texture (g_Texture1), TIMEOFFSET uses the
-        // time-offset texture (g_Texture2). The previous combo-blind heuristic
-        // always picked g_Texture1Resolution, mis-scaling the TIMEOFFSET case.
+        // WPE distortion shaders (waterwaves/waterripple/foliagesway…) scale `v_TexCoord.zw` by
+        // the *active auxiliary texture's* resolution, mirroring the `#if MASK / #elif
+        // TIMEOFFSET` ladder in the .vert: MASK uses the opacity-mask texture (g_Texture1),
+        // TIMEOFFSET uses the time-offset texture (g_Texture2). The previous combo-blind heuristic always picked g_Texture1Resolution, mis-scaling the TIMEOFFSET case.
         if comboValues["MASK"] == 1, availableUniforms.contains("g_Texture1Resolution") {
             return "g_Texture1Resolution"
         }

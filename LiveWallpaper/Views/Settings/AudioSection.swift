@@ -74,43 +74,43 @@ extension GeneralSettingsView {
 
     private var audioStatusText: String {
         guard audioResponseEnabled else {
-            return String(localized: "Off", comment: "Feature is off.")
+            return String(localized: "Off", bundle: .appLanguage, comment: "Feature is off.")
         }
         if audioStatusRefreshPending {
-            return String(localized: "Checking…", comment: "Inline status while waiting for audio permission state.")
+            return String(localized: "Checking…", bundle: .appLanguage, comment: "Inline status while waiting for audio permission state.")
         }
         switch audioCaptureState {
         case .capturing:
-            return String(localized: "Granted", comment: "Permission granted.")
+            return String(localized: "Granted", bundle: .appLanguage, comment: "Permission granted.")
         case .failed:
-            return String(localized: "Needs Access", comment: "Permission still required.")
+            return String(localized: "Needs Access", bundle: .appLanguage, comment: "Permission still required.")
         case .idle:
-            return String(localized: "Not Granted", comment: "Permission not granted yet.")
+            return String(localized: "Not Granted", bundle: .appLanguage, comment: "Permission not granted yet.")
         }
     }
 
     private var audioStatusSubtitle: String {
         guard audioResponseEnabled else {
-            return String(localized: "Audio response is off", comment: "Help text when audio response toggle is off.")
+            return String(localized: "Audio response is off", bundle: .appLanguage, comment: "Help text when audio response toggle is off.")
         }
         if audioStatusRefreshPending {
             return String(
                 localized: "Waiting for macOS to update audio permission",
-                comment: "Help text while system audio permission status refreshes."
+                bundle: .appLanguage, comment: "Help text while system audio permission status refreshes."
             )
         }
         switch audioCaptureState {
         case .capturing:
             return String(
                 localized: "System audio capture is running",
-                comment: "Help text when system audio capture is active."
+                bundle: .appLanguage, comment: "Help text when system audio capture is active."
             )
         case .failed(let reason):
             return LogPrivacyRedactor.scrub(reason)
         case .idle:
             return String(
                 localized: "Turn on access to start system audio capture",
-                comment: "Help text prompting the user to grant system audio access."
+                bundle: .appLanguage, comment: "Help text prompting the user to grant system audio access."
             )
         }
     }

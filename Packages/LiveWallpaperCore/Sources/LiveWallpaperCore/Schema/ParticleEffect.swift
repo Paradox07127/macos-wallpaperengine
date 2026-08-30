@@ -17,11 +17,9 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
 
     public var id: String { rawValue }
 
-    /// Whether wind should lean this effect.
-    ///
-    /// Only the ones that fall. Bokeh, fireflies and stars have no "down" to
-    /// tilt away from — leaning them just rotates the whole field, which reads
-    /// as the screen being crooked rather than as weather.
+    /// Whether wind should lean this effect. Only the ones that fall. Bokeh, fireflies and stars
+    /// have no "down" to tilt away from — leaning them just rotates the whole field, which reads as
+    /// the screen being crooked rather than as weather.
     public var leansIntoWind: Bool {
         switch self {
         case .rain, .snow, .fallingLeaves, .sakura, .dust: return true

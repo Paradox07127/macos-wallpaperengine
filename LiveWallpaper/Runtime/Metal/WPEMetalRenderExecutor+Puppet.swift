@@ -8,12 +8,11 @@ import MetalKit
 import os
 import simd
 extension WPEMetalRenderExecutor {
-    /// Skinning-gate breadcrumb. A gated-off puppet silently renders the static rest pose (no
-    /// blink/sway), so the console log surfaces why — warning for DISABLED (mirrors the v19/v20
-    /// character-sheet path), info for ENABLED. The console emission is OFF by default and opt-in
-    /// via `defaults write … WPEPuppetSkinDebugLog -bool YES`; the scene-debug layer-placements dump
-    /// (`recordPuppetSkinningStates`, gated separately by `WPESceneDebugArtifactsEnabled`) always
-    /// carries the gate decision regardless, so a bug-report dump is unaffected.
+    /// Skinning-gate breadcrumb: a gated-off puppet silently renders the static rest pose (no
+    /// blink/sway), so the console log surfaces why — warning for DISABLED (mirrors the
+    /// v19/v20 character-sheet path), info for ENABLED. Console emission is OFF by default,
+    /// opt-in via `defaults write … WPEPuppetSkinDebugLog -bool YES`; the scene-debug dump
+    /// (`recordPuppetSkinningStates`, gated by `WPESceneDebugArtifactsEnabled`) always carries the gate decision regardless, so a bug-report dump is unaffected.
     private static let puppetSkinBreadcrumbEnabled = UserDefaults.standard.bool(forKey: "WPEPuppetSkinDebugLog")
 
     func recordPuppetSkinningBreadcrumbs(
@@ -136,13 +135,11 @@ extension WPEMetalRenderExecutor {
             )
         }
 
-        // MDLV0019/0020 ship the mesh as a FLAT character sheet: the MDLV bind pose is the exploded
-        // split-source, and the assembled character is recovered ONLY by skinning through the MDLA
-        // animation pose. Its bind pose is therefore guaranteed-wrong, so skinning is MANDATORY for
-        // these generations — the regression carve-outs (which exist to keep pre-assembled v21/v23
-        // face/blink puppets static) must not apply, and rejecting on the displacement bound can only
-        // make it worse than the already-broken bind. Derived here from the model the executor already
-        // holds; no scene-schema threading.
+        // MDLV0019/0020 ship the mesh as a FLAT character sheet: the MDLV bind pose is the
+        // exploded split-source, and the assembled character is recovered ONLY by skinning
+        // through the MDLA animation pose. The bind pose is therefore guaranteed-wrong, so
+        // skinning is MANDATORY for these generations — the regression carve-outs (which keep
+        // pre-assembled v21/v23 face/blink puppets static) must not apply, and rejecting on the displacement bound can only make it worse. Derived from the model the executor already holds; no scene-schema threading.
         if model.version >= 19, model.version < 21, !model.bones.isEmpty {
             return mandatorySkinningState(
                 for: layer,
@@ -348,13 +345,11 @@ extension WPEMetalRenderExecutor {
         )
     }
 
-    /// Samples the palette across the clip and rejects skinning if any frame is non-finite or moves a
-    /// skinned vertex further than a puppet-size-relative bound — the catch for an otherwise "finite"
-    /// but exploding palette that frame-0==identity alone would not detect.
-    /// Returns nil when every sampled frame's palette is finite and bounded; otherwise a short
-    /// failure detail (frame / transform space / vertex-delta vs. allowed) that rides on the
-    /// `palette-unbounded` reason so the skinning-gate log shows WHY a puppet was rejected — a near-miss
-    /// delta means the threshold is too tight, a huge delta means the palette evaluation is exploding.
+    /// Samples the palette across the clip and rejects skinning if any frame is non-finite or
+    /// moves a skinned vertex further than a puppet-size-relative bound — catching an
+    /// otherwise "finite" but exploding palette that frame-0==identity alone wouldn't detect.
+    /// Returns nil when every sampled frame is finite and bounded; otherwise a short failure
+    /// detail (frame / transform space / vertex-delta vs. allowed) riding on `palette-unbounded` so the log shows WHY — a near-miss delta means the threshold is too tight, a huge delta means the palette is exploding.
     private func paletteBoundFailureDetail(
         layers: [WPEPuppetAnimationLayer],
         bones: [WPEPuppetBone],
@@ -367,11 +362,10 @@ extension WPEMetalRenderExecutor {
         let frames = Array(Set([0, 1, last / 4, last / 2, (last * 3) / 4, last])).sorted()
         let extent = Self.modelExtent(meshes: meshes)
         // This bound only needs to catch a grossly exploding palette: structural failures
-        // (non-finite, out-of-range skin indices, unresolved attachments, broken hierarchy) are
-        // caught by the other gate conditions. The previous 0.12×extent was far too tight — it
-        // rejected legit flowing-hair / gesture motion (e.g. Plana's finite 0.37×-extent swing),
-        // leaving the whole puppet static (no blink/sway). A legit pose keeps every skinned vertex
-        // within ~1.5 model extents of rest; beyond that the palette is exploding.
+        // (non-finite, out-of-range skin indices, unresolved attachments, broken hierarchy)
+        // are caught by the other gate conditions. The previous 0.12×extent was far too
+        // tight — it rejected legit flowing-hair/gesture motion (e.g. Plana's finite
+        // 0.37×-extent swing), leaving the puppet static. A legit pose keeps every skinned vertex within ~1.5 model extents of rest; beyond that the palette is exploding.
         let maxAllowedDelta = max(Float(256), extent * 1.5)
         for frame in frames {
             let time = Double(frame) / fps / max(base.rate, 0.0001)
@@ -458,14 +452,11 @@ extension WPEMetalRenderExecutor {
         return maxDelta
     }
 
-    /// Re-derives an attached child's transform from its parent puppet's animated anchor bone. The
-    /// child's static (parent-baked) origin already places it correctly at the bind pose, so we add
-    /// only the anchor's per-frame scene-space motion; at the bind pose the delta is exactly zero.
-    ///
-    /// ON-DEVICE VALIDATION POINT: the MDAT bind matrix is treated as a bone-LOCAL anchor offset, so
-    /// the model-space anchor is `boneBind · MDAT`. The model→scene mapping (puppetModelPointToScene)
-    /// is the convention most worth verifying on-device; both anchor points share it, so any constant
-    /// offset cancels and only the parent's scale/rotation shapes the followed motion.
+    /// Re-derives an attached child's transform from its parent puppet's animated anchor bone.
+    /// The child's static (parent-baked) origin already places it at the bind pose, so we add
+    /// only the anchor's per-frame scene-space motion (zero delta at bind pose).
+    /// ON-DEVICE VALIDATION POINT: the MDAT bind matrix is treated as a bone-LOCAL anchor offset,
+    /// so the model-space anchor is `boneBind · MDAT`; the model→scene mapping (`puppetModelPointToScene`) is the convention most worth verifying — both anchor points share it, so any constant offset cancels and only the parent's scale/rotation shapes the followed motion.
     func layerApplyingAttachmentFollow(
         _ layer: WPERenderLayer,
         context: PuppetAttachmentFrameContext
@@ -631,13 +622,11 @@ extension WPEMetalRenderExecutor {
             currentTargetID: destination.id
         )
         if shaderKind == .genericImage4 {
-            // generic4 MODEL material semantics differ from the image-layer path:
-            // slot 1 is the normal map (unused), slot 2 the PBR component map
-            // whose ALPHA is the emissive mask; tint/emissive come from the
-            // material constants ("color"/"emissivecolor"…). RenderDoc oracle on
-            // 3509243656: the suns are tex0 × g_TintColor with
-            // g_EmissiveColor × mask.a × g_EmissiveBrightness — the flat image
-            // fragment rendered them plain white.
+            // generic4 MODEL material semantics differ from the image-layer path: slot 1 is the
+            // normal map (unused), slot 2 the PBR component map whose ALPHA is the emissive
+            // mask; tint/emissive come from the material constants ("color"/"emissivecolor"…).
+            // RenderDoc oracle on 3509243656: the suns are tex0 × g_TintColor with
+            // g_EmissiveColor × mask.a × g_EmissiveBrightness — the flat image fragment rendered them plain white.
             encoder.setRenderPipelineState(try renderPipeline(
                 vertexName: "wpe_scene_model_mesh_vertex",
                 fragmentName: "wpe_scene_model_generic4_fragment",
@@ -729,12 +718,10 @@ extension WPEMetalRenderExecutor {
             return false
         }
         if shouldDeferPuppetMeshWarp(for: layer) {
-            // Intentional fallthrough: the dispatcher's genericimage2/4 path resolves
-            // texture0 with the SAME atlas precedence used below
-            // (`textureBindings[0] ?? textures[0] ?? source`). Because this pass targets
-            // `.layerComposite`, `usesObjectQuadGeometry` is false, so it renders the
-            // atlas at local UV 1:1 via `wpe_fullscreen_vertex` (no mesh warp). The warp
-            // is applied later by `encodePuppetSceneCompositePassIfNeeded`.
+            // Intentional fallthrough: the dispatcher's genericimage2/4 path resolves texture0
+            // with the SAME atlas precedence used below (`textureBindings[0] ?? textures[0] ??
+            // source`). Because this pass targets `.layerComposite`, `usesObjectQuadGeometry` is
+            // false, so it renders the atlas at local UV 1:1 via `wpe_fullscreen_vertex` (no mesh warp) — the warp is applied later by `encodePuppetSceneCompositePassIfNeeded`.
             return false
         }
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
@@ -967,12 +954,9 @@ extension WPEMetalRenderExecutor {
         let localSize = puppetCompositeLocalSize(for: layer, sourceTexture: sourceTexture)
         let paletteState = puppetBonePalette(for: skinningState)
 
-        // Placement copied from the current final object-quad path:
-        //   centerAndSize        -> objectCenterAndSize
-        //   sceneSizeAndRotation -> sceneSizeAndRotation
-        //   uvSignAndPadding.xy  -> meshCenterAndScaleSign.zw
-        // The vertex uses objectCenterAndSize.zw / localSize to produce the same screen-space scale
-        // `wpe_object_quad_vertex` applied to the layer FBO.
+        // Placement copied from the current final object-quad path: centerAndSize→objectCenterAndSize,
+        // sceneSizeAndRotation→sceneSizeAndRotation, uvSignAndPadding.xy→meshCenterAndScaleSign.zw.
+        // The vertex uses objectCenterAndSize.zw / localSize to produce the same screen-space scale `wpe_object_quad_vertex` applied to the layer FBO.
         var compositeUniforms = WPEPuppetSceneCompositeUniforms(
             localSizeAndMode: SIMD4<Float>(
                 localSize.x,
@@ -1405,13 +1389,12 @@ extension WPEMetalRenderExecutor {
         )
     }
 
-    /// Per-puppet deferred-warp decision (replaces the old global flag). The deferred warp only matters
-    /// for puppets with an effect chain — running base+effects in atlas/local UV space so effect masks
-    /// align with the mesh, then warping at the scene composite. A no-effect puppet renders identically
-    /// either way, so it stays on the direct (material-time warp) path and is byte-identical to the
-    /// pre-deferral behaviour. Clip-composite puppets with effects use the same ordering: their local
-    /// material/effects are produced first, then the final mesh warp re-applies authored per-part clipping.
-    /// A DEBUG `WPEPuppetDeferMeshWarp` override forces the decision (A/B testing).
+    /// Per-puppet deferred-warp decision (replaces the old global flag). Deferred warp only
+    /// matters for puppets with an effect chain — running base+effects in atlas/local UV space
+    /// so effect masks align with the mesh, then warping at the scene composite. A no-effect
+    /// puppet renders identically either way, so it stays on the direct (material-time warp)
+    /// path, byte-identical to pre-deferral behaviour. Clip-composite puppets with effects use
+    /// the same ordering (local material/effects first, then the final mesh warp re-applies authored per-part clipping); a DEBUG `WPEPuppetDeferMeshWarp` override forces the decision (A/B testing).
     private func shouldDeferPuppetMeshWarp(for layer: WPERenderLayer) -> Bool {
         // The deferred warp can only be applied if there's a `.scene` copy pass to land it on; without
         // one, deferring the material-time warp would lose it (the puppet would render unwarped). So even

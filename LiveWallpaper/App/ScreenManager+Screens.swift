@@ -100,7 +100,7 @@ extension ScreenManager {
     }
 
     func clearWallpaperForScreen(_ screen: Screen) {
-        Logger.info("Clearing wallpaper for screen \(screen.id)", category: .screenManager)
+        Logger.notice("Clearing wallpaper for screen \(screen.id)", category: .screenManager)
         releaseRuntimeSession(screen)
         persistence.remove(for: screen.id)
         notifyWallpaperSessionChanged()
@@ -561,11 +561,9 @@ extension ScreenManager {
         }
     }
 
-    /// Migrates every value keyed by a legacy fingerprint to its current-key counterpart.
-    /// Two-phase so that a legacy key shared by multiple screens (two same-model panels
-    /// both reporting EDID serial 0) is cloned to every mapped current key instead of
-    /// being consumed by whichever screen is processed first; existing current-key
-    /// values always win, and legacy keys are only dropped after all clones are assigned.
+    /// Migrates every value keyed by a legacy fingerprint to its current-key counterpart. Two-phase so a legacy key shared by multiple screens (two
+    /// same-model panels both reporting EDID serial 0) is cloned to every mapped current key instead of being consumed by whichever screen is processed first —
+    /// existing current-key values always win, and legacy keys are only dropped after all clones are assigned.
     nonisolated static func migrateLegacyFingerprintKeys<Value>(
         _ dict: [String: Value],
         mappings: [LegacyFingerprintMapping]

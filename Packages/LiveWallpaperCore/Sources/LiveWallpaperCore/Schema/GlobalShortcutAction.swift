@@ -45,19 +45,19 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
     public var displayName: String {
         switch self {
         case .togglePlayback:
-            return AppLanguagePreference.localizedString("Play / Pause All Wallpapers")
+            return String(localized: "Play / Pause All Wallpapers", bundle: .appLanguage)
         case .nextWallpaper:
-            return AppLanguagePreference.localizedString("Next Wallpaper (Active Display)")
+            return String(localized: "Next Wallpaper (Active Display)", bundle: .appLanguage)
         case .previousWallpaper:
-            return AppLanguagePreference.localizedString("Previous Wallpaper (Active Display)")
+            return String(localized: "Previous Wallpaper (Active Display)", bundle: .appLanguage)
         case .toggleMute:
-            return AppLanguagePreference.localizedString("Toggle Mute")
+            return String(localized: "Toggle Mute", bundle: .appLanguage)
         case .toggleMouseInteraction:
-            return AppLanguagePreference.localizedString("Toggle Interaction")
+            return String(localized: "Toggle Interaction", bundle: .appLanguage)
         case .toggleWallpapers:
-            return AppLanguagePreference.localizedString("Show / Hide All Wallpapers")
+            return String(localized: "Show / Hide All Wallpapers", bundle: .appLanguage)
         case .reloadWallpapers:
-            return AppLanguagePreference.localizedString("Reload All Wallpapers")
+            return String(localized: "Reload All Wallpapers", bundle: .appLanguage)
         }
     }
 
@@ -163,7 +163,7 @@ public struct GlobalShortcutBinding: Codable, Equatable, Hashable, Sendable {
             if let scalar = printableCharacter(for: keyCode) {
                 return String(scalar).uppercased()
             }
-            return AppLanguagePreference.localizedFormat("Key %u", keyCode)
+            return String(localized: "Key \(keyCode)", bundle: .appLanguage)
         }
     }
 

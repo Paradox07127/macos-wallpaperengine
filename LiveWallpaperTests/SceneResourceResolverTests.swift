@@ -241,7 +241,9 @@ struct SceneResourceResolverTests {
             _ = try resolver.resolveImage(relativePath: "models/util/solidlayer.json").image
             Issue.record("Expected materialUnresolved")
         } catch SceneResourceResolver.ResolveError.materialUnresolved(let reason) {
-            #expect(reason.contains("Built-in"))
+            // The path, not the English wording: the reason is user-facing copy
+            // and now renders in the picked language.
+            #expect(reason.contains("models/util/solidlayer.json"))
         } catch {
             Issue.record("Expected materialUnresolved, got \(error)")
         }

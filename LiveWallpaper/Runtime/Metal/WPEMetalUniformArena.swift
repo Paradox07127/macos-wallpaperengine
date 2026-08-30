@@ -4,56 +4,35 @@ import Metal
 import simd
 
 /// Resident per-frame-slot storage for the transpiler's `WPEUniforms.vals[]` packing.
+/// Before this, every pass built a fresh `[SIMD4<Float>]` (~53 allocations/frame at
+/// steady state, one per `passEnc` in `WPEFrameOccupancyMeter`), and layouts over 4 KB
+/// also built a fresh `MTLBuffer` every frame; both become one bump allocation inside
+/// a shared-storage buffer per in-flight frame slot.
 ///
-/// Before this, every graphics pass built a fresh `[SIMD4<Float>]` (~53 array
-/// allocations per frame at steady state, one per `passEnc` in
-/// `WPEFrameOccupancyMeter`) and every layout over 4 KB additionally built a
-/// brand-new `MTLBuffer` every frame. Both become a bump allocation inside one
-/// shared-storage buffer per in-flight frame slot.
-///
-/// ## In-flight safety
-///
-/// A region handed out by `reserve` stays readable by the GPU until the command
-/// buffer that bound it completes, so the cursor for a slot is rewound ONLY while
-/// that slot has zero committed-but-uncompleted command buffers. That count is
-/// `InFlightCounters`: raised before `commit()` and dropped from the command
-/// buffer's own completion handler.
-///
-/// The count — not the frame-slot index — is what makes this correct. Slot indices
-/// alone are not enough here: on the SceneScript fail-close path a second
-/// `render()` reuses one `WPEMetalFrameSubmissionLease`, and therefore one slot,
-/// while the speculative frame's command buffer is already committed and unfinished
-/// (`WPEMetalSceneRenderer+ScriptFailClose.swift`, "Speculative buffer committed
-/// without present"). Keying the rewind on completion makes that case bump forward
-/// instead of overwriting live memory, and keeps the invariant independent of
-/// `maxFramesInFlight`.
+/// A region from `reserve` stays GPU-readable until its command buffer completes, so a
+/// slot's cursor rewinds ONLY while `InFlightCounters` (raised before `commit()`,
+/// dropped in the completion handler) is zero for that slot — not the frame-slot index
+/// alone: on the SceneScript fail-close path a second `render()` reuses one
+/// `WPEMetalFrameSubmissionLease`/slot while the speculative command buffer is already
+/// committed and unfinished (`WPEMetalSceneRenderer+ScriptFailClose.swift`, "Speculative
+/// buffer committed without present"). Keying on completion bumps forward instead of
+/// overwriting live memory, independent of `maxFramesInFlight`.
 final class WPEMetalUniformArena {
 
-    /// Byte alignment applied to every sub-allocation, so a region's `offset` is
-    /// always legal for `MTLRenderCommandEncoder.setFragmentBuffer(_:offset:index:)`.
+    /// Byte alignment for every sub-allocation, so a region's `offset` stays legal for
+    /// `MTLRenderCommandEncoder.setFragmentBuffer(_:offset:index:)`. Metal has no runtime
+    /// query for it — `MTLDevice`'s `minimum*AlignmentForPixelFormat:` pair governs
+    /// `makeTexture`, not buffer binding — and Apple's docs only point to the Metal
+    /// Feature Set Tables' "Minimum constant buffer offset alignment" row, which reads
+    /// 4 B for the Apple families; reviewers disagreed whether a Mac2 row of 32 B still
+    /// exists there.
     ///
-    /// Metal exposes no runtime query for it: `MTLDevice` has
-    /// `minimumLinearTextureAlignmentForPixelFormat:` and
-    /// `minimumTextureBufferAlignmentForPixelFormat:`, both of which govern
-    /// `makeTexture(descriptor:offset:bytesPerRow:)` and neither of which applies to
-    /// buffer binding. Apple's docs for `setFragmentBuffer(_:offset:index:)` only say
-    /// to "check for offset alignment requirements for buffers in `device` and
-    /// `constant` address space" in the Metal Feature Set Tables, whose row
-    /// "Minimum constant buffer offset alignment" reads 4 B for the Apple families.
-    /// Two reviewers read that table and disagreed about whether a Mac2 row of 32 B
-    /// is still present, so only the Apple figure is asserted here.
-    ///
-    /// 256 is deliberately over-aligned rather than the documented minimum: an Apple
-    /// silicon Mac reports BOTH Apple7+ and Mac2, and Apple documents only that a
-    /// device supports "the union of both feature families" — it never says which
-    /// number wins for a numeric limit. A multiple of every documented value needs no
-    /// such adjudication and no per-family branch. It is also a multiple of
-    /// `MemoryLayout<SIMD4<Float>>.alignment` (16). Cost is under 256 bytes per pass.
-    ///
-    /// Older sources put this figure at 256 for macOS. Reviewers could not agree on
-    /// whether that came from a since-renamed row or from the constant-offset row of
-    /// the day, so this comment claims only that 256 satisfies every value either
-    /// reading produces.
+    /// 256 is deliberately over-aligned rather than either documented minimum: Apple
+    /// silicon reports both Apple7+ and Mac2 with no stated tie-break, so a multiple of
+    /// every candidate value needs no adjudication. It's also a multiple of
+    /// `MemoryLayout<SIMD4<Float>>.alignment` (16), costs under 256 B/pass, and matches
+    /// older macOS sources that put the figure at 256 (reviewers disagreed which row that
+    /// came from — this only claims 256 satisfies every reading).
     static let offsetAlignment = 256
 
     /// Enough for ~128 typical passes without a grow cycle; a scene that needs more
@@ -198,12 +177,9 @@ final class WPEMetalUniformArena {
         return Submission(counters: counters, slot: frameSlot)
     }
 
-    /// Exactly-once release token. `deinit` is the fail-safe for a command buffer
-    /// dropped without commit — the GPU never read the region, so freeing it is right.
-    ///
-    /// `@unchecked Sendable`: `counters` is the only mutable state and `lock` guards
-    /// both the read and the nil-out, so the completion handler and a concurrent
-    /// `deinit` cannot both release the slot. `slot` is let.
+    /// Exactly-once release token. `deinit` is the fail-safe for a command buffer dropped
+    /// without commit — the GPU never read the region, so freeing it is right. `@unchecked
+    /// Sendable`: `counters` is the only mutable state and `lock` guards both the read and the nil-out, so the completion handler and a concurrent `deinit` cannot both release the slot. `slot` is let.
     final class Submission: @unchecked Sendable {
         private let lock = NSLock()
         private var counters: InFlightCounters?

@@ -4,11 +4,9 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// The Steam Web API key, entered in place.
-///
-/// Settings used to open the key sheet from here, which meant a modal window
-/// on top of a settings window to fill in one field. Once a key is stored the
-/// section is a single row; "Replace" expands `SteamWebAPIKeyEditor` — the
-/// same view the sheet wraps, so the two cannot lay one field out two ways.
+/// Settings used to open the key sheet from here — a modal window on top of a settings window
+/// to fill in one field. Once a key is stored the section is a single row; "Replace" expands
+/// `SteamWebAPIKeyEditor`, the same view the sheet wraps, so the two can't lay one field out two ways.
 struct WorkshopAPIKeySection: View {
     let services: WorkshopServices
 
@@ -25,7 +23,7 @@ struct WorkshopAPIKeySection: View {
             SettingRow(
                 icon: "key",
                 iconColor: .orange,
-                title: "Steam Web API key (optional)",
+                title: "Steam Web API key",
                 subtitle: subtitle,
                 info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Get one free at steamcommunity.com/dev/apikey."
             ) {
@@ -48,7 +46,7 @@ struct WorkshopAPIKeySection: View {
                 editor
             }
         } header: {
-            SettingsSearchSectionHeader("Steam Web API key", anchor: .workshopSetup)
+            SettingsSearchSectionHeader("Steam Web API key (optional)", anchor: .workshopSetup)
         }
     }
 

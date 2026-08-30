@@ -13,14 +13,8 @@ enum WallpaperImportRoute: Equatable {
     case unsupported
 }
 
-/// One classifier for every import surface — the toolbar picker, the display
-/// page's drop target, and the onboarding picker. Each of those grew its own
-/// copy of "is this a scene folder?", and they had already drifted: the drop
-/// handler checked HTML first, and `isSupportedHTMLResourceURL` answers `true`
-/// for *any* directory, so a scene folder became a web wallpaper.
-///
-/// Classification only. Applying the result differs per caller (one display vs
-/// every display vs the Workshop library), so that stays with the caller.
+/// One classifier for every import surface — the toolbar picker, the display page's drop target, and the onboarding picker. Each of those grew its own copy of "is this a scene folder?", and they had already drifted: the drop handler checked HTML first, and `isSupportedHTMLResourceURL` answers `true` for *any* directory, so a scene folder became a web wallpaper.
+/// Classification only. Applying the result differs per caller (one display vs every display vs the Workshop library), so that stays with the caller.
 @MainActor
 enum WallpaperImportRouter {
     static func route(_ url: URL, sceneCapable: Bool) -> WallpaperImportRoute {

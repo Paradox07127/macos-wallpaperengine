@@ -440,7 +440,7 @@ public enum WPESceneDocumentParser {
                 message: String(
                     localized: "Top-level effects are not yet rendered",
                     defaultValue: "Top-level effects are not yet rendered",
-                    comment: "Wallpaper Engine scene diagnostic when root-level effects are ignored."
+                    bundle: .appLanguage, comment: "Wallpaper Engine scene diagnostic when root-level effects are ignored."
                 )
             ))
         }
@@ -1171,7 +1171,7 @@ public enum WPESceneDocumentParser {
                 severity: .warning,
                 message: String(
                     localized: "Sound object \(objectName) has no sound files",
-                    comment: "Wallpaper Engine scene diagnostic. The placeholder is the sound object name."
+                    bundle: .appLanguage, comment: "Wallpaper Engine scene diagnostic. The placeholder is the sound object name."
                 )
             ))
             return nil
@@ -1234,18 +1234,17 @@ public enum WPESceneDocumentParser {
         default:
             authoredText = nil
         }
-        // A script-driven text object may author an EMPTY placeholder — its
-        // update() computes the real string (3509243656's `time` display authors
-        // "" and is the scene's only `shared.xntime` producer; dropping it froze
-        // every consumer text). WPE runs the script regardless of the authored
-        // value, so only SCRIPTLESS objects with no resolvable text are dropped.
+        // A script-driven text object may author an EMPTY placeholder — its update() computes the
+        // real string (3509243656's `time` display authors "" and is the scene's only
+        // `shared.xntime` producer; dropping it froze every consumer text). WPE runs the script
+        // regardless of the authored value, so only SCRIPTLESS objects with no resolvable text are dropped.
         guard authoredText?.isEmpty == false || textScript != nil else {
             let objectName = dict["name"] as? String ?? "?"
             diagnostics.append(.init(
                 severity: .warning,
                 message: String(
                     localized: "Text object \(objectName) has no resolvable text",
-                    comment: "Wallpaper Engine scene diagnostic. The placeholder is the text object name."
+                    bundle: .appLanguage, comment: "Wallpaper Engine scene diagnostic. The placeholder is the text object name."
                 )
             ))
             return nil
@@ -1547,7 +1546,7 @@ public enum WPESceneDocumentParser {
                 severity: .warning,
                 message: String(
                     localized: "Particle object \(objectName) has no particle file",
-                    comment: "Wallpaper Engine scene diagnostic. The placeholder is the particle object name."
+                    bundle: .appLanguage, comment: "Wallpaper Engine scene diagnostic. The placeholder is the particle object name."
                 )
             ))
             return nil
@@ -1859,7 +1858,7 @@ public enum WPESceneDocumentParser {
                 message: String(
                     localized: "general.orthogonalprojection is null — using perspective camera with 1920×1080 render size",
                     defaultValue: "general.orthogonalprojection is null — using perspective camera with 1920×1080 render size",
-                    comment: "Wallpaper Engine scene diagnostic when perspective projection is used."
+                    bundle: .appLanguage, comment: "Wallpaper Engine scene diagnostic when perspective projection is used."
                 )
             ))
             projection = WPESceneGeneral.defaultGeneral.orthogonalProjection
@@ -1870,7 +1869,7 @@ public enum WPESceneDocumentParser {
                 message: String(
                     localized: "general.orthogonalprojection missing — using 1920×1080",
                     defaultValue: "general.orthogonalprojection missing — using 1920×1080",
-                    comment: "Wallpaper Engine scene diagnostic when default projection dimensions are used."
+                    bundle: .appLanguage, comment: "Wallpaper Engine scene diagnostic when default projection dimensions are used."
                 )
             ))
             projection = WPESceneGeneral.defaultGeneral.orthogonalProjection

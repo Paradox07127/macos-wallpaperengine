@@ -1,11 +1,9 @@
 import Foundation
 
-/// How hard it is coming down.
-///
-/// WMO codes already carry this — 51/53/55 are slight/moderate/dense drizzle,
-/// 61/63/65 slight/moderate/heavy rain, 71/73/75 slight/moderate/heavy snow,
-/// 80/81/82 slight/moderate/violent showers. The old mapping collapsed each
-/// triple onto one description, which is why a drizzle and a downpour drew
+/// How hard it is coming down. WMO codes already carry this: 51/53/55 are
+/// slight/moderate/dense drizzle, 61/63/65 and 71/73/75 slight/moderate/heavy
+/// rain and snow, 80/81/82 slight/moderate/violent showers. The old mapping
+/// collapsed each triple onto one description, so a drizzle and a downpour drew
 /// exactly the same rain at exactly the same density.
 enum WeatherIntensity: String, Sendable, CaseIterable {
     case light

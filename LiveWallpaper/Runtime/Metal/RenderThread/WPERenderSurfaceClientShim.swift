@@ -3,34 +3,22 @@ import CoreGraphics
 import Foundation
 import os
 
-/// Main-thread delivery shim between `WPERenderSurface` (the AppKit-bound MTKView
-/// owner) and `WPEMetalSceneRenderer` (the frame producer). The surface's
-/// `draw(in:)` and drawable-size callbacks land here; the shim funnels each one
-/// through a single async hop to the main actor instead of calling the renderer
-/// inline.
+/// Main-thread delivery shim between `WPERenderSurface` (AppKit MTKView owner) and
+/// `WPEMetalSceneRenderer` (frame producer): funnels `draw(in:)`/drawable-size
+/// callbacks onto the render actor instead of calling the renderer inline, because
+/// `draw(in:)` is always on the main thread but the renderer lives in
+/// `WPEDisplayRenderActor`, which may be backed by a dedicated render thread.
 ///
-/// Why a shim (the renderer is not `WPERenderSurfaceClient` itself): `draw(in:)`
-/// is an AppKit callback that is *always* on the main thread, but the renderer
-/// lives inside `WPEDisplayRenderActor`, which may be backed by a
-/// dedicated render thread. The shim absorbs the hop: each surface callback is
-/// delivered onto the render actor, where the renderer runs it.
-///
-/// Draw delivery depends on the actor's backing (passed at construction):
-///
-/// - `.main` backing: `draw(in:)` already runs on the actor's isolation thread
-///   (the main thread), so the shim enters isolation **synchronously** via
-///   `assumeIsolatedOnRenderThread` and renders inline. This restores the
-///   invariant that `draw(in:)` returns only once the frame has been
-///   produced — an async hop would have let `draw` return before the render ran.
-///
-/// - `.renderThread` backing: the render happens off the main actor, so the shim
-///   uses an async, latest-wins hop. `draw(in:)` can fire faster than the render
-///   thread drains; `frameInFlight` keeps at most one frame scheduled — a second
-///   `draw` arriving while one is pending is dropped, not queued, because
-///   `renderFrame` always reads the *newest* renderer state, so the already-
-///   scheduled render presents it. The flag clears only once the actor finishes,
-///   so a dropped draw's side effects (an appended live-poster continuation, a
-///   fresh `outputTexture`) are always folded into the pending render.
+/// Backing-dependent delivery (passed at construction):
+/// - `.main`: `draw(in:)` already runs on the actor's isolation thread, so the shim
+///   enters isolation **synchronously** via `assumeIsolatedOnRenderThread` and renders
+///   inline — preserving "`draw(in:)` returns only once the frame is produced" (an
+///   async hop would let `draw` return before the render ran).
+/// - `.renderThread`: an async, latest-wins hop. `frameInFlight` allows at most one
+///   scheduled frame — a `draw` arriving while one is pending is dropped, not queued,
+///   because `renderFrame` always reads the newest renderer state, so the pending
+///   render presents it and folds in the dropped draw's side effects (an appended
+///   live-poster continuation, a fresh `outputTexture`).
 @MainActor
 final class WPERenderSurfaceClientShim: WPERenderSurfaceClient {
     /// The render actor to deliver onto. Weak: the actor owns the renderer, which
@@ -48,14 +36,11 @@ final class WPERenderSurfaceClientShim: WPERenderSurfaceClient {
     private let frameInFlight = OSAllocatedUnfairLock(initialState: false)
 
     #if DEBUG
-    /// Frames the shim has finished delivering. For the synchronous (`.main`) path
-    /// the increment happens inline before `renderAndPresentFrame` returns; for the
-    /// async path it happens in the completion (off-main), so it is lock-backed
-    /// (Sendable) rather than actor-isolated. This is the observable for the
-    /// "draw returns = frame produced" invariant.
-    ///
-    /// DEBUG-only: the counter has no production reader, and incrementing it took
-    /// a lock on every frame of every display.
+    /// Frames the shim has finished delivering. For the synchronous (`.main`) path the
+    /// increment happens inline before `renderAndPresentFrame` returns; for the async path
+    /// it happens in the completion (off-main), so it's lock-backed rather than
+    /// actor-isolated — the observable for the "draw returns = frame produced" invariant.
+    /// DEBUG-only: the counter has no production reader, and incrementing it took a lock on every frame of every display.
     private let completedFrameDeliveryCount = OSAllocatedUnfairLock(initialState: 0)
     var completedFrameDeliveries: Int { completedFrameDeliveryCount.withLock { $0 } }
     #endif

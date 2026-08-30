@@ -146,7 +146,7 @@ struct TimeEditorPopover: View {
         let format = String(
             localized: "Overlaps with %@",
             defaultValue: "Overlaps with %@",
-            comment: "Schedule editor warning when the chosen range overlaps an existing slot. Placeholder is a comma-separated list of slot labels."
+            bundle: .appLanguage, comment: "Schedule editor warning when the chosen range overlaps an existing slot. Placeholder is a comma-separated list of slot labels."
         )
         return String(format: format, names)
     }

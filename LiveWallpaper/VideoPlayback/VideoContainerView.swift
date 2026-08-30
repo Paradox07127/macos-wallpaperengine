@@ -185,11 +185,10 @@ final class VideoContainerView: NSView {
         needsLayout = true
     }
 
-    /// Hard bound on how long the still frame may outlive the start of a wake.
-    /// Two rebuild failures strand it otherwise: a load that bails before
-    /// `clearStillFrameWhenPlayerIsReady` is ever called (unplayable asset,
-    /// vanished volume), and a rebuilt item whose layer never reports
-    /// `isReadyForDisplay`. Both leave the desktop frozen on a fake frame.
+    /// Hard bound on how long the still frame may outlive the start of a wake. Two rebuild failures
+    /// strand it otherwise: a load that bails before `clearStillFrameWhenPlayerIsReady` is ever
+    /// called (unplayable asset, vanished volume), and a rebuilt item whose layer never reports
+    /// `isReadyForDisplay` — both leave the desktop frozen on a fake frame.
     func clearStillFrameNoLaterThan(_ seconds: TimeInterval) {
         guard isShowingStillFrame else { return }
         cancelStillFrameDeadline()

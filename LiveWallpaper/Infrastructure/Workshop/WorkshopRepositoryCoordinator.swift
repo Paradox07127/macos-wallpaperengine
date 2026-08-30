@@ -12,13 +12,8 @@ extension Notification.Name {
     static let workshopItemDidMutate = Notification.Name("WorkshopItemDidMutate")
 }
 
-/// App-local consistency boundary for the shared Steam Workshop repository.
-///
-/// Steam does not participate in `NSFileCoordinator`, so Loomscreen coordinates
-/// its own readers around every mutation it starts. The existing SteamCMD
-/// operation/process gates still serialize writers across the repository; this
-/// coordinator adds the narrower per-item lifecycle required by renderers that
-/// read `scene.pkg` and loose assets in place.
+/// App-local consistency boundary for the shared Steam Workshop repository. Steam does not participate in `NSFileCoordinator`, so Loomscreen coordinates its own readers around every mutation it starts.
+/// The existing SteamCMD operation/process gates still serialize writers across the repository; this coordinator adds the narrower per-item lifecycle required by renderers that read `scene.pkg` and loose assets in place.
 @MainActor
 final class WorkshopRepositoryCoordinator {
     enum MutationError: Error, Equatable {

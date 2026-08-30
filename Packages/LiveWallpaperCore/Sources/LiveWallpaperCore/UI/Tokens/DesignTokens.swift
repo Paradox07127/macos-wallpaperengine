@@ -7,11 +7,10 @@ public enum DesignTokens {
         // Surfaces — automatically adapt to light/dark and Increase Contrast.
         public static let pageBackground = Color(nsColor: .windowBackgroundColor)
 
-        /// One step off the page, in both appearances. `controlBackgroundColor`
-        /// used to back this, but it resolves to *exactly* `windowBackgroundColor`
-        /// — #FFFFFF light, #1E1E1E dark — so every card was the same colour as
-        /// the page behind it and only a hairline stroke said otherwise.
-        /// Measured after this change: #F6F6F6 on white, #303030 on #1E1E1E.
+        /// One step off the page, in both appearances. `controlBackgroundColor` used to back this
+        /// but resolves to *exactly* `windowBackgroundColor` (#FFFFFF light, #1E1E1E dark), so every
+        /// card matched the page behind it with only a hairline stroke to tell them apart. Measured
+        /// after this change: #F6F6F6 on white, #303030 on #1E1E1E.
         public static let surfaceRaised = Color(nsColor: NSColor(name: "surfaceRaised") { appearance in
             let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             let base = NSColor.windowBackgroundColor
@@ -75,11 +74,11 @@ public enum DesignTokens {
         /// deliberately darker, where the lighter amber washed out.
         public static let boardEditBorder = Color(red: 0.62, green: 0.50, blue: 0.28)
 
-        /// Board edit chrome, which floats over the user's wallpaper and is
-        /// therefore always dark regardless of system appearance — semantic
-        /// surface tokens would flip it to white over a light wallpaper. These
-        /// replace `Color(white: 0.12/0.14/0.3)` literals that the control bar,
-        /// the settings card and the size toggle each carried their own copy of.
+        /// Board edit chrome floats over the user's wallpaper and is always
+        /// dark regardless of system appearance — semantic surface tokens
+        /// would flip it to white over a light wallpaper. Replaces
+        /// `Color(white: 0.12/0.14/0.3)` literals the control bar, settings
+        /// card and size toggle each carried their own copy of.
         public enum BoardChrome {
             /// Settings card / control bar fill.
             public static let surface = Color(white: 0.14)
@@ -115,10 +114,9 @@ public enum DesignTokens {
     }
 
     /// Prefer Dynamic Type styles so text auto-scales with accessibility
-    /// settings; only `badge` is fixed-size because it floats in tight,
-    /// fixed-geometry chips. Never inline `.font(.system(size:))` on text —
-    /// standalone SF Symbol glyph sizing is the documented exemption
-    /// (DESIGN.md hard rule 1).
+    /// settings; only `badge` is fixed-size (floats in tight, fixed-geometry
+    /// chips). Never inline `.font(.system(size:))` on text — standalone SF
+    /// Symbol glyph sizing is the documented exemption (DESIGN.md hard rule 1).
     public enum Typography {
         public static let badge = Font.system(.caption2).weight(.semibold)
 
@@ -149,12 +147,12 @@ public enum DesignTokens {
         public static let codeCaption = Font.system(.caption, design: .monospaced)
     }
 
-    /// The one grid every full-page wallpaper library uses — Aerials, Bookmarks,
-    /// Workshop Browse, Workshop Installed. They had three different column
-    /// definitions and three different spacings for the same kind of grid, and
-    /// the two without a `maximum` grew their cards without limit on a wide
-    /// window while the Workshop's stayed capped, so the same library looked
-    /// denser on one page than another.
+    /// The one grid every full-page wallpaper library uses — Aerials,
+    /// Bookmarks, Workshop Browse, Workshop Installed. They had three
+    /// different column definitions and spacings for the same grid kind;
+    /// the two without a `maximum` grew cards without limit on a wide
+    /// window while Workshop's stayed capped, so the library looked denser
+    /// on one page than another.
     public enum LibraryGrid {
         public static let minimumColumnWidth: CGFloat = 184
         public static let maximumColumnWidth: CGFloat = 220
@@ -263,12 +261,12 @@ public enum DesignTokens {
         public static let searchMaxWidth: CGFloat = 216
     }
 
-    /// Floor dimensions every sidebar-routed library page uses. Without this,
-    /// macOS 26 NavigationSplitView occasionally squeezes the detail column,
-    /// drives the sidebar list below its `navigationSplitViewColumnWidth`
-    /// minimum, and drops the upper sections (Displays + Library) out of view.
-    /// Workshop hit this first and pinned its own floor; promoting it here
-    /// keeps Bookmarks / Apple Aerials behaving the same way.
+    /// Floor dimensions every sidebar-routed library page uses — without
+    /// them, macOS 26 `NavigationSplitView` occasionally squeezes the detail
+    /// column, drives the sidebar list below its
+    /// `navigationSplitViewColumnWidth` minimum, and drops the upper
+    /// sections (Displays + Library) out of view. Workshop hit this first
+    /// and pinned its own floor; promoted here for Bookmarks / Apple Aerials.
     public enum LibraryPage {
         public static let minWidth: CGFloat = 760
         public static let minHeight: CGFloat = 540

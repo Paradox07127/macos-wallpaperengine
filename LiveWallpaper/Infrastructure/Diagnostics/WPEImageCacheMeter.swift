@@ -40,24 +40,10 @@ struct WPEImageCacheStats: Equatable, Sendable {
     var isUntouched: Bool { inserted == 0 && evicted == 0 }
 }
 
-/// Live-stock accounting for the app's image caches.
-///
-/// `NSCache` exposes neither its occupancy nor the cost of an evicted object, so
-/// the cost is recorded here at insert time and looked up again by object
-/// identity when `NSCacheDelegate` reports the eviction. The subtraction is
-/// therefore byte-identical to the addition — no cost formula is ever re-run,
-/// which is what lets `NSImage` (a foreign class with no room for a stored
-/// property) be metered at all.
-///
-/// `liveBytes` is exact exactly when `duplicateInserts` and
-/// `unattributedEvictions` are both zero, and the report prints both. A ledger
-/// entry can only outlive its object when one instance occupies several cache
-/// slots (`NSCache` then reports one eviction, not one per slot — measured on
-/// macOS 27), and that case is already flagged at insert time, before the
-/// under-report can happen.
-///
-/// `Sendable`: the only stored property is an `OSAllocatedUnfairLock`, which
-/// serialises every read and write of the state it wraps.
+/// Live-stock accounting for the app's image caches. `NSCache` exposes neither occupancy nor an evicted object's cost, so cost is recorded here at insert time and looked up by object identity when `NSCacheDelegate` reports the eviction.
+/// Subtraction is therefore byte-identical to the addition — no cost formula is ever re-run — which is what lets `NSImage` (a foreign class with no room for a stored property) be metered at all.
+/// `liveBytes` is exact exactly when `duplicateInserts` and `unattributedEvictions` are both zero, and the report prints both. A ledger entry can only outlive its object when one instance occupies several cache slots (`NSCache` then reports one eviction, not one per slot — measured on macOS 27), and that case is already flagged at insert time, before the under-report can happen.
+/// `Sendable`: the only stored property is an `OSAllocatedUnfairLock`, which serialises every read and write of the state it wraps.
 final class WPEImageCacheAccountant: Sendable {
 
     private struct State {
@@ -75,13 +61,10 @@ final class WPEImageCacheAccountant: Sendable {
 
     private let state = OSAllocatedUnfairLock(initialState: State())
 
-    /// Installs the metering delegate on `cache`. The cache's own limits and
-    /// eviction policy are untouched.
-    ///
-    /// `NSCache.delegate` is declared `assign` (`unowned(unsafe)`), not `weak`,
-    /// and a cache drains through that pointer when it deallocates — a released
-    /// delegate is a hard crash, not a silent no-op. The probe is therefore
-    /// parked in a process-wide registry and never released.
+    /// Installs the metering delegate on `cache`; the cache's own limits and
+    /// eviction policy are untouched. `NSCache.delegate` is declared `assign`
+    /// (`unowned(unsafe)`), not `weak`, and drains through that pointer on
+    /// dealloc — a released delegate is a hard crash, not a silent no-op — so the probe is parked in a process-wide registry and never released.
     func attach<Key: AnyObject, Value: AnyObject>(
         _ cache: NSCache<Key, Value>, as kind: WPEImageCacheKind
     ) {
@@ -185,11 +168,10 @@ final class WPEImageCacheEvictionProbe: NSObject, NSCacheDelegate, Sendable {
     }
 }
 
-/// Opt-in via `WPEImageCacheLog`. Disabled cost is one cached bool check.
-///
+/// Opt-in via `WPEImageCacheLog`; disabled cost is one cached bool check.
 /// Answers "which image cache is holding the app's idle footprint" by reporting
-/// standing occupancy — live bytes and live object count per cache — rather than
-/// a rate. `inserted`/`evicted` come along to show turnover.
+/// standing occupancy (live bytes and live object count per cache) rather than
+/// a rate — `inserted`/`evicted` come along to show turnover.
 enum WPEImageCacheMeter {
 
     static let isEnabled: Bool = {

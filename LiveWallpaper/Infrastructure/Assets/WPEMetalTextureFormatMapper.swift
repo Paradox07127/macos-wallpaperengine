@@ -1,6 +1,7 @@
 #if !LITE_BUILD
-import Metal
+import LiveWallpaperCore
 import LiveWallpaperProWPE
+import Metal
 
 /// Color textures request sRGB-encoded pixel formats; data textures (masks,
 /// normal maps, R8/RG8 channels) must stay linear.
@@ -39,25 +40,25 @@ enum WPEMetalTextureLoaderError: Error, Equatable, LocalizedError, Sendable {
             return String(
                 localized: "error.texture.format.unsupported_format",
                 defaultValue: "WPE Metal texture format is unsupported: \(format.debugLabel)",
-                comment: "Error shown when a Wallpaper Engine texture format cannot be mapped to Metal."
+                bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine texture format cannot be mapped to Metal."
             )
         case .unsupportedCompressedFormat(let format):
             return String(
                 localized: "error.texture.format.unsupported_compressed_format",
                 defaultValue: "This Metal device cannot sample \(format.debugLabel) textures.",
-                comment: "Error shown when the current Metal device cannot sample a compressed texture format."
+                bundle: .appLanguage, comment: "Error shown when the current Metal device cannot sample a compressed texture format."
             )
         case .malformedPayload(let reason):
             return String(
                 localized: "error.texture.format.malformed_payload",
                 defaultValue: "WPE Metal texture payload is malformed: \(reason)",
-                comment: "Error shown when a Wallpaper Engine texture payload is malformed."
+                bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine texture payload is malformed."
             )
         case .textureAllocationFailed:
             return String(
                 localized: "error.texture.format.texture_allocation_failed",
                 defaultValue: "Metal texture allocation failed.",
-                comment: "Error shown when Metal texture allocation fails."
+                bundle: .appLanguage, comment: "Error shown when Metal texture allocation fails."
             )
         }
     }

@@ -146,11 +146,10 @@ final class WPESoundRuntime: Sendable {
     /// through a completion handler, a queue hop and a lock.
     private static let scheduleDepth = 2
 
-    /// Unchecked because AVAudioEngine/AVAudioPlayerNode/AVAudioFile carry no
-    /// Sendable conformance under the shipping 26.6 toolchain. The mechanism is
-    /// the `OSAllocatedUnfairLock` below: every read and write of this struct
-    /// happens inside `state.withLock`, so the AVFoundation objects are only
-    /// ever touched by one thread at a time.
+    /// Unchecked because AVAudioEngine/AVAudioPlayerNode/AVAudioFile carry no Sendable
+    /// conformance under the shipping 26.6 toolchain. The mechanism is the
+    /// `OSAllocatedUnfairLock` below: every read and write happens inside `state.withLock`, so
+    /// the AVFoundation objects are only ever touched by one thread at a time.
     private struct State: @unchecked Sendable {
         let engine = AVAudioEngine()
         var tracks: [Track] = []

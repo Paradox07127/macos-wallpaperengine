@@ -260,7 +260,7 @@ final class WeatherReactiveService {
         let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current=\(current)&timezone=auto"
 
         guard let url = URL(string: urlString) else {
-            lastError = String(localized: "Invalid URL", defaultValue: "Invalid URL", comment: "Weather fetch error.")
+            lastError = String(localized: "Invalid URL", defaultValue: "Invalid URL", bundle: .appLanguage, comment: "Weather fetch error.")
             locationStatus = .error
             return
         }
@@ -332,16 +332,12 @@ final class WeatherReactiveService {
 
     // MARK: - Weather → Particle Mapping
 
-    /// Maps a weather description to a particle effect for auto-reactive mode.
-    ///
-    /// Seasonal effects (sakura, falling leaves) stay out: the API says nothing
-    /// about what is in bloom. `lightning` likewise stays out — a surprise
-    /// full-screen flash imposed without consent is jarring.
-    ///
-    /// Time of day is no longer in that list. The same free request returns
-    /// `is_day`, so a clear night can have the stars the effect set has always
-    /// had and never used; the old comment's "the API exposes neither
-    /// timestamp nor season" was only half true, and the half that was wrong
+    /// Maps a weather description to a particle effect for auto-reactive mode. Seasonal
+    /// effects (sakura, falling leaves) stay out: the API says nothing about what's in bloom.
+    /// `lightning` likewise stays out — a surprise full-screen flash without consent is jarring.
+    /// Time of day is no longer excluded: the same free request returns `is_day`, so a clear
+    /// night can have the stars the effect set always had and never used — the old comment's
+    /// "the API exposes neither timestamp nor season" was only half true, and the wrong half
     /// cost the two nicest effects on the list.
     private func mapDescriptionToParticle(
         _ desc: WeatherDescription, isDaylight: Bool? = nil

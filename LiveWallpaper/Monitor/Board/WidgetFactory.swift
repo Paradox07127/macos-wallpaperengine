@@ -7,15 +7,15 @@ enum WidgetFactory {
 
     static func displayName(_ kind: MonitorWidgetKind) -> String {
         switch kind {
-        case .cpu: return String(localized: "CPU", comment: "Monitor widget name: CPU instrument.")
-        case .memory: return String(localized: "Memory", comment: "Monitor widget name: Memory instrument.")
-        case .gpu: return String(localized: "GPU", comment: "Monitor widget name: GPU instrument.")
-        case .network: return String(localized: "Network", comment: "Monitor widget name: Network instrument.")
-        case .disk: return String(localized: "Disk", comment: "Monitor widget name: Disk I/O instrument.")
-        case .power: return String(localized: "Power", comment: "Monitor widget name: Power/battery instrument.")
-        case .processes: return String(localized: "Processes", comment: "Monitor widget name: top-processes instrument.")
-        case .fleet: return String(localized: "Agent Session", comment: "Monitor widget name: AI agent session instrument.")
-        case .aiEngine: return String(localized: "ANE Memory", comment: "Monitor widget name for process-attributed Neural Engine memory footprint; not activity or utilization.")
+        case .cpu: return String(localized: "CPU", bundle: .appLanguage, comment: "Monitor widget name: CPU instrument.")
+        case .memory: return String(localized: "Memory", bundle: .appLanguage, comment: "Monitor widget name: Memory instrument.")
+        case .gpu: return String(localized: "GPU", bundle: .appLanguage, comment: "Monitor widget name: GPU instrument.")
+        case .network: return String(localized: "Network", bundle: .appLanguage, comment: "Monitor widget name: Network instrument.")
+        case .disk: return String(localized: "Disk", bundle: .appLanguage, comment: "Monitor widget name: Disk I/O instrument.")
+        case .power: return String(localized: "Power", bundle: .appLanguage, comment: "Monitor widget name: Power/battery instrument.")
+        case .processes: return String(localized: "Processes", bundle: .appLanguage, comment: "Monitor widget name: top-processes instrument.")
+        case .fleet: return String(localized: "Agent Session", bundle: .appLanguage, comment: "Monitor widget name: AI agent session instrument.")
+        case .aiEngine: return String(localized: "ANE Memory", bundle: .appLanguage, comment: "Monitor widget name for process-attributed Neural Engine memory footprint; not activity or utilization.")
         }
     }
 

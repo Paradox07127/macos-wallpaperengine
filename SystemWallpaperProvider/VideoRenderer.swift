@@ -357,32 +357,6 @@ final class VideoRenderer: @unchecked Sendable {
         handler?()
     }
 
-    // MARK: - Rate
-
-    func setRate(_ rate: Double) {
-        queue.async { [weak self] in self?.setRateOnQueue(rate) }
-    }
-
-    private func setRateOnQueue(_ rate: Double) {
-        cancelRamp()
-        desiredRate = rate
-        applyRate(rate)
-    }
-
-    /// Every rate change funnels through here so the decoder-release timer is
-    /// always in sync with whether anything is actually moving.
-    private func applyRate(_ rate: Double) {
-        if rate > 0, isDeepPaused { resumeFromDeepPause() }
-        guard let timebase else { return }
-        CMTimebaseSetRate(timebase, rate: rate)
-        currentRate = rate
-        if rate == 0 {
-            scheduleDeepPause()
-        } else {
-            cancelDeepPauseTimer()
-        }
-    }
-
     // MARK: - Deep pause
 
     /// A paused renderer still owns an AVAssetReader and a hardware video

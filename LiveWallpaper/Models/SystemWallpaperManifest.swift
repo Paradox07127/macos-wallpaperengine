@@ -9,14 +9,10 @@ enum SystemWallpaperPlaybackMode: String, Codable, Equatable, CaseIterable {
     case stillOnDesktop
 }
 
-/// Shared contract between the main app (writer) and the wallpaper appex
-/// (reader). Compiled into both targets — keep it Foundation-only.
-///
-/// On-disk layout, inside the *host app's* sandbox container:
-///   .../Library/Application Support/Loomscreen/SystemWallpaper/
-///     manifest.json      written by the app
-///     heartbeat.json     written back by the appex
-///     Videos/<fileName>  copied video assets
+/// Shared contract between the main app (writer) and the wallpaper appex (reader); compiled into both
+/// targets, so keep it Foundation-only. On disk, inside the host app's sandbox container:
+/// `SystemWallpaper/manifest.json` (written by the app), `heartbeat.json` (written back by the appex),
+/// `Videos/<fileName>` (copied video assets).
 struct SystemWallpaperManifest: Codable, Equatable {
     struct Item: Codable, Equatable, Identifiable {
         var id: String
@@ -90,13 +86,10 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     /// revision 1.
     var runtimeCheckVersion: Int?
 
-    /// Bump this whenever the appex's private-API layout check changes.
-    ///
-    /// An unhealthy verdict hides the publish UI, and the extension only runs
-    /// once something has been published — so without a build stamp a fixed
-    /// check could never get the chance to overwrite the verdict that its own
-    /// broken predecessor wrote, and the user stayed locked out on an OS build
-    /// that had stopped being the problem.
+    /// Bump whenever the appex's private-API layout check changes. An unhealthy verdict hides the publish
+    /// UI, and the extension only runs once something has been published — so without a build stamp, a
+    /// fixed check could never overwrite the verdict its own broken predecessor wrote, and the user stayed
+    /// locked out on an OS build that had stopped being the problem.
     static let currentRuntimeCheckVersion = 1
 
     init(timestamp: Date, activeChoiceID: String?, activeChoiceIDs: [String]? = nil,
@@ -200,16 +193,12 @@ enum SystemWallpaperPaths {
 /// asks for a removal. One implementation so the two can never disagree about
 /// what "removed" leaves behind.
 enum SystemWallpaperLibrary {
-    /// Removes `id`: persists the shrunk manifest first (via `persist`), and
-    /// only then deletes the files. That order means a failed persist leaves a
-    /// still-consistent library, and a failed delete leaves an orphan the
-    /// sweep below reclaims — never a manifest entry pointing at nothing.
-    /// Returns the new manifest, or nil when the id was not present.
-    /// `onFileRemovalFailure` sees anything that could not be unlinked. The
-    /// manifest is already persisted by then, so a failure here is not fatal —
-    /// but swallowing it silently left files on disk that nothing ever
-    /// mentioned again. The sweep reclaims them; the callback is what lets a
-    /// caller say so.
+    /// Removes `id`: persists the shrunk manifest first (`persist`), then deletes the files — a failed persist
+    /// leaves a still-consistent library; a failed delete leaves an orphan the sweep below reclaims, never a
+    /// manifest entry pointing at nothing. Returns the new manifest, or nil if `id` was absent.
+    /// `onFileRemovalFailure` reports anything left unlinked: the manifest is already persisted, so this
+    /// failure isn't fatal, but silently swallowing it left orphaned files nothing ever mentioned again — the
+    /// sweep reclaims them; the callback lets a caller notice.
     static func remove(
         id: String,
         from manifest: SystemWallpaperManifest,
@@ -234,25 +223,21 @@ enum SystemWallpaperLibrary {
         return updated
     }
 
-    /// Name for a publish's staging copy. The creation time is *in the name*
-    /// because `copyItem` carries the source file's mtime over: a year-old
-    /// source produced a staging file that read as ancient for the whole copy,
-    /// and a concurrent sweep deleted it mid-publish. A dot prefix does not
-    /// help either — `contentsOfDirectory` returns hidden files unless asked
-    /// not to.
-    /// Ends in the video's own extension, and carries no second marker: the
-    /// `.stage-` prefix plus the timestamp already identify these. A name
-    /// ending in `.partial` typed the file as a non-video for AVFoundation,
-    /// which failed every staged thumbnail with "Cannot Open".
+    /// Name for a publish's staging copy. The creation time is *in the name* because `copyItem` carries the
+    /// source file's mtime over — a year-old source produced a staging file that read as ancient for the whole
+    /// copy, and a concurrent sweep deleted it mid-publish; a dot prefix doesn't help either, since
+    /// `contentsOfDirectory` returns hidden files unless asked not to. Ends in the video's own extension and
+    /// carries no second marker — the `.stage-` prefix plus the timestamp already identify these; a name ending
+    /// in `.partial` typed the file as a non-video for AVFoundation, which failed every staged thumbnail with
+    /// "Cannot Open".
     static func stagingFileName(itemID: String, ext: String, now: Date, tag: UUID = UUID()) -> String {
         ".stage-\(Int(now.timeIntervalSince1970))-\(itemID)-\(tag.uuidString).\(ext)"
     }
 
-    /// Name for the copy a republish displaces and keeps until its manifest
-    /// write lands. Deliberately a staging name: this file *is* the previously
-    /// published video, so it carries that video's mtime, and the sweep's mtime
-    /// rule let the appex reclaim it mid-republish — which left the rollback
-    /// with nothing to restore. One `tag` names the video and its thumbnail.
+    /// Name for the copy a republish displaces and keeps until its manifest write lands. Deliberately a
+    /// staging name: this file *is* the previously published video, so it carries that video's mtime, and
+    /// the sweep's mtime rule let the appex reclaim it mid-republish — which left the rollback with nothing
+    /// to restore. One `tag` names the video and its thumbnail.
     static func transientBackupName(itemID: String, ext: String, tag: UUID, now: Date) -> String {
         stagingFileName(itemID: "\(itemID)-backup", ext: ext, now: now, tag: tag)
     }
@@ -271,12 +256,10 @@ enum SystemWallpaperLibrary {
         return Date(timeIntervalSince1970: seconds)
     }
 
-    /// Files in Videos/ that no manifest entry references — left behind by a
-    /// crash between copy and manifest write, or by a lost manifest update.
-    ///
-    /// Two clocks, because a staging file's mtime is the *source's*:
-    /// ordinary orphans go by mtime, staging files by the timestamp in their
-    /// own name, with a much longer grace so a slow 4K copy is never touched.
+    /// Files in Videos/ that no manifest entry references — left behind by a crash between copy and
+    /// manifest write, or a lost manifest update. Two clocks, because a staging file's mtime is the
+    /// *source's*: ordinary orphans go by mtime, staging files by the timestamp in their own name, with a
+    /// much longer grace so a slow 4K copy is never touched.
     static func sweepOrphans(
         manifest: SystemWallpaperManifest,
         videosDirectory: URL,

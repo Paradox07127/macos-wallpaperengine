@@ -244,7 +244,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
         for path in Self.classificationCorpus {
             let layer = makeLayer(imagePath: path)
             #expect(layer.utilityModelKind == WPEUtilityModelKind.classify(path))
-            #expect(layer.isUtilityModelLayer == WPEUtilityModelKind.isUtilityModelPath(path))
+            #expect(layer.isUtilityModelLayer == (WPEUtilityModelKind.classify(path) != nil))
         }
     }
 

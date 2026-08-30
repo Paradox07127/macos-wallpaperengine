@@ -170,6 +170,16 @@ extension ScreenManager {
         return definition.displayName(using: { bookmarkDisplayName(for: $0) })
     }
 
+    /// Author-supplied Workshop title for this screen's scene, sanitized for a
+    /// log line or a bug report. Separate from `wallpaperDisplayName`, whose
+    /// scene case only ever yields `"Scene <id>"`.
+    func wallpaperOriginTitle(for screen: Screen) -> String? {
+        guard let configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+              let title = configuration.wpeOrigin?.title, !title.isEmpty else { return nil }
+        let sanitized = LogPrivacyRedactor.sanitizedTitle(title)
+        return sanitized.isEmpty ? nil : sanitized
+    }
+
     func bookmarkDisplayName(for bookmarkData: Data) -> String? {
         bookmarkDisplayNameCache.name(for: bookmarkData)
     }
@@ -226,11 +236,10 @@ extension ScreenManager {
         }
     }
 
-    /// Whether a toggle should stop this one wallpaper. Intent alone is the
-    /// wrong test: during a safety suspend intent stays true while playback is
-    /// stopped, so the button reads Play — and an intent-only toggle would run
-    /// `pause()`, clearing intent and leaving the wallpaper dead after the
-    /// suspend lifts.
+    /// Whether a toggle should stop this one wallpaper. Intent alone is the wrong test: during a
+    /// safety suspend intent stays true while playback is stopped, so the button reads Play — an
+    /// intent-only toggle would run `pause()`, clearing intent and leaving the wallpaper dead after
+    /// the suspend lifts.
     static func shouldPauseOnToggle(_ playback: any WallpaperPlaybackControllable) -> Bool {
         playback.userIntendsToPlay && playback.isPlaying
     }

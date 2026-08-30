@@ -2,24 +2,13 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Direct-Pro first-run Workshop setup, drawn as a dependency tree.
-///
-/// Capabilities are the folders, setup steps are the files inside, so parallel
-/// groups sit at the same indent and order-within-a-group reads top-down:
-///
-///   Download wallpapers   ← SteamCMD, then the library folder, then sign-in
-///   Scene resources       ← link a folder (no requirements), or download it
-///                           (needs the group above, and an account that owns
-///                           Wallpaper Engine)
-///   Steam Web API key     ← optional, last: it only improves browsing
-///
-/// Scenes PLAY without any of this — a missing assets install only skips the
-/// layers it would have supplied — so nothing here gates Continue.
-///
-/// Every row acts in place. There used to be a "Steam connection" sheet behind
-/// two of these buttons, which meant a modal on top of a modal to pick one
-/// folder, and a second rendering of the same three steps that could drift
-/// from this one.
+/// Direct-Pro first-run Workshop setup, drawn as a dependency tree — capabilities
+/// are folders, setup steps are files inside, indent = parallel groups.
+///   Download wallpapers ← SteamCMD → library folder → sign-in
+///   Scene resources     ← link a folder, or download (needs the group above + an account owning Wallpaper Engine)
+///   Steam Web API key   ← optional, last: only improves browsing
+/// Scenes PLAY without any of this (a missing install just skips layers), so nothing gates Continue. Every row acts
+/// in place; replaced a "Steam connection" sheet that stacked modal-on-modal and let its duplicate of these three steps drift.
 struct OnboardingWorkshopSetupView: View {
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
@@ -34,11 +23,11 @@ struct OnboardingWorkshopSetupView: View {
 
     var body: some View {
         VStack(spacing: DesignTokens.Spacing.lg) {
-            VStack(spacing: DesignTokens.Spacing.xs) {
+            VStack(spacing: DesignTokens.Spacing.md) {
                 Text("Set Up Steam Workshop")
                     .font(DesignTokens.Typography.pageTitle)
                     .accessibilityAddTraits(.isHeader)
-                Text("Each group unlocks one capability. Set up what you want — everything can be finished later in Settings.")
+                Text("None of this is required to start. Set up only the parts you want — the rest can wait until Settings.")
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(DesignTokens.Colors.textSecondary)
                     .multilineTextAlignment(.center)
@@ -69,7 +58,7 @@ struct OnboardingWorkshopSetupView: View {
             // cannot reach Settings, so the same words get a presenter here.
             Button { showingPrivacy = true } label: {
                 Label {
-                    Text("Privacy & terms", bundle: .main)
+                    Text("Privacy & terms")
                 } icon: {
                     Image(systemName: "hand.raised")
                 }
@@ -81,41 +70,38 @@ struct OnboardingWorkshopSetupView: View {
 
             Spacer(minLength: 0)
 
-            VStack(spacing: DesignTokens.Spacing.sm) {
-                Button(action: continueAction) {
-                    Text("Continue")
-                        .frame(minWidth: 140)
-                }
-                .buttonStyle(CapsuleButtonStyle(preset: .large))
-                .keyboardShortcut(.defaultAction)
-
-                // Same action as Continue — it exists to say out loud that
-                // nothing on this page is required.
-                Button(action: continueAction) {
-                    Text("Skip for Now", comment: "Secondary onboarding action that defers wallpaper setup.")
-                        .font(DesignTokens.Typography.body)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+            Button(action: continueAction) {
+                Text("Continue")
+                    .frame(minWidth: 140)
             }
+            .buttonStyle(CapsuleButtonStyle(preset: .large))
+            .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, DesignTokens.Spacing.xl + DesignTokens.Spacing.sm)
         .padding(.bottom, DesignTokens.Spacing.lg)
         .sheet(isPresented: $showingKeyEntry) {
-            SteamWebAPIKeyEntrySheet(services: services) {
-                Task { await services.refreshAPIKeyStatus() }
+            AppLanguageScope(defaults: .appScoped()) {
+                SteamWebAPIKeyEntrySheet(services: services) {
+                    Task { await services.refreshAPIKeyStatus() }
+                }
             }
         }
         .sheet(isPresented: $showingSetupSheet) {
-            SteamCMDSetupSheet(onConfirmManagedInstall: { controller.runManagedInstall() })
+            AppLanguageScope(defaults: .appScoped()) {
+                SteamCMDSetupSheet(onConfirmManagedInstall: { controller.runManagedInstall() })
+            }
         }
         .sheet(isPresented: $showingSignIn) {
-            SteamSignInSheet { accountName in
-                controller.adoptSignedInAccount(accountName)
+            AppLanguageScope(defaults: .appScoped()) {
+                SteamSignInSheet { accountName in
+                    controller.adoptSignedInAccount(accountName)
+                }
             }
         }
         .sheet(isPresented: $showingPrivacy) {
-            WorkshopPrivacySheet()
+            AppLanguageScope(defaults: .appScoped()) {
+                WorkshopPrivacySheet()
+            }
         }
         .task {
             await services.refreshAPIKeyStatus()
@@ -230,9 +216,9 @@ struct OnboardingWorkshopSetupView: View {
                         onRescan: { Task { await controller.loadAccounts() } }
                     )
                 } label: {
-                    Text(doctor.username == nil ? "Choose account" : "Switch account", bundle: .main)
+                    Text(doctor.username == nil ? "Choose account" : "Switch account")
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
                 .controlSize(.small)
                 .fixedSize()
             }
@@ -298,11 +284,11 @@ struct OnboardingWorkshopSetupView: View {
 
     private var sceneResourcesDetail: String {
         if controller.engineInstaller.isBusy {
-            return String(localized: "Downloading from Steam…", comment: "Onboarding engine-assets step detail while the download runs.")
+            return String(localized: "Downloading from Steam…", bundle: .appLanguage, comment: "Onboarding engine-assets step detail while the download runs.")
         }
         if controller.hasEngineAssets {
             return controller.engineAssets.engineRootDisplayName
-                ?? String(localized: "Ready", comment: "Onboarding engine-assets step detail when the assets are available.")
+                ?? String(localized: "Ready", bundle: .appLanguage, comment: "Onboarding engine-assets step detail when the assets are available.")
         }
         // The blocked reason belongs on the line, not only in the disabled
         // button's tooltip: a dimmed control is exactly what a pointer skips.
@@ -311,7 +297,7 @@ struct OnboardingWorkshopSetupView: View {
         }
         return String(
             localized: "Download the copy you own, or link an install you already have",
-            comment: "Onboarding scene-resources detail naming the two routes."
+            bundle: .appLanguage, comment: "Onboarding scene-resources detail naming the two routes."
         )
     }
 
@@ -348,8 +334,8 @@ struct OnboardingWorkshopSetupView: View {
 
     private var apiKeyDetail: String {
         services.hasWebAPIKey
-            ? String(localized: "Ready", comment: "Workshop setup status when a Steam Web API key exists.")
-            : String(localized: "Optional — adds ratings, authors and faster search", comment: "Workshop settings subtitle for Steam Web API key.")
+            ? String(localized: "Ready", bundle: .appLanguage, comment: "Workshop setup status when a Steam Web API key exists.")
+            : String(localized: "Optional — adds ratings, authors and faster search", bundle: .appLanguage, comment: "Workshop settings subtitle for Steam Web API key.")
     }
 }
 
@@ -366,10 +352,10 @@ private struct TreeGroupHeader: View {
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
-            Text(title, bundle: .main)
+            Text(title)
                 .font(DesignTokens.Typography.bodyEmphasized)
             if isOptional, state == .notStarted {
-                Text("Optional", bundle: .main)
+                Text("Optional")
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -407,13 +393,13 @@ private struct TreeRow<Control: View>: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: DesignTokens.Spacing.xs) {
-                    Text(title, bundle: .main)
+                    Text(title)
                         .font(DesignTokens.Typography.body)
                     if let state {
                         Circle()
                             .fill(state.tint)
                             .frame(width: 5, height: 5)
-                            .accessibilityLabel(Text(state.statusText, bundle: .main))
+                            .accessibilityLabel(Text(state.statusText))
                     }
                     if let info {
                         InfoTooltipButton(text: info)

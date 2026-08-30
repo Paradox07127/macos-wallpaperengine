@@ -3,10 +3,8 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Preset selection and management for the scene settings card.
-///
-/// Everything lives in one row plus an optional naming line, because this sits
-/// in an inspector whose minimum width is `DesignTokens.Inspector.minWidth`
-/// (268pt, ~235pt usable) and CJK copy runs 1.5-2× English.
+/// Everything lives in one row plus an optional naming line, because this sits in an inspector
+/// whose minimum width is `DesignTokens.Inspector.minWidth` (268pt, ~235pt usable) and CJK copy runs 1.5–2× English.
 struct ScenePresetBar: View {
     /// Already filtered to the descriptor's base wallpaper by the caller.
     let presets: [ScenePreset]
@@ -38,7 +36,7 @@ struct ScenePresetBar: View {
                 Spacer(minLength: DesignTokens.Spacing.sm)
 
                 if presets.isEmpty {
-                    Text("None saved", bundle: .main)
+                    Text("None saved")
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -85,7 +83,7 @@ struct ScenePresetBar: View {
                         Text(verbatim: preset.name).tag(String?.some(preset.id))
                     }
                 } header: {
-                    Text("Saved by you", bundle: .main)
+                    Text("Saved by you")
                 }
             }
             if !workshopPresets.isEmpty {
@@ -99,7 +97,7 @@ struct ScenePresetBar: View {
                         .tag(String?.some(preset.id))
                     }
                 } header: {
-                    Text("From the Workshop", bundle: .main)
+                    Text("From the Workshop")
                 }
             }
         }

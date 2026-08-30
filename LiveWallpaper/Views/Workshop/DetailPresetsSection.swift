@@ -3,14 +3,9 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Presets published for one wallpaper, listed inside its Workshop detail page.
-///
-/// Steam has no "is a preset" flag we can query — a preset is only identifiable
-/// once its `project.json` has been unpacked. What Steam does offer is
-/// `child_publishedfileid` ("Find all items that reference the given item"),
-/// and a preset references the wallpaper it restyles. So this lists *referencing
-/// items* and lets the import path make the final call: whatever turns out to be
-/// a preset registers as one, anything else lands in the library as a wallpaper.
-/// Nothing is discarded on a wrong guess.
+/// Steam has no "is a preset" flag — a preset is only identifiable once its `project.json` is
+/// unpacked. Steam does offer `child_publishedfileid` ("find all items referencing the given
+/// item"), and a preset references the wallpaper it restyles — so this lists *referencing items* and lets the import path decide; nothing is discarded on a wrong guess.
 struct DetailPresetsSection: View {
     /// Published file id of the wallpaper whose presets these are. Taken as a
     /// plain id rather than a `WorkshopQueryItem` so the installed-library
@@ -96,7 +91,7 @@ struct DetailPresetsSection: View {
             }
         }
         if totalCount(loaded: presets.count) > presets.count {
-            Text("Showing the top \(presets.count) of \(totalCount(loaded: presets.count)) presets.", bundle: .main)
+            Text("Showing the top \(presets.count) of \(totalCount(loaded: presets.count)) presets.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -112,7 +107,7 @@ struct DetailPresetsSection: View {
 
     private var header: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
-            Text("Presets", bundle: .main)
+            Text("Presets")
                 .font(DesignTokens.Typography.bodyEmphasized)
             if case .loaded(let presets) = state, !presets.isEmpty {
                 Text(verbatim: "\(totalCount(loaded: presets.count))")
@@ -150,7 +145,7 @@ struct DetailPresetsSection: View {
 
     private var emptyRow: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text("No presets have been published for this wallpaper.", bundle: .main)
+            Text("No presets have been published for this wallpaper.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -160,7 +155,7 @@ struct DetailPresetsSection: View {
 
     private var noMatchesRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            Text("No presets match your search.", bundle: .main)
+            Text("No presets match your search.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
             Button("Clear") { searchText = "" }
@@ -177,13 +172,13 @@ struct DetailPresetsSection: View {
             if error == .missingAPIKey {
                 // Not a failure worth an alarm icon: browsing works without a
                 // key on the paste path, so this is a capability notice.
-                Text("Add your Steam Web API key to see presets for this wallpaper.", bundle: .main)
+                Text("Add your Steam Web API key to see presets for this wallpaper.")
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Label {
-                    Text("Couldn't load presets.", bundle: .main)
+                    Text("Couldn't load presets.")
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(DesignTokens.Colors.Status.warning)

@@ -4,13 +4,11 @@ import LiveWallpaperCore
 import Observation
 
 extension ScreenManager {
-    /// Reconcile the Monitor overlay for every live display against its persisted config.
-    ///
-    /// The master switch counts as a reason to have none: it means "stop every
-    /// wallpaper", and these panels are drawn over the wallpaper. Particles
-    /// already stopped, because `releaseRuntimeSession` takes their layer down
-    /// on the way past — the Monitor and Now Playing panels are owned here
-    /// instead and used to keep rendering over a bare desktop.
+    /// Reconcile the Monitor overlay for every live display against its persisted config. The
+    /// master switch counts as a reason to have none: it means "stop every wallpaper", and these
+    /// panels are drawn over the wallpaper. Particles already stopped, because
+    /// `releaseRuntimeSession` takes their layer down on the way past — the Monitor and Now Playing
+    /// panels are owned here instead and used to keep rendering over a bare desktop.
     func reconcileMonitorOverlays() {
         guard !isTerminating, wallpapersGloballyEnabled else {
             OverlayController.shared.teardownAll()
@@ -94,15 +92,12 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.music = music }
     }
 
-    /// Copies one overlay from `source` onto every other display, leaving each
-    /// target's wallpaper — and the overlays the user is not looking at —
-    /// exactly as they were.
-    ///
-    /// Deliberately not folded into "Apply to All Displays" on the wallpaper
-    /// header: that action means "put this picture on every screen", and
-    /// quietly taking a carefully arranged board along with it would destroy
-    /// work the user never offered up. On the overlay tab the same button means
-    /// the layer in front of you, and only that one.
+    /// Copies one overlay from `source` onto every other display, leaving each target's wallpaper —
+    /// and the overlays the user is not looking at — exactly as they were. Deliberately not folded
+    /// into "Apply to All Displays" on the wallpaper header: that action means "put this picture on
+    /// every screen", and quietly taking a carefully arranged board along with it would destroy work
+    /// the user never offered up. On the overlay tab the same button means the layer in front of you,
+    /// and only that one.
     func applyOverlayToAllDisplays(_ kind: OverlayKind, from source: Screen) {
         guard !isTerminating, screens.count > 1 else { return }
         let targets = screens.filter { $0.id != source.id }
@@ -285,7 +280,7 @@ extension ScreenManager {
             afterCommit = {
                 _ = session.applyHTMLConfig(effectiveConfig)
             }
-            Logger.info("Preparing HTML wallpaper for screen \(screen.id) — \(effectiveSource.displayName) [leader=\(isLeader)]", category: .screenManager)
+            Logger.notice("Preparing HTML wallpaper for screen \(screen.id) — \(LogPrivacyRedactor.sanitizedTitle(effectiveSource.displayName)) [leader=\(isLeader)]", category: .screenManager)
         case .scene(let descriptor):
             #if !LITE_BUILD
             let runtimeOrigin: WPEOrigin? = if !descriptor.dependencyWorkshopIDs.isEmpty,
@@ -357,7 +352,7 @@ extension ScreenManager {
                     audio.setAudioVolume(configuration.videoVolume)
                 }
             }
-            Logger.info("Preparing scene wallpaper (workshop \(descriptor.workshopID)) for screen \(screen.id)", category: .screenManager)
+            Logger.notice("Preparing scene wallpaper (workshop \(descriptor.workshopID))\(LogPrivacyRedactor.titleFragment(configuration.wpeOrigin?.title)) for screen \(screen.id)", category: .screenManager)
             #else
             _ = descriptor
             return

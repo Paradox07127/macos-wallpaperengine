@@ -3,14 +3,9 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Page-level warning that Wallpaper Engine's shared `assets/` are not set up.
-///
-/// It used to hang off the applied scene's detail card and fire only after a
-/// load failure or unresolved refs. Both halves of that were wrong: the missing
-/// assets do not fail a scene — measured on 3558034522, an unlinked install
-/// leaves 144 references unresolved and the scene still renders, four passes
-/// short and with no error to report — and a reader with no scene applied never
-/// saw the card at all. Missing assets are a setup state, so the banner reads
-/// the setup state.
+/// Used to hang off the applied scene's detail card and fire only after a load failure or
+/// unresolved refs — both wrong: missing assets don't fail a scene (measured on 3558034522, an
+/// unlinked install leaves 144 references unresolved, scene still renders four passes short with no error), and a reader with no scene applied never saw the card. Missing assets are a setup state, so the banner reads it.
 struct EngineAssetsBanner: View {
     @Environment(\.featureCatalog) private var featureCatalog
     /// Observed for the published flags only, not a bookmark resolve per layout pass.

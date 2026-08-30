@@ -1,12 +1,9 @@
-/// Layers 0-3 of the playback decision: user intent folded onto the policy
-/// engine's decision, per screen. The single source of truth for
-/// `userIntendsToPlay`, which today lives duplicated in each session type.
-///
-/// Deliberately owns no timers and knows nothing about hibernation depth —
-/// dwell, deep-sleep countdowns, and restore retries stay with the resource
-/// owners downstream (they already carry generation counters against late
-/// callbacks). `.neverPause` and pause settings stay in `WallpaperPolicyEngine`;
-/// this machine only consumes its `WallpaperPolicyDecision`.
+/// Layers 0-3 of the playback decision: user intent folded onto the policy engine's decision, per
+/// screen. The single source of truth for `userIntendsToPlay`, which today lives duplicated in each
+/// session type. Deliberately owns no timers and knows nothing about hibernation depth — dwell,
+/// deep-sleep countdowns, and restore retries stay with the resource owners downstream (they already
+/// carry generation counters against late callbacks). `.neverPause` and pause settings stay in
+/// `WallpaperPolicyEngine`; this machine only consumes its `WallpaperPolicyDecision`.
 @MainActor
 public final class WallpaperPlaybackStateMachine {
     /// The only persistent state. Only `userPlay()`/`userPause()` may change

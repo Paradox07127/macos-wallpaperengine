@@ -2,13 +2,9 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Shared chrome for the Steam sheets (connection, install consent, sign-in,
-/// API key, privacy).
-///
-/// Five of them had each grown their own header and their own width — two of
-/// the headers were the same fifteen lines with a different icon. One header
-/// and two widths is what makes the family read as one feature rather than
-/// five screens that happen to be adjacent.
+/// Shared chrome for the Steam sheets (connection, install consent, sign-in, API key, privacy).
+/// Five had each grown their own header and their own width — two headers were the same fifteen
+/// lines with a different icon. One header and two widths makes the family read as one feature, not five adjacent screens.
 
 // MARK: - Header
 
@@ -35,7 +31,7 @@ struct SteamSheetHeader: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
-                    Text(title, bundle: .main)
+                    Text(title)
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
                     if let info {
@@ -43,7 +39,7 @@ struct SteamSheetHeader: View {
                     }
                 }
                 if let subtitle {
-                    Text(subtitle, bundle: .main)
+                    Text(subtitle)
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -70,11 +66,9 @@ enum SteamSheetWidth {
 // MARK: - Status
 
 /// One status vocabulary for the whole family.
-///
-/// Setup rows used a 6pt dot plus a word; probe rows used filled SF Symbols.
-/// Two languages for one concept in one window meant a green dot and a green
-/// checkmark had to be read as unrelated. This is the symbol version, because
-/// the symbol survives being scanned at a glance and the dot does not.
+/// Setup rows used a 6pt dot plus a word; probe rows used filled SF Symbols — two languages for
+/// one concept meant a green dot and a green checkmark had to be read as unrelated. This is the
+/// symbol version, because a symbol survives being scanned at a glance and a dot doesn't.
 enum SteamStatusIcon {
     static func symbol(for state: WorkshopStepState) -> String {
         switch state {
@@ -98,12 +92,12 @@ struct SteamStatusGlyph: View {
             ProgressView()
                 .controlSize(.small)
                 .frame(width: size, height: size)
-                .accessibilityLabel(Text(state.statusText, bundle: .main))
+                .accessibilityLabel(Text(state.statusText))
         } else {
             Image(systemName: SteamStatusIcon.symbol(for: state))
                 .font(.system(size: size))
                 .foregroundStyle(state.tint)
-                .accessibilityLabel(Text(state.statusText, bundle: .main))
+                .accessibilityLabel(Text(state.statusText))
         }
     }
 }

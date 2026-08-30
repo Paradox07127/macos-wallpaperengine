@@ -9,15 +9,13 @@ extension WPEShaderTranspiler {
     // MARK: - auto_sway varying reconstruction
 
     /// Fragment-side reconstruction of `auto_sway.vert` (workshop 3235948233,
-    /// `AA_VERSION == 2`) — the per-node sway state the fragment consumes. All
-    /// of it is uniform-only except the `v_PosX`/`v_EndpointPosX` dot products,
-    /// which are affine in the texcoord and therefore identical when recomputed
-    /// per-pixel from the interpolated UV. Without this the varyings fell back
-    /// to screen-UV ramps and the swaying hair locks smeared across the layer
-    /// (3462491575: bangs rotated over the eyes on both characters).
-    /// Matched structurally (v2 varying signature + the shader's distinctive
-    /// uniforms) so repacks under other workshop IDs reconstruct too; the v1/v3
-    /// variants keep today's fallback.
+    /// `AA_VERSION == 2`) — the per-node sway state the fragment consumes. All uniform-
+    /// only except the `v_PosX`/`v_EndpointPosX` dot products, affine in the texcoord and
+    /// therefore identical when recomputed per-pixel from the interpolated UV. Without
+    /// this the varyings fell back to screen-UV ramps and swaying hair locks smeared
+    /// across the layer (3462491575: bangs rotated over the eyes on both characters).
+    /// Matched structurally (v2 varying signature + the shader's distinctive uniforms) so
+    /// repacks under other workshop IDs reconstruct too; v1/v3 keep today's fallback.
     static func autoSwayVaryingReconstructionLines(
         varyings: [WPEVaryingDecl],
         availableUniforms: Set<String>,
@@ -151,13 +149,11 @@ extension WPEShaderTranspiler {
     // MARK: - v_TexCoord.zw resolution-scaled aux UV families
 
     /// Engine effect `.vert`s compute a resolution-scaled aux UV into `v_TexCoord.zw`
-    /// (`uv·res.zw/res.xy` — the POT-padding/aspect correction for the mask, flow, or
-    /// blend texture), which the fragment-only path synthesizes byte-for-byte via
-    /// `wpe_texcoord_with_resolution(in.uv, g_TextureNResolution)`. For the families in
-    /// `texCoordZWResolutionSlot` we keep the `.zw` sample so that correction survives.
-    /// For every other shader the synthesized `.zw` is NOT guaranteed to match the source
-    /// `.vert` (blur-step verts, swing/twirl's aspect+sine packing, TRANSFORMUV blends),
-    /// so we keep the historical `.xy` fallback.
+    /// (`uv·res.zw/res.xy` — POT-padding/aspect correction for the mask, flow, or blend
+    /// texture), which the fragment-only path synthesizes byte-for-byte via
+    /// `wpe_texcoord_with_resolution(in.uv, g_TextureNResolution)`. Families in
+    /// `texCoordZWResolutionSlot` keep the `.zw` sample; every other shader (blur-step verts,
+    /// swing/twirl's aspect+sine packing, TRANSFORMUV blends) isn't guaranteed to match, so keeps the historical `.xy` fallback.
     static func rewriteTexCoordMaskUVFallback(
         _ source: String,
         varyingTypesByName: [String: String],
@@ -170,13 +166,11 @@ extension WPEShaderTranspiler {
     }
 
     static func shouldPreserveTexCoordZW(shaderName: String, comboValues: [String: Int]) -> Bool {
-        // swing/twirl: .zw = aspect + sine phase, rebuilt by their varyingInitializer
-        // case. Safe even when its uniform gate fails: the float4 default leaves
-        // .zw == uv — exactly what the historical .xy downgrade produced.
-        // blur_precise_gaussian: .zw is the per-tap blur STEP, not a scaled UV. The `.xy`
-        // downgrade turned it into screen UV — six orders of magnitude past `g_Scale/resolution`
-        // — so blur13a's taps spanned the whole frame (scene 3413921910's water reflection was
-        // flattened to a solid band by the two blur passes that follow it).
+        // swing/twirl: .zw = aspect + sine phase, rebuilt by their varyingInitializer case —
+        // safe even when the uniform gate fails, since the float4 default leaves .zw == uv,
+        // exactly what the historical .xy downgrade produced. blur_precise_gaussian: .zw is
+        // the per-tap blur STEP, not a scaled UV; the `.xy` downgrade turned it into screen UV
+        // (six orders of magnitude past `g_Scale/resolution`), so blur13a's taps spanned the whole frame (3413921910: water reflection flattened to a solid band by the two blur passes that follow).
         if let family = texCoordZWFamilyName(shaderName: shaderName),
            family == "swing" || family == "twirl" || family == "blur_precise_gaussian" {
             return true
@@ -188,11 +182,10 @@ extension WPEShaderTranspiler {
     /// (verified line-by-line against the engine's `assets/effects/*/shaders` `.vert`s).
     /// Returns the texture slot N whose resolution the `.vert` reads, or nil when the
     /// family's `.zw` carries different semantics and must keep the `.xy` downgrade.
-    /// Excluded on purpose: blur_precise_gaussian/shine_gaussian/godrays_gaussian
-    /// (directional blur step), shine_combine/godrays_combine (HLSL-only half-texel
-    /// shift; GL `.zw` == uv), swing/twirl (aspect + sine time packing — rebuilt by
-    /// their dedicated `varyingInitializer` case instead), spin (never
-    /// writes `.zw`, so `.xy` is exact), fluidsimulation_clear (pressure decay).
+    /// Excluded: blur_precise_gaussian/shine_gaussian/godrays_gaussian (directional blur),
+    /// shine_combine/godrays_combine (HLSL-only half-texel shift; GL `.zw` == uv),
+    /// swing/twirl (aspect+sine time packing, rebuilt by `varyingInitializer` instead),
+    /// spin (never writes `.zw`, so `.xy` is exact), fluidsimulation_clear (pressure decay).
     static func texCoordZWResolutionSlot(shaderName: String, comboValues: [String: Int]) -> Int? {
         guard let family = texCoordZWFamilyName(shaderName: shaderName) else { return nil }
         switch family {

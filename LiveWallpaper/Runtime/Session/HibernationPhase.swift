@@ -1,18 +1,12 @@
 import Foundation
 
-/// The cover-then-release lifecycle shared by the wallpaper runtimes that tear
-/// themselves down after an absence and rebuild on the way back.
-///
-/// Ordering is the whole point: the cover (a snapshot overlay for HTML, a
-/// captured still frame for video) has to be on screen *before* the live thing is
-/// released, or the desktop flashes blank — the same failure that keeps
-/// `aggressiveSuspend` opt-in. Two rules fall out of that and are why this is a
-/// type rather than a pair of booleans per runtime:
-///
-/// - A resume arriving while a restore is still in flight must NOT uncover; the
-///   thing on screen is a blank or half-built document.
-/// - A suspend arriving mid-restore must leave a phase the dwell can arm from,
-///   or that screen never hibernates again for the rest of the session.
+/// The cover-then-release lifecycle shared by wallpaper runtimes that tear themselves down
+/// after an absence and rebuild on the way back. Ordering is the whole point: the cover (a
+/// snapshot overlay for HTML, a captured still frame for video) must be on screen *before* the
+/// live thing releases, or the desktop flashes blank — the same failure that keeps
+/// `aggressiveSuspend` opt-in. Two rules make this a type, not a pair of booleans: a resume
+/// mid-restore must NOT uncover (the screen is blank or half-built); a suspend mid-restore must
+/// leave a phase the dwell can arm from, or that screen never hibernates again.
 struct HibernationPhase: Equatable {
     enum Phase: Equatable {
         case live
@@ -73,13 +67,11 @@ struct HibernationPhase: Equatable {
         }
     }
 
-    /// A suspend landing mid-restore. The rebuild is still in flight and will
-    /// finish, so the resources are about to be live again — `.live` is the honest
-    /// phase and the only one both runtimes' eligibility guards will arm from.
-    ///
-    /// It must NOT go to `.hibernated`: that claims the resources are gone while
-    /// they are coming back, and both guards reject `.hibernated`, so the dwell
-    /// would never re-arm and nothing would ever release them again.
+    /// A suspend landing mid-restore: the rebuild is still in flight and will finish, so the
+    /// resources are about to be live again — `.live` is the honest phase and the only one both
+    /// runtimes' eligibility guards will arm from. Must NOT go to `.hibernated`: that claims the
+    /// resources are gone while they're coming back, and both guards reject `.hibernated`, so
+    /// the dwell would never re-arm and nothing would ever release them again.
     mutating func noteSuspendedDuringRestore() {
         guard phase == .restoring else { return }
         phase = .live

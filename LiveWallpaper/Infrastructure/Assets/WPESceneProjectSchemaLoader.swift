@@ -3,13 +3,8 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Resolves the `project.json` schema for a WPE *scene* descriptor.
-///
-/// The runtime cache (`wpe-cache/<id>/`) only holds what the `scene.pkg`
-/// archive shipped — `project.json` lives next to the archive in the workshop
-/// folder and is never extracted. Try cache first, then fall back to
-/// `WPEOrigin.sourceFolderBookmark` so existing caches without a copied
-/// `project.json` still show their author-defined properties.
+/// Resolves the `project.json` schema for a WPE *scene* descriptor. The runtime cache (`wpe-cache/<id>/`) only holds what the `scene.pkg` archive shipped — `project.json` lives next to the archive in the workshop folder and is never extracted.
+/// Try cache first, then fall back to `WPEOrigin.sourceFolderBookmark` so existing caches without a copied `project.json` still show their author-defined properties.
 enum WPESceneProjectSchemaLoader {
     struct Outcome: Sendable {
         let schema: WallpaperEngineProjectPropertySchema?
@@ -70,11 +65,8 @@ enum WPESceneProjectSchemaLoader {
             return nil
         }
         do {
-            // schemecolor is the WPE GLOBAL accent — most scenes never bind a
-            // field to it, so the picker is a no-op for them on macOS. Hidden by
-            // default (matches read()'s default); scenes that DO reference it via
-            // a `{"user":"schemecolor"}` envelope still resolve its value through
-            // effectiveSceneValues in the renderer.
+            // schemecolor is the WPE GLOBAL accent — most scenes never bind a field to it, so the picker is a no-op for them on macOS.
+            // Hidden by default (matches read()'s default); scenes that DO reference it via a `{"user":"schemecolor"}` envelope still resolve its value through effectiveSceneValues in the renderer.
             let parsed = try WallpaperEngineProjectPropertySchema.read(from: folderURL)
             return makeOutcome(parsed: parsed, workshopID: workshopID, locationDescription: "cache at \(folderURL.path)")
         } catch {

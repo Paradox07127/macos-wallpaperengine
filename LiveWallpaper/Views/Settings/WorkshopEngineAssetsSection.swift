@@ -5,10 +5,8 @@ import SwiftUI
 
 /// Linking or downloading a Wallpaper Engine install for the assets some
 /// scenes reference.
-///
-/// The download progress gets a row of its own here: a multi-GB bar squeezed
-/// into the trailing slot next to three buttons was the one place this page
-/// ran out of width.
+/// The download progress gets a row of its own here: a multi-GB bar squeezed into the
+/// trailing slot next to three buttons was the one place this page ran out of width.
 struct WorkshopEngineAssetsSection: View {
     @Environment(WorkshopSetupController.self) private var controller
 
@@ -258,24 +256,24 @@ struct WorkshopEngineAssetsSection: View {
         }
         if controller.isPreflightingDownload {
             return EngineAssetsStatusLine(
-                message: String(localized: "Checking SteamCMD readiness before downloading.", comment: "Engine-assets settings status while preflighting SteamCMD."),
+                message: String(localized: "Checking SteamCMD readiness before downloading.", bundle: .appLanguage, comment: "Engine-assets settings status while preflighting SteamCMD."),
                 tint: .secondary
             )
         }
         switch engineInstaller.phase {
         case .downloading:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloading Wallpaper Engine, then Loomscreen will keep only the assets folder and link it automatically.", comment: "Engine-assets settings status while downloading."),
+                message: String(localized: "Downloading Wallpaper Engine, then Loomscreen will keep only the assets folder and link it automatically.", bundle: .appLanguage, comment: "Engine-assets settings status while downloading."),
                 tint: .secondary
             )
         case .pruning:
             return EngineAssetsStatusLine(
-                message: String(localized: "Download finished. Keeping the assets folder and linking it now.", comment: "Engine-assets settings status while pruning the downloaded WPE app."),
+                message: String(localized: "Download finished. Keeping the assets folder and linking it now.", bundle: .appLanguage, comment: "Engine-assets settings status while pruning the downloaded WPE app."),
                 tint: .secondary
             )
         case .checking:
             return EngineAssetsStatusLine(
-                message: String(localized: "Checking Steam for the latest Wallpaper Engine build.", comment: "Engine-assets settings status while checking for updates."),
+                message: String(localized: "Checking Steam for the latest Wallpaper Engine build.", bundle: .appLanguage, comment: "Engine-assets settings status while checking for updates."),
                 tint: .secondary
             )
         case .idle, .failed:
@@ -290,10 +288,10 @@ struct WorkshopEngineAssetsSection: View {
         if engineAssets.isAuthorized {
             let name = engineAssets.engineRootDisplayName ?? String(
                 localized: "selected folder",
-                comment: "Fallback display name for a manually linked engine-assets folder."
+                bundle: .appLanguage, comment: "Fallback display name for a manually linked engine-assets folder."
             )
             return EngineAssetsStatusLine(
-                message: String(localized: "Linked to \(name) for extra scene coverage.", comment: "Engine-assets settings status for a manually linked folder."),
+                message: String(localized: "Linked to \(name) for extra scene coverage.", bundle: .appLanguage, comment: "Engine-assets settings status for a manually linked folder."),
                 tint: DesignTokens.Colors.Status.active
             )
         }
@@ -303,7 +301,7 @@ struct WorkshopEngineAssetsSection: View {
             return EngineAssetsStatusLine(message: reason, tint: .secondary)
         }
         return EngineAssetsStatusLine(
-            message: String(localized: "Not linked. Most scenes still use Loomscreen's built-in equivalents.", comment: "Engine-assets settings status when no engine assets are linked."),
+            message: String(localized: "Not linked. Most scenes still use Loomscreen's built-in equivalents.", bundle: .appLanguage, comment: "Engine-assets settings status when no engine assets are linked."),
             tint: .secondary
         )
     }
@@ -312,32 +310,32 @@ struct WorkshopEngineAssetsSection: View {
         switch engineInstaller.updateCheckOutcome {
         case .available:
             return EngineAssetsStatusLine(
-                message: String(localized: "Update available on Steam. Current downloaded assets are still linked.", comment: "Engine-assets settings status when an update is available."),
+                message: String(localized: "Update available on Steam. Current downloaded assets are still linked.", bundle: .appLanguage, comment: "Engine-assets settings status when an update is available."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case .upToDate:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked and up to date.", comment: "Engine-assets settings status when downloaded assets are current."),
+                message: String(localized: "Downloaded assets linked and up to date.", bundle: .appLanguage, comment: "Engine-assets settings status when downloaded assets are current."),
                 tint: DesignTokens.Colors.Status.active
             )
         case .unableToCompare:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked, but their version is unknown. Download again to refresh them.", comment: "Engine-assets settings status when installed build id is unknown."),
+                message: String(localized: "Downloaded assets linked, but their version is unknown. Download again to refresh them.", bundle: .appLanguage, comment: "Engine-assets settings status when installed build id is unknown."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case .loginRequired:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked. Your Steam sign-in expired, so the version check couldn't run.", comment: "Engine-assets settings status when Steam refused the cached session during an update check."),
+                message: String(localized: "Downloaded assets linked. Your Steam sign-in expired, so the version check couldn't run.", bundle: .appLanguage, comment: "Engine-assets settings status when Steam refused the cached session during an update check."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case .checkFailed:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked. Couldn't check Steam for updates.", comment: "Engine-assets settings status when update check fails."),
+                message: String(localized: "Downloaded assets linked. Couldn't check Steam for updates.", bundle: .appLanguage, comment: "Engine-assets settings status when update check fails."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case .checking:
             return EngineAssetsStatusLine(
-                message: String(localized: "Checking Steam for the latest Wallpaper Engine build.", comment: "Engine-assets settings status while checking for updates."),
+                message: String(localized: "Checking Steam for the latest Wallpaper Engine build.", bundle: .appLanguage, comment: "Engine-assets settings status while checking for updates."),
                 tint: .secondary
             )
         case .notChecked:

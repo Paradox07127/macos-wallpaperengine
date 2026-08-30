@@ -147,14 +147,10 @@ struct HistoryRow: View {
         }
     }
 
-    /// Only video projects have a resolution at all — a WPE scene renders at
-    /// whatever the display is, and web has none. Packaged video projects keep
-    /// their media outside the source folder, so those stay unlabelled too.
-    /// Keyed by import stamp as well as workshop ID: `recordWPEImport` restamps
-    /// `importedAt` on a genuine re-import (and deliberately preserves it on a
-    /// relink), so this re-probes exactly when the file behind the ID can have
-    /// changed — a 1080p item updated to 4K would otherwise keep its old label
-    /// until relaunch.
+    /// Only video projects have a resolution — a WPE scene renders at whatever the display is,
+    /// and web has none; packaged video keeps media outside the source folder, so those stay
+    /// unlabelled too. Keyed by import stamp + workshop ID: `recordWPEImport` restamps `importedAt`
+    /// on a genuine re-import (preserves it on a relink), so a 1080p item updated to 4K re-probes instead of keeping its old label until relaunch.
     private var resolutionProbeKey: String {
         "\(entry.origin.workshopID)#\(entry.importedAt.timeIntervalSince1970)"
     }
@@ -221,11 +217,9 @@ struct HistoryRow: View {
         if hasUpdate {
             label = label + Text(verbatim: " — ") + Text("Update available", comment: "A11y: the installed item has a newer version on Steam.")
         }
-        // Type and resolution are stated here unconditionally because their
-        // badges are `accessibilityHidden` glyphs on the thumbnail — the card
-        // label is their only textual path. The type used to ride in on the
-        // footer's `TypeBadge`, which carried its own label and was exposed as a
-        // child under `allowsInlineApply`; that badge is gone.
+        // Type and resolution are stated here unconditionally because their badges are
+        // `accessibilityHidden` glyphs on the thumbnail — the card label is their only textual
+        // path. Type used to ride in on the footer's `TypeBadge` (its own label, exposed as a child under `allowsInlineApply`); that badge is gone.
         label = label + Text(verbatim: " — ") + Text(verbatim: entry.origin.localizedDisplayTypeName)
         if let resolutionLabel {
             label = label + Text(verbatim: " — ") + Text(verbatim: resolutionLabel)

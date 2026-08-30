@@ -53,16 +53,9 @@ enum WPETexPixelDecoder {
         return DecodedRGBAImage(width: width, height: height, pixels: rgba)
     }
 
-    /// WPE stores two distinct things in `RG88`:
-    ///   - Normal maps / data textures (default): R and G independent (e.g.
-    ///     normal.xy). Keep (R, G, 0, 255) so shaders reading `.xy`
-    ///     (waterripple's `DecompressNormal`) stay correct.
-    ///   - Grayscale + alpha glows (`alphaChannelPriority`, TEXI `0x80000`):
-    ///     legacy LUMINANCE_ALPHA — R is luminance, G is alpha. Must expand to
-    ///     (R, R, R, G) as GL samples LUMINANCE_ALPHA. Light shafts/beams are
-    ///     this kind; decoding as (R, G, 0, 255) forced alpha to 1.0, so
-    ///     additive sprites stacked at one point saturated the quad into a
-    ///     solid block — the "red square light" artifact (scene 3426865175).
+    /// WPE stores two distinct things in `RG88`: normal maps / data textures (default), where R and G are independent (e.g. normal.xy) — keep `(R, G, 0, 255)` so shaders reading `.xy` (waterripple's `DecompressNormal`) stay correct.
+    /// Grayscale + alpha glows (`alphaChannelPriority`, TEXI `0x80000`) are legacy LUMINANCE_ALPHA instead — R is luminance, G is alpha — and must expand to `(R, R, R, G)` as GL samples LUMINANCE_ALPHA.
+    /// Light shafts/beams are this kind; decoding as `(R, G, 0, 255)` forced alpha to 1.0, so additive sprites stacked at one point saturated the quad into a solid block — the "red square light" artifact (scene 3426865175).
     static func decodeRG88(
         _ bytes: Data,
         width: Int,

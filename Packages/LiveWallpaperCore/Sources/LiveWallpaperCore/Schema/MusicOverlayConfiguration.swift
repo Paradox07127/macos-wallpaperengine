@@ -8,13 +8,11 @@ public enum MusicOverlaySize: String, Codable, Sendable, CaseIterable {
     case large = "l"
 }
 
-/// The Now Playing layer's own per-display configuration.
-///
-/// It is deliberately not a Monitor widget: there is exactly one per display,
-/// it has its own switch and its own window, and it never sits on the board's
-/// grid. Modelling it as a widget meant one array held two modules' contents,
-/// so every reader filtered it in half and every writer had to merge it back —
-/// and a missed merge silently deleted the other module's widgets.
+/// The Now Playing layer's own per-display configuration. It is deliberately not a Monitor widget:
+/// there is exactly one per display, it has its own switch and its own window, and it never sits on
+/// the board's grid. Modelling it as a widget meant one array held two modules' contents, so every
+/// reader filtered it in half and every writer had to merge it back — and a missed merge silently
+/// deleted the other module's widgets.
 public struct MusicOverlayConfiguration: Codable, Equatable, Sendable {
     public var enabled: Bool
     public var level: MonitorOverlayLevel

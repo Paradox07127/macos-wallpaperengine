@@ -1,11 +1,8 @@
 import Foundation
 
 /// `SerialExecutor` that runs actor jobs on a `WPERenderThread`. Pairing an actor's
-/// `unownedExecutor` with this makes the actor's isolation domain *be* the render
-/// thread — see SE-0392 (custom actor executors).
-///
-/// `@unchecked Sendable`: holds only an immutable reference to the (Sendable)
-/// render thread; it has no mutable state of its own.
+/// `unownedExecutor` with this makes the actor's isolation domain *be* the render thread
+/// (see SE-0392, custom actor executors). `@unchecked Sendable`: holds only an immutable reference to the (Sendable) render thread; no mutable state of its own.
 final class WPERenderThreadExecutor: SerialExecutor, @unchecked Sendable {
 
     private let thread: WPERenderThread

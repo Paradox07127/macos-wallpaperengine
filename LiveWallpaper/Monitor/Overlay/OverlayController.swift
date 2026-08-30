@@ -410,13 +410,10 @@ final class OverlayController: NSObject {
     #endif
 
     private func updateInteractive(_ host: Host) {
-        // A widget can claim the pointer on its own (Now Playing's transport
-        // controls) without the user opting the whole board in. The window flag
-        // that allows that is display-wide, and `HostView.hitTest` cannot narrow
-        // it: a view returning nil does not hand the click to the window below,
-        // it only leaves it unhandled — which is why an interactive full-screen
-        // overlay froze the whole desktop. The window therefore stays
-        // click-through until the pointer is actually over a live control.
+        // A widget can claim the pointer on its own (Now Playing's transport) without the whole board opting in.
+        // That window flag is display-wide, and `HostView.hitTest` can't narrow it — nil doesn't hand the click to
+        // the window below, it just leaves it unhandled, which once froze the whole desktop under an interactive
+        // full-screen overlay. So the window stays click-through until the pointer is over a live control.
         if case .monitor(let view, let config) = host.content {
             view.setPointerScope(HostView.pointerScope(for: config, isEditing: view.isEditing))
         }
@@ -441,10 +438,9 @@ final class OverlayController: NSObject {
         return host.acceptsPointer(atLocalPoint: host.view.convert(inWindow, from: nil))
     }
 
-    /// One monitor for every host: only `.widgetsOnly` needs the pointer
-    /// followed, and only while such a host exists. The local monitor covers the
-    /// window we just made interactive — once the pointer is ours, the global
-    /// monitor stops seeing it, and without the local one it could never leave.
+    /// One monitor per host: only `.widgetsOnly` needs the pointer followed, and only while such a host
+    /// exists. The local monitor covers the window just made interactive — once the pointer is ours, the
+    /// global monitor stops seeing it, and without the local one it could never leave.
     private func refreshPointerTracking() {
         let needsTracking = hosts.values.contains { $0.pointerScope == .widgetsOnly }
         guard needsTracking else {
@@ -509,11 +505,10 @@ final class OverlayController: NSObject {
         scheduleRuntimeReconciliation()
     }
 
-    /// A metric group no placed widget read was not sampled at all — the source
-    /// still emits a literal 0 for it (`"normal"` for pressure), and those
-    /// placeholders are indistinguishable from a real idle reading once they are
-    /// in the series. A widget added later would therefore draw a fabricated
-    /// flat history, so the series restarts whenever the *sampled* set grows.
+    /// A metric group no placed widget reads isn't sampled at all — the source still emits a literal 0 for
+    /// it (`"normal"` for pressure), indistinguishable from a real idle reading once in the series. A
+    /// widget added later would draw a fabricated flat history, so the series restarts whenever the sampled
+    /// set grows.
     nonisolated static func historyResetRequired(
         previous: Set<MonitorWidgetKind>,
         next: Set<MonitorWidgetKind>
@@ -623,13 +618,10 @@ final class OverlayController: NSObject {
             guard let lease = appliedRuntimeState.lease else { return }
 
             if appliedRuntimeState.options != options {
-                // A metric group no placed widget read was not sampled at all —
-                // the source still emits a literal 0 for it (`"normal"` for
-                // pressure), and those placeholders are indistinguishable from
-                // a real idle reading once they are in the series. A widget
-                // added later would therefore draw a fabricated flat history,
-                // so restart the series whenever the sampled set grows. Both
-                // edit paths (overlay-side and Settings-side) funnel here.
+                // A metric group no placed widget reads isn't sampled — the source still emits a literal 0
+                // (`"normal"` for pressure), indistinguishable from real idle data once in the series. A widget
+                // added later would draw a fabricated flat history, so restart the series when the sampled set
+                // grows. Both edit paths (overlay-side, Settings-side) funnel here.
                 let resetsHistory = Self.historyResetRequired(
                     previous: appliedRuntimeState.options?.activeWidgetKinds ?? [],
                     next: options.activeWidgetKinds ?? []

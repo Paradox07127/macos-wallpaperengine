@@ -21,21 +21,18 @@ enum WPEMetalTargetID: Hashable {
     }
 }
 
-/// Attachment alpha writes are surface semantics, not a side effect of the
-/// authored blend mode. The render graph's `.scene` target is a shader-readable
-/// premultiplied RGBA intermediate (it feeds `.previous`, scene aliases, bloom,
-/// and frame history), so it must retain alpha just like named FBOs. The terminal
-/// present pass also writes RGBA normally and makes its opaque-alpha contract
-/// explicit in the fragment result; color write masks never carry that semantic.
+/// Attachment alpha writes are surface semantics, not a side effect of the authored
+/// blend mode. The render graph's `.scene` target is a shader-readable premultiplied
+/// RGBA intermediate (feeds `.previous`, scene aliases, bloom, frame history), so it
+/// must retain alpha like named FBOs; the terminal present pass writes RGBA normally and makes its opaque-alpha contract explicit in the fragment result, never via color write masks.
 enum WPEMetalAlphaWritePolicy: Hashable, Sendable {
     case all
 
-    /// `blendMode` is taken and deliberately ignored. It is not a leftover: the
-    /// earlier rule keyed the write mask off it ("a blended scene target is
-    /// RGB-only"), and that produced RGB>0/A=0 texels wherever a transparent
-    /// clear met a blended draw. Keeping the parameter keeps the corrected
-    /// claim — blend mode does not influence the alpha write mask — stated at
-    /// the call boundary and pinned by `alphaWritePolicySeparatesTerminalSurfaceFromRenderGraph`.
+    /// `blendMode` is taken and deliberately ignored — not a leftover: the earlier rule
+    /// keyed the write mask off it ("a blended scene target is RGB-only"), producing
+    /// RGB>0/A=0 texels wherever a transparent clear met a blended draw. Keeping the
+    /// parameter keeps the corrected claim — blend mode doesn't influence the alpha write
+    /// mask — stated at the call boundary, pinned by `alphaWritePolicySeparatesTerminalSurfaceFromRenderGraph`.
     static func resolve(targetID: WPEMetalTargetID, blendMode _: String) -> Self {
         // Both logical render-graph target classes are sampled again. Preserve
         // their complete premultiplied RGBA contract regardless of blend mode.
@@ -61,25 +58,20 @@ struct WPEMetalFrameState {
     var latestSceneTexture: MTLTexture?
     var latestNamedTextures: [String: MTLTexture] = [:]
     var writtenTargets: Set<WPEMetalTargetID> = []
-    /// Bumped on every scene-target write. Scene-alias snapshots
-    /// (`_rt_FullFrameBuffer` etc.) are stamped with this so a later
-    /// referencing pass can tell a stale capture from a current one — WPE
-    /// re-captures the frame for every sampling layer, so a snapshot taken
-    /// for one layer must not be reused after other layers drew to the scene
-    /// (3521337568's filmgrain erased the beams/halo drawn after the shine
-    /// chain's capture).
+    /// Bumped on every scene-target write. Scene-alias snapshots (`_rt_FullFrameBuffer`
+    /// etc.) are stamped with this so a later referencing pass can tell a stale capture
+    /// from a current one — WPE re-captures the frame for every sampling layer, so a
+    /// snapshot for one layer must not be reused after other layers drew to the scene
+    /// (3521337568's filmgrain erased the beams/halo drawn after the shine chain's capture).
     var sceneWriteGeneration: Int = 0
     /// `sceneWriteGeneration` at the time each scene-alias snapshot was taken.
     /// An entry exists ONLY for snapshot-created textures; a real write to the
     /// same name (a chain rendering into `_rt_HalfFrameBuffer` as an actual
     /// target) removes it so the snapshot logic never clobbers real content.
     var sceneAliasSnapshotGenerations: [String: Int] = [:]
-    /// Per-physical-texture initialization tracking: ping-pong's
-    /// secondary texture is allocated lazily and may contain garbage on
-    /// first use. Tracking by texture identity (not target) lets us decide
-    /// whether `.load` is safe or whether we need `.clear` (or a blit-copy
-    /// from the previous primary) before rendering a same-target pass that
-    /// blends, culls, or rejects fragments via depth.
+    /// Per-physical-texture initialization tracking: ping-pong's secondary texture is
+    /// allocated lazily and may contain garbage on first use. Tracking by texture identity
+    /// (not target) lets us decide whether `.load` is safe or whether we need `.clear` (or a blit-copy from the previous primary) before a same-target pass that blends, culls, or rejects fragments via depth.
     var initializedTextures: Set<ObjectIdentifier> = []
     var depthTextures: [WPEMetalDepthTextureKey: MTLTexture] = [:]
     /// Identity of the output texture whose REFRACT snapshot is still current.

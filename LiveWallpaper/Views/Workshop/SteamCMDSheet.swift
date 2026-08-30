@@ -4,13 +4,9 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// The two ways to get SteamCMD, as one choice.
-///
-/// These were two separate sheets reached from two different places — the
-/// managed install from a prominent button, Homebrew from an item buried in an
-/// `⋯` menu — which presented one decision as a default plus a secret. Both
-/// routes need their terms stated before anything happens (where the bytes
-/// come from, how large they get, where they land, that it can be undone), so
-/// they belong on one screen where they can be compared.
+/// Used to be two separate sheets from two places — the managed install from a prominent
+/// button, Homebrew from an item buried in a `⋯` menu — presenting one decision as a default
+/// plus a secret. Both routes need their terms stated first (where the bytes come from, how large, where they land, that it's undoable), so they belong on one screen for comparison.
 struct SteamCMDSetupSheet: View {
     /// Called when the user picks the managed install and confirms it.
     let onConfirmManagedInstall: () -> Void
@@ -38,12 +34,12 @@ struct SteamCMDSetupSheet: View {
                 )
 
                 Picker("How to install", selection: $route) {
-                    Text("Let Loomscreen install it", bundle: .main).tag(Route.managed)
-                    Text("Install with Homebrew", bundle: .main).tag(Route.homebrew)
+                    Text("Let Loomscreen install it").tag(Route.managed)
+                    Text("Install with Homebrew").tag(Route.homebrew)
                 }
                 .pickerStyle(.radioGroup)
                 .labelsHidden()
-                .accessibilityLabel(Text("How to install SteamCMD", bundle: .main))
+                .accessibilityLabel(Text("How to install SteamCMD"))
 
                 switch route {
                 case .managed: managedDetail
@@ -79,29 +75,29 @@ struct SteamCMDSetupSheet: View {
     private var managedDetail: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             fact(
-                label: Text("Download size", bundle: .main),
+                label: Text("Download size"),
                 value: Text(verbatim: String(
                     localized: "About \(formatted(SteamCMDManifest.approximateDownloadBytes)) from Valve's server at \(SteamCMDManifest.url.host() ?? "media.steampowered.com")",
-                    comment: "Managed SteamCMD install consent sheet; first %@ is an approximate download size, second is a hostname."
+                    bundle: .appLanguage, comment: "Managed SteamCMD install consent sheet; first %@ is an approximate download size, second is a hostname."
                 ))
             )
             fact(
-                label: Text("Size once ready", bundle: .main),
+                label: Text("Size once ready"),
                 value: Text(verbatim: String(
                     localized: "About \(formatted(SteamCMDManifest.approximateInstalledBytes))",
-                    comment: "Managed SteamCMD install consent sheet; %@ is the approximate installed size."
+                    bundle: .appLanguage, comment: "Managed SteamCMD install consent sheet; %@ is the approximate installed size."
                 ))
             )
             fact(
-                label: Text("Location", bundle: .main),
+                label: Text("Location"),
                 value: Text(verbatim: installLocationDisplayPath)
             )
             fact(
-                label: Text("Checks", bundle: .main),
-                value: Text("Every download must match Valve's published checksum, and the program must carry Valve's signature, before it is ever run.", bundle: .main)
+                label: Text("Checks"),
+                value: Text("Every download must match Valve's published checksum, and the program must carry Valve's signature, before it is ever run.")
             )
 
-            Text("This installs SteamCMD only. It does not sign you in to Steam, and you can remove it again from Settings.", bundle: .main)
+            Text("This installs SteamCMD only. It does not sign you in to Steam, and you can remove it again from Settings.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -142,7 +138,7 @@ struct SteamCMDSetupSheet: View {
     /// is not something to automate.
     private var homebrewDetail: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            Text("Installs system-wide, where other tools can find it too. Run this in Terminal:", bundle: .main)
+            Text("Installs system-wide, where other tools can find it too. Run this in Terminal:")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -166,7 +162,7 @@ struct SteamCMDSetupSheet: View {
                     .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
             )
 
-            Text("When it finishes, use Locate automatically and Loomscreen will pick it up.", bundle: .main)
+            Text("When it finishes, use Locate automatically and Loomscreen will pick it up.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -256,7 +256,7 @@ struct ScheduleSection: View {
         let format = String(
             localized: "Time range overlaps with %@",
             defaultValue: "Time range overlaps with %@",
-            comment: "Schedule conflict message; placeholder is a comma-separated list of overlapping slot labels."
+            bundle: .appLanguage, comment: "Schedule conflict message; placeholder is a comma-separated list of overlapping slot labels."
         )
         let formatted = String(format: format, labels)
         withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.2))) {
@@ -314,7 +314,7 @@ struct ScheduleSection: View {
                 String(
                     localized: "That preset overlaps an existing slot. Adjust an existing slot first.",
                     defaultValue: "That preset overlaps an existing slot. Adjust an existing slot first.",
-                    comment: "Schedule error shown when a preset can't be applied because it overlaps."
+                    bundle: .appLanguage, comment: "Schedule error shown when a preset can't be applied because it overlaps."
                 )
             )
             return
@@ -328,7 +328,7 @@ struct ScheduleSection: View {
         let noFreeRangeMessage = String(
             localized: "No free time range. Adjust an existing slot first.",
             defaultValue: "No free time range. Adjust an existing slot first.",
-            comment: "Schedule error shown when Add Slot cannot find a gap of at least 2 hours."
+            bundle: .appLanguage, comment: "Schedule error shown when Add Slot cannot find a gap of at least 2 hours."
         )
         guard let free = SchedulePolicy.findFreeRange(in: scheduleSlots, minHours: 2) else {
             flashAddError(noFreeRangeMessage)
@@ -362,7 +362,7 @@ struct ScheduleSection: View {
                 String(
                     localized: "No room here. Drag a neighbouring slot edge first.",
                     defaultValue: "No room here. Drag a neighbouring slot edge first.",
-                    comment: "Schedule error shown when a double-tap insertion would collide with neighbours."
+                    bundle: .appLanguage, comment: "Schedule error shown when a double-tap insertion would collide with neighbours."
                 )
             )
             return

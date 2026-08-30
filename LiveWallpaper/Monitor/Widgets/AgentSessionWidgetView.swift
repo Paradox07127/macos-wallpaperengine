@@ -651,11 +651,11 @@ private enum AgentSessionStrings {
     /// "3 agents" — count is data, so composed with a verbatim number at the call
     /// site rather than a format string. The word is the only localizable part.
     static func agentCount(_ n: Int) -> String {
-        String(localized: "\(n) agents", comment: "Agent Session widget header: number of tracked agent sessions.")
+        String(localized: "\(n) agents", bundle: .appLanguage, comment: "Agent Session widget header: number of tracked agent sessions.")
     }
 
     static func moreCount(_ n: Int) -> String {
-        String(localized: "+\(n) more", comment: "Agent Session widget: whisper for sessions not shown as rows.")
+        String(localized: "+\(n) more", bundle: .appLanguage, comment: "Agent Session widget: whisper for sessions not shown as rows.")
     }
 
     static func warningLabel(_ raw: String) -> LocalizedStringKey {
@@ -843,12 +843,12 @@ extension AgentSessionWidgetView {
 
     private nonisolated static func waitingText(_ seconds: Double) -> String {
         String(localized: "waiting \(Format.mmss(seconds))",
-               comment: "Agent Session row timer: how long a session has been blocked waiting for the user; arg is mm:ss.")
+               bundle: .appLanguage, comment: "Agent Session row timer: how long a session has been blocked waiting for the user; arg is mm:ss.")
     }
 
     private nonisolated static func finishedText(_ secondsAgo: Double) -> String {
         String(localized: "finished \(Format.ago(secondsAgo)) ago",
-               comment: "Agent Session row: how long ago an ended session finished; arg is a compact age like 2m.")
+               bundle: .appLanguage, comment: "Agent Session row: how long ago an ended session finished; arg is a compact age like 2m.")
     }
 
     // MARK: warning chip

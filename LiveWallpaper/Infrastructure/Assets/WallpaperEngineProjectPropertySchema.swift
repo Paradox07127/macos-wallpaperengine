@@ -64,17 +64,8 @@ struct WallpaperEngineProjectPropertySchema: Equatable, Sendable {
         defaultValues.merging(overrides) { _, override in override }
     }
 
-    /// Keeps only values this wallpaper actually declares as editable.
-    ///
-    /// A Workshop preset's `preset` map carries an entry for **every** property
-    /// row, including the decorative `text` / `group` ones whose value is an
-    /// empty string. `effectiveValues` merges unconditionally, so those empty
-    /// strings won over real schema defaults the moment the preset layer
-    /// started reaching the renderer — every image layer in a preset-carrying
-    /// scene rendered with no output while text layers were unaffected.
-    ///
-    /// Also drops keys this wallpaper no longer declares, which is what a
-    /// preset authored against an older revision leaves behind.
+    /// Keeps only values this wallpaper actually declares as editable. A Workshop preset's `preset` map carries an entry for **every** property row, including the decorative `text` / `group` ones whose value is an empty string; `effectiveValues` merges unconditionally, so those empty strings won over real schema defaults the moment the preset layer started reaching the renderer — every image layer in a preset-carrying scene rendered with no output while text layers were unaffected.
+    /// Also drops keys this wallpaper no longer declares, which is what a preset authored against an older revision leaves behind.
     func declaredEditableValues(
         _ values: [String: WallpaperEngineProjectPropertyValue]
     ) -> [String: WallpaperEngineProjectPropertyValue] {
@@ -84,11 +75,8 @@ struct WallpaperEngineProjectPropertySchema: Equatable, Sendable {
     }
 
     /// Schema defaults + the descriptor's preset layer + the user's increment
-    /// (the last two alone if no project.json).
-    ///
-    /// Reads `layeredPropertyValues()`, never `propertyOverrides`: the increment
-    /// on its own is half the look, so a descriptor carrying a preset would
-    /// render as bare scene defaults.
+    /// (the last two alone if no project.json). Reads `layeredPropertyValues()`,
+    /// never `propertyOverrides`: the increment on its own is half the look, so a descriptor carrying a preset would render as bare scene defaults.
     static func effectiveSceneValues(
         descriptor: SceneDescriptor,
         cacheRootURL: URL
@@ -299,12 +287,9 @@ extension WallpaperEngineProjectPropertySchema {
             return promoTextMarkers.contains(where: haystack.contains)
         }
 
-        /// `JSONSerialization` returns every JSON number as `NSNumber`, and `NSNumber as? Bool`
-        /// succeeds for 0 and 1 — so a `{"type":"slider","value":0}` used to collapse to
-        /// `.bool(false)`. The envelope `{"user":K,"value":V}` then resolved to `false`, the bound
-        /// uniform silently fell back to its shader default, and scene 3413921910's water blur ran
-        /// at full strength (author default 0) and smeared the finished reflection into a flat
-        /// band. The DECLARED type is the disambiguator; only CoreFoundation booleans are booleans.
+        /// `JSONSerialization` returns every JSON number as `NSNumber`, and `NSNumber as? Bool` succeeds for 0 and 1 — so a `{"type":"slider","value":0}` used to collapse to `.bool(false)`.
+        /// The envelope `{"user":K,"value":V}` then resolved to `false`, the bound uniform silently fell back to its shader default, and scene 3413921910's water blur ran at full strength (author default 0) and smeared the finished reflection into a flat band.
+        /// The DECLARED type is the disambiguator; only CoreFoundation booleans are booleans.
         fileprivate static func value(
             from raw: Any?,
             type: PropertyType

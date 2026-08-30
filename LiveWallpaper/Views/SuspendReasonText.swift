@@ -2,11 +2,9 @@ import Foundation
 import LiveWallpaperCore
 
 /// User-facing wording for why a wallpaper stopped.
-///
-/// Grouped by what the user can do about it rather than by which subsystem
-/// raised it: safety reasons have no setting to turn off, so they get a
-/// "this lifts on its own" note instead of a cause the user would go hunting
-/// for in preferences.
+/// Grouped by what the user can do about it, not which subsystem raised it: safety reasons
+/// have no setting to turn off, so they get a "this lifts on its own" note instead of a cause
+/// the user would go hunting for in preferences.
 enum SuspendReasonText {
     /// The single reason worth showing when several apply at once.
     /// Safety wins — it is the one the user cannot do anything about, and
@@ -22,24 +20,30 @@ enum SuspendReasonText {
 
     static func localized(for reasons: Set<WallpaperSuspendReason>) -> String? {
         guard let reason = primary(from: reasons), reason.isUserVisible else { return nil }
-        return AppLanguagePreference.localizedString(key(for: reason))
+        return copy(for: reason)
     }
 
-    private static func key(for reason: WallpaperSuspendReason) -> String {
+    // Each case resolves its own literal rather than returning a key for one
+    // shared lookup: a key that only exists as a runtime value is invisible to
+    // both the string extractor and `LocalizationCoverageTests`.
+    private static func copy(for reason: WallpaperSuspendReason) -> String {
         switch reason {
         case .thermal, .memoryPressure:
-            "System resources are tight — playback resumes automatically"
+            String(
+                localized: "System resources are tight — playback resumes automatically",
+                bundle: .appLanguage
+            )
         case .applicationRule:
-            "Paused by a per-app rule"
+            String(localized: "Paused by a per-app rule", bundle: .appLanguage)
         case .battery:
-            "Paused on battery"
+            String(localized: "Paused on battery", bundle: .appLanguage)
         case .lowPowerMode:
-            "Paused in Low Power Mode"
+            String(localized: "Paused in Low Power Mode", bundle: .appLanguage)
         case .fullScreen, .windowOcclusion:
-            "Paused while covered"
+            String(localized: "Paused while covered", bundle: .appLanguage)
         case .userAbsent:
             // Filtered out above: nobody is looking at the screen to read it.
-            "Paused by system"
+            String(localized: "Paused by system", bundle: .appLanguage)
         }
     }
 }

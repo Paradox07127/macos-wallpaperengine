@@ -108,9 +108,9 @@ struct ManualLocationPicker: View {
                     query = ""
                     completer.update(query: "")
                 } else if let error {
-                    resolutionError = String(localized: "Could not find that location: \(error.localizedDescription)", comment: "Manual weather location lookup error. The placeholder is the system error.")
+                    resolutionError = String(localized: "Could not find that location: \(error.localizedDescription)", bundle: .appLanguage, comment: "Manual weather location lookup error. The placeholder is the system error.")
                 } else {
-                    resolutionError = String(localized: "Could not find that location.", defaultValue: "Could not find that location.", comment: "Manual weather location lookup error.")
+                    resolutionError = String(localized: "Could not find that location.", defaultValue: "Could not find that location.", bundle: .appLanguage, comment: "Manual weather location lookup error.")
                 }
             }
         }

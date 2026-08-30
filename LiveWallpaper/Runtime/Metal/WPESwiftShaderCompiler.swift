@@ -2,13 +2,10 @@
 import Foundation
 import Metal
 
-/// Uses `WPEShaderTranspiler` to emit MSL and `MTLDevice.makeLibrary(source:)`
-/// to compile it. Shaders it can't handle throw `.translationFailed`, which
-/// `WPEMetalSceneRenderer` surfaces as `SceneRenderingError.metalRendererUnsupported`.
-///
-/// `recordFailure` gates the scene-debug shader-failure artifact. The off-thread
-/// transpile pre-warm passes `false` so a failing shader is recorded once — by the
-/// real first-frame render — not twice.
+/// Uses `WPEShaderTranspiler` to emit MSL and `MTLDevice.makeLibrary(source:)` to compile it.
+/// Shaders it can't handle throw `.translationFailed`, which `WPEMetalSceneRenderer` surfaces
+/// as `SceneRenderingError.metalRendererUnsupported`. `recordFailure` gates the scene-debug
+/// shader-failure artifact; the off-thread transpile pre-warm passes `false` so a failing shader is recorded once — by the real first-frame render — not twice.
 struct WPESwiftShaderCompiler: Sendable {
     let device: MTLDevice
     let translationCache: WPEShaderTranslationCache

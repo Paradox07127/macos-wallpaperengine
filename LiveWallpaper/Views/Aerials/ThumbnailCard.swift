@@ -90,12 +90,10 @@ struct ThumbnailCard: View {
 
     // MARK: Thumbnail tile
 
-    /// The poster is an `overlay`, not a ZStack sibling: `scaledToFill` reports the
-    /// *scaled* size, so as a sibling it made the tile grow to the poster's aspect
-    /// ratio and bleed into the neighbouring grid column (posters are only 16:9
-    /// when the source video is). An overlay never resizes its base, so the tile
-    /// is 16:9 for every asset; `clipped()` then hides the overflowing poster,
-    /// which would otherwise paint over the footer.
+    /// The poster is an `overlay`, not a ZStack sibling: `scaledToFill` reports the *scaled*
+    /// size, so as a sibling it grew the tile to the poster's aspect ratio and bled into the
+    /// neighbouring grid column (posters are only 16:9 when the source video is). An overlay
+    /// never resizes its base, so the tile stays 16:9; `clipped()` then hides the overflowing poster, which would otherwise paint over the footer.
     private var thumbnailTile: some View {
         tileBackground
             .overlay { tileContent }

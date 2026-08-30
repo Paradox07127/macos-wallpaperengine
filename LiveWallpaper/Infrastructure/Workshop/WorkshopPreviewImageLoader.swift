@@ -14,29 +14,17 @@ final class WorkshopPreviewImageLoader {
 
     // Sync with WorkshopAnimatedGIF.maxBytes (32 MiB blanked real GIF previews).
     nonisolated static let maxBytes = 32 * 1024 * 1024
-    /// Sized for a screenful plus scroll headroom, not for the browsing history.
-    /// A tile poster is capped at 800 px on its long edge, so a 16:9 preview
-    /// decodes to 800×450×4 ≈ 1.44 MB — the meter's 84 live entries averaged
-    /// 1.52 MiB. The default window shows 4 columns × ~3 rows ≈ 12 tiles; a
-    /// maximised window on a 1440p display shows ~50, one whole query page.
-    /// 48 MB ≈ 33 posters, so the cost limit is what binds for tiles and the
-    /// count limit only catches unusually small entries.
-    ///
-    /// Undersizing is cheap now that `WorkshopPreviewDiskCache` backs this: a
-    /// miss costs a disk read and a decode, not a download. And a mounted tile
-    /// holds its own asset via `GIFAnimationController`, so eviction never
-    /// blanks a visible card. Was 128 MB / 128 entries, which metered at
-    /// 127.65 MiB live with 177 evictions against 261 inserts — full to the
-    /// brim and thrashing.
+    /// Sized for a screenful plus scroll headroom, not the browsing history: a tile poster caps at 800px on its long edge, so a 16:9 preview decodes to 800×450×4 ≈ 1.44 MB (the meter's 84 live entries averaged 1.52 MiB); the default window shows ~12 tiles (4 columns × ~3 rows), a maximised 1440p window ~50 (one whole query page).
+    /// 48 MB ≈ 33 posters, so the cost limit is what binds for tiles and the count limit only catches unusually small entries.
+    /// Undersizing is cheap now that `WorkshopPreviewDiskCache` backs this (a miss costs a disk read and decode, not a download), and a mounted tile holds its own asset via `GIFAnimationController`, so eviction never blanks a visible card.
+    /// Was 128 MB / 128 entries, which metered at 127.65 MiB live with 177 evictions against 261 inserts — full to the brim and thrashing.
     nonisolated static let cacheCountLimit = 40
     nonisolated static let cacheCostLimit = 48 * 1024 * 1024
 
-    /// Keyed by URL *and* decode size: Steam serves one `preview_url` for the
-    /// grid tile and the detail hero, and a tile-sized poster must not be handed
-    /// to the hero (or the hero's cost charged to a grid page).
-    /// Not `private`: `LocalImageCacheReclaimerTests` observes that the last
-    /// window closing empties this too, the same way it observes the three
-    /// local-source caches.
+    /// Keyed by URL *and* decode size: Steam serves one `preview_url` for both
+    /// the grid tile and the detail hero, and a tile-sized poster must not be
+    /// handed to the hero (or the hero's cost charged to a grid page). Not
+    /// `private`: `LocalImageCacheReclaimerTests` observes that the last window closing empties this too, the same way it observes the three local-source caches.
     let assetCache = NSCache<NSString, CachedWorkshopPreviewAsset>()
     private var assetInflight: [String: InflightLoad] = [:]
     private let diskCache: WorkshopPreviewDiskCache
@@ -44,9 +32,8 @@ final class WorkshopPreviewImageLoader {
 
     /// One shared load, plus how many tiles are still waiting on it. Sweeping
     /// through pages used to leave every started download running to completion:
-    /// the view's `.task` was cancelled, but the loader's task was deliberately
-    /// detached from it so several tiles could share one fetch, and nothing
-    /// counted when the last of them went away.
+    /// the loader's task is deliberately detached from the view's `.task` so
+    /// several tiles can share one fetch, and nothing counted when the last of them went away.
     @MainActor
     private final class InflightLoad {
         var task: Task<CachedWorkshopPreviewAsset?, Never>!
@@ -54,11 +41,9 @@ final class WorkshopPreviewImageLoader {
     }
 
     /// Both the normal and the cancelled path release the same waiter, and on
-    /// cancellation both can run.
-    ///
-    /// `@unchecked Sendable` so the cancellation handler — which runs on the
-    /// cancelling task's executor — can carry it back to the main actor; every
-    /// read and write of `released` happens there.
+    /// cancellation both can run. `@unchecked Sendable` so the cancellation
+    /// handler — which runs on the cancelling task's executor — can carry it
+    /// back to the main actor, where every read and write of `released` happens.
     @MainActor
     private final class WaiterRelease: @unchecked Sendable {
         private var released = false
@@ -76,11 +61,10 @@ final class WorkshopPreviewImageLoader {
         assetCache.countLimit = Self.cacheCountLimit
         assetCache.totalCostLimit = Self.cacheCostLimit
         WPEImageCacheMeter.attach(assetCache, as: .workshopPreview)
-        // Reclaimed with the local caches once the last window closes. Safe only
-        // because these bytes now survive on disk: a rebuild is a 0.05 ms read
-        // plus a decode (measured p50 1.5 ms, p95 8.2 ms over the real cache),
-        // never a re-download. The budget itself stays — that decode tail is why
-        // the tier has to keep its size while a window is actually open.
+        // Reclaimed with the local caches once the last window closes — safe
+        // only because these bytes now survive on disk: a rebuild is a 0.05 ms
+        // read plus a decode (measured p50 1.5 ms, p95 8.2 ms), never a
+        // re-download. The budget itself stays, since that decode tail is why the tier must keep its size while a window is open.
         LocalImageCacheRegistry.shared.register(assetCache)
         self.diskCache = diskCache
 
@@ -96,9 +80,8 @@ final class WorkshopPreviewImageLoader {
 
     /// Cookieless and cache-less on purpose: nothing about a browsing session is
     /// offered to Steam's CDN or written to disk by the URL loading system.
-    /// `WorkshopPreviewDiskCache` is the disk layer instead, and it holds image
-    /// bytes only — switching `urlCache` on here would put response headers,
-    /// and anything cookie-shaped in them, back on disk.
+    /// `WorkshopPreviewDiskCache` is the disk layer instead and holds image bytes
+    /// only — switching `urlCache` on here would put response headers, and anything cookie-shaped in them, back on disk.
     nonisolated static func makeSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieAcceptPolicy = .never
@@ -170,11 +153,9 @@ final class WorkshopPreviewImageLoader {
         return load
     }
 
-    /// Cancels the shared load once nothing is waiting on it any more.
-    ///
-    /// Takes the `InflightLoad` the caller actually joined rather than looking
-    /// the key up again: by the time the last waiter of an old load lets go, a
-    /// new tile may already have registered a different load under the same key.
+    /// Cancels the shared load once nothing is waiting on it any more. Takes the
+    /// `InflightLoad` the caller actually joined rather than looking the key up
+    /// again: by the time the last waiter of an old load lets go, a new tile may already have registered a different load under the same key.
     private func dropWaiter(_ load: InflightLoad, forKey cacheKey: String) {
         load.waiters -= 1
         guard load.waiters <= 0 else { return }
@@ -242,13 +223,10 @@ final class WorkshopPreviewImageLoader {
                 decode.cancel()
             }
             PreviewSignpost.end("workshop.decode", decoding)
-            // The disk entry is written here, after the verdict, and not before
-            // the decode: a body that satisfied every network check — 200,
-            // `image/*`, under the byte cap — and still is not an image used to
-            // be persisted anyway, and from then on every visit hit that entry
-            // instead of the network, so the card stayed blank until the TTL or
-            // the cap got round to it. `.abandoned` still stores: those bytes
-            // are already paid for and nothing ever judged them.
+            // The disk entry is written here, after the verdict, not before the
+            // decode: a body that passed every network check (200, `image/*`,
+            // under the byte cap) but still wasn't an image used to be persisted
+            // anyway, so every later visit hit that dead entry and the card stayed blank until the TTL or cap caught it. `.abandoned` still stores — those bytes are already paid for and nothing ever judged them.
             if !servedFromDisk, outcome.keepsBytes {
                 await diskCache.store(data, for: canonicalURL, size: size)
             }

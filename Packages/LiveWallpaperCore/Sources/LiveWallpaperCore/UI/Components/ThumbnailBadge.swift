@@ -1,16 +1,12 @@
 import SwiftUI
 
-/// A small pill floating over a thumbnail or preview: optional glyph, optional
-/// label, glass backing.
-///
-/// Nine of these were written out longhand across four files — resolution,
-/// rating, In Library, Update, In use, compatibility, playing, and the Aerials
-/// format labels. They drifted: padding ran 5/2, 6/3 and 7/3 for badges that sit
-/// side by side. One component keeps the metrics in one place.
-///
-/// Badges are `accessibilityHidden` by default because the cards combine their
-/// children into a single element and restate the information in the card's own
-/// label. Pass `accessibility:` for a badge that has no such host.
+/// A small pill floating over a thumbnail or preview: optional glyph, optional label, glass backing.
+/// Nine of these were written out longhand across four files — resolution, rating, In Library,
+/// Update, In use, compatibility, playing, and the Aerials format labels. They drifted: padding ran
+/// 5/2, 6/3 and 7/3 for badges that sit side by side. One component keeps the metrics in one place.
+/// Badges are `accessibilityHidden` by default because the cards combine their children into a
+/// single element and restate the information in the card's own label. Pass `accessibility:` for a
+/// badge that has no such host.
 public struct ThumbnailBadge: View {
     private let systemImage: String?
     private let label: Text?
@@ -31,7 +27,7 @@ public struct ThumbnailBadge: View {
         accessibility: Text? = nil
     ) {
         self.systemImage = systemImage
-        self.label = Text(title, bundle: .main)
+        self.label = Text(title)
         self.tint = tint
         self.opacity = opacity
         self.accessibility = accessibility

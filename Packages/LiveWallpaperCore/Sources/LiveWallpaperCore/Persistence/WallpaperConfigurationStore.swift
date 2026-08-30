@@ -69,15 +69,13 @@ public final class WallpaperConfigurationStore {
         return migrateByFingerprint(to: screenID, fingerprint: fingerprint)
     }
 
-    /// Re-key one display's stored configuration when its fingerprint format
-    /// changes (EDID → per-display UUID). Runs once per display; refuses to act
-    /// when the new key already has a config, so two panels that used to share
-    /// an ambiguous EDID key cannot both claim it.
-    ///
-    /// `screenID` is the display doing the migrating. Two identical serial-0
-    /// panels stored one row each under the same legacy key, so row order alone
-    /// would hand one panel the other's wallpaper; the row whose `screenID`
-    /// matches wins, and a tie with no match is refused rather than guessed.
+    /// Re-key one display's stored configuration when its fingerprint format changes (EDID →
+    /// per-display UUID). Runs once per display; refuses to act when the new key already has a
+    /// config, so two panels that used to share an ambiguous EDID key cannot both claim it.
+    /// `screenID` is the display doing the migrating. Two identical serial-0 panels stored one row
+    /// each under the same legacy key, so row order alone would hand one panel the other's
+    /// wallpaper; the row whose `screenID` matches wins, and a tie with no match is refused rather
+    /// than guessed.
     @discardableResult
     public func migrateFingerprint(
         from legacy: String,

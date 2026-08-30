@@ -4,26 +4,24 @@ import QuartzCore
 import os.log
 
 /// Implements the Agent-facing protocol. One instance per connection; all
-/// lifecycle work hops onto a process-wide serial queue so an invalidate can
-/// never interleave with the two halves of an acquire (contract §3).
-///
-/// `@unchecked Sendable`: every stored property except `agentProxyProvider` is
-/// a `let`, and the provider is assigned once in `accept(connection:)` before
-/// the connection is resumed, so no incoming call can observe it mid-write.
+/// lifecycle work hops onto a process-wide serial queue so an invalidate
+/// can never interleave with the two halves of an acquire (contract §3).
+/// `@unchecked Sendable`: every stored property except `agentProxyProvider`
+/// is a `let`, assigned once in `accept(connection:)` before the connection
+/// resumes, so no incoming call can observe it mid-write.
 final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unchecked Sendable {
     private let store: SharedLibraryStore
     private let registry: SurfaceRegistry
     private let settings: SettingsProvider
-    /// Derives the agent proxy per call rather than storing one.
-    /// `connection.remoteObjectProxy` returns an autoreleased object that
-    /// nothing else owns, so a stored `weak` reference reads back nil (measured
-    /// 2026-08-20) and every call through it silently did nothing. Storing it
-    /// strongly is not an option either — the connection already owns this
-    /// handler via `exportedObject`, so that closes a cycle.
-    /// Not `@Sendable`: it captures the `NSXPCConnection`, which Apple does
-    /// not mark Sendable. Safe because `NSXPCConnection` is documented as
-    /// thread-safe (NSXPCConnection.h) and the only caller,
-    /// `invalidateAgentSnapshots()`, runs on `Self.queue`.
+    /// Derives the agent proxy per call rather than storing one:
+    /// `connection.remoteObjectProxy` returns an autoreleased object nothing
+    /// else owns, so a stored `weak` reference reads back nil (measured
+    /// 2026-08-20) and every call silently did nothing; storing it strongly
+    /// isn't an option either, since the connection already owns this
+    /// handler via `exportedObject`, closing a cycle. Not `@Sendable`: it
+    /// captures `NSXPCConnection` (Apple doesn't mark it Sendable) — safe
+    /// since it's documented thread-safe (NSXPCConnection.h) and the only
+    /// caller, `invalidateAgentSnapshots()`, runs on `Self.queue`.
     nonisolated(unsafe) var agentProxyProvider: (() -> WallpaperExtensionProxyXPCProtocol?)?
 
     private static let queue = DispatchQueue(label: "com.loomscreen.wallpaper.lifecycle")
@@ -119,11 +117,11 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     reply(context, nil)
                     return
                 }
-                // Switching between two of our own wallpapers: the Agent keeps
-                // compositing the OLD context until we reply, so holding the
-                // reply until the new video's first frame is out replaces the
-                // blink with a clean hand-off (contract §3.1). Preview surfaces
-                // reply at once — the picker must stay responsive.
+                // Switching between two of our own wallpapers: the Agent
+                // keeps compositing the OLD context until we reply, so the
+                // held reply until the new video's first frame replaces the
+                // blink with a clean hand-off (contract §3.1) — preview
+                // surfaces reply at once so the picker stays responsive.
                 if isPreview {
                     startPlayback(surface: surface, choiceID: choiceID, size: size, replyOnFirstFrame: nil)
                     reply(context, nil)
@@ -171,11 +169,11 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             CATransaction.flush()
 
             // Seed a still so the context has composited content before we
-            // reply — the Agent swaps to us on reply and would otherwise show
-            // a blank surface (contract §3.1). Seeding the chosen video's own
-            // poster frame rather than flat black is what makes the switch read
-            // as the wallpaper appearing instead of a black (or, on an
-            // untouched surface, green) flash.
+            // reply — the Agent swaps to us on reply and would otherwise
+            // show a blank surface (contract §3.1). Seeding the video's own
+            // poster frame, not flat black, makes the switch read as the
+            // wallpaper appearing rather than a black (or, on an untouched
+            // surface, green) flash.
             surface.renderer.enqueueStill(posterURL: posterURL(for: choiceID), size: size)
             CATransaction.flush()
 
@@ -224,13 +222,13 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 reply(nil)
                 return
             }
-            // Defer teardown: display wake and fast switching both invalidate
-            // then immediately re-acquire the same surface (contract §3.3).
-            // Strong captures on purpose — the connection (and this handler)
-            // usually dies within the 15 s grace, and a teardown that no-ops
-            // then leaks the remote context into the Agent's composite tree
-            // until `killall WallpaperAgent`. Registry and store outlive every
-            // connection (they belong to the bridge), so nothing cycles.
+            // Defer teardown: display wake and fast switching both
+            // invalidate then immediately re-acquire the same surface
+            // (contract §3.3). Strong captures on purpose: the connection
+            // usually dies within the 15 s grace, and a no-op teardown
+            // leaks the remote context until `killall WallpaperAgent`.
+            // Registry and store outlive every connection (they belong to
+            // the bridge), so nothing cycles.
             let registry = registry
             let store = store
             let work = DispatchWorkItem {
@@ -283,15 +281,15 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     // MARK: - Choices
 
     func selectedChoicesDidChange(for id: Any?, reply: @escaping @Sendable (Error?) -> Void) {
-        // Deliberately no renderer work: the callback carries no display, and
-        // the system follows it with invalidate + acquire (contract §9 坑 7).
-        // The whole active set goes out, not just the notified choice: with two
-        // displays on two videos the single-value form marks the other one idle
-        // until the following acquire, and the app will delete an idle item.
-        // The heartbeat walks `registry.all` and reads each surface's
-        // `choiceID`; both are confined to the lifecycle queue, and reading
-        // them from the XPC thread raced `acquire`'s insert on a second
-        // display. Probing `id` stays here so the opaque value never crosses.
+        // Deliberately no renderer work: the callback carries no display,
+        // and the system follows with invalidate + acquire (contract §9 坑
+        // 7). The whole active set goes out, not just the notified choice:
+        // with two displays on two videos, a single-value form marks the
+        // other idle until the next acquire and the app deletes it. The
+        // heartbeat reads each `registry.all` surface's `choiceID`, both
+        // lifecycle-queue-confined — reading them from the XPC thread raced
+        // `acquire`'s insert on a second display. Probing `id` stays here
+        // so the opaque value never crosses.
         let choiceID = MirrorProbe.identifierFromDescription(id)
         Self.queue.async { [self] in
             Self.writeActiveHeartbeat(registry: registry, store: store, including: choiceID)
@@ -365,11 +363,11 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         }
     }
 
-    /// The push half of `provideSettingsViewModels`: same models, same encoder,
-    /// our side calling the Agent over `remoteObjectInterface`.
-    /// `invalidateSnapshots` alone only re-renders the tiles the panel already
-    /// holds, so an item the app just published or deleted did not appear (or
-    /// disappear) until the panel was closed and reopened.
+    /// The push half of `provideSettingsViewModels`: same models, same
+    /// encoder, our side calling the Agent over `remoteObjectInterface`.
+    /// `invalidateSnapshots` alone only re-renders tiles the panel already
+    /// holds, so a just-published or -deleted item didn't appear/disappear
+    /// until the panel was closed and reopened.
     private func pushSettingsViewModels() {
         guard let proxy = agentProxyProvider?() else { return }
         guard let object = SettingsViewModelsEncoder.makeXPCObject(settings.makeViewModels()) else {
@@ -420,12 +418,12 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
 
     // MARK: - Helpers
 
-    /// `verifyRuntimeLayout` only proves the private classes still exist. One
-    /// that keeps its name but changes the layout we raw-write fails here
-    /// instead, per call — and the old shape of that was `reply(nil, nil)` next
-    /// to a `runtimeHealthy: true` beat, so the panel went blank while the app
-    /// reported the extension was fine. The health bit has to mean "this call
-    /// really produced the object", and every later success rewrites it true.
+    /// `verifyRuntimeLayout` only proves the private classes still exist —
+    /// one that keeps its name but changes the raw-written layout fails
+    /// here instead, per call. The old shape was `reply(nil, nil)` next to
+    /// a `runtimeHealthy: true` beat, so the panel went blank while the app
+    /// reported fine; the health bit must mean "this call really produced
+    /// the object", and every later success rewrites it true.
     private func reportUnbuildable(_ what: String) {
         wpxLog.error("could not build \(what, privacy: .public) — the private layout changed under us")
         // Disarm the keep-alive with it: a timer republishing "healthy" every
@@ -436,13 +434,13 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         store.writeHeartbeat(activeChoiceID: nil, runtimeHealthy: false)
     }
 
-    /// The one ladder acquire, update and invalidate all key off. They used to
-    /// disagree: acquire filed a surface under the *request*'s
-    /// `directDisplayID` while the other two probed the *id*'s, so a
-    /// WallpaperID-less acquire got updates meant for every display and an
-    /// invalidate that could never find it. Nil only when the call carries no
-    /// identity at all — acquire has a terminal fallback, the other two treat
-    /// it as "not this surface".
+    /// The one ladder acquire, update and invalidate all key off — they
+    /// used to disagree, filing a surface under the *request*'s
+    /// `directDisplayID` (acquire) vs. the *id*'s (the other two), so a
+    /// WallpaperID-less acquire got updates for every display and an
+    /// invalidate that could never find it. Nil only with no identity at
+    /// all: acquire has a terminal fallback, the other two treat it as "not
+    /// this surface".
     private static func surfaceUUID(id: Any?, request: Any? = nil) -> UUID? {
         if let uuid = MirrorProbe.firstUUID(in: id) { return uuid }
         if let displayID = MirrorProbe.uint32(named: "directDisplayID", in: id) {

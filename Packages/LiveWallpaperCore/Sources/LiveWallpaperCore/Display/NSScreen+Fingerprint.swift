@@ -1,13 +1,11 @@
 import AppKit
 import CoreGraphics
 
-/// How a display is identified across sessions.
-///
-/// EDID `vendor:model:serial` is the primary key because it survives cable and
-/// port changes. It has one hole: panels that report **serial 0** are
-/// indistinguishable from an identical unit of the same model, so two of them
-/// would share every per-display setting. Those fall back to the per-display
-/// UUID, which macOS keeps stable across reboots and assigns per panel.
+/// How a display is identified across sessions. EDID `vendor:model:serial` is the primary key
+/// because it survives cable and port changes. It has one hole: panels that report **serial 0** are
+/// indistinguishable from an identical unit of the same model, so two of them would share every
+/// per-display setting. Those fall back to the per-display UUID, which macOS keeps stable across
+/// reboots and assigns per panel.
 public enum DisplayFingerprint {
     public static func make(
         vendor: UInt32,

@@ -3,15 +3,8 @@ import Foundation
 import Metal
 import LiveWallpaperProWPE
 
-/// BC1/2/3/7 → RGBA8 transcode using Apple's GPU (sample BC into an
-/// `rgba8Unorm` render target, read back).
-///
-/// Not `MTLBlitCommandEncoder.copy`: blit is a bit-for-bit copy, so it
-/// reinterprets BC block bytes as RGBA pixels (green-tinted noise) instead
-/// of decompressing. Decompression must go through a sampling shader.
-///
-/// Loader fallback when native BC upload is unavailable, avoiding the
-/// magenta placeholder path.
+/// BC1/2/3/7 → RGBA8 transcode using Apple's GPU (sample BC into an `rgba8Unorm` render target, read back). Not `MTLBlitCommandEncoder.copy`: blit is a bit-for-bit copy, so it reinterprets BC block bytes as RGBA pixels (green-tinted noise) instead of decompressing — decompression must go through a sampling shader.
+/// Loader fallback when native BC upload is unavailable, avoiding the magenta placeholder path.
 enum WPETexMetalTranscoder {
 
     private static let device: MTLDevice? = MTLCreateSystemDefaultDevice()

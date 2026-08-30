@@ -23,16 +23,14 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
     /// increment resets to the preset instead of to the scene defaults.
     public private(set) var presetID: String?
     /// The applied preset's values, carried alongside the pointer.
-    ///
-    /// Denormalised on purpose. The renderer receives a descriptor and nothing
-    /// else — it has no route to `GlobalSettings.scenePresets` — so a pointer
-    /// alone would mean the preset silently did nothing at render time. Keeping
-    /// it a separate layer from `propertyOverrides` is what preserves "drop the
-    /// increment, keep the preset".
-    ///
-    /// `presetID` stays the authority for library operations (rename, delete,
-    /// re-apply); `refreshingPresetSnapshot(in:)` re-syncs this copy whenever
-    /// the library is at hand.
+    /// Denormalised on purpose: the renderer receives a descriptor and
+    /// nothing else — no route to `GlobalSettings.scenePresets` — so a
+    /// pointer alone would mean the preset silently did nothing at render
+    /// time. A separate layer from `propertyOverrides` is what preserves
+    /// "drop the increment, keep the preset". `presetID` stays the
+    /// authority for library operations (rename, delete, re-apply);
+    /// `refreshingPresetSnapshot(in:)` re-syncs this copy when the library
+    /// is at hand.
     public private(set) var presetSnapshot: [String: WallpaperEngineProjectPropertyValue]
 
     public init(
@@ -82,13 +80,12 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         return copy
     }
 
-    /// Switching preset clears the increment: the old increment was authored
-    /// against the previous preset's values, so carrying it over would silently
-    /// re-apply edits the user made to a different look.
-    ///
-    /// Re-applying the preset already in place is a no-op, not a reset — a user
-    /// clicking the selected preset again has not asked to lose their edits.
-    /// A preset belonging to another wallpaper is refused outright.
+    /// Switching preset clears the increment: the old increment was
+    /// authored against the previous preset's values, so carrying it over
+    /// would silently re-apply edits made to a different look. Re-applying
+    /// the preset already in place is a no-op, not a reset — clicking the
+    /// selected preset again hasn't asked to lose edits. A preset belonging
+    /// to another wallpaper is refused outright.
     public func applyingPreset(_ preset: ScenePreset?) -> SceneDescriptor {
         if let preset {
             guard preset.baseWorkshopID == workshopID else { return self }
@@ -105,13 +102,12 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
             .withPropertyOverrides([:])
     }
 
-    /// The preset this descriptor points at, if the library still holds one that
-    /// belongs to this scene.
-    ///
-    /// Two ways it can come back nil with a non-nil `presetID`: the preset was
-    /// deleted, or its `baseWorkshopID` names a different wallpaper. Both must
-    /// resolve to "no preset" rather than to someone else's values — a stale id
-    /// reused by a later preset would otherwise silently repaint the scene.
+    /// The preset this descriptor points at, if the library still holds
+    /// one that belongs to this scene. Two ways it can come back nil with
+    /// a non-nil `presetID`: the preset was deleted, or its
+    /// `baseWorkshopID` names a different wallpaper — both must resolve to
+    /// "no preset" rather than someone else's values, or a stale id reused
+    /// by a later preset would silently repaint the scene.
     public func resolvedPreset(in library: [String: ScenePreset]) -> ScenePreset? {
         guard let presetID, let preset = library[presetID] else { return nil }
         guard preset.id == presetID, preset.baseWorkshopID == workshopID else { return nil }
@@ -130,33 +126,31 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         return withPresetLayer(id: preset.id, snapshot: preset.values)
     }
 
-    /// Values to hand the renderer, before the property schema folds in the
-    /// scene's own defaults for keys nobody touched.
-    ///
-    /// This is what every render-path caller must use instead of reading
-    /// `propertyOverrides` directly: the increment alone is only half the look.
+    /// Values to hand the renderer, before the property schema folds in
+    /// the scene's own defaults for keys nobody touched. Every render-path
+    /// caller must use this instead of reading `propertyOverrides`
+    /// directly: the increment alone is only half the look.
     public func layeredPropertyValues() -> [String: WallpaperEngineProjectPropertyValue] {
         guard presetID != nil, !presetSnapshot.isEmpty else { return propertyOverrides }
         return presetSnapshot.merging(propertyOverrides) { _, userEdit in userEdit }
     }
 
-    /// Keys the engine reads out of a preset snapshot, which therefore may only
-    /// ever be written by the engine settings UI.
-    ///
-    /// `volume` is the collision that matters: it is a perfectly ordinary name
-    /// for a scene author's own `project.json` property, and author edits land
-    /// in `propertyOverrides`.
+    /// Keys the engine reads out of a preset snapshot, which therefore may
+    /// only ever be written by the engine settings UI. `volume` is the
+    /// collision that matters: a perfectly ordinary name for a scene
+    /// author's own `project.json` property, whose edits land in
+    /// `propertyOverrides`.
     public static func isEngineReservedKey(_ key: String) -> Bool {
         key == WPEEngineAudioSettings.volumeKey
             || key.hasPrefix(WPEEngineColorCorrection.keyPrefix)
     }
 
     /// Values for a *new* preset snapshot capturing what is on screen.
-    ///
     /// Layered like `layeredPropertyValues()`, except the increment may not
-    /// supply engine-reserved keys. Folding it in verbatim promotes an author's
-    /// `volume` slider into the engine's master-gain slot, so saving a preset
-    /// after touching that slider would rescale every sound in the scene.
+    /// supply engine-reserved keys: folding it in verbatim would promote an
+    /// author's `volume` slider into the engine's master-gain slot, so
+    /// saving a preset after touching that slider would rescale every sound
+    /// in the scene.
     public func presetSnapshotForCurrentState() -> [String: WallpaperEngineProjectPropertyValue] {
         let authoredEdits = propertyOverrides.filter { !Self.isEngineReservedKey($0.key) }
         guard presetID != nil, !presetSnapshot.isEmpty else { return authoredEdits }
@@ -242,11 +236,11 @@ public enum SceneCapabilityTier: String, Codable, Equatable, Sendable {
     public var localizedLabel: String {
         switch self {
         case .imageOnly:
-            return String(localized: "Image-only", defaultValue: "Image-only", comment: "Wallpaper Engine scene capability tier.")
+            return String(localized: "Image-only", defaultValue: "Image-only", bundle: .appLanguage, comment: "Wallpaper Engine scene capability tier.")
         case .degraded:
-            return String(localized: "Limited Compatibility", defaultValue: "Limited Compatibility", comment: "Wallpaper Engine scene capability tier.")
+            return String(localized: "Limited Compatibility", defaultValue: "Limited Compatibility", bundle: .appLanguage, comment: "Wallpaper Engine scene capability tier.")
         case .unsupported:
-            return String(localized: "Unsupported", defaultValue: "Unsupported", comment: "Wallpaper Engine scene capability tier.")
+            return String(localized: "Unsupported", defaultValue: "Unsupported", bundle: .appLanguage, comment: "Wallpaper Engine scene capability tier.")
         }
     }
 }

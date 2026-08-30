@@ -2,20 +2,19 @@
 import CoreGraphics
 import Foundation
 
-/// Whether MetalFX render scaling can actually pay off, decided before anything
-/// is sized. Source textures downsample at load and that is irreversible, so a
-/// decision deferred to present time (where the scaler's own check lives) is far
-/// too late: a scene that rendered small and is then refused paid the resolution
-/// for nothing. Every rejection knowable up front is therefore made here.
+/// Whether MetalFX render scaling can pay off, decided before anything is sized.
+/// Source textures downsample at load (irreversible), so deferring the decision to
+/// present time (where the scaler's own check lives) is too late — a scene rendered
+/// small and then refused paid the resolution for nothing; every knowable rejection
+/// is made here.
 ///
-/// A derived value, not a one-shot: the inputs land at different times (world
-/// canvas from parsing, drawable from window layout, fit mode from a config
-/// submit), so each change refreshes it via `refreshUpscalePlan`. Only the
-/// texture cap latches.
+/// A derived value, not one-shot: inputs land at different times (world canvas from
+/// parsing, drawable from window layout, fit mode from config submit), so each change
+/// refreshes it via `refreshUpscalePlan` — only the texture cap latches.
 ///
-/// It does NOT gate the present-time scaler — perspective renders at a
-/// drawable-derived world size and still needs the scaler to restore it. The
-/// plan governs what we allocate; `preScalerRejection` governs what we present.
+/// Does NOT gate the present-time scaler: perspective renders at a drawable-derived
+/// world size and still needs the scaler to restore it — the plan governs what we
+/// allocate, `preScalerRejection` governs what we present.
 struct WPEMetalUpscalePlan: Equatable, Sendable {
 
     /// Carried into the logs so a shipping session can answer "did this machine
@@ -59,14 +58,11 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
         maxSourceTextureEdge: nil, plannedDrawableSize: .zero
     )
 
-    /// Give up scaling for the rest of this scene after the present-time scaler
-    /// declined anyway. Load-time inputs cannot see everything: `makeSpatialScaler`
-    /// can refuse a size/format pair the device claims to support, the drawable's
-    /// usage can fall short, and `presentFitMode` can change after the plan was
-    /// fixed. Whatever the cause, a declined frame means the resolution was paid
-    /// for nothing, so subsequent frames render native. `maxSourceTextureEdge` is
-    /// deliberately kept: those textures are already uploaded, and the reload path
-    /// must keep matching them.
+    /// Give up scaling for the rest of this scene after the present-time scaler declined
+    /// anyway. Load-time inputs can't see everything: `makeSpatialScaler` can refuse a
+    /// size/format pair the device claims to support, the drawable's usage can fall short,
+    /// and `presentFitMode` can change after the plan was fixed — whatever the cause, a
+    /// declined frame means the resolution was paid for nothing, so subsequent frames render native. `maxSourceTextureEdge` is deliberately kept: those textures are already uploaded, and the reload path must keep matching them.
     func demotedToNative() -> WPEMetalUpscalePlan {
         WPEMetalUpscalePlan(
             verdict: .declinedAtPresent,
@@ -82,15 +78,13 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
         drawableSize == plannedDrawableSize
     }
 
-    /// Take a freshly computed verdict after the drawable size became known or
-    /// changed, keeping what cannot be redone.
-    ///
-    /// The cap is NOT carried over: it is latched separately by the renderer at
-    /// the moment textures upload (`latchedTextureCap`), which is the only point
-    /// the decision becomes irreversible. Freezing it here instead meant a plan
-    /// decided before the fit mode or drawable had settled could cap uploads for
-    /// a verdict that no longer held. A present-time decline is sticky:
-    /// re-activating after the scaler already refused would just oscillate.
+    /// Take a freshly computed verdict after the drawable size became known or changed,
+    /// keeping what cannot be redone. The cap is NOT carried over — it's latched
+    /// separately by the renderer when textures upload (`latchedTextureCap`), the only
+    /// point the decision becomes irreversible; freezing it here instead meant a plan
+    /// decided before the fit mode/drawable settled could cap uploads for a verdict that
+    /// no longer held. A present-time decline is sticky: re-activating after the scaler
+    /// already refused would just oscillate.
     func adopting(_ fresh: WPEMetalUpscalePlan) -> WPEMetalUpscalePlan {
         guard verdict != .declinedAtPresent else { return self }
         return WPEMetalUpscalePlan(
@@ -129,13 +123,10 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
             return inactive(.noHeadroom)
         }
 
-        // Clamp the canvas to what the display can actually resolve BEFORE
-        // applying the user's scale. Without this, an authored canvas larger
-        // than the screen (a 4K scene on a 1080p display) keeps rendering above
-        // the drawable even at 0.75 — the scaler then refuses it as a downscale
-        // and the saving stops at the authored canvas instead of following the
-        // screen. Capped at 1.0 because rendering ABOVE the authored canvas is
-        // supersampling, a different feature.
+        // Clamp the canvas to what the display can actually resolve BEFORE applying the
+        // user's scale. Without this, an authored canvas larger than the screen (a 4K scene
+        // on a 1080p display) keeps rendering above the drawable even at 0.75 — the scaler
+        // then refuses it as a downscale, and the saving stops at the authored canvas instead of following the screen. Capped at 1.0 because rendering ABOVE the authored canvas is supersampling, a different feature.
         let drawableFit = min(
             drawableSize.width / worldCanvas.width,
             drawableSize.height / worldCanvas.height
@@ -145,15 +136,13 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
         let pixelSize = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
             worldCanvas, pixelScale: effectiveScale
         )
-        // NOTE: cover/contain compare aspects with zero tolerance (deliberate —
-        // a letterbox the scaler stretched away is still wrong), and a drawable
-        // whose dimensions are coprime admits NO reduced integer size with the
-        // same ratio. Such a display therefore never scales under cover/contain,
-        // only under stretch. That is correct rather than a gap: scaling it would
-        // hand the scaler a full-rect map the fit mode did not ask for.
-        // The final gate is the scaler's OWN predicate rather than a copy of
-        // its rules, so the plan and the present path can never disagree about
-        // whether a frame is eligible.
+        // NOTE: cover/contain compare aspects with zero tolerance (deliberate — a letterbox
+        // the scaler stretched away is still wrong), and a drawable whose dimensions are
+        // coprime admits NO reduced integer size with the same ratio, so such a display never
+        // scales under cover/contain, only under stretch — correct rather than a gap: scaling
+        // it would hand the scaler a full-rect map the fit mode did not ask for. The final
+        // gate is the scaler's OWN predicate rather than a copy of its rules, so the plan and
+        // the present path can never disagree about eligibility.
         if let rejection = WPEMetalFXSpatialUpscaler.preScalerRejection(
             fitMode: fitMode,
             sourceWidth: Int(pixelSize.width),

@@ -4,16 +4,15 @@ import MetalKit
 import simd
 
 /// `MTKView` subclass that captures real mouse events for clickable WPE scenes.
+/// Parallax (`g_PointerPosition`) only needs the *global* cursor position and works
+/// independently via the renderer's global pointer sampler; click interaction differs
+/// — the wallpaper window must stop ignoring mouse events (which steals desktop
+/// clicks), and the events must reach the renderer. This view latches the captured
+/// pointer/button state for the per-frame uniforms.
 ///
-/// Parallax (`g_PointerPosition`) only needs the *global* cursor position and
-/// works independently via the renderer's global pointer sampler. Click
-/// interaction is different: the wallpaper window must stop ignoring mouse
-/// events (which steals desktop clicks), and the events must reach the renderer.
-/// This view latches the captured pointer/button state for the per-frame uniforms.
-///
-/// All capture is gated on `clickCaptureEnabled`; when off, events fall through
-/// to `super` (and the hosting window keeps `ignoresMouseEvents = true`, so they
-/// never arrive anyway).
+/// All capture is gated on `clickCaptureEnabled`; when off, events fall through to
+/// `super` (and the hosting window keeps `ignoresMouseEvents = true`, so they never
+/// arrive anyway).
 @MainActor
 final class WPEInteractiveMTKView: MTKView {
     /// Flipped by the renderer from the per-screen "Interaction" toggle. Only

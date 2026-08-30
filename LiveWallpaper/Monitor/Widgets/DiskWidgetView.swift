@@ -31,7 +31,7 @@ struct DiskWidgetView: View {
     private func small(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
-            Text("ALL DISKS", bundle: .main)
+            Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {
             VStack(alignment: .leading, spacing: scale.label * 0.55) {
@@ -44,7 +44,7 @@ struct DiskWidgetView: View {
                 )
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * 2.4)
-                Self.peakTag(label: String(localized: "R peak", comment: "Disk widget: recent read-rate peak label."),
+                Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
                              value: Format.rate(history.diskReadPeak),
                              scale: scale)
             }
@@ -82,7 +82,7 @@ struct DiskWidgetView: View {
     private func medium(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
-            Text("ALL DISKS", bundle: .main)
+            Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {
             VStack(alignment: .leading, spacing: scale.label * 0.6) {
@@ -96,7 +96,7 @@ struct DiskWidgetView: View {
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * 3)
                 .overlay(alignment: .topTrailing) {
-                    Self.peakTag(label: String(localized: "R peak", comment: "Disk widget: recent read-rate peak label."),
+                    Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
                                  value: Format.rate(history.diskReadPeak),
                                  scale: scale)
                         .padding(scale.label * 0.3)
@@ -156,7 +156,7 @@ struct DiskWidgetView: View {
         var s = "Σ " + Format.bytes(total)
         if let age = freshnessSeconds {
             s += " · " + Format.ago(age) + " "
-                + String(localized: "ago", comment: "Relative-age suffix, e.g. '2m ago'.")
+                + String(localized: "ago", bundle: .appLanguage, comment: "Relative-age suffix, e.g. '2m ago'.")
         }
         return s
     }
@@ -199,7 +199,7 @@ struct DiskWidgetView: View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         let topIO = topIOProcesses
         return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
-            Text("ALL DISKS", bundle: .main)
+            Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {
             VStack(alignment: .leading, spacing: scale.label * 0.6) {
@@ -214,12 +214,12 @@ struct DiskWidgetView: View {
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * (topIO.isEmpty ? 5 : 3))
                 .overlay(alignment: .topTrailing) {
-                    Self.peakTag(label: String(localized: "R peak", comment: "Disk widget: recent read-rate peak label."),
+                    Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
                                  value: Format.rate(history.diskReadPeak), scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    Self.peakTag(label: String(localized: "W peak", comment: "Disk widget: recent write-rate peak label."),
+                    Self.peakTag(label: String(localized: "W peak", bundle: .appLanguage, comment: "Disk widget: recent write-rate peak label."),
                                  value: Format.rate(history.diskWritePeak), scale: scale)
                         .padding(scale.label * 0.3)
                 }
@@ -340,7 +340,7 @@ struct DiskWidgetView: View {
             Spacer(minLength: 6)
             if let age = freshnessSeconds {
                 Text(verbatim: Format.ago(age) + " "
-                     + String(localized: "ago", comment: "Relative-age suffix, e.g. '2m ago'."))
+                     + String(localized: "ago", bundle: .appLanguage, comment: "Relative-age suffix, e.g. '2m ago'."))
                     .font(Design.labelFont(size: scale.label))
                     .foregroundStyle(Design.inkFaint)
             }

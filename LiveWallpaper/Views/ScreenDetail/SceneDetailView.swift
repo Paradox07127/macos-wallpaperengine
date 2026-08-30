@@ -51,9 +51,7 @@ struct SceneDetailView: View {
     let session: SceneWallpaperSession?
     /// Whether the display reports a *scene rendering* failure above this card.
     /// Session-derived state misses failures that never produced a scene session
-    /// (`ScreenManager.transientRuntimeErrors`). Narrower than "any runtime
-    /// error" on purpose: a revoked bookmark or an unplayable file is not
-    /// something an engine-assets install fixes.
+    /// (`ScreenManager.transientRuntimeErrors`). Narrower than "any runtime error" on purpose: a revoked bookmark or unplayable file isn't something an engine-assets install fixes.
     let hasSceneRenderingError: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -99,7 +97,9 @@ struct SceneDetailView: View {
             }
         }
         .sheet(isPresented: $showLogSheet) {
-            DiagnosticLogSheet(title: origin.title, log: fullDiagnosticText, tint: currentSeverityTint)
+            AppLanguageScope(defaults: .appScoped()) {
+                DiagnosticLogSheet(title: origin.title, log: fullDiagnosticText, tint: currentSeverityTint)
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("\(origin.title). Scene wallpaper. \(stateAccessibilityText)", comment: "A11y label for a Wallpaper Engine scene detail card. Placeholders are scene title and state."))
@@ -690,15 +690,15 @@ struct SceneDetailView: View {
     private var stateAccessibilityText: String {
         switch state {
         case .idle:
-            return String(localized: "Idle", defaultValue: "Idle", comment: "Scene renderer accessibility state.")
+            return String(localized: "Idle", defaultValue: "Idle", bundle: .appLanguage, comment: "Scene renderer accessibility state.")
         case .notRendering:
-            return String(localized: "Wallpaper rendering is off", defaultValue: "Wallpaper rendering is off", comment: "Scene renderer accessibility state shown when the menu-bar master switch is off.")
+            return String(localized: "Wallpaper rendering is off", defaultValue: "Wallpaper rendering is off", bundle: .appLanguage, comment: "Scene renderer accessibility state shown when the menu-bar master switch is off.")
         case .loading:
-            return String(localized: "Loading scene assets", defaultValue: "Loading scene assets", comment: "Scene renderer accessibility state.")
+            return String(localized: "Loading scene assets", defaultValue: "Loading scene assets", bundle: .appLanguage, comment: "Scene renderer accessibility state.")
         case .ready:
-            return String(localized: "Scene preview", defaultValue: "Scene preview", comment: "Scene renderer accessibility state.")
+            return String(localized: "Scene preview", defaultValue: "Scene preview", bundle: .appLanguage, comment: "Scene renderer accessibility state.")
         case .error:
-            return String(localized: "Scene cannot be played", defaultValue: "Scene cannot be played", comment: "Scene renderer accessibility state.")
+            return String(localized: "Scene cannot be played", defaultValue: "Scene cannot be played", bundle: .appLanguage, comment: "Scene renderer accessibility state.")
         }
     }
 }
@@ -852,17 +852,17 @@ struct SceneInformationOverlay: View {
                 Text(verbatim: origin.originalType.localizedDisplayName)
             }
             if requiresWindowsPlugin {
-                tag("WIN PLUGIN", background: DesignTokens.Colors.Status.danger.opacity(0.55))
+                tag(Text("Win plugin"), background: DesignTokens.Colors.Status.danger.opacity(0.55))
             }
             // Only the "nothing renders" verdict earns a badge.
             if descriptor.capabilityTier == .unsupported {
                 tag(
-                    descriptor.capabilityTier.localizedLabel,
+                    Text(verbatim: descriptor.capabilityTier.localizedLabel),
                     background: DesignTokens.Colors.Status.danger.opacity(0.55)
                 )
             }
             if let storageLabel {
-                tag(storageLabel)
+                tag(Text(storageLabel))
             }
             if !descriptor.dependencyWorkshopIDs.isEmpty {
                 HStack(spacing: 3) {
@@ -870,7 +870,7 @@ struct SceneInformationOverlay: View {
                     Text(verbatim: "\(descriptor.dependencyWorkshopIDs.count)")
                 }
             }
-            ForEach(featureLabels, id: \.self) { tag($0) }
+            ForEach(Array(featureLabels.enumerated()), id: \.offset) { tag(Text($1)) }
         }
         .font(DesignTokens.Typography.code)
         .foregroundStyle(DesignTokens.Colors.overlayForeground)
@@ -880,19 +880,20 @@ struct SceneInformationOverlay: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func tag(_ text: String, background: Color = Color.white.opacity(0.18)) -> some View {
-        Text(verbatim: text)
+    private func tag(_ text: Text, background: Color = Color.white.opacity(0.18)) -> some View {
+        text
             .font(DesignTokens.Typography.badge)
+            .textCase(.uppercase)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .background(background, in: Capsule())
     }
 
-    private var storageLabel: String? {
+    private var storageLabel: LocalizedStringKey? {
         switch descriptor.assetStorage {
         case .cache:           return nil
-        case .sourceDirectory: return "FOLDER"
-        case .packageSource:   return "PACKAGED"
+        case .sourceDirectory: return "Folder"
+        case .packageSource:   return "Packaged"
         }
     }
 
@@ -900,15 +901,15 @@ struct SceneInformationOverlay: View {
         origin.requiresWindowsPlugin || descriptor.preflightFeatureFlags.contains(.windowsPlugin)
     }
 
-    private var featureLabels: [String] {
+    private var featureLabels: [LocalizedStringKey] {
         descriptor.preflightFeatureFlags.compactMap { flag in
             switch flag {
-            case .customShaderSource: return "SHADER"
-            case .particleObject:     return "PARTICLE"
-            case .textObject:         return "TEXT"
-            case .soundObject:        return "AUDIO"
-            case .lightObject:        return "LIGHT"
-            case .animationLayer:     return "ANIM"
+            case .customShaderSource: return "Shader"
+            case .particleObject:     return "Particle"
+            case .textObject:         return "Text"
+            case .soundObject:        return "Audio"
+            case .lightObject:        return "Lighting"
+            case .animationLayer:     return "Anim"
             case .imageEffect:        return "FX"
             case .unknownObject:      return nil
             case .windowsPlugin:      return nil

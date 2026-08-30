@@ -2,12 +2,10 @@ import Foundation
 import LiveWallpaperCore
 import ServiceManagement
 
-/// Owns the "start at login" registration and the delayed re-check that catches
-/// the cases where `SMAppService` reports success but the item never becomes
-/// active — the app not living in `/Applications`, or signing being rejected.
-///
-/// Nothing here touches settings persistence, and the generation counter that
-/// cancels a superseded validation is state only this controller needs.
+/// Owns "start at login" registration and the delayed re-check that catches `SMAppService`
+/// reporting success while the item never activates — app not in `/Applications`, or signing
+/// rejected. Touches no settings persistence; the generation counter that cancels a superseded
+/// validation is state only this controller needs.
 @MainActor
 final class LoginItemController {
     /// Identifies the apply currently allowed to report. Bumped on every apply

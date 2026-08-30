@@ -4,11 +4,10 @@ import CoreText
 import Foundation
 import simd
 
-/// Vertical line metrics in pixels at a concrete em size, resolved with
-/// FreeType's table-selection rule so line spacing matches Wallpaper Engine:
-/// OS/2 `USE_TYPO_METRICS` (fsSelection bit 7) selects the typo metrics,
-/// otherwise hhea metrics apply. (Oracle-verified across 9 corpus fonts —
-/// p5hatty is the discriminating case; see memory `wpe-text-windows-model`.)
+/// Vertical line metrics in pixels at a concrete em size, resolved with FreeType's
+/// table-selection rule so line spacing matches Wallpaper Engine: OS/2 `USE_TYPO_METRICS`
+/// (fsSelection bit 7) selects the typo metrics, otherwise hhea metrics apply. (Oracle-verified
+/// across 9 corpus fonts — p5hatty is the discriminating case; see memory `wpe-text-windows-model`.)
 struct WPETextLineMetrics {
     /// Ascender above the baseline, pixels (positive).
     let ascender: Double

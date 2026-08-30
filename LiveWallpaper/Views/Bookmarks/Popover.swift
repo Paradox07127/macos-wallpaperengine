@@ -176,7 +176,7 @@ struct Popover: View {
         case .html(let source, _):
             return source.displayName
         case .scene(let descriptor):
-            return String(localized: "Scene \(descriptor.workshopID)", comment: "Bookmark source label for a Wallpaper Engine scene. The placeholder is the Workshop ID.")
+            return String(localized: "Scene \(descriptor.workshopID)", bundle: .appLanguage, comment: "Bookmark source label for a Wallpaper Engine scene. The placeholder is the Workshop ID.")
         }
     }
 }

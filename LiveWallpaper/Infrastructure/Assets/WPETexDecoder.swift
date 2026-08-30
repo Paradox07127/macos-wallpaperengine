@@ -5,13 +5,8 @@ import Foundation
 import ImageIO
 import LiveWallpaperProWPE
 
-/// Which decoded mip levels the caller is actually going to upload.
-///
-/// The container ships a full chain but a Metal upload usually reads one level
-/// out of it (level 0 at renderScale 1.0), so the rest used to be LZ4-inflated
-/// and dropped. Skipped levels keep their index/width/height — that metadata is
-/// all `WPEMetalTextureLoader.uploadMipStartIndex` needs to pick a level — and
-/// carry an empty `bytes`.
+/// Which decoded mip levels the caller is actually going to upload. The container ships a full chain but a Metal upload usually reads one level out of it (level 0 at renderScale 1.0), so the rest used to be LZ4-inflated and dropped.
+/// Skipped levels keep their index/width/height — that metadata is all `WPEMetalTextureLoader.uploadMipStartIndex` needs to pick a level — and carry an empty `bytes`.
 struct WPETexMipInflateScope: Sendable, Equatable {
     /// Longest-edge cap the consumer renders at; nil = no render-scale cap.
     let maxSourceEdge: Int?

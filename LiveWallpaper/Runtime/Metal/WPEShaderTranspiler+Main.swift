@@ -118,13 +118,10 @@ extension WPEShaderTranspiler {
     }
 
     /// Rewrite every `g_Texture<N>.sample(linearSampler|repeatSampler, …)` read to the
-    /// per-slot runtime sampler `wpeSampler<N>`, whose address mode (clamp/repeat) and
-    /// filter (linear/nearest) are bound from the texture's TEXI flags in the executor —
-    /// so scrolled tiling maps (water-normal, noise, flow) repeat instead of clamping to
-    /// a frozen edge. `wpeSampler<N>` is a `main` argument and a threaded helper resource
-    /// (`helperResources`), so it is in scope in both main and helper bodies; `#define`
-    /// macro bodies expand into those same scopes. Runs LAST, after the `linearSampler`-
-    /// keyed coordinate-narrowing and LOD rewrites, so those still match the literal name.
+    /// per-slot runtime sampler `wpeSampler<N>`, whose address mode and filter are bound from
+    /// the texture's TEXI flags in the executor — so scrolled tiling maps (water-normal, noise,
+    /// flow) repeat instead of clamping to a frozen edge. `wpeSampler<N>` is a `main` argument
+    /// and threaded helper resource, so `#define` macros expanding into main/helper bodies see it too. Runs LAST, after the `linearSampler`-keyed coordinate-narrowing and LOD rewrites, so those still match the literal name.
     static func rewriteSamplersToPerSlot(_ source: String) -> String {
         guard let regex = try? NSRegularExpression(
             pattern: #"(g_Texture(\d+)\.sample\()(?:linearSampler|repeatSampler)(\s*,)"#

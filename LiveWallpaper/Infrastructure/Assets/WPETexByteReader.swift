@@ -2,14 +2,8 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// Lightweight cursor over an immutable `Data` slice. Used by the `.tex`
-/// decoder to read little-endian integers and 8-byte ASCII block magics
-/// without allocating intermediate `String` / `NSData` wrappers.
-///
-/// Block magics in WPE `.tex` files always come as a NUL-terminated 8-byte
-/// ASCII run (`TEXV0005\0`, `TEXI0001\0`, …). The reader strips the NUL
-/// terminator and returns the canonical 8-character form so the decoder
-/// can prefix-match (`hasPrefix("TEXV")`).
+/// Lightweight cursor over an immutable `Data` slice. Used by the `.tex` decoder to read little-endian integers and 8-byte ASCII block magics without allocating intermediate `String` / `NSData` wrappers.
+/// Block magics in WPE `.tex` files always come as a NUL-terminated 8-byte ASCII run (`TEXV0005\0`, `TEXI0001\0`, …); the reader strips the NUL terminator and returns the canonical 8-character form so the decoder can prefix-match (`hasPrefix("TEXV")`).
 struct WPETexByteReader {
     let data: Data
     private(set) var cursor: Int

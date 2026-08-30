@@ -11,12 +11,8 @@ enum WorkshopPreviewSize: String, Sendable {
     /// Detail-sheet hero.
     case hero
 
-    /// Longest-edge cap handed to Image I/O, sized so `scaledToFill` never has
-    /// to upscale: the surface is square, so a 16:9 preview must be
-    /// `edge × 16/9` wide for its height to cover. Tile = 220 pt
-    /// (`LibraryGrid.maximumColumnWidth`) × 2 × 16/9 ≈ 782; hero = 392 pt
-    /// (`Inspector.maxWidth`) × 2 × 16/9 ≈ 1394. Still 3–7× fewer pixels than
-    /// the 1920×1080 poster Steam actually stores.
+    /// Longest-edge cap handed to Image I/O, sized so `scaledToFill` never has to upscale: the surface is square, so a 16:9 preview must be `edge × 16/9` wide for its height to cover.
+    /// Tile = 220 pt (`LibraryGrid.maximumColumnWidth`) × 2 × 16/9 ≈ 782; hero = 392 pt (`Inspector.maxWidth`) × 2 × 16/9 ≈ 1394 — still 3–7× fewer pixels than the 1920×1080 poster Steam actually stores.
     var maxPixelSize: Int {
         switch self {
         case .tile: return 800
@@ -92,11 +88,8 @@ extension WorkshopAnimatedGIF {
     /// a cache entry priced at poster + encoded bytes.
     nonisolated(unsafe) private static let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
 
-    /// Thumbnail rather than full decode: the grid draws these at ~220 pt, and a
-    /// 1920×1080 poster costs ~8 MB of RGBA plus a per-frame GPU resample.
-    /// `CreateThumbnailAtIndex` composes partial GIF frames before scaling
-    /// (verified against a hand-built partial-frame fixture), so animation frames
-    /// can take the same path as the poster.
+    /// Thumbnail rather than full decode: the grid draws these at ~220 pt, and a 1920×1080 poster costs ~8 MB of RGBA plus a per-frame GPU resample.
+    /// `CreateThumbnailAtIndex` composes partial GIF frames before scaling (verified against a hand-built partial-frame fixture), so animation frames can take the same path as the poster.
     private static func thumbnailOptions(maxPixelSize: Int) -> CFDictionary {
         [
             kCGImageSourceShouldCache: false,

@@ -149,17 +149,12 @@ struct WPEProjectCustomSettingsCard: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
-                    // Option labels are author-supplied (song titles, preset names)
-                    // with no length bound. `.fixedSize()` made the menu demand its
-                    // ideal width — the LONGEST label — which pushed the settings
-                    // column past the panel. Staying compressible is what keeps the
-                    // panel intact; no max width is needed for that.
-                    //
-                    // But `SettingRow` gives its title `maxWidth: .infinity`
-                    // AND `layoutPriority(1)`, so a merely-compressible control loses
-                    // every point of the row and collapses to a bare chevron. Matching
-                    // that priority makes the two share the row, and `minWidth` keeps
-                    // the menu clickable when the title is long.
+                    // Option labels are author-supplied (song titles, preset names), unbounded in length.
+                    // `.fixedSize()` demanded the ideal width — the LONGEST label — pushing the settings
+                    // column past the panel; staying compressible keeps the panel intact, no max width needed.
+                    // But `SettingRow` gives its title `maxWidth: .infinity` + `layoutPriority(1)`, so a merely-
+                    // compressible control loses the row and collapses to a bare chevron — matching that priority
+                    // lets the two share the row, and `minWidth` keeps the menu clickable when the title is long.
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(minWidth: 96, alignment: .trailing)

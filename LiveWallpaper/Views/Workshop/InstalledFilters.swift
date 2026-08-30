@@ -14,7 +14,7 @@ enum WPELibraryTypeKind: String, CaseIterable, Identifiable {
         case .video: return WPEType.video.localizedDisplayName
         case .web: return WPEType.web.localizedDisplayName
         case .scene: return WPEType.scene.localizedDisplayName
-        case .unsupported: return String(localized: "Unsupported", comment: "Workshop library type filter.")
+        case .unsupported: return String(localized: "Unsupported", bundle: .appLanguage, comment: "Workshop library type filter.")
         }
     }
 
@@ -37,8 +37,8 @@ enum InstalledSource: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .steamWorkshop: return String(localized: "Steam Workshop", comment: "Installed library origin filter: items with a real Steam Workshop ID.")
-        case .local: return String(localized: "Local", comment: "Installed library origin filter: imported, no Steam Workshop ID.")
+        case .steamWorkshop: return String(localized: "Steam Workshop", bundle: .appLanguage, comment: "Installed library origin filter: items with a real Steam Workshop ID.")
+        case .local: return String(localized: "Local", bundle: .appLanguage, comment: "Installed library origin filter: imported, no Steam Workshop ID.")
         }
     }
 
@@ -56,8 +56,8 @@ enum InstalledStorageKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .managed: return String(localized: "App copy", comment: "Installed library storage filter: extracted into the app's managed cache.")
-        case .linked: return String(localized: "Linked folder", comment: "Installed library storage filter: links to the user's own folder.")
+        case .managed: return String(localized: "App copy", bundle: .appLanguage, comment: "Installed library storage filter: extracted into the app's managed cache.")
+        case .linked: return String(localized: "Linked folder", bundle: .appLanguage, comment: "Installed library storage filter: links to the user's own folder.")
         }
     }
 
@@ -74,9 +74,9 @@ enum WPELibrarySortOrder: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .recommended: return String(localized: "Recent", comment: "Workshop library sort order: most recently imported first.")
-        case .name: return String(localized: "Name", comment: "Workshop library sort order.")
-        case .updateAvailable: return String(localized: "Needs Update", comment: "Workshop library sort order: update-available items first.")
+        case .recommended: return String(localized: "Recent", bundle: .appLanguage, comment: "Workshop library sort order: most recently imported first.")
+        case .name: return String(localized: "Name", bundle: .appLanguage, comment: "Workshop library sort order.")
+        case .updateAvailable: return String(localized: "Needs Update", bundle: .appLanguage, comment: "Workshop library sort order: update-available items first.")
         }
     }
 }

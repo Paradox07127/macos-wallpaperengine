@@ -172,7 +172,9 @@ struct PlaylistSection: View {
         .accessibilityLabel(Text("Rotation interval"))
         .accessibilityValue(rotateAccessibilityValue)
         .popover(isPresented: $rotatePopoverShown, arrowEdge: .top) {
-            rotatePopoverContent
+            AppLanguageScope(defaults: .appScoped()) {
+                rotatePopoverContent
+            }
         }
     }
 
@@ -394,7 +396,7 @@ struct PlaylistSection: View {
                 isPrimary: index == primaryIndex,
                 isPlaying: index == cursor,
                 name: screenManager.bookmarkDisplayName(for: bookmark)
-                    ?? String(localized: "Unknown", defaultValue: "Unknown", comment: "Fallback playlist entry name.")
+                    ?? String(localized: "Unknown", defaultValue: "Unknown", bundle: .appLanguage, comment: "Fallback playlist entry name.")
             )
         }
         if entries != nextEntries { entries = nextEntries }

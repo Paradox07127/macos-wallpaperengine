@@ -1,12 +1,10 @@
 import SwiftUI
 
-/// Small tinted status/tag capsule — the one recipe for footer badges, status
-/// pills, and tag chips that are NOT floating over a thumbnail (those use
-/// `ThumbnailBadge`). Because it never floats, the fill stays flat; it shares the
-/// `.badge` type with `TypeBadge`, so every chip-sized label reads as one system.
-///
-/// Before this existed the recipe was written out longhand four ways
-/// (fonts 11pt/12pt, Capsule/RoundedRect, glass/flat, stroke/none).
+/// Small tinted status/tag capsule — the one recipe for footer badges, status pills, and tag chips
+/// that are NOT floating over a thumbnail (those use `ThumbnailBadge`). Because it never floats, the
+/// fill stays flat; it shares the `.badge` type with `TypeBadge`, so every chip-sized label reads as
+/// one system. Before this existed the recipe was written out longhand four ways (fonts 11pt/12pt,
+/// Capsule/RoundedRect, glass/flat, stroke/none).
 public struct StatusChip: View {
     private let title: Text
     private let tint: Color
@@ -17,7 +15,7 @@ public struct StatusChip: View {
         tint: Color = .accentColor,
         systemImage: String? = nil
     ) {
-        self.title = Text(title, bundle: .main)
+        self.title = Text(title)
         self.tint = tint
         self.systemImage = systemImage
     }

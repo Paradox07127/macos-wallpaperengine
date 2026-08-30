@@ -13,11 +13,10 @@ struct WPETexAnimatedFrame {
     let duration: TimeInterval
 }
 
-/// Rebuild source for a suspended eager animation: the mmap-backed compressed
-/// `.tex` plus the upload parameters `WPEMetalTextureLoader` used, so a restored
-/// atlas samples identically (same pixel format, swizzle, registry metadata).
-/// Without one, an eager source's atlases are the only copy of its frames and
-/// must never be released.
+/// Rebuild source for a suspended eager animation: the mmap-backed compressed `.tex` plus
+/// the upload parameters `WPEMetalTextureLoader` used, so a restored atlas samples identically
+/// (pixel format, swizzle, registry metadata). Without one, an eager source's atlases are the
+/// only copy of its frames and must never be released.
 struct WPETexAnimatedAtlasProvider {
     enum Failure: Error, Equatable {
         case missingImage(Int)
@@ -272,11 +271,10 @@ final class WPETexAnimatedTextureSource: WPEDynamicTextureSource {
         }
     }
 
-    /// Marks a slot whose `MTLTexture` was handed to a holder outside this source
-    /// (the particle path stores frame 0's atlas in `particleTextures` for the
-    /// whole scene). Nilling our reference would not free such a slot, and the
-    /// next restore would allocate a *second* copy alongside the pinned one —
-    /// net GPU use above where we started. So pinned slots are never released.
+    /// Marks a slot whose `MTLTexture` was handed to a holder outside this source (the
+    /// particle path stores frame 0's atlas in `particleTextures` for the whole scene).
+    /// Nilling our reference wouldn't free it, and the next restore would allocate a *second*
+    /// copy alongside the pinned one — net GPU use above baseline — so pinned slots are never released.
     func pinSlotHoldingExternally(textureFor time: TimeInterval) {
         guard !frameMetadata.isEmpty else { return }
         externallyHeldSlots.insert(frameMetadata[frameIndex(at: time)].atlasSlot)
@@ -301,11 +299,10 @@ final class WPETexAnimatedTextureSource: WPEDynamicTextureSource {
         }
         var allSucceeded = true
         defer {
-            // Only a complete rebuild clears the flag. Clearing it up front latched
-            // a transient allocation failure (memory pressure at wake) forever: the
-            // slot stayed nil and `texture(at:)` never retried, so those frames went
-            // missing until the scene reloaded. Re-entry is still bounded — the next
-            // attempt happens on the next frame, and only while a slot is missing.
+            // Only a complete rebuild clears the flag: clearing it up front once latched a
+            // transient allocation failure (memory pressure at wake) forever — the slot stayed
+            // nil and `texture(at:)` never retried, frames missing until the scene reloaded.
+            // Re-entry is still bounded: next attempt is next frame, only while a slot is missing.
             atlasesReleased = !allSucceeded
         }
         for index in atlasSlots.indices {

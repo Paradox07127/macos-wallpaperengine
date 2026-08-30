@@ -4,25 +4,10 @@ import Darwin
 import Foundation
 import os
 
-/// Disk layer for Workshop preview images: the encoded image bytes, and nothing
-/// else.
-///
-/// All three Workshop sessions are deliberately `.ephemeral` with
-/// `httpCookieAcceptPolicy = .never`, `urlCache = nil` and
-/// `reloadIgnoringLocalAndRemoteCacheData` — here, in `WorkshopQueryService`
-/// and in `SteamWorkshopMetadata` — and `docs/SECURITY.md` advertises that
-/// posture to users. Getting a disk layer by hanging a `URLCache` on that
-/// session would persist response headers (and anything cookie-shaped in them),
-/// which is the one thing the configuration exists to prevent. So this cache is
-/// filled by the loader rather than by the URL loading system, and an entry is
-/// byte-for-byte the image that was decoded: no headers, no status line, no
-/// URL, no wrapper.
-///
-/// The file *name* is a SHA-256 of the key, so a directory listing does not
-/// disclose which previews were browsed either.
-///
-/// `Sendable`: every stored property is a `let` of a `Sendable` type, and all
-/// file work is funnelled onto the serial `queue`.
+/// Disk layer for Workshop preview images: the encoded image bytes, and nothing else.
+/// All three Workshop sessions are deliberately `.ephemeral` with `httpCookieAcceptPolicy = .never`, `urlCache = nil` and `reloadIgnoringLocalAndRemoteCacheData` — here, in `WorkshopQueryService` and in `SteamWorkshopMetadata` — and `docs/SECURITY.md` advertises that posture to users.
+/// Getting a disk layer by hanging a `URLCache` on that session would persist response headers (and anything cookie-shaped in them), which is the one thing the configuration exists to prevent — so this cache is filled by the loader rather than by the URL loading system, and an entry is byte-for-byte the image that was decoded: no headers, no status line, no URL, no wrapper.
+/// The file *name* is a SHA-256 of the key, so a directory listing does not disclose which previews were browsed either. `Sendable`: every stored property is a `let` of a `Sendable` type, and all file work is funnelled onto the serial `queue`.
 final class WorkshopPreviewDiskCache: Sendable {
 
     static let shared = WorkshopPreviewDiskCache()
@@ -103,22 +88,10 @@ final class WorkshopPreviewDiskCache: Sendable {
         return "\(digest).\(fileExtension)"
     }
 
-    /// One housekeeping pass per instance, the first time the cache is used for
-    /// real work.
-    ///
-    /// `enforceCap` otherwise only ever runs as the tail of a write, which
-    /// leaves three ways for the directory to stay wrong indefinitely: a
-    /// browsing session followed by never opening the Workshop again strands
-    /// expired entries; a process that exits between the `rename(2)` and the
-    /// cap check leaves the directory over `capBytes` with nothing due to
-    /// notice; and a crash mid-write leaves a `.tmp` that no total counts.
-    /// Sweeping at first use clears all three on the next run, without putting
-    /// any I/O on the launch path — this is a menu-bar app, and nothing touches
-    /// this cache until a Workshop view asks for a preview.
-    ///
-    /// Queued *behind* the request that triggered it, on the same serial queue,
-    /// so the preview the user is waiting for is not made to wait for a full
-    /// directory listing.
+    /// One housekeeping pass per instance, the first time the cache is used for real work.
+    /// `enforceCap` otherwise only ever runs as the tail of a write, which leaves three ways for the directory to stay wrong indefinitely: a browsing session followed by never opening the Workshop again strands expired entries; a process that exits between the `rename(2)` and the cap check leaves the directory over `capBytes` with nothing due to notice; and a crash mid-write leaves a `.tmp` that no total counts.
+    /// Sweeping at first use clears all three on the next run, without putting any I/O on the launch path — this is a menu-bar app, and nothing touches this cache until a Workshop view asks for a preview.
+    /// Queued *behind* the request that triggered it, on the same serial queue, so the preview the user is waiting for is not made to wait for a full directory listing.
     private func sweepOnce() {
         let claimed = hasSwept.withLock { swept -> Bool in
             guard !swept else { return false }

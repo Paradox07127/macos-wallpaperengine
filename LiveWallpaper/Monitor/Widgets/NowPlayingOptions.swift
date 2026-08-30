@@ -4,17 +4,11 @@ import SwiftUI
 
 // MARK: - Typed view of the Now Playing placement options
 
-/// Everything the user can dial on the Now Playing layer, parsed out of the
-/// placement's untyped `options` dictionary.
-///
-/// Contract, both directions:
-/// * `init(_:)` never fails and never traps — a missing key, a wrong case, a
-///   string where a number belongs, or NaN all fall back to the default, and
-///   numbers are clamped into their published range on the way in.
-/// * `applied(to:)` writes back onto the dictionary it is given, so options
-///   belonging to other widgets (or to a later version of this one) survive,
-///   and drops every key that is back at its default so untouched layers keep
-///   an empty dictionary on disk.
+/// Everything the user can dial on the Now Playing layer, parsed from the placement's untyped `options` dictionary.
+/// Contract, both directions: `init(_:)` never fails or traps — a missing key, wrong case, a string where a number belongs,
+/// or NaN all fall back to the default, and numbers clamp into their published range. `applied(to:)` writes back onto the
+/// given dictionary, so options belonging to other widgets (or a later version of this one) survive, and drops every key
+/// back at its default so untouched layers keep an empty dictionary on disk.
 struct NowPlayingOptions: Equatable, Sendable {
     typealias Style = NowPlayingWidgetView.Style
 

@@ -54,13 +54,10 @@ struct WPECameraParallaxFrame: Equatable, Sendable {
     }
 }
 
-/// Cursor smoother. Tracks even when parallax is disabled: only the per-layer
-/// translation is gated (`amount`); `g_ParallaxPosition` still feeds `depthparallax`.
-///
-/// `cameraparallaxdelay` is a RAMP (`t = idle / delay`), not `1 - exp(-dt/delay)`.
-/// A moving cursor holds `t` near zero; a settled one lands exactly on target.
-/// The exp form was still ~37% short after one `delay` and never arrived, so
-/// on a 2 s scene every parallaxed layer visibly trailed.
+/// Cursor smoother. Tracks even when parallax is disabled: only the per-layer translation
+/// is gated (`amount`); `g_ParallaxPosition` still feeds `depthparallax`. `cameraparallaxdelay`
+/// is a RAMP (`t = idle / delay`), not `1 - exp(-dt/delay)`: a moving cursor holds `t` near
+/// zero, a settled one lands exactly on target. The exp form was still ~37% short after one `delay` and never arrived, so on a 2s scene every parallaxed layer visibly trailed.
 struct WPECameraParallaxSmoother: Equatable, Sendable {
     private(set) var smoothed = SIMD2<Float>(0, 0)
     private var lastTime: Double?

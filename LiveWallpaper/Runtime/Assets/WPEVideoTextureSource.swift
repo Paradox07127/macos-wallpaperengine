@@ -135,22 +135,19 @@ final class WPEVideoTextureSource {
     /// delivering once the decoder feeds it, so attaching after the rotation
     /// froze the last frame ~150 ms at every wrap (loop-seam probe, 2026-08-20).
     private var itemOutputs: [(item: AVPlayerItem, output: AVPlayerItemVideoOutput)] = []
-    /// Outputs whose item left the looper queue. Releasing one tears down its
-    /// pixel-buffer pool, and `latest`/`pendingRetirements` wrappers may still
-    /// reference buffers from it (same crash as documented in `invalidate()`),
-    /// so retirement is deferred: entries release two rotations later — by then
-    /// the continuous publish stream has replaced and fence-swept every wrapper
-    /// the old pool backed — or in `invalidate()` after the frame teardown.
+    /// Outputs whose item left the looper queue: releasing one tears down its pixel-buffer
+    /// pool, which `latest`/`pendingRetirements` wrappers may still reference (same crash as
+    /// `invalidate()`). Retirement is deferred two rotations — until the publish stream has
+    /// fence-swept every wrapper the old pool backed — or happens in `invalidate()` at teardown.
     private var retiredItemOutputs: [(item: AVPlayerItem, output: AVPlayerItemVideoOutput)] = []
     /// macOS 15+ player-level output (AnyObject for 14 floor); spans looper item rotations.
     private var playerLevelOutput: AnyObject?
     /// Last player-level frame PTS — avoid re-wrapping the same buffer every tick.
     private var lastPlayerLevelPresentationTime: CMTime?
     private var latest: PublishedFrame?
-    /// Decoded and wrapped, but NOT yet published: its NV12→BGRA pass still
-    /// has to be encoded into the renderer's scene command buffer. It becomes
-    /// `latest` only once that buffer is committed, so a frame whose buffer is
-    /// dropped (drawable miss, encode throw, in-flight budget) can never end up
+    /// Decoded and wrapped but not yet published: its NV12→BGRA pass must be encoded into
+    /// the renderer's scene command buffer before it becomes `latest`, so a frame whose
+    /// buffer is dropped (drawable miss, encode throw, in-flight budget) never ends up
     /// sampled with its conversion unexecuted.
     private var staged: StagedFrame?
     /// Retirement armed on the scene command buffer at encode time (Metal wants
@@ -160,11 +157,10 @@ final class WPEVideoTextureSource {
     private var armedRetirement: PendingFrameRetirement?
     private var isInvalidated = false
 
-    /// Only `invalidate()` builds a command buffer here now — the per-frame
-    /// NV12→BGRA pass rides the renderer's scene buffer instead
-    /// (`encodeStagedFrameWork`). In the app this is the render executor's
-    /// frame queue, so the teardown marker still fences behind every render
-    /// buffer that could be reading a retired plane.
+    /// Only `invalidate()` builds a command buffer here now — the per-frame NV12→BGRA pass
+    /// rides the renderer's scene buffer instead (`encodeStagedFrameWork`, the render
+    /// executor's frame queue in the app), so the teardown marker still fences behind every
+    /// render buffer that could be reading a retired plane.
     private let conversionQueue: MTLCommandQueue
     private var conversionPipeline: MTLRenderPipelineState?
     private var conversionSetupFailed = false
@@ -214,17 +210,14 @@ final class WPEVideoTextureSource {
 
     private struct PublishedFrame {
         let texture: MTLTexture
-        /// CV wrappers stay retained here until the next publish replaces this
-        /// frame (one wrapper on the BGRA path, luma + chroma on biplanar).
-        /// At replacement they do NOT drop — they move into
-        /// `pendingRetirements`, fenced by the scene command buffer that
-        /// carried the replacing frame's conversion (or, at teardown, by
-        /// `invalidate()`'s marker buffer). That buffer is committed after every
-        /// render buffer that could still sample this frame, on the same queue —
-        /// the pool cannot recycle a plane mid-read anymore. Release happens
-        /// on the publishing thread (`sweepRetiredFrames`) or in `invalidate()`
-        /// after `waitUntilCompleted` on the fences; the completed handler
-        /// itself never releases anything (see `WPEFrameFenceFlag`).
+        /// CV wrappers stay retained until the next publish replaces this frame (1 wrapper
+        /// BGRA, luma+chroma biplanar); at replacement they move into `pendingRetirements`
+        /// rather than drop, fenced by the scene buffer carrying the replacement's conversion
+        /// (or, at teardown, `invalidate()`'s marker buffer) — same queue, committed after
+        /// every render buffer that could still sample this frame, so the pool can't recycle
+        /// a plane mid-read. Released on the publishing thread (`sweepRetiredFrames`) or by
+        /// `invalidate()` after `waitUntilCompleted`; the completed handler itself releases
+        /// nothing (see `WPEFrameFenceFlag`).
         let retainedSourceTextures: [CVMetalTexture]
     }
 
@@ -367,15 +360,11 @@ final class WPEVideoTextureSource {
         }
     }
 
-    /// What the renderer samples this frame. A staged frame wins over the
-    /// published one: its conversion is encoded into the same scene command
-    /// buffer, ahead of every pass that reads it.
-    ///
-    /// A staged NV12 frame is therefore handed out before its conversion has
-    /// run. In the steady state that is the same working texture `latest`
-    /// points at, so the worst case is last frame's pixels; on the first frame
-    /// and after a decoder resolution change it is a brand-new backing, which
-    /// is why `ensureWorkingTexture` clears one at allocation — see there.
+    /// What the renderer samples: a staged frame wins over the published one — its conversion
+    /// is encoded into the same scene buffer ahead of every pass reading it — so it's handed
+    /// out before that conversion runs. Steady state: same working texture `latest` points at
+    /// (last frame's pixels); first frame / after a decoder resolution change: brand-new
+    /// backing, why `ensureWorkingTexture` clears one at allocation — see there.
     private var currentTexture: MTLTexture? { staged?.frame.texture ?? latest?.texture }
 
     func texture(at time: TimeInterval) -> MTLTexture? {
@@ -429,11 +418,10 @@ final class WPEVideoTextureSource {
             if !scriptControlled { player?.play() }
         case .suspended:
             player?.pause()
-            // `sweepRetiredFrames` only runs from `publish`, and a paused source
-            // never publishes again — without this the last replaced frame's
-            // planes (~12 MiB NV12 4K, ~32 MiB BGRA) stay resident for the whole
-            // suspension. Fences here are a conversion pass or an empty marker,
-            // both already committed, so the wait is bounded and short.
+            // `sweepRetiredFrames` only runs from `publish`, and a paused source never publishes
+            // again — without this the last replaced frame's planes (~12 MiB NV12 4K, ~32 MiB
+            // BGRA) stay resident for the whole suspension. Fences here (a conversion pass or
+            // empty marker) are already committed, so the wait is bounded and short.
             drainRetiredFrames()
         }
     }
@@ -488,12 +476,11 @@ final class WPEVideoTextureSource {
         resetScriptPlayback()
     }
 
-    /// A playing `AVQueuePlayer` is retained by AVFoundation's own CoreMedia
-    /// threads, so dropping the last Swift reference does NOT stop it: the MP4
-    /// and its decode buffers stay resident and the decoder keeps running.
-    /// Sampled in Release at 10.8 GB / 42 threads with four live
-    /// `coremedia.audioqueue.source` sets. `invalidate()` is idempotent, so this
-    /// is a pure backstop for paths that never reached an explicit teardown.
+    /// A playing `AVQueuePlayer` is retained by AVFoundation's own CoreMedia threads, so
+    /// dropping the last Swift reference does NOT stop it — the MP4 and its decode buffers
+    /// stay resident and the decoder keeps running (sampled in Release at 10.8 GB / 42 threads,
+    /// four live `coremedia.audioqueue.source` sets). `invalidate()` is idempotent, so this is
+    /// a pure backstop for paths that never reached an explicit teardown.
     deinit {
         invalidate()
     }
@@ -501,19 +488,13 @@ final class WPEVideoTextureSource {
     func invalidate() {
         guard !isInvalidated else { return }
         isInvalidated = true
-        // Drain in-flight GPU work BEFORE releasing any CV wrapper: a pending
-        // conversion pass may still be reading retired planes, and the
-        // completed handlers only mark flags — they hold no wrapper to carry a
-        // late release past this point. Bounded wait (one small pass per
-        // fence, already committed).
-        // The frame still published has never been retired — retirement happens
-        // at replacement, and there is no next publish. On the biplanar path the
-        // drain below already covers it (its conversion pass is the fence
-        // registered by that publish), but a BGRA frame is sampled by the
-        // renderer directly, so fence it now: without this, releasing the
-        // wrapper hands the buffer back to a pool the decoder is still feeding
-        // for the few milliseconds until `player.pause()` below, and a render
-        // command buffer mid-flight would sample the overwritten surface.
+        // Drain in-flight GPU work before releasing any CV wrapper: a pending conversion pass may still
+        // read retired planes, and completed handlers only flag (no wrapper to carry a late release) —
+        // bounded wait, fences already committed. The still-published frame was never retired (that
+        // happens at replacement; there's no next publish) — biplanar is covered by the drain (its
+        // conversion pass is the fence), but BGRA is sampled directly, so fence it now: without this the
+        // wrapper's buffer goes back to a pool the decoder still feeds for a few ms until `player.pause()`
+        // below, and a mid-flight render buffer would sample the overwritten surface.
         if let current = latest, let marker = conversionQueue.makeCommandBuffer() {
             WPEFrameOccupancyMeter.count(.videoMarkerCommandBuffer)
             retire(current, fence: marker)
@@ -526,12 +507,11 @@ final class WPEVideoTextureSource {
         // armed retirement — its buffer never reached `pendingRetirements`.
         armedRetirement = nil
         staged = nil
-        // Drop the published frame BEFORE the player goes away. Its
-        // `CVMetalTexture` backing references a pixel buffer owned by the video
-        // output's pool, so releasing it after the outputs are removed /
-        // `removeAllItems()` has torn that pool down dereferences a dead
-        // backing — EXC_BAD_ACCESS at 0x0 inside `CVBufferBacking::releaseUser`,
-        // reached from `WPEDisplayRenderActor` teardown on a scene swap.
+        // Drop the published frame BEFORE the player goes away: its `CVMetalTexture` backing
+        // references a pixel buffer owned by the video output's pool, so releasing it after the
+        // outputs are removed / `removeAllItems()` tears that pool down dereferences a dead
+        // backing — EXC_BAD_ACCESS at 0x0 inside `CVBufferBacking::releaseUser`, reached from
+        // `WPEDisplayRenderActor` teardown on a scene swap.
         latest = nil
         CVMetalTextureCacheFlush(textureCache, 0)
         // Plain GPU allocations (not CV-backed) — safe to drop in any order;
@@ -720,11 +700,10 @@ final class WPEVideoTextureSource {
         stage(PublishedFrame(texture: texture, retainedSourceTextures: [cvTexture]), conversion: nil)
     }
 
-    /// Hand a decoded frame to the renderer without publishing it. Replacing an
-    /// already-staged frame drops its wrappers immediately, which is safe: a
-    /// staged frame is only ever referenced by a command buffer that was NOT
-    /// committed (commit clears `staged` in the same synchronous step), so no
-    /// GPU work can still be reading it.
+    /// Hand a decoded frame to the renderer without publishing it. Replacing an already-staged
+    /// frame drops its wrappers immediately — safe because a staged frame is only ever
+    /// referenced by a command buffer that was NOT committed (commit clears `staged`
+    /// synchronously), so no GPU work can still be reading it.
     private func stage(_ frame: PublishedFrame, conversion: PendingConversion?) {
         staged = StagedFrame(frame: frame, conversion: conversion)
         // The cache holds a mapping per pixel buffer it has wrapped; the pool
@@ -923,11 +902,10 @@ final class WPEVideoTextureSource {
             height: height,
             mipmapped: false
         )
-        // `.pixelFormatView` is required for the sRGB view below. Omitting it
-        // happens to work on this Mac even under the Metal validation layer,
-        // but that is undocumented tolerance: without the flag the view can
-        // fail elsewhere and the `?? target` fallback would silently sample
-        // gamma bytes as linear — brighter video, no log.
+        // `.pixelFormatView` is required for the sRGB view below. Omitting it happens to work on
+        // this Mac even under the Metal validation layer, but that's undocumented tolerance:
+        // without the flag the view can fail elsewhere and the `?? target` fallback would
+        // silently sample gamma bytes as linear — brighter video, no log.
         descriptor.usage = [.renderTarget, .shaderRead, .pixelFormatView]
         descriptor.storageMode = .private
         guard let target = device.makeTexture(descriptor: descriptor) else { return nil }
@@ -936,14 +914,11 @@ final class WPEVideoTextureSource {
         // samples through this sRGB view — byte-identical to the old
         // `.bgra8Unorm_srgb` CV wrap, with no double gamma conversion.
         let sampleView = target.makeTextureView(pixelFormat: .bgra8Unorm_srgb) ?? target
-        // Clear once, here, not per frame. `texture(at:)` hands a staged frame's
-        // target to the renderer before the conversion that fills it has been
-        // encoded, so a brand-new `.private` backing would be sampled as
-        // undefined memory in the one case where `makeRenderCommandEncoder`
-        // then returns nil. Both review models raised this for the first frame
-        // and for a decoder resolution change; a resolution change is rare and
-        // the first allocation happens once, so the cost is a command buffer
-        // per allocation rather than anything on the frame path.
+        // Clear once here, not per frame: `texture(at:)` hands a staged frame's target to the renderer
+        // before its filling conversion is encoded, so an unwritten `.private` backing would sample as
+        // undefined memory if `makeRenderCommandEncoder` then returns nil (both review models flagged
+        // this for the first frame and a decoder resolution change — rare, with the first allocation
+        // happening once, so the cost is one command buffer per allocation, not per frame).
         if let commandBuffer = conversionQueue.makeCommandBuffer() {
             let clearPass = MTLRenderPassDescriptor()
             clearPass.colorAttachments[0].texture = target
@@ -961,10 +936,9 @@ final class WPEVideoTextureSource {
         return (target, sampleView)
     }
 
-    /// Direct pixel-buffer ingest — test seam for hermetic NV12/HDR/BGRA
-    /// branch coverage without AVPlayer timing. `drivesFrame` also runs the
-    /// renderer's half of the contract (encode into a command buffer, commit,
-    /// publish), so a call is one whole frame; pass false to stop at staging
+    /// Direct pixel-buffer ingest — test seam for hermetic NV12/HDR/BGRA branch coverage
+    /// without AVPlayer timing. `drivesFrame` also runs the renderer's half of the contract
+    /// (encode, commit, publish), so a call is one whole frame; pass false to stop at staging
     /// and drive the three steps by hand.
     func ingestForTesting(pixelBuffer: CVPixelBuffer, drivesFrame: Bool = true) {
         publish(pixelBuffer: pixelBuffer)
@@ -986,11 +960,10 @@ final class WPEVideoTextureSource {
         return true
     }
 
-    /// Decoder-native NV12 first (video then full range) with a 32BGRA tail:
-    /// AVFoundation picks the closest match to the source, so 8-bit SDR lands
-    /// on the biplanar path and sources NV12 cannot represent (alpha video)
-    /// negotiate BGRA. Width/height are added only when `outputSize` is set,
-    /// which is the display-sized cap (never an upscale).
+    /// Decoder-native NV12 first (video then full range), 32BGRA tail: AVFoundation picks the
+    /// closest match to the source, so 8-bit SDR lands on biplanar and sources NV12 can't
+    /// represent (alpha video) negotiate BGRA. Width/height are added only when `outputSize`
+    /// is set — the display-sized cap, never an upscale.
     static let negotiatedPixelFormats: [OSType] = [
         kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
         kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
@@ -1107,12 +1080,10 @@ final class WPEVideoTextureSource {
 
 extension WPEVideoTextureSource: WPEDynamicTextureSource {}
 
-/// The ONLY thing a frame-fence completed handler captures. It must never
-/// capture the source, the texture cache, or the wrappers themselves: an
-/// earlier attempt that released wrappers from the handler crashed when the
-/// handler fired after `invalidate()` had torn the buffer pool down
-/// (`CVBufferBacking::releaseUser` on a dead backing). A handler that only
-/// flips this flag is safe to fire at any time, on any thread.
+/// The ONLY thing a frame-fence completed handler captures — never the source, texture cache,
+/// or wrappers: an earlier attempt that released wrappers from the handler crashed when it
+/// fired after `invalidate()` had torn the buffer pool down (`CVBufferBacking::releaseUser` on
+/// a dead backing). A handler that only flips this flag is safe to fire at any time, on any thread.
 private final class WPEFrameFenceFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var completed = false

@@ -55,8 +55,11 @@ struct WPEResolutionDiagnosticsTests {
             environmentLines: ["Environment", "Fixture GPU"]
         )
 
-        #expect(report.contains("Capability: Limited Compatibility"))
-        #expect(report.contains("Preflight: Approximate"))
+        // Compared through the same accessor the report uses: these labels are
+        // localized, so hard-coding the English broke as soon as the app's
+        // language routing started working.
+        #expect(report.contains("Capability: \(SceneCapabilityTier.degraded.localizedLabel)"))
+        #expect(report.contains("Preflight: \(WPEScenePreflightTier.degradedPlayable.localizedLabel)"))
         #expect(report.contains("Features: imageEffect"))
         #expect(report.contains("Error code: WPE_FIXTURE"))
         #expect(report.contains("materials/missing.tex: fileMissing"))

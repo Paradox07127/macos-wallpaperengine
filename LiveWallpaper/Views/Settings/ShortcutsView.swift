@@ -134,16 +134,16 @@ struct ShortcutsView: View {
             case .valid:
                 rejectionMessage = nil
             case .missingModifier:
-                rejectionMessage = AppLanguagePreference.localizedString(
-                    "Add at least one modifier (⌃ ⌥ ⇧ ⌘) — bare keys would intercept normal typing."
+                rejectionMessage = String(
+                    localized: "Add at least one modifier (⌃ ⌥ ⇧ ⌘) — bare keys would intercept normal typing.",
+                    bundle: .appLanguage
                 )
                 NSSound.beep()
                 return
             case .duplicate(let other):
-                rejectionMessage = AppLanguagePreference.localizedFormat(
-                    "%@ is already used by %@.",
-                    newBinding.displayString,
-                    other.displayName
+                rejectionMessage = String(
+                    localized: "\(newBinding.displayString) is already used by \(other.displayName).",
+                    bundle: .appLanguage
                 )
                 NSSound.beep()
                 return
@@ -202,9 +202,9 @@ private struct ShortcutRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(action.displayNameKey, bundle: .main)
+                    Text(action.displayNameKey)
                         .font(DesignTokens.Typography.body)
-                    Text(action.displayDescriptionKey, bundle: .main)
+                    Text(action.displayDescriptionKey)
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -233,7 +233,7 @@ private struct ShortcutRow: View {
                 .fixedSize()
                 .disabled(!isEnabled)
                 .opacity(isEnabled ? 1 : 0.55)
-                .accessibilityLabel(Text("More options for \(action.displayName)", bundle: .main, comment: "Shortcut row menu a11y label. The placeholder is the shortcut action name."))
+                .accessibilityLabel(Text("More options for \(action.displayName)", comment: "Shortcut row menu a11y label. The placeholder is the shortcut action name."))
             }
         }
         .padding(.vertical, 4)

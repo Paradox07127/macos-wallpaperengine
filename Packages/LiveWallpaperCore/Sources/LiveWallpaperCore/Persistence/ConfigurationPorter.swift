@@ -15,22 +15,22 @@ public enum ConfigurationPorter {
             case .invalidFile(let reason):
                 return String(
                     localized: "Couldn't read this configuration file: \(reason)",
-                    comment: "Import failure: the file isn't a valid LiveWallpaper config bundle."
+                    bundle: .appLanguage, comment: "Import failure: the file isn't a valid LiveWallpaper config bundle."
                 )
             case .fileTooLarge(let bytes):
                 return String(
                     localized: "This file is too large to import (\(bytes) bytes). Configuration backups are usually well under 10 MB.",
-                    comment: "Import failure: the file exceeds the size cap and is likely not a real config bundle."
+                    bundle: .appLanguage, comment: "Import failure: the file exceeds the size cap and is likely not a real config bundle."
                 )
             case .unsupportedSchemaVersion(let found, let supported):
                 return String(
                     localized: "This configuration was made with a different version (schema \(found)). This build supports schema 1 through \(supported).",
-                    comment: "Import failure: schema is outside the supported range."
+                    bundle: .appLanguage, comment: "Import failure: schema is outside the supported range."
                 )
             case .bundleMismatch(let expected, let found):
                 return String(
                     localized: "This configuration is for a different app (\(found)). Expected \(expected).",
-                    comment: "Import failure: bundle identifier doesn't match."
+                    bundle: .appLanguage, comment: "Import failure: bundle identifier doesn't match."
                 )
             }
         }

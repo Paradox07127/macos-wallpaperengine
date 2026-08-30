@@ -1,21 +1,17 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Computes a memory-aliasing layout for render-target (FBO) textures: assigns
-/// each one an OFFSET in a single shared heap such that targets whose
-/// within-frame lifetimes do NOT overlap may share the same memory, while
-/// targets that ARE alive at the same time never overlap. The lever that turns
-/// "sum of every FBO" into "≈ peak concurrent". The GPU step
-/// (`WPEMetalRenderTargetPool.prepareAliasPlan`) consumes only `Plan.heapSize`:
-/// the heap is `.automatic`, so Metal does the actual suballocation and the
-/// offsets here exist to prove that size is enough.
+/// Computes a memory-aliasing layout for render-target (FBO) textures: assigns each
+/// an OFFSET in a shared heap so non-overlapping-lifetime targets can share memory
+/// while concurrently-alive ones never overlap — turning "sum of every FBO" into
+/// "≈ peak concurrent". `WPEMetalRenderTargetPool.prepareAliasPlan` consumes only
+/// `Plan.heapSize`; the heap is `.automatic` so Metal suballocates, and the offsets
+/// here just prove that size is enough.
 ///
-/// Algorithm: a classic time-ordered offset allocator. Intervals are placed in
-/// start order (largest first on ties); each is given the lowest offset whose
-/// memory range is free for the whole of its lifetime (i.e. doesn't collide
-/// with any concurrently-alive, already-placed interval). Greedy first-fit —
-/// near-optimal for these cascade-shaped lifetimes and always correct (it never
-/// overlaps two simultaneously-live targets).
+/// Algorithm: a classic time-ordered offset allocator — intervals placed in start
+/// order (largest first on ties), each given the lowest offset free for its whole
+/// lifetime. Greedy first-fit: near-optimal for these cascade-shaped lifetimes,
+/// always correct.
 enum WPEMetalFBOAliasPlanner {
     /// A render target's memory request + its inclusive within-frame lifetime
     /// `[firstPass, lastPass]` (pass indices in the flattened render order).

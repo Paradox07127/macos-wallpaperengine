@@ -78,11 +78,9 @@ struct MonitorOverlaySection: View {
 }
 
 /// The preview's wallpaper backdrop, shown on every overlay page.
-///
-/// One switch, three places: the setting is a single `@AppStorage` key that
-/// every overlay preview canvas already reads, so a user who turns it off on
-/// the Music page expects the Monitor page to follow — and it does. It sits on
-/// each page because that is where the preview it changes is.
+/// One switch, three places: the setting is a single `@AppStorage` key every overlay preview
+/// canvas already reads, so turning it off on the Music page makes the Monitor page follow too.
+/// It sits on each page because that's where the preview it changes is.
 struct OverlayBackdropRow: View {
     /// Whether this display's wallpaper has a still frame to show at all.
     let available: Bool

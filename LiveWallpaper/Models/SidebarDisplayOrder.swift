@@ -20,11 +20,10 @@ enum SidebarDisplayOrder {
         }
     }
 
-    /// Re-key one display's saved entry when its fingerprint format changes.
-    /// Matching needs the display ID too: two identical serial-0 panels shared
-    /// one legacy fingerprint, so the fingerprint alone cannot say whose entry
-    /// this is. Entries whose ID also changed keep their stale key and fall
-    /// back to system order, exactly as they did before this ran.
+    /// Re-key one display's saved entry when its fingerprint format changes. Matching needs the display ID
+    /// too: two identical serial-0 panels shared one legacy fingerprint, so the fingerprint alone cannot
+    /// say whose entry this is. Entries whose ID also changed keep their stale key and fall back to system
+    /// order, exactly as they did before this ran.
     static func rekeyed(
         _ entries: [Entry],
         displayID: CGDirectDisplayID,

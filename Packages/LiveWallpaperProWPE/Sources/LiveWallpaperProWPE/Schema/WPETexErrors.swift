@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import LiveWallpaperCore
 
 /// Wallpaper Engine `.tex` container format codes. Source: publicly
 /// documented community reverse-engineering of the format, cross-
@@ -89,42 +90,39 @@ public enum WPETexDecodeError: Error, Equatable, Sendable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unsupportedContainer(let magic):
-            return String(localized: "error.texture.decode.unsupported_container", defaultValue: ".tex container '\(magic)' is unrecognised.", comment: "Error shown when a Wallpaper Engine .tex container magic is unsupported.")
+            return String(localized: "error.texture.decode.unsupported_container", defaultValue: ".tex container '\(magic)' is unrecognised.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex container magic is unsupported.")
         case .unsupportedBlock(let magic):
-            return String(localized: "error.texture.decode.unsupported_block", defaultValue: ".tex block '\(magic)' is unrecognised.", comment: "Error shown when a Wallpaper Engine .tex block magic is unsupported.")
+            return String(localized: "error.texture.decode.unsupported_block", defaultValue: ".tex block '\(magic)' is unrecognised.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex block magic is unsupported.")
         case .missingInfoBlock:
-            return String(localized: "error.texture.decode.missing_info_block", defaultValue: ".tex file is missing the TEXI info block.", comment: "Error shown when a Wallpaper Engine .tex file is missing the TEXI block.")
+            return String(localized: "error.texture.decode.missing_info_block", defaultValue: ".tex file is missing the TEXI info block.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file is missing the TEXI block.")
         case .missingBitmapBlock:
-            return String(localized: "error.texture.decode.missing_bitmap_block", defaultValue: ".tex file is missing the TEXB bitmap block.", comment: "Error shown when a Wallpaper Engine .tex file is missing the TEXB block.")
+            return String(localized: "error.texture.decode.missing_bitmap_block", defaultValue: ".tex file is missing the TEXB bitmap block.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file is missing the TEXB block.")
         case .unsupportedFormat(let code):
-            return String(localized: "error.texture.decode.unsupported_format", defaultValue: ".tex format code \(code) is not yet supported.", comment: "Error shown when a Wallpaper Engine .tex file uses an unsupported format code.")
+            return String(localized: "error.texture.decode.unsupported_format", defaultValue: ".tex format code \(code) is not yet supported.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file uses an unsupported format code.")
         case .unsupportedAnimation:
-            return String(localized: "error.texture.decode.unsupported_animation", defaultValue: ".tex animation/sequence frames are not supported.", comment: "Error shown when a Wallpaper Engine .tex file contains unsupported animation frames.")
+            return String(localized: "error.texture.decode.unsupported_animation", defaultValue: ".tex animation/sequence frames are not supported.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file contains unsupported animation frames.")
         case .invalidDimensions(let w, let h):
-            return String(localized: "error.texture.decode.invalid_dimensions", defaultValue: ".tex declares invalid dimensions \(w)×\(h).", comment: "Error shown when a Wallpaper Engine .tex file declares invalid pixel dimensions.")
+            return String(localized: "error.texture.decode.invalid_dimensions", defaultValue: ".tex declares invalid dimensions \(w)×\(h).", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex file declares invalid pixel dimensions.")
         case .truncatedBlock(let block, let offset):
-            return String(localized: "error.texture.decode.truncated_block", defaultValue: ".tex block '\(block)' truncated at offset \(offset).", comment: "Error shown when a Wallpaper Engine .tex block ends before its declared payload.")
+            return String(localized: "error.texture.decode.truncated_block", defaultValue: ".tex block '\(block)' truncated at offset \(offset).", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex block ends before its declared payload.")
         case .mipmapOutOfBounds(let index):
-            return String(localized: "error.texture.decode.mipmap_out_of_bounds", defaultValue: ".tex mipmap index \(index) is out of bounds.", comment: "Error shown when a Wallpaper Engine .tex mipmap index is invalid.")
+            return String(localized: "error.texture.decode.mipmap_out_of_bounds", defaultValue: ".tex mipmap index \(index) is out of bounds.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap index is invalid.")
         case .decompressionFailed(let mipmap):
-            return String(localized: "error.texture.decode.decompression_failed", defaultValue: ".tex mipmap \(mipmap) decompression failed.", comment: "Error shown when a Wallpaper Engine .tex mipmap cannot be decompressed.")
+            return String(localized: "error.texture.decode.decompression_failed", defaultValue: ".tex mipmap \(mipmap) decompression failed.", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap cannot be decompressed.")
         case .decodeFailed(let mipmap, let detail):
-            return String(localized: "error.texture.decode.decode_failed", defaultValue: ".tex mipmap \(mipmap) decode failed: \(detail)", comment: "Error shown when a Wallpaper Engine .tex mipmap cannot be decoded.")
+            return String(localized: "error.texture.decode.decode_failed", defaultValue: ".tex mipmap \(mipmap) decode failed: \(detail)", bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine .tex mipmap cannot be decoded.")
         case .metalUnavailable(let format):
-            return String(localized: "error.texture.decode.metal_unavailable", defaultValue: "Cannot decode \(format.debugLabel) without Metal support on this machine.", comment: "Error shown when a texture format requires Metal support that is unavailable.")
+            return String(localized: "error.texture.decode.metal_unavailable", defaultValue: "Cannot decode \(format.debugLabel) without Metal support on this machine.", bundle: .appLanguage, comment: "Error shown when a texture format requires Metal support that is unavailable.")
         }
     }
 }
 
 // MARK: - Value types parsed out of the container
 
-/// Raw four-byte TEXI extension guarded by flag `0x40`.
-///
-/// The official LUT corpus stores an asset-specific value here. The value is
-/// intentionally left uninterpreted: it is not a texture dimension and does
-/// not imply a 3D texture. `sourceRange` is retained so dumps and future oracle
-/// comparisons can identify the exact bytes without reconstructing the header
-/// layout.
+/// Raw four-byte TEXI extension guarded by flag `0x40`. The official LUT corpus stores an
+/// asset-specific value here. The value is intentionally left uninterpreted: it is not a texture
+/// dimension and does not imply a 3D texture. `sourceRange` is retained so dumps and future oracle
+/// comparisons can identify the exact bytes without reconstructing the header layout.
 public struct WPETexFlag0x40Extension: Sendable, Equatable {
     public let rawValue: Int32
     public let sourceRange: Range<Int>
@@ -135,11 +133,10 @@ public struct WPETexFlag0x40Extension: Sendable, Equatable {
     }
 }
 
-/// `imageWidth/imageHeight/unknownInt0` are TEXI fields the decoder reads
-/// but doesn't act on; they are surfaced here for dump fidelity so future
-/// runtime/transpiler work can cross-reference padded atlas dimensions
-/// against the texture-coordinate space (the modal `.tex` records the
-/// padded atlas size, not the logical image size, in `width/height`).
+/// `imageWidth/imageHeight/unknownInt0` are TEXI fields the decoder reads but doesn't act on; they
+/// are surfaced here for dump fidelity so future runtime/transpiler work can cross-reference padded
+/// atlas dimensions against the texture-coordinate space (the modal `.tex` records the padded atlas
+/// size, not the logical image size, in `width/height`).
 public struct WPETexInfo: Sendable, Equatable {
     public let containerVersion: Int
     public let infoVersion: Int
@@ -191,11 +188,10 @@ public struct WPETexInfo: Sendable, Equatable {
     /// instead of linear — pixel-art / palette maps (e.g. `camera.tex`).
     public static let noInterpolationFlag: UInt32 = 0x0000_0001
 
-    /// TEXI flag bit 0x2 = ClampUVs: the texture must NOT tile — sample with
-    /// clamp-to-edge. When UNSET (the default) WPE tiles it with `repeat`, which
-    /// is required for scrolled maps (water-normal, noise, flow) whose sample UVs
-    /// leave [0,1] over time; gradients / flashlights / beams set the bit.
-    /// Empirically confirmed: every `gradient_*` / `flashlight*` / `beam_*` sets
+    /// TEXI flag bit 0x2 = ClampUVs: the texture must NOT tile — sample with clamp-to-edge. When
+    /// UNSET (the default) WPE tiles it with `repeat`, which is required for scrolled maps
+    /// (water-normal, noise, flow) whose sample UVs leave [0,1] over time; gradients / flashlights /
+    /// beams set the bit. Empirically confirmed: every `gradient_*` / `flashlight*` / `beam_*` sets
     /// 0x2, while `waterripplenormal` (flags 0x0) does not.
     public static let clampUVsFlag: UInt32 = 0x0000_0002
 
@@ -209,23 +205,20 @@ public struct WPETexInfo: Sendable, Equatable {
     /// Sample with nearest (`true`) vs linear (`false`) filtering. See `noInterpolationFlag`.
     public var noInterpolation: Bool { flags & Self.noInterpolationFlag != 0 }
 
-    /// Whether this texture must be sampled as LUMINANCE_ALPHA → (R, R, R, G):
-    /// R is luminance broadcast to RGB, G is the alpha falloff. In the WPE
-    /// corpus `RG88` is ONLY ever a particle glow/sprite — normal and data
-    /// maps use `rgba8888n`, never RG88 (verified: 0 of 50 RG88 assets are
-    /// normal maps). So every RG88 is luminance+alpha; uploading it raw as
-    /// `.rg8Unorm` samples (R, G, 0, 1) and renders opaque (the "red square
-    /// light" / red-line fog artifacts).
+    /// Whether this texture must be sampled as LUMINANCE_ALPHA → (R, R, R, G): R is luminance
+    /// broadcast to RGB, G is the alpha falloff. In the WPE corpus `RG88` is ONLY ever a particle
+    /// glow/sprite — normal and data maps use `rgba8888n`, never RG88 (verified: 0 of 50 RG88 assets
+    /// are normal maps). So every RG88 is luminance+alpha; uploading it raw as `.rg8Unorm` samples
+    /// (R, G, 0, 1) and renders opaque (the "red square light" / red-line fog artifacts).
     public var isRG88LuminanceAlpha: Bool {
         format == .rg88
     }
 }
 
-/// TEXB v4 carries four extra fields per mipmap that the runtime doesn't
-/// consume (yet) but should still surface in raw-tex dumps so corpus
-/// regressions don't silently lose ground. `condition` is the only
-/// non-trivial one — it's a NUL-terminated ASCII run used as a
-/// conditional-mip predicate in the official engine.
+/// TEXB v4 carries four extra fields per mipmap that the runtime doesn't consume (yet) but should
+/// still surface in raw-tex dumps so corpus regressions don't silently lose ground. `condition` is
+/// the only non-trivial one — it's a NUL-terminated ASCII run used as a conditional-mip predicate in
+/// the official engine.
 public struct WPETexMipmapV4Fields: Sendable, Equatable {
     public let param1: Int32
     public let param2: Int32
@@ -424,12 +417,11 @@ public struct WPETexStreamingFrame: Sendable, Equatable {
     }
 }
 
-/// Lazy-decode counterpart to `WPETexTexturePayload`. Holds compressed
-/// per-image byte spans plus the TEXS sub-rect schedule; consumers stream
-/// frames out one at a time, keeping recently decompressed images in a
-/// process-wide byte-budget LRU (see `WPEAnimatedFrameByteCache`).
-/// Peak CPU footprint is therefore the mapped `.tex` bytes plus the shared
-/// decoded-frame budget, not the full eager-decode total.
+/// Lazy-decode counterpart to `WPETexTexturePayload`. Holds compressed per-image byte spans plus
+/// the TEXS sub-rect schedule; consumers stream frames out one at a time, keeping recently
+/// decompressed images in a process-wide byte-budget LRU (see `WPEAnimatedFrameByteCache`). Peak CPU
+/// footprint is therefore the mapped `.tex` bytes plus the shared decoded-frame budget, not the full
+/// eager-decode total.
 public struct WPETexStreamingPayload: Sendable, Equatable {
     public let info: WPETexInfo
     public let compressedImages: [WPETexCompressedImage]

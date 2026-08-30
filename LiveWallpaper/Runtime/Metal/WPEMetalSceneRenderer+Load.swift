@@ -90,21 +90,27 @@ extension WPEMetalSceneRenderer {
         case let executorError as WPEMetalRenderExecutorError:
             switch executorError {
             case .shaderTranslatorUnavailable(let name, let reason):
-                return "shader '\(name)': \(reason)"
+                return String(localized: "shader '\(name)': \(reason)", bundle: .appLanguage, comment: "Scene failure reason. Placeholders are the shader name and the translator failure.")
             case .unsupportedShader(let name):
-                return "shader '\(name)' unsupported by Metal renderer"
-            case .unsupportedTarget:
-                return "unsupported Metal render target"
+                return String(
+                    localized: "error.render.executor.unsupported_shader_reason",
+                    defaultValue: "shader '\(name)' unsupported by Metal renderer",
+                    bundle: .appLanguage, comment: "Reason line shown when a workshop scene shader cannot run on the Metal renderer. Placeholder is the shader name."
+                )
             case .pipelineStateBuildFailed(let name, let detail):
-                return "Metal pipeline '\(name)' rejected (likely stage_in mismatch): \(detail)"
+                return String(localized: "Metal pipeline '\(name)' rejected (likely stage_in mismatch): \(detail)", bundle: .appLanguage, comment: "Scene failure reason. Placeholders are the pipeline name and the Metal error.")
             case .renderTargetDimensionsExceedDeviceLimit(let targetName, let width, let height, let limit):
-                return "render target '\(targetName)' is \(width)x\(height), exceeding this device's \(limit)x\(limit) Metal texture limit"
+                return String(
+                    localized: "error.render.executor.render_target_exceeds_limit_reason",
+                    defaultValue: "render target '\(targetName)' is \(width)x\(height), exceeding this device's \(limit)x\(limit) Metal texture limit",
+                    bundle: .appLanguage, comment: "Scene failure reason. Placeholders are the target name, its width and height, then the device texture limit twice."
+                )
             case .missingTexture(let reference):
                 switch reference {
                 case .previous:
-                    return "previous-frame texture unavailable for this pass — no prior frame was rendered for its target"
+                    return String(localized: "previous-frame texture unavailable for this pass — no prior frame was rendered for its target", bundle: .appLanguage, comment: "Scene failure reason.")
                 case .fbo(let name):
-                    return "named FBO '\(name)' unresolved on Metal pass — likely cross-pass alias miss"
+                    return String(localized: "named FBO '\(name)' unresolved on Metal pass — likely cross-pass alias miss", bundle: .appLanguage, comment: "Scene failure reason. Placeholder is the framebuffer name.")
                 case .image, .asset:
                     return nil
                 }
@@ -154,7 +160,7 @@ extension WPEMetalSceneRenderer {
         let id = descriptor.workshopID
 
         debugStage("read.entry", "resolving \(descriptor.entryFile)")
-        onProgress?(String(localized: "Reading scene", comment: "Scene load progress: parsing the scene package."))
+        onProgress?(String(localized: "Reading scene", bundle: .appLanguage, comment: "Scene load progress: parsing the scene package."))
         try Task.checkCancellation()
         let entryReader = entryResolver
         let sceneDescriptor = descriptor
@@ -202,7 +208,7 @@ extension WPEMetalSceneRenderer {
         try Task.checkCancellation()
 
         debugStage("graph.build", "begin")
-        onProgress?(String(localized: "Building render graph", comment: "Scene load progress: building the render graph."))
+        onProgress?(String(localized: "Building render graph", bundle: .appLanguage, comment: "Scene load progress: building the render graph."))
         let cacheRoot = cacheRootURL
         let mounts = dependencyMounts
         let engineRoot = effectiveEngineAssetsRootURL
@@ -218,7 +224,7 @@ extension WPEMetalSceneRenderer {
         try Task.checkCancellation()
 
         debugStage("pipeline.build", "begin")
-        onProgress?(String(localized: "Preparing render pipeline", comment: "Scene load progress: compiling Metal pipeline state."))
+        onProgress?(String(localized: "Preparing render pipeline", bundle: .appLanguage, comment: "Scene load progress: compiling Metal pipeline state."))
         let pipeline = try await Task.detached(priority: .userInitiated) {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
@@ -386,7 +392,7 @@ extension WPEMetalSceneRenderer {
         }
 
         debugStage("textures.load", "begin (pipeline-driven)")
-        onProgress?(String(localized: "Loading textures", comment: "Scene load progress: uploading textures."))
+        onProgress?(String(localized: "Loading textures", bundle: .appLanguage, comment: "Scene load progress: uploading textures."))
         try await loadTextures(for: pipeline, on: actor)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         indexOnDemandVideoLayers(pipeline: pipeline)
@@ -395,7 +401,7 @@ extension WPEMetalSceneRenderer {
         try Task.checkCancellation()
 
         debugStage("particles.load", "begin")
-        onProgress?(String(localized: "Loading particle systems", comment: "Scene load progress: building particle systems."))
+        onProgress?(String(localized: "Loading particle systems", bundle: .appLanguage, comment: "Scene load progress: building particle systems."))
         await loadParticleSystems(from: document, on: actor)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         // Emitters with audioprocessingmode > 0 consume the spectrum in the CPU
@@ -412,7 +418,7 @@ extension WPEMetalSceneRenderer {
         try Task.checkCancellation()
 
         debugStage("text.load", "begin")
-        onProgress?(String(localized: "Loading text pipeline", comment: "Scene load progress: building the text rendering pipeline."))
+        onProgress?(String(localized: "Loading text pipeline", bundle: .appLanguage, comment: "Scene load progress: building the text rendering pipeline."))
         beginSceneScriptVideoCommands()
         loadTextPipeline(from: document, scriptLoadToken: scriptLoadToken)
         debugStage("text.load.done", "objects=\(textObjects.count)")
@@ -442,7 +448,7 @@ extension WPEMetalSceneRenderer {
             scriptsAreBaked: &scriptsAreBaked
         )
         debugStage("render.firstFrame", "begin")
-        onProgress?(String(localized: "Rendering scene", comment: "Scene load progress: first frame is being drawn."))
+        onProgress?(String(localized: "Rendering scene", bundle: .appLanguage, comment: "Scene load progress: first frame is being drawn."))
 
         // First frame must be sync: snapshot/`renderedTexture` read back immediately after load(). Async would race the GPU.
         executor.synchronizeFrameCompletion = true

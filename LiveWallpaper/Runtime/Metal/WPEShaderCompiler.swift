@@ -149,12 +149,10 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
             }
         }
 
-        /// `nil` when the result cannot round-trip: `Slot.Constant` has no
-        /// `.animated` case, so an animated uniform default would come back as
-        /// no default at all and the fallback in `resolvedUniformValue` would
-        /// silently change between the compile that produced it and every later
-        /// hit — including the second display in the same process. Refusing to
-        /// cache keeps the fresh translation authoritative.
+        /// `nil` when the result cannot round-trip: `Slot.Constant` has no `.animated` case,
+        /// so an animated uniform default would come back as no default at all, and the
+        /// fallback in `resolvedUniformValue` would silently change between the compile that
+        /// produced it and every later hit (including the second display in the same process). Refusing to cache keeps the fresh translation authoritative.
         static func from(_ result: WPEShaderCompileResult) -> Payload? {
             var slots: [Slot] = []
             slots.reserveCapacity(result.uniformLayout.count)

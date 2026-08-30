@@ -2,21 +2,14 @@
 import Foundation
 import os
 
-/// Process-wide byte-budget LRU for decoded animation frame bytes, shared by
-/// every `WPETexLazyAnimatedTextureSource` across scenes and displays. This
-/// replaces the former per-source "4 decoded frames" cap, whose worst case
-/// scaled with the number of concurrent animations, not with a budget.
-///
-/// Eviction policy (WebKit MemoryCache-style):
-/// 1. speculative (prefetched, never yet consumed) entries evict first, LRU;
-/// 2. then consumed entries, LRU;
-/// 3. per-source pinned image IDs (the frame currently on screen) are skipped;
-/// 4. prune runs to ~80% of budget so admission doesn't thrash at the edge;
-/// 5. frames above the admission cap are never stored (callers hold them
-///    transiently for upload only).
-///
-/// Thread-safe: prefetch queues store from worker threads while render actors
-/// look up. All state sits behind one unfair lock; entries are `Data` values.
+/// Process-wide byte-budget LRU for decoded animation frame bytes, shared by every
+/// `WPETexLazyAnimatedTextureSource`; replaces the former per-source "4 decoded frames" cap,
+/// which scaled with concurrent animation count instead of a budget. Eviction order (WebKit
+/// MemoryCache-style): speculative (never-consumed) entries LRU, then consumed entries LRU;
+/// per-source pinned (on-screen) IDs are skipped; prunes to ~80% of budget to avoid edge
+/// thrashing; frames over the admission cap are never stored (upload-only, held transiently).
+/// Thread-safe via one unfair lock; workers store during prefetch, render actors read; entries
+/// are `Data`.
 final class WPEAnimatedFrameByteCache: @unchecked Sendable {
     struct SourceToken: Hashable, Sendable {
         fileprivate let id: UInt64

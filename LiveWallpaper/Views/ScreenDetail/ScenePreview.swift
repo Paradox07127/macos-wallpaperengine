@@ -5,12 +5,9 @@ import ImageIO
 import LiveWallpaperCore
 
 /// How large this preview has to be decoded.
-///
-/// One cap could not serve both: a gallery tile is ~220 pt, while the detail
-/// pane takes `aspectRatio: nil` and fills the window, so on a 2× display it can
-/// want several thousand pixels. `.pane` is the default precisely because the
-/// expensive mistake is the silent one — a tile that decodes too much only
-/// wastes work, a pane that decodes too little visibly softens.
+/// One cap can't serve both: a gallery tile is ~220 pt, but the detail pane takes
+/// `aspectRatio: nil` and fills the window, wanting several thousand pixels on a 2× display.
+/// `.pane` is the default because the expensive mistake is silent: a tile that decodes too much only wastes work, a pane that decodes too little visibly softens.
 enum WPEPreviewSize {
     /// Gallery tiles: 220 pt square, `resizeAspectFill` from 16:9, 2×.
     case tile
@@ -166,12 +163,10 @@ private struct OptionalAspectRatio: ViewModifier {
 
 // MARK: - Aspect-fill bridge
 
-/// In-memory cache of *decoded* previews keyed by URL. Caching the raw bytes
-/// instead meant every cache hit paid a synchronous main-thread decode, which is
-/// exactly the cost a cache is supposed to remove.
-///
-/// Internal, not private, only so `LocalImageCacheReclaimerTests` can observe
-/// the purge; every production reader stays in this file.
+/// In-memory cache of *decoded* previews keyed by URL — caching raw bytes instead meant
+/// every hit paid a synchronous main-thread decode, exactly the cost a cache should remove.
+/// Internal, not private, only so `LocalImageCacheReclaimerTests` can observe the purge;
+/// every production reader stays in this file.
 enum WPEPreviewDecodedCache {
     // NSCache is thread-safe internally; `nonisolated(unsafe)` just suppresses
     // the Swift 6 Sendable diagnostic since NSCache isn't formally Sendable.
@@ -406,16 +401,12 @@ private struct AspectFillImage: NSViewRepresentable {
         coordinator.inflightTask = task
     }
 
-    /// Carries the modification date, because a Workshop update rewrites
-    /// `preview.jpg` at the same path: keyed by URL alone the grid would serve
-    /// the pre-update pixels until the entry was evicted, which on a 256-entry
-    /// cache is "for the rest of the session".
-    ///
-    /// `nil` — and therefore no caching at all — when the date cannot be read.
-    /// That happens for a security-scoped URL whose scope is only opened inside
-    /// `loadAndDecode`, and an entry nothing can invalidate is worse than a
-    /// re-decode. The `stat` runs on the main actor, but only when the URL or
-    /// the retry counter actually changed, not per frame.
+    /// Carries the modification date, because a Workshop update rewrites `preview.jpg` at the
+    /// same path: keyed by URL alone the grid would serve pre-update pixels until the entry
+    /// was evicted, which on a 256-entry cache is "for the rest of the session".
+    /// `nil` (no caching) when the date can't be read — true for a security-scoped URL whose
+    /// scope is only opened inside `loadAndDecode`, and an entry nothing can invalidate is worse
+    /// than a re-decode. The `stat` runs on the main actor, but only when the URL or retry counter changed, not per frame.
     private static func cacheKey(for url: URL, size: WPEPreviewSize) -> NSString? {
         guard let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate else { return nil }

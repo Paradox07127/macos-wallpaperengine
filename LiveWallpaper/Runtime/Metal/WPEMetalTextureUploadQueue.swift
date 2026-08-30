@@ -17,14 +17,11 @@ private final class WPEMetalTextureDispatchExecutor: WPEMetalTextureUploadExecut
     }
 }
 
-/// Bounded off-main upload lane for Metal texture work. WPE scenes routinely
-/// ship 4K BC mip chains; running `MTLTexture.replace(...)` on the calling
-/// actor blocks the main thread for tens of milliseconds per mip. Admission is
-/// gated BEFORE dispatching (suspending the caller, not a GCD worker) so excess
-/// uploads wait as continuations instead of parked threads — blocking a
-/// semaphore inside a concurrent queue is the classic thread-explosion
-/// antipattern. Overcommitting the GPU's IO surface produces no real speedup
-/// anyway and just contends for system RAM.
+/// Bounded off-main upload lane for Metal texture work. WPE scenes routinely ship 4K BC mip
+/// chains; running `MTLTexture.replace(...)` on the calling actor blocks the main thread for
+/// tens of milliseconds per mip. Admission is gated BEFORE dispatching (suspending the caller,
+/// not a GCD worker) so excess uploads wait as continuations instead of parked threads —
+/// blocking a semaphore inside a concurrent queue is the classic thread-explosion antipattern; overcommitting the GPU's IO surface produces no real speedup anyway and just contends for system RAM.
 final class WPEMetalTextureUploadQueue: @unchecked Sendable {
     struct AdmissionSnapshot: Equatable, Sendable {
         let grantedCount: Int

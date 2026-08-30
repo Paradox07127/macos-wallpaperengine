@@ -22,11 +22,9 @@ enum WorkshopStepState: Equatable {
         }
     }
 
-    /// Named `statusText`, not `label`: the i18n guard forbids rendering a
-    /// `.label` member directly, because on most types that is a raw enum name.
-    /// This one is already a `LocalizedStringKey`, so the rule is a false
-    /// positive here — renaming is cheaper than an escape hatch, and `label`
-    /// was overloaded against SwiftUI's own meaning anyway.
+    /// Named `statusText`, not `label`: the i18n guard forbids rendering a `.label` member
+    /// directly (on most types that's a raw enum name) — a false positive here since this is
+    /// already a `LocalizedStringKey`. Renaming was cheaper than an escape hatch, and `label` was overloaded against SwiftUI's own meaning anyway.
     var statusText: LocalizedStringKey {
         switch self {
         case .notStarted: return "Not set"
@@ -63,50 +61,6 @@ extension WorkshopStepState {
     }
 }
 
-/// One setup step: name, state badge, optional detail, and the control that advances it.
-struct WorkshopSetupRow<Control: View>: View {
-    let icon: String
-    let title: LocalizedStringKey
-    /// Path / account / short reason — one line.
-    let detail: String?
-    let state: WorkshopStepState
-    let info: String.LocalizationValue
-    @ViewBuilder let control: () -> Control
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(state.tint)
-                .frame(width: 18)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    Text(title, bundle: .main)
-                        .font(DesignTokens.Typography.bodyEmphasized)
-                    WorkshopStateBadge(state: state)
-                    InfoTooltipButton(text: info)
-                }
-                if let detail {
-                    Text(detail)
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .marqueeOnHover()
-                        .textSelection(.enabled)
-                }
-            }
-
-            Spacer(minLength: DesignTokens.Spacing.sm)
-
-            control()
-                .fixedSize()
-        }
-        .padding(.vertical, DesignTokens.Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 /// Dot + word status (not a filled chip — three stack without looking like alerts).
 struct WorkshopStateBadge: View {
     let state: WorkshopStepState
@@ -116,7 +70,7 @@ struct WorkshopStateBadge: View {
             Circle()
                 .fill(state.tint)
                 .frame(width: 6, height: 6)
-            Text(state.statusText, bundle: .main)
+            Text(state.statusText)
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
         }
@@ -147,9 +101,9 @@ struct WorkshopPrivacySheet: View {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
                     ForEach(WorkshopLegalContent.points) { point in
                         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                            Text(point.title, bundle: .main)
+                            Text(point.title)
                                 .font(DesignTokens.Typography.bodyEmphasized)
-                            Text(point.body, bundle: .main)
+                            Text(point.body)
                                 .font(DesignTokens.Typography.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -161,7 +115,7 @@ struct WorkshopPrivacySheet: View {
                             Button {
                                 NSWorkspace.shared.open(reference.url)
                             } label: {
-                                Text(reference.title, bundle: .main)
+                                Text(reference.title)
                             }
                             .buttonStyle(.link)
                             .fixedSize()

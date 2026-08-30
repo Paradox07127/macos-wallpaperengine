@@ -63,12 +63,10 @@ public struct WPEParticleChildReference: Equatable, Sendable {
     public let relativePath: String
     public let originOffset: SIMD3<Double>
     public let type: String?
-    /// WPE `probability`: "The chance at which the child particle system is
-    /// spawned WHEN THE EVENT CONDITION IS MET" (docs.wallpaperengine.io,
-    /// scene/particles/component/children). So it is rolled once per event, not
-    /// once per scene — Valve's own `presets/lightning/particles/presets/
-    /// thunderbolt.json` ships `eventfollow` at 0.2. Corpus: 0.5×6 (all
-    /// eventfollow), 0×2 (eventdeath), 1×44.
+    /// WPE `probability`: "The chance at which the child particle system is spawned WHEN THE
+    /// EVENT CONDITION IS MET" (docs.wallpaperengine.io, scene/particles/component/children) —
+    /// rolled once per event, not once per scene. Valve's `presets/lightning/particles/presets/
+    /// thunderbolt.json` ships `eventfollow` at 0.2. Corpus: 0.5×6 (all eventfollow), 0×2 (eventdeath), 1×44.
     public let probability: Double
     /// WPE `scale`: spawn-time transform, sibling of `origin`/`angles` rather
     /// than a `sizerandom` multiplier — a per-axis vector (corpus has "1 1 2").
@@ -132,15 +130,12 @@ public struct WPEParticleAlphaChange: Equatable, Sendable {
     }
 }
 
-/// `oscillatealpha` operator: WPE's `FrequencyValue::GetScale` — a cosine that
-/// lerps the alpha multiplier across `[scaleMin, scaleMax]`. Frequency and phase
-/// are randomized PER PARTICLE at spawn, so stars twinkle out of step.
-///
-/// The reference computes `f = frequency/2π` then `w = 2π·f`, i.e. **w is the
-/// authored frequency** — folding in another 2π ran it 6.28× too fast. Reading
-/// only `frequency`/`frequencymin` was worse: presets that author bare
-/// `frequencymax` (Stars.json: `{frequencymax:3, scalemin:0.2}`) collapsed to
-/// frequency 0 and stopped twinkling altogether.
+/// `oscillatealpha` operator: WPE's `FrequencyValue::GetScale` — a cosine that lerps the alpha
+/// multiplier across `[scaleMin, scaleMax]`. Frequency and phase are randomized PER PARTICLE at
+/// spawn, so stars twinkle out of step. The reference computes `f = frequency/2π` then `w = 2π·f`,
+/// i.e. **w is the authored frequency** — folding in another 2π ran it 6.28× too fast. Reading only
+/// `frequency`/`frequencymin` was worse: presets authoring bare `frequencymax` (Stars.json:
+/// `{frequencymax:3, scalemin:0.2}`) collapsed to frequency 0 and stopped twinkling.
 public struct WPEParticleOscillateAlpha: Equatable, Sendable {
     public let frequencyMin: Double
     public let frequencyMax: Double
@@ -173,14 +168,12 @@ public struct WPEParticleOscillateAlpha: Equatable, Sendable {
     }
 }
 
-/// `oscillatesize` operator: the same `FrequencyValue`/`GetScale` cosine as
-/// `WPEParticleOscillateAlpha`, multiplied into the sprite size instead of the alpha.
-///
-/// Deliberately a separate type rather than a reuse: alpha's factor is clamped into 0…1 because
-/// alpha cannot exceed 1, while a size oscillation routinely enlarges
-/// (`deku_twinkle_star_shine.json` authors `scalemax: 1.5`). It also carries its own scale
-/// defaults — `WPParticleParser.cpp`'s `ReadFromJson` gives `oscillatesize` 0.8…1.2 where the
-/// base `FrequencyValue` uses 0…1, and `particles/presets/fireflies.json` relies on that.
+/// `oscillatesize` operator: the same `FrequencyValue`/`GetScale` cosine as `WPEParticleOscillateAlpha`,
+/// multiplied into the sprite size instead of the alpha. Deliberately a separate type rather than a reuse:
+/// alpha's factor is clamped into 0…1 because alpha cannot exceed 1, while a size oscillation routinely
+/// enlarges (`deku_twinkle_star_shine.json` authors `scalemax: 1.5`). It also carries its own scale defaults
+/// — `WPParticleParser.cpp`'s `ReadFromJson` gives `oscillatesize` 0.8…1.2 where the base `FrequencyValue`
+/// uses 0…1, and `particles/presets/fireflies.json` relies on that.
 public struct WPEParticleOscillateSize: Equatable, Sendable {
     public let frequencyMin: Double
     public let frequencyMax: Double
@@ -214,25 +207,20 @@ public struct WPEParticleOscillateSize: Equatable, Sendable {
     }
 }
 
-/// `spritetrail` / `ropetrail` renderer params. These ARE `g_RenderVar0.xy`
-/// verbatim: the shader stretches the quad along the velocity by
-/// `clamp(speed * length, min, maxLength)`
-/// (`common_particles.h` ComputeParticleTrailTangents).
-///
-/// The DEFAULTS carry the whole effect and must not be invented
-/// (`wpscene/WPParticleObject.h`: `length {0.05}`, `maxlength {10.0}`,
-/// `subdivision {3.0}`). 3448877775's meteor authors `length: 3` and omits
-/// `maxlength`: speed 100–250 × 3 = 300–750 is clamped by the default 10 to a
-/// ~10× streak. Treating the absent `maxlength` as unbounded instead drew a
-/// screen-crossing "laser". RenderDoc cross-checks the pair on the same scene's
-/// rain (`length 0.005, maxlength 100` → `g_RenderVar0 = (0.005, 100.0, …)`,
-/// speed 3000 → stretch 15).
+/// `spritetrail` / `ropetrail` renderer params. These ARE `g_RenderVar0.xy` verbatim: the shader
+/// stretches the quad along the velocity by `clamp(speed * length, min, maxLength)`
+/// (`common_particles.h` ComputeParticleTrailTangents). The DEFAULTS carry the whole effect and
+/// must not be invented (`wpscene/WPParticleObject.h`: `length {0.05}`, `maxlength {10.0}`,
+/// `subdivision {3.0}`). 3448877775's meteor authors `length: 3` and omits `maxlength`: speed
+/// 100–250 × 3 = 300–750 is clamped by the default 10 to a ~10× streak — treating the absent
+/// `maxlength` as unbounded instead drew a screen-crossing "laser". RenderDoc cross-checks the
+/// pair on the same scene's rain (`length 0.005, maxlength 100` → `g_RenderVar0 = (0.005, 100.0,
+/// …)`, speed 3000 → stretch 15).
 public struct WPEParticleTrailRenderer: Equatable, Sendable {
-    /// `spritetrail` = one velocity-stretched quad per particle (`genericparticle`
-    /// TRAILRENDERER). `ropetrail` = a ribbon threaded through the particle's own
-    /// position history (`genericropeparticle`), where length is a UV segment scale,
-    /// NOT a velocity stretch. The kind gates the stretch in the render executor:
-    /// a `.rope` trail must never take the `spritetrail` path.
+    /// `spritetrail` = one velocity-stretched quad per particle (`genericparticle` TRAILRENDERER).
+    /// `ropetrail` = a ribbon threaded through the particle's own position history
+    /// (`genericropeparticle`), where length is a UV segment scale, NOT a velocity stretch — the kind
+    /// gates the stretch in the render executor: a `.rope` trail must never take the `spritetrail` path.
     public enum Kind: Sendable, Equatable { case sprite, rope }
     public let kind: Kind
     public let length: Double
@@ -324,11 +312,10 @@ public struct WPEParticleColorChange: Equatable, Sendable {
     }
 }
 
-/// `oscillateposition` operator: a per-particle sine sway. Frequency, amplitude
-/// (`scale`, in pixels) and phase are randomized per particle from their
-/// min/max ranges at spawn; `mask` selects which axes sway. The displacement is
-/// transient — derived from age each frame, never integrated into the stored
-/// position — so the particle sways without drifting off its path.
+/// `oscillateposition` operator: a per-particle sine sway. Frequency, amplitude (`scale`, in
+/// pixels) and phase are randomized per particle from their min/max ranges at spawn; `mask` selects
+/// which axes sway. The displacement is transient — derived from age each frame, never integrated
+/// into the stored position — so the particle sways without drifting off its path.
 public struct WPEParticleOscillatePosition: Equatable, Sendable {
     public let frequencyMin: Double
     public let frequencyMax: Double
@@ -354,16 +341,13 @@ public struct WPEParticleOscillatePosition: Equatable, Sendable {
     }
 }
 
-/// `turbulentvelocityrandom` INITIALIZER: seeds each particle, once at spawn,
-/// with a velocity aimed along a curl-noise stream. This is what gives WPE's
-/// leaves/petals/embers their initial drift — NOT the per-frame operator below.
-///
-/// The stream direction is a curl-noise sample, cone-limited around `forward`
-/// (default +Y) and then rotated `offset` radians about `right` (default +Z).
-/// `scale` is the cone WIDTH as a fraction of a hemisphere: `2` = every
-/// direction, smaller = a tighter cone about `forward`. `offset` is what turns
-/// an upward stream downward — the leaves preset authors `offset: 3` (≈172°),
-/// rotating the +Y stream to nearly -Y so leaves fall. Speed is a per-particle
+/// `turbulentvelocityrandom` INITIALIZER: seeds each particle, once at spawn, with a velocity aimed
+/// along a curl-noise stream — gives WPE's leaves/petals/embers their initial drift, NOT the
+/// per-frame operator below. The stream direction is a curl-noise sample, cone-limited around
+/// `forward` (default +Y) and then rotated `offset` radians about `right` (default +Z). `scale` is
+/// the cone WIDTH as a fraction of a hemisphere (`2` = every direction, smaller = a tighter cone
+/// about `forward`). `offset` is what turns an upward stream downward — the leaves preset authors
+/// `offset: 3` (≈172°), rotating the +Y stream to nearly -Y so leaves fall. Speed is a per-particle
 /// `uniform(speedMin, speedMax)`. Engine defaults mirror the reference renderer.
 public struct WPEParticleTurbulentVelocityInit: Equatable, Sendable {
     public let speedMin: Double
@@ -399,14 +383,12 @@ public struct WPEParticleTurbulentVelocityInit: Equatable, Sendable {
     }
 }
 
-/// `turbulence` OPERATOR: a per-frame acceleration sampled from a curl-noise
-/// field that scrolls over time (`timescale`) — a continuous, axis-masked wind.
-/// Distinct from the initializer above (which fires once at spawn): the operator
-/// keeps pushing every particle each frame, so presets that use it usually pair
-/// it with `drag` to bound the resulting velocity (fireflies drag 2.5). Applied
-/// as `velocity += speed · normalize(curl((pos + X·(phase + timescale·t))·2·scale)) · mask · dt`.
-/// Engine defaults mirror the reference renderer (500…1000, scale 0.01,
-/// timescale 20, mask 1 1 0).
+/// `turbulence` OPERATOR: a per-frame acceleration sampled from a curl-noise field that scrolls
+/// over time (`timescale`) — a continuous, axis-masked wind. Distinct from the initializer above
+/// (which fires once at spawn): the operator keeps pushing every particle each frame, so presets
+/// that use it usually pair it with `drag` to bound the resulting velocity (fireflies drag 2.5).
+/// Applied as `velocity += speed · normalize(curl((pos + X·(phase + timescale·t))·2·scale)) · mask · dt`.
+/// Engine defaults mirror the reference renderer (500…1000, scale 0.01, timescale 20, mask 1 1 0).
 public struct WPEParticleTurbulenceOperator: Equatable, Sendable {
     public let speedMin: Double
     public let speedMax: Double
@@ -443,11 +425,10 @@ public enum WPEParticleEmitterShape: String, Sendable, Equatable {
     case box
 }
 
-/// Lossless-enough, Sendable preservation for authored particle-emitter fields
-/// whose runtime meaning has not been established yet. Numbers are stored as
-/// doubles because that is JSONSerialization's numeric representation throughout
-/// the WPE parser; strings remain strings, so vector-shaped authored values are
-/// not silently canonicalized before their schema is confirmed.
+/// Lossless-enough, Sendable preservation for authored particle-emitter fields whose runtime
+/// meaning has not been established yet. Numbers are stored as doubles because that is
+/// JSONSerialization's numeric representation throughout the WPE parser; strings remain strings, so
+/// vector-shaped authored values are not silently canonicalized before their schema is confirmed.
 public indirect enum WPEParticleRawJSONValue: Equatable, Sendable {
     case null
     case bool(Bool)
@@ -487,10 +468,9 @@ public indirect enum WPEParticleRawJSONValue: Equatable, Sendable {
     }
 }
 
-/// Authored emitter audio state. The two known naming families are exposed as
-/// typed projections, while every `audio*` field is also retained verbatim in
-/// `rawFields`. The typed fields drive `emissionScale(spectrum16:)` — an
-/// emission-rate multiplier per the reference renderer (waywallen
+/// Authored emitter audio state. The two known naming families are exposed as typed projections,
+/// while every `audio*` field is also retained verbatim in `rawFields`. The typed fields drive
+/// `emissionScale(spectrum16:)` — an emission-rate multiplier per the reference renderer (waywallen
 /// ParticleEmitter.cpp `AudioResponseScale`, semantics only).
 public struct WPEParticleEmitterAudioState: Equatable, Sendable {
     public let mode: Int?
@@ -523,10 +503,9 @@ public struct WPEParticleEmitterAudioState: Equatable, Sendable {
     /// `.enable = wpe.audioprocessingmode != u32()`).
     public var isEnabled: Bool { (mode ?? 0) != 0 }
 
-    /// Emission-rate multiplier from a 16-band mono spectrum. Reference
-    /// semantics: mean of the clamped `[frequencyStart, frequencyEnd]` band
-    /// range (defaults 0…15), linearly normalized against `bounds` (defaults
-    /// 0…1 — NOT the material path's smoothstep), raised to
+    /// Emission-rate multiplier from a 16-band mono spectrum. Reference semantics: mean of the
+    /// clamped `[frequencyStart, frequencyEnd]` band range (defaults 0…15), linearly normalized
+    /// against `bounds` (defaults 0…1 — NOT the material path's smoothstep), raised to
     /// `max(0.001, exponent)`, then `max(0, 1 + level·amount)`. Silence ⇒ 1.
     public func emissionScale(spectrum16: [Float]) -> Double {
         guard isEnabled, !spectrum16.isEmpty else { return 1 }
@@ -549,12 +528,10 @@ public struct WPEParticleEmitterAudioState: Equatable, Sendable {
     }
 }
 
-/// Lean particle-system descriptor parsed from a WPE `particles/*.json`
-/// file. Fields cover the subset of the WPE DSL the runtime actually
-/// drives — emitter geometry, the random initializers, and the operator
-/// parameters that affect frame-by-frame motion (movement, alphafade,
-/// angular movement). Anything not in the JSON falls back to a safe
-/// default so partial schemas still produce a working emitter.
+/// Lean particle-system descriptor parsed from a WPE `particles/*.json` file. Fields cover the
+/// subset of the WPE DSL the runtime actually drives — emitter geometry, the random initializers,
+/// and the operator parameters that affect frame-by-frame motion (movement, alphafade, angular
+/// movement). Anything not in the JSON falls back to a safe default so partial schemas still work.
 public struct WPEParticleDefinition: Equatable, Sendable {
     public let materialRelativePath: String?
     public let childReferences: [WPEParticleChildReference]
@@ -565,11 +542,10 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     /// Keyframed `instanceoverride.alpha`, applied per frame by the system
     /// (NOT baked into `alphaMin/alphaMax` — see `applying(instanceOverride:)`).
     public let overrideAlphaAnimation: WPESceneAnimatedValue?
-    /// `renderer: [{name:"rope"}]` — a ribbon/trail that connects its particles
-    /// in emission order into one textured strip (meteor tails, cursor trails)
-    /// instead of N independent billboards. Drawn as a per-frame triangle strip,
-    /// NOT instanced quads: stacking the quads (all knots spawn at one point with
-    /// no spread, relying on the rope to spread them along the control-point path)
+    /// `renderer: [{name:"rope"}]` — a ribbon/trail that connects its particles in emission order
+    /// into one textured strip (meteor tails, cursor trails) instead of N independent billboards.
+    /// Drawn as a per-frame triangle strip, NOT instanced quads: stacking the quads (all knots spawn
+    /// at one point with no spread, relying on the rope to spread them along the control-point path)
     /// piled into an additive white blob (scene 3351072238).
     public let isRope: Bool
     /// `spritetrail` (kind `.sprite`) orients + stretches the quad along velocity.
@@ -606,11 +582,10 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     /// small). Sampling uniformly over-sizes the average.
     public let sizeExponent: Double
     public let originOffset: SIMD3<Double>
-    /// Emission distribution. `.sphere` (the WPE default `sphererandom`) uses the
-    /// `.x` of dispersalMin/Max as a scalar radius; `.box` (`boxrandom`) samples
-    /// each axis independently within ±dispersalMax (per-axis half-extents). A box
-    /// emitter parsed as a sphere collapses its vector `distancemax` to one point
-    /// (scene 3351072238: 500 rain halos piled into a white blob).
+    /// Emission distribution. `.sphere` (the WPE default `sphererandom`) uses the `.x` of
+    /// dispersalMin/Max as a scalar radius; `.box` (`boxrandom`) samples each axis independently
+    /// within ±dispersalMax (per-axis half-extents). A box emitter parsed as a sphere collapses its
+    /// vector `distancemax` to one point (scene 3351072238: 500 rain halos piled into a white blob).
     public let emitterShape: WPEParticleEmitterShape
     /// Per-axis emission bounds. Sphere reads `.x` as the radius; box reads all
     /// three as half-extents. Stored as a vector so `boxrandom`'s
@@ -618,11 +593,10 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     public let dispersalMin: SIMD3<Double>
     public let dispersalMax: SIMD3<Double>
     public let directionMask: SIMD3<Double>
-    /// `emitter[].sign`, normalized to -1/0/1 per axis (WPParticleObject.cpp
-    /// `Emitter::FromJson`: `v != 0 ? v / abs(v) : 0`). A nonzero axis forces
-    /// that component of the sphere dispersal to `abs(value) * sign` — e.g.
-    /// snowperspective's `"0 0 1"` keeps every dust mote in front of camera
-    /// instead of half spawning at negative depth (scene 3462491575).
+    /// `emitter[].sign`, normalized to -1/0/1 per axis (WPParticleObject.cpp `Emitter::FromJson`:
+    /// `v != 0 ? v / abs(v) : 0`). A nonzero axis forces that component of the sphere dispersal to
+    /// `abs(value) * sign` — e.g. snowperspective's `"0 0 1"` keeps every dust mote in front of
+    /// camera instead of half spawning at negative depth (scene 3462491575).
     public let sign: SIMD3<Double>
     /// Emitter-authored radial launch speed along the normalized dispersal vector.
     public let emitterSpeedMin: Double
@@ -634,12 +608,11 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     /// Tracks explicit `color`/`colorrandom` initialization because `colorchange` must not recolor an unauthored base.
     /// Instance-level `colorn` remains applicable independently.
     public let hasColorInitializer: Bool
-    /// Whether the particle JSON explicitly opted into sprite-sheet sequence
-    /// animation (`"animationmode": "sequence"` or a non-null
-    /// `sequencemultiplier`). `animationMode` alone can't distinguish this —
-    /// an omitted `animationmode` also defaults to `.sequence` — and the
-    /// distinction gates the derived-grid atlas fallback, which must not
-    /// slice single-image sprites that merely inherited the default.
+    /// Whether the particle JSON explicitly opted into sprite-sheet sequence animation
+    /// (`"animationmode": "sequence"` or a non-null `sequencemultiplier`). `animationMode` alone
+    /// can't distinguish this — an omitted `animationmode` also defaults to `.sequence` — and the
+    /// distinction gates the derived-grid atlas fallback, which must not slice single-image sprites
+    /// that merely inherited the default.
     public let declaresSequenceAnimation: Bool
     /// True when `flags & 4` enables depth-aware perspective sizing and motion.
     public let isPerspective: Bool
@@ -833,13 +806,11 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     public func applying(instanceOverride: WPESceneParticleInstanceOverride?) -> WPEParticleDefinition {
         guard let instanceOverride else { return self }
 
-        // TRIED 2026-08-06 and REVERTED: making `count` scale only the emission
-        // rate (leaving `maxcount` alone) fits the four override systems on
-        // 3461168300 and the two on 3713073223, but measured over all nine oracle
-        // scenes it was a net LOSS — total particle parity 76% -> 71%, with
-        // 3713073223 falling 89% -> 71% and 3448877775 98% -> 91%. Whatever the
-        // real rule is, it is not "rate only". Re-measure the whole corpus before
-        // touching this again.
+        // TRIED 2026-08-06 and REVERTED: making `count` scale only the emission rate (leaving
+        // `maxcount` alone) fits the four override systems on 3461168300 and the two on 3713073223,
+        // but measured over all nine oracle scenes it was a net LOSS — total particle parity 76% ->
+        // 71%, with 3713073223 falling 89% -> 71% and 3448877775 98% -> 91%. Whatever the real rule
+        // is, it is not "rate only". Re-measure the whole corpus before touching this again.
         let countScale = max(0, instanceOverride.count ?? 1)
         let rateScale = max(0, instanceOverride.rate ?? countScale)
         let lifetimeScale = max(0.0001, instanceOverride.lifetime ?? 1)
@@ -923,12 +894,11 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             dispersalMax: dispersalMax,
             velocityMin: velocityMin * speedScale,
             velocityMax: velocityMax * speedScale,
-            // `colorn` is a per-instance colour MULTIPLIER, not a replacement.
-            // Replace-vs-multiply only diverges when the base colour isn't white:
-            // wildfire's smoke (no initializer, white base) dims to `0.24,0.16,0.27`
-            // either way, but 3462491575's matrix glyphs pair a GREEN `colorrandom`
-            // with a white `colorn` — replacement bleached them white; Windows keeps
-            // them green. Only `colorchange` is gated (below).
+            // `colorn` is a per-instance colour MULTIPLIER, not a replacement. Replace-vs-multiply
+            // only diverges when the base colour isn't white: wildfire's smoke (no initializer,
+            // white base) dims to `0.24,0.16,0.27` either way, but 3462491575's matrix glyphs pair a
+            // GREEN `colorrandom` with a white `colorn` — replacement bleached them white; Windows
+            // keeps them green. Only `colorchange` is gated (below).
             colorMin: Self.multiplyingColor(
                 colorMin, byNormalizedOverride: instanceOverride.color) * brightnessScale,
             colorMax: Self.multiplyingColor(
@@ -1072,7 +1042,7 @@ public enum WPEParticleDefinitionParser {
         var diagnostics: [WPESceneDiagnostic] = []
         let definition = parse(dictionary: json, diagnostics: &diagnostics)
         for diagnostic in diagnostics {
-            Logger.warning(diagnostic.message, category: .wpeRender)
+            Logger.log(diagnostic.message, category: .wpeRender, level: diagnostic.severity.logLevel)
         }
         return definition
     }
@@ -1108,18 +1078,15 @@ public enum WPEParticleDefinitionParser {
         // array marks a simulation-only spawner (renders nothing itself).
         let rendererEntries = json["renderer"] as? [[String: Any]]
         let rendersSprite = rendererEntries.map { !$0.isEmpty } ?? true
-        // `rope` = ONE ribbon threaded through the whole particle chain (our
-        // `buildRopeGeometry`). `ropetrail`/`spritetrail` are NOT that: RenderDoc
-        // on 3448877775 shows each particle carrying its OWN position history —
-        // `TEXCOORD1.w` (trailPosition) runs 0,1,2,3,0,1,2,3… i.e. 80 vertices =
-        // 20 meteors × 4 points, and each group's positions form one moving
-        // particle's path (386→420→646→886→1141). The point count comes from
-        // `subdivision` (default 3 ⇒ 4 points), NOT from `length`.
-        //
-        // So `ropetrail` must NOT take the rope path: threading one ribbon through
-        // unrelated particles — the emitter is `boxrandom` over a 360×360 box —
-        // draws a random zigzag across the sky. It gets its own per-particle
-        // history ribbon instead (`usesTrailRibbon`).
+        // `rope` = ONE ribbon threaded through the whole particle chain (our `buildRopeGeometry`).
+        // `ropetrail`/`spritetrail` are NOT that: RenderDoc on 3448877775 shows each particle
+        // carrying its OWN position history — `TEXCOORD1.w` (trailPosition) runs 0,1,2,3,0,1,2,3…
+        // i.e. 80 vertices = 20 meteors × 4 points, each group's positions forming one moving
+        // particle's path (386→420→646→886→1141). The point count comes from `subdivision` (default
+        // 3 ⇒ 4 points), NOT from `length`. So `ropetrail` must NOT take the rope path: threading one
+        // ribbon through unrelated particles — the emitter is `boxrandom` over a 360×360 box — draws
+        // a random zigzag across the sky. It gets its own per-particle history ribbon instead
+        // (`usesTrailRibbon`).
         let rendererNames = (rendererEntries ?? []).compactMap {
             ($0["name"] as? String)?.lowercased()
         }
@@ -1153,11 +1120,10 @@ public enum WPEParticleDefinitionParser {
         let isPerspective = (particleFlags & 4) != 0
 
         let firstEmitter = (json["emitter"] as? [[String: Any]])?.first
-        // `duration: 0` is the editor's default, written onto every emitter — it
-        // means unbounded, not "emit for zero seconds". Every authored value in the
-        // 63-scene corpus is 0, including continuously-emitting rate emitters
-        // (bird_child rate:1), so reading it literally silences them after one
-        // tick. L3 + on-device only; no Windows trace pins the boundary yet.
+        // `duration: 0` is the editor's default, written onto every emitter — it means unbounded,
+        // not "emit for zero seconds". Every authored value in the 63-scene corpus is 0, including
+        // continuously-emitting rate emitters (bird_child rate:1), so reading it literally silences
+        // them after one tick. L3 + on-device only; no Windows trace pins the boundary yet.
         let emitterDuration = firstEmitter
             .flatMap { WPEValueParser.double($0["duration"]) }
             .flatMap { $0 > 0 ? $0 : nil }
@@ -1187,23 +1153,21 @@ public enum WPEParticleDefinitionParser {
         var emitterShape: WPEParticleEmitterShape = .sphere
         var dispersalMin = SIMD3<Double>(0, 0, 0)
         var dispersalMax = SIMD3<Double>(0, 0, 0)
-        // WPE scene particles render as 2D billboards unless an emitter
-        // explicitly opts into a Z axis. Defaulting missing `directions`
-        // to Z=1 collapses depth-only random offsets back onto the same
-        // screen-space center in the Metal 2D pipeline, creating bright
-        // additive piles for bokeh-style emitters.
+        // WPE scene particles render as 2D billboards unless an emitter explicitly opts into a Z
+        // axis. Defaulting missing `directions` to Z=1 collapses depth-only random offsets back onto
+        // the same screen-space center in the Metal 2D pipeline, creating bright additive piles for
+        // bokeh-style emitters.
         var directionMask: SIMD3<Double> = SIMD3(1, 1, 0)
         var sign: SIMD3<Double> = SIMD3(0, 0, 0)
         var emitterSpeedMin: Double = 0
         var emitterSpeedMax: Double = 0
 
         if let first = firstEmitter {
-            // WPE's emitter `rate` defaults to 5.0 when the key is absent
-            // (verified against ground truth; provenance in .notes/wpe-parity). Ours
-            // was 0, i.e. silence: 19 emitters across 16 installed scenes omit the
-            // key and emitted nothing at all (dust motes, snow, fog, shooting
-            // stars, leaves). NOT the per-instance-override `rate` default of 1.0 —
-            // that one is a multiplier, not an emission rate.
+            // WPE's emitter `rate` defaults to 5.0 when the key is absent (verified against ground
+            // truth; provenance in .notes/wpe-parity). Ours was 0, i.e. silence: 19 emitters across
+            // 16 installed scenes omit the key and emitted nothing at all (dust motes, snow, fog,
+            // shooting stars, leaves). NOT the per-instance-override `rate` default of 1.0 — that one
+            // is a multiplier, not an emission rate.
             rate = WPEValueParser.double(first["rate"]) ?? 5
             instantaneousCount = WPEValueParser.double(first["instantaneous"])
                 .map { max(0, WPEValueParser.saturatingInt($0)) } ?? 0
@@ -1386,20 +1350,18 @@ public enum WPEParticleDefinitionParser {
                     }
                 case "alphafade":
                     // A bare `{"name":"alphafade"}` is a normal configuration: WPE's
-                    // own reference scene FOR THIS OPERATOR
+                    // own reference scene for this operator
                     // (assets/scenes/particleelementpreviews/alphafade) writes exactly
                     // that, as do the rope/ropetrail/sprite/spritetrail reference
                     // scenes and 106 of the 228 corpus alphafade entries. A 0 fade-out
                     // left all of them at full alpha until their lifetime expired and
                     // then popped them out — 3413921910's meteors rode the whole steep
-                    // tail of their arc at full brightness.
-                    //
-                    // 0.3 is NOT verified as the engine default: the reference scenes
-                    // hand-tune `fadeouttime` into three clusters (0.3 ×7, 0.9 ×9,
-                    // 0.2 ×2) and 11 more set `fadeintime` while deliberately omitting
-                    // it. Only that a bare operator must fade out at all is evidenced;
-                    // the number is the low end of what those scenes use, pending a
-                    // Windows capture of the alphafade reference scene.
+                    // tail of their arc at full brightness. 0.3 is NOT verified as the
+                    // engine default: the reference scenes hand-tune `fadeouttime` into
+                    // three clusters (0.3×7, 0.9×9, 0.2×2) and 11 more set `fadeintime`
+                    // while deliberately omitting it — only that a bare operator must
+                    // fade out at all is evidenced; the number is the low end of what
+                    // those scenes use, pending a Windows capture of the reference scene.
                     fadeInSeconds = WPEValueParser.double(entry["fadeintime"]) ?? 0.1
                     fadeOutSeconds = WPEValueParser.double(entry["fadeouttime"]) ?? 0.3
                 case "alphachange":

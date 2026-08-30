@@ -11,11 +11,10 @@ public struct BookmarkPlaybackSettings: Codable, Equatable, Sendable {
     public var muted: Bool?
     public var videoVolume: Double?
     public var setAsLockScreen: Bool?
-    /// Whether the Monitor overlay was showing, and on which layer. The board's
-    /// own layout is deliberately NOT captured: it is arranged against one
-    /// display's geometry and shared by every wallpaper on it, so restoring a
-    /// bookmark's copy would silently overwrite arrangement work the user did
-    /// later. Bookmarks restore whether the overlay shows, not how it is built.
+    /// Whether the Monitor overlay was showing, and on which layer. The board's own layout is
+    /// deliberately NOT captured: it is arranged against one display's geometry and shared by every
+    /// wallpaper on it, so restoring a bookmark's copy would silently overwrite arrangement work the
+    /// user did later. Bookmarks restore whether the overlay shows, not how it is built.
     public var monitorOverlayEnabled: Bool?
     public var monitorOverlayLevel: MonitorOverlayLevel?
 

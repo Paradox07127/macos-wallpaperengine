@@ -204,10 +204,10 @@ struct Row: View {
             components.append(metadata.subtitle)
         }
         if entry.isPrimary {
-            components.append(String(localized: "Primary entry", defaultValue: "Primary entry", comment: "VoiceOver tag for the starred playlist entry."))
+            components.append(String(localized: "Primary entry", defaultValue: "Primary entry", bundle: .appLanguage, comment: "VoiceOver tag for the starred playlist entry."))
         }
         if entry.isPlaying {
-            components.append(String(localized: "Now playing", defaultValue: "Now playing", comment: "VoiceOver tag for the currently playing playlist entry."))
+            components.append(String(localized: "Now playing", defaultValue: "Now playing", bundle: .appLanguage, comment: "VoiceOver tag for the currently playing playlist entry."))
         }
         return Text(verbatim: components.joined(separator: ", "))
     }

@@ -1,11 +1,9 @@
 import AppKit
 import LiveWallpaperCore
 
-/// Where the Now Playing layer sits and how large it draws.
-///
-/// The three sizes are still expressed in the Monitor grid's cell pitch, which
-/// is a unit of measure here and nothing more: the layer keeps the exact
-/// footprint it had while it was a widget, without belonging to a board.
+/// Where the Now Playing layer sits and how large it draws. The three sizes are expressed in the
+/// Monitor grid's cell pitch as a unit of measure only — the layer keeps the exact footprint it had
+/// while it was a widget, without belonging to a board.
 enum MusicOverlayLayout {
     /// Reference-board fractions of one cell, from the same 1512×982 board the
     /// nine-up anchors are computed against.

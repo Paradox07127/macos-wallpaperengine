@@ -2,12 +2,11 @@ import Accelerate
 import Foundation
 
 /// Alloc-free stereo FFT → 64 log-spaced bins with treble EQ + attack/release (WPE-style).
-/// Input arrives through `ingest` into an `AudioSpectrumWindowExchange` (audio thread, no
-/// FFT); analysis is pull-driven via `analyzeIfDue`, so FFT rate follows consumer demand,
-/// capped at 120 Hz.
-/// @unchecked Sendable: the cross-thread sample hand-off is owned by the exchange, and
-/// every field declared here is consumer-only — reached from `process`/`analyzeIfDue`
-/// under the broker's snapshot lock (or single-threaded), never from the audio thread.
+/// Input arrives via `ingest` into an `AudioSpectrumWindowExchange` (audio thread, no FFT);
+/// analysis is pull-driven via `analyzeIfDue`, so FFT rate follows demand, capped at 120 Hz.
+/// @unchecked Sendable: the cross-thread hand-off is owned by the exchange; every field here
+/// is consumer-only, reached under the broker's snapshot lock (or single-threaded), never
+/// from the audio thread.
 final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable {
     struct Configuration: Equatable, Sendable {
         var fftSize: Int = 2048
@@ -174,11 +173,10 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         #if DEBUG
         afterWindowCopyForTesting?()
         #endif
-        // The copy runs under the exchange lock, so the window is always exactly one
-        // generation. It can still be old: a producer that has since run more than a
-        // full history (~170 ms at 48 kHz) past this window's start means the consumer
-        // was descheduled that long, so drop this frame and let the next pull take the
-        // fresh seal. Smoothing state is untouched, so nothing is lost but one interval.
+        // The copy runs under the exchange lock (window is always exactly one generation) but
+        // can still be old: a producer running more than a full history (~170 ms at 48 kHz)
+        // past this window's start means the consumer was descheduled that long — drop this
+        // frame, let the next pull take the fresh seal; smoothing state is untouched, nothing lost but one interval.
         let published = exchange.publishedCursor().totalSamples
         guard published - (cursor.totalSamples - configuration.fftSize) <= exchange.historyCapacity else {
             return nil
@@ -197,13 +195,11 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     }
 
     private func updateSmoothingIfNeeded(hopSize: Int) {
-        // A consumer that stopped pulling (suspended, hibernated, App-Napped)
-        // leaves `lastAnalyzedTotal` arbitrarily far behind the producer, and a
-        // hop of hundreds of thousands of samples drives both coefficients to
-        // ~0 — no smoothing at all on the first frame back, i.e. a spectrum pop
-        // on resume. The window itself is one coherent generation, so clamp the
-        // hop to the retained history: gaps larger than that carry no usable
-        // relation to the retained audio anyway.
+        // A consumer that stopped pulling (suspended, hibernated, App-Napped) leaves
+        // `lastAnalyzedTotal` arbitrarily far behind the producer, and a hop of hundreds of
+        // thousands of samples drives both coefficients to ~0 — a spectrum pop on resume.
+        // Clamp the hop to the retained history (the window is one coherent generation);
+        // larger gaps carry no usable relation to the retained audio.
         let clamped = Swift.min(hopSize, exchange.historyCapacity)
         let hop = clamped > 0 ? clamped : configuration.fftSize
         guard hop != lastHopSize else { return }

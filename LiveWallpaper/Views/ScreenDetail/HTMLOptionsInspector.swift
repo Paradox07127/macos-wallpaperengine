@@ -123,7 +123,9 @@ struct HTMLOptionsInspector: View {
             }
             .fixedSize()
             .popover(isPresented: $customCSSPresented, arrowEdge: .leading) {
-                customCSSEditor
+                AppLanguageScope(defaults: .appScoped()) {
+                    customCSSEditor
+                }
             }
         }
         .onAppear { scheduleCustomCSSDraftSync(config.customCSS) }

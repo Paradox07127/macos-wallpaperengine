@@ -20,13 +20,11 @@ protocol WallpaperAudioConfigurable: AnyObject {
     func setAudioVolume(_ volume: Double)
 }
 
-/// Runtimes that own a deep-hibernate teardown behind their own dwell, so the
-/// session can drive eligibility without casting to a concrete view type.
-///
-/// `immediately` skips that dwell for a caller that has already served an
-/// equivalent (or longer) wait of its own — today only the manual-pause
-/// countdown, which must release at the same wall-clock mark for every
-/// wallpaper kind instead of stacking the two delays.
+/// Runtimes that own a deep-hibernate teardown behind their own dwell, so the session can
+/// drive eligibility without casting to a concrete view type. `immediately` skips that dwell
+/// for a caller that already served an equivalent (or longer) wait of its own — today only the
+/// manual-pause countdown, which must release at the same wall-clock mark for every wallpaper
+/// kind instead of stacking the two delays.
 @MainActor
 protocol WallpaperHibernationEligible: AnyObject {
     func setHibernationEligible(_ eligible: Bool, immediately: Bool)
@@ -38,17 +36,13 @@ extension WallpaperHibernationEligible {
     }
 }
 
-/// Runtimes that can shed resident resources on *critical* system memory
-/// pressure, ahead of the dwell countdowns they normally release behind.
-///
-/// Taken as state, not as a one-shot trigger: the level is pushed on every
-/// change so a runtime can revoke whatever it armed once the emergency clears.
-///
-/// Orthogonal to `applyPerformanceProfile`, never a substitute for it. The
-/// profile decides *whether* a wallpaper runs and owns play intent; this only
-/// decides *how deep* an already-suspended one goes, and implementations must
-/// not write the profile or intent back from here — otherwise the two signals
-/// start overwriting each other.
+/// Runtimes that can shed resident resources on *critical* system memory pressure, ahead of
+/// the dwell countdowns they normally release behind. Taken as state, not a one-shot trigger:
+/// the level is pushed on every change so a runtime can revoke whatever it armed once the
+/// emergency clears. Orthogonal to `applyPerformanceProfile`, never a substitute for it — the
+/// profile decides *whether* a wallpaper runs and owns play intent, this only decides *how
+/// deep* an already-suspended one goes, and implementations must not write the profile or
+/// intent back from here, or the two signals start overwriting each other.
 @MainActor
 protocol WallpaperCriticalMemoryPressureResponding: AnyObject {
     func setCriticalMemoryPressureActive(_ active: Bool)

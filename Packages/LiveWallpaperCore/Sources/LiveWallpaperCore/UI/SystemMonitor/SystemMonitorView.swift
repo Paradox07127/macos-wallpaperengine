@@ -22,7 +22,7 @@ struct SystemMonitorView: View {
         ramScopeRaw == "app" ? monitor.cpuUsage : monitor.systemCpuUsage
     }
     private var ramTitle: String {
-        String(localized: "RAM", defaultValue: "RAM", comment: "Dashboard memory gauge title. Industry-standard abbreviation; kept verbatim across locales.")
+        String(localized: "RAM", defaultValue: "RAM", bundle: .appLanguage, comment: "Dashboard memory gauge title. Industry-standard abbreviation; kept verbatim across locales.")
     }
 
     private var ramDetailText: Text {
@@ -61,11 +61,10 @@ struct SystemMonitorView: View {
 
                     Spacer(minLength: 0)
 
-                    // Reflects ProcessInfo.thermalState — a coarse OS thermal-pressure
-                    // level, NOT a measured temperature. A flame + "Thermal" label
-                    // (instead of a thermometer) keeps users from reading the state
-                    // word as a °C reading; the API stays nominal at normal-but-warm
-                    // die temps (e.g. 70°C) by design.
+                    // Reflects ProcessInfo.thermalState — a coarse OS thermal-pressure level, NOT a
+                    // measured temperature. A flame + "Thermal" label (instead of a thermometer)
+                    // keeps users from reading the state word as a °C reading; the API stays nominal
+                    // at normal-but-warm die temps (e.g. 70°C) by design.
                     HStack(spacing: 4) {
                         Image(systemName: "flame")
                             .font(.caption2)
@@ -319,7 +318,7 @@ struct RAMScopePicker: View {
         ) { value, isSelected in
             // Explicit LocalizedStringKey: a bare string ternary would type as
             // String and render verbatim, silently skipping the catalog.
-            Text(value == "system" ? LocalizedStringKey("All") : LocalizedStringKey("App"), bundle: .main)
+            Text(value == "system" ? LocalizedStringKey("All") : LocalizedStringKey("App"))
                 .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
                 .accessibilityLabel(value == "system"
                     ? Text("Show whole-system memory usage", comment: "RAM scope toggle a11y label when scope is the whole system.")

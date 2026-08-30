@@ -188,12 +188,11 @@ struct WPEVaryingDecl: Equatable {
         let tokens = decl.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard tokens.count >= 2 else { return nil }
         let rawName = tokens[1]
-        // The dimension may be a numeric literal (`[64]`) or a `#define`d symbol (`[RESOLUTION]`),
-        // so match any non-`]` token, not just digits. A symbolic dim leaking into `name` was the
-        // `audioValue[RESOLUTION]` → invalid-MSL bug (oscilloscope shaders).
-        // A trailing swizzle in the DECLARATION (`varying vec4 v_Size.xy;`) is illegal GLSL that
-        // fxc lets through; frame_builder.frag ships it. Every use site still reads `v_Size.xy`,
-        // so drop the suffix and declare the base name at the written type.
+        // The dimension may be a numeric literal (`[64]`) or a `#define`d symbol
+        // (`[RESOLUTION]`), so match any non-`]` token, not just digits — a symbolic dim
+        // leaking into `name` was the `audioValue[RESOLUTION]` → invalid-MSL bug (oscilloscope
+        // shaders). A trailing swizzle in the DECLARATION (`varying vec4 v_Size.xy;`) is illegal
+        // GLSL that fxc lets through (frame_builder.frag ships it); every use site still reads `v_Size.xy`, so drop the suffix and declare the base name at the written type.
         let pattern = #"^([A-Za-z_][A-Za-z0-9_]*)(?:\.[xyzwrgba]{1,4})?(?:\[([^\]]+)\])?$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: rawName, range: NSRange(rawName.startIndex..., in: rawName)),

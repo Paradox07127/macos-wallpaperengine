@@ -13,7 +13,7 @@ struct SystemSnapshot: Sendable {
     let chip: String
     let physicalMemoryGiB: Int
     let displays: [DisplayDescriptor]
-    let activeWallpaperKinds: [String]
+    let activeWallpapers: [String]
     let bundleIdentifier: String
     let localeIdentifier: String
 
@@ -29,7 +29,7 @@ struct SystemSnapshot: Sendable {
     }
 
     @MainActor
-    static func capture(activeWallpaperKinds: [String]) -> SystemSnapshot {
+    static func capture(activeWallpapers: [String]) -> SystemSnapshot {
         SystemSnapshot(
             appVersion: bundleString(forKey: "CFBundleShortVersionString") ?? "unknown",
             appBuild: bundleString(forKey: "CFBundleVersion") ?? "unknown",
@@ -48,10 +48,23 @@ struct SystemSnapshot: Sendable {
                     backingScaleFactor: Int(screen.backingScaleFactor)
                 )
             },
-            activeWallpaperKinds: activeWallpaperKinds,
+            activeWallpapers: activeWallpapers,
             bundleIdentifier: Bundle.main.bundleIdentifier ?? "unknown",
             localeIdentifier: Locale.current.identifier
         )
+    }
+
+    /// One-line launch banner. Without it, call-site line numbers in a user's runtime log are unreadable:
+    /// the file spans upgrades silently, and a log that covers two versions attributes lines to the wrong
+    /// source. Deliberately avoids the `capture(...)` path — no NSScreen or sysctl work on the launch path,
+    /// just the four fields that date the log.
+    static var launchBanner: String {
+        let version = bundleString(forKey: "CFBundleShortVersionString") ?? "unknown"
+        let build = bundleString(forKey: "CFBundleVersion") ?? "unknown"
+        let os = ProcessInfo.processInfo.operatingSystemVersionString
+            .components(separatedBy: " (")
+            .first ?? ProcessInfo.processInfo.operatingSystemVersionString
+        return "\(version) (build \(build)) \(currentSKU.rawValue) on \(os) (\(extractMacOSBuild() ?? "unknown"))"
     }
 
     private static var currentSKU: SKU {

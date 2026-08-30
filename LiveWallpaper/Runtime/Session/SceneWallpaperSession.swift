@@ -380,11 +380,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
         if effective == .quality, isHibernated {
             isHibernated = false
-            // This wake supersedes any earlier one still waiting out its retry:
-            // left alive, that one would reload on top of this wake and — when
-            // its reload failed — restore `isHibernated` behind this wake's
-            // back. The replacement below inherits the give-up restore, so
-            // cancelling here does not drop it.
+            // This wake supersedes any earlier one still waiting out its retry: left alive,
+            // that one would reload on top of this wake and — when its reload failed — restore
+            // `isHibernated` behind this wake's back. The replacement below inherits the
+            // give-up restore, so cancelling here doesn't drop it.
             wakeTask?.cancel()
             // Rebuild everything hibernate dropped; the profile command above
             // (or the load tail's re-apply) restores pacing once loaded.
@@ -407,11 +406,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         } catch {
             return
         }
-        // Give up if the wallpaper stopped being wanted while we waited (paused
-        // again, policy re-suspended, session torn down) — or if a manual retry
-        // already healed it. Giving up while still broken has to restore the
-        // hibernated flag: the wake path is gated on it, so leaving it false
-        // would make every later play a no-op and strand the scene in
+        // Give up if the wallpaper stopped being wanted while we waited (paused again, policy
+        // re-suspended, session torn down) — or if a manual retry already healed it. Giving up
+        // while still broken has to restore the hibernated flag: the wake path is gated on it,
+        // so leaving it false would make every later play a no-op and strand the scene in
         // `loadError` with no automatic way back.
         guard hasRenderer, effectivePerformanceProfile == .quality, loadError != nil else {
             if hasRenderer, loadError != nil { isHibernated = true }
@@ -442,15 +440,13 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     }
 
-    /// Critical system memory pressure: skip the dwell and release renderer
-    /// resources now (policy has already suspended the session). Own slot so a
-    /// routine `setHibernationEligible(false)` push cannot cancel it.
-    ///
-    /// Takes the level as state rather than a one-shot trigger: the retry
-    /// cadence must not outlive the emergency. Armed-and-blocked (in-flight
-    /// load) plus a return to normal used to leave the 1s retry running, which
-    /// then hibernated a session suspended for an unrelated reason — bypassing
-    /// the manual-pause and absence dwells entirely.
+    /// Critical system memory pressure: skip the dwell and release renderer resources now
+    /// (policy has already suspended the session). Own slot so a routine
+    /// `setHibernationEligible(false)` push cannot cancel it. Takes the level as state, not a
+    /// one-shot trigger: the retry cadence must not outlive the emergency — armed-and-blocked
+    /// (in-flight load) plus a return to normal used to leave the 1s retry running, which then
+    /// hibernated a session suspended for an unrelated reason, bypassing the manual-pause and
+    /// absence dwells entirely.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         guard active else {
             pressureDwell.cancel()
@@ -738,10 +734,11 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     private func refreshSystemAudioCaptureRequirement() async {
         let requiresCapture = await renderActor.requiresSystemAudioCapture()
-        // Separates "the renderer says this scene needs no audio" from "we never
-        // got to ask" — `updateSystemAudioCaptureRequirement` drops the value
-        // entirely when the renderer has gone, leaving the flag false forever.
-        Logger.notice(
+        // Console-only, but kept: it is the only record that separates "the
+        // renderer answered, and the answer was no" from "the answer was
+        // discarded because the renderer went away", which the guard below
+        // makes indistinguishable downstream.
+        Logger.info(
             "[AudioCapture] session refresh: rendererSaysNeedsAudio=\(requiresCapture)"
                 + " hasRenderer=\(hasRenderer) cancelled=\(Task.isCancelled)",
             category: .audioCapture
@@ -766,7 +763,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             + "/\(userIntendsToPlay)/\(effectivePerformanceProfile)"
         if inputs != lastLoggedAudioDemandInputs {
             lastLoggedAudioDemandInputs = inputs
-            Logger.notice(
+            // Console-only: the dedupe key includes `effectivePerformanceProfile`,
+            // which flips on every app switch, so this can never be quiet enough
+            // for the file. `SystemAudioCaptureService` records the real outcome.
+            Logger.info(
                 "[AudioCapture] session demand=\(shouldRetain)"
                     + " renderer=\(hasRenderer) sceneNeedsAudio=\(requiresSystemAudioCapture)"
                     + " playing=\(userIntendsToPlay)"

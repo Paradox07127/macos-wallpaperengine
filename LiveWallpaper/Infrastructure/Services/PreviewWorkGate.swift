@@ -1,26 +1,9 @@
 import Foundation
 
-/// Bounds how many preview downloads + decodes are in flight at once.
-///
-/// Every tile that scrolls into view starts its own fetch and its own detached
-/// decode. The cooperative pool caps how many *execute* in parallel, but nothing
-/// capped how many were started: sweeping through several Workshop pages left
-/// dozens of downloads competing for the same connection and dozens of decoded
-/// posters alive at the same moment.
-///
-/// Callers must check `Task.isCancelled` as their first act inside `run` —
-/// abandoned work then drains its queue slot in nanoseconds instead of making
-/// the tiles the reader is actually looking at wait behind it.
-///
-/// Cancelling a *queued* waiter withdraws it from the queue. It used to stay in
-/// line — a `CheckedContinuation` is not withdrawn when its task is cancelled —
-/// so a fling through several pages left a wall of abandoned waiters that newly
-/// visible tiles had to queue behind, each waking only to find it had been
-/// cancelled. That turned "too much work at once" into "the tile you are looking
-/// at waits for work nobody wants", which is worse.
-///
-/// Not reentrant: work submitted here must never submit to the same gate, or a
-/// full gate deadlocks against itself.
+/// Bounds how many preview downloads + decodes are in flight at once. Every tile that scrolls into view starts its own fetch and detached decode; the cooperative pool caps how many *execute* in parallel, but nothing capped how many were started, so sweeping through several Workshop pages left dozens of downloads competing for the same connection and dozens of decoded posters alive at once.
+/// Callers must check `Task.isCancelled` as their first act inside `run` — abandoned work then drains its queue slot in nanoseconds instead of making the tiles the reader is actually looking at wait behind it.
+/// Cancelling a *queued* waiter withdraws it from the queue: it used to stay in line (a `CheckedContinuation` isn't withdrawn when its task is cancelled), so a fling through several pages left a wall of abandoned waiters that newly visible tiles had to queue behind, each waking only to find it cancelled — turning "too much work at once" into the worse "the tile you're looking at waits for work nobody wants".
+/// Not reentrant: work submitted here must never submit to the same gate, or a full gate deadlocks against itself.
 actor PreviewWorkGate {
     /// Wide enough to keep several connections and cores busy, narrow enough
     /// that a fling through ten pages does not queue two hundred downloads.

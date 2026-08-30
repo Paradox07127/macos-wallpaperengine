@@ -236,11 +236,9 @@ private struct BookmarkTile: View {
             .overlay(alignment: .bottom) { bottomBand }
     }
 
-    /// Renaming takes the band's place rather than sitting inside it: the field
-    /// is a full-height control and the band is one line of type. Clicking the
-    /// title used to start the rename; on the picture that affordance had no
-    /// visual tell, so it now lives only where it is already spelled out — the
-    /// context menu and the VoiceOver action.
+    /// Renaming takes the band's place rather than sitting inside it: the field is a full-height
+    /// control and the band is one line of type. Clicking the title used to start the rename; on
+    /// the picture that affordance had no visual tell, so it now lives only in the context menu and the VoiceOver action, where it's already spelled out.
     @ViewBuilder
     private var bottomBand: some View {
         if isRenaming {

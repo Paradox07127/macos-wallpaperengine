@@ -83,11 +83,10 @@ final class ScreenManager {
         return machine
     }
 
-    /// Session install/replace/release must not leak the previous session's
-    /// intent into the machine: drop the entry (lazy rebuild intends to play,
-    /// matching every fresh session), hand the fresh machine to a session that
-    /// adopts it as its intent source, and re-sync if a non-adopting session
-    /// disagrees.
+    /// Session install/replace/release must not leak the previous session's intent into the
+    /// machine: drop the entry (lazy rebuild intends to play, matching every fresh session), hand
+    /// the fresh machine to a session that adopts it as its intent source, and re-sync if a non-
+    /// adopting session disagrees.
     func resetPlaybackStateMachine(for screen: Screen) {
         playbackStateMachines.removeValue(forKey: screen.id)
         guard let playback = screen.playbackController else { return }

@@ -338,7 +338,7 @@ struct BrowsePane: View {
             symbol: "wifi.exclamationmark",
             verbatimTitle: String(
                 localized: "Couldn’t load results from the Steam Workshop page.",
-                comment: "Workshop Browse error shown when the key-free public search page fails to load."
+                bundle: .appLanguage, comment: "Workshop Browse error shown when the key-free public search page fails to load."
             ),
             symbolColor: DesignTokens.Colors.Status.warning,
             primary: EmptyStateButtonAction("Retry") { Task { await viewModel.reload() } },
@@ -365,7 +365,7 @@ struct BrowsePane: View {
                         .controlSize(.small)
                         Text(verbatim: String(
                             localized: "Paste a Workshop URL to install an item directly, without searching.",
-                            comment: "Workshop Browse fallback hint next to the “Or download by link” button."
+                            bundle: .appLanguage, comment: "Workshop Browse fallback hint next to the “Or download by link” button."
                         ))
                             .font(.caption)
                             .foregroundStyle(.tertiary)
@@ -431,8 +431,8 @@ struct BrowsePane: View {
     private func creatorFilterBanner(_ creator: BrowseViewModel.CreatorFilter) -> some View {
         scopeBanner(
             icon: "person.crop.circle",
-            label: Text(creator.name.map { String(localized: "Works by \($0)", comment: "Workshop creator-scoped browse header. Placeholder is the creator's name.") }
-                        ?? String(localized: "Works by this creator", comment: "Workshop creator-scoped browse header when the name is unknown.")),
+            label: Text(creator.name.map { String(localized: "Works by \($0)", bundle: .appLanguage, comment: "Workshop creator-scoped browse header. Placeholder is the creator's name.") }
+                        ?? String(localized: "Works by this creator", bundle: .appLanguage, comment: "Workshop creator-scoped browse header when the name is unknown.")),
             clear: { await viewModel.clearCreatorFilter() }
         )
     }
@@ -440,7 +440,7 @@ struct BrowsePane: View {
     private func tagFilterBanner(_ tag: String) -> some View {
         scopeBanner(
             icon: "tag",
-            label: Text(String(localized: "Tagged “\(tag)”", comment: "Workshop tag-scoped browse header. Placeholder is the tag.")),
+            label: Text(String(localized: "Tagged “\(tag)”", bundle: .appLanguage, comment: "Workshop tag-scoped browse header. Placeholder is the tag.")),
             clear: { await viewModel.clearPinnedTag() }
         )
     }
@@ -531,20 +531,20 @@ struct BrowsePane: View {
     private var emptyMessage: String {
         if let creator = viewModel.creatorFilter {
             if let name = creator.name {
-                return String(localized: "\(name) hasn't published any wallpapers here.", comment: "Empty creator-scoped Workshop browse. Placeholder is the creator's name.")
+                return String(localized: "\(name) hasn't published any wallpapers here.", bundle: .appLanguage, comment: "Empty creator-scoped Workshop browse. Placeholder is the creator's name.")
             }
-            return String(localized: "This creator hasn't published any wallpapers here.", comment: "Empty creator-scoped Workshop browse, name unknown.")
+            return String(localized: "This creator hasn't published any wallpapers here.", bundle: .appLanguage, comment: "Empty creator-scoped Workshop browse, name unknown.")
         }
         if let tag = viewModel.pinnedTag {
-            return String(localized: "No results tagged “\(tag)”.", comment: "Empty tag-scoped Workshop browse. Placeholder is the tag.")
+            return String(localized: "No results tagged “\(tag)”.", bundle: .appLanguage, comment: "Empty tag-scoped Workshop browse. Placeholder is the tag.")
         }
         if !viewModel.searchInput.isEmpty {
-            return String(localized: "No results for \"\(viewModel.searchInput)\".", comment: "Empty Workshop search result. Placeholder is the query.")
+            return String(localized: "No results for \"\(viewModel.searchInput)\".", bundle: .appLanguage, comment: "Empty Workshop search result. Placeholder is the query.")
         }
         if hasActiveFilters {
-            return String(localized: "No results for these filters.", comment: "Empty Workshop result when type/age filters exclude everything.")
+            return String(localized: "No results for these filters.", bundle: .appLanguage, comment: "Empty Workshop result when type/age filters exclude everything.")
         }
-        return String(localized: "No results yet.", comment: "Initial empty Workshop browse state.")
+        return String(localized: "No results yet.", bundle: .appLanguage, comment: "Initial empty Workshop browse state.")
     }
 
     private func clearFilters() {
@@ -570,50 +570,50 @@ struct BrowsePane: View {
         case .missingAPIKey:
             return String(
                 localized: "Set your Steam Web API key in Settings to browse online.",
-                comment: "Workshop browse error when no Steam Web API key is configured."
+                bundle: .appLanguage, comment: "Workshop browse error when no Steam Web API key is configured."
             )
         case .keychainAccessDenied:
             return String(
                 localized: "macOS wouldn't unlock your saved API key — allow access when it asks, or set the key again in Settings.",
-                comment: "Workshop browse error when the keychain refused to hand over the stored API key."
+                bundle: .appLanguage, comment: "Workshop browse error when the keychain refused to hand over the stored API key."
             )
         case .unauthorized:
             return String(
                 localized: "Steam rejected the API key. Update it in Settings.",
-                comment: "Workshop browse error when the Steam Web API key is rejected."
+                bundle: .appLanguage, comment: "Workshop browse error when the Steam Web API key is rejected."
             )
         case .keyDisabled:
             return String(
                 localized: "Your Steam API key was disabled by Valve. Regenerate one.",
-                comment: "Workshop browse error when Valve disabled the API key."
+                bundle: .appLanguage, comment: "Workshop browse error when Valve disabled the API key."
             )
         case .rateLimited:
             return String(
-                localized: "Steam is rate-limiting. Please retry in a moment.",
-                comment: "Workshop browse error when Steam rate-limits requests."
+                localized: "Steam is rate-limiting. Retry in a moment.",
+                bundle: .appLanguage, comment: "Workshop browse error when Steam rate-limits requests."
             )
         case .networkUnreachable:
             return String(
                 localized: "Couldn't reach Steam. Check your connection.",
-                comment: "Workshop browse error when Steam is unreachable."
+                bundle: .appLanguage, comment: "Workshop browse error when Steam is unreachable."
             )
         case .timeout:
             return String(
                 localized: "Steam took too long to respond. Retry?",
-                comment: "Workshop browse error when Steam times out."
+                bundle: .appLanguage, comment: "Workshop browse error when Steam times out."
             )
         case .http(let status):
             return String(
                 localized: "Steam returned HTTP \(status).",
-                comment: "Workshop browse error with HTTP status. Placeholder is the status code."
+                bundle: .appLanguage, comment: "Workshop browse error with HTTP status. Placeholder is the status code."
             )
         case .responseParseFailure, .schemaMismatch:
             return String(
                 localized: "Steam returned an unexpected response.",
-                comment: "Workshop browse error when the Steam payload cannot be parsed."
+                bundle: .appLanguage, comment: "Workshop browse error when the Steam payload cannot be parsed."
             )
         case .cancelled:
-            return String(localized: "Cancelled", comment: "Workshop browse request cancelled.")
+            return String(localized: "Cancelled", bundle: .appLanguage, comment: "Workshop browse request cancelled.")
         }
     }
 }

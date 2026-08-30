@@ -3,7 +3,6 @@ import SwiftUI
 
 struct StepWelcome: View {
     let nextStep: () -> Void
-    let skip: () -> Void
     @Environment(\.featureCatalog) private var featureCatalog
 
     private var tagline: LocalizedStringKey {
@@ -26,7 +25,7 @@ struct StepWelcome: View {
 
             Spacer().frame(height: DesignTokens.Spacing.xl)
 
-            VStack(spacing: DesignTokens.Spacing.sm) {
+            VStack(spacing: DesignTokens.Spacing.md) {
                 // Both SKUs ship under their own name (Pro "Loomscreen Pro",
                 // Lite "Loomscreen"), so the brand comes from the running
                 // bundle rather than a literal.
@@ -55,14 +54,6 @@ struct StepWelcome: View {
             .keyboardShortcut(.defaultAction)
             .accessibilityHint(Text("Proceed to choose your first wallpaper"))
 
-            Button(action: skip) {
-                Text("Skip for Now", comment: "Skip first-run wallpaper setup and open the app.")
-                    .font(DesignTokens.Typography.body)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(DesignTokens.Colors.textSecondary)
-            .padding(.top, DesignTokens.Spacing.md)
-
             Spacer().frame(height: DesignTokens.Spacing.xl)
         }
     }
@@ -87,7 +78,7 @@ struct StepWelcome: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(DesignTokens.Colors.accent)
-            Text(title, bundle: .main)
+            Text(title)
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(DesignTokens.Colors.textSecondary)
         }

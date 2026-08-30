@@ -3,12 +3,10 @@ import LiveWallpaperCore
 import SwiftUI
 
 extension GeneralSettingsView {
-    /// The About page has to live inside whatever height the settings window
-    /// happens to have (floor: `SettingsWindowMetrics.minimumContentSize`), and
-    /// at the floor the roomy layout overflowed and put a scroller on a page of
-    /// six static elements. `ViewThatFits` picks the largest layout that fits
-    /// instead — no height thresholds to keep in sync with translations or
-    /// Dynamic Type, since it measures the real content.
+    /// The About page must fit whatever height the settings window has (floor:
+    /// `SettingsWindowMetrics.minimumContentSize`) — at the floor the roomy layout overflowed
+    /// and put a scroller on a page of six static elements. `ViewThatFits` picks the largest
+    /// layout that fits instead — no height thresholds to sync with translations or Dynamic Type, since it measures the real content.
     @ViewBuilder
     var aboutTab: some View {
         ViewThatFits(in: .vertical) {
@@ -195,7 +193,7 @@ extension GeneralSettingsView {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "–"
         let build = info?["CFBundleVersion"] as? String ?? "–"
-        return String(localized: "Version \(version) (\(build))", comment: "About tab version line. Placeholders are marketing version and build number.")
+        return String(localized: "Version \(version) (\(build))", bundle: .appLanguage, comment: "About tab version line. Placeholders are marketing version and build number.")
     }
 }
 

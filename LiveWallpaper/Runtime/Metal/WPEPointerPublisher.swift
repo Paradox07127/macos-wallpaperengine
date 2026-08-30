@@ -2,15 +2,13 @@
 import AppKit
 
 /// Feeds a `WPEPointerMailbox` from AppKit so the render thread never reads
-/// `NSEvent` / `NSView`. Owns only the mouse-position and window-geometry slots;
-/// `pointerFrame` and `clickCaptureEnabled` are pushed by the view/renderer.
+/// `NSEvent`/`NSView`. Owns only the mouse-position/window-geometry slots;
+/// `pointerFrame`/`clickCaptureEnabled` are pushed by the view/renderer.
 ///
-/// Global + local monitors are both required. `addGlobalMonitorForEvents` sees
-/// events destined for *other* processes — including the desktop the wallpaper
-/// sits behind — but never this app's own windows. `addLocalMonitorForEvents`
-/// sees only this app's own events. Wallpaper parallax must track the cursor
-/// everywhere on screen, so only their union is complete; neither alone covers
-/// both "over another app / the desktop" and "over our own settings window".
+/// Global + local monitors are both required: `addGlobalMonitorForEvents` sees other
+/// processes' events (incl. the desktop behind the wallpaper) but never this app's own
+/// windows, while `addLocalMonitorForEvents` sees only this app's — parallax needs
+/// their union to cover both "over another app/the desktop" and "over our settings window".
 @MainActor
 final class WPEPointerPublisher {
     private let mailbox: WPEPointerMailbox
@@ -35,11 +33,10 @@ final class WPEPointerPublisher {
         .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged
     ]
 
-    /// `throttleFPS` bounds mailbox writes to display cadence: at 120 Hz a burst
-    /// of sub-8 ms mouse events collapses to one write. Safe because the mailbox
-    /// is last-write-wins and the renderer re-reads every frame — a dropped
-    /// intermediate move is one the renderer would never have sampled. Cost: the
-    /// final move before the cursor stops can lag by up to one interval (< 1
+    /// `throttleFPS` bounds mailbox writes to display cadence: at 120 Hz a burst of sub-8 ms
+    /// mouse events collapses to one write. Safe because the mailbox is last-write-wins and the
+    /// renderer re-reads every frame — a dropped intermediate move is one it would never have
+    /// sampled. Cost: the final move before the cursor stops can lag by up to one interval (<1
     /// frame), invisible at parallax cadence. `throttleFPS <= 0` disables it.
     init(
         mailbox: WPEPointerMailbox,
@@ -68,13 +65,11 @@ final class WPEPointerPublisher {
         if mouseMonitoringEnabled { installMouseMonitors() }
     }
 
-    /// The renderer's suspend/demand gate over the NSEvent monitors alone.
-    /// Geometry observers stay installed so a later re-enable publishes against
-    /// current geometry; the flag persists while stopped so a re-`start()` honors
-    /// the last request. The `isStarted` guard is load-bearing: an enable queued
-    /// before `detach()` can be delivered after it, and must not resurrect the
-    /// monitors on a torn-down surface. Main-actor because NSEvent monitors must be added and
-    /// removed on the main thread.
+    /// The renderer's suspend/demand gate over the NSEvent monitors alone. Geometry observers
+    /// stay installed so a later re-enable publishes against current geometry; the flag
+    /// persists while stopped so a re-`start()` honors the last request. The `isStarted` guard
+    /// is load-bearing: an enable queued before `detach()` can be delivered after it, and must
+    /// not resurrect the monitors on a torn-down surface. Main-actor because NSEvent monitors must be added/removed on the main thread.
     func setMouseMonitoringEnabled(_ enabled: Bool) {
         mouseMonitoringEnabled = enabled
         guard isStarted else { return }
@@ -178,15 +173,13 @@ final class WPEPointerPublisher {
 
     private func publishGeometry() {
         mailbox.publishGeometry(Self.geometry(of: view))
-        // The cursor can cross the view boundary without moving: a display
-        // rearrange or a window move slides the view under (or out from under)
-        // a stationary pointer. Re-sampling here refreshes `lastSampleWasInside`
-        // and fires the wake — otherwise a pointer-locked particle scene that
-        // dropped its demand sleeps until the user happens to move the mouse,
-        // and a stale `true` would suppress the next genuine enter entirely.
-        // Only while the monitors are installed: gated off, `lastSampleWasInside`
-        // must stay the `false` that `removeMouseMonitors` left, or the re-enable
-        // seed would see no edge and skip its wake.
+        // The cursor can cross the view boundary without moving: a display rearrange or a
+        // window move can slide the view under (or out from under) a stationary pointer.
+        // Re-sampling here refreshes `lastSampleWasInside` and fires the wake — otherwise a
+        // pointer-locked particle scene that dropped its demand sleeps until the user moves
+        // the mouse, and a stale `true` would suppress the next genuine enter. Only while
+        // monitors are installed: gated off, `lastSampleWasInside` must stay the `false` that
+        // `removeMouseMonitors` left, or the re-enable seed would see no edge and skip its wake.
         if isRunning { ingestPointerLocation(NSEvent.mouseLocation) }
     }
 

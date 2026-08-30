@@ -72,14 +72,8 @@ actor WPEVideoTextureDiskCache {
         return target
     }
 
-    /// Scene playback is permanently muted, but a muted-but-PRESENT audio track
-    /// still makes AVPlayerLooper's item rotation non-gapless: audio priming of
-    /// the next item held frame publication ~100 ms at every 20 s wrap of scene
-    /// 3660962877's clip vs 14-21 ms with the track removed (loop-seam probe
-    /// A/B, 2026-08-20). Stripping once at write time keeps playback (lwmem
-    /// mapping included) completely unchanged. Idempotent: an audio-free file —
-    /// including every previously stripped one — returns after one track load.
-    /// Any failure keeps the original file: worse seams, never broken playback.
+    /// Scene playback is permanently muted, but a muted-but-PRESENT audio track still makes AVPlayerLooper's item rotation non-gapless: audio priming of the next item held frame publication ~100 ms at every 20 s wrap of scene 3660962877's clip vs 14-21 ms with the track removed (loop-seam probe A/B, 2026-08-20).
+    /// Stripping once at write time keeps playback (lwmem mapping included) completely unchanged. Idempotent: an audio-free file — including every previously stripped one — returns after one track load. Any failure keeps the original file: worse seams, never broken playback.
     private func stripAudioTrackIfNeeded(at target: URL, cacheKey: String) async {
         guard !audioStripFailedKeys.contains(cacheKey) else { return }
         do {
@@ -100,11 +94,7 @@ actor WPEVideoTextureDiskCache {
             let (range, transform) = try await videoTrack.load(.timeRange, .preferredTransform)
             try compositionTrack.insertTimeRange(range, of: videoTrack, at: .zero)
             compositionTrack.preferredTransform = transform
-            // Dot-prefixed sibling: same volume as `target`, since
-            // `replaceItemAt` is only atomic within a volume. Hidden keeps it
-            // out of the LRU (evicting a half-written export would break it),
-            // so `stats()` counts it and `collectOrphans` sweeps stale ones —
-            // a force-quit mid-export used to strand it forever.
+            // Dot-prefixed sibling: same volume as `target`, since `replaceItemAt` is only atomic within a volume. Hidden keeps it out of the LRU (evicting a half-written export would break it), so `stats()` counts it and `collectOrphans` sweeps stale ones — a force-quit mid-export used to strand it forever.
             let tempURL = target.deletingLastPathComponent()
                 .appendingPathComponent("\(Self.stripPrefix)\(UUID().uuidString).mp4")
             defer { try? fileManager.removeItem(at: tempURL) }

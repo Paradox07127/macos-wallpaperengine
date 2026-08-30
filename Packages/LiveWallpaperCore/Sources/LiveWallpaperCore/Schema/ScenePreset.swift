@@ -1,16 +1,12 @@
 import Foundation
 
-/// A named set of `project.json` property values for one base wallpaper.
-///
-/// Workshop presets and "save my current tweaks" are the same object: a
-/// Workshop preset item is a published file whose manifest carries `dependency`
-/// (the base wallpaper) plus a `preset` map, which is exactly what a locally
-/// authored preset holds. Keeping one model is what lets a downloaded preset be
-/// edited, re-saved, and exported like any other.
-///
-/// Values are applied as a layer, not baked into the descriptor:
-/// scene defaults → preset → the user's per-screen increment. That ordering is
-/// what makes "reset to preset" a matter of dropping the increment.
+/// A named set of `project.json` property values for one base wallpaper. Workshop presets and "save
+/// my current tweaks" are the same object: a Workshop preset item is a published file whose manifest
+/// carries `dependency` (the base wallpaper) plus a `preset` map, which is exactly what a locally
+/// authored preset holds. Keeping one model is what lets a downloaded preset be edited, re-saved,
+/// and exported like any other. Values are applied as a layer, not baked into the descriptor: scene
+/// defaults → preset → the user's per-screen increment. That ordering is what makes "reset to
+/// preset" a matter of dropping the increment.
 public struct ScenePreset: Identifiable, Codable, Equatable, Sendable {
     public enum Source: Equatable, Sendable {
         /// Downloaded Workshop preset item; the payload is its own workshop id,
@@ -30,13 +26,11 @@ public struct ScenePreset: Identifiable, Codable, Equatable, Sendable {
     public var values: [String: WallpaperEngineProjectPropertyValue]
     public let source: Source
     public let createdAt: Date
-    /// Set once the user renames this preset, and only then.
-    ///
-    /// Re-downloading a Workshop preset brings its published title back. Keeping
-    /// the stored name unconditionally would also pin a title the author later
-    /// changed upstream; adopting the incoming one unconditionally would discard
-    /// the user's label. Neither is recoverable from the names alone — "differs
-    /// from what we hold" describes both cases — so the rename records itself.
+    /// Set once the user renames this preset, and only then. Re-downloading a Workshop preset brings
+    /// its published title back. Keeping the stored name unconditionally would also pin a title the
+    /// author later changed upstream; adopting the incoming one unconditionally would discard the
+    /// user's label. Neither is recoverable from the names alone — "differs from what we hold"
+    /// describes both cases — so the rename records itself.
     public private(set) var hasUserAssignedName: Bool
 
     private init(

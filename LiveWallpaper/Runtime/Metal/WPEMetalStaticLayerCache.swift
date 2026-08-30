@@ -14,23 +14,20 @@ struct WPEMetalStaticLayerCachePlan: Equatable, Sendable {
     let compositePassCount: Int
 }
 
-/// Decides whether a layer's composites are provably frame-invariant, so they
-/// can be rendered once and reused. The cache is exact BY CONSTRUCTION only for
-/// layers whose composite is a pure function of static inputs, so this is
-/// deliberately ULTRA-conservative — anything it can't prove invariant is left
-/// on the normal per-frame path (slower, never wrong).
+/// Decides whether a layer's composites are provably frame-invariant so they can be
+/// rendered once and reused. Exact by construction only for a pure function of static
+/// inputs, so this is deliberately ULTRA-conservative: anything unprovable falls back
+/// to the normal per-frame path (slower, never wrong).
 ///
-/// A layer qualifies only when EVERY pass:
-///   - uses a BUILTIN shader (a custom material shader could sample
-///     g_Time/g_Pointer/g_AudioSpectrum/g_ModelMatrix even outside effects/);
-///   - is not an effects/ or workshop/ animated shader;
-///   - carries no animated authored constant;
-///   - reads only frame-invariant textures: a non-dynamic image/asset, or an
-///     FBO THIS layer already produced — never `.previous` (feedback) and never
-///     a scene-alias FBO (`_rt_FullFrameBuffer`, which is the live scene output).
-/// …and the layer itself has no puppet, no `animationLayers`, no animated
-/// alpha/color on any of its geometries (base, local, group-local), exactly one
-/// `.scene` pass, and ≥2 composite passes (the cost gate).
+/// A layer qualifies only when EVERY pass: uses a BUILTIN shader (a custom material
+/// shader could sample g_Time/g_Pointer/g_AudioSpectrum/g_ModelMatrix even outside
+/// effects/); is not an effects/ or workshop/ animated shader; carries no animated
+/// authored constant; reads only frame-invariant textures (a non-dynamic image/asset,
+/// or an FBO this layer already produced — never `.previous` feedback, never a
+/// scene-alias FBO like `_rt_FullFrameBuffer`). The layer itself must also have no
+/// puppet, no `animationLayers`, no animated alpha/color on any geometry (base,
+/// local, group-local), exactly one `.scene` pass, and ≥2 composite passes (the cost
+/// gate).
 enum WPEMetalStaticLayerClassifier {
     static func cachePlan(
         for layer: WPEPreparedRenderLayer,

@@ -1192,11 +1192,10 @@ final class WPEParticleSystem {
                 spawnAccumulator = min(spawnAccumulator, 1)
             }
         }
-        // Mirrors the spawn gates above exactly: `elapsed` is monotonic within a
-        // load, so once every gate is closed no later tick can reopen one. A
-        // pointer-blocked burst keeps `hasEmittedBurst` false and an eventfollow
-        // child without a duration stays emittable — both remain not-exhausted,
-        // which is the conservative direction for the frame-demand gate.
+        // Mirrors the spawn gates above exactly: `elapsed` is monotonic within a load, so once
+        // every gate is closed no later tick can reopen one. A pointer-blocked burst keeps
+        // `hasEmittedBurst` false and an eventfollow child without a duration stays emittable —
+        // both remain not-exhausted, the conservative direction for the frame-demand gate.
         let rateExhausted = definition.rate <= 0 || !isWithinDuration
         let burstExhausted: Bool
         if definition.instantaneousCount <= 0 {

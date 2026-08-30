@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperCore
 import Observation
 
 enum WorkshopContentTypeFilter: String, CaseIterable, Identifiable {
@@ -11,9 +12,9 @@ enum WorkshopContentTypeFilter: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .scene: return String(localized: "Scene", comment: "Workshop content-type filter: scene wallpapers.")
-        case .video: return String(localized: "Video", comment: "Workshop content-type filter: video wallpapers.")
-        case .web: return String(localized: "Web", comment: "Workshop content-type filter: web wallpapers.")
+        case .scene: return String(localized: "Scene", bundle: .appLanguage, comment: "Workshop content-type filter: scene wallpapers.")
+        case .video: return String(localized: "Video", bundle: .appLanguage, comment: "Workshop content-type filter: video wallpapers.")
+        case .web: return String(localized: "Web", bundle: .appLanguage, comment: "Workshop content-type filter: web wallpapers.")
         }
     }
 
@@ -42,11 +43,11 @@ enum WorkshopAgeRatingFilter: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .everyone:
-            return String(localized: "Everyone", comment: "Workshop maturity filter: everyone.")
+            return String(localized: "Everyone", bundle: .appLanguage, comment: "Workshop maturity filter: everyone.")
         case .questionable:
-            return String(localized: "Questionable", comment: "Workshop maturity filter: questionable.")
+            return String(localized: "Questionable", bundle: .appLanguage, comment: "Workshop maturity filter: questionable.")
         case .mature:
-            return String(localized: "Mature", comment: "Workshop maturity filter: mature.")
+            return String(localized: "Mature", bundle: .appLanguage, comment: "Workshop maturity filter: mature.")
         }
     }
 
@@ -98,9 +99,9 @@ enum WorkshopResolutionFilter: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .any:
-            return String(localized: "All", comment: "Workshop resolution filter: no restriction.")
+            return String(localized: "All", bundle: .appLanguage, comment: "Workshop resolution filter: no restriction.")
         case .standardDefinition:
-            return String(localized: "Standard Definition", comment: "Workshop resolution filter display label.")
+            return String(localized: "Standard Definition", bundle: .appLanguage, comment: "Workshop resolution filter display label.")
         case .fullHD1080:
             return "1920 x 1080"
         case .quadHD1440:
@@ -112,7 +113,7 @@ enum WorkshopResolutionFilter: String, CaseIterable, Identifiable {
         case .portrait:
             return "1080 x 1920"
         case .dual:
-            return String(localized: "Dual 3840 x 1080", comment: "Workshop dual-display resolution filter label.")
+            return String(localized: "Dual 3840 x 1080", bundle: .appLanguage, comment: "Workshop dual-display resolution filter label.")
         }
     }
 
@@ -325,14 +326,10 @@ final class BrowseViewModel {
         await reload()
     }
 
-    /// Deep-link search: clears any creator/tag scope inline (no per-clear
-    /// reload) so `makeRequest` doesn't drop the query, then applies it in one
-    /// reload. The `searchInput` didSet's debounced auto-apply is cancelled by
-    /// `reload()` on the same actor turn, so no double fetch.
-    ///
-    /// Rate-limit check comes first, like every other entry point: `reload()`
-    /// would bail out on its own, leaving the scope cleared and the search box
-    /// rewritten over a grid that still shows the old scoped results.
+    /// Deep-link search: clears any creator/tag scope inline (no per-clear reload) so
+    /// `makeRequest` doesn't drop the query, then applies it in one reload; `searchInput`'s
+    /// debounced auto-apply is cancelled by `reload()` on the same actor turn, so no double fetch.
+    /// Rate-limit check comes first, like every entry point: `reload()` alone would leave the scope cleared and the search box rewritten over a grid still showing old results.
     func searchFromDeepLink(_ query: String) async {
         guard !isRateLimited else { return }
         pinnedTag = nil

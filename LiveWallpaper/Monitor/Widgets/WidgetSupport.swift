@@ -60,16 +60,11 @@ struct MonitorHistorySnapshot: Sendable, Equatable {
 }
 
 extension MonitorHistorySnapshot {
-    /// The last `seconds` of a series aligned with `sampleTimes`.
-    ///
-    /// Not `suffix(seconds)`: that only equals N seconds while the board
-    /// samples at exactly 1 Hz, and the refresh slider spans 0.2…2 Hz — at the
-    /// slow end a chart labelled "60s" was drawing five minutes of history and
-    /// at the fast end thirty seconds of it. CPU and GPU were moved onto their
-    /// sample times when the slider landed; Memory, Disk and Network were not.
-    ///
-    /// Falls back to a sample count when the times are missing or out of step
-    /// with the series, which is the only case where nothing better is known.
+    /// The last `seconds` of a series aligned with `sampleTimes`. Not `suffix(seconds)`: that only equals N seconds
+    /// while the board samples at exactly 1 Hz, and the refresh slider spans 0.2…2 Hz — at the slow end a "60s" chart
+    /// was drawing five minutes of history, at the fast end thirty seconds. CPU and GPU were moved onto their sample
+    /// times when the slider landed; Memory, Disk, and Network were not. Falls back to a sample count when the times
+    /// are missing or out of step with the series — the only case where nothing better is known.
     func windowed(_ series: [Double], seconds: Int, minimumPoints: Int = 2) -> [Double] {
         guard sampleTimes.count == series.count, let last = sampleTimes.last else {
             return Array(series.suffix(max(seconds, minimumPoints)))

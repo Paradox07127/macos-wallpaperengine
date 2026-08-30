@@ -1,15 +1,11 @@
 import SwiftUI
 
-/// A fixed two-line title window. The text wraps normally; only when it still
-/// doesn't fit does hovering scroll it vertically to reveal the rest.
-///
-/// The sizing base is a plain `Text` with `reservesSpace` — the visible copy
-/// rides in an `overlay`, which never resizes its base. That is the whole point:
-/// a title must never widen or heighten its card, or a grid row's cards start
-/// overlapping each other and the sidebar.
-///
-/// Scrolling is hover-gated because a grid of titles all crawling at once is
-/// distracting and needless animation work; Reduce Motion turns it off and the
+/// A fixed two-line title window. The text wraps normally; only when it still doesn't fit does
+/// hovering scroll it vertically to reveal the rest. The sizing base is a plain `Text` with
+/// `reservesSpace` — the visible copy rides in an `overlay`, which never resizes its base. That is
+/// the whole point: a title must never widen or heighten its card, or a grid row's cards start
+/// overlapping each other and the sidebar. Scrolling is hover-gated because a grid of titles all
+/// crawling at once is distracting and needless animation work; Reduce Motion turns it off and the
 /// text simply truncates.
 public struct MarqueeText: View {
     private let text: String
@@ -35,11 +31,10 @@ public struct MarqueeText: View {
     private var overflow: CGFloat { max(0, contentHeight - windowHeight) }
     private var shouldScroll: Bool { isActive && !reduceMotion && overflow > 0.5 }
 
-    /// The crawl restarts whenever this changes, not just when scrolling turns on
-    /// or off: resizing the window changes how far the text has to travel while
-    /// the pointer stays put, and an animation still aiming at the old distance
-    /// would stop short of the last line. Rounded to half a point so measurement
-    /// jitter can't restart it every frame.
+    /// The crawl restarts whenever this changes, not just when scrolling turns on or off: resizing
+    /// the window changes how far the text has to travel while the pointer stays put, and an
+    /// animation still aiming at the old distance would stop short of the last line. Rounded to half
+    /// a point so measurement jitter can't restart it every frame.
     private var plan: ScrollPlan {
         ScrollPlan(isScrolling: shouldScroll, distance: (overflow * 2).rounded() / 2)
     }

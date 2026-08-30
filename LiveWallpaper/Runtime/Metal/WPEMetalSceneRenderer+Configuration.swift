@@ -5,12 +5,10 @@ import LiveWallpaperProWPE
 import MetalKit
 
 extension WPEMetalSceneRenderer {
-    /// Default frame rate target when no user override has been applied.
-    /// 30 FPS matches Wallpaper Engine's stock default (the official
-    /// Windows app's "Balanced" preset defaults to 30) — most published
-    /// WPE shaders are tuned around a 30 FPS clock, so running at 60 made
-    /// their `g_Time`-driven motion look ≈2× too fast.
-    /// `MTKView` clamps this to the display's refresh rate.
+    /// Default frame rate target when no user override applied. 30 FPS matches Wallpaper
+    /// Engine's stock default (Windows app's "Balanced" preset defaults to 30) — most
+    /// published WPE shaders are tuned around a 30 FPS clock, so 60 made their
+    /// `g_Time`-driven motion look ≈2× too fast. `MTKView` clamps this to the display's refresh rate.
     static let defaultPreferredFPS = 30
     /// Perspective scenes render at the drawable resolution (capped 4K) instead
     /// of the fixed 1080 fallback, so HUD text is crisp. Default ON; disable with
@@ -21,35 +19,28 @@ extension WPEMetalSceneRenderer {
     /// wallpaper below this even when occluded/on battery (15 FPS measured at
     /// ~83 mW vs ~330 mW at 60, a ~75% GPU-power cut, while staying watchable).
     static let adaptiveThrottleFloorFPS = 15
-    /// Native vsync cap used when the user picks `.unlimited` — MTKView's
-    /// throttle clamps to the display refresh anyway, but we surface a
-    /// concrete value here so a `setPreferredFramesPerSecond(0)` doesn't get
-    /// interpreted as "as fast as possible" (which on some macOS versions
-    /// free-runs well past vsync). Derived from the fastest attached display
-    /// so ProMotion panels actually reach 120 instead of a literal 60;
-    /// MTKView still clamps per-display, so over-asking on slower screens
-    /// is harmless.
+    /// Native vsync cap used when the user picks `.unlimited` — MTKView's throttle clamps
+    /// to the display refresh anyway, but a concrete value here keeps
+    /// `setPreferredFramesPerSecond(0)` from being read as "as fast as possible" (some
+    /// macOS versions free-run past vsync). Derived from the fastest attached display so
+    /// ProMotion panels reach 120 instead of a literal 60; MTKView clamps per-display, so over-asking slower screens is harmless.
     static var unlimitedPreferredFPS: Int {
         let fastest = NSScreen.screens.map(\.maximumFramesPerSecond).max() ?? 0
         return fastest > 0 ? fastest : 60
     }
-    /// Above this raw-bytes footprint, eager-upload a multi-frame `.tex`
-    /// would burn far more VRAM than the runtime needs at any one moment
-    /// — route through `WPETexLazyAnimatedTextureSource` instead. Threshold
-    /// chosen to keep small (≤2-3 frame) workshop sprite-sheets on the
-    /// fast eager path while sending workshop 3725117707-class assets
-    /// (60 × 122 MB raw) to the streaming source. Tiered by physical RAM
-    /// (halved on 8 GB machines — see `WPEMemoryTier`).
+    /// Above this raw-bytes footprint, eager-upload of a multi-frame `.tex` would burn far
+    /// more VRAM than the runtime needs at any moment — route through
+    /// `WPETexLazyAnimatedTextureSource` instead. Chosen to keep small (≤2-3 frame) workshop
+    /// sprite-sheets on the fast eager path while sending workshop 3725117707-class assets
+    /// (60 × 122 MB raw) to the streaming source; tiered by physical RAM (halved on 8 GB machines, see `WPEMemoryTier`).
     static let lazyAnimationRawByteThreshold = WPEMemoryTier.current.lazyAnimationRawByteThreshold
 
     static let textureCacheBudgetMiBDefaultsKey = "WPEMetalTextureCacheBudgetMiB"
-    /// VRAM budget for reloadable static source textures. Unset ⇒ the machine's
-    /// memory-tier default (every tier bounded — see `WPEMemoryTier`);
-    /// explicit 0 or negative ⇒ unbounded (manual opt-out);
-    /// positive ⇒ that many MiB. Over-budget inactive (hidden-layer) textures
-    /// are LRU-evicted and reloaded on demand. Snapshot per scene load, so
-    /// `defaults write com.loomscreen.pro WPEMetalTextureCacheBudgetMiB -int 256`
-    /// applies on the next (re)load.
+    /// VRAM budget for reloadable static source textures. Unset ⇒ the machine's memory-tier
+    /// default (every tier bounded, see `WPEMemoryTier`); 0 or negative ⇒ unbounded
+    /// (manual opt-out); positive ⇒ that many MiB. Over-budget inactive (hidden-layer)
+    /// textures are LRU-evicted and reloaded on demand. Snapshot per scene load, so
+    /// `defaults write com.loomscreen.pro WPEMetalTextureCacheBudgetMiB -int 256` applies on the next (re)load.
     static var textureCacheBudgetBytes: Int? {
         resolvedTextureCacheBudgetBytes(
             manualValue: UserDefaults.standard.object(forKey: textureCacheBudgetMiBDefaultsKey),
@@ -79,11 +70,10 @@ extension WPEMetalSceneRenderer {
     ) -> Double? {
         guard definition.rate > 0 || definition.instantaneousCount > 0 else { return nil }
         // Oracle capture renders ONE frame on a frozen clock, so `dt` is 0 and
-        // `spawnAccumulator += dt * rate` never fires: a `starttime: 0` emitter
-        // shows 0 alive while WPE — running for real — shows rate x elapsed
-        // (2955378002: 273 alive = 40/s x the 6.845s replay time). Simulating to
-        // the replay instant is what makes the two frames comparable at all; the
-        // steady-state heuristic below would land on a different count.
+        // `spawnAccumulator += dt * rate` never fires: a `starttime: 0` emitter shows 0
+        // alive while WPE (running for real) shows rate x elapsed (2955378002: 273 alive =
+        // 40/s x the 6.845s replay time). Simulating to the replay instant is what makes the
+        // two frames comparable; the steady-state heuristic below would land on a different count.
         if let oracleReplaySeconds, oracleReplaySeconds > 0 {
             // `starttime` PRE-SIMULATES, so at frame time T the system has been
             // running for `starttime + T` — WPE docs, corroborated by RenderDoc
@@ -94,12 +84,10 @@ extension WPEMetalSceneRenderer {
             return min(authoredStart + oracleReplaySeconds, Self.maxPrewarmSeconds)
         }
         let authoredStart = max(0, definition.startDelay)
-        // `starttime` PRE-SIMULATES rather than delaying, so at load the system
-        // has already been running for exactly that long — no steady-state
-        // padding on top. Same semantics the oracle branch above uses, which
-        // RenderDoc corroborated; the live path used to add an extra 2–15s of
-        // emission and dead-zone the offset instead, which matched WPE at
-        // neither end.
+        // `starttime` PRE-SIMULATES rather than delaying, so at load the system has already
+        // been running for exactly that long — no steady-state padding on top. Same
+        // semantics the oracle branch above uses, RenderDoc-corroborated; the live path used
+        // to add an extra 2–15s of emission and dead-zone the offset instead, matching WPE at neither end.
         if authoredStart > 0 {
             return min(authoredStart, Self.maxPrewarmSeconds)
         }

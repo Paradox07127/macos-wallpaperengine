@@ -2,11 +2,9 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// About-page readout for Sparkle, sitting inline under the version line rather
-/// than in a card of its own — the update state is a fact about the build named
-/// directly above it, not a separate section. Sparkle owns the actual update UI;
-/// this view only reports whether something is pending and offers a manual
-/// check, and pressing either control hands off to Sparkle's own dialog.
+/// About-page readout for Sparkle, sitting inline under the version line rather than in a card
+/// of its own — the update state is a fact about the build named directly above it. Sparkle owns
+/// the actual update UI; this view only reports pending/checks, and either control hands off to Sparkle's own dialog.
 struct UpdateStatusLine: View {
     @State private var updater = SparkleUpdaterController.shared
 
@@ -51,18 +49,18 @@ struct UpdateStatusLine: View {
         if let version = updater.availableVersion {
             return String(
                 localized: "Version \(version) available",
-                comment: "About page update status when a release is available. Placeholder is the new version."
+                bundle: .appLanguage, comment: "About page update status when a release is available. Placeholder is the new version."
             )
         }
         guard hasCheckedBefore else {
             return String(
                 localized: "Update status unknown",
-                comment: "About panel update status before any successful check has run."
+                bundle: .appLanguage, comment: "About panel update status before any successful check has run."
             )
         }
         return String(
             localized: "Up to date",
-            comment: "About page update status when current, shown inline under the version line."
+            bundle: .appLanguage, comment: "About page update status when current, shown inline under the version line."
         )
     }
 
@@ -71,12 +69,12 @@ struct UpdateStatusLine: View {
     private var statusDetail: String? {
         guard updater.availableVersion == nil else { return nil }
         guard let date = updater.lastUpdateCheckDate else {
-            return String(localized: "Not checked yet", comment: "About panel update detail when no check has run.")
+            return String(localized: "Not checked yet", bundle: .appLanguage, comment: "About panel update detail when no check has run.")
         }
         let relative = Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
         return String(
             localized: "Last checked \(relative)",
-            comment: "About panel update detail. Placeholder is a relative date string."
+            bundle: .appLanguage, comment: "About panel update detail. Placeholder is a relative date string."
         )
     }
 

@@ -150,10 +150,9 @@ extension ScreenManager {
         reconcileAbsenceRevalidationTimer()
     }
 
-    /// `revalidateUserAbsence` only runs inside a policy refresh, and every
-    /// refresh is event-driven — so a lost wake/unlock notification with no
-    /// later events pins every wallpaper suspended forever (the exact hole the
-    /// revalidation was built to close). While absent, poll it on a slow
+    /// `revalidateUserAbsence` only runs inside a policy refresh, and every refresh is event-driven
+    /// — so a lost wake/unlock notification with no later events pins every wallpaper suspended
+    /// forever (the exact hole revalidation was built to close). While absent, poll it on a slow
     /// clock; the wallpapers are suspended then, so this is nearly free.
     private func reconcileAbsenceRevalidationTimer() {
         if isUserAbsent {
@@ -207,24 +206,20 @@ extension ScreenManager {
         return true
     }
 
-    /// Absence is driven only by OS notifications, with no redundancy: one
-    /// dropped unlock or display wake pins every wallpaper suspended forever,
-    /// unreachable by settings or the play button. This asks an independent
-    /// truth source whether the user is in fact back, and only ever *clears*
-    /// reasons — it can never invent an absence.
-    ///
-    /// Deliberately unequal trust: `CGDisplayIsAsleep` is an unambiguous
-    /// boolean, while a missing `CGSSessionScreenIsLocked` key cannot be told
-    /// apart from a failed read (probe 2026-08-18), so unlocking demands
-    /// corroboration from an active display. System sleep is not revalidated at
-    /// all — the process is suspended through it and always gets its wake.
+    /// Absence is driven only by OS notifications, with no redundancy: one dropped unlock or display
+    /// wake pins every wallpaper suspended forever, unreachable by settings or the play button. This
+    /// asks an independent truth source whether the user is in fact back, and only ever *clears*
+    /// reasons — it can never invent an absence. Deliberately unequal trust: `CGDisplayIsAsleep` is
+    /// an unambiguous boolean, while a missing `CGSSessionScreenIsLocked` key can't be told apart
+    /// from a failed read (probe 2026-08-18), so unlocking demands corroboration from an active
+    /// display. System sleep is not revalidated at all — the process is suspended through it and
+    /// always gets its wake.
     func revalidateUserAbsence() {
         guard !userAbsenceReasons.isEmpty else { return }
 
-        // A reason recorded moments ago is trusted as-is: `setUserAbsence`
-        // refreshes policy synchronously, so without this the sleep/lock
-        // notification's own refresh would revalidate the absence it just
-        // recorded — and CoreGraphics often has not caught up yet, which would
+        // A reason recorded moments ago is trusted as-is: `setUserAbsence` refreshes policy
+        // synchronously, so without this the sleep/lock notification's own refresh would revalidate
+        // the absence it just recorded — and CoreGraphics often has not caught up yet, which would
         // clear it instantly on every single sleep.
         func isSettled(_ reason: UserAbsenceReason) -> Bool {
             guard let marked = absenceMarkedAt[reason] else { return true }
@@ -366,15 +361,12 @@ extension ScreenManager {
             suspendedScreenIDs.remove(screen.id)
         }
         applyAdaptiveFrameRate(to: screen, settings: settings, throttleReasons: decision.throttleReasons)
-        // Deep hibernate is reserved for absence-like suspensions (lock, sleep,
-        // full-screen cover/occlusion) — an app-rule or battery pause stays a
-        // warm suspend for fast resume. The session owns the dwell countdown.
-        //
-        // Coverage inputs are only usable while the detector is actually
-        // rescanning: with fallback polling off, its space/app-activation
-        // rescans are demand-gated too, so hidden/occluded would be frozen
-        // at whatever the last scan saw. Absence stays authoritative either
-        // way — it is tracked independently of the detector.
+        // Deep hibernate is reserved for absence-like suspensions (lock, sleep, full-screen
+        // cover/occlusion) — an app-rule or battery pause stays a warm suspend for fast resume, and the
+        // session owns the dwell countdown. Coverage inputs are only usable while the detector is
+        // actually rescanning: with fallback polling off, its space/app-activation rescans are demand-
+        // gated too, so hidden/occluded would be frozen at whatever the last scan saw. Absence stays
+        // authoritative either way — it is tracked independently of the detector.
         let coverageIsLive = fullScreenDetector.isFallbackPollingEnabled
         let isAbsenceLikeSuspension = profile == .suspended
             && (isUserAbsent

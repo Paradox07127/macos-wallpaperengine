@@ -50,7 +50,7 @@ struct ReportBugSheet: View {
                     .font(.title3.weight(.semibold))
             }
 
-            Text("Thanks for helping LiveWallpaper improve. The information below will be pre-filled into a GitHub issue. **Please review it before posting** — once an issue is created, anyone can read it.")
+            Text("The information below will be pre-filled into a GitHub issue. **Review it before posting** — once an issue is created, anyone can read it.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

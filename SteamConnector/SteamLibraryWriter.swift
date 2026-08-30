@@ -1,14 +1,12 @@
 import Foundation
 
-/// Every write Loomscreen makes to the user's Steam library goes through here.
-///
-/// The main app holds no write capability at all — it cannot delete a Workshop
-/// item or prune a Wallpaper Engine install even if its code tried. That is the
-/// point of putting the writer in the connector: one process, one place to audit.
-///
-/// The guards are ported from the app's retired `WPEEngineAssetsFilesystemOwner`,
-/// with the containment anchor moved from "our sandbox container" to "the Steam
-/// root we were pointed at". Two subtrees are writable and nothing else:
+/// Every write Loomscreen makes to the user's Steam library goes through
+/// here — the main app holds no write capability at all, and can't delete
+/// a Workshop item or prune a Wallpaper Engine install even if its code
+/// tried; one process, one place to audit. Guards ported from the app's
+/// retired `WPEEngineAssetsFilesystemOwner`, with the containment anchor
+/// moved from "our sandbox container" to "the Steam root we were pointed
+/// at". Two subtrees are writable and nothing else:
 ///   `steamapps/workshop/content/431960/<id>/`
 ///   `steamapps/common/wallpaper_engine/`
 enum SteamLibraryWriter {
@@ -30,13 +28,12 @@ enum SteamLibraryWriter {
 
     // MARK: - Delete
 
-    /// Removes one Workshop item. Steam's `appworkshop_431960.acf` deliberately
-    /// keeps listing the item afterwards: it is Steam's ledger, not ours, and a
-    /// later `workshop_download_item` re-fetching the item is the behaviour we
-    /// want. Do not "fix" that inconsistency by rewriting the acf.
-    ///
-    /// `steamRoot` is injectable purely so the destructive path can be tested
-    /// against a scratch tree; production always takes the default.
+    /// Removes one Workshop item. Steam's `appworkshop_431960.acf`
+    /// deliberately keeps listing it afterwards — it's Steam's ledger, not
+    /// ours, and a later `workshop_download_item` re-fetching it is the
+    /// wanted behaviour; do not "fix" that by rewriting the acf.
+    /// `steamRoot` is injectable purely so the destructive path can be
+    /// tested against a scratch tree; production always takes the default.
     static func deleteWorkshopItem(
         workshopID: String,
         steamRoot: URL = SteamLibraryPaths.steamRoot()
@@ -127,15 +124,13 @@ enum SteamLibraryWriter {
 
     // MARK: - Descriptor-based traversal
 
-    /// Opens `components` one level at a time from `root`, refusing to follow a
-    /// link at any step, and returns the final directory descriptor.
-    ///
-    /// Path-string checks cannot close this hole: validating a path and then
-    /// handing the same *string* to `removeItem` leaves a window where an
-    /// ancestor is swapped for a link, and every later check faithfully
-    /// describes the attacker's target instead. Once this returns, the fd names
-    /// the directory itself — nothing that happens to the path afterwards can
-    /// redirect the removal.
+    /// Opens `components` one level at a time from `root`, refusing to
+    /// follow a link at any step, and returns the final directory
+    /// descriptor. Path-string checks can't close this hole: validating a
+    /// path then handing the same *string* to `removeItem` leaves a window
+    /// where an ancestor is swapped for a link, so later checks describe
+    /// the attacker's target instead. Once this returns, the fd names the
+    /// directory itself — nothing after can redirect the removal.
     private static func openDirectory(root: URL, components: [String]) throws -> Int32 {
         var fd = open(root.path(percentEncoded: false), O_RDONLY | O_DIRECTORY)
         guard fd >= 0 else { throw WriteError.unexpectedLayout }
@@ -150,13 +145,13 @@ enum SteamLibraryWriter {
         return fd
     }
 
-    /// Reads every entry name **without** consuming the caller's descriptor.
-    ///
-    /// `fdopendir` adopts whatever it is given and `closedir` closes it, so it
-    /// gets a `dup`. An earlier version handed it the caller's own descriptor:
-    /// the recursion below then kept using a closed fd, which silently skipped
-    /// every nested entry — and, if another thread reused the number, would have
-    /// operated relative to an unrelated directory.
+    /// Reads every entry name **without** consuming the caller's
+    /// descriptor: `fdopendir` adopts whatever it's given and `closedir`
+    /// closes it, so it gets a `dup`. An earlier version handed it the
+    /// caller's own descriptor — the recursion below then kept using a
+    /// closed fd, silently skipping every nested entry, and could have
+    /// operated relative to an unrelated directory if another thread reused
+    /// the number.
     private static func listDirectory(fd: Int32) throws -> [String] {
         let copy = dup(fd)
         guard copy >= 0 else { throw WriteError.unexpectedLayout }
@@ -176,11 +171,11 @@ enum SteamLibraryWriter {
         return names
     }
 
-    /// Recursive delete that never re-resolves a path. Every entry is reached
-    /// through its parent's descriptor and unlinked with `unlinkat`, so a
-    /// directory swapped in mid-walk cannot redirect the removal outside.
-    /// Workshop items are shallow; a tree deep enough to exhaust the stack is
-    /// hostile input, not real content, so bound the descent rather than crash.
+    /// Recursive delete that never re-resolves a path: every entry is
+    /// reached through its parent's descriptor and unlinked with
+    /// `unlinkat`, so a swapped directory can't redirect removal outside.
+    /// Workshop items are shallow, so a tree deep enough to exhaust the
+    /// stack is hostile input — bound the descent rather than crash.
     private static let maxTreeDepth = 64
 
     private static func removeTree(parent: Int32, name: String, depth: Int = 0) throws {

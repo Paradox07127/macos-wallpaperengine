@@ -4,11 +4,10 @@ import CoreText
 import Foundation
 import LiveWallpaperProWPE
 
-/// Resolves a text object's typeface once per scene. Shared by the layout pass
-/// (which computes exact block/surface extents) and the coverage-atlas mesh
-/// builder so both see the SAME font — a mismatch would place glyphs using one
-/// typeface's metrics and rasterize another.
-/// Not `@MainActor`: lives inside the renderer's actor isolation.
+/// Resolves a text object's typeface once per scene, shared by the layout pass (which computes
+/// exact block/surface extents) and the coverage-atlas mesh builder so both see the SAME font —
+/// a mismatch would place glyphs using one typeface's metrics and rasterize another. Not
+/// `@MainActor`: lives inside the renderer's actor isolation.
 final class WPETextFontResolver {
     private let resolver: WPEMultiRootResourceResolver
     private var descriptorCache: [String: CTFontDescriptor] = [:]
@@ -35,13 +34,12 @@ final class WPETextFontResolver {
         return CTFontCreateWithName("HelveticaNeue" as CFString, size, nil)
     }
 
-    /// Descriptors carry the file URL, so `CTFontCreateWithFontDescriptor` loads
-    /// the face straight off disk — no `CTFontManagerRegisterFontsForURL`. We
-    /// never look scene faces up by name, and the header states registration is
-    /// what makes a face "participate in font descriptor matching", which is
-    /// exactly the capability we don't use. Registering instead pinned every
-    /// face a scene ever touched in the process font catalogue for the life of
-    /// the process, and nothing here ever unregistered them.
+    /// Descriptors carry the file URL, so `CTFontCreateWithFontDescriptor` loads the face
+    /// straight off disk — no `CTFontManagerRegisterFontsForURL`. We never look scene faces up
+    /// by name, and the header says registration is what makes a face "participate in font
+    /// descriptor matching" — exactly what we don't use. Registering instead pinned every face
+    /// a scene ever touched in the process font catalogue for the process's life; nothing here
+    /// ever unregisters them.
     private func fontDescriptor(forPath path: String) -> CTFontDescriptor? {
         if let cached = descriptorCache[path] { return cached }
         guard let url = try? resolver.resolveExistingFileURL(relativePath: path),

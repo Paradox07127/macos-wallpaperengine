@@ -148,11 +148,9 @@ struct InstalledView: View {
         if model.entries.isEmpty {
             emptyState
         } else {
-            // Read once. `visibleEntries` filters and then ICU-sorts the whole
-            // library on every access, and this body used to reach for it three
-            // times — once for the count, once to test emptiness, once for the
-            // grid — so a single keystroke in the search field paid for it three
-            // times over.
+            // Read once: `visibleEntries` filters and ICU-sorts the whole library on every
+            // access, and this body used to reach for it three times — count, emptiness test,
+            // grid — so a single keystroke in the search field paid for it three times over.
             let visibleEntries = model.visibleEntries
             VStack(spacing: 0) {
                 LibraryFilterBar(

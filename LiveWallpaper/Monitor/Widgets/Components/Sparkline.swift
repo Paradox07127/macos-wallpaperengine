@@ -11,17 +11,12 @@ struct Sparkline: View {
     var guides: [Double] = []
     var lineWidth: CGFloat = 1.6
 
-    /// Paths in one immediate-mode pass instead of a `ZStack` of `Path`s, a
-    /// guide `ForEach` and a gradient — every monitor widget rebuilt that tree on
-    /// its sample tick. `CPUStackChart` in this same folder already draws this way.
-    ///
-    /// The endpoint dot stays a real view: it sits at `x == width`, and its glow
-    /// deliberately spills past the sparkline's own bounds. `Canvas` clips to its
-    /// frame, so drawing it there would shave off half the dot and its shadow.
-    ///
-    /// It reads the size from a `GeometryReader` rather than `onGeometryChange`
-    /// into `@State`: the state round-trip costs a pass, so the dot was missing
-    /// from the first frame the sparkline appeared on.
+    /// Paths in one immediate-mode pass instead of a `ZStack` of `Path`s, a guide `ForEach`, and a gradient — every monitor
+    /// widget rebuilt that tree on its sample tick (`CPUStackChart` here already draws this way). The endpoint dot stays a
+    /// real view at `x == width`, its glow deliberately spilling past the sparkline's bounds — `Canvas` clips to its frame,
+    /// so drawing the dot there would shave off half of it and its shadow. Reads size from a `GeometryReader`, not
+    /// `onGeometryChange` into `@State`: the state round-trip costs a pass, so the dot was missing from the sparkline's first
+    /// frame.
     var body: some View {
         Canvas(opaque: false, rendersAsynchronously: false) { context, size in
             let (lo, hi) = resolvedDomain()
@@ -184,7 +179,9 @@ struct Sparkline: View {
 
         Sparkline(values: [], domain: 0...1)
             .frame(width: 260, height: 40)
-            .overlay(Text("empty").font(Design.captionFont(size: 11))
+            // `verbatim:` or SwiftUI reads the literal as a LocalizedStringKey and the
+            // extractor lands a bogus `empty` key in the catalog, failing coverage.
+            .overlay(Text(verbatim: "empty").font(Design.captionFont(size: 11))
                 .foregroundStyle(Design.inkFaint))
     }
     .padding(24)

@@ -107,12 +107,10 @@ struct NowPlayingWidgetLayout: Equatable {
         // it never carries the component at any setting.
         if hasLyrics, options.showLyrics, !compact { visible.insert(.lyrics) }
 
-        // Same AND rule as every other component, with the pointer as a third
-        // term: the player must be drivable, the user must have left the
-        // switch on, and the pointer must be over the tile. Edit mode is out —
-        // there a click means "grab this layer", and the board's own drag
-        // gesture runs alongside subview gestures, so a button under the
-        // pointer would fire while the user was only trying to move the tile.
+        // Same AND rule as every component, plus the pointer as a third term: drivable, switch on, and pointer
+        // over the tile. Edit mode is out — there a click means "grab this layer", and the board's drag
+        // gesture runs alongside subview gestures, so a button under the pointer would fire while the user was
+        // only trying to move the tile.
         if canControl, options.showControls, hovering, !isEditing { visible.insert(.controls) }
 
         let motion = state.phase == .playing && !reduceMotion
@@ -162,11 +160,10 @@ struct NowPlayingWidgetLayout: Equatable {
         return max(0, value)
     }
 
-    /// Where a landed seek believes the playhead is, until the player says
-    /// otherwise. Spotify does not always announce a scrub, so the draft has to
-    /// keep running on the same wall clock as the real position — and it has to
-    /// yield the moment a report sampled *after* the drag arrives, otherwise a
-    /// track change would keep drawing the old track's offset.
+    /// Where a landed seek believes the playhead is, until the player says otherwise. Spotify doesn't always
+    /// announce a scrub, so the draft keeps running on the same wall clock as the real position — and yields the
+    /// moment a report sampled *after* the drag arrives, or a track change would keep drawing the old track's
+    /// offset.
     struct SeekDraft: Equatable {
         var seconds: Double
         var landedAt: Date
@@ -252,9 +249,9 @@ struct NowPlayingWidgetView: View {
 
     static func styleDisplayName(_ style: Style) -> String {
         switch style {
-        case .poster: return String(localized: "Poster", comment: "Now Playing widget style: typographic poster layer.")
-        case .vinyl: return String(localized: "Vinyl", comment: "Now Playing widget style: spinning record.")
-        case .aurora: return String(localized: "Aurora", comment: "Now Playing widget style: minimal text with a glow.")
+        case .poster: return String(localized: "Poster", bundle: .appLanguage, comment: "Now Playing widget style: typographic poster layer.")
+        case .vinyl: return String(localized: "Vinyl", bundle: .appLanguage, comment: "Now Playing widget style: spinning record.")
+        case .aurora: return String(localized: "Aurora", bundle: .appLanguage, comment: "Now Playing widget style: minimal text with a glow.")
         }
     }
 
@@ -526,21 +523,12 @@ struct NowPlayingWidgetView: View {
 
     // MARK: Transport controls
 
-    /// Hidden until the pointer arrives, so the resting layer stays a piece of
-    /// type rather than a player widget.
-    ///
-    /// An overlay, never a row in the style's stack. Two reasons, both learned
-    /// the hard way: in the flow it reflowed the tile on hover and slid itself
-    /// out from under the click, and on a one-cell-tall tile the stack
-    /// overflowed the widget rect — which is precisely the region the overlay
-    /// window hit-tests, so the buttons were both invisible to the pointer and
-    /// able to cancel their own hover. An overlay inset inside the tile is
-    /// always inside that rect, and hover cannot be lost by walking towards it.
-    ///
-    /// Top-trailing, not centred. All three styles put their progress line at
-    /// the bottom of their content block, and vinyl and aurora centre that
-    /// block vertically — so a centred pill landed exactly on the one control
-    /// the user might want to drag. The top edge is the only corner no style
+    /// Hidden until the pointer arrives, so the resting layer stays type, not a player widget. An overlay, never a stack row —
+    /// two bugs taught this: in-flow it reflowed the tile on hover and slid out from under the click, and on a one-cell-tall tile
+    /// the stack overflowed the widget rect (exactly what the overlay window hit-tests), so buttons were invisible to the pointer
+    /// yet could cancel their own hover; an inset overlay stays inside that rect, so hover can't be lost walking toward it.
+    /// Top-trailing, not centred: all three styles put their progress line at the bottom, and vinyl/aurora centre that block
+    /// vertically, so a centred pill sat on the one control users might want to drag — the top edge is the only corner no style
     /// draws a scrubbable line in.
     @ViewBuilder
     private func transportOverlay(state: MonitorNowPlayingState, in size: CGSize) -> some View {
@@ -554,11 +542,9 @@ struct NowPlayingWidgetView: View {
             }
             .padding(.horizontal, side * 0.3)
             .padding(.vertical, side * 0.16)
-            // One scrim, not two. The buttons used to carry a filled circle
-            // each on top of this capsule, which read as a control panel
-            // dropped onto the layer rather than part of it; a single hairline
-            // glass pill is the same language the rest of the app's floating
-            // chrome uses.
+            // One scrim, not two: the buttons used to carry a filled circle each on top of this capsule, which
+            // read as a control panel dropped onto the layer rather than part of it — a single hairline glass pill
+            // matches the rest of the app's floating chrome.
             .background {
                 Capsule()
                     .fill(.black.opacity(0.28))
@@ -797,11 +783,9 @@ struct NowPlayingWidgetView: View {
         return parts.joined(separator: " — ").uppercased()
     }
 
-    /// Spectrum and progress line share one column, so they start and end on
-    /// the same two pixels; the elapsed/total readout sits beside the pair
-    /// rather than shortening only the line. Before this the bars ran the full
-    /// width of the type block while the line stopped short of the readout,
-    /// and the two looked like unrelated parts.
+    /// Spectrum and progress line share one column, starting and ending on the same two pixels; the elapsed/total
+    /// readout sits beside the pair rather than shortening only the line. Before this the bars ran the full width
+    /// of the type block while the line stopped short of the readout, and the two looked like unrelated parts.
     @ViewBuilder
     private func posterMeter(
         state: MonitorNowPlayingState, eyebrowSize: CGFloat, titleSize: CGFloat
@@ -1071,12 +1055,10 @@ struct NowPlayingWidgetView: View {
 
 // MARK: - Marquee (opt-in horizontal loop for long titles)
 
-/// A title too wide for its tile loops sideways instead of truncating.
-///
-/// Driven by a single repeating SwiftUI animation started on appear — no timer,
-/// and nothing to tear down. The caller only mounts this while motion is
-/// allowed, so reduce-motion, paused and suspended all fall back to the plain
-/// truncating label; a title that already fits never scrolls either.
+/// A title too wide for its tile loops sideways instead of truncating, driven by a single repeating SwiftUI
+/// animation started on appear — no timer, nothing to tear down. The caller only mounts this while motion is
+/// allowed, so reduce-motion, paused, and suspended all fall back to the plain truncating label; a title that
+/// already fits never scrolls either.
 private struct NowPlayingMarqueeText: View {
     let text: String
     let font: Font

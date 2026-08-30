@@ -16,14 +16,11 @@ final class WPEMetalDepthStateCache {
     }
 
     static let memorylessDepthDefaultsKey = "WPEMetalMemorylessDepthEnabled"
-    /// Internal kill-switch, default ON: `.memoryless` (tile-only) depth on Apple
-    /// GPUs saves depth-texture bandwidth/footprint but is precision-sensitive, so
-    /// `defaults write com.loomscreen.pro WPEMetalMemorylessDepthEnabled -bool NO`
-    /// stays as the per-user escape hatch. Suite-first so that write is honoured
-    /// even when the renderer runs in a process whose standard domain isn't the
-    /// app's. Frozen read-once (restart to apply) — this was the last per-frame
-    /// UserDefaults read in the release render loop; no in-app code writes the key
-    /// or expects a live toggle.
+    /// Internal kill-switch, default ON: `.memoryless` (tile-only) depth on Apple GPUs saves
+    /// depth-texture bandwidth/footprint but is precision-sensitive, so
+    /// `defaults write com.loomscreen.pro WPEMetalMemorylessDepthEnabled -bool NO` stays as
+    /// the per-user escape hatch (suite-first so it's honoured even in a process whose
+    /// standard domain isn't the app's). Frozen read-once (restart to apply) — this was the last per-frame UserDefaults read in the release render loop; no in-app code writes or expects a live toggle.
     static let isMemorylessDepthEnabled: Bool = {
         let suite = UserDefaults.appSuite
         if suite.object(forKey: memorylessDepthDefaultsKey) != nil {
@@ -111,15 +108,14 @@ final class WPEMetalDepthStateCache {
 
     static func compareFunction(for raw: String, reversedZ: Bool = false) -> MTLCompareFunction {
         switch raw.lowercased() {
-        // WPE materials express depth testing as a boolean string: every
-        // `depthtest` in the corpus is "enabled" (33) or "disabled" (799), never a
-        // GL compare name. "enabled" means "occlude by depth", so it must map to a
-        // real comparison — the old `default: .always` silently disabled depth
-        // testing while depth WRITE stayed on, so a no-cull mesh (a sphere) drew in
-        // index order (front/back faces interleaved → half the surface "fault"ed)
-        // and a nearer object (three-body stars) was overwritten by a later, farther
-        // one (the skybox). "disabled" correctly keeps `.always`: those passes carry
-        // no depth attachment, so the compare is moot.
+        // WPE materials express depth testing as a boolean string: every `depthtest` in
+        // the corpus is "enabled" (33) or "disabled" (799), never a GL compare name.
+        // "enabled" means "occlude by depth", so it must map to a real comparison — the
+        // old `default: .always` silently disabled depth testing while depth WRITE stayed
+        // on, so a no-cull mesh (sphere) drew in index order (half the surface "fault"ed)
+        // and a nearer object (three-body stars) was overwritten by a farther one (the
+        // skybox). "disabled" correctly keeps `.always`: those passes carry no depth
+        // attachment, so the compare is moot.
         case "enabled", "true":
             return reversedZ ? .greaterEqual : .lessEqual
         case "always", "disabled", "false":

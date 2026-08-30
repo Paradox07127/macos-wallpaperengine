@@ -5,12 +5,9 @@ import Foundation
 /// not a new branch in the fetch path.
 struct NowPlayingArtworkRoute: Sendable {
     enum Strategy: Sendable {
-        /// Ask Spotify for the cover URL, and fall back to resolving one from
-        /// the track ID through oEmbed. The player already knows the answer,
-        /// so the lookup is a round trip spent re-deriving what is sitting in
-        /// its own dictionary — but it only knows it once Automation consent
-        /// exists, and consent is not something a wallpaper layer may demand,
-        /// so oEmbed stays as the path for everyone who has not granted it.
+        /// Ask Spotify for the cover URL, falling back to oEmbed via track ID — a round trip re-deriving
+        /// what the player's own dictionary already has, because that only exists once Automation consent
+        /// is granted, and a wallpaper layer can't demand consent, so oEmbed stays the path until it is.
         case spotifyOEmbed
         /// iTunes Search scored against artist/title/album (no track ID exists).
         case itunesSearch

@@ -279,11 +279,10 @@ struct ClaudeSessionModel {
                 outstandingToolIDs.removeAll { $0 == id }
                 outstandingAskIDs.remove(id)
             } else {
-                // No id to match on. Retire the oldest outstanding call — that is
-                // the authoritative list, and it survives a cursor restore where
-                // the rendered-event arrays start empty. Marking the oldest
-                // unresolved rendered event is best-effort and independent: a call
-                // whose name failed sanitization has no rendered event at all.
+                // No id to match on: retire the oldest outstanding call — that's the authoritative list, and it
+                // survives a cursor restore where the rendered-event arrays start empty. Marking the oldest
+                // unresolved rendered event is best-effort and independent: a call whose name failed sanitization
+                // has no rendered event at all.
                 if let index = recentTools.firstIndex(where: { $0.ok == nil }) {
                     recentTools[index].ok = !result.isError
                 }

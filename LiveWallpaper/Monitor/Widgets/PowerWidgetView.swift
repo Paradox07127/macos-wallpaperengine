@@ -323,11 +323,11 @@ struct MonitorPowerModel {
         var localizedText: String {
             switch self {
             case .lowPower:
-                return String(localized: "Low Power", comment: "Power widget: Low Power Mode is on.")
+                return String(localized: "Low Power", bundle: .appLanguage, comment: "Power widget: Low Power Mode is on.")
             case .thermal(let state):
-                let thermal = String(localized: "Thermal", comment: "Power widget: thermal-pressure chip prefix.")
+                let thermal = String(localized: "Thermal", bundle: .appLanguage, comment: "Power widget: thermal-pressure chip prefix.")
                 let severity = String(localized: String.LocalizationValue(state),
-                                      comment: "Thermal severity word (serious / critical).")
+                                      bundle: .appLanguage, comment: "Thermal severity word (serious / critical).")
                 return "\(thermal) \(severity)"
             }
         }

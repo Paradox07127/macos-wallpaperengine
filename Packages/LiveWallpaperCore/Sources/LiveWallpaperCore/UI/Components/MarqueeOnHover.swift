@@ -35,11 +35,11 @@ public enum MarqueeMetrics {
     }
 }
 
-/// Horizontal sibling of `MarqueeText`, and it borrows that view's central trick:
-/// an invisible base owns the layout while the copy the reader sees rides in an
-/// `overlay`, which never resizes its base. Hanging `fixedSize` on the label
-/// itself instead keeps it clamped to the row's width, so it scrolls the
-/// *truncated* string and the tail stays hidden — which is the bug this replaced.
+/// Horizontal sibling of `MarqueeText`, borrowing its central trick: an
+/// invisible base owns the layout while the copy the reader sees rides in
+/// an `overlay`, which never resizes its base. Hanging `fixedSize` on the
+/// label itself instead keeps it clamped to the row's width, scrolling the
+/// *truncated* string with the tail hidden — the bug this replaced.
 private struct MarqueeOnHover: ViewModifier {
     let truncationMode: Text.TruncationMode
 
@@ -62,11 +62,11 @@ private struct MarqueeOnHover: ViewModifier {
         )
     }
 
-    /// The crawl restarts whenever this changes, not only when scrolling flips:
-    /// resizing the row changes how far the text has to travel while the pointer
-    /// stays put, and an animation still aiming at the old distance would stop
-    /// short of the tail. Rounded to half a point so measurement jitter can't
-    /// restart it every frame.
+    /// The crawl restarts whenever this changes, not only when scrolling
+    /// flips: resizing the row changes how far the text must travel while
+    /// the pointer stays put, and an animation aimed at the old distance
+    /// would stop short. Rounded to half a point so measurement jitter
+    /// can't restart it every frame.
     private var plan: ScrollPlan {
         ScrollPlan(isScrolling: shouldScroll, distance: (overflow * 2).rounded() / 2)
     }
@@ -77,12 +77,11 @@ private struct MarqueeOnHover: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        // At rest this modifier is one truncated `Text`. Every inspector row and
-        // gallery card in the app carries one, so the hidden full-width copy —
-        // a whole second text layout, needed only to decide whether the string
-        // overflows — is mounted while the pointer is here and not before. The
-        // crawl waits `startDelay` before moving, so measuring on hover-in is
-        // in time.
+        // At rest this modifier is one truncated `Text`. Every inspector row
+        // and gallery card carries one, so the hidden full-width copy — a
+        // whole second text layout, needed only to decide overflow — mounts
+        // only while the pointer is here. The crawl waits `startDelay`
+        // before moving, so measuring on hover-in is in time.
         content
             .lineLimit(1)
             .truncationMode(truncationMode)
@@ -151,17 +150,15 @@ private struct MarqueeOnHover: ViewModifier {
 }
 
 public extension View {
-    /// One-line label that reveals its tail by scrolling while the pointer rests
-    /// on it, instead of hiding it behind an ellipsis for good. Falls back to
-    /// plain truncation when it already fits, when the pointer is away, and
-    /// under Reduce Motion — so the ellipsis is still the resting state.
-    ///
-    /// The multi-line card-title equivalent is `MarqueeText`.
-    ///
-    /// Meant for `Text`: while hovered the label is rendered three times — an
-    /// invisible base that owns the width, a hidden full-width copy that
-    /// measures, and the copy the reader sees — so the wrapped view has to be
-    /// cheap and stateless. At rest it is a single truncated label.
+    /// One-line label that reveals its tail by scrolling while the pointer
+    /// rests on it, instead of hiding it behind an ellipsis for good. Falls
+    /// back to plain truncation when it already fits, when the pointer is
+    /// away, and under Reduce Motion — the ellipsis is still the resting
+    /// state. The multi-line card-title equivalent is `MarqueeText`. Meant
+    /// for `Text`: while hovered the label renders three times — an
+    /// invisible base owning the width, a hidden full-width copy that
+    /// measures, and the copy the reader sees — so the wrapped view must be
+    /// cheap and stateless. At rest it's a single truncated label.
     func marqueeOnHover(truncationMode: Text.TruncationMode = .middle) -> some View {
         modifier(MarqueeOnHover(truncationMode: truncationMode))
     }

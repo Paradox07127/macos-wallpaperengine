@@ -2,13 +2,10 @@ import Foundation
 import LiveWallpaperCore
 import Sparkle
 
-/// Owns the one Sparkle updater for the app.
-///
-/// A scheduled check that finds something gets Sparkle's standard alert — its
-/// default behaviour — because the menu bar badge alone is too easy to miss.
-/// The badge is still lit on top of it: `standardUserDriverWillHandleShowingUpdate`
-/// fires whether or not Sparkle handles the presentation, so the About page and
-/// the menu bar stay in sync with what Sparkle found.
+/// Owns the one Sparkle updater for the app. A scheduled check that finds
+/// something gets Sparkle's own alert (default behaviour, since the menu bar
+/// badge alone is easy to miss) — the badge still lights too, because
+/// `standardUserDriverWillHandleShowingUpdate` fires either way, keeping it and the About page in sync.
 @MainActor
 @Observable
 final class SparkleUpdaterController {
@@ -101,11 +98,9 @@ final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
     var onSessionFinished: (() -> Void)?
 
     /// Sparkle 2.9.6 calls the delegate on the main thread — `SPUStandardUserDriver.m`
-    /// asserts `NSThread.isMainThread` at each call site — but that `assert` is
-    /// compiled out of its release build and the guarantee is not written into
-    /// the protocol header, so a version bump could move a callback off. A late
-    /// banner is recoverable; `assumeIsolated` off the main thread traps. The
-    /// failed-check path reaches `standardUserDriverWillFinishUpdateSession`.
+    /// asserts `NSThread.isMainThread` per call site, but that assert is compiled
+    /// out of release builds and absent from the protocol header, so a version bump
+    /// could move a callback off-thread, where `assumeIsolated` traps (unlike a merely-late banner); the failed-check path reaches `standardUserDriverWillFinishUpdateSession`.
     private nonisolated func onMain(_ body: @escaping @MainActor () -> Void) {
         if Thread.isMainThread {
             MainActor.assumeIsolated(body)
@@ -114,11 +109,10 @@ final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
         }
     }
 
-    /// Still true: the menu bar badge below is a gentle reminder, layered on top
-    /// of Sparkle's alert rather than replacing it. Sparkle reads this only to
-    /// decide whether to log its "background app with no gentle reminder" warning
-    /// (`SPUStandardUserDriver.logGentleScheduledUpdateReminderWarningIfNeeded`),
-    /// which would be a false alarm here.
+    /// Still true — the menu bar badge is a gentle reminder layered on top of
+    /// Sparkle's alert, not replacing it. Sparkle reads this flag only to decide
+    /// whether to log its "background app with no gentle reminder" warning
+    /// (`SPUStandardUserDriver.logGentleScheduledUpdateReminderWarningIfNeeded`), which would be a false alarm here.
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
     /// `true` = Sparkle's own default: it puts the update alert on screen for a

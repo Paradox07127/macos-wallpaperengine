@@ -62,12 +62,12 @@ final class SourceAuthorization {
         panel.prompt = String(
             localized: "Grant Access",
             defaultValue: "Grant Access",
-            comment: "Confirm button in the monitor wallpaper's AI-log folder access panel."
+            bundle: .appLanguage, comment: "Confirm button in the monitor wallpaper's AI-log folder access panel."
         )
         panel.message = String(
             localized: "Choose the folder to read agent activity from (read-only, for the monitor wallpaper).",
             defaultValue: "Choose the folder to read agent activity from (read-only, for the monitor wallpaper).",
-            comment: "Explanatory message in the monitor wallpaper's AI-log folder access panel."
+            bundle: .appLanguage, comment: "Explanatory message in the monitor wallpaper's AI-log folder access panel."
         )
 
         let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
@@ -179,16 +179,16 @@ final class SourceAuthorization {
         alert.messageText = String(
             localized: "That's not the expected folder",
             defaultValue: "That's not the expected folder",
-            comment: "Monitor wallpaper AI-log access: title shown when the user grants a folder other than the provider's own root."
+            bundle: .appLanguage, comment: "Monitor wallpaper AI-log access: title shown when the user grants a folder other than the provider's own root."
         )
         alert.informativeText = String(
             localized: "Choose your \(provider.defaultDirectoryName) folder in your home directory. A wider folder can't be granted for the monitor wallpaper.",
-            comment: "Monitor wallpaper AI-log access: explanation shown when the chosen folder is not the provider root; %@ is a folder name like .claude or .codex."
+            bundle: .appLanguage, comment: "Monitor wallpaper AI-log access: explanation shown when the chosen folder is not the provider root; %@ is a folder name like .claude or .codex."
         )
         alert.addButton(withTitle: String(
             localized: "OK",
             defaultValue: "OK",
-            comment: "Dismiss button on the monitor wallpaper wrong-folder alert."
+            bundle: .appLanguage, comment: "Dismiss button on the monitor wallpaper wrong-folder alert."
         ))
         if let window {
             alert.beginSheetModal(for: window, completionHandler: nil)

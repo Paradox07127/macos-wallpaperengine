@@ -20,12 +20,10 @@ protocol WPEDynamicTextureSource: AnyObject {
     /// The scene command buffer was committed: publish the staged frame and
     /// hand the frame it replaced to that buffer's fence.
     func commitStagedFrameWork()
-    /// The scene command buffer was dropped before commit (encode throw,
-    /// `makeCommandBuffer` failure, in-flight budget exhausted, no renderable
-    /// passes): keep the published frame where it is and leave the staged one
-    /// for the next buffer. NOT a drawable miss — a merged present whose
-    /// `nextDrawable` comes back nil still commits the buffer, so the frame
-    /// advances and simply does not reach the screen.
+    /// The scene command buffer was dropped before commit (encode throw, `makeCommandBuffer`
+    /// failure, in-flight budget exhausted, no renderable passes): keep the published frame,
+    /// leave staged for the next buffer. NOT a drawable miss — a merged present whose
+    /// `nextDrawable` comes back nil still commits, so the frame advances but doesn't reach the screen.
     func rollbackStagedFrameWork()
 }
 

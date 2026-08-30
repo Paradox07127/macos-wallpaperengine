@@ -22,14 +22,11 @@ struct WPEStaticTextureReloadThrottle: Equatable, Sendable {
     }
 }
 
-/// LRU bookkeeping for reloadable static source textures. The renderer owns the
-/// actual `MTLTexture` store; this only tracks resident byte estimates and
-/// recency so the frame path can evict inactive textures while protecting the
-/// paths the current frame samples. Eviction policy: frame-driven sweep that
-/// never touches a protected (active this frame) path — see
-/// `evictOverBudget(protecting:)`. Bookkeeping itself lives in the shared
-/// `WPEMetalLRUByteBudget` core (see `WPEMetalStaticLayerCacheLRU` for the
-/// sibling cache with a different — reject-if-oversized — admission policy).
+/// LRU bookkeeping for reloadable static source textures. The renderer owns the actual
+/// `MTLTexture` store; this only tracks resident byte estimates and recency so the frame path
+/// can evict inactive textures while protecting the paths the current frame samples. Eviction
+/// policy: frame-driven sweep that never touches a protected path (`evictOverBudget(protecting:)`).
+/// Bookkeeping lives in the shared `WPEMetalLRUByteBudget` core (see `WPEMetalStaticLayerCacheLRU` for the sibling cache's different — reject-if-oversized — admission policy).
 struct WPEMetalTextureCacheLRU: Equatable, Sendable {
     private var core: WPEMetalLRUByteBudget<String>
 

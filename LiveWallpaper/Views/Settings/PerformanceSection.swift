@@ -116,9 +116,7 @@ extension GeneralSettingsView {
                 icon: "hand.raised",
                 iconColor: .blue,
                 title: "App Exceptions",
-                subtitle: applicationRules.isEmpty
-                    ? "Pause wallpapers while chosen apps are in use"
-                    : "Active for \(applicationRules.count) app\(applicationRules.count == 1 ? "" : "s")"
+                subtitle: appExceptionsSubtitle
             ) {
                 Button("Edit") { showAppExceptions = true }
                     .fixedSize()
@@ -171,11 +169,23 @@ extension GeneralSettingsView {
         }
     }
 
+    // One key per count instead of an interpolated English "s": the shared key
+    // dropped that morpheme mid-sentence in ja/zh, gluing a Latin s onto CJK.
+    private var appExceptionsSubtitle: LocalizedStringKey {
+        if applicationRules.isEmpty {
+            return "Pause wallpapers while chosen apps are in use"
+        }
+        if applicationRules.count == 1 {
+            return "Active for 1 app"
+        }
+        return "Active for \(applicationRules.count) apps"
+    }
+
     /// `150 MB · 300 MB total` (per-screen · total). Off collapses to
     /// "Streaming only" to avoid a misleading "0 MB total".
     private var videoCacheValueLabel: String {
         guard videoCacheBudgetMB > 0 else {
-            return String(localized: "Streaming only", comment: "Video cache budget set to off / stream from disk.")
+            return String(localized: "Streaming only", bundle: .appLanguage, comment: "Video cache budget set to off / stream from disk.")
         }
 
         let perScreenMB = Int(videoCacheBudgetMB)
@@ -184,6 +194,6 @@ extension GeneralSettingsView {
             return "\(perScreenMB) MB"
         }
         let totalMB = perScreenMB * screenCount
-        return String(localized: "\(perScreenMB) MB · \(totalMB) MB total", comment: "Video cache budget subtitle: per-screen budget then the multi-screen total.")
+        return String(localized: "\(perScreenMB) MB · \(totalMB) MB total", bundle: .appLanguage, comment: "Video cache budget subtitle: per-screen budget then the multi-screen total.")
     }
 }

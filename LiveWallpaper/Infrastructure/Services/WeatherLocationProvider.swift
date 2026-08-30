@@ -182,7 +182,7 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
                     displayName: String(
                         localized: "System location",
                         defaultValue: "System location",
-                        comment: "Weather source label for macOS Core Location."
+                        bundle: .appLanguage, comment: "Weather source label for macOS Core Location."
                     ),
                     error: nil,
                     failureKind: nil
@@ -202,7 +202,7 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
                 error: String(
                     localized: "Location unavailable. Allow Location Services or pick Manual in Settings → Weather.",
                     defaultValue: "Location unavailable. Allow Location Services or pick Manual in Settings → Weather.",
-                    comment: "Weather error shown when System location is selected but Core Location did not yield a coordinate and no manual city is set."
+                    bundle: .appLanguage, comment: "Weather error shown when System location is selected but Core Location did not yield a coordinate and no manual city is set."
                 ),
                 failureKind: failureKind
             )
@@ -216,7 +216,7 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
                 error: String(
                     localized: "Manual location not set. Type a city in Settings → Weather.",
                     defaultValue: "Manual location not set. Type a city in Settings → Weather.",
-                    comment: "Weather error shown when Manual source is selected but the user has not typed a city yet."
+                    bundle: .appLanguage, comment: "Weather error shown when Manual source is selected but the user has not typed a city yet."
                 ),
                 failureKind: .unavailable
             )
@@ -354,7 +354,7 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
             resolvedSource: .manual,
             displayName: String(
                 localized: "Manual: \(manual.name)",
-                comment: "Weather source label. The placeholder is the user-selected location name."
+                bundle: .appLanguage, comment: "Weather source label. The placeholder is the user-selected location name."
             ),
             error: nil,
             failureKind: nil

@@ -43,10 +43,12 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "@unchecked Sendable, WPESceneScriptEngineExecutionGuarding",
             in: runtime
         ) == 3)
+        // 14, not 11: the media event handlers gained a bounded synchronous entry
+        // point on all three engines (scene, layer, dynamic-transform).
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(",
             in: runtime
-        ) == 11)
+        ) == 14)
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .setup, admission: .waitUntilDeadline)",
             in: runtime
@@ -55,10 +57,12 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "return runWithBudget(budget, operation: .tick, admission: .failFast)",
             in: runtime
         ) == 3)
+        // Cursor events plus the three media-event entry points; all are fail-fast
+        // because a frame must never wait on a script engine.
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .event, admission: .failFast)",
             in: runtime
-        ) == 1)
+        ) == 4)
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .userProperties, admission: .waitUntilDeadline)",
             in: runtime
@@ -128,13 +132,14 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "                safety.complete()\n                return false",
             in: runtime
         ) == 0)
-        // Only the cursor-event path still refuses an attempt after reserving:
-        // batch ticks reserve inside the worker closure, so a refusal there
-        // releases through the same owner in the `slot.rejectTick` branch.
+        // Only the live event paths (layer cursor, layer media, transform media)
+        // still refuse an attempt after reserving: batch ticks reserve inside the
+        // worker closure, so a refusal there releases through the same owner in
+        // the `slot.rejectTick` branch.
         #expect(RR10ProductionSource.occurrences(
             of: "                asyncExecutionSafety.complete(safety)\n                return false",
             in: runtime
-        ) == 1)
+        ) == 3)
         // The synchronous runner owns its reservation outright and must keep
         // releasing it directly; this pins the two forms apart.
         #expect(RR10ProductionSource.occurrences(

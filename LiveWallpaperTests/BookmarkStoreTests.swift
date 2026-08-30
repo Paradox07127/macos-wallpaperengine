@@ -342,7 +342,10 @@ struct BookmarkStoreTests {
     @Test("defaultLabel: video resolves to bookmark name fallback when unresolvable")
     func defaultLabelVideoFallback() {
         let label = BookmarkStore.defaultLabel(for: .video(bookmarkData: Data()))
-        #expect(label == "Video")
+        // Compared against the same lookup the fallback uses: the label is
+        // user-facing copy and renders in whichever language the app is set to.
+        #expect(label == String(localized: "Video", bundle: .appLanguage))
+        #expect(!label.isEmpty)
     }
 
     @Test("defaultLabel: html .url uses host")
