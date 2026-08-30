@@ -13,6 +13,46 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.6.1] — 2026-08-30
+
+### Added
+
+- Weather effects read live conditions more faithfully: rain is rebuilt as
+  streaks that lean with the wind, a Mist effect gives fog something to draw,
+  and precipitation intensity now scales density. Each behavior has its own
+  toggle on the display's weather card.
+- Desktop overlays got liquid-glass cards, an Apple Music playhead with seek,
+  and shared board history across displays.
+- Onboarding was rebuilt around the real setup order, with appearance and
+  widget styling steps.
+
+### Changed
+
+- "Apply to All Displays" for a weather overlay now copies the wind and
+  intensity toggles too, matching what the confirmation promises.
+- Switching the app language now reaches AppKit surfaces (file pickers, window
+  titles) without a restart.
+- Comment-heavy internals were compressed and dead code removed — about two
+  thousand lines lighter with no behavior change.
+
+### Fixed
+
+- A malformed number, a junk array element, or a null animation track in a
+  downloaded scene could crash the wallpaper agent at load, silently drop the
+  valid parts around it, or drive one axis with another axis's animation. All
+  parsing now saturates, keeps valid siblings, and holds track positions.
+- The overlay master switch stops the Monitor and Now Playing panels again,
+  and particles stay below app windows.
+- A Now Playing overlay opened mid-song could draw transport controls that
+  ignored clicks; a track ending under the pointer could leave the whole
+  desktop swallowing clicks. The window's interactivity now follows the music.
+- Skipping onboarding while a dropped folder was still importing no longer
+  reopens the app on the display page after the import lands.
+- Bug reports scrub wallpaper names before prefilling a GitHub issue: a local
+  file's full path or a token in a Workshop title never leaves the machine.
+- The system-wallpaper extension keeps a republish from dropping the old
+  thumbnail and no longer reports success it didn't have.
+
 ## [0.6.0] — 2026-08-24
 
 ### Changed
