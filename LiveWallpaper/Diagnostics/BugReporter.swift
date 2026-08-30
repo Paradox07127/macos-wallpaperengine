@@ -95,6 +95,14 @@ enum BugReporter {
         }
     }
 
+    /// Wallpaper names cross the process boundary into a GitHub issue: a local
+    /// HTML source's display name can be a full `file://` URL and Workshop
+    /// titles are author-controlled, so both go through the same redactor as
+    /// the log excerpt below them.
+    private static func scrubbedWallpaperNames(_ names: [String]) -> [String] {
+        names.map { LogPrivacyRedactor.scrub(LogPrivacyRedactor.sanitizedTitle($0)) }
+    }
+
     private static func englishMarkdown(snapshot: SystemSnapshot, recentLogLines: [String]) -> String {
         var sections: [String] = []
 
@@ -105,7 +113,7 @@ enum BugReporter {
         - **macOS**: \(snapshot.macOSVersion) (\(snapshot.macOSBuild))
         - **Hardware**: \(snapshot.hardwareModel) · \(snapshot.chip) · \(snapshot.physicalMemoryGiB) GB
         - **Displays**: \(formatDisplays(snapshot.displays, form: .english))
-        - **Active wallpapers**: \(snapshot.activeWallpapers.isEmpty ? "(none)" : snapshot.activeWallpapers.joined(separator: ", "))
+        - **Active wallpapers**: \(snapshot.activeWallpapers.isEmpty ? "(none)" : scrubbedWallpaperNames(snapshot.activeWallpapers).joined(separator: ", "))
         - **Locale**: \(snapshot.localeIdentifier)
         - **Bundle**: `\(snapshot.bundleIdentifier)`
         """)
@@ -153,7 +161,7 @@ enum BugReporter {
         - **macOS**：\(snapshot.macOSVersion)（\(snapshot.macOSBuild)）
         - **硬件**：\(snapshot.hardwareModel) · \(snapshot.chip) · \(snapshot.physicalMemoryGiB) GB
         - **显示器**：\(formatDisplays(snapshot.displays, form: .simplifiedChinese))
-        - **正在播放的壁纸**：\(snapshot.activeWallpapers.isEmpty ? "（无）" : snapshot.activeWallpapers.joined(separator: "、"))
+        - **正在播放的壁纸**：\(snapshot.activeWallpapers.isEmpty ? "（无）" : scrubbedWallpaperNames(snapshot.activeWallpapers).joined(separator: "、"))
         - **语言区域**：\(snapshot.localeIdentifier)
         - **Bundle**：`\(snapshot.bundleIdentifier)`
         """)

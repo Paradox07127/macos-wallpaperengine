@@ -353,7 +353,7 @@ struct WorkshopFilterChip: View {
         .buttonStyle(.plain)
         .help(onIsolate != nil
             ? Text("Click to show/hide · Option-click to show only this")
-            : Text(""))
+            : Text(verbatim: ""))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityValue(isSelected ? Text("Shown") : Text("Hidden"))
     }

@@ -474,3 +474,16 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         return copy
     }
 }
+
+public extension ScreenConfiguration {
+    /// The Weather "Apply to All Displays" copy: exactly the fields the weather
+    /// overlay rides on, nothing else about the target display. Pure so the
+    /// field list is testable without a two-display ScreenManager.
+    mutating func adoptWeatherOverlay(from template: ScreenConfiguration) {
+        particleEffect = template.particleEffect
+        effectConfig.weatherReactive = template.effectConfig.weatherReactive
+        effectConfig.particleDensity = template.effectConfig.particleDensity
+        effectConfig.weatherWind = template.effectConfig.weatherWind
+        effectConfig.weatherIntensity = template.effectConfig.weatherIntensity
+    }
+}

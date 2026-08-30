@@ -98,6 +98,28 @@ struct BugReporterBodyLanguageTests {
         )
     }
 
+    /// The snapshot leaves the process as a GitHub issue body. A local HTML
+    /// wallpaper's display name can be a full `file:///Users/<name>/...` URL and
+    /// a Workshop title is author-controlled, so the active-wallpapers line has
+    /// to pass the same redaction boundary as the log excerpt above it.
+    @Test("Active wallpaper names are scrubbed before they enter the issue body")
+    func activeWallpaperNamesAreScrubbed() {
+        for form in [BugReporter.IssueForm.english, .simplifiedChinese] {
+            let body = BugReporter.formatMarkdown(
+                snapshot: Self.snapshot(activeWallpapers: [
+                    "file:///Users/alice/Documents/secret-project.html",
+                    "Nice Scene ?token=abc123def",
+                ]),
+                recentLogLines: [],
+                form: form
+            )
+            #expect(!body.contains("alice"), "\(form) leaked the user name")
+            #expect(!body.contains("/Users/"), "\(form) leaked a home path")
+            #expect(!body.contains("abc123def"), "\(form) leaked a token")
+            #expect(body.contains("Nice Scene"), "\(form) kept the recognizable part")
+        }
+    }
+
     @Test("The Chinese form gets a Chinese outline")
     func chineseFormGetsChineseBody() {
         let body = BugReporter.formatMarkdown(

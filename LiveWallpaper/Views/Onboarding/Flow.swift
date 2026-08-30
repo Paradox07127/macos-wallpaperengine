@@ -19,6 +19,11 @@ enum OnboardingCompletionDestination: Equatable {
 struct Flow: View {
     @AppStorage("Onboarding.Completed") private var hasCompletedOnboarding: Bool = false
     @State private var index = 0
+    /// One-shot: the first finish wins. "Skip for Now" sits on the chrome, so it
+    /// can close onboarding while a dropped folder's import is still running —
+    /// that import's `didConfigure` then re-fired `finish`, yanking the user
+    /// back to the display page of a setup they had just dismissed.
+    @State private var didFinish = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.featureCatalog) private var featureCatalog
 
@@ -176,6 +181,8 @@ struct Flow: View {
     }
 
     private func finish(_ destination: OnboardingCompletionDestination) {
+        guard !didFinish else { return }
+        didFinish = true
         hasCompletedOnboarding = true
         onClose()
         switch destination {
@@ -189,6 +196,8 @@ struct Flow: View {
     }
 
     private func completeAndClose(opening screenID: CGDirectDisplayID?) {
+        guard !didFinish else { return }
+        didFinish = true
         hasCompletedOnboarding = true
         onClose()
         onFinish(screenID)

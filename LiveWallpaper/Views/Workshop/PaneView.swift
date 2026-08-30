@@ -342,7 +342,7 @@ struct WorkshopPaneHeader: View {
         }
         .help(selectedTab == .browseOnline && services.hasWebAPIKey
             ? Text("Steam doesn't expose remaining quota; this counts only the requests this Mac has issued today.")
-            : Text(""))
+            : Text(verbatim: ""))
     }
 
     private var headerStat: String {
