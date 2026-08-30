@@ -154,9 +154,10 @@ git push origin main
 | [**Pro**][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
 
 <details>
-<summary><b>First launch</b> — one command, needed once</summary>
+<summary><b>First launch</b> — if macOS says the app is damaged</summary>
 
-After dragging the app to Applications, run this once so macOS will open it:
+Nothing here is notarized, so a DMG downloaded by hand is quarantined and macOS
+may refuse to open it. If that happens, run this once:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Loomscreen.app
@@ -168,7 +169,8 @@ For Pro:
 xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
 ```
 
-Updates after that install themselves — no need to repeat this.
+Once is enough — updates Loomscreen installs itself clear the flag, so later
+versions open straight away.
 
 </details>
 
@@ -197,6 +199,10 @@ Requires macOS 14.6+.
   一个包通吃，不要按架构拆成两行（2026-08-30 试过又撤回：同一个链接出现两次看着像贴错）。
   Pro 是 `arm64` 单架构，所以那行只写 Apple Silicon。架构结论以本次发布的 `lipo -archs` 为准，
   别照抄上一版。
+- **首次启动那块是兜底说明，不是必做步骤。** 2026-08-30 实测：Sparkle 2.9.6 会清掉它自己
+  安装的那份的 `com.apple.quarantine`，所以用户执行过一次之后，后续更新都不用再执行。
+  措辞要写成「如果 macOS 拒绝打开」，并说明应用内更新会自己清掉这个标记。但**不能整段删**
+  ——手动下载的 DMG 仍然会被隔离，而且 `release_contract_check.sh` 会断言 appcast 里必须有这条命令。
 - **`</summary>` 后面要空一行**，否则 GitHub 不会渲染 `<details>` 里的 markdown。
 - **一键复制靠的就是围栏代码块** —— GitHub 会自动加复制按钮。Lite 与 Pro 分成两个块，
   各有各的按钮。

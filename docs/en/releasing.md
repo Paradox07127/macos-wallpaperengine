@@ -178,9 +178,10 @@ the very bottom of the file and are shared by both languages.
 | [**Pro**][pro] | Apple Silicon | Video · Web · **Wallpaper Engine scenes** |
 
 <details>
-<summary><b>First launch</b> — one command, needed once</summary>
+<summary><b>First launch</b> — if macOS says the app is damaged</summary>
 
-After dragging the app to Applications, run this once so macOS will open it:
+Nothing here is notarized, so a DMG downloaded by hand is quarantined and macOS
+may refuse to open it. If that happens, run this once:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Loomscreen.app
@@ -192,7 +193,8 @@ For Pro:
 xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
 ```
 
-Updates after that install themselves — no need to repeat this.
+Once is enough — updates Loomscreen installs itself clear the flag, so later
+versions open straight away.
 
 </details>
 
@@ -222,6 +224,12 @@ Details that have bitten before:
   (tried and reverted on 2026-08-30: the same link twice reads as a mistake).
   Pro is `arm64` only, so its row says Apple Silicon. Take the architecture claim
   from this release's `lipo -archs`, not from last release's notes.
+- **The first-launch block is a fallback, not an instruction.** Measured 2026-08-30:
+  Sparkle 2.9.6 clears `com.apple.quarantine` on what it installs, so a user who ran
+  the command once never runs it again across updates. Phrase it as "if macOS refuses
+  to open it", and say the flag is cleared by in-app updates. It cannot be dropped
+  entirely — a hand-downloaded DMG still arrives quarantined, and
+  `release_contract_check.sh` asserts the command is present in the appcast.
 - **Leave a blank line after `</summary>`** or GitHub will not render the markdown
   inside `<details>`.
 - **One-click copy is just a fenced code block** — GitHub adds the copy button.

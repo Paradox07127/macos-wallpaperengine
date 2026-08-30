@@ -8,7 +8,7 @@
     <language>en</language>
     <item>
       <title>Version 0.6.1</title>
-      <pubDate>Sun, 30 Aug 2026 19:21:22 +0000</pubDate>
+      <pubDate>Sun, 30 Aug 2026 19:26:15 +0000</pubDate>
       <sparkle:version>0.6.1</sparkle:version>
       <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
@@ -38,7 +38,7 @@
 <li>"Apply to All Displays" for weather now copies the wind and intensity toggles</li>
 <li>Republishing a system wallpaper kept dropping the old thumbnail</li>
 </ul>
-<p><small>Not notarized — a hand-installed DMG needs <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates installed by Loomscreen Pro clear it for you. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.1">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.1">完整发布说明</a></small></p>
       ]]></description>
       <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.1/Loomscreen-Pro-0.6.1.dmg" type="application/octet-stream" sparkle:edSignature="mnurf1eEFmSN2JJ6XO1bdsF6UTn6BeAy9aVbgYXiXisiKrnBO8ejlZgLvAxQcvDwGL8MqRikpMyI6a+YFMvuDA==" length="9478134" />
     </item>
