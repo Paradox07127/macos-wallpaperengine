@@ -15,6 +15,8 @@ enum WPEPropertyRowIcon {
         case .textinput:   return "character.cursor.ibeam"
         case .file:        return "doc.badge.plus"
         case .directory:   return "folder.badge.plus"
+        case .sceneTexture: return "photo.badge.plus"
+        case .userShortcut: return "lock.shield"
         case .group, .text, .unsupported:
             return "questionmark"
         }

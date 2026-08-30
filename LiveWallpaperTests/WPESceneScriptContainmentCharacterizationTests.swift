@@ -46,7 +46,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(",
             in: runtime
-        ) == 11)
+        ) == 20)
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .setup, admission: .waitUntilDeadline)",
             in: runtime
@@ -59,6 +59,14 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "return runWithBudget(budget, operation: .event, admission: .failFast)",
             in: runtime
         ) == 1)
+        // resizeScreen/destroy/applyGeneralSettings are lifecycle or settings
+        // events for all three live engines. They wait within the same bounded
+        // deadline so a transiently saturated worker cannot silently drop the
+        // event edge.
+        #expect(RR10ProductionSource.occurrences(
+            of: "return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline)",
+            in: runtime
+        ) == 9)
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .userProperties, admission: .waitUntilDeadline)",
             in: runtime

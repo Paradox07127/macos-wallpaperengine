@@ -15,6 +15,20 @@ struct AppLanguagePreferenceTests {
         #expect(AppLanguagePreference.japanese.localeIdentifier == "ja")
     }
 
+    @Test("App UI languages map to official Wallpaper Engine language codes")
+    func wallpaperEngineLanguageCodesFollowTheResolvedUILanguage() {
+        #expect(AppLanguagePreference.english.wallpaperEngineLanguageCode() == "en-us")
+        #expect(AppLanguagePreference.simplifiedChinese.wallpaperEngineLanguageCode() == "zh-chs")
+        #expect(AppLanguagePreference.traditionalChinese.wallpaperEngineLanguageCode() == "zh-cht")
+        #expect(AppLanguagePreference.japanese.wallpaperEngineLanguageCode() == "ja-jp")
+        #expect(AppLanguagePreference.system.wallpaperEngineLanguageCode(
+            preferredLocalization: "zh-Hant"
+        ) == "zh-cht")
+        #expect(AppLanguagePreference.system.wallpaperEngineLanguageCode(
+            preferredLocalization: "de"
+        ) == "en-us")
+    }
+
     @Test("Saved language preference round-trips through an injected domain")
     func savedPreferencePersists() throws {
         let scratch = try TestScratch.defaultsSuite("AppLanguagePreferenceTests.roundTrip")

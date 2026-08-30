@@ -640,6 +640,7 @@ struct WPEMetalShaderDispatcher {
                 ?? pass.pass.binds[slot]
                 ?? pass.pass.textures[slot]
             let texture: MTLTexture?
+            let samplingDescriptor: WPETexSpriteSamplingDescriptor?
             let resolvedReference: WPETextureReference?
             let fallbackToPrimary: Bool
             if let reference {
@@ -656,6 +657,7 @@ struct WPEMetalShaderDispatcher {
                         currentTargetID: destination.id
                     )
                     resolvedReference = reference
+                    samplingDescriptor = executor.textureSamplingDescriptor(for: reference)
                     fallbackToPrimary = false
                 } catch where slot > 0 {
                     let key = "\(pass.pass.id)#\(slot)"
@@ -669,6 +671,10 @@ struct WPEMetalShaderDispatcher {
                     }
                     texture = primary
                     resolvedReference = nil
+                    // Wallpaper Engine's missing auxiliary-slot transform
+                    // fallback is undocumented. Do not infer it from the
+                    // primary texture merely because the Metal slot rebinds it.
+                    samplingDescriptor = nil
                     fallbackToPrimary = true
                 }
             } else if slot == 0 {
@@ -679,10 +685,12 @@ struct WPEMetalShaderDispatcher {
                     currentTargetID: destination.id
                 )
                 resolvedReference = pass.pass.source
+                samplingDescriptor = executor.textureSamplingDescriptor(for: pass.pass.source)
                 fallbackToPrimary = false
             } else {
                 texture = primary
                 resolvedReference = nil
+                samplingDescriptor = nil
                 fallbackToPrimary = true
             }
             if slot == 0, let texture { primary = texture }
@@ -703,7 +711,11 @@ struct WPEMetalShaderDispatcher {
                 executor.customShaderSamplerState(for: texture),
                 index: slot
             )
-            resolvedTexturesBySlot[slot] = texture
+            resolvedTexturesBySlot.set(
+                texture: texture,
+                samplingDescriptor: samplingDescriptor,
+                at: slot
+            )
             #if !LITE_BUILD && DEBUG
             canonicalTextureBindings.append(WPECanonicalTraceRecorder.TextureBindingInput(
                 slot: slot,

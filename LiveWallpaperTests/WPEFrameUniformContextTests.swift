@@ -276,6 +276,113 @@ struct WPEFrameUniformContextTests {
         #expect(slots[0].x == 1.5)
     }
 
+    @Test("Camera view globals beat authored sentinels through translated uniform binding")
+    func cameraViewGlobalsBeatAuthoredValues() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let names = ["g_EyePosition", "g_ViewForward", "g_ViewRight", "g_ViewUp"]
+        let (_, pass) = Self.makePass(
+            id: "camera.priority",
+            uniformValues: Dictionary(
+                uniqueKeysWithValues: names.map { ($0, WPESceneShaderConstantValue.vector([-9, -9, -9])) }
+            )
+        )
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 64, height: 32, auto: true),
+            sceneCamera: WPESceneCamera(
+                center: SIMD3<Double>(7, 8, 8),
+                eye: SIMD3<Double>(7, 8, 9),
+                up: SIMD3<Double>(0, 1, 0),
+                nearZ: 0.01,
+                farZ: 10_000,
+                fov: 50
+            ),
+            usesPerspectiveProjection: true
+        )
+        executor.frameUniformContext = WPEFrameUniformContext(
+            runtimeUniformValues: [:],
+            cameraUniformValues: camera.uniformValues,
+            objectUniformValuesByPassID: [:]
+        )
+        defer { executor.frameUniformContext = .empty }
+
+        let slots = executor.packTranslatedUniforms(
+            for: pass,
+            layout: names.enumerated().map { index, name in
+                Self.slot(name, index, type: "vec3")
+            }
+        )
+        #expect(slots[0] == SIMD4<Float>(7, 8, 9, 0))
+        #expect(slots[1] == SIMD4<Float>(0, 0, -1, 0))
+        #expect(slots[2] == SIMD4<Float>(1, 0, 0, 0))
+        #expect(slots[3] == SIMD4<Float>(0, 1, 0, 0))
+    }
+
+    @Test("Official matrix counterparts bind per pass, beat authored values, and follow the camera")
+    func officialMatrixCounterpartsAreBoundAtObjectScope() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let names = [
+            "g_ModelMatrixInverse",
+            "g_ModelViewProjectionMatrix",
+            "g_ModelViewProjectionMatrixInverse",
+            "g_LayerModelMatrix"
+        ]
+        let sentinel = WPESceneShaderConstantValue.vector([Double](repeating: -9, count: 16))
+        let (_, passA) = Self.makePass(
+            id: "matrix.a",
+            uniformValues: Dictionary(uniqueKeysWithValues: names.map { ($0, sentinel) })
+        )
+        let (_, passB) = Self.makePass(
+            id: "matrix.b",
+            uniformValues: Dictionary(uniqueKeysWithValues: names.map { ($0, sentinel) })
+        )
+        let objectA = WPEMetalObjectUniforms.uniformValues(
+            origin: SIMD3<Double>(2, 3, 4), scale: SIMD3<Double>(2, 1, 1), angles: .zero
+        )
+        let objectB = WPEMetalObjectUniforms.uniformValues(
+            origin: SIMD3<Double>(9, 8, 7), scale: SIMD3<Double>(1, 3, 1), angles: .zero
+        )
+        let cameraA = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 64, height: 32, auto: true),
+            sceneCamera: .defaultCamera
+        )
+        let frameA = WPEFrameUniformContext(
+            runtimeUniformValues: [:],
+            cameraUniformValues: cameraA.uniformValues,
+            objectUniformValuesByPassID: ["matrix.a": objectA, "matrix.b": objectB]
+        )
+        let layout = names.enumerated().map { index, name in
+            Self.slot(name, index * 4, type: "mat4", slotCount: 4)
+        }
+
+        executor.frameUniformContext = frameA
+        let packedA = executor.packTranslatedUniforms(for: passA, layout: layout)
+        let packedB = executor.packTranslatedUniforms(for: passB, layout: layout)
+        #expect(packedA != packedB, "each prepared pass must use its own layer/object matrices")
+        #expect(packedA.allSatisfy { $0 != SIMD4<Float>(repeating: -9) })
+        #expect(frameA.value(named: "g_ModelViewProjectionMatrix", passID: "missing") == nil)
+
+        let cameraB = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 128, height: 64, auto: true),
+            sceneCamera: .defaultCamera
+        )
+        executor.frameUniformContext = WPEFrameUniformContext(
+            runtimeUniformValues: [:],
+            cameraUniformValues: cameraB.uniformValues,
+            objectUniformValuesByPassID: ["matrix.a": objectA]
+        )
+        let packedAfterCameraChange = executor.packTranslatedUniforms(for: passA, layout: layout)
+        #expect(
+            Array(packedAfterCameraChange[4..<8]) != Array(packedA[4..<8]),
+            "MVP must be composed from the current camera, not cached with the object"
+        )
+        // Direct object-only counterparts do not move with the camera.
+        #expect(Array(packedAfterCameraChange[0..<4]) == Array(packedA[0..<4]))
+        #expect(Array(packedAfterCameraChange[12..<16]) == Array(packedA[12..<16]))
+        executor.frameUniformContext = .empty
+    }
+
     // MARK: - Static-pass structure reuse
 
     @Test("A fully static pass is reused without cloning; animated/scripted passes are re-resolved")
@@ -347,6 +454,10 @@ struct WPEFrameUniformContextTests {
         #expect(index["g_time"] == "g_Time")
         #expect(index["g_viewprojectionmatrix"] == "g_ViewProjectionMatrix")
         #expect(index["g_modelmatrix"] == "g_ModelMatrix")
+        #expect(index["g_modelmatrixinverse"] == "g_ModelMatrixInverse")
+        #expect(index["g_modelviewprojectionmatrix"] == "g_ModelViewProjectionMatrix")
+        #expect(index["g_modelviewprojectionmatrixinverse"] == "g_ModelViewProjectionMatrixInverse")
+        #expect(index["g_layermodelmatrix"] == "g_LayerModelMatrix")
         #expect(index["g_audiospectrum64left"] == "g_AudioSpectrum64Left")
         #expect(index["u_notaframeglobal"] == nil)
     }

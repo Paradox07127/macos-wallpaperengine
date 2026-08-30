@@ -10,6 +10,28 @@ public struct WPERenderGraph: Equatable, Sendable {
     }
 }
 
+/// Complete authored JSON that contributed to one render layer.
+///
+/// `sceneObjects` is ordered from the outermost authored ancestor to the
+/// rendered object itself. `imageDescriptor` is the root dictionary loaded
+/// from the object's JSON image/model path (typically `models/*.json`). These
+/// values are preservation-only metadata: their presence does not imply that
+/// unknown fields have a native runtime consumer.
+public struct WPERenderLayerAuthoredJSON: Equatable, Sendable {
+    public let sceneObjects: [WPESceneJSONValue]
+    public let imageDescriptor: WPESceneJSONValue?
+
+    public init(
+        sceneObjects: [WPESceneJSONValue] = [],
+        imageDescriptor: WPESceneJSONValue? = nil
+    ) {
+        self.sceneObjects = sceneObjects
+        self.imageDescriptor = imageDescriptor
+    }
+
+    public static let empty = WPERenderLayerAuthoredJSON()
+}
+
 public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     public var id: String { objectID }
 
@@ -26,6 +48,9 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     public let attachment: String?
     /// Scene `animationlayers` for this object, selecting which puppet MDLA animation(s) play.
     public let animationLayers: [WPESceneAnimationLayer]
+    /// Lossless authored object ancestry and image/model descriptor. Metadata
+    /// only; typed fields below remain the renderer's consumed representation.
+    public let authoredJSON: WPERenderLayerAuthoredJSON
     public let geometry: WPERenderLayerGeometry
     /// Pre-inheritance geometry retained so an attached child can re-derive its placement from the
     /// parent puppet's animated anchor bone. `nil` for layers that need no attachment-following.
@@ -62,6 +87,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         parentObjectID: String? = nil,
         attachment: String? = nil,
         animationLayers: [WPESceneAnimationLayer] = [],
+        authoredJSON: WPERenderLayerAuthoredJSON = .empty,
         geometry: WPERenderLayerGeometry,
         localGeometry: WPERenderLayerGeometry? = nil,
         compositeA: String,
@@ -83,6 +109,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         self.parentObjectID = parentObjectID
         self.attachment = attachment
         self.animationLayers = animationLayers
+        self.authoredJSON = authoredJSON
         self.geometry = geometry
         self.localGeometry = localGeometry
         self.compositeA = compositeA
@@ -265,6 +292,74 @@ public struct WPERenderUserTextureBindings: Equatable, Sendable {
     }
 
     public static let empty = WPERenderUserTextureBindings()
+
+    public var isEmpty: Bool {
+        material.isEmpty && pass.isEmpty && override.isEmpty
+    }
+}
+
+/// Stable authored identity for a pass contributed by an image effect.
+///
+/// `stablePassID` names the effect asset's pass/override locus and remains
+/// stable even when one effect pass expands into multiple renderer passes.
+/// `WPERenderPass.id` remains the concrete render-pass identity.
+public struct WPERenderEffectPassIdentity: Equatable, Sendable {
+    public let stableEffectID: String
+    public let stablePassID: String
+    public let objectID: String
+    public let authoredEffectID: String
+    public let authoredEffectPath: String
+    public let effectPassIndex: Int
+    public let authoredOverrideID: Int?
+
+    public init(
+        objectID: String,
+        authoredEffectID: String,
+        authoredEffectPath: String,
+        effectPassIndex: Int,
+        authoredOverrideID: Int?
+    ) {
+        self.objectID = objectID
+        self.authoredEffectID = authoredEffectID
+        self.authoredEffectPath = authoredEffectPath
+        self.effectPassIndex = effectPassIndex
+        self.authoredOverrideID = authoredOverrideID
+        stableEffectID = "\(objectID):effect:\(authoredEffectID)"
+        stablePassID = "\(objectID):effect:\(authoredEffectID):pass:\(effectPassIndex)"
+    }
+}
+
+/// Complete authored JSON documents that contributed a render pass.
+///
+/// The typed fields on `WPERenderPass` remain the executor's fast path. These
+/// trees preserve every material/effect key and array entry through graph and
+/// prepared-pipeline construction so a future consumer can be added without
+/// first changing the package reader. Presence here is metadata, not proof that
+/// an unsupported field already has equivalent runtime behavior.
+public struct WPERenderPassAuthoredJSON: Equatable, Sendable {
+    public let materialDocument: WPESceneJSONValue?
+    public let materialPass: WPESceneJSONValue?
+    public let effectDocument: WPESceneJSONValue?
+    public let effectPass: WPESceneJSONValue?
+    /// Stable effect/pass identity for diagnostics. Nil for material, command,
+    /// text, and other independently dispatched paths.
+    public let effectIdentity: WPERenderEffectPassIdentity?
+
+    public init(
+        materialDocument: WPESceneJSONValue? = nil,
+        materialPass: WPESceneJSONValue? = nil,
+        effectDocument: WPESceneJSONValue? = nil,
+        effectPass: WPESceneJSONValue? = nil,
+        effectIdentity: WPERenderEffectPassIdentity? = nil
+    ) {
+        self.materialDocument = materialDocument
+        self.materialPass = materialPass
+        self.effectDocument = effectDocument
+        self.effectPass = effectPass
+        self.effectIdentity = effectIdentity
+    }
+
+    public static let empty = WPERenderPassAuthoredJSON()
 }
 
 public struct WPERenderPass: Equatable, Sendable, Identifiable {
@@ -280,6 +375,9 @@ public struct WPERenderPass: Equatable, Sendable, Identifiable {
     /// Metadata-only preservation for material/pass/instance dynamic texture
     /// declarations. Runtime texture-provider consumption is a separate gate.
     public let userTextureBindings: WPERenderUserTextureBindings
+    /// Lossless material/effect documents and pass dictionaries that produced
+    /// this pass. Consumers must still opt into individual fields explicitly.
+    public let authoredJSON: WPERenderPassAuthoredJSON
     public let blending: String
     public let cullMode: String
     public let depthTest: String
@@ -302,6 +400,7 @@ public struct WPERenderPass: Equatable, Sendable, Identifiable {
         constants: [String: WPESceneShaderConstantValue],
         combos: [String: Int],
         userTextureBindings: WPERenderUserTextureBindings = .empty,
+        authoredJSON: WPERenderPassAuthoredJSON = .empty,
         blending: String,
         cullMode: String,
         depthTest: String,
@@ -319,6 +418,7 @@ public struct WPERenderPass: Equatable, Sendable, Identifiable {
         self.constants = constants
         self.combos = combos
         self.userTextureBindings = userTextureBindings
+        self.authoredJSON = authoredJSON
         self.blending = blending
         self.cullMode = cullMode
         self.depthTest = depthTest
@@ -339,6 +439,7 @@ public struct WPERenderPass: Equatable, Sendable, Identifiable {
             constants: constants,
             combos: combos,
             userTextureBindings: userTextureBindings,
+            authoredJSON: authoredJSON,
             blending: blending,
             cullMode: cullMode,
             depthTest: depthTest,
@@ -360,6 +461,7 @@ public struct WPERenderPass: Equatable, Sendable, Identifiable {
             constants: constants,
             combos: combos,
             userTextureBindings: userTextureBindings,
+            authoredJSON: authoredJSON,
             blending: blending,
             cullMode: cullMode,
             depthTest: depthTest,

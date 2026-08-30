@@ -118,6 +118,11 @@ struct WPECameraParallaxSmoother: Equatable, Sendable {
 struct WPEMetalRuntimeUniforms: Equatable, Sendable {
     let time: Double
     let daytime: Double
+    /// Official shader global `g_Frametime`: duration of the current logical
+    /// frame in seconds. The executor derives it from consecutive `g_Time`
+    /// samples so a fail-close re-encode of the same logical frame reuses the
+    /// same delta instead of observing zero.
+    var frameTime: Double
     let brightness: Double
     let pointerPosition: SIMD2<Double>
     /// Defaults to current so a fresh frame reports zero motion.
@@ -130,6 +135,7 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
     static let zero = WPEMetalRuntimeUniforms(
         time: 0,
         daytime: 0,
+        frameTime: 0,
         brightness: 1,
         pointerPosition: SIMD2<Double>(0.5, 0.5)
     )
@@ -137,6 +143,7 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
     init(
         time: Double,
         daytime: Double,
+        frameTime: Double = 0,
         brightness: Double,
         pointerPosition: SIMD2<Double>,
         audioSpectrum: [Double] = [Double](repeating: 0, count: 64)
@@ -145,6 +152,7 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
         self.init(
             time: time,
             daytime: daytime,
+            frameTime: frameTime,
             brightness: brightness,
             pointerPosition: pointerPosition,
             audioSpectrumLeft: mono,
@@ -155,6 +163,7 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
     init(
         time: Double,
         daytime: Double,
+        frameTime: Double = 0,
         brightness: Double,
         pointerPosition: SIMD2<Double>,
         audioSpectrumLeft: [Double],
@@ -162,6 +171,7 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
     ) {
         self.time = time
         self.daytime = daytime
+        self.frameTime = frameTime.isFinite ? max(frameTime, 0) : 0
         self.brightness = brightness
         self.pointerPosition = pointerPosition
         self.pointerPositionLast = pointerPosition
@@ -194,6 +204,7 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
         return [
             "g_Time": .number(time),
             "g_Daytime": .number(daytime),
+            "g_Frametime": .number(frameTime),
             "g_Brightness": .number(brightness),
             "g_PointerPosition": .vector([pointerPosition.x, pointerPosition.y]),
             "g_ParallaxPosition": .vector([parallaxPosition.x, parallaxPosition.y]),
@@ -342,6 +353,15 @@ struct WPEMetalPointerSampler {
 }
 
 struct WPEMetalCameraUniforms: Equatable, Sendable {
+    /// The current renderer uses an identity camera orientation in both
+    /// projection paths: perspective applies only `-eye` translation and the
+    /// orthographic path has no view rotation. These are therefore the exact
+    /// normalized world-space basis vectors of the view matrix, not an inferred
+    /// axis convention from authored metadata that the renderer does not apply.
+    static let viewForward = SIMD3<Double>(0, 0, -1)
+    static let viewRight = SIMD3<Double>(1, 0, 0)
+    static let viewUp = SIMD3<Double>(0, 1, 0)
+
     let renderSize: CGSize
     let viewProjectionMatrix: [Double]
     let usesPerspectiveProjection: Bool
@@ -417,6 +437,10 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
 
     var uniformValues: [String: WPESceneShaderConstantValue] {
         [
+            "g_EyePosition": .vector([sceneCamera.eye.x, sceneCamera.eye.y, sceneCamera.eye.z]),
+            "g_ViewForward": .vector([Self.viewForward.x, Self.viewForward.y, Self.viewForward.z]),
+            "g_ViewRight": .vector([Self.viewRight.x, Self.viewRight.y, Self.viewRight.z]),
+            "g_ViewUp": .vector([Self.viewUp.x, Self.viewUp.y, Self.viewUp.z]),
             "g_ViewProjectionMatrix": .vector(viewProjectionMatrix),
             "g_LightAmbientColor": .vector([lightAmbientColor.x, lightAmbientColor.y, lightAmbientColor.z]),
             "g_LightSkylightColor": .vector([lightSkylightColor.x, lightSkylightColor.y, lightSkylightColor.z]),

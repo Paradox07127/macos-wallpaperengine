@@ -7,6 +7,21 @@ import MetalKit
 import os
 import simd
 
+/// Applies only an explicitly authored Sprite Trail minimum. An absent/null key
+/// leaves the existing projection value untouched because its WPE default still
+/// requires L1 evidence.
+func wpeApplyingAuthoredSpriteTrailMinimum(
+    from renderer: WPEParticleTrailRenderer,
+    to projection: SIMD4<Float>
+) -> SIMD4<Float> {
+    guard renderer.kind == .sprite, let minLength = renderer.minLength else {
+        return projection
+    }
+    var result = projection
+    result.z = Float(minLength)
+    return result
+}
+
 extension WPEMetalRenderExecutor {
     /// One render encoder for particle draws into `output` (`.load`/`.store` so it
     /// composites over the scene so far). Shared across consecutive non-refract
@@ -117,11 +132,18 @@ extension WPEMetalRenderExecutor {
         //     full-screen line. 1× keeps the bare 4:1 drop the team validated, now
         //     correctly oriented.
         if let trail = system.definition.trailRenderer, trail.kind == .sprite {
+            let existingProjection: SIMD4<Float>
             if system.definition.isPerspective {
-                projection.trail = SIMD4<Float>(0, Float(trail.maxLength), 1, 1)
+                existingProjection = SIMD4<Float>(0, Float(trail.maxLength), 1, 1)
             } else {
-                projection.trail = SIMD4<Float>(Float(trail.length), Float(trail.maxLength), 0, 1)
+                existingProjection = SIMD4<Float>(
+                    Float(trail.length), Float(trail.maxLength), 0, 1
+                )
             }
+            projection.trail = wpeApplyingAuthoredSpriteTrailMinimum(
+                from: trail,
+                to: existingProjection
+            )
         }
 
         let useFrameRects = system.frameRectsBuffer != nil

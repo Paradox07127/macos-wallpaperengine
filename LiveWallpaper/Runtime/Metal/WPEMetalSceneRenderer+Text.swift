@@ -301,6 +301,10 @@ extension WPEMetalSceneRenderer {
                         canvasSize: SIMD2<Double>(
                             Double(self.sceneRenderSize.width),
                             Double(self.sceneRenderSize.height)
+                        ),
+                        screenSize: SIMD2<Double>(
+                            max(Double(self.surfaceDrawableSize.width), 1),
+                            max(Double(self.surfaceDrawableSize.height), 1)
                         )
                     )
                 }) else { return }
@@ -364,6 +368,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: adjusted(geometry)!,
             localGeometry: adjusted(localGeometry),
             compositeA: compositeA,

@@ -164,8 +164,16 @@ struct WPEMetalPreparedRenderStateCacheTests {
 
         let reference: [Int: MTLTexture] = [0: textures[0], 3: textures[1], 7: textures[2]]
         let table = WPEMetalTextureSlotTable()
+        let samplingDescriptor = WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.5, 0.1, -0.2, 0.5),
+            translation: SIMD2<Float>(0.25, 0.75)
+        )
         for (slot, texture) in reference {
-            table[slot] = texture
+            table.set(
+                texture: texture,
+                samplingDescriptor: slot == 3 ? samplingDescriptor : nil,
+                at: slot
+            )
         }
 
         // Probe well past the transpiler's ceiling: `g_Texture<N>Resolution`
@@ -175,10 +183,13 @@ struct WPEMetalPreparedRenderStateCacheTests {
             #expect(table[slot] === reference[slot])
         }
         #expect(table.slotCount == WPEShaderTranspiler.customTextureSlotCount)
+        #expect(table.samplingDescriptor(at: 3) == samplingDescriptor)
+        #expect(table.samplingDescriptor(at: 0) == nil)
 
         table.reset()
         for slot in 0..<table.slotCount {
             #expect(table[slot] == nil)
+            #expect(table.samplingDescriptor(at: slot) == nil)
         }
     }
 

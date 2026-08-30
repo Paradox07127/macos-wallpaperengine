@@ -466,6 +466,71 @@ struct WPESceneDocumentParserTests {
         #expect(document.camera.fov == 50)
     }
 
+    @Test("Bottom-most visible camera wins in authored object order")
+    func bottomMostVisibleCameraWins() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0", "eye": "9 9 9", "up": "0 1 0"],
+            "general": ["orthogonalprojection": NSNull(), "fov": 60],
+            "objects": [
+                ["id": 1, "camera": "default", "origin": "0 0 1", "visible": true],
+                ["id": 2, "camera": "default", "origin": "0 0 2", "visible": false],
+                ["id": 3, "camera": "default", "origin": "0 0 3"],
+                ["id": 4, "camera": "default", "origin": "0 0 4", "visible": ["value": false]]
+            ]
+        ]
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload)
+        )
+
+        #expect(document.camera.eye == SIMD3<Double>(0, 0, 3))
+        #expect(document.camera.center == SIMD3<Double>(0, 0, 2))
+    }
+
+    @Test("All hidden camera objects keep the top-level editor camera")
+    func allHiddenCameraObjectsKeepTopLevelCamera() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "1 2 3", "eye": "4 5 6", "up": "0 1 0"],
+            "general": ["orthogonalprojection": NSNull(), "fov": 60],
+            "objects": [
+                ["id": 1, "camera": "default", "origin": "0 0 1", "visible": false],
+                ["id": 2, "camera": "default", "origin": "0 0 2", "visible": ["value": false]]
+            ]
+        ]
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload)
+        )
+
+        #expect(document.camera.eye == SIMD3<Double>(4, 5, 6))
+        #expect(document.camera.center == SIMD3<Double>(1, 2, 3))
+    }
+
+    @Test("Resolved user visibility participates in bottom-most camera selection")
+    func cameraUserVisibilityGateParticipatesInSelection() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0", "eye": "9 9 9", "up": "0 1 0"],
+            "general": ["orthogonalprojection": NSNull(), "fov": 60],
+            "objects": [
+                ["id": 1, "camera": "default", "origin": "0 0 1"],
+                [
+                    "id": 2,
+                    "camera": "default",
+                    "origin": "0 0 2",
+                    "visible": ["user": "secondCamera", "value": false]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+
+        let fallback = try WPESceneDocumentParser.parse(data: data)
+        #expect(fallback.camera.eye == SIMD3<Double>(0, 0, 1))
+
+        let enabled = try WPESceneDocumentParser.parse(
+            data: data,
+            userValues: ["secondCamera": .bool(true)]
+        )
+        #expect(enabled.camera.eye == SIMD3<Double>(0, 0, 2))
+    }
+
     @Test("Text object records parent id and pre-composition local origin")
     func textObjectRecordsParentAndLocalOrigin() throws {
         let payload: [String: Any] = [

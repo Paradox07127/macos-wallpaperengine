@@ -484,6 +484,21 @@ extension WPEMetalSceneRenderer {
         }
     }
 
+    /// The lazy source binds an axis-aligned frame crop. A TEXS frame with
+    /// cross-axis basis terms requires the full atlas plus its authored
+    /// transform; routing it through the cropped representation would discard
+    /// rotation/shear and then falsely report identity to the shader.
+    nonisolated static func shouldUseLazyAnimationRepresentation(
+        _ payload: WPETexStreamingPayload,
+        threshold: Int
+    ) -> Bool {
+        let requiresAtlasSampling = payload.frames.contains { frame in
+            guard let descriptor = frame.samplingDescriptor else { return false }
+            return descriptor.rotation.y != 0 || descriptor.rotation.z != 0
+        }
+        return !requiresAtlasSampling && eagerAnimationGPUBytes(of: payload) > threshold
+    }
+
     private nonisolated static func detectHeavyStreaming(
         _ candidate: String,
         resolver: WPEMultiRootResourceResolver,
@@ -503,7 +518,7 @@ extension WPEMetalSceneRenderer {
             guard let payload = try? resolver.resolveStreamingTexturePayload(relativePath: probe) else {
                 continue
             }
-            if eagerAnimationGPUBytes(of: payload) > threshold {
+            if shouldUseLazyAnimationRepresentation(payload, threshold: threshold) {
                 return true
             }
         }
@@ -793,10 +808,19 @@ extension WPEMetalSceneRenderer {
                 continue
             }
             let gpuBytes = Self.eagerAnimationGPUBytes(of: payload)
-            if gpuBytes <= Self.lazyAnimationRawByteThreshold {
+            if !Self.shouldUseLazyAnimationRepresentation(
+                payload,
+                threshold: Self.lazyAnimationRawByteThreshold
+            ) {
+                let reason = payload.frames.contains { frame in
+                    guard let descriptor = frame.samplingDescriptor else { return false }
+                    return descriptor.rotation.y != 0 || descriptor.rotation.z != 0
+                }
+                    ? "cross-axis TEXS requires eager atlas sampling"
+                    : "gpu=\(gpuBytes)B below threshold"
                 debugStage(
                     "tex.lazy.skip",
-                    "probe=\(probe) gpu=\(gpuBytes)B below threshold"
+                    "probe=\(probe) reason=\(reason)"
                 )
                 continue
             }
@@ -1050,14 +1074,20 @@ extension WPEMetalSceneRenderer {
         // frame published from `init`) are caught here too — they are still
         // staged on the first frame that walks the dictionary.
         var stagedWork: [any WPEDynamicTextureSource] = []
+        var samplingDescriptors: [String: WPETexSpriteSamplingDescriptor] = [:]
+        samplingDescriptors.reserveCapacity(dynamicTextureSources.count)
         for (path, source) in dynamicTextureSources {
             if let texture = source.texture(at: time, frameSlot: frameSlot) {
                 loadedTextures[path] = texture
+                if let descriptor = source.samplingDescriptor(at: time, frameSlot: frameSlot) {
+                    samplingDescriptors[path] = descriptor
+                }
             }
             if source.hasStagedFrameWork {
                 stagedWork.append(source)
             }
         }
+        loadedTextureSamplingDescriptors = samplingDescriptors
         executor.stageTextureWork(stagedWork)
 
         // Skip the active-path walk unless the budget is/was on or a placeholder still awaits reload.
@@ -1094,6 +1124,7 @@ extension WPEMetalSceneRenderer {
         dynamicTextureSources.values.forEach { $0.invalidate() }
         dynamicTextureSources.removeAll()
         loadedTextures.removeAll()
+        loadedTextureSamplingDescriptors.removeAll()
         resetTextureCacheBudgetState()
     }
 

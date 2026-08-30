@@ -183,6 +183,14 @@ extension WPEMetalSceneRenderer {
         textRenderPlans = WPETextRenderPlanner.plans(for: parsedDocument, fonts: textFonts)
         textFontResolver = textFonts
         let document = parsedDocument.appendingImageObjects(textRenderPlans.map(\.imageObject))
+        #if DEBUG
+        shaderImplementationInventory = WPEShaderImplementationInventory.preflightEntries(
+            document: document
+        )
+        WPECanonicalTraceRecorder.shared.recordShaderImplementationInventory(
+            shaderImplementationInventory
+        )
+        #endif
         debugStage("read.entry.done", "imageObjects=\(document.imageObjects.count) particles=\(document.particleObjects.count) text=\(document.textObjects.count) textLayers=\(textRenderPlans.count) sound=\(document.soundObjects.count)")
         let scriptInventory = WPESceneScriptInstanceInventory(document: document)
         if !scriptLoadToken.prepare(scriptInventory) {
@@ -216,6 +224,18 @@ extension WPEMetalSceneRenderer {
             return try builder.build(document: document)
         }.value
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        #if DEBUG
+        let graphShaderImplementationInventory = WPEShaderImplementationInventory.graphEntries(
+            graph: graph
+        )
+        shaderImplementationInventory = WPEShaderImplementationInventory.merging(
+            shaderImplementationInventory,
+            with: graphShaderImplementationInventory
+        )
+        WPECanonicalTraceRecorder.shared.recordShaderImplementationInventory(
+            graphShaderImplementationInventory
+        )
+        #endif
         debugStage("graph.build.done", "layers=\(graph.layers.count)")
         try Task.checkCancellation()
 
@@ -447,6 +467,10 @@ extension WPEMetalSceneRenderer {
             dumpOutputTextureIfRequested(outputTexture)
         }
         didLoad = true
+        // A defaults/locale notification may arrive while load is suspended on
+        // shader/GPU work. Initial delivery used the then-current language;
+        // reconcile once loaded so that race becomes one changed-only event.
+        applySceneScriptGeneralSettingsIfChanged()
         // Steady-state: async unless a per-frame read-back is active or WPEMetalSerializeFrames is set.
         executor.synchronizeFrameCompletion = shouldSynchronizeFrames()
         applyPerformanceProfile(currentProfile)

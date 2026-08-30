@@ -16,6 +16,8 @@ struct WPEMetalObjectUniformsTests {
             angles: SIMD3<Double>(0, 0, 0)
         )
         #expect(values["g_ModelMatrix"]?.vectorValue == [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+        #expect(values["g_ModelMatrixInverse"]?.vectorValue == [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+        #expect(values["g_LayerModelMatrix"]?.vectorValue == values["g_ModelMatrix"]?.vectorValue)
         #expect(values["g_NormalModelMatrix"]?.vectorValue == [1, 0, 0, 0, 1, 0, 0, 0, 1])
     }
 
@@ -56,6 +58,82 @@ struct WPEMetalObjectUniformsTests {
         let normal = try #require(values["g_NormalModelMatrix"]?.vectorValue)
         #expect(normal == [1, 0, 0, 0, 1, 0, 0, 0, 1])
         #expect(normal.allSatisfy { $0.isFinite })
+        let modelInverse = try #require(values["g_ModelMatrixInverse"]?.vectorValue)
+        #expect(modelInverse == [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+        #expect(modelInverse.allSatisfy { $0.isFinite })
+    }
+
+    @Test("MVP counterparts use VP times model and invert the product")
+    func modelViewProjectionCounterpartsAreStrictMath() throws {
+        let object = WPEMetalObjectUniforms.uniformValues(
+            origin: SIMD3<Double>(5, 6, 7),
+            scale: SIMD3<Double>(2, 3, 4),
+            angles: .zero
+        )
+        let model = try #require(object["g_ModelMatrix"])
+        let modelInverseValue = try #require(object["g_ModelMatrixInverse"])
+        let viewProjection = WPESceneShaderConstantValue.vector([
+            10, 0, 0, 0,
+            0, 20, 0, 0,
+            0, 0, 30, 0,
+            0, 0, 0, 1
+        ])
+        let mvpValue = try #require(WPEMetalObjectUniforms.cameraComposedValue(
+            named: "g_ModelViewProjectionMatrix",
+            modelValue: model,
+            viewProjectionValue: viewProjection
+        ))
+        let inverseValue = try #require(WPEMetalObjectUniforms.cameraComposedValue(
+            named: "g_ModelViewProjectionMatrixInverse",
+            modelValue: model,
+            viewProjectionValue: viewProjection
+        ))
+        let mvpValues = try #require(mvpValue.vectorValue)
+        let inverseValues = try #require(inverseValue.vectorValue)
+        let modelValues = try #require(model.vectorValue)
+        let modelInverseValues = try #require(modelInverseValue.vectorValue)
+        let modelMatrix = try #require(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: modelValues))
+        let modelInverse = try #require(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: modelInverseValues))
+        let mvp = try #require(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: mvpValues))
+        let inverse = try #require(WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: inverseValues))
+
+        let local = SIMD4<Double>(1, 1, 1, 1)
+        let world = modelMatrix * local
+        let modelRecovered = modelInverse * world
+        #expect(abs(modelRecovered.x - 1) < 1e-9)
+        #expect(abs(modelRecovered.y - 1) < 1e-9)
+        #expect(abs(modelRecovered.z - 1) < 1e-9)
+        #expect(abs(modelRecovered.w - 1) < 1e-9)
+        let projected = mvp * local
+        #expect(projected == SIMD4<Double>(70, 180, 330, 1))
+        let recovered = inverse * projected
+        #expect(abs(recovered.x - 1) < 1e-9)
+        #expect(abs(recovered.y - 1) < 1e-9)
+        #expect(abs(recovered.z - 1) < 1e-9)
+        #expect(abs(recovered.w - 1) < 1e-9)
+    }
+
+    @Test("A singular MVP inverse falls back to finite identity")
+    func singularModelViewProjectionInverseFallsBackToIdentity() throws {
+        let object = WPEMetalObjectUniforms.uniformValues(
+            origin: .zero,
+            scale: .zero,
+            angles: .zero
+        )
+        let model = try #require(object["g_ModelMatrix"])
+        let inverse = try #require(WPEMetalObjectUniforms.cameraComposedValue(
+            named: "g_ModelViewProjectionMatrixInverse",
+            modelValue: model,
+            viewProjectionValue: .vector([
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+            ])
+        ))
+        let value = try #require(inverse.vectorValue)
+        #expect(value == [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+        #expect(value.allSatisfy { $0.isFinite })
     }
 
     @Test("90° Z rotation maps +X to +Y (column-major sign convention)")
