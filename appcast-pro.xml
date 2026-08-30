@@ -8,16 +8,37 @@
     <language>en</language>
     <item>
       <title>Version 0.6.1</title>
-      <pubDate>Sun, 30 Aug 2026 11:46:12 +0000</pubDate>
+      <pubDate>Sun, 30 Aug 2026 19:21:22 +0000</pubDate>
       <sparkle:version>0.6.1</sparkle:version>
       <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
-<p><strong>Not notarized</strong> — if you installed the DMG by hand, run this once in Terminal:</p>
-<pre>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</pre>
-<p>An update installed by Loomscreen Pro itself clears it for you. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.1">Full release notes</a></p>
-<hr>
-<p><strong>未经苹果公证</strong>——手动安装 DMG 的话，在终端执行一次上面那条命令。自动更新装上的版本已经替你清掉了。<a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.1">完整发布说明</a></p>
+<p><strong>What's New</strong></p>
+<ul>
+<li>Browse the Steam Workshop without a Web API key, with view and favorite counts</li>
+<li>Weather effects: wind-leaning rain streaks, a new Mist effect, intensity-scaled density</li>
+<li>Apple Music playhead with seek, liquid-glass overlay cards, board history shared across displays</li>
+<li>Scene wallpapers respond to now-playing media, including $mediaThumbnail album art</li>
+</ul>
+<p><strong>Improvements</strong></p>
+<ul>
+<li>Workshop setup is one guided flow shared by Settings, onboarding and the Workshop pane</li>
+<li>The Steam Web API key is optional and now stored in the keychain</li>
+<li>SteamCMD recovers by restarting through its own self-update</li>
+<li>WPE parsers survive malformed Workshop content instead of crashing or dropping valid parts of a scene</li>
+<li>Switching the app language reaches file pickers and window titles without a restart</li>
+<li>Bug reports scrub wallpaper names before prefilling a GitHub issue</li>
+</ul>
+<p><strong>Bug Fixes</strong></p>
+<ul>
+<li>Fixed the audio-response bug (#133)</li>
+<li>The overlay master switch reliably stops the Monitor and Now Playing panels</li>
+<li>Particles stay below app windows, and rain falls where it points</li>
+<li>A Now Playing overlay could leave desktop clicks swallowed</li>
+<li>"Apply to All Displays" for weather now copies the wind and intensity toggles</li>
+<li>Republishing a system wallpaper kept dropping the old thumbnail</li>
+</ul>
+<p><small>Not notarized — a hand-installed DMG needs <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates installed by Loomscreen Pro clear it for you. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.1">完整发布说明</a></small></p>
       ]]></description>
       <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.1/Loomscreen-Pro-0.6.1.dmg" type="application/octet-stream" sparkle:edSignature="mnurf1eEFmSN2JJ6XO1bdsF6UTn6BeAy9aVbgYXiXisiKrnBO8ejlZgLvAxQcvDwGL8MqRikpMyI6a+YFMvuDA==" length="9478134" />
     </item>

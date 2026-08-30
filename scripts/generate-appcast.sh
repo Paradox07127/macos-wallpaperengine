@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_SLUG="Paradox07127/macos-wallpaperengine"
 TAG_PREFIX="loomscreen-v"
 
-SKU=""; VERSION=""; DMG=""; BUILD=""; KEY_FILE=""; DERIVED_DATA=""
+SKU=""; VERSION=""; DMG=""; BUILD=""; KEY_FILE=""; DERIVED_DATA=""; NOTES_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sku)         SKU="${2:-}"; shift 2 ;;
@@ -26,6 +26,10 @@ while [[ $# -gt 0 ]]; do
     --ed-key-file) KEY_FILE="${2:-}"; shift 2 ;;
     # release-app.sh builds into its own derivedDataPath, not Xcode's default.
     --derived-data) DERIVED_DATA="${2:-}"; shift 2 ;;
+    # The release notes this version ships with, so the update dialog and the
+    # GitHub release page say the same thing. Optional: without it the dialog
+    # falls back to the quarantine line alone, which is what shipped before 0.6.2.
+    --notes-file)  NOTES_FILE="${2:-}"; shift 2 ;;
     *) echo "ERROR: unknown argument: $1" >&2; exit 64 ;;
   esac
 done
@@ -109,17 +113,41 @@ fi
 
 DMG_NAME="$(basename "$DMG")"
 NOTES_URL="https://github.com/$REPO_SLUG/releases/tag/$TAG_PREFIX$VERSION"
+
+# What changed, lifted from the same notes file the GitHub release body uses, so
+# the two cannot drift. Only the English half (everything before the `---`) and
+# only the three changelog sections: the download table is meaningless inside an
+# updater that is already downloading, and the pane is 565x402 — 10975ac shipped
+# a version whose two-language block opened scrolled past its own first half.
+CHANGELOG_HTML=""
+if [[ -n "$NOTES_FILE" ]]; then
+  [[ -f "$NOTES_FILE" ]] || { echo "ERROR: --notes-file not found: $NOTES_FILE" >&2; exit 66; }
+  CHANGELOG_HTML="$(awk '
+    /^---$/ { exit }                                  # stop at the language separator
+    /^## (What'"'"'s New|Improvements|Bug Fixes)$/ {
+      if (open) { print "</ul>" }
+      sub(/^## /, ""); printf "<p><strong>%s</strong></p>\n<ul>\n", $0
+      open = 1; next
+    }
+    /^## / { if (open) { print "</ul>"; open = 0 } next }   # any other section: drop
+    open && /^- / {
+      sub(/^- /, "")
+      gsub(/&/, "\&amp;"); gsub(/</, "\&lt;"); gsub(/>/, "\&gt;")
+      gsub(/\*\*/, "")                                    # bold markers do not survive as text
+      gsub(/`/, "")
+      printf "<li>%s</li>\n", $0
+    }
+    END { if (open) print "</ul>" }
+  ' "$NOTES_FILE")"
+fi
+
 # Sparkle clears com.apple.quarantine on what it installs (2.9.6 does it in
-# Installer.xpc), but a DMG downloaded by hand from the releases page arrives
-# quarantined and nothing here is notarized. The command therefore rides along in
-# every update's notes instead of living only in a release body someone has to
-# remember to write.
+# Installer.xpc), so this line is only for someone who grabbed the DMG by hand —
+# it stays one line at the bottom rather than leading the dialog. Nothing here is
+# notarized, so it cannot be dropped entirely.
 read -r -d '' DESCRIPTION <<HTML || true
-<p><strong>Not notarized</strong> — if you installed the DMG by hand, run this once in Terminal:</p>
-<pre>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</pre>
-<p>An update installed by $TITLE itself clears it for you. <a href="$NOTES_URL">Full release notes</a></p>
-<hr>
-<p><strong>未经苹果公证</strong>——手动安装 DMG 的话，在终端执行一次上面那条命令。自动更新装上的版本已经替你清掉了。<a href="$NOTES_URL">完整发布说明</a></p>
+$CHANGELOG_HTML
+<p><small>Not notarized — a hand-installed DMG needs <code>xattr -dr com.apple.quarantine "/Applications/$TITLE.app"</code> once; updates installed by $TITLE clear it for you. <a href="$NOTES_URL">Full release notes</a> · <a href="$NOTES_URL">完整发布说明</a></small></p>
 HTML
 
 URL="https://github.com/$REPO_SLUG/releases/download/$TAG_PREFIX$VERSION/$DMG_NAME"
