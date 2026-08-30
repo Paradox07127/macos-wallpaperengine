@@ -627,7 +627,7 @@ public struct WPEParticleEmitterAudioState: Equatable, Sendable {
         guard isEnabled, !spectrum16.isEmpty else { return 1 }
         let maxIndex = spectrum16.count - 1
         func bandIndex(_ value: Double) -> Int {
-            min(max(Int(value.rounded()), 0), maxIndex)
+            min(max(WPEValueParser.saturatingInt(value.rounded()), 0), maxIndex)
         }
         var first = bandIndex(frequencyStart ?? 0)
         var last = bandIndex(frequencyEnd ?? Double(maxIndex))
@@ -971,13 +971,13 @@ public struct WPEParticleDefinition: Equatable, Sendable {
         if countScale == 0 || maxCount == 0 {
             scaledMaxCount = 0
         } else {
-            scaledMaxCount = max(1, Int((Double(maxCount) * countScale).rounded()))
+            scaledMaxCount = max(1, WPEValueParser.saturatingInt((Double(maxCount) * countScale).rounded()))
         }
         let scaledInstantaneous: Int
         if countScale == 0 || instantaneousCount == 0 {
             scaledInstantaneous = 0
         } else {
-            scaledInstantaneous = max(1, Int((Double(instantaneousCount) * countScale).rounded()))
+            scaledInstantaneous = max(1, WPEValueParser.saturatingInt((Double(instantaneousCount) * countScale).rounded()))
         }
         // `speed` override scales emission velocity — including the turbulence
         // seed/wind speeds (the reference renderer multiplies every velocity op).
@@ -1186,7 +1186,7 @@ public enum WPEParticleDefinitionParser {
         let rawComponents = WPEParticleRawComponentBag(sourceJSON: sourceJSON)
 
         let material = json["material"] as? String
-        let childReferences = (json["children"] as? [[String: Any]])?
+        let childReferences = WPEValueParser.objectArray(json["children"])?
             .compactMap { child -> WPEParticleChildReference? in
                 let path: String?
                 if let name = child["name"] as? String, !name.isEmpty {
@@ -1212,7 +1212,7 @@ public enum WPEParticleDefinitionParser {
             } ?? []
         // Absent `renderer` keeps legacy drawable behavior; an explicit empty
         // array marks a simulation-only spawner (renders nothing itself).
-        let rendererEntries = json["renderer"] as? [[String: Any]]
+        let rendererEntries = WPEValueParser.objectArray(json["renderer"])
         let rendersSprite = rendererEntries.map { !$0.isEmpty } ?? true
         // `rope` = ONE ribbon threaded through the whole particle chain (our `buildRopeGeometry`).
         // `ropetrail`/`spritetrail` are NOT that: RenderDoc on 3448877775 shows each particle
@@ -1259,7 +1259,7 @@ public enum WPEParticleDefinitionParser {
         // Typed runtime behavior intentionally remains first-emitter-only. Every
         // emitter is nevertheless retained in `rawComponents.emitters`, making
         // this a visible PARTIAL projection instead of parser data loss.
-        let firstEmitter = (json["emitter"] as? [[String: Any]])?.first
+        let firstEmitter = WPEValueParser.objectArray(json["emitter"])?.first
         if rawComponents.emitters.count > 1 {
             diagnostics.append(.init(
                 severity: .info,
@@ -1368,7 +1368,7 @@ public enum WPEParticleDefinitionParser {
         var angularVelocityMin: SIMD3<Double> = def.angularVelocityMin
         var angularVelocityMax: SIMD3<Double> = def.angularVelocityMax
 
-        if let initializers = json["initializer"] as? [[String: Any]] {
+        if let initializers = WPEValueParser.objectArray(json["initializer"]) {
             for entry in initializers {
                 guard let name = (entry["name"] as? String)?.lowercased() else { continue }
                 switch name {
@@ -1457,9 +1457,9 @@ public enum WPEParticleDefinitionParser {
         // the emitter origin by WPE convention, so a pointer-locked id-0 makes
         // the emitter spawn at the cursor (the "follow" behavior).
         var controlPoints: [WPEParticleControlPoint] = []
-        if let cps = json["controlpoint"] as? [[String: Any]] {
+        if let cps = WPEValueParser.objectArray(json["controlpoint"]) {
             for cp in cps {
-                guard let id = (cp["id"] as? Int) ?? (cp["id"] as? Double).map({ Int($0) }) else { continue }
+                guard let id = (cp["id"] as? Int) ?? (cp["id"] as? Double).map({ WPEValueParser.saturatingInt($0) }) else { continue }
                 let offset = WPEValueParser.vector3(cp["offset"]) ?? SIMD3(0, 0, 0)
                 let flagsRaw = WPEValueParser.int(cp["flags"])
                 controlPoints.append(WPEParticleControlPoint(
@@ -1485,13 +1485,13 @@ public enum WPEParticleDefinitionParser {
         var angularForceZ: Double = 0
         var angularDrag: Double = 0
         var attractors: [WPEParticleControlPointAttractor] = []
-        if let operators = json["operator"] as? [[String: Any]] {
+        if let operators = WPEValueParser.objectArray(json["operator"]) {
             for entry in operators {
                 guard let name = (entry["name"] as? String)?.lowercased() else { continue }
                 switch name {
                 case "controlpointattract":
                     let cpID = (entry["controlpoint"] as? Int)
-                        ?? (entry["controlpoint"] as? Double).map { Int($0) } ?? 0
+                        ?? (entry["controlpoint"] as? Double).map { WPEValueParser.saturatingInt($0) } ?? 0
                     let scale = WPEValueParser.double(entry["scale"]) ?? 0
                     let threshold = WPEValueParser.double(entry["threshold"]) ?? 0
                     if scale != 0, threshold > 0 {
@@ -1704,7 +1704,7 @@ public enum WPEParticleDefinitionParser {
 
     private static func intValue(_ value: Any?) -> Int? {
         if let v = value as? Int { return v }
-        if let v = value as? Double { return Int(v) }
+        if let v = value as? Double { return WPEValueParser.saturatingInt(v) }
         if let v = value as? String { return Int(v) }
         return nil
     }

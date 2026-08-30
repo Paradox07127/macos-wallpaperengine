@@ -121,3 +121,59 @@ struct WPESceneDocumentParserIndexTests {
         #expect(futureField?["weights"]?[2] == .null)
     }
 }
+
+/// One malformed element in an authored array used to fail the whole
+/// `as? [[String: Any]]` cast: every valid sibling silently vanished while
+/// `sourceJSON` kept them all — two truths, and the visible one was empty.
+@Suite("Malformed array elements")
+struct WPESceneMalformedArrayElementTests {
+    private struct NoScriptResolver: WPESceneTransformScriptResolving {
+        func resolveVec3(
+            script: String,
+            properties: [String: WPESceneScriptPropertyValue],
+            seed: SIMD3<Double>
+        ) -> SIMD3<Double>? { nil }
+    }
+
+    @Test("A junk element among scene objects does not erase the valid ones")
+    func junkObjectElementKeepsSiblings() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+            "objects": [
+                [
+                    "id": 100,
+                    "name": "kept",
+                    "image": "models/kept.json",
+                    "origin": "0 0 0",
+                    "visible": true
+                ],
+                0
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let document = try WPESceneDocumentParser.parse(
+            data: data,
+            userValues: [:],
+            makeTransformScriptResolver: { _, _ in NoScriptResolver() }
+        )
+        #expect(document.imageObjects.count == 1,
+                "the valid sibling of a junk element must survive")
+        #expect(document.imageObjects.first?.name == "kept")
+    }
+
+    @Test("A junk element among a particle's control points keeps the parsed ones")
+    func junkControlPointKeepsSiblings() throws {
+        let json: [String: Any] = [
+            "emitter": [["name": "e", "rate": 5]],
+            "controlpoint": [
+                ["id": 0, "offset": "1 2 3", "flags": 1],
+                "junk"
+            ]
+        ]
+        var diagnostics: [WPESceneDiagnostic] = []
+        let definition = WPEParticleDefinitionParser.parse(dictionary: json, diagnostics: &diagnostics)
+        #expect(definition.controlPoints.count == 1)
+        #expect(definition.controlPoints.first?.pointerLocked == true)
+    }
+}

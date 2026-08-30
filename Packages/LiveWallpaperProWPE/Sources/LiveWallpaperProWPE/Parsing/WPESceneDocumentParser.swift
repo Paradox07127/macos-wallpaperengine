@@ -274,8 +274,8 @@ public enum WPESceneDocumentParser {
         )
         let general = parseGeneral(generalDict, authored: rawGeneralDict, diagnostics: &diagnostics)
 
-        let rawObjects: [[String: Any]] = (root["objects"] as? [[String: Any]]) ?? []
-        let authoredObjects: [[String: Any]] = ((json as? [String: Any])?["objects"] as? [[String: Any]])
+        let rawObjects: [[String: Any]] = WPEValueParser.objectArray(root["objects"]) ?? []
+        let authoredObjects: [[String: Any]] = WPEValueParser.objectArray((json as? [String: Any])?["objects"])
             ?? rawObjects
         let authoredCameraObjects = parseAuthoredCameraObjects(authoredObjects)
         // WPE's runtime camera is a scene OBJECT carrying a `camera` key ("default");
@@ -707,7 +707,7 @@ public enum WPESceneDocumentParser {
         guard let root = json as? [String: Any] else {
             return [:]
         }
-        let rawObjects = root["objects"] as? [[String: Any]] ?? []
+        let rawObjects = WPEValueParser.objectArray(root["objects"]) ?? []
         var result: [String: [WPEScenePropertyBinding]] = [:]
 
         func append(
@@ -798,7 +798,7 @@ public enum WPESceneDocumentParser {
                 append(raw: object["material"], target: .objectResource(objectID: objectID, field: "material"), kind: .resource, action: .reload)
                 appendScriptProperties(in: object["visible"], objectID: objectID, role: .layerVisible)
                 appendScriptProperties(in: object["alpha"], objectID: objectID, role: .layerAlpha)
-                if let effects = object["effects"] as? [[String: Any]] {
+                if let effects = WPEValueParser.objectArray(object["effects"]) {
                     for (effectIndex, effect) in effects.enumerated() {
                         let effectIdentifier = effectID(in: effect, fallback: "\(effectIndex)")
                         append(raw: effect["visible"], target: .imageEffect(objectID: objectID, effectID: effectIdentifier), kind: .visible, action: .reload, includeNestedScriptProperties: false)
@@ -808,7 +808,7 @@ public enum WPESceneDocumentParser {
                             role: .effectVisible,
                             subresourceID: effectIdentifier
                         )
-                        if let passes = effect["passes"] as? [[String: Any]] {
+                        if let passes = WPEValueParser.objectArray(effect["passes"]) {
                             for (passIndex, pass) in passes.enumerated() {
                                 let passID = parseInt(pass["id"]) ?? passIndex
                                 forEachShaderConstant(in: pass["constantshadervalues"]) { name, raw in

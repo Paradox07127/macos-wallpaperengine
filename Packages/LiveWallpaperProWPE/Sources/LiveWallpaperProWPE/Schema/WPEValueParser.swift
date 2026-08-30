@@ -126,11 +126,19 @@ public enum WPEValueParser {
             return (key, index)
         }.sorted { $0.index < $1.index }
 
-        return trackKeys.compactMap { key in
-            guard let rawFrames = animationDict[key.name] as? [Any] else {
-                return nil
-            }
-            let frames = rawFrames.compactMap { raw -> WPESceneAnimationKeyframe? in
+        // Tracks are positional (c0 = x, c1 = y, …), so a track that fails to
+        // parse — `"c0": null`, not an array, no valid keyframes — must hold its
+        // slot as an empty track (the sampler falls back per component) rather
+        // than be dropped: compacting shifted c1 into slot 0 and drove x with
+        // the y animation. Index gaps are filled for the same reason. 64 caps a
+        // hostile "c999999999" from allocating a giant array.
+        guard let maxIndex = trackKeys.last?.index, maxIndex < 64 else {
+            return trackKeys.isEmpty ? [] : animationDict.keys.contains("c0") ? [[]] : []
+        }
+        var tracks = [[WPESceneAnimationKeyframe]](repeating: [], count: maxIndex + 1)
+        for key in trackKeys {
+            guard let rawFrames = animationDict[key.name] as? [Any] else { continue }
+            tracks[key.index] = rawFrames.compactMap { raw -> WPESceneAnimationKeyframe? in
                 guard let dict = raw as? [String: Any],
                       let frame = double(dict["frame"], boolAsNumber: boolAsNumber),
                       let value = double(dict["value"], boolAsNumber: boolAsNumber) else {
@@ -145,8 +153,10 @@ public enum WPEValueParser {
                     back: authoredJSONField(in: dict, key: "back", parse: animationTangent)
                 )
             }
-            return frames.isEmpty ? nil : frames
         }
+        // All-empty means nothing parsed at all — keep the old "no animation"
+        // answer so `animatedValue` still rejects the document.
+        return tracks.allSatisfy(\.isEmpty) ? [] : tracks
     }
 
     private static func animationEvents(_ raw: Any) -> [WPESceneAnimationEvent]? {
@@ -218,11 +228,14 @@ public enum WPEValueParser {
             return SIMD3<Double>(values[0], values[1], z)
         }
         if let dict = raw as? [String: Any] {
-            let x = double(dict["x"], boolAsNumber: boolAsNumber) ?? 0
-            let y = double(dict["y"], boolAsNumber: boolAsNumber) ?? 0
-            let z = double(dict["z"], boolAsNumber: boolAsNumber) ?? 0
-            if x == 0 && y == 0 && z == 0 { return nil }
-            return SIMD3<Double>(x, y, z)
+            let x = double(dict["x"], boolAsNumber: boolAsNumber)
+            let y = double(dict["y"], boolAsNumber: boolAsNumber)
+            let z = double(dict["z"], boolAsNumber: boolAsNumber)
+            // No axis key at all is "not a vector"; an authored {"x":0,"y":0,"z":0}
+            // is a real zero — the old all-zero test conflated the two and marked
+            // the zero vector unparsed while the string "0 0 0" parsed fine.
+            if x == nil, y == nil, z == nil { return nil }
+            return SIMD3<Double>(x ?? 0, y ?? 0, z ?? 0)
         }
         return nil
     }
@@ -247,6 +260,16 @@ public enum WPEValueParser {
             return Double(string)
         }
         return nil
+    }
+
+    /// An authored array with one malformed element: `as? [[String: Any]]` fails
+    /// the WHOLE cast, silently erasing every valid sibling while `sourceJSON`
+    /// keeps them all — two truths, and the rendered one empty. Per-element
+    /// compaction keeps what parses; nil only when the value is not an array.
+    public static func objectArray(_ raw: Any?) -> [[String: Any]]? {
+        if let exact = raw as? [[String: Any]] { return exact }
+        guard let array = raw as? [Any] else { return nil }
+        return array.compactMap { $0 as? [String: Any] }
     }
 
     public static func int(_ raw: Any?, boolAsNumber: Bool = false) -> Int? {
