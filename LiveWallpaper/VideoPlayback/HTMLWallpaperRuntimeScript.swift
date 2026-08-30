@@ -1265,6 +1265,19 @@ enum HTMLWallpaperRuntimeScript {
                 document.documentElement.classList.toggle('__lw-suspended__', paused);
             }
 
+            // Wallpaper Engine's public web-wallpaper lifecycle callback. Keep
+            // this separate from the host's suspension mechanics so a page
+            // callback cannot prevent timers, rAF, workers, or audio from being
+            // parked/restored.
+            function notifyWallpaperPropertyListenerPaused(paused) {
+                try {
+                    var listener = window.wallpaperPropertyListener;
+                    if (listener && typeof listener.setPaused === 'function') {
+                        listener.setPaused(!!paused);
+                    }
+                } catch (e) {}
+            }
+
             function collectGPUCanvasContexts() {
                 gpuCanvasContexts = [];
                 try {
@@ -1317,6 +1330,7 @@ enum HTMLWallpaperRuntimeScript {
                     window.__lwSuspendAudioContexts__();
                 }
                 if (aggressive) releaseGPUCanvasContexts();
+                notifyWallpaperPropertyListenerPaused(true);
             };
 
             window.__lwResume__ = function () {
@@ -1336,6 +1350,7 @@ enum HTMLWallpaperRuntimeScript {
                 // Ratio 1 still reconciles so a pre-suspend throttle wrapper is cleared.
                 installRafThrottle(rafThrottleRatio);
                 installRafTargetInterval(rafTargetIntervalMs);
+                notifyWallpaperPropertyListenerPaused(false);
             };
 
             window.__lwSetRafThrottle__ = function (ratio) {

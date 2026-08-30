@@ -22,8 +22,17 @@ extension WPEMetalRenderExecutor {
     struct UniformResolutionPlan {
         /// `g_TexelSize` is scene-level; falls through when scene size is degenerate.
         let isTexelSize: Bool
+        /// Official half-pixel reciprocal, derived from the same render-pixel
+        /// dimensions as `g_TexelSize`.
+        let isTexelSizeHalf: Bool
+        /// Official `(width, height, width / height)` render-pixel tuple.
+        let isScreen: Bool
         /// `g_Texture<N>Resolution` → N. Falls through when slot N is unbound.
         let textureResolutionSlot: Int?
+        /// Official TEXS globals exist only for sampler slots 0...7. They are
+        /// terminal only when this exact binding carries a frame descriptor.
+        let textureRotationSlot: Int?
+        let textureTranslationSlot: Int?
         let steps: [UniformResolutionStep]
         let defaultValue: WPESceneShaderConstantValue?
     }
@@ -106,7 +115,11 @@ extension WPEMetalRenderExecutor {
 
         return UniformResolutionPlan(
             isTexelSize: uniform.name == Self.texelSizeUniformName,
+            isTexelSizeHalf: uniform.name == Self.texelSizeHalfUniformName,
+            isScreen: uniform.name == Self.screenUniformName,
             textureResolutionSlot: Self.textureResolutionSlotIndex(for: uniform.name),
+            textureRotationSlot: Self.textureRotationSlotIndex(for: uniform.name),
+            textureTranslationSlot: Self.textureTranslationSlotIndex(for: uniform.name),
             steps: steps,
             defaultValue: uniform.defaultValue
         )
@@ -128,9 +141,39 @@ extension WPEMetalRenderExecutor {
            ) {
             return value
         }
+        if plan.isTexelSizeHalf,
+           let value = Self.texelSizeHalfValue(
+               named: Self.texelSizeHalfUniformName,
+               sceneSize: currentScenePixelSize
+           ) {
+            return value
+        }
+        if plan.isScreen,
+           let value = Self.screenValue(
+               named: Self.screenUniformName,
+               sceneSize: currentScenePixelSize
+           ) {
+            return value
+        }
         if let slot = plan.textureResolutionSlot,
            let texture = texturesBySlot?[slot] {
             return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).shaderValue
+        }
+        if let slot = plan.textureRotationSlot,
+           let descriptor = texturesBySlot?.samplingDescriptor(at: slot) {
+            return .vector([
+                Double(descriptor.rotation.x),
+                Double(descriptor.rotation.y),
+                Double(descriptor.rotation.z),
+                Double(descriptor.rotation.w)
+            ])
+        }
+        if let slot = plan.textureTranslationSlot,
+           let descriptor = texturesBySlot?.samplingDescriptor(at: slot) {
+            return .vector([
+                Double(descriptor.translation.x),
+                Double(descriptor.translation.y)
+            ])
         }
         WPEFrameOccupancyMeter.count(.uniformSlotResolved)
         for step in plan.steps {

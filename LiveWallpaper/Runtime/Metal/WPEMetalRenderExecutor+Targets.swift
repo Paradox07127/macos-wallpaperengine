@@ -33,6 +33,7 @@ extension WPEMetalRenderExecutor {
 
     func releaseTransientResources() {
         releaseRenderScaleDependentResources()
+        resetShaderFrameTime()
         // Clip-role detection + activation diagnostics are keyed by objectID, which a reload can reuse
         // for a different puppet/material/animation, so drop them when the graph is rebuilt.
         puppetClipPairsCache.removeAll()

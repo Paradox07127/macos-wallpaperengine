@@ -49,6 +49,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         var width = 0
         var height = 0
         var lastUploadedFrameIndex = -1
+        var samplingDescriptor: WPETexSpriteSamplingDescriptor?
     }
 
     /// One upload target per admitted frame — replace(region:) must not overwrite in-flight samples.
@@ -191,6 +192,15 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
                 )
             }
             workingTextureSlots[frameSlot].lastUploadedFrameIndex = index
+            // This source binds a frame-sized crop, not the authored atlas.
+            // Applying the atlas-space descriptor again would double-crop.
+            // Identity/zero is the exact transform for this axis-aligned bound
+            // representation, and is produced only when the TEXS frame carried
+            // a descriptor. Cross-axis TEXS is routed to the eager atlas source
+            // before construction (`shouldUseLazyAnimationRepresentation`).
+            workingTextureSlots[frameSlot].samplingDescriptor = frame.samplingDescriptor == nil
+                ? nil
+                : .identity
             return texture
         } catch {
             let message = "\(error)"
@@ -200,6 +210,14 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
             }
             return workingTextureSlots[frameSlot].texture
         }
+    }
+
+    func samplingDescriptor(
+        at _: TimeInterval,
+        frameSlot: Int
+    ) -> WPETexSpriteSamplingDescriptor? {
+        guard workingTextureSlots.indices.contains(frameSlot) else { return nil }
+        return workingTextureSlots[frameSlot].samplingDescriptor
     }
 
     func frameIndex(at time: TimeInterval) -> Int {

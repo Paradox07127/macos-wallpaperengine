@@ -2806,6 +2806,43 @@ struct WPEParticleSystemTests {
         #expect(alpha(upTo: 9.5) < 0.1, "nearly gone by the end of life")
     }
 
+    @Test("spritetrail consumes authored minlength without inventing a missing default")
+    func spriteTrailAuthoredMinimumLength() throws {
+        func parsed(_ json: String) throws -> (WPEParticleDefinition, WPEParticleTrailRenderer) {
+            let definition = try #require(WPEParticleDefinitionParser.parse(
+                data: Data("{\"renderer\":[\(json)]}".utf8)
+            ))
+            return (definition, try #require(definition.trailRenderer))
+        }
+
+        let (missingDefinition, missing) = try parsed(#"{"name":"spritetrail"}"#)
+        #expect(missing.minLength == nil)
+        #expect(missingDefinition.rawComponents.renderers[0]["minlength"] == nil)
+        let (nullDefinition, null) = try parsed(#"{"name":"spritetrail","minlength":null}"#)
+        #expect(null.minLength == nil)
+        #expect(nullDefinition.rawComponents.renderers[0]["minlength"] == .null)
+        let sentinel = SIMD4<Float>(0.05, 10, 37, 1)
+        #expect(wpeApplyingAuthoredSpriteTrailMinimum(from: missing, to: sentinel) == sentinel)
+        #expect(wpeApplyingAuthoredSpriteTrailMinimum(from: null, to: sentinel) == sentinel)
+
+        let (zeroDefinition, explicitZero) = try parsed(#"{"name":"spritetrail","minlength":0}"#)
+        #expect(explicitZero.minLength == 0)
+        #expect(zeroDefinition.rawComponents.renderers[0]["minlength"] == .number(0))
+        #expect(wpeApplyingAuthoredSpriteTrailMinimum(from: explicitZero, to: sentinel).z == 0)
+
+        // Workshop 3713073223 authors `minlength: 1` in two Sprite Trail renderers.
+        let (_, authored) = try parsed(#"{"name":"spritetrail","minlength":1}"#)
+        #expect(authored.minLength == 1)
+        #expect(wpeApplyingAuthoredSpriteTrailMinimum(from: authored, to: sentinel).z == 1)
+
+        let (_, rope) = try parsed(#"{"name":"ropetrail","minlength":9}"#)
+        #expect(rope.minLength == 9, "typed authored metadata remains lossless")
+        #expect(
+            wpeApplyingAuthoredSpriteTrailMinimum(from: rope, to: sentinel) == sentinel,
+            "rope-trail history ribbons must not consume Sprite Trail minlength"
+        )
+    }
+
     // MARK: - ropetrail per-particle history ribbon (scene 3413921910 meteors)
 
     /// Far from the world origin so a ribbon that failed to seed its history would
@@ -3157,6 +3194,105 @@ struct WPEParticleSystemTests {
         #expect(!children[1].rollsProbabilityPerEvent, "static rolls once")
         #expect(children[2].rollsProbabilityPerEvent, "eventdeath")
         #expect(!children[3].rollsProbabilityPerEvent, "no type ⇒ static")
+    }
+
+    @Test("Legacy child flags bit 2 selects event-follow only when type is absent")
+    func legacyChildFlagsSelectEventFollow() throws {
+        let json = #"""
+        {
+            "children": [
+                {"name": "legacy.json", "flags": 2},
+                {"name": "explicit-static.json", "flags": 2, "type": "static"},
+                {"name": "explicit-event.json", "flags": 0, "type": "eventdeath"}
+            ]
+        }
+        """#
+        let children = try #require(
+            WPEParticleDefinitionParser.parse(data: Data(json.utf8))
+        ).childReferences
+
+        #expect(children.map(\.flagsRaw) == [2, 2, 0])
+        #expect(children[0].isEventFollow)
+        #expect(children[0].rollsProbabilityPerEvent)
+        #expect(!children[1].isEventFollow, "an authored type wins over the legacy flag")
+        #expect(!children[1].rollsProbabilityPerEvent)
+        #expect(!children[2].isEventFollow)
+        #expect(children[2].rollsProbabilityPerEvent)
+    }
+
+    @Test("Nested child transforms scale descendant offsets before composing scale")
+    func nestedChildTransformComposition() {
+        let child = WPEParticleChildReference(
+            relativePath: "child.json",
+            originOffset: SIMD3<Double>(10, 20, 3),
+            scale: SIMD3<Double>(2, 3, 4)
+        )
+        let grandchild = WPEParticleChildReference(
+            relativePath: "grandchild.json",
+            originOffset: SIMD3<Double>(4, 5, 2),
+            scale: SIMD3<Double>(0.5, 2, 0.25)
+        )
+
+        let composed = WPEParticleChildTransform.identity
+            .appending(child)
+            .appending(grandchild)
+
+        #expect(composed.origin == SIMD3<Double>(18, 35, 11))
+        #expect(composed.scale == SIMD3<Double>(1, 6, 1))
+    }
+
+    @Test("Child scale reaches spawn position and sprite size without changing root semantics")
+    func childScaleIsConsumedByRuntime() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let definition = WPEParticleDefinition(
+            materialRelativePath: nil,
+            maxCount: 1,
+            rate: 0,
+            instantaneousCount: 1,
+            startDelay: 0,
+            lifetimeMin: 10,
+            lifetimeMax: 10,
+            sizeMin: 10,
+            sizeMax: 10,
+            originOffset: SIMD3<Double>(1, 2, 0),
+            dispersalMin: .zero,
+            dispersalMax: .zero,
+            velocityMin: .zero,
+            velocityMax: .zero,
+            colorMin: SIMD3<Double>(255, 255, 255),
+            colorMax: SIMD3<Double>(255, 255, 255),
+            fadeInSeconds: 0
+        )
+        let scale = SIMD3<Float>(2, 4, 1)
+        let transform = WPEParticleSceneTransform(
+            sceneSize: SIMD2<Float>(200, 200),
+            objectOrigin: SIMD3<Float>(100, 100, 0),
+            objectScale: SIMD3<Float>(repeating: 1),
+            objectAngleZ: 0,
+            childOrigin: SIMD3<Float>(10, 20, 0),
+            childScale: scale
+        )
+        let system = try #require(WPEParticleSystem(
+            definition: definition,
+            device: device,
+            sceneTransform: transform,
+            childScale: scale,
+            seed: 0xC11D_5CA1E
+        ))
+        system.isNestedChildSystem = true
+
+        system.tick(now: 0)
+
+        #expect(system.liveInstanceCount == 1)
+        let instance = system.instanceBuffer.contents()
+            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0]
+        // Child origin is translated in root-local space; the emitter's own
+        // origin is then scaled by the child transform: (10,20) + (2,4)*(1,2).
+        #expect(abs(instance.positionAndSize.x - 12) < 0.0001)
+        #expect(abs(instance.positionAndSize.y - 28) < 0.0001)
+        // Particle quads carry one scalar size, so match the existing scene-object
+        // rule: mean(abs(scale.x), abs(scale.y)) = 3.
+        #expect(abs(instance.positionAndSize.w - 30) < 0.0001)
     }
 
     @Test("eventfollow probability is rolled per parent event, not once per system")

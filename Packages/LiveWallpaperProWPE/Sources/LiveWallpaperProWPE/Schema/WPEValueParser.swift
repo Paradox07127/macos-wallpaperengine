@@ -104,7 +104,10 @@ public enum WPEValueParser {
                 fps: double(options["fps"], boolAsNumber: boolAsNumber) ?? 30,
                 length: double(options["length"], boolAsNumber: boolAsNumber) ?? 0,
                 mode: (options["mode"] as? String) ?? "single",
-                wrapLoop: bool(options["wraploop"]) ?? false
+                wrapLoop: bool(options["wraploop"]) ?? false,
+                name: authoredJSONField(in: options, key: "name") { $0 as? String },
+                startPaused: authoredJSONField(in: options, key: "startpaused", parse: strictBool),
+                events: authoredJSONField(in: options, key: "events", parse: animationEvents)
             ),
             scalarFallback: scalarFallback,
             vectorFallback: vectorFallback
@@ -133,10 +136,55 @@ public enum WPEValueParser {
                       let value = double(dict["value"], boolAsNumber: boolAsNumber) else {
                     return nil
                 }
-                return WPESceneAnimationKeyframe(frame: frame, value: value)
+                return WPESceneAnimationKeyframe(
+                    frame: frame,
+                    value: value,
+                    lockAngle: authoredJSONField(in: dict, key: "lockangle", parse: strictBool),
+                    lockLength: authoredJSONField(in: dict, key: "locklength", parse: strictBool),
+                    front: authoredJSONField(in: dict, key: "front", parse: animationTangent),
+                    back: authoredJSONField(in: dict, key: "back", parse: animationTangent)
+                )
             }
             return frames.isEmpty ? nil : frames
         }
+    }
+
+    private static func animationEvents(_ raw: Any) -> [WPESceneAnimationEvent]? {
+        guard let entries = raw as? [Any] else { return nil }
+        var events: [WPESceneAnimationEvent] = []
+        events.reserveCapacity(entries.count)
+        for entry in entries {
+            guard let dict = entry as? [String: Any] else { return nil }
+            events.append(WPESceneAnimationEvent(
+                name: authoredJSONField(in: dict, key: "name") { $0 as? String },
+                frame: authoredJSONField(in: dict, key: "frame") { double($0) }
+            ))
+        }
+        return events
+    }
+
+    private static func animationTangent(_ raw: Any) -> WPESceneAnimationTangent? {
+        guard let dict = raw as? [String: Any] else { return nil }
+        return WPESceneAnimationTangent(
+            enabled: authoredJSONField(in: dict, key: "enabled", parse: strictBool),
+            x: authoredJSONField(in: dict, key: "x") { double($0) },
+            y: authoredJSONField(in: dict, key: "y") { double($0) },
+            magic: dict.keys.contains("magic") ? dict["magic"].flatMap(WPESceneJSONValue.init(jsonValue:)) : nil
+        )
+    }
+
+    /// `nil` means the key was absent. A present null, a value of the expected
+    /// type, and a present unexpected JSON shape remain independently observable.
+    private static func authoredJSONField<Value: Equatable & Sendable>(
+        in dict: [String: Any],
+        key: String,
+        parse: (Any) -> Value?
+    ) -> WPESceneAuthoredJSONField<Value>? {
+        guard dict.keys.contains(key), let raw = dict[key] else { return nil }
+        if raw is NSNull { return .null }
+        if let value = parse(raw) { return .value(value) }
+        guard let preserved = WPESceneJSONValue(jsonValue: raw) else { return nil }
+        return .unparsed(preserved)
     }
 
     public static func numberVector(

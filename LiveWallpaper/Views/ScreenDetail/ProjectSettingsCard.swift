@@ -182,13 +182,15 @@ struct WPEProjectCustomSettingsCard: View {
                     .controlSize(.small)
                     .accessibilityLabel(property.displayText)
             }
-        case .file, .directory:
+        case .file, .directory, .sceneTexture, .userShortcut:
             // WPE web projects expect to load arbitrary local paths through `applyUserProperties`, but our `WKWebView` only has read access scoped to the project folder via `FolderURLSchemeHandler`.
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: .secondary,
                 verbatimTitle: property.displayText,
-                subtitle: "Not supported on macOS yet"
+                subtitle: property.type == .userShortcut
+                    ? "Disabled for security"
+                    : "Not supported on macOS yet"
             ) {
                 EmptyView()
             }

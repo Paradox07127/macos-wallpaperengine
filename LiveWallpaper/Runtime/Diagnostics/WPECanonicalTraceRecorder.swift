@@ -72,6 +72,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     private var frameComplete = false
     private var passes: [[String: Any]] = []
     private var resources: ResourceTables = ResourceTables()
+    private var shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
 
     private init() {}
 
@@ -85,14 +86,33 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         return scene != nil && !frameComplete
     }
 
-    func beginScene(workshopID: String, projectJsonPath: String?, descriptor: String) {
+    func beginScene(
+        workshopID: String,
+        projectJsonPath: String?,
+        descriptor: String,
+        shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
+    ) {
         guard WPESceneDebugArtifacts.shared.isEnabled else { return }
         lock.lock()
         scene = SceneContext(workshopID: workshopID, projectJsonPath: projectJsonPath, descriptor: descriptor)
         frameComplete = false
         passes.removeAll(keepingCapacity: true)
         resources = ResourceTables()
+        self.shaderImplementationInventory = shaderImplementationInventory
         lock.unlock()
+    }
+
+    func recordShaderImplementationInventory(
+        _ entries: [WPEShaderImplementationInventoryEntry]
+    ) {
+        guard !entries.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard scene != nil, !frameComplete else { return }
+        shaderImplementationInventory = WPEShaderImplementationInventory.merging(
+            shaderImplementationInventory,
+            with: entries
+        )
     }
 
     func recordCustomPass(
@@ -226,7 +246,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "shaders": ["vs": vertexShaderID, "fs": fragmentShaderID],
             "constantBuffers": [constantBuffer],
             "state": state,
-            "output": output
+            "output": output,
+            "implementation": implementationRecord(for: pass.shader)
         ]
         passes.append(passRecord)
     }
@@ -347,7 +368,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "constantBuffers": [Any](),
             "state": state,
             "output": output,
-            "builtin": ["kind": builtinKind]
+            "builtin": ["kind": builtinKind],
+            "implementation": implementationRecord(for: pass.shader)
         ]
         passes.append(passRecord)
     }
@@ -538,7 +560,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "constantBuffers": constantBuffers,
             "state": state,
             "output": output,
-            "puppet": puppet
+            "puppet": puppet,
+            // Puppet meshes bypass WPEShaderProgram and execute the app's
+            // hand-authored Metal vertex/fragment pair directly.
+            "implementation": nativeImplementationRecord()
         ]
         passes.append(passRecord)
     }
@@ -697,7 +722,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "shaders": ["vs": "shader-vs-particle", "fs": "shader-fs-particle"],
             "constantBuffers": [constantBuffer],
             "state": state,
-            "output": output
+            "output": output,
+            // Particle systems likewise use the dedicated Metal instance path,
+            // not translated WPE source or a missing-source copy fallback.
+            "implementation": nativeImplementationRecord()
         ]
         // Same shape and 256-cap as the Windows side's decoded POINTLIST vertex
         // buffers, so the diff can compare per-particle aggregates on both sides.
@@ -721,6 +749,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         frameComplete = true
         let passSnapshot = passes
         let resourceSnapshot = resources
+        let shaderImplementationInventorySnapshot = shaderImplementationInventory
         lock.unlock()
 
         // Everything below runs WITHOUT the lock: the final-texture readback and
@@ -796,6 +825,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "capture": capture,
             "resources": resourceBlock,
             "passes": passSnapshot,
+            "shaderImplementationInventory": shaderImplementationInventorySnapshot.map(
+                Self.shaderImplementationInventoryRecord
+            ),
             "final": finalBlock
         ]
         let passCount = passSnapshot.count
@@ -813,6 +845,42 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     }
 
     // MARK: - Description helpers (mirror WPESceneDebugArtifacts)
+
+    static func executionClassification(
+        for program: WPEShaderProgram?
+    ) -> WPEShaderExecutionClassification? {
+        program?.executionClassification
+    }
+
+    static func shaderImplementationInventoryRecord(
+        _ entry: WPEShaderImplementationInventoryEntry
+    ) -> [String: Any] {
+        let renderPassID: Any = entry.renderPassID.map { $0 as Any } ?? NSNull()
+        let shaderPath: Any = entry.authoredShaderPath.map { $0 as Any } ?? NSNull()
+        let authoredOverrideID: Any = entry.authoredOverrideID.map { $0 as Any } ?? NSNull()
+        return [
+            "effectId": entry.stableEffectID,
+            "passId": entry.stablePassID,
+            "authoredOverrideId": authoredOverrideID,
+            "renderPassId": renderPassID,
+            "effectPath": entry.authoredEffectPath,
+            "shaderPath": shaderPath,
+            "classification": entry.classification.rawValue,
+            "consumerDisposition": entry.consumerDisposition.rawValue,
+            "metadataKind": entry.metadataKind,
+            "metadataSources": entry.metadataSources
+        ]
+    }
+
+    private func implementationRecord(for program: WPEShaderProgram?) -> [String: Any] {
+        [
+            "classification": jsonOrNull(Self.executionClassification(for: program)?.rawValue)
+        ]
+    }
+
+    private func nativeImplementationRecord() -> [String: Any] {
+        ["classification": WPEShaderExecutionClassification.nativeApproximation.rawValue]
+    }
 
     static func describe(reference: WPETextureReference?) -> String? {
         guard let reference else { return nil }

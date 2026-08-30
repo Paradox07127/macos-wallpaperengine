@@ -109,6 +109,42 @@ struct WPEScenePreflightTests {
 
         #expect(result.tier == .degradedPlayable)
         #expect(result.featureFlags.contains(.imageEffect))
+        #expect(result.shaderImplementationInventory.isEmpty)
+    }
+
+    @Test("Effect override usertextures produce explicit metadata-only inventory")
+    func effectUserTexturesProduceMetadataOnlyInventory() throws {
+        let project = Self.makeProject()
+        let effect = WPESceneImageEffect(
+            id: "effect-7",
+            name: "Dynamic input",
+            fileRelativePath: "effects/dynamic/effect.json",
+            visible: true,
+            passOverrides: [WPESceneEffectPassOverride(
+                id: 42,
+                combos: [:],
+                constants: [:],
+                textures: [:],
+                userTextures: [WPESceneUserTextureBinding(name: "$source", type: "system")]
+            )]
+        )
+        let result = WPEScenePreflight.classify(
+            document: Self.makeDocument(imageObjects: [Self.makeImageObject(effects: [effect])]),
+            project: project,
+            scenePackageEntries: []
+        )
+
+        let entry = try #require(result.shaderImplementationInventory.first)
+        #expect(result.shaderImplementationInventory.count == 1)
+        #expect(entry.stableEffectID == "1:effect:effect-7")
+        #expect(entry.stablePassID == "1:effect:effect-7:pass:0")
+        #expect(entry.authoredOverrideID == 42)
+        #expect(entry.renderPassID == nil)
+        #expect(entry.authoredEffectPath == "effects/dynamic/effect.json")
+        #expect(entry.authoredShaderPath == nil)
+        #expect(entry.classification == .unsupportedMetadataOnly)
+        #expect(entry.consumerDisposition == .noRuntimeTextureProviderConsumer)
+        #expect(entry.metadataKind == "usertextures")
     }
 
     // MARK: - Fixtures

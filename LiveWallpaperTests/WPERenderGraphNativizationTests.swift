@@ -66,6 +66,22 @@ struct WPERenderGraphNativizationTests {
             userTextureBindings: WPERenderUserTextureBindings(
                 material: [WPESceneUserTextureBinding(name: "$materialSource", type: "system")]
             ),
+            authoredJSON: WPERenderPassAuthoredJSON(
+                materialDocument: .object([
+                    "passes": .array([.object(["future": .bool(true)])]),
+                    "nullable": .null
+                ]),
+                materialPass: .object(["future": .number(2.5)]),
+                effectDocument: .object(["future": .string("effect-root")]),
+                effectPass: .object(["future": .array([.number(1), .null])]),
+                effectIdentity: WPERenderEffectPassIdentity(
+                    objectID: "object/7",
+                    authoredEffectID: "effect-3",
+                    authoredEffectPath: "effects/custom/effect.json",
+                    effectPassIndex: 2,
+                    authoredOverrideID: 17
+                )
+            ),
             blending: try foreign("translucent_blend_mode_long_enough"),
             cullMode: try foreign("nocull_mode_value_long_enough_here"),
             depthTest: try foreign("disabled_depth_test_long_enough"),
@@ -91,6 +107,16 @@ struct WPERenderGraphNativizationTests {
             parentObjectID: try foreign("parent_object_identifier_long"),
             attachment: try foreign("anchor_attachment_name_long_x"),
             animationLayers: [WPESceneAnimationLayer(id: 1, rate: 2, visible: true, blend: 0.5, animation: 3)],
+            authoredJSON: WPERenderLayerAuthoredJSON(
+                sceneObjects: [
+                    .object(["id": .string("parent"), "future": .bool(true)]),
+                    .object(["id": .number(7), "ordered": .array([.number(2), .null, .bool(false)])])
+                ],
+                imageDescriptor: .object([
+                    "material": .string("materials/layer.json"),
+                    "future": .array([.bool(true), .number(4.5), .null])
+                ])
+            ),
             geometry: geometry,
             localGeometry: geometry,
             compositeA: try foreign("_rt_imageLayerComposite_7_a_long"),
@@ -121,6 +147,9 @@ struct WPERenderGraphNativizationTests {
         #expect(nativized == graph)
 
         let nativizedLayer = try #require(nativized.layers.first)
+        #expect(nativizedLayer.authoredJSON == layer.authoredJSON)
+        #expect(nativizedLayer.passes.first?.authoredJSON.effectIdentity
+            == pass.authoredJSON.effectIdentity)
         assertAllStringsContiguous(in: nativizedLayer)
     }
 

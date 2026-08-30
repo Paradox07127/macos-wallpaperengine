@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import LiveWallpaperProWPE
 import Metal
 import Testing
 @testable import LiveWallpaper
@@ -104,6 +105,44 @@ struct WPETexAnimatedTextureSourceTests {
         #expect(source.texture(at: 0.0) === textures[0])
         #expect(source.texture(at: 0.1) === textures[1])
         #expect(source.texture(at: 0.2) === textures[2])
+    }
+
+    @MainActor
+    @Test("Eager atlas binding exposes the authored TEXS descriptor for the current frame")
+    func eagerAtlasBindingTracksSamplingDescriptor() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let atlas = try makeTexture(device: device, value: 0, width: 8, height: 4)
+        let first = WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.5, 0.125, -0.25, 0.5),
+            translation: SIMD2<Float>(0, 0)
+        )
+        let second = WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.5, 0, 0, 0.5),
+            translation: SIMD2<Float>(0.5, 0.5)
+        )
+        let source = WPETexAnimatedTextureSource(
+            frames: [
+                WPETexAnimatedFrame(
+                    texture: atlas,
+                    sourceSubRect: CGRect(x: 0, y: 0, width: 4, height: 2),
+                    duration: 0.1,
+                    samplingDescriptor: first
+                ),
+                WPETexAnimatedFrame(
+                    texture: atlas,
+                    sourceSubRect: CGRect(x: 4, y: 2, width: 4, height: 2),
+                    duration: 0.1,
+                    samplingDescriptor: second
+                )
+            ],
+            frameRate: 10,
+            loop: true
+        )
+
+        #expect(source.texture(at: 0) === atlas)
+        #expect(source.samplingDescriptor(at: 0, frameSlot: 0) == first)
+        #expect(source.texture(at: 0.11) === atlas)
+        #expect(source.samplingDescriptor(at: 0.11, frameSlot: 0) == second)
     }
 
     @MainActor
