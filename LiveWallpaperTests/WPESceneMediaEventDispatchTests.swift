@@ -114,6 +114,32 @@ struct WPESceneMediaEventDispatchTests {
         #expect(instance.tick()?.own.visible == false)
     }
 
+    /// The production drain path: a cold start posts `[playback, properties,
+    /// thumbnail]` in one drain, and the frame path is the fire-and-forget async
+    /// lane, not the bounded-sync one the other tests use. Dispatched per event,
+    /// the single in-flight slot admitted playback and silently dropped the rest
+    /// — title/artist never reached the script until the next real change.
+    @Test("A cold-start burst delivers every event to the async lane, not just the first")
+    func liveBurstDeliversEveryEvent() async throws {
+        let instance = try layerInstance(script: """
+        var seen = 0;
+        export function mediaPlaybackChanged(event) { seen += 1; }
+        export function mediaPropertiesChanged(event) { seen += 1; }
+        export function mediaThumbnailChanged(event) { seen += 1; }
+        export function update() { thisLayer.visible = seen >= 3; }
+        """)
+        instance.liveDispatchMediaEvents([
+            .playbackChanged(.playing),
+            .propertiesChanged(WPESceneMediaProperties(title: "t", artist: "a")),
+            .thumbnailChanged(.absent),
+        ])
+        // The async lane lands on the engine's serial queue; the sync tick below
+        // queues behind it, so one settle hop is enough on an unloaded queue.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(instance.tick()?.own.visible == true,
+                "all three handlers must have run — a dropped event leaves seen < 3")
+    }
+
     // MARK: - 2. mediaPropertiesChanged reaches a text script
 
     @Test("A text script's mediaPropertiesChanged receives title and artist")
@@ -265,6 +291,35 @@ struct WPESceneMediaEventDispatchTests {
         ])
         #expect(!WPESceneMediaEventDispatcher.isNeeded(by: silent))
         #expect(source.subscriberCount == 0)
+    }
+
+    /// The demand scan is a text probe over the script source. Matching the raw
+    /// text made a comment or a string containing an event name subscribe the
+    /// scene to now-playing — the written requirement is that a scene with no
+    /// handler costs nothing.
+    @Test("An event name in a comment or string does not create demand")
+    func commentedNameCreatesNoDemand() throws {
+        let commented = try document(scripts: [
+            "text": """
+            // TODO: wire mediaPlaybackChanged some day
+            /* mediaThumbnailChanged would be nice */
+            var s = "mediaPropertiesChanged";
+            var t = 'mediaTimelineChanged';
+            export function update(value) { return value; }
+            """
+        ])
+        #expect(!WPESceneMediaEventDispatcher.isNeeded(by: commented))
+
+        // The stripper must not eat a real export that FOLLOWS a comment/string.
+        let real = try document(scripts: [
+            "text": """
+            // a comment first
+            var label = "not media";
+            export function mediaPlaybackChanged(event) {}
+            export function update(value) { return value; }
+            """
+        ])
+        #expect(WPESceneMediaEventDispatcher.isNeeded(by: real))
     }
 
     @Test("A scene exporting a media handler does subscribe and does receive events")

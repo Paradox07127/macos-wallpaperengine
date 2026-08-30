@@ -798,7 +798,7 @@ final class WPESceneScriptInstance {
     /// bounded-synchronous like `applyScriptProperties` rather than earning the
     /// text engine a second async lane.
     func dispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
-        guard !isPoisoned, handles(event), engine.allows(.event) else { return }
+        guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }
         switch engine.dispatchMediaEvent(
             event,
             runtimeSeconds: runtimeSeconds,
@@ -968,7 +968,7 @@ final class WPESceneScriptInstance {
     func batchTickString(
         runtimeSeconds: Double? = nil
     ) -> (value: String, job: WPESceneScriptBatchDispatcher.Job?) {
-        guard hasUpdateFunction, !isPoisoned, !isDestroyed else { return (lastValue, nil) }
+        guard !isPoisoned, !isDestroyed else { return (lastValue, nil) }
         if let overrun = engine.quarantineAsyncIfOverdue(budget: tickBudget) {
             isPoisoned = true
             Logger.warning(
@@ -977,6 +977,7 @@ final class WPESceneScriptInstance {
             )
             return (lastValue, nil)
         }
+        guard hasUpdateFunction else { return (lastValue, nil) }
         guard engine.allows(.tick) else { return (lastValue, nil) }
         if let fresh = asyncOutcomeSlot.takeLatest(), let newValue = fresh {
             lastValue = newValue
@@ -2500,7 +2501,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     /// `WPELayerScriptInstance`; the handler mutates module state and the next
     /// `update()` returns the new transform value, so nothing is published here.
     func dispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
-        guard !isPoisoned, !engine.hasRuntimeFault,
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
               mediaHandlers.handles(event), engine.allows(.event) else { return }
         switch engine.dispatchMediaEvent(
             event,
@@ -2522,9 +2523,18 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     /// render thread never waits on a script engine, exactly like the layer
     /// runtime's cursor and media events.
     func liveDispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
-        guard !isPoisoned, !engine.hasRuntimeFault,
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
               mediaHandlers.handles(event), engine.allows(.event) else { return }
         _ = engine.dispatchMediaEventAsync(event, runtimeSeconds: runtimeSeconds)
+    }
+
+    /// One drain's worth of events in one hop; see the layer runtime's batch
+    /// entry for why per-event dispatch dropped everything after the first.
+    func liveDispatchMediaEvents(_ events: [WPESceneMediaEvent], runtimeSeconds: Double? = nil) {
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return }
+        let handled = events.filter { mediaHandlers.handles($0) }
+        guard !handled.isEmpty, engine.allows(.event) else { return }
+        _ = engine.dispatchMediaEventsAsync(handled, runtimeSeconds: runtimeSeconds)
     }
 
 
@@ -2682,9 +2692,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         runtimeSeconds: Double? = nil
     ) -> (value: SIMD3<Double>?, job: WPESceneScriptBatchDispatcher.Job?) {
         guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return (nil, nil) }
-        // No `update` to run: hold whatever `init` returned rather than schedule a
-        // per-frame job whose nil result would overwrite it.
-        guard hasUpdateFunction else { return (hasAsyncOutcome ? lastValue : nil, nil) }
+        // Overdue check BEFORE the no-update return: an init-only module still
+        // hosts media handlers, and a hung one must poison the instance rather
+        // than keep its engine lane and governor permit occupied forever.
         if let overrun = engine.quarantineAsyncIfOverdue(budget: tickBudget) {
             isPoisoned = true
             Logger.warning(
@@ -2693,6 +2703,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             )
             return (nil, nil)
         }
+        // No `update` to run: hold whatever `init` returned rather than schedule a
+        // per-frame job whose nil result would overwrite it.
+        guard hasUpdateFunction else { return (hasAsyncOutcome ? lastValue : nil, nil) }
         guard engine.allows(.tick) else { return (nil, nil) }
         if let fresh = asyncOutcomeSlot.takeLatest() {
             hasAsyncOutcome = true
@@ -2886,6 +2899,34 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                     permit.release()
                 }
                 self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
+            }
+            return true
+        }
+
+        /// Batch variant: one safety claim + permit + queue hop for a whole drain.
+        /// One at a time, the single in-flight slot admitted only the first event
+        /// of a cold-start burst and silently dropped the rest.
+        func dispatchMediaEventsAsync(
+            _ events: [WPESceneMediaEvent],
+            runtimeSeconds: Double?
+        ) -> Bool {
+            guard !events.isEmpty, allows(.event) else { return false }
+            guard let safety = asyncExecutionSafety.begin(
+                sceneToken: instanceLimitToken,
+                operation: .event
+            ) else { return false }
+            guard let permit = governor.tryAcquireUnreserved(for: participant) else {
+                asyncExecutionSafety.complete(safety)
+                return false
+            }
+            queue.async {
+                defer {
+                    self.asyncExecutionSafety.complete(safety)
+                    permit.release()
+                }
+                for event in events {
+                    self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
+                }
             }
             return true
         }

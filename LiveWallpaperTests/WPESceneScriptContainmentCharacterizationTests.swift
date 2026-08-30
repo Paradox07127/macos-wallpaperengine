@@ -144,10 +144,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
         // still refuse an attempt after reserving: batch ticks reserve inside the
         // worker closure, so a refusal there releases through the same owner in
         // the `slot.rejectTick` branch.
+        // 5 = the three single-event lanes plus the two batch variants added for
+        // the cold-start burst fix; every one releases the safety claim on the
+        // permit-refused path before returning.
         #expect(RR10ProductionSource.occurrences(
             of: "                asyncExecutionSafety.complete(safety)\n                return false",
             in: runtime
-        ) == 3)
+        ) == 5)
         // The synchronous runner owns its reservation outright and must keep
         // releasing it directly; this pins the two forms apart.
         #expect(RR10ProductionSource.occurrences(
@@ -196,6 +199,35 @@ struct WPESceneScriptContainmentCharacterizationTests {
         ) == 3)
         #expect(resources.contains("final class WPESceneScriptAsyncExecutionSafety"))
         #expect(!resources.contains("asyncAfter"))
+    }
+
+    /// destroy() must bar every later event: the tick/cursor/userProperties
+    /// entries all guard `isDestroyed`, and the media entries once did not —
+    /// a post-destroy dispatch still ran the JS handler, held up only by
+    /// teardown call ordering. Every media entry point carries the same guard.
+    @Test("Every media entry point is barred after destroy()")
+    func mediaEntriesGuardIsDestroyed() throws {
+        let runtime = try RR10ProductionSource.combined([
+            "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
+            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
+        ])
+        // Instance-level media entry points (engine-level ones sit behind these).
+        let mediaGuards = [
+            "guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return nil }",
+            "guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }",
+            "guard !isPoisoned, !isDestroyed else { return }",
+            "guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,",
+            "guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return }",
+        ]
+        for pattern in mediaGuards {
+            #expect(runtime.contains(pattern), "missing destroy barrier: \(pattern)")
+        }
+        // No media entry may guard on poison alone — that shape is exactly the
+        // pre-fix hole. (`isPoisoned, handles(` without `isDestroyed`.)
+        #expect(!runtime.contains("guard !isPoisoned, handles(event)"),
+                "a media entry lost its destroy barrier")
+        #expect(!runtime.contains("guard !isPoisoned, !engine.hasRuntimeFault,\n              mediaHandlers.handles"),
+                "a transform media entry lost its destroy barrier")
     }
 
     @Test("B2a production load captures and threads one exact token")

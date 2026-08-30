@@ -101,3 +101,38 @@ struct WPESceneScriptMediaPlaybackEventTests {
         #expect(try instance(script: script).tickString() == "1")
     }
 }
+
+/// An init-only module (no `update`) still hosts media handlers, and its
+/// `batchTick` used to return at the `hasUpdateFunction` guard BEFORE the
+/// overdue-async check — a hung `mediaPlaybackChanged` therefore never poisoned
+/// the instance and its engine lane + governor permit stayed occupied forever.
+@Suite("Init-only transform media fail-close")
+struct WPEInitOnlyTransformMediaFailCloseTests {
+    @Test("A hung media handler on an init-only transform still fail-closes")
+    func hungMediaHandlerPoisonsInitOnlyTransform() async throws {
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            export function init(value) { return {x: 5, y: 6, z: 7}; }
+            export function mediaPlaybackChanged(event) {
+                const t = Date.now();
+                while (Date.now() - t < 1000) {}
+            }
+            """,
+            seed: SIMD3(1, 2, 3),
+            canvasSize: SIMD2(1920, 1080),
+            tickBudget: 0.05,
+            governor: WPESceneScriptExecutionGovernor(limit: 4)
+        )
+        // init's value is being held (the init-only contract).
+        #expect(instance.batchTick(pointerPosition: .zero).value == SIMD3(5, 6, 7))
+
+        instance.liveDispatchMediaEvent(.playbackChanged(.playing))
+        // Let the handler be well past the 50ms budget while still running.
+        try await Task.sleep(for: .milliseconds(300))
+
+        let afterOverdue = instance.batchTick(pointerPosition: .zero)
+        #expect(afterOverdue.value == nil,
+                "the overdue handler must poison the instance, not keep serving init's value")
+        #expect(afterOverdue.job == nil)
+    }
+}

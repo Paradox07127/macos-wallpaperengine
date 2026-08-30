@@ -51,6 +51,27 @@ struct WPEMetalShaderDispatcher {
             return
         }
 
+        // `$media*` slots are resolved only by the custom path's per-slot loop —
+        // that is where `substituting` runs. Left to normalize onto a native fast
+        // path (genericimage2/4, copy, compose) a media-bound pass kept drawing
+        // the authored placeholder forever, silently. Routing a builtin name
+        // through the custom dispatch is established — `genericParticle` below
+        // does the same — and media-bound passes are rare enough that the fast
+        // path loses nothing.
+        if let mediaStore = executor.mediaTextureStore,
+           mediaStore.declarations(forPassID: pass.pass.id) != nil {
+            try dispatchCustomShader(
+                pass: pass,
+                layer: layer,
+                destination: destination,
+                textures: textures,
+                frameState: frameState,
+                encoder: encoder,
+                depthPixelFormat: depthPixelFormat
+            )
+            return
+        }
+
         guard let kind = WPEBuiltinShaderKind(normalizing: pass.pass.shader) else {
             try dispatchCustomShader(
                 pass: pass,
