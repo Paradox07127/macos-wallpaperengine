@@ -106,6 +106,11 @@ final class WPEMetalRenderExecutor {
 
     /// Frame-global uniforms for the current `render` call. Single render thread.
     var frameUniformContext: WPEFrameUniformContext = .empty
+    /// Previous logical shader timestamp and its derived delta. A fail-close
+    /// frame can call `render` twice with the same timestamp; the second encode
+    /// must reuse the first encode's `g_Frametime`, not collapse it to zero.
+    private var lastShaderRuntimeTime: Double?
+    private(set) var currentShaderFrameTime: Double = 0
     /// One per executor = one per display's off-main render thread, which is
     /// what makes the non-`Sendable` cache safe to hold here.
     private let objectUniformCache = WPEObjectUniformCache()
@@ -281,6 +286,22 @@ final class WPEMetalRenderExecutor {
     /// thread at load; the store itself is lock-serialised against the main-actor
     /// now-playing delivery that fills it.
     var mediaTextureStore: WPEMediaTextureStore?
+
+    /// Frame-scoped TEXS sampling transforms, keyed by the same asset path as
+    /// the render call's texture dictionary. This is deliberately not a
+    /// per-MTLTexture registry: eager sprite frames reuse one atlas texture.
+    private var currentTextureSamplingDescriptors: [String: WPETexSpriteSamplingDescriptor] = [:]
+
+    func textureSamplingDescriptor(
+        for reference: WPETextureReference
+    ) -> WPETexSpriteSamplingDescriptor? {
+        switch reference {
+        case .image(let path), .asset(let path):
+            return currentTextureSamplingDescriptors[path]
+        case .fbo, .previous:
+            return nil
+        }
+    }
 
     private func blendFacts(_ blendMode: String) -> BlendStringFacts {
         if let cached = blendStringFactsCache[blendMode] { return cached }
@@ -653,9 +674,9 @@ final class WPEMetalRenderExecutor {
     func notePresentSideDemotion() { presentSideDemotionPending = true }
     /// The scene output's actual pixel size for the frame currently encoding
     /// (= `scaledCanvasSize(currentSceneSize, outputPixelScale)`). This is the
-    /// resolution of the FBO chain's head, which `g_TexelSize` must describe —
-    /// WPE feeds 1/head-resolution to every pass of a blur chain so the kernel
-    /// keeps a fixed SCREEN-space width (see `texelSizeValue`).
+    /// resolution of the FBO chain's head, which `g_TexelSize`,
+    /// `g_TexelSizeHalf`, and `g_Screen` must describe. WPE feeds
+    /// head-resolution-derived globals to every pass of the chain.
     private(set) var currentScenePixelSize: CGSize = .zero
 
     #if DEBUG
@@ -721,6 +742,7 @@ final class WPEMetalRenderExecutor {
         pipeline: WPEPreparedRenderPipeline,
         size: CGSize,
         textures: [String: MTLTexture],
+        textureSamplingDescriptors: [String: WPETexSpriteSamplingDescriptor] = [:],
         dynamicTextureNames: Set<String> = [],
         dynamicLayerIDs: Set<String> = [],
         runtimeUniforms: WPEMetalRuntimeUniforms = .zero,
@@ -746,6 +768,8 @@ final class WPEMetalRenderExecutor {
         /// Encode present into this scene command buffer. Nil on sync/readback.
         deferredPresent: DeferredPresentEncoder? = nil
     ) throws -> MTLTexture {
+        currentTextureSamplingDescriptors = textureSamplingDescriptors
+        defer { currentTextureSamplingDescriptors.removeAll(keepingCapacity: true) }
         // Async submission: take a permit up front so the CPU blocks here (rather
         // than queuing another frame) once `maxFramesInFlight` are outstanding.
         // The matching signal is emitted from the command buffer's completion
@@ -795,8 +819,10 @@ final class WPEMetalRenderExecutor {
             || WPEOracleMode.perPassHashesEnabled
         dumpLayerPassesID = dumpLayerPassesDefaultID
         #endif
+        var shaderRuntimeUniforms = runtimeUniforms
+        shaderRuntimeUniforms.frameTime = advanceShaderFrameTime(runtimeTime: runtimeUniforms.time)
         let (preparedPipeline, frameUniforms) = pipeline.addingMetalRuntimeUniforms(
-            runtimeUniforms,
+            shaderRuntimeUniforms,
             camera: cameraUniforms,
             scriptedConstants: scriptedConstants,
             objectUniformCache: objectUniformCache
@@ -3217,6 +3243,8 @@ final class WPEMetalRenderExecutor {
     /// (per-pass) in `v_SizeMultiplier` — a fixed TEXEL count, diverging from WPE by
     /// 2x/4x/8x/16x down the chain.
     static let texelSizeUniformName = "g_TexelSize"
+    static let texelSizeHalfUniformName = "g_TexelSizeHalf"
+    static let screenUniformName = "g_Screen"
 
     static func texelSizeValue(named name: String, sceneSize: CGSize) -> WPESceneShaderConstantValue? {
         guard name == texelSizeUniformName else { return nil }
@@ -3226,12 +3254,79 @@ final class WPEMetalRenderExecutor {
         return .vector([1 / width, 1 / height])
     }
 
+    static func texelSizeHalfValue(named name: String, sceneSize: CGSize) -> WPESceneShaderConstantValue? {
+        guard name == texelSizeHalfUniformName else { return nil }
+        let width = Double(sceneSize.width)
+        let height = Double(sceneSize.height)
+        guard width > 0, height > 0 else { return nil }
+        return .vector([0.5 / width, 0.5 / height])
+    }
+
+    static func screenValue(named name: String, sceneSize: CGSize) -> WPESceneShaderConstantValue? {
+        guard name == screenUniformName else { return nil }
+        let width = Double(sceneSize.width)
+        let height = Double(sceneSize.height)
+        guard width > 0, height > 0 else { return nil }
+        return .vector([width, height, width / height])
+    }
+
+    /// Advances the official shader `g_Frametime` clock. Equal timestamps are
+    /// the same logical frame (the fail-close re-encode path) and therefore keep
+    /// the already-derived delta. A rewind starts a new clock epoch at zero.
+    @discardableResult
+    func advanceShaderFrameTime(runtimeTime: Double) -> Double {
+        guard runtimeTime.isFinite else {
+            lastShaderRuntimeTime = nil
+            currentShaderFrameTime = 0
+            return 0
+        }
+        guard let previous = lastShaderRuntimeTime else {
+            lastShaderRuntimeTime = runtimeTime
+            currentShaderFrameTime = 0
+            return 0
+        }
+        if runtimeTime > previous {
+            currentShaderFrameTime = runtimeTime - previous
+            lastShaderRuntimeTime = runtimeTime
+        } else if runtimeTime < previous {
+            currentShaderFrameTime = 0
+            lastShaderRuntimeTime = runtimeTime
+        }
+        return currentShaderFrameTime
+    }
+
+    func resetShaderFrameTime() {
+        lastShaderRuntimeTime = nil
+        currentShaderFrameTime = 0
+    }
+
     static func textureResolutionSlotIndex(for name: String) -> Int? {
         let prefix = "g_Texture"
         let suffix = "Resolution"
         guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return nil }
         let slotText = name.dropFirst(prefix.count).dropLast(suffix.count)
         return Int(slotText)
+    }
+
+    static func textureRotationSlotIndex(for name: String) -> Int? {
+        officialTextureSamplingSlotIndex(for: name, suffix: "Rotation")
+    }
+
+    static func textureTranslationSlotIndex(for name: String) -> Int? {
+        officialTextureSamplingSlotIndex(for: name, suffix: "Translation")
+    }
+
+    private static func officialTextureSamplingSlotIndex(
+        for name: String,
+        suffix: String
+    ) -> Int? {
+        let prefix = "g_Texture"
+        guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return nil }
+        let slotText = name.dropFirst(prefix.count).dropLast(suffix.count)
+        guard let slot = Int(slotText), (0..<WPEShaderTranspiler.customTextureSlotCount).contains(slot) else {
+            return nil
+        }
+        return slot
     }
 
     private static func scalarValue(_ value: WPESceneShaderConstantValue?, default fallback: Float) -> Float {

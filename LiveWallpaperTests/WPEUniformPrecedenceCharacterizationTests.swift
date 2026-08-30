@@ -150,6 +150,45 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(slots[1] == SIMD4<Float>(5, 5, 5, 5))
     }
 
+    @Test("Bound TEXS sampling descriptors outrank authored sentinels; missing descriptors fall through")
+    func textureSamplingDescriptorProbeHasBindingScopedPrecedence() throws {
+        let executor = try makeExecutor()
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let table = WPEMetalTextureSlotTable()
+        let descriptor = WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.5, 0.125, -0.25, 0.75),
+            translation: SIMD2<Float>(0.375, 0.625)
+        )
+        table.set(
+            texture: try makeTexture(device: device, width: 8, height: 4),
+            samplingDescriptor: descriptor,
+            at: 0
+        )
+        table[7] = try makeTexture(device: device, width: 2, height: 2)
+
+        let pass = makePass(
+            id: "a6.sampling",
+            constants: ["g_Texture7Translation": .vector([7, 7])],
+            uniformValues: ["g_Texture0Rotation": .vector([-1, -1, -1, -1])]
+        )
+        let layout = [
+            WPEUniformSlot(name: "g_Texture0Rotation", glslType: "vec4", slot: 0, slotCount: 1),
+            WPEUniformSlot(name: "g_Texture0Translation", glslType: "vec2", slot: 1, slotCount: 1),
+            WPEUniformSlot(name: "g_Texture7Translation", glslType: "vec2", slot: 2, slotCount: 1)
+        ]
+        let plans = executor.uniformPlans(for: pass, layout: layout)
+        #expect(plans[0].textureRotationSlot == 0)
+        #expect(plans[1].textureTranslationSlot == 0)
+        #expect(plans[2].textureTranslationSlot == 7)
+
+        let slots = pack(layout, pass: pass, on: executor, textures: table)
+        #expect(slots[0] == descriptor.rotation)
+        #expect(slots[1] == SIMD4<Float>(descriptor.translation.x, descriptor.translation.y, 0, 0))
+        // Slot 7 has a texture but no TEXS descriptor, so the ordinary authored
+        // chain remains authoritative; no identity/zero fallback is invented.
+        #expect(slots[2] == SIMD4<Float>(7, 7, 0, 0))
+    }
+
     /// §2.3: recognition of the derived names is exact and case-sensitive.
     @Test("Derived-probe name recognition is exact and case-sensitive")
     func derivedProbeNameRecognition() {
@@ -160,9 +199,25 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(WPEMetalRenderExecutor.textureResolutionSlotIndex(for: "g_TextureResolution") == nil)
         #expect(WPEMetalRenderExecutor.textureResolutionSlotIndex(for: "g_TextureXResolution") == nil)
 
+        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture0Rotation") == 0)
+        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture7Rotation") == 7)
+        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture8Rotation") == nil)
+        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_texture0Rotation") == nil)
+        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture0rotation") == nil)
+        #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture0Translation") == 0)
+        #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture7Translation") == 7)
+        #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture8Translation") == nil)
+        #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture0TranslationNext") == nil)
+
         #expect(WPEMetalRenderExecutor.texelSizeValue(named: "g_texelsize", sceneSize: CGSize(width: 4, height: 2)) == nil)
         #expect(WPEMetalRenderExecutor.texelSizeValue(named: "g_TexelSize", sceneSize: CGSize(width: 4, height: 2))
             == .vector([0.25, 0.5]))
+        #expect(WPEMetalRenderExecutor.texelSizeHalfValue(named: "g_texelsizehalf", sceneSize: CGSize(width: 4, height: 2)) == nil)
+        #expect(WPEMetalRenderExecutor.texelSizeHalfValue(named: "g_TexelSizeHalf", sceneSize: CGSize(width: 4, height: 2))
+            == .vector([0.125, 0.25]))
+        #expect(WPEMetalRenderExecutor.screenValue(named: "g_screen", sceneSize: CGSize(width: 4, height: 2)) == nil)
+        #expect(WPEMetalRenderExecutor.screenValue(named: "g_Screen", sceneSize: CGSize(width: 4, height: 2))
+            == .vector([4, 2, 2]))
     }
 
     /// §2.2 row 1: a degenerate scene size makes the `g_TexelSize` probe
@@ -648,21 +703,28 @@ struct WPEUniformPrecedenceCharacterizationTests {
     func canonicalFrameGlobalNames() {
         let names = WPEFrameUniformContext.canonicalNames
         for expected in [
-            "g_Time", "g_Daytime", "g_Brightness", "g_PointerPosition", "g_ParallaxPosition",
+            "g_Time", "g_Daytime", "g_Frametime", "g_Brightness", "g_PointerPosition", "g_ParallaxPosition",
             "g_PointerPositionLast", "g_PointerClickPosition", "g_PointerDown", "g_PointerRightDown",
             "g_AudioSpectrum16Left", "g_AudioSpectrum16Right",
             "g_AudioSpectrum32Left", "g_AudioSpectrum32Right",
             "g_AudioSpectrum64Left", "g_AudioSpectrum64Right",
             "g_RenderVar0", "g_RenderVar1", "g_RenderVar2", "g_RenderVar3", "g_HDRParams",
+            "g_EyePosition", "g_ViewForward", "g_ViewRight", "g_ViewUp",
             "g_ViewProjectionMatrix", "g_LightAmbientColor", "g_LightSkylightColor", "g_SceneHDREnabled",
-            "g_ModelMatrix", "g_NormalModelMatrix"
+            "g_ModelMatrix", "g_ModelMatrixInverse", "g_ModelViewProjectionMatrix",
+            "g_ModelViewProjectionMatrixInverse", "g_LayerModelMatrix", "g_NormalModelMatrix"
         ] {
             #expect(names.contains(expected), "missing canonical frame global \(expected)")
             #expect(WPEFrameUniformContext.canonicalNameByLowercased[expected.lowercased()] == expected)
         }
         // The derived probes are NOT frame globals (§2.2).
         #expect(!names.contains("g_TexelSize"))
+        #expect(!names.contains("g_TexelSizeHalf"))
+        #expect(!names.contains("g_Screen"))
         #expect(!names.contains("g_Texture0Resolution"))
+        #expect(!names.contains("g_OrientationForward"))
+        #expect(!names.contains("g_OrientationRight"))
+        #expect(!names.contains("g_OrientationUp"))
     }
 
     // MARK: - F. Type and packing rules (§2.6)
@@ -909,6 +971,77 @@ struct WPEUniformPrecedenceCharacterizationTests {
         let otherName = [WPEUniformSlot(name: "g_TexelSize2", glslType: "vec2", slot: 0, slotCount: 1)]
         let otherPass = makePass(id: "g2b", uniformValues: ["g_TexelSize2": .vector([-1, -1])])
         #expect(pack(otherName, pass: otherPass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
+    }
+
+    /// Official docs define these from the same screen pixel dimensions as
+    /// `g_TexelSize`. They are terminal derived probes so authored values cannot
+    /// become stale when render scale changes.
+    @Test("g_TexelSizeHalf and g_Screen derive from render-pixel size")
+    func halfTexelAndScreenTrackRenderScale() throws {
+        let executor = try makeExecutor()
+        let layout = [
+            WPEUniformSlot(name: "g_TexelSizeHalf", glslType: "vec2", slot: 0, slotCount: 1),
+            WPEUniformSlot(name: "g_Screen", glslType: "vec3", slot: 1, slotCount: 1)
+        ]
+        let pass = makePass(
+            id: "g2c",
+            uniformValues: [
+                "g_TexelSizeHalf": .vector([-1, -1]),
+                "g_Screen": .vector([-1, -1, -1])
+            ]
+        )
+
+        let plans = executor.uniformPlans(for: pass, layout: layout)
+        #expect(plans[0].isTexelSizeHalf)
+        #expect(plans[1].isScreen)
+
+        executor.setCurrentScenePixelSizeForTesting(CGSize(width: 1920, height: 1080))
+        let full = pack(layout, pass: pass, on: executor)
+        #expect(abs(full[0].x - Float(0.5 / 1920.0)) < 0.0000001)
+        #expect(abs(full[0].y - Float(0.5 / 1080.0)) < 0.0000001)
+        #expect(full[1] == SIMD4<Float>(1920, 1080, Float(1920.0 / 1080.0), 0))
+
+        executor.setCurrentScenePixelSizeForTesting(CGSize(width: 960, height: 540))
+        let half = pack(layout, pass: pass, on: executor)
+        #expect(abs(half[0].x - Float(0.5 / 960.0)) < 0.0000001)
+        #expect(half[1] == SIMD4<Float>(960, 540, Float(960.0 / 540.0), 0))
+
+        executor.setCurrentScenePixelSizeForTesting(.zero)
+        let fallback = pack(layout, pass: pass, on: executor)
+        #expect(fallback[0] == SIMD4<Float>(-1, -1, 0, 0))
+        #expect(fallback[1] == SIMD4<Float>(-1, -1, -1, 0))
+    }
+
+    @Test("g_Frametime is fed from logical runtime deltas and survives same-frame re-encode")
+    func shaderFrametimeTracksLogicalFrames() throws {
+        let executor = try makeExecutor()
+        let layout = [WPEUniformSlot(name: "g_Frametime", glslType: "float", slot: 0, slotCount: 1)]
+        let pass = makePass(id: "g2d", uniformValues: ["g_Frametime": .number(-1)])
+
+        func frame(_ delta: Double) -> WPEFrameUniformContext {
+            var runtime = characterizationRuntime
+            runtime.frameTime = delta
+            return WPEFrameUniformContext(
+                runtimeUniformValues: runtime.uniformValues,
+                cameraUniformValues: [:],
+                objectUniformValuesByPassID: [:]
+            )
+        }
+
+        #expect(executor.advanceShaderFrameTime(runtimeTime: 10) == 0)
+        #expect(pack(layout, pass: pass, on: executor, frame: frame(executor.currentShaderFrameTime))[0].x == 0)
+
+        let delta = executor.advanceShaderFrameTime(runtimeTime: 10.025)
+        #expect(abs(delta - 0.025) < 0.0000001)
+        #expect(abs(pack(layout, pass: pass, on: executor, frame: frame(delta))[0].x - 0.025) < 0.000001)
+
+        // Fail-close may encode twice at one timestamp; both encodes are one
+        // logical frame and must receive the same shader delta.
+        #expect(executor.advanceShaderFrameTime(runtimeTime: 10.025) == delta)
+
+        #expect(executor.advanceShaderFrameTime(runtimeTime: 2) == 0)
+        executor.resetShaderFrameTime()
+        #expect(executor.advanceShaderFrameTime(runtimeTime: 5) == 0)
     }
 
     /// §2.7 "Elapsed animation time": the per-frame prepare resolves `.animated`

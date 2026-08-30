@@ -297,6 +297,7 @@ extension WPEMetalSceneRenderer {
                 pipeline: textFrame.pipeline,
                 size: sceneRenderSize,
                 textures: currentTextures,
+                textureSamplingDescriptors: loadedTextureSamplingDescriptors,
                 dynamicTextureNames: dynamicTextureNames,
                 dynamicLayerIDs: staticCacheExcludedLayerIDs,
                 runtimeUniforms: uniforms,

@@ -13,20 +13,30 @@ struct WPERenderGraphBuilderTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        try writeJSON(["material": "materials/layer.json"], to: root.appendingPathComponent("models/layer.json"))
         try writeJSON([
+            "material": "materials/layer.json",
+            "futureDescriptorRoot": [
+                "enabled": true,
+                "ordered": [3.5, false, NSNull(), 1]
+            ]
+        ], to: root.appendingPathComponent("models/layer.json"))
+        try writeJSON([
+            "futureMaterialRoot": ["enabled": true],
             "passes": [[
                 "shader": "genericimage2",
                 "blending": "translucent",
                 "combos": ["VERSION": 2],
-                "textures": ["layer_albedo"]
+                "textures": ["layer_albedo"],
+                "futureMaterialPass": ["weights": [0.25, NSNull()]]
             ]]
         ], to: root.appendingPathComponent("materials/layer.json"))
         try writeJSON([
+            "futureEffectRoot": ["revision": 7],
             "passes": [[
                 "material": "materials/effects/custom.json",
                 "target": "_rt_CustomBuffer",
-                "bind": [["index": 0, "name": "previous"]]
+                "bind": [["index": 0, "name": "previous"]],
+                "futureEffectPass": ["mode": "oracle"]
             ]],
             "fbos": [[
                 "name": "_rt_CustomBuffer",
@@ -37,33 +47,47 @@ struct WPERenderGraphBuilderTests {
             ]]
         ], to: root.appendingPathComponent("effects/custom/effect.json"))
         try writeJSON([
+            "futureEffectMaterialRoot": ["values": [true, false]],
+            "usertextures": [["name": "$effectMaterial", "type": "system"]],
             "passes": [[
                 "shader": "effects/custom",
                 "textures": [NSNull(), "effects/noise"],
+                "usertextures": ["$effectPass"],
                 "constantshadervalues": ["base": 0.25],
-                "combos": ["LOCAL": 1]
+                "combos": ["LOCAL": 1],
+                "futureEffectMaterialPass": ["nullable": NSNull()]
             ]]
         ], to: root.appendingPathComponent("materials/effects/custom.json"))
 
         let scenePayload: [String: Any] = [
             "camera": ["center": "0 0 0"],
             "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
-            "objects": [[
-                "id": 7,
-                "name": "Layer",
-                "type": "image",
-                "image": "models/layer.json",
-                "effects": [[
-                    "id": 3,
-                    "name": "NotASpecialCase",
-                    "file": "effects/custom/effect.json",
-                    "passes": [[
-                        "combos": ["OVERRIDE": 1],
-                        "constantshadervalues": ["strength": 0.75],
-                        "textures": [NSNull(), "masks/custom_mask"]
+            "objects": [
+                [
+                    "id": "group-root",
+                    "name": "Group",
+                    "futureGroupField": ["ordered": [true, 2.25, NSNull()]]
+                ],
+                [
+                    "id": 7,
+                    "name": "Layer",
+                    "type": "image",
+                    "parent": "group-root",
+                    "image": "models/layer.json",
+                    "futureObjectField": ["mode": "preserved", "enabled": false],
+                    "effects": [[
+                        "id": 3,
+                        "name": "NotASpecialCase",
+                        "file": "effects/custom/effect.json",
+                        "passes": [[
+                            "combos": ["OVERRIDE": 1],
+                            "constantshadervalues": ["strength": 0.75],
+                            "textures": [NSNull(), "masks/custom_mask"],
+                            "usertextures": [["name": "$effectOverride", "type": "usershortcut"]]
+                        ]]
                     ]]
-                ]]
-            ]]
+                ]
+            ]
         ]
         let sceneData = try JSONSerialization.data(withJSONObject: scenePayload)
         let document = try WPESceneDocumentParser.parse(data: sceneData)
@@ -87,6 +111,9 @@ struct WPERenderGraphBuilderTests {
         #expect(layer.passes[0].source == .asset("layer_albedo"))
         #expect(layer.passes[0].textures[0] == .asset("layer_albedo"))
         #expect(layer.passes[0].target == .layerComposite(name: "_rt_imageLayerComposite_7_a"))
+        #expect(layer.passes[0].authoredJSON.materialDocument?["futureMaterialRoot"]?["enabled"] == .bool(true))
+        #expect(layer.passes[0].authoredJSON.materialPass?["futureMaterialPass"]?["weights"]?[0] == .number(0.25))
+        #expect(layer.passes[0].authoredJSON.materialPass?["futureMaterialPass"]?["weights"]?[1] == .null)
 
         let effectPass = layer.passes[1]
         #expect(effectPass.phase == .effect(file: "effects/custom/effect.json"))
@@ -97,6 +124,41 @@ struct WPERenderGraphBuilderTests {
         #expect(effectPass.constants["base"]?.numberValue == 0.25)
         #expect(effectPass.constants["strength"]?.numberValue == 0.75)
         #expect(effectPass.target == .fbo(name: "_rt_CustomBuffer"))
+        #expect(effectPass.authoredJSON.effectDocument?["futureEffectRoot"]?["revision"] == .number(7))
+        #expect(effectPass.authoredJSON.effectPass?["futureEffectPass"]?["mode"] == .string("oracle"))
+        #expect(effectPass.authoredJSON.materialDocument?["futureEffectMaterialRoot"]?["values"]?[1] == .bool(false))
+        #expect(effectPass.authoredJSON.materialPass?["futureEffectMaterialPass"]?["nullable"] == .null)
+        #expect(effectPass.authoredJSON.effectIdentity == WPERenderEffectPassIdentity(
+            objectID: "7",
+            authoredEffectID: "3",
+            authoredEffectPath: "effects/custom/effect.json",
+            effectPassIndex: 0,
+            authoredOverrideID: nil
+        ))
+        #expect(effectPass.replacingTarget(.scene).authoredJSON.effectIdentity
+            == effectPass.authoredJSON.effectIdentity)
+        let metadataOnly = WPEShaderImplementationInventory.graphEntries(graph: graph)
+        #expect(metadataOnly.count == 1)
+        #expect(metadataOnly.first?.stableEffectID == "7:effect:3")
+        #expect(metadataOnly.first?.stablePassID == "7:effect:3:pass:0")
+        #expect(metadataOnly.first?.renderPassID == effectPass.id)
+        #expect(metadataOnly.first?.authoredEffectPath == "effects/custom/effect.json")
+        #expect(metadataOnly.first?.authoredShaderPath == "effects/custom")
+        #expect(metadataOnly.first?.classification == .unsupportedMetadataOnly)
+        #expect(metadataOnly.first?.metadataSources == [
+            "effect-material", "material-pass", "effect-override"
+        ])
+        #expect(layer.authoredJSON.sceneObjects.count == 2)
+        #expect(layer.authoredJSON.sceneObjects[0]["futureGroupField"]?["ordered"]?[0] == .bool(true))
+        #expect(layer.authoredJSON.sceneObjects[0]["futureGroupField"]?["ordered"]?[1] == .number(2.25))
+        #expect(layer.authoredJSON.sceneObjects[0]["futureGroupField"]?["ordered"]?[2] == .null)
+        #expect(layer.authoredJSON.sceneObjects[1]["futureObjectField"]?["mode"] == .string("preserved"))
+        #expect(layer.authoredJSON.sceneObjects[1]["futureObjectField"]?["enabled"] == .bool(false))
+        #expect(layer.authoredJSON.imageDescriptor?["futureDescriptorRoot"]?["enabled"] == .bool(true))
+        #expect(layer.authoredJSON.imageDescriptor?["futureDescriptorRoot"]?["ordered"]?[0] == .number(3.5))
+        #expect(layer.authoredJSON.imageDescriptor?["futureDescriptorRoot"]?["ordered"]?[1] == .bool(false))
+        #expect(layer.authoredJSON.imageDescriptor?["futureDescriptorRoot"]?["ordered"]?[2] == .null)
+        #expect(layer.authoredJSON.imageDescriptor?["futureDescriptorRoot"]?["ordered"]?[3] == .number(1))
     }
 
     @Test("Object material instance overrides base textures and shader combos")
@@ -1580,6 +1642,7 @@ struct WPERenderGraphBuilderTests {
                 "name": "Clock Font 2",
                 "type": "text",
                 "text": "12:34",
+                "futureTextField": ["ordered": [false, 9, NSNull()]],
                 "visible": ["user": ["name": "font", "condition": "2"], "value": true]
             ]]
         ]
@@ -1603,6 +1666,11 @@ struct WPERenderGraphBuilderTests {
 
         #expect(layer.visible == false)
         #expect(layer.passes.contains { $0.target == .scene })
+        #expect(layer.authoredJSON.sceneObjects.count == 1)
+        #expect(layer.authoredJSON.sceneObjects[0]["type"] == .string("text"))
+        #expect(layer.authoredJSON.sceneObjects[0]["futureTextField"]?["ordered"]?[0] == .bool(false))
+        #expect(layer.authoredJSON.sceneObjects[0]["futureTextField"]?["ordered"]?[1] == .number(9))
+        #expect(layer.authoredJSON.sceneObjects[0]["futureTextField"]?["ordered"]?[2] == .null)
     }
 
     @Test("Visible image dependencies keep composites before drawing to scene")

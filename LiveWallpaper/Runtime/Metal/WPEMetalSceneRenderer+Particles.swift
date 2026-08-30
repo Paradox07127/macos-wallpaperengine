@@ -134,12 +134,25 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - System loading & registration
 
-    private func makeParticleSceneTransform(for object: WPESceneParticleObject) -> WPEParticleSceneTransform {
+    private func makeParticleSceneTransform(
+        for object: WPESceneParticleObject,
+        childTransform: WPEParticleChildTransform = .identity
+    ) -> WPEParticleSceneTransform {
         WPEParticleSceneTransform(
             sceneSize: SIMD2<Float>(Float(sceneRenderSize.width), Float(sceneRenderSize.height)),
             objectOrigin: SIMD3<Float>(Float(object.origin.x), Float(object.origin.y), Float(object.origin.z)),
             objectScale: SIMD3<Float>(Float(object.scale.x), Float(object.scale.y), Float(object.scale.z)),
-            objectAngleZ: Float(object.angles.z)
+            objectAngleZ: Float(object.angles.z),
+            childOrigin: SIMD3<Float>(
+                Float(childTransform.origin.x),
+                Float(childTransform.origin.y),
+                Float(childTransform.origin.z)
+            ),
+            childScale: SIMD3<Float>(
+                Float(childTransform.scale.x),
+                Float(childTransform.scale.y),
+                Float(childTransform.scale.z)
+            )
         )
     }
     func particleTextureResource(
@@ -192,7 +205,7 @@ extension WPEMetalSceneRenderer {
             await expandParticleTree(
                 path: object.particleRelativePath,
                 parentPath: nil,
-                originAccum: SIMD3<Double>(0, 0, 0),
+                childTransform: .identity,
                 ancestry: [],
                 parentSystem: nil,
                 followFromParent: false,
@@ -324,7 +337,7 @@ extension WPEMetalSceneRenderer {
     private func expandParticleTree(
         path: String,
         parentPath: String?,
-        originAccum: SIMD3<Double>,
+        childTransform: WPEParticleChildTransform,
         ancestry: [String],
         parentSystem: WPEParticleSystem?,
         followFromParent: Bool,
@@ -349,9 +362,7 @@ extension WPEMetalSceneRenderer {
             debugStage("particle", "skip \(object.name) — particle definition load failed: \(particlePath)")
             return
         }
-        let definition = parsedDefinition
-            .offsettingOrigin(by: originAccum)
-            .applying(instanceOverride: object.instanceOverride)
+        let definition = parsedDefinition.applying(instanceOverride: object.instanceOverride)
         let registered: WPEParticleSystem?
         if definition.rendersSprite {
             registered = await registerParticleSystem(
@@ -362,6 +373,7 @@ extension WPEMetalSceneRenderer {
                 requiresFollowParent: followFromParent,
                 sortIndex: sortIndex,
                 isNestedChild: !ancestry.isEmpty,
+                childTransform: childTransform,
                 groupEffect: groupEffect,
                 on: actor
             )
@@ -386,7 +398,7 @@ extension WPEMetalSceneRenderer {
             await expandParticleTree(
                 path: child.relativePath,
                 parentPath: particlePath,
-                originAccum: originAccum + child.originOffset,
+                childTransform: childTransform.appending(child),
                 ancestry: childAncestry,
                 parentSystem: childParentSystem,
                 followFromParent: child.isEventFollow,
@@ -432,13 +444,14 @@ extension WPEMetalSceneRenderer {
         requiresFollowParent: Bool = false,
         sortIndex: Int = 0,
         isNestedChild: Bool = false,
+        childTransform: WPEParticleChildTransform = .identity,
         groupEffect: (mask: MTLTexture?, tint: SIMD3<Float>)? = nil,
         on actor: isolated WPEDisplayRenderActor
     ) async -> WPEParticleSystem? {
         let material = definition.materialRelativePath
             .flatMap(parseParticleMaterial(at:))
         let blendMode = material?.blendMode ?? .translucent
-        let sceneTransform = makeParticleSceneTransform(for: object)
+        let sceneTransform = makeParticleSceneTransform(for: object, childTransform: childTransform)
         guard let texturePath = material?.firstTexturePath else {
             debugStage("particle", "skip \(object.name) — material missing texture binding: \(particlePath)")
             return nil
@@ -513,6 +526,11 @@ extension WPEMetalSceneRenderer {
             device: executor.textureSourceDevice,
             blendMode: blendMode,
             sceneTransform: sceneTransform,
+            childScale: SIMD3<Float>(
+                Float(childTransform.scale.x),
+                Float(childTransform.scale.y),
+                Float(childTransform.scale.z)
+            ),
             spriteSheet: spriteSheet,
             seed: oracleSeed
         ) else { return nil }
@@ -606,6 +624,7 @@ extension WPEMetalSceneRenderer {
             if let turb = d.turbulence {
                 s += "turbulenceOp: speed=[\(turb.speedMin),\(turb.speedMax)] scale=\(turb.scale) timescale=\(turb.timescale) mask=\(turb.mask)\n"
             }
+            s += "childTransform: origin=\(childTransform.origin) scale=\(childTransform.scale)\n"
             s += "sceneTransform: renderOrigin=\(sceneTransform.renderOrigin) objectScale=\(sceneTransform.objectScale) objectAngleZ=\(sceneTransform.objectAngleZ)\n"
             WPESceneDebugArtifacts.shared.recordNote(name: "particle-def-\(idx).txt", contents: s)
         }

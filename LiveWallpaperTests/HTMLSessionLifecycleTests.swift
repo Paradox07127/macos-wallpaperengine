@@ -346,6 +346,59 @@ struct HTMLWallpaperRuntimeScriptTests {
         #expect(script.contains("window.Worker = LWManagedWorker;"))
     }
 
+    @Test("Lifecycle script publishes Wallpaper Engine setPaused transitions exactly once")
+    func lifecycleScriptPublishesWallpaperEnginePauseTransitions() throws {
+        let context = try #require(JSContext())
+        context.evaluateScript(
+            """
+            var window = this;
+            window.performance = { now: function () { return 100; } };
+            window.setTimeout = function () { return 1; };
+            window.clearTimeout = function () {};
+            window.setInterval = window.setTimeout;
+            window.clearInterval = window.clearTimeout;
+            window.requestAnimationFrame = function () { return 1; };
+            window.cancelAnimationFrame = function () {};
+
+            function Event(type) { this.type = type; }
+            function Document() {}
+            var document = Object.create(Document.prototype);
+            var installedStyle = null;
+            document.dispatchEvent = function () {};
+            document.getElementById = function () { return installedStyle; };
+            document.createElement = function () { return { id: '', textContent: '' }; };
+            document.querySelectorAll = function () { return []; };
+            document.documentElement = {
+                classList: { toggle: function () {} },
+                appendChild: function (element) { installedStyle = element; }
+            };
+            document.head = {
+                appendChild: function (element) { installedStyle = element; }
+            };
+
+            var pauseTransitions = [];
+            window.wallpaperPropertyListener = {
+                setPaused: function (isPaused) { pauseTransitions.push(isPaused); }
+            };
+            """
+        )
+        context.evaluateScript(
+            HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false)
+        )
+
+        context.evaluateScript(
+            """
+            window.__lwSuspend__();
+            window.__lwSuspend__();
+            window.__lwResume__();
+            window.__lwResume__();
+            """
+        )
+
+        #expect(context.exception?.toString() == nil)
+        #expect(context.evaluateScript("pauseTransitions.join(',')")?.toString() == "true,false")
+    }
+
     @Test("Lifecycle timer and worker state machine executes in JavaScriptCore")
     func lifecycleTimerAndWorkerStateMachineExecutes() throws {
         let context = try #require(JSContext())

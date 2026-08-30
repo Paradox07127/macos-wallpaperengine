@@ -36,11 +36,34 @@ public struct WPEParticleControlPoint: Equatable, Sendable {
     public let id: Int
     public let offset: SIMD3<Double>
     public let pointerLocked: Bool
+    /// Authored `flags`, when present and non-null. Keep the raw value because
+    /// WPE exposes more modes than the simulator consumes (`worldspace`, parent
+    /// copy/raw and editor-only bits), and their complete bit contract is not in
+    /// the public documentation.
+    public let flagsRaw: Int?
+    /// Authored control-point `angles`, when present and non-null. This is
+    /// metadata-only until the runtime has WPE's control-point rotation basis.
+    public let angles: SIMD3<Double>?
 
-    public init(id: Int, offset: SIMD3<Double>, pointerLocked: Bool) {
+    /// catsout/open-wallpaper-engine both identify bit 1 (`2`) as worldspace.
+    /// The typed fact is exposed without pretending the current simulator
+    /// consumes the associated world-to-local transform.
+    public var isWorldSpace: Bool {
+        flagsRaw.map { ($0 & 2) != 0 } ?? false
+    }
+
+    public init(
+        id: Int,
+        offset: SIMD3<Double>,
+        pointerLocked: Bool,
+        flagsRaw: Int? = nil,
+        angles: SIMD3<Double>? = nil
+    ) {
         self.id = id
         self.offset = offset
         self.pointerLocked = pointerLocked
+        self.flagsRaw = flagsRaw
+        self.angles = angles
     }
 }
 
@@ -63,30 +86,53 @@ public struct WPEParticleChildReference: Equatable, Sendable {
     public let relativePath: String
     public let originOffset: SIMD3<Double>
     public let type: String?
-    /// WPE `probability`: "The chance at which the child particle system is spawned WHEN THE
-    /// EVENT CONDITION IS MET" (docs.wallpaperengine.io, scene/particles/component/children) —
-    /// rolled once per event, not once per scene. Valve's `presets/lightning/particles/presets/
-    /// thunderbolt.json` ships `eventfollow` at 0.2. Corpus: 0.5×6 (all eventfollow), 0×2 (eventdeath), 1×44.
+    /// Authored maximum simultaneous child-system instance count. Optional is
+    /// intentional: missing/null and explicit zero have different authored
+    /// shapes, while only the raw JSON distinguishes missing from null.
+    public let maxCount: Int?
+    /// Authored child-system rotation. Kept optional and unmodified; runtime
+    /// consumption requires the exact WPE parent/child rotation composition.
+    public let angles: SIMD3<Double>?
+    /// Authored child flags, kept opaque except for the reference-backed legacy
+    /// event-follow bit used below.
+    public let flagsRaw: Int?
+    /// First child control point overwritten by parent particle positions when
+    /// "Set control points" is enabled. Presence is significant in the reference
+    /// implementation, so do not synthesize a default here.
+    public let controlPointStartIndex: Int?
+    /// WPE `probability`: "The chance at which the child particle system is
+    /// spawned WHEN THE EVENT CONDITION IS MET" (docs.wallpaperengine.io,
+    /// scene/particles/component/children). So it is rolled once per event, not
+    /// once per scene — Valve's own `presets/lightning/particles/presets/
+    /// thunderbolt.json` ships `eventfollow` at 0.2. Corpus: 0.5×6 (all
+    /// eventfollow), 0×2 (eventdeath), 1×44.
     public let probability: Double
-    /// WPE `scale`: spawn-time transform, sibling of `origin`/`angles` rather
-    /// than a `sizerandom` multiplier — a per-axis vector (corpus has "1 1 2").
-    /// PARSED BUT NOT CONSUMED: which channel it multiplies (child coordinate
-    /// space only, or particle render size too) has no first-hand source yet.
+    /// WPE `scale`: spawn-time child-system transform, sibling of `origin` and
+    /// `angles` rather than a `sizerandom` multiplier. It remains a per-axis
+    /// vector (the corpus includes `"1 1 2"`) so the runtime can compose it
+    /// through nested child systems without collapsing Z or anisotropy.
     public let scale: SIMD3<Double>
 
     /// WPE `type: "eventfollow"` — the child system's emitter rides the
-    /// parent's live particles rather than spawning at a static origin.
+    /// parent's live particles rather than spawning at a static origin. The
+    /// successor reference also accepts legacy `flags & 2` only when `type` is
+    /// absent; an authored type always wins.
     public var isEventFollow: Bool {
-        type?.lowercased() == "eventfollow"
+        effectiveType == "eventfollow"
     }
 
     /// Event-driven children re-roll `probability` on every event. `static`
     /// children roll once, when the system is created.
     public var rollsProbabilityPerEvent: Bool {
-        switch type?.lowercased() {
+        switch effectiveType {
         case "eventfollow", "eventspawn", "eventdeath": return true
         default: return false
         }
+    }
+
+    private var effectiveType: String? {
+        if let type { return type.lowercased() }
+        return flagsRaw.map { ($0 & 2) != 0 } == true ? "eventfollow" : nil
     }
 
     public init(
@@ -94,6 +140,10 @@ public struct WPEParticleChildReference: Equatable, Sendable {
         relativePath: String,
         originOffset: SIMD3<Double> = SIMD3<Double>(0, 0, 0),
         type: String? = nil,
+        maxCount: Int? = nil,
+        angles: SIMD3<Double>? = nil,
+        flagsRaw: Int? = nil,
+        controlPointStartIndex: Int? = nil,
         probability: Double = 1,
         scale: SIMD3<Double> = SIMD3<Double>(1, 1, 1)
     ) {
@@ -101,8 +151,63 @@ public struct WPEParticleChildReference: Equatable, Sendable {
         self.relativePath = relativePath
         self.originOffset = originOffset
         self.type = type
+        self.maxCount = maxCount
+        self.angles = angles
+        self.flagsRaw = flagsRaw
+        self.controlPointStartIndex = controlPointStartIndex
         self.probability = min(max(probability, 0), 1)
         self.scale = scale
+    }
+}
+
+/// Authored particle component arrays. Raw values match the WPE JSON keys so a
+/// caller can iterate the component taxonomy without spelling untyped strings.
+public enum WPEParticleComponentArrayKind: String, CaseIterable, Equatable, Sendable {
+    case emitters = "emitter"
+    case renderers = "renderer"
+    case initializers = "initializer"
+    case operators = "operator"
+    case children
+    case controlPoints = "controlpoint"
+}
+
+/// Lossless component-array view over a particle definition's authored JSON.
+///
+/// Entries deliberately remain `WPESceneJSONValue`: unsupported component names,
+/// unknown fields, non-object elements, booleans, numbers and nulls must cross the
+/// parser boundary unchanged. Typed simulator fields are a separate, deliberately
+/// PARTIAL projection and currently interpret only the first emitter.
+public struct WPEParticleRawComponentBag: Equatable, Sendable {
+    public let emitters: [WPESceneJSONValue]
+    public let renderers: [WPESceneJSONValue]
+    public let initializers: [WPESceneJSONValue]
+    public let operators: [WPESceneJSONValue]
+    public let children: [WPESceneJSONValue]
+    public let controlPoints: [WPESceneJSONValue]
+
+    public init(sourceJSON: WPESceneJSONValue) {
+        func array(_ kind: WPEParticleComponentArrayKind) -> [WPESceneJSONValue] {
+            guard let authored = sourceJSON[kind.rawValue],
+                  case .array(let values) = authored else { return [] }
+            return values
+        }
+        self.emitters = array(.emitters)
+        self.renderers = array(.renderers)
+        self.initializers = array(.initializers)
+        self.operators = array(.operators)
+        self.children = array(.children)
+        self.controlPoints = array(.controlPoints)
+    }
+
+    public subscript(kind: WPEParticleComponentArrayKind) -> [WPESceneJSONValue] {
+        switch kind {
+        case .emitters: emitters
+        case .renderers: renderers
+        case .initializers: initializers
+        case .operators: operators
+        case .children: children
+        case .controlPoints: controlPoints
+        }
     }
 }
 
@@ -225,14 +330,25 @@ public struct WPEParticleTrailRenderer: Equatable, Sendable {
     public let kind: Kind
     public let length: Double
     public let maxLength: Double
+    /// Authored `spritetrail.minlength`. `nil` means missing or JSON null; the
+    /// available reference implementations do not establish the engine default.
+    /// Runtime consumption is gated to `.sprite`, never rope-trail history.
+    public let minLength: Double?
     /// Trail segment count — `subdivision`, NOT `length`. The default 3 is why
     /// RenderDoc shows `trailPosition` cycling 0,1,2,3 (4 points per particle).
     public let subdivision: Double
 
-    public init(kind: Kind, length: Double, maxLength: Double, subdivision: Double) {
+    public init(
+        kind: Kind,
+        length: Double,
+        maxLength: Double,
+        minLength: Double? = nil,
+        subdivision: Double
+    ) {
         self.kind = kind
         self.length = length
         self.maxLength = maxLength
+        self.minLength = minLength
         self.subdivision = subdivision
     }
 }
@@ -528,11 +644,14 @@ public struct WPEParticleEmitterAudioState: Equatable, Sendable {
     }
 }
 
-/// Lean particle-system descriptor parsed from a WPE `particles/*.json` file. Fields cover the
-/// subset of the WPE DSL the runtime actually drives — emitter geometry, the random initializers,
-/// and the operator parameters that affect frame-by-frame motion (movement, alphafade, angular
-/// movement). Anything not in the JSON falls back to a safe default so partial schemas still work.
+/// Particle-system descriptor parsed from a WPE `particles/*.json` file.
+/// `sourceJSON`/`rawComponents` retain the complete authored document while the
+/// remaining typed fields cover the PARTIAL subset the runtime currently drives.
+/// Unsupported components therefore remain available for later consumers rather
+/// than disappearing at the parser boundary.
 public struct WPEParticleDefinition: Equatable, Sendable {
+    public let sourceJSON: WPESceneJSONValue
+    public let rawComponents: WPEParticleRawComponentBag
     public let materialRelativePath: String?
     public let childReferences: [WPEParticleChildReference]
     /// Whether this system draws its own sprites. A WPE root spawner with an
@@ -724,8 +843,11 @@ public struct WPEParticleDefinition: Equatable, Sendable {
         attractors: [WPEParticleControlPointAttractor] = [],
         hasColorInitializer: Bool = false,
         declaresSequenceAnimation: Bool = false,
-        isPerspective: Bool = false
+        isPerspective: Bool = false,
+        sourceJSON: WPESceneJSONValue = .object([:])
     ) {
+        self.sourceJSON = sourceJSON
+        self.rawComponents = WPEParticleRawComponentBag(sourceJSON: sourceJSON)
         self.materialRelativePath = materialRelativePath
         // Prefer explicit child references; fall back to bare paths (origin 0)
         // for the convenience/back-compat `childRelativePaths:` initializer.
@@ -829,7 +951,13 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             ? controlPoints
             : controlPoints.map { point in
                 instanceOverride.controlPointOffsets[point.id].map {
-                    WPEParticleControlPoint(id: point.id, offset: $0, pointerLocked: point.pointerLocked)
+                    WPEParticleControlPoint(
+                        id: point.id,
+                        offset: $0,
+                        pointerLocked: point.pointerLocked,
+                        flagsRaw: point.flagsRaw,
+                        angles: point.angles
+                    )
                 } ?? point
             }
         // A KEYFRAMED override alpha must not be baked: `alpha` is only its static
@@ -933,7 +1061,8 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             attractors: attractors,
             hasColorInitializer: hasColorInitializer,
             declaresSequenceAnimation: declaresSequenceAnimation,
-            isPerspective: isPerspective
+            isPerspective: isPerspective,
+            sourceJSON: sourceJSON
         )
     }
 
@@ -999,7 +1128,8 @@ public struct WPEParticleDefinition: Equatable, Sendable {
             attractors: attractors,
             hasColorInitializer: hasColorInitializer,
             declaresSequenceAnimation: declaresSequenceAnimation,
-            isPerspective: isPerspective
+            isPerspective: isPerspective,
+            sourceJSON: sourceJSON
         )
     }
 
@@ -1052,6 +1182,8 @@ public enum WPEParticleDefinitionParser {
         diagnostics: inout [WPESceneDiagnostic]
     ) -> WPEParticleDefinition {
         let def = WPEParticleDefinition.empty
+        let sourceJSON = WPESceneJSONValue(jsonValue: json) ?? .object([:])
+        let rawComponents = WPEParticleRawComponentBag(sourceJSON: sourceJSON)
 
         let material = json["material"] as? String
         let childReferences = (json["children"] as? [[String: Any]])?
@@ -1070,6 +1202,10 @@ public enum WPEParticleDefinitionParser {
                     relativePath: path,
                     originOffset: WPEValueParser.vector3(child["origin"]) ?? SIMD3(0, 0, 0),
                     type: child["type"] as? String,
+                    maxCount: WPEValueParser.int(child["maxcount"]),
+                    angles: WPEValueParser.vector3(child["angles"]),
+                    flagsRaw: WPEValueParser.int(child["flags"]),
+                    controlPointStartIndex: WPEValueParser.int(child["controlpointstartindex"]),
                     probability: WPEValueParser.double(child["probability"]) ?? 1,
                     scale: WPEValueParser.vector3(child["scale"]) ?? SIMD3(1, 1, 1)
                 )
@@ -1104,6 +1240,7 @@ public enum WPEParticleDefinitionParser {
                 kind: name.hasPrefix("rope") ? .rope : .sprite,
                 length: WPEValueParser.double($0["length"]) ?? 0.05,
                 maxLength: WPEValueParser.double($0["maxlength"]) ?? 10.0,
+                minLength: WPEValueParser.double($0["minlength"]),
                 subdivision: WPEValueParser.double($0["subdivision"]) ?? 3.0
             )
         }
@@ -1119,11 +1256,21 @@ public enum WPEParticleDefinitionParser {
         let particleFlags = WPEValueParser.int(json["flags"]) ?? 0
         let isPerspective = (particleFlags & 4) != 0
 
+        // Typed runtime behavior intentionally remains first-emitter-only. Every
+        // emitter is nevertheless retained in `rawComponents.emitters`, making
+        // this a visible PARTIAL projection instead of parser data loss.
         let firstEmitter = (json["emitter"] as? [[String: Any]])?.first
-        // `duration: 0` is the editor's default, written onto every emitter — it means unbounded,
-        // not "emit for zero seconds". Every authored value in the 63-scene corpus is 0, including
-        // continuously-emitting rate emitters (bird_child rate:1), so reading it literally silences
-        // them after one tick. L3 + on-device only; no Windows trace pins the boundary yet.
+        if rawComponents.emitters.count > 1 {
+            diagnostics.append(.init(
+                severity: .info,
+                message: "Particle definition preserved \(rawComponents.emitters.count) emitters; typed runtime projection remains PARTIAL and consumes only the first emitter"
+            ))
+        }
+        // `duration: 0` is the editor's default, written onto every emitter — it
+        // means unbounded, not "emit for zero seconds". Every authored value in the
+        // 63-scene corpus is 0, including continuously-emitting rate emitters
+        // (bird_child rate:1), so reading it literally silences them after one
+        // tick. L3 + on-device only; no Windows trace pins the boundary yet.
         let emitterDuration = firstEmitter
             .flatMap { WPEValueParser.double($0["duration"]) }
             .flatMap { $0 > 0 ? $0 : nil }
@@ -1314,9 +1461,13 @@ public enum WPEParticleDefinitionParser {
             for cp in cps {
                 guard let id = (cp["id"] as? Int) ?? (cp["id"] as? Double).map({ Int($0) }) else { continue }
                 let offset = WPEValueParser.vector3(cp["offset"]) ?? SIMD3(0, 0, 0)
-                let flags = (cp["flags"] as? Int) ?? (cp["flags"] as? Double).map { Int($0) } ?? 0
+                let flagsRaw = WPEValueParser.int(cp["flags"])
                 controlPoints.append(WPEParticleControlPoint(
-                    id: id, offset: offset, pointerLocked: (flags & 1) != 0
+                    id: id,
+                    offset: offset,
+                    pointerLocked: flagsRaw.map { ($0 & 1) != 0 } ?? false,
+                    flagsRaw: flagsRaw,
+                    angles: WPEValueParser.vector3(cp["angles"])
                 ))
             }
         }
@@ -1546,7 +1697,8 @@ public enum WPEParticleDefinitionParser {
             attractors: attractors,
             hasColorInitializer: hasColorInitializer,
             declaresSequenceAnimation: declaresSequenceAnimation,
-            isPerspective: isPerspective
+            isPerspective: isPerspective,
+            sourceJSON: sourceJSON
         )
     }
 

@@ -1646,6 +1646,7 @@ struct WPERenderPipelineBuilderTests {
         let shader = try #require(pipeline.layers.first?.passes.first?.shader)
 
         #expect(shader.isBuiltin == false)
+        #expect(shader.executionClassification == .officialSource)
         #expect(shader.fragmentSource.contains("0.123"))
     }
 
@@ -1792,6 +1793,7 @@ struct WPERenderPipelineBuilderTests {
 
         #expect(pass.shader?.name == "commands/copy")
         #expect(pass.shader?.isBuiltin == true)
+        #expect(pass.shader?.executionClassification == .nativeApproximation)
         #expect(pass.textureBindings[0] == .fbo("_rt_Source"))
     }
 
@@ -2208,6 +2210,49 @@ struct WPERenderPipelineBuilderTests {
 
         #expect(shader.isBuiltin)
         #expect(shader.name == shaderName)
+        #expect(shader.executionClassification == .nativeApproximation)
+    }
+
+    @Test("Unmapped effect_ source absence is marked as copy fallback")
+    func unmappedEffectSourceAbsenceIsMarkedAsCopyFallback() throws {
+        let fixture = try makeFixture(files: [:])
+        defer { fixture.cleanup() }
+
+        let pass = WPERenderPass(
+            id: "fallback.0",
+            phase: .effect(file: "effects/unmapped/effect.json"),
+            shader: "effect_unmapped",
+            source: .image("materials/base.png"),
+            target: .scene,
+            textures: [:],
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            blending: "normal",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+        let graph = WPERenderGraph(layers: [
+            WPERenderLayer(
+                objectID: "fallback",
+                objectName: "Fallback",
+                imagePath: "materials/base.png",
+                materialPath: nil,
+                geometry: .identity,
+                compositeA: "a",
+                compositeB: "b",
+                localFBOs: [],
+                passes: [pass]
+            )
+        ])
+
+        let prepared = try #require(
+            WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+                .build(graph: graph).layers.first?.passes.first?.shader
+        )
+        #expect(prepared.isBuiltin)
+        #expect(prepared.executionClassification == .copyFallback)
     }
 
     private struct Fixture {

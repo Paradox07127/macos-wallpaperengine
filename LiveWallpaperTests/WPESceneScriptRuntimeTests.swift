@@ -17,7 +17,8 @@ struct WPESceneScriptRuntimeTests {
         setupBudget: TimeInterval = 2,
         tickBudget: TimeInterval = 0.5,
         governor: WPESceneScriptExecutionGovernor? = nil,
-        canvasSize: SIMD2<Double>? = nil
+        canvasSize: SIMD2<Double>? = nil,
+        screenSize: SIMD2<Double>? = nil
     ) throws -> LiveWallpaper.WPESceneScriptInstance {
         try LiveWallpaper.WPESceneScriptInstance(
             script: script,
@@ -27,7 +28,8 @@ struct WPESceneScriptRuntimeTests {
             setupBudget: setupBudget,
             tickBudget: tickBudget,
             governor: governor ?? isolatedGovernor,
-            canvasSize: canvasSize
+            canvasSize: canvasSize,
+            screenSize: screenSize
         )
     }
 
@@ -36,6 +38,7 @@ struct WPESceneScriptRuntimeTests {
         scriptProperties: [String: WPESceneScriptPropertyValue] = [:],
         shared: WPESharedScriptState? = nil,
         canvasSize: SIMD2<Double> = SIMD2<Double>(1920, 1080),
+        screenSize: SIMD2<Double>? = nil,
         setupBudget: TimeInterval = 2,
         tickBudget: TimeInterval = 0.5,
         nowProviderMillis: (@Sendable () -> Double)? = nil,
@@ -50,6 +53,7 @@ struct WPESceneScriptRuntimeTests {
             scriptProperties: scriptProperties,
             shared: shared,
             canvasSize: canvasSize,
+            screenSize: screenSize,
             setupBudget: setupBudget,
             tickBudget: tickBudget,
             nowProviderMillis: nowProviderMillis,
@@ -81,6 +85,7 @@ struct WPESceneScriptRuntimeTests {
         seed: SIMD3<Double>,
         valueShape: WPEScriptValueShape = .vector3,
         canvasSize: SIMD2<Double>,
+        screenSize: SIMD2<Double>? = nil,
         shared: WPESharedScriptState? = nil,
         setupBudget: TimeInterval = 2,
         tickBudget: TimeInterval = 0.5,
@@ -92,6 +97,7 @@ struct WPESceneScriptRuntimeTests {
             seed: seed,
             valueShape: valueShape,
             canvasSize: canvasSize,
+            screenSize: screenSize,
             shared: shared,
             setupBudget: setupBudget,
             tickBudget: tickBudget,
@@ -1074,6 +1080,61 @@ export function init(value) {
         #expect(instance.tickString() == "0.5,0,1,0.5,2.5,1")
     }
 
+    @Test("WEColor converts normalized RGB and HSV canonical colors")
+    func weColorCanonicalConversions() throws {
+        let script = """
+        import * as WEColor from 'WEColor';
+        function rounded(value) { return Math.round(value * 1000000) / 1000000; }
+        function encoded(value) {
+            return [rounded(value.x), rounded(value.y), rounded(value.z), value instanceof Vec3].join(':');
+        }
+        export function update(value) {
+            return [
+                encoded(WEColor.rgb2hsv({ x: 1, y: 0, z: 0 })),
+                encoded(WEColor.rgb2hsv(new Vec3(0, 1, 0))),
+                encoded(WEColor.rgb2hsv(new Vec3(0, 0, 1))),
+                encoded(WEColor.rgb2hsv(new Vec3(0.5, 0.5, 0.5))),
+                encoded(WEColor.hsv2rgb({ x: 0.5, y: 1, z: 1 })),
+                encoded(WEColor.hsv2rgb(new Vec3(2, 1, 1)))
+            ].join('|');
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "init")
+        #expect(instance.tickString() == [
+            "0:1:1:true",
+            "0.333333:1:1:true",
+            "0.666667:1:1:true",
+            "0:0:0.5:true",
+            "0:1:1:true",
+            "1:0:0:true",
+        ].joined(separator: "|"))
+    }
+
+    @Test("WEColor normalizes, expands, and round-trips without mutating the input")
+    func weColorRangeAndRoundTrip() throws {
+        let script = """
+        import * as WEColor from 'WEColor';
+        function rounded(value) { return Math.round(value * 1000000) / 1000000; }
+        function encoded(value) {
+            return [rounded(value.x), rounded(value.y), rounded(value.z), value instanceof Vec3].join(':');
+        }
+        export function update(value) {
+            var source = new Vec3(0.2, 0.4, 0.8);
+            var roundTrip = WEColor.hsv2rgb(WEColor.rgb2hsv(source));
+            var normalized = WEColor.normalizeColor({ x: 255, y: 127.5, z: 0 });
+            var expanded = WEColor.expandColor(new Vec3(0.25, 0.5, 1));
+            return [encoded(roundTrip), encoded(normalized), encoded(expanded), encoded(source)].join('|');
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "init")
+        #expect(instance.tickString() == [
+            "0.2:0.4:0.8:true",
+            "1:0.5:0:true",
+            "63.75:127.5:255:true",
+            "0.2:0.4:0.8:true",
+        ].joined(separator: "|"))
+    }
+
     @Test("localstorage.set/get round-trip")
     func localstorageRoundTrip() throws {
         let script = """
@@ -1095,6 +1156,197 @@ export function init(value) {
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "init")
         #expect(instance.tickString() == "5")
+    }
+
+    @Test("Official Vec2 Vec3 Vec4 APIs preserve inputs and return documented vector types")
+    func officialVectorContracts() throws {
+        let script = """
+        function near(a, b) { return Math.abs(a - b) < 0.000001; }
+        function vec(v, expected) {
+            for (var i = 0; i < expected.length; i += 1) {
+                var key = ['x', 'y', 'z', 'w'][i];
+                if (!near(v[key], expected[i])) { return false; }
+            }
+            return true;
+        }
+        export function update(value) {
+            var failures = [];
+            function check(condition, label) { if (!condition) { failures.push(label); } }
+
+            var methodNames = [
+                'length', 'lengthSqr', 'distance', 'distanceSqr', 'normalize', 'copy',
+                'equals', 'isFinite', 'negate', 'add', 'subtract', 'multiply', 'divide',
+                'dot', 'reflect', 'mix', 'min', 'max', 'clamp', 'abs', 'sign', 'round',
+                'floor', 'ceil', 'fract', 'mod', 'step', 'smoothStep', 'toString'
+            ];
+            [new Vec2(), new Vec3(), new Vec4()].forEach(function (item, dimension) {
+                methodNames.forEach(function (name) {
+                    check(typeof item[name] === 'function', 'Vec' + (dimension + 2) + '.' + name);
+                });
+            });
+            check(typeof Vec3.fromSpherical === 'function', 'Vec3.fromSpherical');
+            ['project', 'angleBetween', 'toSpherical', 'refract', 'cross'].forEach(function (name) {
+                check(typeof new Vec3()[name] === 'function', 'Vec3.' + name);
+            });
+            ['project'].forEach(function (name) {
+                check(typeof new Vec4()[name] === 'function', 'Vec4.' + name);
+            });
+
+            check(vec(new Vec2('x=-1.5 y=2e1 trailing 9'), [-1.5, 20]), 'Vec2 string');
+            check(vec(new Vec3(new Vec2(2, 3)), [2, 3, 0]), 'Vec3 Vec2');
+            check(vec(new Vec3(2, 3), [2, 3, 0]), 'Vec3 xy');
+            check(vec(new Vec4('1 2 3 4 5'), [1, 2, 3, 4]), 'Vec4 string');
+
+            var sources = [new Vec2(1, 2), new Vec3(1, 2, 3), new Vec4(1, 2, 3, 4)];
+            sources.forEach(function (source, index) {
+                var dimension = index + 2;
+                var expected = source.toArray();
+                var other = dimension === 2 ? new Vec2(3, 4) : (dimension === 3 ? new Vec3(3, 4, 5) : new Vec4(3, 4, 5, 6));
+                check(source.copy() !== source && source.copy().equals(source), 'copy' + dimension);
+                check(source.add(1).subtract(1).equals(source), 'add/subtract' + dimension);
+                check(source.multiply(2).divide(2).equals(source), 'multiply/divide' + dimension);
+                check(source.lengthSqr() === source.dot(source), 'lengthSqr' + dimension);
+                check(near(source.distance(other) * source.distance(other), source.distanceSqr(other)), 'distance' + dimension);
+                check(near(source.normalize().length(), 1), 'normalize' + dimension);
+                check(source.negate().add(source).equals(dimension === 2 ? new Vec2(0) : (dimension === 3 ? new Vec3(0) : new Vec4(0))), 'negate' + dimension);
+                check(source.reflect(dimension === 2 ? new Vec2(1, 0) : (dimension === 3 ? new Vec3(1, 0, 0) : new Vec4(1, 0, 0, 0))).x === -1, 'reflect' + dimension);
+                check(source.mix(other, 0.5).equals(source.add(other).divide(2)), 'mix' + dimension);
+                check(source.min(other).equals(source) && source.max(other).equals(other), 'min/max' + dimension);
+                check(source.clamp(2, 3).x === 2, 'clamp' + dimension);
+                check(source.toArray().join(',') === expected.join(','), 'immutable' + dimension);
+            });
+            check(vec(new Vec3(1, 2, 3).add(new Vec2(2, 4)), [3, 6, 3]), 'Vec3 add Vec2');
+            check(vec(new Vec3(1, 2, 3).multiply(new Vec2(2, 4)), [2, 8, 0]), 'Vec3 multiply Vec2');
+            check(!new Vec2(1, 0).divide(0).isFinite(), 'divide zero/isFinite');
+            check(vec(new Vec4(0, 10, 20, 30).mix(new Vec4(10, 20, 30, 40), new Vec4(0, 0.25, 0.5, 1)), [0, 12.5, 25, 40]), 'Vec4 vector mix');
+            return failures.length ? failures.join(',') : 'ok';
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "init")
+        #expect(instance.tickString() == "ok")
+    }
+
+    @Test("Official vector component, projection, spherical, and GLSL contracts match the reference")
+    func officialVectorGeometryAndComponentContracts() throws {
+        let script = """
+        function near(a, b) { return Math.abs(a - b) < 0.000001; }
+        function vec(v, expected) {
+            for (var i = 0; i < expected.length; i += 1) {
+                if (!near(v[['x', 'y', 'z', 'w'][i]], expected[i])) { return false; }
+            }
+            return true;
+        }
+        export function update(value) {
+            var failures = [];
+            function check(condition, label) { if (!condition) { failures.push(label); } }
+            var samples = [new Vec2(-1.6, 2.25), new Vec3(-1.6, 2.25, -3.75), new Vec4(-1.6, 2.25, -3.75, 4.5)];
+            samples.forEach(function (sample, index) {
+                var dimension = index + 2;
+                check(sample.abs().x === 1.6 && sample.sign().x === -1, 'abs/sign' + dimension);
+                check(sample.round().x === -2 && sample.floor().y === 2 && sample.ceil().y === 3, 'rounding' + dimension);
+                check(near(sample.fract().x, 0.4) && near(sample.mod(1).x, 0.4), 'fract/mod' + dimension);
+                check(sample.step(0).x === 0 && sample.step(0).y === 1, 'step' + dimension);
+                check(near(sample.smoothStep(-2, 3).x, 0.018176), 'smoothStep' + dimension);
+                check(new sample.constructor(sample.toString()).equals(sample), 'toString parse' + dimension);
+            });
+            check(vec(new Vec3(2, 2, 0).project(new Vec3(1, 0, 0)), [2, 0, 0]), 'Vec3 project');
+            check(vec(new Vec4(2, 2, 0, 0).project(new Vec4(1, 0, 0, 0)), [2, 0, 0, 0]), 'Vec4 project');
+            check(near(new Vec3(1, 0, 0).angleBetween(new Vec3(0, 1, 0)), 90), 'angleBetween degrees');
+            check(vec(new Vec3(1, 0, 0).cross(new Vec3(0, 1, 0)), [0, 0, 1]), 'cross');
+            var spherical = Vec3.fromSpherical(2, 90, 90);
+            check(vec(spherical, [0, 0, 2]) && vec(spherical.toSpherical(), [2, 90, 90]), 'spherical degrees/order');
+            check(vec(new Vec3(2, -2, 0).refract(new Vec3(0, 1, 0), 0.5), [1, -1.3228756555, 0]), 'GLSL refract no normalization');
+            check(vec(new Vec3(1, 0, 0).refract(new Vec3(0, 1, 0), 2), [0, 0, 0]), 'GLSL refract TIR');
+            return failures.length ? failures.join(',') : 'ok';
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "init")
+        #expect(instance.tickString() == "ok")
+    }
+
+    @Test("Official Mat3 factories, overloads, transforms, and mutation contract match the reference")
+    func officialMat3Contracts() throws {
+        let script = """
+        function near(a, b) { return Math.abs(a - b) < 0.000001; }
+        function vec(v, expected) { return near(v.x, expected[0]) && near(v.y, expected[1]) && (expected.length < 3 || near(v.z, expected[2])); }
+        export function update(value) {
+            var failures = [];
+            function check(condition, label) { if (!condition) { failures.push(label); } }
+            ['translation', 'angle', 'add', 'subtract', 'multiply', 'translate', 'rotate', 'scale',
+             'transformPoint', 'transformDirection', 'transpose', 'determinant', 'inverse', 'decompose',
+             'copy', 'equals'].forEach(function (name) { check(typeof new Mat3()[name] === 'function', 'Mat3.' + name); });
+            ['identity', 'fromTranslation', 'fromScale', 'fromRotation', 'fromBasis', 'fromMat4', 'compose'].forEach(function (name) {
+                check(typeof Mat3[name] === 'function', 'Mat3.' + name);
+            });
+            var matrix = Mat3.compose(new Vec2(3, 4), 90, new Vec2(2, 3));
+            check(vec(matrix.translation(), [3, 4]) && near(matrix.angle(), 90), 'translation/angle');
+            check(vec(matrix.transformPoint(new Vec2(1, 0)), [3, 6]), 'transformPoint');
+            check(vec(matrix.transformDirection(new Vec2(1, 0)), [0, 2]), 'transformDirection');
+            check(matrix.multiply(new Vec3(1, 0, 1)) instanceof Vec3, 'multiply Vec3 type');
+            check(matrix.multiply(2) instanceof Mat3 && matrix.multiply(Mat3.identity()) instanceof Mat3, 'multiply result types');
+            check(matrix.add(Mat3.identity()).subtract(Mat3.identity()).equals(matrix), 'add/subtract');
+            check(near(matrix.determinant(), 6), 'determinant');
+            var parts = matrix.decompose();
+            check(vec(parts.translation, [3, 4]) && near(parts.rotation, 90) && vec(parts.scale, [2, 3]), 'decompose');
+            check(Mat3.fromBasis(new Vec2(1, 2), new Vec2(3, 4)).m.join(',') === '1,2,0,3,4,0,0,0,1', 'fromBasis columns');
+            check(Mat3.fromMat4(Mat4.fromScale(new Vec3(2, 3, 4))).m.join(',') === '2,0,0,0,3,0,0,0,4', 'fromMat4');
+            check(Mat3.identity().translate(new Vec2(3, 4)).rotate(90).scale(new Vec2(2, 3)).equals(matrix), 'right multiply helpers');
+            var copy = matrix.copy();
+            check(copy !== matrix && copy.equals(matrix), 'copy/equals');
+            var returned = copy.translation(new Vec2(8, 9));
+            check(typeof returned === 'undefined' && vec(copy.translation(), [8, 9]) && vec(matrix.translation(), [3, 4]), 'translation setter only mutation');
+            return failures.length ? failures.join(',') : 'ok';
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "init")
+        #expect(instance.tickString() == "ok")
+    }
+
+    @Test("Official Mat4 factories, overloads, transforms, and degree outputs match the reference")
+    func officialMat4Contracts() throws {
+        let script = """
+        function near(a, b) { return Math.abs(a - b) < 0.000001; }
+        function vec(v, expected) {
+            for (var i = 0; i < expected.length; i += 1) {
+                if (!near(v[['x', 'y', 'z', 'w'][i]], expected[i])) { return false; }
+            }
+            return true;
+        }
+        export function update(value) {
+            var failures = [];
+            function check(condition, label) { if (!condition) { failures.push(label); } }
+            ['translation', 'right', 'up', 'forward', 'add', 'subtract', 'multiply', 'translate', 'rotate',
+             'scale', 'transformPoint', 'transformDirection', 'transpose', 'inverse', 'determinant',
+             'extractEuler', 'normalMatrix', 'decompose', 'copy', 'equals'].forEach(function (name) {
+                check(typeof new Mat4()[name] === 'function', 'Mat4.' + name);
+            });
+            ['identity', 'fromTranslation', 'fromScale', 'fromRotation', 'fromBasis', 'lookAt'].forEach(function (name) {
+                check(typeof Mat4[name] === 'function', 'Mat4.' + name);
+            });
+            var rotation = Mat4.fromRotation(90, new Vec3(0, 0, 1));
+            var matrix = Mat4.fromTranslation(new Vec3(3, 4, 5)).multiply(rotation).multiply(Mat4.fromScale(2));
+            check(vec(matrix.translation(), [3, 4, 5]), 'translation getter');
+            check(vec(rotation.right(), [0, 1, 0]) && vec(rotation.up(), [-1, 0, 0]) && vec(rotation.forward(), [0, 0, 1]), 'basis getters');
+            check(vec(matrix.transformPoint(new Vec3(1, 0, 0)), [3, 6, 5]), 'transformPoint');
+            check(vec(matrix.transformDirection(new Vec3(1, 0, 0)), [0, 2, 0]), 'transformDirection');
+            check(matrix.multiply(new Vec4(1, 0, 0, 1)) instanceof Vec4, 'multiply Vec4 type');
+            check(matrix.multiply(2) instanceof Mat4 && matrix.multiply(Mat4.identity()) instanceof Mat4, 'multiply result types');
+            check(matrix.add(Mat4.identity()).subtract(Mat4.identity()).equals(matrix), 'add/subtract');
+            check(near(matrix.determinant(), 8), 'determinant');
+            var parts = matrix.decompose();
+            check(vec(parts.translation, [3, 4, 5]) && vec(parts.rotation, [0, 0, 90]) && vec(parts.scale, [2, 2, 2]), 'decompose degrees');
+            check(vec(matrix.extractEuler(), [0, 0, 90]), 'extractEuler degrees');
+            check(Mat4.fromBasis(new Vec3(1, 2, 3), new Vec3(4, 5, 6), new Vec3(7, 8, 9)).m.slice(0, 12).join(',') === '1,2,3,0,4,5,6,0,7,8,9,0', 'fromBasis columns');
+            check(Mat4.identity().translate(new Vec3(3, 4, 5)).rotate(90, new Vec3(0, 0, 1)).scale(2).equals(matrix), 'right multiply helpers');
+            var copy = matrix.copy();
+            check(copy !== matrix && copy.equals(matrix), 'copy/equals');
+            var returned = copy.translation(new Vec2(8, 9));
+            check(typeof returned === 'undefined' && vec(copy.translation(), [8, 9, 0]) && vec(matrix.translation(), [3, 4, 5]), 'translation setter only mutation');
+            return failures.length ? failures.join(',') : 'ok';
+        }
+        """
+        let instance = try WPESceneScriptInstance(script: script, initialValue: "init")
+        #expect(instance.tickString() == "ok")
     }
 
     @Test("Mat4.identity().normalMatrix() is the identity 3×3")
@@ -3324,5 +3576,244 @@ export function init(value) {
         _ = instance.tick(runtimeSeconds: 3, pointerFrame: moved)
         #expect(store.get("writes") as? Double == afterFirst + 2)
         #expect(store.get("px") as? Double == 100)
+    }
+
+    @Test("Layer resizeScreen uses real changed screen size and destroy is one-shot")
+    func layerLifecycleEventsAreOrderedAndIdempotent() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPELayerScriptInstance(
+            script: """
+            export function init() {
+                shared.initScreen = engine.screenResolution.x + ':' + engine.screenResolution.y;
+                shared.canvas = engine.canvasSize.x + ':' + engine.canvasSize.y;
+                shared.resizeCount = 0;
+                shared.destroyCount = 0;
+            }
+            export function resizeScreen(size) {
+                shared.resizeCount += 1;
+                shared.isVec2 = size instanceof Vec2;
+                shared.eventSize = size.x + ':' + size.y;
+                shared.engineSize = engine.screenResolution.x + ':' + engine.screenResolution.y;
+                shared.canvasAfter = engine.canvasSize.x + ':' + engine.canvasSize.y;
+                thisLayer.alpha = size.x / 1000;
+            }
+            export function destroy() {
+                shared.destroyCount += 1;
+                thisLayer.visible = false;
+            }
+            export function update() { shared.updates = (shared.updates || 0) + 1; }
+            """,
+            shared: store,
+            canvasSize: SIMD2(100, 50),
+            screenSize: SIMD2(200, 100)
+        )
+
+        // Official contract: startup seeds screenResolution but does not emit resizeScreen.
+        #expect(store.get("initScreen") as? String == "200:100")
+        #expect(store.get("canvas") as? String == "100:50")
+        #expect(store.get("resizeCount") as? Double == 0)
+        #expect(instance.resizeScreen(SIMD2(200, 100)) == nil)
+        #expect(store.get("resizeCount") as? Double == 0)
+
+        let resized = try #require(instance.resizeScreen(SIMD2(300, 150)))
+        #expect(store.get("resizeCount") as? Double == 1)
+        #expect(store.get("isVec2") as? Bool == true)
+        #expect(store.get("eventSize") as? String == "300:150")
+        #expect(store.get("engineSize") as? String == "300:150")
+        #expect(store.get("canvasAfter") as? String == "100:50")
+        #expect(resized.own.alpha == 0.3)
+        #expect(instance.resizeScreen(SIMD2(300, 150)) == nil)
+        #expect(store.get("resizeCount") as? Double == 1)
+
+        let destroyed = try #require(instance.destroy())
+        #expect(destroyed.own.visible == false)
+        #expect(store.get("destroyCount") as? Double == 1)
+        #expect(instance.destroy() == nil)
+        #expect(instance.resizeScreen(SIMD2(400, 200)) == nil)
+        _ = instance.tick(runtimeSeconds: 1)
+        #expect(store.get("destroyCount") as? Double == 1)
+        #expect(store.get("updates") == nil)
+    }
+
+    @Test("Text SceneScript lifecycle keeps canvas and screen independent")
+    func textLifecycleEventsUseLiveScreenState() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPESceneScriptInstance(
+            script: """
+            export function init() {
+                shared.resizeCount = 0;
+                shared.destroyCount = 0;
+            }
+            export function resizeScreen(size) {
+                shared.resizeCount += 1;
+                shared.isVec2 = size instanceof Vec2;
+                shared.eventSize = size.x + ':' + size.y;
+            }
+            export function destroy() { shared.destroyCount += 1; }
+            export function update(value) {
+                return engine.screenResolution.x + 'x' + engine.screenResolution.y
+                    + '/' + engine.canvasSize.x + 'x' + engine.canvasSize.y;
+            }
+            """,
+            initialValue: "seed",
+            shared: store,
+            canvasSize: SIMD2(640, 360),
+            screenSize: SIMD2(1280, 720)
+        )
+
+        #expect(instance.tickString() == "1280x720/640x360")
+        #expect(store.get("resizeCount") as? Double == 0)
+        #expect(instance.resizeScreen(SIMD2(1280, 720)) == false)
+        #expect(instance.resizeScreen(SIMD2(1920, 1080)))
+        #expect(store.get("resizeCount") as? Double == 1)
+        #expect(store.get("isVec2") as? Bool == true)
+        #expect(store.get("eventSize") as? String == "1920:1080")
+        #expect(instance.tickString() == "1920x1080/640x360")
+        #expect(instance.destroy())
+        #expect(instance.destroy() == false)
+        #expect(store.get("destroyCount") as? Double == 1)
+        #expect(instance.tickString() == "1920x1080/640x360")
+    }
+
+    @Test("Dynamic SceneScript lifecycle is changed-size and one-shot")
+    func dynamicLifecycleEventsAreOneShot() throws {
+        let store = WPESharedScriptState()
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            export function init(value) {
+                shared.resizeCount = 0;
+                shared.destroyCount = 0;
+            }
+            export function resizeScreen(size) {
+                shared.resizeCount += 1;
+                shared.screen = engine.screenResolution.x + ':' + engine.screenResolution.y;
+                shared.canvas = engine.canvasSize.x + ':' + engine.canvasSize.y;
+            }
+            export function destroy() { shared.destroyCount += 1; }
+            export function update(value) { return value; }
+            """,
+            seed: SIMD3(1, 2, 3),
+            canvasSize: SIMD2(320, 180),
+            screenSize: SIMD2(1280, 720),
+            shared: store
+        )
+
+        #expect(instance.resizeScreen(SIMD2(1280, 720)) == false)
+        #expect(instance.resizeScreen(SIMD2(2560, 1440)))
+        #expect(store.get("resizeCount") as? Double == 1)
+        #expect(store.get("screen") as? String == "2560:1440")
+        #expect(store.get("canvas") as? String == "320:180")
+        #expect(instance.destroy())
+        #expect(instance.destroy() == false)
+        #expect(instance.resizeScreen(SIMD2(3000, 2000)) == false)
+        #expect(store.get("destroyCount") as? Double == 1)
+    }
+
+    @Test("General settings language is an own-key object in every live context")
+    func generalSettingsLanguageContractAcrossContexts() throws {
+        let layerStore = WPESharedScriptState()
+        let layer = try WPELayerScriptInstance(
+            script: """
+            export function applyGeneralSettings(settings) {
+                shared.language = settings.language;
+                shared.ownsLanguage = settings.hasOwnProperty('language');
+                shared.keyCount = Object.keys(settings).length;
+                thisLayer.alpha = settings.language === 'ja-jp' ? 0.4 : 1;
+            }
+            """,
+            shared: layerStore
+        )
+        let layerOutput = try #require(layer.applyGeneralSettings(language: "ja-jp"))
+        #expect(layerStore.get("language") as? String == "ja-jp")
+        #expect(layerStore.get("ownsLanguage") as? Bool == true)
+        #expect(layerStore.get("keyCount") as? Double == 1)
+        #expect(layerOutput.own.alpha == 0.4)
+
+        let textStore = WPESharedScriptState()
+        let text = try WPESceneScriptInstance(
+            script: """
+            export function applyGeneralSettings(settings) {
+                shared.language = settings.language;
+                shared.ownsLanguage = settings.hasOwnProperty('language');
+            }
+            export function update(value) { return shared.language || value; }
+            """,
+            initialValue: "seed",
+            shared: textStore
+        )
+        #expect(text.applyGeneralSettings(language: "zh-chs"))
+        #expect(textStore.get("ownsLanguage") as? Bool == true)
+        #expect(text.tickString() == "zh-chs")
+
+        let dynamicStore = WPESharedScriptState()
+        let dynamic = try WPEDynamicTransformScriptInstance(
+            script: """
+            export function applyGeneralSettings(settings) {
+                shared.language = settings.language;
+                shared.ownsLanguage = settings.hasOwnProperty('language');
+            }
+            export function update(value) { return value; }
+            """,
+            seed: SIMD3(1, 2, 3),
+            canvasSize: SIMD2(100, 100),
+            shared: dynamicStore
+        )
+        #expect(dynamic.applyGeneralSettings(language: "en-us"))
+        #expect(dynamicStore.get("language") as? String == "en-us")
+        #expect(dynamicStore.get("ownsLanguage") as? Bool == true)
+
+        _ = layer.destroy()
+        #expect(layer.applyGeneralSettings(language: "en-us") == nil)
+        _ = text.destroy()
+        #expect(text.applyGeneralSettings(language: "en-us") == false)
+        _ = dynamic.destroy()
+        #expect(dynamic.applyGeneralSettings(language: "ja-jp") == false)
+    }
+
+    @Test("General settings delivery is initial-full then changed-only per generation")
+    func generalSettingsDeliveryStateContract() {
+        var state = WPESceneScriptGeneralSettingsDeliveryState(language: "en-us")
+        #expect(state.takeInitialLanguage() == "en-us")
+        #expect(state.takeChangedLanguage() == nil)
+        #expect(state.updateLanguage("en-us") == false)
+        #expect(state.takeChangedLanguage() == nil)
+
+        let changedToJapanese = state.updateLanguage("ja-jp")
+        #expect(changedToJapanese)
+        #expect(state.takeChangedLanguage() == "ja-jp")
+        #expect(state.takeChangedLanguage() == nil)
+
+        // A notification received while load is suspended is retained and
+        // reconciled once the renderer marks the generation loaded.
+        let changedToSimplifiedChinese = state.updateLanguage("zh-chs")
+        #expect(changedToSimplifiedChinese)
+        #expect(state.takeChangedLanguage() == "zh-chs")
+        state.resetGeneration()
+        #expect(state.takeInitialLanguage() == "zh-chs")
+        #expect(state.takeChangedLanguage() == nil)
+    }
+
+    @Test("Retired SceneScript generation rejects lifecycle callbacks")
+    func retiredGenerationRejectsLifecycleEvents() throws {
+        let token = WPESceneScriptInstanceLimitToken(generation: 41)
+        #expect(token.prepare(.init(text: 0, layer: 1, transform: 0)))
+        let store = WPESharedScriptState(sceneScriptLoadToken: token)
+        let instance = try WPELayerScriptInstance(
+            script: """
+            export function resizeScreen(size) { shared.resized = size.x; }
+            export function applyGeneralSettings(settings) { shared.language = settings.language; }
+            export function destroy() { shared.destroyed = true; }
+            """,
+            shared: store,
+            screenSize: SIMD2(100, 100)
+        )
+
+        token.retire()
+        #expect(instance.resizeScreen(SIMD2(200, 200)) == nil)
+        #expect(instance.applyGeneralSettings(language: "ja-jp") == nil)
+        #expect(instance.destroy() == nil)
+        #expect(store.get("resized") == nil)
+        #expect(store.get("language") == nil)
+        #expect(store.get("destroyed") == nil)
     }
 }

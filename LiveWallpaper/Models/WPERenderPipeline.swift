@@ -170,11 +170,44 @@ struct WPERenderObjectTransform: Equatable, Sendable {
     }
 }
 
+/// Observable provenance for the implementation that will execute a prepared
+/// WPE shader pass. The labels are part of the canonical-trace contract: they
+/// describe the selected path, not a claim of pixel equivalence with WPE.
+enum WPEShaderExecutionClassification: String, Equatable, Sendable {
+    /// WPE-format GLSL resolved from the scene/dependency/engine asset roots and
+    /// translated at runtime.
+    case officialSource = "official-source"
+    /// A hand-authored Metal implementation selected for a known WPE shader.
+    case nativeApproximation = "native-approximation"
+    /// A copy program selected specifically because an effect source was absent.
+    case copyFallback = "copy-fallback"
+    /// Authored shader/effect metadata retained without an executable pass.
+    /// No current prepared-pass producer may infer this from `shader == nil`:
+    /// text and other separately dispatched paths also intentionally omit it.
+    case unsupportedMetadataOnly = "unsupported-metadata-only"
+}
+
 struct WPEShaderProgram: Equatable, Sendable {
     let name: String
     let vertexSource: String
     let fragmentSource: String
     let isBuiltin: Bool
+    let executionClassification: WPEShaderExecutionClassification
+
+    init(
+        name: String,
+        vertexSource: String,
+        fragmentSource: String,
+        isBuiltin: Bool,
+        executionClassification: WPEShaderExecutionClassification? = nil
+    ) {
+        self.name = name
+        self.vertexSource = vertexSource
+        self.fragmentSource = fragmentSource
+        self.isBuiltin = isBuiltin
+        self.executionClassification = executionClassification
+            ?? (isBuiltin ? .nativeApproximation : .officialSource)
+    }
 }
 
 extension WPEPreparedRenderPipeline {
@@ -574,10 +607,14 @@ private extension WPEPreparedRenderLayer {
             binds: p.binds,
             constants: p.constants,
             combos: p.combos,
+            userTextureBindings: p.userTextureBindings,
+            authoredJSON: p.authoredJSON,
             blending: p.blending,
             cullMode: p.cullMode,
             depthTest: p.depthTest,
-            depthWrite: p.depthWrite
+            depthWrite: p.depthWrite,
+            constantScripts: p.constantScripts,
+            visibilityGate: p.visibilityGate
         )
         let dynamicPass = WPEPreparedRenderPass(
             pass: renderPass,
@@ -624,6 +661,7 @@ private extension WPERenderLayer {
             parentObjectID: nil,
             attachment: nil,
             animationLayers: [],
+            authoredJSON: authoredJSON,
             geometry: dynamicGeometry,
             localGeometry: dynamicGeometry,
             compositeA: WPERenderTargetNames.CreatedLayerComposite.make(key: state.key).a,
@@ -658,6 +696,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: adjustedGeometry,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -683,6 +722,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: geometry,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -742,6 +782,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: overridden,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -799,6 +840,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: overridden,
             localGeometry: localGeometry,
             compositeA: compositeA,
@@ -832,6 +874,7 @@ private extension WPERenderLayer {
             parentObjectID: parentObjectID,
             attachment: attachment,
             animationLayers: animationLayers,
+            authoredJSON: authoredJSON,
             geometry: geometry.resolved(at: time),
             localGeometry: localGeometry?.resolved(at: time),
             compositeA: compositeA,

@@ -1,0 +1,79 @@
+import Testing
+@testable import LiveWallpaperProWPE
+
+/// Contract tests for the official timeline Mirror mode: forward for the
+/// configured duration, reverse for the same duration, then repeat.
+@Suite("WPE scene numeric animation Mirror mode")
+struct WPESceneNumericAnimationMirrorTests {
+    private func linearMirror(
+        length: Double = 10,
+        wrapLoop: Bool = false
+    ) -> WPESceneNumericAnimation {
+        WPESceneNumericAnimation(
+            tracks: [[
+                WPESceneAnimationKeyframe(frame: 0, value: 0),
+                WPESceneAnimationKeyframe(frame: length, value: 1)
+            ]],
+            fps: 10,
+            length: length,
+            mode: "mirror",
+            wrapLoop: wrapLoop
+        )
+    }
+
+    private func scalar(_ animation: WPESceneNumericAnimation, at time: Double) -> Double {
+        animation.values(at: time, fallbacks: [-1])[0]
+    }
+
+    @Test("Mirror retains both turn-around endpoints")
+    func endpoints() {
+        let animation = linearMirror()
+
+        #expect(scalar(animation, at: 0) == 0)
+        #expect(scalar(animation, at: 1) == 1)
+        #expect(scalar(animation, at: 2) == 0)
+        #expect(scalar(animation, at: 3) == 1)
+        #expect(scalar(animation, at: 4) == 0)
+    }
+
+    @Test("Mirror reverses at the same speed as its forward traversal")
+    func forwardThenReverseAtEqualSpeed() {
+        let animation = linearMirror()
+
+        for forwardTime in [0.125, 0.25, 0.5, 0.75, 0.875] {
+            let reverseTime = 2 - forwardTime
+            #expect(abs(scalar(animation, at: forwardTime) - scalar(animation, at: reverseTime)) < 1e-12)
+        }
+    }
+
+    @Test("Mirror takes precedence over wrap-loop at runtime")
+    func mirrorWithWrapLoopStillReverses() {
+        let animation = linearMirror(wrapLoop: true)
+
+        #expect(abs(scalar(animation, at: 1.25) - 0.75) < 1e-12)
+        #expect(abs(scalar(animation, at: 1.75) - 0.25) < 1e-12)
+    }
+
+    @Test("Negative time clamps to the first frame")
+    func negativeTime() {
+        let animation = linearMirror()
+
+        #expect(scalar(animation, at: -0.001) == 0)
+        #expect(scalar(animation, at: -10_000) == 0)
+    }
+
+    @Test("A zero-length single-frame Mirror animation is stable")
+    func zeroLengthSingleFrame() {
+        let animation = WPESceneNumericAnimation(
+            tracks: [[WPESceneAnimationKeyframe(frame: 0, value: 42)]],
+            fps: 30,
+            length: 0,
+            mode: "mirror",
+            wrapLoop: false
+        )
+
+        for time in [-10.0, 0, 0.5, 10, 1_000_000] {
+            #expect(scalar(animation, at: time) == 42)
+        }
+    }
+}

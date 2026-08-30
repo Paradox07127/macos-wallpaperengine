@@ -5,6 +5,40 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import os
 
+/// Generation-local delivery state for WPE's initial-full then changed-only
+/// general-settings contract. Keeping this as a value type makes load suspension
+/// races and de-duplication testable without constructing a Metal renderer.
+struct WPESceneScriptGeneralSettingsDeliveryState: Sendable {
+    private(set) var language: String
+    private var appliedLanguage: String?
+
+    init(language: String) {
+        self.language = language
+    }
+
+    @discardableResult
+    mutating func updateLanguage(_ language: String) -> Bool {
+        guard language != self.language else { return false }
+        self.language = language
+        return true
+    }
+
+    mutating func takeInitialLanguage() -> String {
+        appliedLanguage = language
+        return language
+    }
+
+    mutating func takeChangedLanguage() -> String? {
+        guard appliedLanguage != language else { return nil }
+        appliedLanguage = language
+        return language
+    }
+
+    mutating func resetGeneration() {
+        appliedLanguage = nil
+    }
+}
+
 /// Shared admission + async-overrun quarantine for scene/layer/transform engines.
 protocol WPESceneScriptEngineExecutionGuarding: AnyObject {
     var queue: DispatchQueue { get }
@@ -686,6 +720,7 @@ final class WPESceneScriptInstance {
     let mediaHandlers: WPESceneMediaHandlerSet
     private let tickBudget: TimeInterval
     private var isPoisoned = false
+    private var isDestroyed = false
     private(set) var lastValue: String
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<String?>()
 
@@ -704,7 +739,8 @@ final class WPESceneScriptInstance {
         /// The scene's render size. `nil` leaves the sandbox's 1920x1080, which
         /// is only right for scenes that happen to be that size — every caller
         /// that knows the real canvas must pass it.
-        canvasSize: SIMD2<Double>? = nil
+        canvasSize: SIMD2<Double>? = nil,
+        screenSize: SIMD2<Double>? = nil
     ) throws {
         self.lastValue = initialValue
         self.tickBudget = tickBudget
@@ -712,7 +748,8 @@ final class WPESceneScriptInstance {
             shared: shared,
             governor: governor,
             batchDispatcher: batchDispatcher,
-            canvasSize: canvasSize
+            canvasSize: canvasSize,
+            screenSize: screenSize ?? canvasSize
         )
         self.engineRelease = WPESceneScriptLaneRelease(value: engine, queue: engine.queue)
         var prepared = Self.preprocess(script: script)
@@ -788,7 +825,7 @@ final class WPESceneScriptInstance {
     func tickString(
         runtimeSeconds: Double? = nil
     ) -> String {
-        guard hasUpdateFunction, !isPoisoned,
+        guard hasUpdateFunction, !isPoisoned, !isDestroyed,
               engine.allows(.tick) else { return lastValue }
         switch engine.tick(
             lastValue: lastValue,
@@ -822,7 +859,7 @@ final class WPESceneScriptInstance {
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
     ) -> Bool {
-        guard !isPoisoned, !properties.isEmpty,
+        guard !isPoisoned, !isDestroyed, !properties.isEmpty,
               engine.allows(.userProperties) else { return false }
         let budget = tickBudget * 2
         switch engine.applyScriptProperties(
@@ -848,12 +885,62 @@ final class WPESceneScriptInstance {
         }
     }
 
+    @discardableResult
+    func resizeScreen(_ size: SIMD2<Double>) -> Bool {
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return false }
+        let budget = tickBudget * 2
+        switch engine.resizeScreen(size, budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Text SceneScript resizeScreen() exceeded \(budget)s — frozen", category: .wpeRender)
+            return false
+        case .capacityUnavailable:
+            return false
+        case let .completed(invoked):
+            return engine.acceptsCompletion() && invoked
+        }
+    }
+
+    @discardableResult
+    func applyGeneralSettings(language: String) -> Bool {
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return false }
+        let budget = tickBudget * 2
+        switch engine.applyGeneralSettings(language: language, budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Text SceneScript applyGeneralSettings() exceeded \(budget)s — frozen", category: .wpeRender)
+            return false
+        case .capacityUnavailable:
+            return false
+        case let .completed(invoked):
+            return engine.acceptsCompletion() && invoked
+        }
+    }
+
+    @discardableResult
+    func destroy() -> Bool {
+        guard !isDestroyed else { return false }
+        isDestroyed = true
+        guard !isPoisoned, engine.allows(.event) else { return false }
+        let budget = tickBudget * 2
+        switch engine.destroy(budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Text SceneScript destroy() exceeded \(budget)s", category: .wpeRender)
+            return false
+        case .capacityUnavailable:
+            return false
+        case let .completed(invoked):
+            return engine.acceptsCompletion() && invoked
+        }
+    }
+
     // MARK: Async Tick
 
     /// Load-path seeding: one bounded synchronous tick so the first frame shows
     /// the scripted value instead of popping the authored placeholder.
     func seedAsyncTick(runtimeSeconds: Double? = nil) {
-        guard hasUpdateFunction, !isPoisoned,
+        guard hasUpdateFunction, !isPoisoned, !isDestroyed,
               engine.allows(.tick) else { return }
         switch engine.tick(
             lastValue: lastValue,
@@ -881,7 +968,7 @@ final class WPESceneScriptInstance {
     func batchTickString(
         runtimeSeconds: Double? = nil
     ) -> (value: String, job: WPESceneScriptBatchDispatcher.Job?) {
-        guard hasUpdateFunction, !isPoisoned else { return (lastValue, nil) }
+        guard hasUpdateFunction, !isPoisoned, !isDestroyed else { return (lastValue, nil) }
         if let overrun = engine.quarantineAsyncIfOverdue(budget: tickBudget) {
             isPoisoned = true
             Logger.warning(
@@ -928,6 +1015,7 @@ final class WPESceneScriptInstance {
         private var audioBridge: WPESceneScriptAudioBridge?
         private var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
+        private var screenResolution: JSValue?
         private var lastRuntimeSeconds: Double?
         /// One-crossing clock updates; nil until setUp (then falls back to
         /// `wpeRefreshEngineClock` should construction ever fail).
@@ -944,14 +1032,17 @@ final class WPESceneScriptInstance {
         private var faultPolicy = WPEScriptFaultPolicy()
         /// Scene render size, or nil to leave the sandbox's 1920x1080.
         private let canvasSize: SIMD2<Double>?
+        private var screenSize: SIMD2<Double>?
 
         init(
             shared: WPESharedScriptState?,
             governor: WPESceneScriptExecutionGovernor,
             batchDispatcher: WPESceneScriptBatchDispatcher,
-            canvasSize: SIMD2<Double>?
+            canvasSize: SIMD2<Double>?,
+            screenSize: SIMD2<Double>?
         ) {
             self.canvasSize = canvasSize
+            self.screenSize = screenSize.map { SIMD2(max($0.x, 1), max($0.y, 1)) }
             self.shared = shared
             self.governor = governor
             self.participant = governor.makeParticipant()
@@ -1024,6 +1115,33 @@ final class WPESceneScriptInstance {
             }
         }
 
+        func resizeScreen(
+            _ size: SIMD2<Double>,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<Bool> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.resizeScreenOnQueue(size)
+            }
+        }
+
+        func applyGeneralSettings(
+            language: String,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<Bool> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.applyGeneralSettingsOnQueue(language: language)
+            }
+        }
+
+        func destroy(budget: TimeInterval) -> WPESceneScriptBoundedExecutionResult<Bool> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.destroyOnQueue()
+            }
+        }
+
         /// Batch-mode work unit. No governor permit: concurrency is bounded by the
         /// dispatcher's worker count, and the work runs ON this engine's queue
         /// because in batch mode that queue IS its worker.
@@ -1056,17 +1174,64 @@ final class WPESceneScriptInstance {
             }
         }
 
-        /// Same contract as the layer engine's: both keys, or the sandbox's
-        /// hardcoded 1920x1080 `screenResolution` survives and contradicts
-        /// `canvasSize` in the same context.
         private func installCanvasSize(in context: JSContext) {
-            guard let canvasSize,
-                  let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
-                  let size = JSValue(newObjectIn: context) else { return }
-            size.setObject(canvasSize.x, forKeyedSubscript: "x" as NSString)
-            size.setObject(canvasSize.y, forKeyedSubscript: "y" as NSString)
-            engine.setObject(size, forKeyedSubscript: "canvasSize" as NSString)
-            engine.setObject(size, forKeyedSubscript: "screenResolution" as NSString)
+            guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject else { return }
+            if let canvasSize, let canvas = JSValue(newObjectIn: context) {
+                update(canvas, x: canvasSize.x, y: canvasSize.y)
+                engine.setObject(canvas, forKeyedSubscript: "canvasSize" as NSString)
+            }
+            if let screenSize, let screen = JSValue(newObjectIn: context) {
+                update(screen, x: screenSize.x, y: screenSize.y)
+                engine.setObject(screen, forKeyedSubscript: "screenResolution" as NSString)
+                screenResolution = screen
+            }
+        }
+
+        private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> Bool {
+            let size = SIMD2(max(requestedSize.x, 1), max(requestedSize.y, 1))
+            guard size != screenSize else { return false }
+            screenSize = size
+            update(screenResolution, x: size.x, y: size.y)
+            guard let context,
+                  let function = context.objectForKeyedSubscript("resizeScreen"),
+                  !function.isUndefined, function.hasProperty("call"),
+                  let vectorType = context.objectForKeyedSubscript("Vec2"),
+                  let argument = vectorType.construct(withArguments: [size.x, size.y]) else {
+                return false
+            }
+            didThrow = false
+            _ = function.call(withArguments: [argument])
+            return !didThrow
+        }
+
+        private func applyGeneralSettingsOnQueue(language: String) -> Bool {
+            guard let context,
+                  let function = context.objectForKeyedSubscript("applyGeneralSettings"),
+                  !function.isUndefined, function.hasProperty("call"),
+                  let settings = JSValue(newObjectIn: context) else { return false }
+            settings.setObject(language, forKeyedSubscript: "language" as NSString)
+            didThrow = false
+            _ = function.call(withArguments: [settings])
+            return !didThrow
+        }
+
+        private func destroyOnQueue() -> Bool {
+            var invoked = false
+            if let context,
+               let function = context.objectForKeyedSubscript("destroy"),
+               !function.isUndefined, function.hasProperty("call") {
+                didThrow = false
+                _ = function.call(withArguments: [])
+                invoked = !didThrow
+            }
+            timerScheduler?.invalidate()
+            updateFunction = nil
+            return invoked
+        }
+
+        private func update(_ vector: JSValue?, x: Double, y: Double) {
+            vector?.setObject(x, forKeyedSubscript: "x" as NSString)
+            vector?.setObject(y, forKeyedSubscript: "y" as NSString)
         }
 
         private func setUpOnQueue(
@@ -1260,8 +1425,8 @@ final class WPESceneScriptInstance {
         s = s.replacingOccurrences(of: "export const", with: "const")
         // A top-level `import` is a SyntaxError in JSContext's non-module eval,
         // and one SyntaxError aborts the whole body — no update(), no init().
-        // The modules scripts import (`WEMath`) are installed as globals by
-        // `installSandbox`, so dropping the line is enough.
+        // The modules scripts import (`WEMath`, `WEColor`) are installed as
+        // globals by the sandbox/baseclass setup, so dropping the line is enough.
         s = s.replacingOccurrences(
             of: #"(?m)^[\t ]*import\b[^\n]*$"#,
             with: "",
@@ -2236,6 +2401,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
     /// those slots is hosted here, not by the text or layer runtimes, so without this the
     /// scenes' scale/position/tint reactions stay frozen.
     let mediaHandlers: WPESceneMediaHandlerSet
+    private var isDestroyed = false
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<SIMD3<Double>?>()
     /// Latest completed inner result: nil mirrors the legacy "script returned no
     /// value this tick" contract (caller falls back to the baked transform).
@@ -2262,6 +2428,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         seed: SIMD3<Double>,
         valueShape: WPEScriptValueShape = .vector3,
         canvasSize: SIMD2<Double>,
+        screenSize: SIMD2<Double>? = nil,
         ownLayerName: String? = nil,
         ownObjectID: String? = nil,
         shared: WPESharedScriptState? = nil,
@@ -2277,6 +2444,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             seed: seed,
             valueShape: valueShape,
             canvasSize: canvasSize,
+            screenSize: screenSize ?? canvasSize,
             ownLayerName: ownLayerName,
             ownObjectID: ownObjectID,
             shared: shared,
@@ -2367,7 +2535,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         pointerPosition: SIMD2<Double>,
         runtimeSeconds: Double? = nil
     ) -> SIMD3<Double>? {
-        guard !isPoisoned, !engine.hasRuntimeFault else { return nil }
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return nil }
         guard hasUpdateFunction else { return hasAsyncOutcome ? lastValue : nil }
         guard engine.allows(.tick) else { return nil }
         switch engine.tick(
@@ -2400,7 +2568,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         pointerPosition: SIMD2<Double>,
         runtimeSeconds: Double? = nil
     ) -> Bool {
-        guard !isPoisoned, !engine.hasRuntimeFault, !properties.isEmpty,
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault, !properties.isEmpty,
               engine.allows(.userProperties) else { return false }
         let budget = tickBudget * 2
         switch engine.applyScriptProperties(
@@ -2429,12 +2597,65 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         }
     }
 
+    @discardableResult
+    func resizeScreen(_ size: SIMD2<Double>) -> Bool {
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
+              engine.allows(.event) else { return false }
+        let budget = tickBudget * 2
+        switch engine.resizeScreen(size, budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Transform SceneScript resizeScreen() exceeded \(budget)s — frozen", category: .wpeRender)
+            return false
+        case .capacityUnavailable:
+            return false
+        case let .completed(invoked):
+            return engine.acceptsCompletion() && invoked
+        }
+    }
+
+    @discardableResult
+    func applyGeneralSettings(language: String) -> Bool {
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
+              engine.allows(.event) else { return false }
+        let budget = tickBudget * 2
+        switch engine.applyGeneralSettings(language: language, budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Transform SceneScript applyGeneralSettings() exceeded \(budget)s — frozen", category: .wpeRender)
+            return false
+        case .capacityUnavailable:
+            return false
+        case let .completed(invoked):
+            return engine.acceptsCompletion() && invoked
+        }
+    }
+
+    @discardableResult
+    func destroy() -> Bool {
+        guard !isDestroyed else { return false }
+        isDestroyed = true
+        guard !isPoisoned, !engine.hasRuntimeFault,
+              engine.allows(.event) else { return false }
+        let budget = tickBudget * 2
+        switch engine.destroy(budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Transform SceneScript destroy() exceeded \(budget)s", category: .wpeRender)
+            return false
+        case .capacityUnavailable:
+            return false
+        case let .completed(invoked):
+            return engine.acceptsCompletion() && invoked
+        }
+    }
+
     // MARK: Async Tick
 
     /// Load-path seeding: one bounded synchronous tick so the first frame uses
     /// the scripted transform instead of popping from the baked value.
     func seedAsyncTick(pointerPosition: SIMD2<Double>, runtimeSeconds: Double? = nil) {
-        guard !isPoisoned, !engine.hasRuntimeFault, hasUpdateFunction,
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault, hasUpdateFunction,
               engine.allows(.tick) else { return }
         switch engine.tick(
             currentValue: lastValue,
@@ -2460,7 +2681,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         pointerPosition: SIMD2<Double>,
         runtimeSeconds: Double? = nil
     ) -> (value: SIMD3<Double>?, job: WPESceneScriptBatchDispatcher.Job?) {
-        guard !isPoisoned, !engine.hasRuntimeFault else { return (nil, nil) }
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault else { return (nil, nil) }
         // No `update` to run: hold whatever `init` returned rather than schedule a
         // per-frame job whose nil result would overwrite it.
         guard hasUpdateFunction else { return (hasAsyncOutcome ? lastValue : nil, nil) }
@@ -2514,6 +2735,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private let seed: SIMD3<Double>
         private let valueShape: WPEScriptValueShape
         private let canvasSize: SIMD2<Double>
+        private var screenSize: SIMD2<Double>
         private let ownLayerName: String?
         private let ownObjectID: String?
         private let shared: WPESharedScriptState?
@@ -2527,6 +2749,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private var audioBridge: WPESceneScriptAudioBridge?
         private var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
+        private var screenResolution: JSValue?
         private var cursorWorldPosition: JSValue?
         /// One-crossing clock updates; nil until setUp (then falls back to
         /// `wpeRefreshEngineClock` should construction ever fail).
@@ -2554,6 +2777,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             seed: SIMD3<Double>,
             valueShape: WPEScriptValueShape,
             canvasSize: SIMD2<Double>,
+            screenSize: SIMD2<Double>,
             ownLayerName: String?,
             ownObjectID: String?,
             shared: WPESharedScriptState?,
@@ -2566,6 +2790,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             self.seed = seed
             self.valueShape = valueShape
             self.canvasSize = canvasSize
+            self.screenSize = SIMD2(max(screenSize.x, 1), max(screenSize.y, 1))
             self.ownLayerName = ownLayerName
             self.ownObjectID = ownObjectID
             self.shared = shared
@@ -2663,6 +2888,33 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
                 self.dispatchMediaEventOnQueue(event, runtimeSeconds: runtimeSeconds)
             }
             return true
+        }
+
+        func resizeScreen(
+            _ size: SIMD2<Double>,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<Bool> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.resizeScreenOnQueue(size)
+            }
+        }
+
+        func applyGeneralSettings(
+            language: String,
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<Bool> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.applyGeneralSettingsOnQueue(language: language)
+            }
+        }
+
+        func destroy(budget: TimeInterval) -> WPESceneScriptBoundedExecutionResult<Bool> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.destroyOnQueue()
+            }
         }
 
         /// Batch work unit: no governor permit (worker count bounds concurrency); reserve inside closure.
@@ -2940,11 +3192,60 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
 
         private func installCanvasSize(in context: JSContext) {
             guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
-                  let size = JSValue(newObjectIn: context) else { return }
-            size.setObject(canvasSize.x, forKeyedSubscript: "x" as NSString)
-            size.setObject(canvasSize.y, forKeyedSubscript: "y" as NSString)
-            engine.setObject(size, forKeyedSubscript: "canvasSize" as NSString)
-            engine.setObject(size, forKeyedSubscript: "screenResolution" as NSString)
+                  let canvas = JSValue(newObjectIn: context),
+                  let screen = JSValue(newObjectIn: context) else { return }
+            update(canvas, x: canvasSize.x, y: canvasSize.y)
+            update(screen, x: screenSize.x, y: screenSize.y)
+            engine.setObject(canvas, forKeyedSubscript: "canvasSize" as NSString)
+            engine.setObject(screen, forKeyedSubscript: "screenResolution" as NSString)
+            screenResolution = screen
+        }
+
+        private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> Bool {
+            let size = SIMD2(max(requestedSize.x, 1), max(requestedSize.y, 1))
+            guard size != screenSize else { return false }
+            screenSize = size
+            update(screenResolution, x: size.x, y: size.y)
+            guard let context,
+                  let function = context.objectForKeyedSubscript("resizeScreen"),
+                  !function.isUndefined, function.hasProperty("call"),
+                  let vectorType = context.objectForKeyedSubscript("Vec2"),
+                  let argument = vectorType.construct(withArguments: [size.x, size.y]) else {
+                return false
+            }
+            didThrow = false
+            _ = function.call(withArguments: [argument])
+            return !didThrow
+        }
+
+        private func applyGeneralSettingsOnQueue(language: String) -> Bool {
+            guard let context,
+                  let function = context.objectForKeyedSubscript("applyGeneralSettings"),
+                  !function.isUndefined, function.hasProperty("call"),
+                  let settings = JSValue(newObjectIn: context) else { return false }
+            settings.setObject(language, forKeyedSubscript: "language" as NSString)
+            didThrow = false
+            _ = function.call(withArguments: [settings])
+            return !didThrow
+        }
+
+        private func destroyOnQueue() -> Bool {
+            var invoked = false
+            if let context,
+               let function = context.objectForKeyedSubscript("destroy"),
+               !function.isUndefined, function.hasProperty("call") {
+                didThrow = false
+                _ = function.call(withArguments: [])
+                invoked = !didThrow
+            }
+            timerScheduler?.invalidate()
+            updateFunction = nil
+            return invoked
+        }
+
+        private func update(_ vector: JSValue?, x: Double, y: Double) {
+            vector?.setObject(x, forKeyedSubscript: "x" as NSString)
+            vector?.setObject(y, forKeyedSubscript: "y" as NSString)
         }
 
         private func installInput(in context: JSContext) {

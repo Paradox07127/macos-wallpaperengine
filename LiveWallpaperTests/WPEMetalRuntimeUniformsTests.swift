@@ -2,6 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import QuartzCore
+import simd
 import Testing
 @testable import LiveWallpaper
 
@@ -42,8 +43,30 @@ struct WPEMetalRuntimeUniformsTests {
         #expect(uniforms.brightness == 1)
         #expect(uniforms.pointerPosition == SIMD2<Double>(0.25, 0.75))
         #expect(uniforms.uniformValues["g_Time"]?.numberValue == 2.5)
+        #expect(uniforms.uniformValues["g_Frametime"]?.numberValue == 0)
         #expect(uniforms.uniformValues["g_Brightness"]?.numberValue == 1)
         #expect(uniforms.uniformValues["g_PointerPosition"]?.vectorValue == [0.25, 0.75])
+    }
+
+    @Test("Official shader frametime is a non-negative runtime global")
+    func officialShaderFrametimeRuntimeGlobal() {
+        let positive = WPEMetalRuntimeUniforms(
+            time: 4,
+            daytime: 0.5,
+            frameTime: 1.0 / 60.0,
+            brightness: 1,
+            pointerPosition: SIMD2<Double>(0.5, 0.5)
+        )
+        #expect(positive.uniformValues["g_Frametime"]?.numberValue == 1.0 / 60.0)
+
+        let invalid = WPEMetalRuntimeUniforms(
+            time: 4,
+            daytime: 0.5,
+            frameTime: -.infinity,
+            brightness: 1,
+            pointerPosition: SIMD2<Double>(0.5, 0.5)
+        )
+        #expect(invalid.uniformValues["g_Frametime"]?.numberValue == 0)
     }
 
     @Test("Suspended profile keeps brightness uniform at one")
@@ -924,5 +947,69 @@ struct WPEMetalRuntimeUniformsTests {
         let expected16: [Double] = (0..<16).map { Double(4 * $0 + 4) }
         #expect(s32 == expected32)
         #expect(s16 == expected16)
+    }
+}
+
+@MainActor
+@Suite("WPE Metal camera uniforms")
+struct WPEMetalCameraUniformsTests {
+
+    @Test("Official camera globals expose eye and the renderer's normalized world-space basis")
+    func officialCameraGlobalsExposeCurrentView() {
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 1920, height: 1080, auto: true),
+            sceneCamera: WPESceneCamera(
+                center: SIMD3<Double>(3, 4, 4),
+                eye: SIMD3<Double>(3, 4, 5),
+                up: SIMD3<Double>(0, 1, 0),
+                nearZ: 0.01,
+                farZ: 10_000,
+                fov: 50
+            ),
+            usesPerspectiveProjection: true
+        )
+        let values = camera.uniformValues
+
+        #expect(values["g_EyePosition"]?.vectorValue == [3, 4, 5])
+        #expect(values["g_ViewForward"]?.vectorValue == [0, 0, -1])
+        #expect(values["g_ViewRight"]?.vectorValue == [1, 0, 0])
+        #expect(values["g_ViewUp"]?.vectorValue == [0, 1, 0])
+        #expect(simd_length(WPEMetalCameraUniforms.viewForward) == 1)
+        #expect(simd_length(WPEMetalCameraUniforms.viewRight) == 1)
+        #expect(simd_length(WPEMetalCameraUniforms.viewUp) == 1)
+    }
+
+    @Test("Camera globals are regenerated from the current frame camera")
+    func cameraGlobalsFollowCurrentFrameCamera() {
+        func makeCamera(eye: SIMD3<Double>) -> WPEMetalCameraUniforms {
+            WPEMetalCameraUniforms(
+                orthogonalProjection: WPESceneOrthogonalProjection(width: 64, height: 32, auto: true),
+                sceneCamera: WPESceneCamera(
+                    center: eye + WPEMetalCameraUniforms.viewForward,
+                    eye: eye,
+                    up: WPEMetalCameraUniforms.viewUp,
+                    nearZ: 0.01,
+                    farZ: 10_000,
+                    fov: 50
+                ),
+                usesPerspectiveProjection: true
+            )
+        }
+
+        let first = makeCamera(eye: SIMD3<Double>(0, 0, 6)).uniformValues
+        let second = makeCamera(eye: SIMD3<Double>(10, 20, 30)).uniformValues
+        #expect(first["g_EyePosition"]?.vectorValue == [0, 0, 6])
+        #expect(second["g_EyePosition"]?.vectorValue == [10, 20, 30])
+        #expect(first["g_ViewForward"] == second["g_ViewForward"])
+        #expect(first["g_ViewRight"] == second["g_ViewRight"])
+        #expect(first["g_ViewUp"] == second["g_ViewUp"])
+    }
+
+    @Test("Particle orientation globals are not camera aliases")
+    func particleOrientationGlobalsAreNotProducedByCamera() {
+        let values = WPEMetalCameraUniforms.identity.uniformValues
+        #expect(values["g_OrientationForward"] == nil)
+        #expect(values["g_OrientationRight"] == nil)
+        #expect(values["g_OrientationUp"] == nil)
     }
 }

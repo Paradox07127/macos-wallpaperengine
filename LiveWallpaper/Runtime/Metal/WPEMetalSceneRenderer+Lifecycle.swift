@@ -34,7 +34,6 @@ extension WPEMetalSceneRenderer {
     /// executor transients — while keeping the descriptor, resolvers, and asset
     /// provider so a later `load` can rebuild the scene from disk.
     func retireRuntimeState(on actor: isolated WPEDisplayRenderActor) async {
-        sceneScriptLoadState.retireCurrent()
         didLoad = false
         let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()
         loadGeneration &+= 1
@@ -51,6 +50,9 @@ extension WPEMetalSceneRenderer {
         latestFrameProduction = nil
         renderGraph = nil
         renderPipeline = nil
+        #if DEBUG
+        shaderImplementationInventory = []
+        #endif
         lastFramePipeline = nil
         scenePropertyBindings = [:]
         liveLayerVisibility = [:]
@@ -63,6 +65,10 @@ extension WPEMetalSceneRenderer {
         ownVisibilityByID = [:]
         liveTextVisibility = [:]
         clearSceneScriptRuntimeState()
+        // `destroy()` is an event on the current generation. Retire only after
+        // the instances have synchronously received it and released their JSC
+        // callbacks; late queued completions are rejected from this point on.
+        sceneScriptLoadState.retireCurrent()
         loadDiagnostics = nil
         resolutionTracer.reset()
         releaseDynamicTextureSources()
@@ -795,7 +801,6 @@ extension WPEMetalSceneRenderer {
     // MARK: - Teardown
 
     func cleanup() {
-        sceneScriptLoadState.retireCurrent()
         didLoad = false
         // Owner is an actor now; quiesce fire-and-forget from this sync teardown.
         // It cancels in-flight reload tasks; the discarded Drain isn't awaited.
@@ -824,6 +829,7 @@ extension WPEMetalSceneRenderer {
         ownVisibilityByID = [:]
         liveTextVisibility = [:]
         clearSceneScriptRuntimeState()
+        sceneScriptLoadState.retireCurrent()
         releaseDynamicTextureSources()
         particleSystems.removeAll(keepingCapacity: false)
         particleTextures.removeAll(keepingCapacity: false)

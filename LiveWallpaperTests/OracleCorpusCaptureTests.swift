@@ -129,6 +129,9 @@ struct OracleCorpusCaptureTests {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
         var captured = 0, skipped = 0, failed = 0, builtinPassesCaptured = 0
+        var graphLayers = 0, authoredJSONLayers = 0, authoredSceneObjectNodes = 0
+        var authoredImageDescriptors = 0, malformedAuthoredLayerLinks = 0
+        var graphPasses = 0, authoredJSONPasses = 0, malformedAuthoredPassLinks = 0
         for folder in folders {
             let id = folder.lastPathComponent
             if let filter, !filter.contains(id) { continue }
@@ -195,6 +198,15 @@ struct OracleCorpusCaptureTests {
                 let renderActor = WPEDisplayRenderActor(backing: .main)
                 await renderActor.adopt(WPERendererHandoff(renderer: renderer).renderer)
                 try await renderActor.load()
+                let authoredSummary = Self.authoredJSONSummary(renderer.renderGraph)
+                graphLayers += authoredSummary.layers
+                authoredJSONLayers += authoredSummary.authoredLayers
+                authoredSceneObjectNodes += authoredSummary.sceneObjectNodes
+                authoredImageDescriptors += authoredSummary.imageDescriptors
+                malformedAuthoredLayerLinks += authoredSummary.malformedLayerLinks
+                graphPasses += authoredSummary.passes
+                authoredJSONPasses += authoredSummary.authoredPasses
+                malformedAuthoredPassLinks += authoredSummary.malformedPassLinks
                 Self.printTextEvidence(renderer: renderer, sceneID: id)
                 try Self.advanceToTracedFrame(
                     renderer: renderer,
@@ -223,8 +235,16 @@ struct OracleCorpusCaptureTests {
             }
         }
         print("=== oracle-capture: captured=\(captured) skipped=\(skipped) failed=\(failed) → \(outDir.path) ===")
+        print("=== authored-json: graphLayers=\(graphLayers) authoredLayers=\(authoredJSONLayers) "
+              + "sceneObjectNodes=\(authoredSceneObjectNodes) imageDescriptors=\(authoredImageDescriptors) "
+              + "malformedLayerLinks=\(malformedAuthoredLayerLinks) graphPasses=\(graphPasses) "
+              + "authoredPasses=\(authoredJSONPasses) malformedPassLinks=\(malformedAuthoredPassLinks) ===")
         #expect(captured > 0, "no scene produced a trace — check corpus root / engine assets")
         #expect(builtinPassesCaptured > 0, "captured traces contained no hand-authored Metal builtin pass")
+        #expect(authoredJSONLayers > 0, "real-scene render graphs exposed no authored scene/model layer JSON")
+        #expect(malformedAuthoredLayerLinks == 0, "layer-level authored scene ancestry was lost")
+        #expect(authoredJSONPasses > 0, "real-scene render graphs exposed no material/effect authored JSON")
+        #expect(malformedAuthoredPassLinks == 0, "pass-level authored JSON lost its parent document")
     }
 
     @Test("Config decode fills in defaults for keys a config file omits")
@@ -299,7 +319,8 @@ struct OracleCorpusCaptureTests {
                 WPECanonicalTraceRecorder.shared.beginScene(
                     workshopID: id,
                     projectJsonPath: stage.appendingPathComponent(entryFile).path,
-                    descriptor: summary
+                    descriptor: summary,
+                    shaderImplementationInventory: renderer.shaderImplementationInventory
                 )
             }
             // Drain per frame like WPERenderThread does in-app; without this the
@@ -383,6 +404,56 @@ struct OracleCorpusCaptureTests {
         print("[oracle-capture] [\(sceneID)] trace-summary passes=\(passes.count) "
               + "builtin=\(kinds.count) kinds={\(histogram)}")
         return (kinds.count, kinds)
+    }
+
+    private static func authoredJSONSummary(
+        _ graph: WPERenderGraph?
+    ) -> (
+        layers: Int,
+        authoredLayers: Int,
+        sceneObjectNodes: Int,
+        imageDescriptors: Int,
+        malformedLayerLinks: Int,
+        passes: Int,
+        authoredPasses: Int,
+        malformedPassLinks: Int
+    ) {
+        guard let graph else { return (0, 0, 0, 0, 0, 0, 0, 0) }
+        var authoredLayers = 0
+        var sceneObjectNodes = 0
+        var imageDescriptors = 0
+        var malformedLayerLinks = 0
+        var passes = 0
+        var authoredPasses = 0
+        var malformedPassLinks = 0
+        for layer in graph.layers {
+            let authored = layer.authoredJSON
+            if authored != .empty { authoredLayers += 1 }
+            sceneObjectNodes += authored.sceneObjects.count
+            if authored.imageDescriptor != nil { imageDescriptors += 1 }
+            if authored.sceneObjects.isEmpty { malformedLayerLinks += 1 }
+        }
+        for pass in graph.layers.flatMap(\.passes) {
+            passes += 1
+            let authored = pass.authoredJSON
+            if authored != .empty { authoredPasses += 1 }
+            if authored.materialPass != nil, authored.materialDocument == nil {
+                malformedPassLinks += 1
+            }
+            if authored.effectPass != nil, authored.effectDocument == nil {
+                malformedPassLinks += 1
+            }
+        }
+        return (
+            graph.layers.count,
+            authoredLayers,
+            sceneObjectNodes,
+            imageDescriptors,
+            malformedLayerLinks,
+            passes,
+            authoredPasses,
+            malformedPassLinks
+        )
     }
 
     @MainActor

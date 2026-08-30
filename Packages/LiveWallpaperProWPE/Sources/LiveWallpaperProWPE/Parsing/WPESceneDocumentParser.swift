@@ -247,6 +247,9 @@ public enum WPESceneDocumentParser {
         } catch {
             throw WPESceneDocumentError.invalidUTF8
         }
+        guard let sourceJSON = WPESceneJSONValue(jsonValue: json) else {
+            throw WPESceneDocumentError.malformedField("source JSON")
+        }
         // Record property→target bindings BEFORE resolving envelopes, since
         // resolution replaces `{"user":K}` with the literal value and loses the key.
         let propertyBindings = extractUserPropertyBindings(in: json)
@@ -266,15 +269,20 @@ public enum WPESceneDocumentParser {
 
         let rawGeneralDict = ((json as? [String: Any])?["general"] as? [String: Any]) ?? generalDict
         let authoredCamera = parseCamera(cameraDict, general: generalDict)
+        let authoredCameraMetadata = parseAuthoredCameraMetadata(
+            ((json as? [String: Any])?["camera"] as? [String: Any]) ?? cameraDict
+        )
         let general = parseGeneral(generalDict, authored: rawGeneralDict, diagnostics: &diagnostics)
 
         let rawObjects: [[String: Any]] = (root["objects"] as? [[String: Any]]) ?? []
         let authoredObjects: [[String: Any]] = ((json as? [String: Any])?["objects"] as? [[String: Any]])
             ?? rawObjects
-        // WPE's runtime camera is a scene OBJECT carrying a `camera` key ("default"); the top-level
-        // `camera` block is only the editor viewport bookmark. Ground truth (RenderDoc capture of
-        // 3509243656): g_EyePosition == the camera object's origin (0,0,6) with identity orientation,
-        // while the top-level eye (−2.06, 0.85, 10.07) sits outside the skybox shell and is never used.
+        let authoredCameraObjects = parseAuthoredCameraObjects(authoredObjects)
+        // WPE's runtime camera is a scene OBJECT carrying a `camera` key ("default");
+        // the top-level `camera` block is only the editor viewport bookmark. Ground
+        // truth (RenderDoc capture of 3509243656): g_EyePosition == the camera
+        // object's origin (0,0,6) with identity orientation, while the top-level
+        // eye (−2.06, 0.85, 10.07) sits outside the skybox shell and is never used.
         let camera = runtimeCameraObjectOverride(
             rawObjects,
             base: authoredCamera,
@@ -460,7 +468,10 @@ public enum WPESceneDocumentParser {
         }
 
         return WPESceneDocument(
+            sourceJSON: sourceJSON,
             camera: camera,
+            authoredCamera: authoredCameraMetadata,
+            authoredCameraObjects: authoredCameraObjects,
             general: general,
             imageObjects: imageObjects,
             scriptHostObjects: scriptHostObjects,
@@ -1710,6 +1721,70 @@ public enum WPESceneDocumentParser {
 
     // MARK: - Camera
 
+    private static func parseAuthoredCameraMetadata(
+        _ dict: [String: Any]
+    ) -> WPESceneAuthoredCamera {
+        WPESceneAuthoredCamera(
+            sourceJSON: WPESceneJSONValue(jsonValue: dict) ?? .object([:]),
+            paths: authoredJSONField(in: dict, key: "paths") { raw in
+                guard let values = raw as? [Any] else { return nil }
+                var paths: [String] = []
+                paths.reserveCapacity(values.count)
+                for value in values {
+                    guard let path = value as? String else { return nil }
+                    paths.append(path)
+                }
+                return paths
+            }
+        )
+    }
+
+    private static func parseAuthoredCameraObjects(
+        _ objects: [[String: Any]]
+    ) -> [WPESceneAuthoredCameraObject] {
+        objects.enumerated().compactMap { index, entry in
+            // Presence, rather than a successful String cast, is deliberate:
+            // malformed/null camera discriminators still belong in the lossless IR.
+            guard entry.keys.contains("camera") else { return nil }
+            return WPESceneAuthoredCameraObject(
+                sourceObjectIndex: index,
+                sourceJSON: WPESceneJSONValue(jsonValue: entry) ?? .object([:]),
+                camera: authoredJSONField(in: entry, key: "camera") { $0 as? String },
+                path: authoredJSONField(in: entry, key: "path") { $0 as? String },
+                queueMode: authoredJSONField(in: entry, key: "queuemode") { $0 as? String },
+                origin: authoredJSONField(in: entry, key: "origin", parse: cameraVector3),
+                angles: authoredJSONField(in: entry, key: "angles", parse: cameraVector3),
+                fov: authoredJSONField(in: entry, key: "fov", parse: cameraDouble),
+                zoom: authoredJSONField(in: entry, key: "zoom", parse: cameraDouble)
+            )
+        }
+    }
+
+    /// Camera scalars/vectors may use the usual authored `{value, user, script}`
+    /// envelope. Decode its seed while `sourceJSON` retains the complete envelope.
+    private static func cameraVector3(_ raw: Any) -> SIMD3<Double>? {
+        WPEValueParser.vector3(raw)
+    }
+
+    private static func cameraDouble(_ raw: Any) -> Double? {
+        if let dict = raw as? [String: Any], dict.keys.contains("value") {
+            return WPEValueParser.double(dict["value"])
+        }
+        return WPEValueParser.double(raw)
+    }
+
+    private static func authoredJSONField<Value: Equatable & Sendable>(
+        in dict: [String: Any],
+        key: String,
+        parse: (Any) -> Value?
+    ) -> WPESceneAuthoredJSONField<Value>? {
+        guard dict.keys.contains(key), let raw = dict[key] else { return nil }
+        if raw is NSNull { return .null }
+        if let value = parse(raw) { return .value(value) }
+        guard let preserved = WPESceneJSONValue(jsonValue: raw) else { return nil }
+        return .unparsed(preserved)
+    }
+
     private static func parseCamera(
         _ dict: [String: Any],
         general: [String: Any]
@@ -1734,7 +1809,12 @@ public enum WPESceneDocumentParser {
         base: WPESceneCamera,
         diagnostics: inout [WPESceneDiagnostic]
     ) -> WPESceneCamera {
-        guard let entry = rawObjects.first(where: { $0["camera"] is String }) else { return base }
+        // The official camera contract selects the bottom-most visible camera in
+        // the asset list. `rawObjects` retains authored list order, and visibility
+        // envelopes have already been resolved against the current user values.
+        guard let entry = rawObjects.last(where: {
+            $0["camera"] is String && (parseBool($0["visible"]) ?? true)
+        }) else { return base }
         let origin = parseVector3(entry["origin"]) ?? .zero
         var fov = base.fov
         if let raw = entry["fov"] {
