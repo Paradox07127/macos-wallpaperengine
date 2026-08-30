@@ -86,10 +86,19 @@ Gatekeeper 命令里——这也是它在打包时生成、而不是作为静态
 
 预期命令：
 
+先 Lite 后 Pro，让打包顺序与上传顺序一致：
+
 ```sh
-scripts/release-app.sh --sku lite --version X.Y.Z
-scripts/release-app.sh --sku pro  --version X.Y.Z
+scripts/release-app.sh --sku lite --version X.Y.Z --skip-checks
+scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks
 ```
+
+`release-app.sh` 默认会为**每个** SKU 重跑一整轮候选门禁，所以不带参数的两条命令
+会在同一个 commit 上把门禁跑三遍。`--skip-checks` 跳过的正是这次重复——只有在上面
+那轮门禁已经在这个 commit 上通过时才用它，并在发布报告里写明。它**不会**跳过每个
+SKU 真正要紧的核验：Sparkle 辅助程序重签与 Team ID 对齐、签名验证、对已签 app 的
+有效 entitlements 检查、bundle ID / 显示名 / 版本号字段、DMG 挂载与验签、sha256、
+以及 appcast 再生成。这些是无条件执行的。
 
 不构建、不签名地验证干净克隆下的工具链契约：
 
@@ -108,26 +117,71 @@ scripts/release-app.sh --sku pro  --version X.Y.Z --plan
 
 ## GitHub release
 
-创建一个统一的 release：
+顺序要紧：Sparkle 读的是 `main` 上的 feed，appcast 先落地而 DMG 还不存在，指向的就是 404。
 
 ```sh
+# 1. 提交两次打包再生出的 appcast，然后打 tag
+git add appcast-lite.xml appcast-pro.xml
+git commit -m "Publish Sparkle appcast for X.Y.Z"
+git tag -a loomscreen-vX.Y.Z -m "Loomscreen X.Y.Z"
+git push origin loomscreen-vX.Y.Z
+
+# 2. 上传 DMG，让 enclosure URL 真正可解析
 gh release create loomscreen-vX.Y.Z \
   build/release/Loomscreen-X.Y.Z.dmg \
   build/release/Loomscreen-X.Y.Z.dmg.sha256 \
   build/release/Loomscreen-Pro-X.Y.Z.dmg \
   build/release/Loomscreen-Pro-X.Y.Z.dmg.sha256 \
+  --verify-tag \
   --title "Loomscreen X.Y.Z" \
   --notes-file <notes.md>
+
+# 3. 到这一步才把 feed 推出去
+git push origin main
 ```
 
-两个 SKU 都打完后提交 `appcast-lite.xml` 和 `appcast-pro.xml`。创建 GitHub
-release（让 enclosure URL 真正存在）并马上把这两份 appcast 推到 `main`——Sparkle
-读的是 `main` 上的 feed，feed 上了但 DMG 还没挂出来会 404。
+## 发布说明
 
-发布说明应以 Lite 下载开头。写明新下载的构建首次启动仍要跑清除隔离标记的命令（没有公证），
-之后的更新从 **设置 → 关于** 或菜单栏的 **Update** 按钮安装。
+三个平铺的小节，一条一件事，面向用户的在前。没内容的小节整段省略。条目取自
+`git log <上一个 tag>..HEAD` 里实际发出去的东西，挑用户会注意到的写——这是
+changelog，不是每个 commit 的汇总。
 
-## 发布后冒烟
+```markdown
+## What's New
+
+- <之前没有的、用户可见的新能力>
+
+## Improvements
+
+- <已有行为变得更好、更快或更清楚>
+
+## Bug Fixes
+
+- <哪里坏了，用用户的说法写；有 issue 就引用>
+
+Requires macOS 14.6+.
+```
+
+英文在前，`---` 分隔，之后是等价的简体中文块，标题用 新功能 / 改进 / Bug 修复。
+等价就是等价：版本号、命令行、路径、SKU 名（Loomscreen / Loomscreen Pro）两边字面一致
+且不翻译，任何一边都不许比另一边少一条。
+
+**不要写**：营销式标语或开场段落、"下载下方 DMG"这类指引段、清除隔离标记的命令与
+"没有公证"的说明、按子系统划分的小标题。下载是 release 页面自带的 UI，安装说明在
+[install.md](install.md) 里。
+
+## 发布后验证
+
+先确认上传没有损坏——这是唯一能证明 GitHub 上放着的就是这里签出来的那份字节的证据：
+
+```sh
+gh release view loomscreen-vX.Y.Z --json tagName,assets \
+  --jq '.tagName, (.assets[] | "\(.name) \(.size)")'
+gh release download loomscreen-vX.Y.Z --pattern 'Loomscreen-X.Y.Z.dmg' --clobber
+shasum -a 256 Loomscreen-X.Y.Z.dmg   # 必须等于 build/release/Loomscreen-X.Y.Z.dmg.sha256
+```
+
+然后对构建本身做冒烟：
 
 1. 在一台干净的 Mac 上安装 Lite DMG。
 2. 执行：
