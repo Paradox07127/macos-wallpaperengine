@@ -207,6 +207,13 @@ Requires macOS 14.6+.
 - 仍然**不要写**：营销式标语或开场段落、按子系统划分的小标题。下载与首次启动**是要写的**，
   但只用上面的表格与折叠块形式，不要退回成散文段落。
 
+这份文件是两个界面的**唯一真值源**：`gh release create --notes-file` 用它渲染 release 页，
+`scripts/generate-appcast.sh --notes-file` 从中抽出三段 changelog——只取 `---` 之前的英文
+半边——注入 Sparkle 的更新弹窗。下载表、折叠块和中文半边都不会进弹窗：正在下载的更新器
+不需要下载表，而且面板只有 565x402。**notes 要在打包之前写好**，因为
+`release-app.sh --notes-file` 是在打包时把它交给 appcast 生成器的；漏传不报错，只会退回成
+弹窗里只有 quarantine 一行。
+
 ## 发布后验证
 
 先确认上传没有损坏——这是唯一能证明 GitHub 上放着的就是这里签出来的那份字节的证据：

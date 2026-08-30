@@ -236,6 +236,16 @@ Details that have bitten before:
   The download and first-launch blocks *are* wanted — but only in the table and
   collapsed form above, never as prose paragraphs.
 
+This file is the single source for both surfaces. `gh release create --notes-file`
+renders the release page from it, and `scripts/generate-appcast.sh --notes-file`
+lifts the three changelog sections — English half only, everything before the
+`---` — into Sparkle's update dialog. The download table, the collapsed block and
+the Chinese half never reach the dialog: an updater that is already downloading
+does not need a download table, and the pane is only 565x402. Write the notes
+*before* packaging, because `release-app.sh --notes-file` passes them to the
+appcast generator at package time; omitting the flag silently falls back to a
+dialog carrying nothing but the quarantine line.
+
 ## Post-release verification
 
 Confirm the upload survived the trip — the only evidence that GitHub holds the
