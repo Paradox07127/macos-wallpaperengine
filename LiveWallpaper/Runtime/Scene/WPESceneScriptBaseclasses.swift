@@ -6,6 +6,9 @@ enum WPESceneScriptBaseclasses {
         _ = context.evaluateScript(Self.prelude)
     }
 
+    // swiftformat:disable indent — the raw string below is JavaScript, and the
+    // indent rule re-indents its lines as if they were Swift (measured 2026-08-31:
+    // two JS function bodies pushed out 8 spaces).
     private static let prelude = #"""
 (function () {
     var root = (typeof globalThis !== "undefined") ? globalThis : this;
@@ -991,5 +994,6 @@ enum WPESceneScriptBaseclasses {
     installMethod(root.engine, "getScene", createSafeCallable("engine.getScene"));
 }());
 """#
+    // swiftformat:enable indent
 }
 #endif
