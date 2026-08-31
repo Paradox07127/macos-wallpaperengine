@@ -229,7 +229,7 @@ final class VideoRenderer: @unchecked Sendable {
         let asset = AVURLAsset(url: url)
         self.asset = asset
         guard let track = loadFirstVideoTrack(asset) else {
-            wpxLog.error("no video track in \(url.lastPathComponent, privacy: .public)")
+            wpxLog.error("no video track in \(url.lastPathComponent, privacy: .private)")
             return
         }
         do {
@@ -248,14 +248,14 @@ final class VideoRenderer: @unchecked Sendable {
             guard reader.canAdd(output) else { return }
             reader.add(output)
             guard reader.startReading() else {
-                wpxLog.error("reader failed: \(String(describing: reader.error), privacy: .public)")
+                wpxLog.error("reader failed: \(WPXLogPrivacy.summary(reader.error), privacy: .public)")
                 return
             }
             self.reader = reader
             self.output = output
             requestMedia()
         } catch {
-            wpxLog.error("reader init failed: \(String(describing: error), privacy: .public)")
+            wpxLog.error("reader init failed: \(WPXLogPrivacy.summary(error), privacy: .public)")
         }
     }
 

@@ -195,11 +195,15 @@ public struct AtomicFileStore<Value: Codable> {
         var rotated = false
         do {
             if fileExists(fileURL) {
-                if fileExists(backupURL) {
-                    try fileManager.removeItem(at: backupURL)
+                if backupIsSoleReadableGeneration() {
+                    try fileManager.removeItem(at: fileURL)
+                } else {
+                    if fileExists(backupURL) {
+                        try fileManager.removeItem(at: backupURL)
+                    }
+                    try fileManager.moveItem(at: fileURL, to: backupURL)
+                    rotated = true
                 }
-                try fileManager.moveItem(at: fileURL, to: backupURL)
-                rotated = true
             }
             try fileManager.moveItem(at: tempURL, to: fileURL)
         } catch {
@@ -210,6 +214,15 @@ public struct AtomicFileStore<Value: Codable> {
         }
 
         fsyncParentDirectory(of: fileURL)
+    }
+
+    /// After `read()` has recovered from the backup, the primary stays corrupt —
+    /// nothing heals it. Rotating in that state deletes the backup and promotes
+    /// the corrupt primary into its slot, so a later primary loss leaves nothing
+    /// readable. Keep the backup and drop the corrupt primary instead.
+    private func backupIsSoleReadableGeneration() -> Bool {
+        guard fileExists(backupURL) else { return false }
+        return decode(from: fileURL) == nil && decode(from: backupURL) != nil
     }
 
     private func acquireLock() throws -> Int32 {

@@ -13,7 +13,13 @@ enum WPESceneScriptBaseclasses {
     var hasSymbol = typeof Symbol !== "undefined";
 
     function number(value, fallback) {
+        if (value === undefined) { return fallback || 0; }
         var n = Number(value);
+        // A real NaN must SURVIVE into the returned vector: the host's finite guards
+        // then reject the frame and keep the last good value. Laundering it to 0 made
+        // the rejection unreachable and applied a bogus zero (3146703458's titles at
+        // scale 0). The `undefined` early return keeps `new Vec3(1, 2)` at z == 0.
+        if (n !== n) { return n; }
         return isFinite(n) ? n : (fallback || 0);
     }
 
@@ -27,6 +33,10 @@ enum WPESceneScriptBaseclasses {
         if (typeof value === "object") {
             if (typeof value[key] !== "undefined") { return number(value[key], fallback); }
             if (typeof value[index] !== "undefined") { return number(value[index], fallback); }
+            // An object that simply lacks this axis (Vec2 widened to Vec3) takes the
+            // fallback. The old fall-through coerced the whole OBJECT to a number and
+            // only yielded 0 because `number` used to launder NaN.
+            return number(fallback, 0);
         }
         return number(value, fallback);
     }

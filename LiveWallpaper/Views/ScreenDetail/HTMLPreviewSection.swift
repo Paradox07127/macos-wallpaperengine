@@ -490,16 +490,28 @@ struct HTMLRenderingDiagnosticsOverlay: View {
                 diagnosticCell("Backing", diagnostics.backingPixelSizeText)
                 diagnosticCell("Scale", diagnostics.scaleText)
                 diagnosticCell("Viewport", diagnostics.viewportText)
-                diagnosticCell("DPR", diagnostics.devicePixelRatioText)
+                // "DPR" stays verbatim: it is the web platform's own acronym for
+                // `window.devicePixelRatio`, not prose.
+                diagnosticCell(verbatimLabel: "DPR", diagnostics.devicePixelRatioText)
                 diagnosticCell("Mode", diagnostics.modeText)
             }
         }
         .frame(maxWidth: 360, alignment: .leading)
     }
 
-    private func diagnosticCell(_ label: String, _ value: String) -> some View {
+    /// `value` is verbatim on purpose: it is either a measurement with units or
+    /// a string the diagnostics already localized at the point it was computed.
+    private func diagnosticCell(_ label: LocalizedStringKey, _ value: String) -> some View {
+        cell(label: Text(label), value: value)
+    }
+
+    private func diagnosticCell(verbatimLabel: String, _ value: String) -> some View {
+        cell(label: Text(verbatim: verbatimLabel), value: value)
+    }
+
+    private func cell(label: Text, value: String) -> some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
-            Text(verbatim: label)
+            label
                 .font(DesignTokens.Typography.badge)
                 .opacity(0.65)
             Text(verbatim: value)

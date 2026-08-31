@@ -74,6 +74,28 @@ struct ConfigurationPorterTests {
         }
     }
 
+    /// Lite and Pro are one product family, and the UTI list has always said so.
+    /// A user upgrading Lite → Pro (or moving a backup the other way) must be
+    /// able to restore their setup; only foreign apps are provenance failures.
+    @Test(
+        "Accepts exports from every Loomscreen product-family bundle ID",
+        arguments: ["com.loomscreen.pro", "com.loomscreen", "com.taijia.livewallpaper"]
+    )
+    func acceptsProductFamilyBundleIDs(exporterID: String) throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let bundle = ConfigurationBundle(
+            appBundleID: exporterID,
+            globalSettings: GlobalSettings()
+        )
+        let destination = directory.appendingPathComponent("family-\(exporterID).lwconfig")
+        try ConfigurationPorter.encode(bundle).write(to: destination)
+
+        let decoded = try ConfigurationPorter.decode(from: destination)
+        #expect(decoded.appBundleID == exporterID)
+    }
+
     @Test("Rejects payloads that aren't JSON at all")
     func rejectsCorruptFile() throws {
         let directory = try makeTempDirectory()

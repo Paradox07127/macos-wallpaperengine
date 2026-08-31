@@ -18,23 +18,47 @@ final class SteamWebAPIKeyEntryModel {
         case error(String)
     }
 
+    struct Dependencies: Sendable {
+        var validationDelayNanoseconds: UInt64 = 250_000_000
+        var validateAPIKey: @Sendable (String) async throws -> Bool
+        var saveAPIKey: @Sendable (String) async throws -> Void
+        var deleteAPIKey: @Sendable () async throws -> Void
+        var refreshAPIKeyStatus: @MainActor @Sendable () async -> Void
+    }
+
     var apiKey: String = ""
     var isShowingKey: Bool = false
 
     private(set) var validation: Validation = .empty
     private(set) var savingError: String?
+    private(set) var isSaving = false
 
-    @ObservationIgnored private let services: WorkshopServices
+    @ObservationIgnored private let dependencies: Dependencies
     @ObservationIgnored private var validationTask: Task<Void, Never>?
     @ObservationIgnored private var validatedAPIKey: String?
+    @ObservationIgnored private var editRevision: UInt = 0
 
     init(services: WorkshopServices) {
-        self.services = services
+        let queryService = services.queryService
+        let keychain = services.keychain
+        dependencies = Dependencies(
+            validateAPIKey: { try await queryService.validateAPIKey($0) },
+            saveAPIKey: { try await keychain.setWebAPIKey($0) },
+            deleteAPIKey: { try await keychain.deleteWebAPIKey() },
+            refreshAPIKeyStatus: { await services.refreshAPIKeyStatus() }
+        )
     }
 
-    var canSave: Bool { validation == .valid }
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
+
+    var canSave: Bool {
+        validation == .valid && !isSaving
+    }
 
     func reset() {
+        editRevision &+= 1
         validationTask?.cancel()
         validationTask = nil
         validatedAPIKey = nil
@@ -45,6 +69,7 @@ final class SteamWebAPIKeyEntryModel {
     }
 
     func keyChanged() {
+        editRevision &+= 1
         savingError = nil
         validatedAPIKey = nil
         validationTask?.cancel()
@@ -58,13 +83,18 @@ final class SteamWebAPIKeyEntryModel {
             return
         }
         validation = .validating
-        let service = services.queryService
+        let validateAPIKey = dependencies.validateAPIKey
+        let validationDelayNanoseconds = dependencies.validationDelayNanoseconds
         validationTask = Task {
             do {
-                try await Task.sleep(nanoseconds: 250_000_000)
-                if Task.isCancelled { return }
-                let ok = try await service.validateAPIKey(trimmed)
-                if Task.isCancelled { return }
+                try await Task.sleep(nanoseconds: validationDelayNanoseconds)
+                if Task.isCancelled {
+                    return
+                }
+                let ok = try await validateAPIKey(trimmed)
+                if Task.isCancelled {
+                    return
+                }
                 guard stillEditing(trimmed) else { return }
                 if ok {
                     validation = .valid
@@ -94,16 +124,22 @@ final class SteamWebAPIKeyEntryModel {
     /// Returns `true` once the key is stored and `hasWebAPIKey` reflects it.
     @discardableResult
     func save() async -> Bool {
+        guard !isSaving else { return false }
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard validation == .valid, validatedAPIKey == trimmed else {
             keyChanged()
             return false
         }
+        let revision = editRevision
+        isSaving = true
+        defer { isSaving = false }
         do {
-            try await services.keychain.setWebAPIKey(trimmed)
-            await services.refreshAPIKeyStatus()
+            try await dependencies.saveAPIKey(trimmed)
+            await dependencies.refreshAPIKeyStatus()
+            guard editRevision == revision, stillEditing(trimmed) else { return false }
             return true
         } catch {
+            guard editRevision == revision, stillEditing(trimmed) else { return false }
             savingError = String(
                 localized: "Couldn't save: \(error.localizedDescription)",
                 bundle: .appLanguage, comment: "Steam Web API key save failure."
@@ -114,7 +150,7 @@ final class SteamWebAPIKeyEntryModel {
 
     func forget() async {
         do {
-            try await services.keychain.deleteWebAPIKey()
+            try await dependencies.deleteAPIKey()
         } catch {
             // Swallowing this left `hasWebAPIKey` true with the UI claiming the
             // key was forgotten — the one state where the user stops looking.
@@ -122,10 +158,10 @@ final class SteamWebAPIKeyEntryModel {
                 localized: "Couldn't remove the key: \(error.localizedDescription)",
                 bundle: .appLanguage, comment: "Steam Web API key deletion failure."
             )
-            await services.refreshAPIKeyStatus()
+            await dependencies.refreshAPIKeyStatus()
             return
         }
-        await services.refreshAPIKeyStatus()
+        await dependencies.refreshAPIKeyStatus()
         reset()
     }
 

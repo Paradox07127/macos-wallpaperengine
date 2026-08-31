@@ -254,6 +254,97 @@ struct WPESceneScriptRuntimeTests {
         #expect(value.z == 0.15, "number property did not reach the script: \(value)")
     }
 
+    /// 3146703458's song titles: the `scale` constant on their transform effect
+    /// assigns `speed` ONLY inside `applyUserProperties`. Effect-constant and
+    /// dynamic-transform instances never received that callback (only the four
+    /// layer/text families did), so `speed` stayed undefined, `WEMath.mix(1, 1,
+    /// undefined)` returned NaN, and every title rendered at scale 0 — the oracle
+    /// dump showed `g_Scale = [0, 0]` against an authored `1 1`.
+    @Test("Transform script receives applyUserProperties")
+    func transformScriptReceivesApplyUserProperties() throws {
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            'use strict';
+            let speed;
+            export function update(value) {
+                if (speed === undefined) { return new Vec3(0, 0, 0); }
+                return new Vec3(speed, speed, speed);
+            }
+            export function applyUserProperties(changed) {
+                speed = changed.hoScale;
+            }
+            """,
+            seed: SIMD3<Double>(1, 1, 1),
+            canvasSize: SIMD2<Double>(1920, 1080)
+        )
+        // Control: before the callback the script cannot know `hoScale`, so the
+        // authored value collapses exactly the way the shipped scene did.
+        let before = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 0))
+        #expect(before == SIMD3<Double>(0, 0, 0))
+
+        #expect(instance.applyUserProperties(["hoScale": .number(1.5)]))
+        let after = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 0.016))
+        #expect(after == SIMD3<Double>(1.5, 1.5, 1.5))
+    }
+
+    /// Second half of the same 3146703458 fix (see above): the JS `Vec3` constructor
+    /// laundered NaN into 0, so the host applied a real zero instead of rejecting the frame.
+    @Test("NaN from a transform script is rejected, not applied as zero")
+    func nanFromTransformScriptIsRejectedNotAppliedAsZero() throws {
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            'use strict';
+            import * as WEMath from 'WEMath';
+            let initScale, speed;
+            export function init(value) { initScale = value; return value; }
+            export function update(value) {
+                return new Vec3(
+                    WEMath.mix(value.x, initScale.x, speed),
+                    WEMath.mix(value.y, initScale.y, speed),
+                    WEMath.mix(value.z, initScale.z, speed)
+                );
+            }
+            """,
+            seed: SIMD3<Double>(1, 1, 0),
+            canvasSize: SIMD2<Double>(3840, 2160)
+        )
+        #expect(instance.tick(pointerPosition: .zero, runtimeSeconds: 0) == nil)
+    }
+
+    /// Control for the same change: a MISSING argument still defaults to 0, so
+    /// `new Vec3(1, 2)` keeps z == 0 and ordinary two-component authored values
+    /// are unaffected.
+    @Test("Missing Vec component still defaults to zero")
+    func missingVecComponentStillDefaultsToZero() throws {
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            'use strict';
+            export function update(value) { return new Vec3(4, 5); }
+            """,
+            seed: SIMD3<Double>(9, 9, 9),
+            canvasSize: SIMD2<Double>(1920, 1080)
+        )
+        let value = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 0))
+        #expect(value == SIMD3<Double>(4, 5, 0))
+    }
+
+    @Test("Transform script without applyUserProperties export stays unharmed")
+    func transformScriptWithoutApplyUserPropertiesExportStaysUnharmed() throws {
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: """
+            'use strict';
+            export function update(value) { return value; }
+            """,
+            seed: SIMD3<Double>(2, 3, 4),
+            canvasSize: SIMD2<Double>(1920, 1080)
+        )
+        // A script that does not export the handler must not be reported as
+        // invoked, and its value must survive the delivery attempt untouched.
+        #expect(instance.applyUserProperties(["hoScale": .number(1.5)]) == false)
+        let value = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 0))
+        #expect(value == SIMD3<Double>(2, 3, 4))
+    }
+
     @Test("Transform update reuses the same argument object across ticks")
     func transformUpdateReusesArgumentObjectAcrossTicks() throws {
         let instance = try WPEDynamicTransformScriptInstance(

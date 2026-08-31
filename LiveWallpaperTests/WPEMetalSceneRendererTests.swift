@@ -2504,3 +2504,107 @@ struct WPEMetalTextureSnapshotterFormatTests {
         #expect(abs(Int(mid.r) - 188) <= 2 && abs(Int(mid.g) - 188) <= 2 && abs(Int(mid.b) - 188) <= 2)
     }
 }
+
+@Suite("WPE hover hit rect")
+struct WPEHoverHitRectTests {
+    private func geometry(
+        origin: SIMD3<Double>,
+        size: CGSize,
+        scale: SIMD3<Double> = SIMD3<Double>(1, 1, 1)
+    ) -> WPERenderLayerGeometry {
+        WPERenderLayerGeometry(
+            origin: origin,
+            scale: scale,
+            angles: SIMD3<Double>(0, 0, 0),
+            alignment: .center,
+            size: size,
+            alpha: 1,
+            color: SIMD3<Double>(1, 1, 1),
+            brightness: 1
+        )
+    }
+
+    /// 3146703458's song list: authored origins are Y-UP (bottom-left), the pointer
+    /// arrives Y-DOWN, so an unconverted ortho centre inverted every hover — the top
+    /// entry highlighted the bottom one.
+    @Test("Orthographic hover centre converts the authored Y-up origin to pointer space")
+    func orthographicHoverCentreConvertsAuthoredYUpOrigin() throws {
+        let scene = CGSize(width: 3840, height: 2160)
+        // Authored near the TOP of the canvas in Y-up terms.
+        let rect = try #require(WPEMetalSceneRenderer.hoverHitRect(
+            geometry: geometry(origin: SIMD3<Double>(2061, 1900, 0), size: CGSize(width: 427, height: 113)),
+            sceneSize: scene,
+            projection: nil
+        ))
+        // Y-down pointer space: 2160 - 1900 = 260, i.e. still near the top.
+        #expect(rect.center == SIMD2<Double>(2061, 260))
+        #expect(rect.half.x == 213.5)
+
+        // A layer authored near the BOTTOM must land near the bottom, not the top.
+        let low = try #require(WPEMetalSceneRenderer.hoverHitRect(
+            geometry: geometry(origin: SIMD3<Double>(100, 200, 0), size: CGSize(width: 427, height: 113)),
+            sceneSize: scene,
+            projection: nil
+        ))
+        #expect(low.center.y == 1960)
+    }
+
+    // Control: the perspective branch already converted, and must not change.
+    @Test("Perspective hover centre keeps its existing conversion")
+    func perspectiveHoverCentreKeepsExistingConversion() throws {
+        let scene = CGSize(width: 3840, height: 2160)
+        let rect = try #require(WPEMetalSceneRenderer.hoverHitRect(
+            geometry: geometry(origin: SIMD3<Double>(0, 0, 0), size: CGSize(width: 400, height: 400)),
+            sceneSize: scene,
+            projection: (center: SIMD2<Double>(120, 300), depthScale: 0.5)
+        ))
+        #expect(rect.center == SIMD2<Double>(1920 + 120, 1080 - 300))
+        #expect(rect.half == SIMD2<Double>(100, 100))
+    }
+
+    @Test("Hover half-extent keeps its reachability floor")
+    func hoverHalfExtentKeepsReachabilityFloor() throws {
+        let scene = CGSize(width: 3840, height: 2160)
+        let rect = try #require(WPEMetalSceneRenderer.hoverHitRect(
+            geometry: geometry(origin: SIMD3<Double>(500, 500, 0), size: CGSize(width: 4, height: 4)),
+            sceneSize: scene,
+            projection: nil
+        ))
+        #expect(rect.half == SIMD2<Double>(43.2, 43.2))
+    }
+}
+
+@Suite("WPE particle host origin delta")
+struct WPEParticleHostOriginDeltaTests {
+    /// 3509243656's `MAIN 0-1` and 3448877775 drive a particle host's origin from a
+    /// script. The delta rides `projection.padding`, the same Y-up channel as the
+    /// parallax offset, and both inputs are authored Y-up — so a host moving UP must
+    /// move its particles UP. Negating Y sent them the opposite way.
+    @Test("Host moving up moves its particles up")
+    func hostMovingUpMovesParticlesUp() {
+        let delta = WPEMetalSceneRenderer.particleHostOriginDelta(
+            now: SIMD3<Double>(100, 700, 0),
+            seed: SIMD3<Double>(100, 500, 0)
+        )
+        #expect(delta == SIMD2<Float>(0, 200))
+    }
+
+    @Test("Host moving down moves its particles down")
+    func hostMovingDownMovesParticlesDown() {
+        let delta = WPEMetalSceneRenderer.particleHostOriginDelta(
+            now: SIMD3<Double>(100, 300, 0),
+            seed: SIMD3<Double>(100, 500, 0)
+        )
+        #expect(delta == SIMD2<Float>(0, -200))
+    }
+
+    // Control: X was always correct and must stay untouched.
+    @Test("Horizontal delta passes through unchanged")
+    func horizontalDeltaPassesThroughUnchanged() {
+        let delta = WPEMetalSceneRenderer.particleHostOriginDelta(
+            now: SIMD3<Double>(340, 500, 0),
+            seed: SIMD3<Double>(100, 500, 0)
+        )
+        #expect(delta == SIMD2<Float>(240, 0))
+    }
+}

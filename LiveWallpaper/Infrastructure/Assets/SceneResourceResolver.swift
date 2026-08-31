@@ -70,6 +70,43 @@ struct SceneResourceResolver: Sendable {
         }
     }
 
+    /// Reference-only result for shader format selection. Keeping the terminal
+    /// lookup inside this resolver preserves the same scene / dependency /
+    /// engine-assets origin that resolved the JSON chain, without decoding the
+    /// image or copying a package-backed TEX payload.
+    struct ResolvedTextureFormatProbe: Sendable {
+        let relativePath: String
+        let texPayload: WPEMappedByteSpan?
+    }
+
+    func resolveTextureFormatProbe(relativePath: String) throws -> ResolvedTextureFormatProbe {
+        guard !relativePath.isEmpty else { throw ResolveError.fileMissing }
+        let resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
+        let extensionName = (resolvedPath as NSString).pathExtension.lowercased()
+
+        if Self.isTexturePayloadPath(resolvedPath) {
+            do {
+                return try ResolvedTextureFormatProbe(
+                    relativePath: resolvedPath,
+                    texPayload: providerWindow(resolvedPath)
+                )
+            } catch ResolveError.fileMissing where extensionName == "tex" {
+                // Match resolveImageCandidate's missing-TEX raster fallback.
+                if let sibling = rasterSiblingPaths(forMissingTexPath: resolvedPath).first(where: {
+                    provider.exists(atRelativePath: $0)
+                }) {
+                    return ResolvedTextureFormatProbe(relativePath: sibling, texPayload: nil)
+                }
+                throw ResolveError.fileMissing
+            }
+        }
+
+        guard provider.exists(atRelativePath: resolvedPath) else {
+            throw ResolveError.fileMissing
+        }
+        return ResolvedTextureFormatProbe(relativePath: resolvedPath, texPayload: nil)
+    }
+
     func resolveImage(relativePath: String, maxSourceEdge: Int? = nil) throws -> ResolvedImage {
         guard !relativePath.isEmpty else { throw ResolveError.fileMissing }
         var lastMissing: ResolveError?
@@ -136,8 +173,7 @@ struct SceneResourceResolver: Sendable {
         forMissingTexPath texPath: String,
         maxSourceEdge: Int? = nil
     ) throws -> ResolvedImage? {
-        let basePath = (texPath as NSString).deletingPathExtension
-        for candidate in ["\(basePath).png", "\(basePath).jpg", "\(basePath).jpeg"] {
+        for candidate in rasterSiblingPaths(forMissingTexPath: texPath) {
             do {
                 let payload = try providerData(candidate)
                 return try decodeRasterImage(payload, maxSourceEdge: maxSourceEdge)
@@ -146,6 +182,11 @@ struct SceneResourceResolver: Sendable {
             }
         }
         return nil
+    }
+
+    private func rasterSiblingPaths(forMissingTexPath texPath: String) -> [String] {
+        let basePath = (texPath as NSString).deletingPathExtension
+        return ["\(basePath).png", "\(basePath).jpg", "\(basePath).jpeg"]
     }
 
     private func decodeRasterImage(_ payload: Data, maxSourceEdge: Int? = nil) throws -> ResolvedImage {

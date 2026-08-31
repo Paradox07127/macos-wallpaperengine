@@ -124,6 +124,17 @@
             return stableFrame
         }
 
+        /// Live ancestor-origin delta for a particle system — the authored seed is
+        /// already baked into the particle transform. UNFLIPPED: inputs and the channel
+        /// it rides (`projection.padding`, divided by `halfHeight` without negation in
+        /// `wpe_particle_vertex`) are all Y-up; negating Y inverted 3509243656/3448877775.
+        static func particleHostOriginDelta(
+            now: SIMD3<Double>,
+            seed: SIMD3<Double>
+        ) -> SIMD2<Float> {
+            SIMD2<Float>(Float(now.x - seed.x), Float(now.y - seed.y))
+        }
+
         /// Recomputes only the script/keyframe ancestor delta. Fail-close uses
         /// this after rollback without advancing particle time or emission.
         func updateParticleHostOriginOffsets(using transforms: LiveScriptTransforms) {
@@ -131,14 +142,9 @@
                 system.hostOriginOffset = .zero
                 guard !system.hostAncestorIDs.isEmpty, !transforms.origins.isEmpty else { continue }
                 for id in system.hostAncestorIDs {
-                    // The authored seed is baked into the particle transform;
-                    // only the live delta is applied, with Y flipped to Y-up.
                     guard let now = transforms.origins[id],
                           let seed = transformHostLocalTransformsByID[id]?.origin else { continue }
-                    system.hostOriginOffset += SIMD2<Float>(
-                        Float(now.x - seed.x),
-                        Float(seed.y - now.y)
-                    )
+                    system.hostOriginOffset += Self.particleHostOriginDelta(now: now, seed: seed)
                 }
             }
         }

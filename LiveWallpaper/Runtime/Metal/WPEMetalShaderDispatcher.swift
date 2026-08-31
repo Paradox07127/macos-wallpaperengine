@@ -51,27 +51,6 @@ struct WPEMetalShaderDispatcher {
             return
         }
 
-        // `$media*` slots are resolved only by the custom path's per-slot loop —
-        // that is where `substituting` runs. Left to normalize onto a native fast
-        // path (genericimage2/4, copy, compose) a media-bound pass kept drawing
-        // the authored placeholder forever, silently. Routing a builtin name
-        // through the custom dispatch is established — `genericParticle` below
-        // does the same — and media-bound passes are rare enough that the fast
-        // path loses nothing.
-        if let mediaStore = executor.mediaTextureStore,
-           mediaStore.declarations(forPassID: pass.pass.id) != nil {
-            try dispatchCustomShader(
-                pass: pass,
-                layer: layer,
-                destination: destination,
-                textures: textures,
-                frameState: frameState,
-                encoder: encoder,
-                depthPixelFormat: depthPixelFormat
-            )
-            return
-        }
-
         guard let kind = WPEBuiltinShaderKind(normalizing: pass.pass.shader) else {
             try dispatchCustomShader(
                 pass: pass,
@@ -438,6 +417,16 @@ struct WPEMetalShaderDispatcher {
 
     // MARK: - Image family
 
+    /// `$media*` album art for a BUILTIN image pass, which binds its slots directly
+    /// rather than through the custom path's per-slot `substituting` loop. Routing
+    /// builtins to `dispatchCustomShader` instead threw `unsupportedShader`, skipped
+    /// the composite write, and took the whole scene down (3660962877).
+    private func mediaSubstituted(_ texture: MTLTexture, slot: Int, passID: String) -> MTLTexture {
+        guard let store = executor.mediaTextureStore,
+              let declarations = store.declarations(forPassID: passID) else { return texture }
+        return store.substituting(texture, slot: slot, declarations: declarations) ?? texture
+    }
+
     private func dispatchGenericImage2(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -460,11 +449,15 @@ struct WPEMetalShaderDispatcher {
             depthPixelFormat: depthPixelFormat
         ))
         let reference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
-        let texture = try WPEMetalShaderInputs.resolve(
-            reference: reference,
-            textures: textures,
-            frameState: frameState,
-            currentTargetID: destination.id
+        let texture = mediaSubstituted(
+            try WPEMetalShaderInputs.resolve(
+                reference: reference,
+                textures: textures,
+                frameState: frameState,
+                currentTargetID: destination.id
+            ),
+            slot: 0,
+            passID: pass.pass.id
         )
         encoder.setFragmentTexture(texture, index: 0)
         var uniforms = executor.genericImageUniforms(
@@ -507,11 +500,15 @@ struct WPEMetalShaderDispatcher {
             depthPixelFormat: depthPixelFormat
         ))
         let primaryRef = pass.textureBindings[primarySlot] ?? pass.pass.textures[primarySlot] ?? pass.pass.source
-        let primary = try WPEMetalShaderInputs.resolve(
-            reference: primaryRef,
-            textures: textures,
-            frameState: frameState,
-            currentTargetID: destination.id
+        let primary = mediaSubstituted(
+            try WPEMetalShaderInputs.resolve(
+                reference: primaryRef,
+                textures: textures,
+                frameState: frameState,
+                currentTargetID: destination.id
+            ),
+            slot: primarySlot,
+            passID: pass.pass.id
         )
         WPESceneDebugArtifacts.shared.recordTextureBinding(
             passID: pass.pass.id,
@@ -526,11 +523,15 @@ struct WPEMetalShaderDispatcher {
         let hasMask = maskRef != nil
         let mask: MTLTexture
         if let maskRef {
-            mask = try WPEMetalShaderInputs.resolve(
-                reference: maskRef,
-                textures: textures,
-                frameState: frameState,
-                currentTargetID: destination.id
+            mask = mediaSubstituted(
+                try WPEMetalShaderInputs.resolve(
+                    reference: maskRef,
+                    textures: textures,
+                    frameState: frameState,
+                    currentTargetID: destination.id
+                ),
+                slot: maskSlot,
+                passID: pass.pass.id
             )
             WPESceneDebugArtifacts.shared.recordTextureBinding(
                 passID: pass.pass.id,

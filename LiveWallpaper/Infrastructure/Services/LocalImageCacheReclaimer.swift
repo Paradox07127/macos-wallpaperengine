@@ -28,8 +28,6 @@ final class LocalImageCacheRegistry: Sendable {
     func purgeAll() {
         for purge in purges.withLock({ $0 }) { purge() }
     }
-
-    var registeredCacheCount: Int { purges.withLock { $0.count } }
 }
 
 /// Drops the local-source image caches once the app's last user-visible window has stayed closed for `delay`. The trigger has to be the *transition*, not the condition: this is a menu-bar agent, so "no window open" is its ordinary resting state.

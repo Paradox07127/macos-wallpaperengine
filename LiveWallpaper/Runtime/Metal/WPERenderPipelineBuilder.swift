@@ -452,16 +452,19 @@ private struct WPEShaderSourceLoader: Sendable {
     private func probeTextureFormatResolution(forExternalPath path: String) -> TextureFormatResolution {
         let candidates = textureFormatProbeCandidates(for: path)
         for candidate in candidates {
-            let ext = (candidate as NSString).pathExtension.lowercased()
-            guard resolver.exists(relativePath: candidate) else { continue }
-            guard ext == "tex" || ext.isEmpty else {
-                // ImageIO uploads PNG/JPEG/etc. as an ordinary four-channel texture.
-                return .rgbaFallback("native raster '\(candidate)' uses four-channel sampling")
-            }
-
             do {
-                let data = try resolver.data(relativePath: candidate, optional: true)
-                switch WPETexDecoder().probe(data: data) {
+                let probe = try resolver.resolveTextureFormatProbe(
+                    relativePath: candidate,
+                    optional: true
+                )
+                guard let payload = probe.texPayload else {
+                    // ImageIO uploads PNG/JPEG/etc. as an ordinary four-channel texture.
+                    return .rgbaFallback(
+                        "native raster '\(probe.relativePath)' uses four-channel sampling"
+                    )
+                }
+
+                switch WPETexDecoder().probe(span: payload) {
                 case .success(let info):
                     guard let value = WPEOfficialTextureFormatABI.shaderValue(
                         forTextureFormatCode: info.textureFormatCode
@@ -474,14 +477,15 @@ private struct WPEShaderSourceLoader: Sendable {
                     return TextureFormatResolution(value: value, diagnostic: nil, isMalformedTexture: false)
                 case .failure(let error):
                     return .rgbaFallback(
-                        "could not probe TEXI header for '\(candidate)': \(error)",
+                        "could not probe TEXI header for '\(probe.relativePath)': \(error)",
                         malformed: true
                     )
                 }
+            } catch SceneResourceResolver.ResolveError.fileMissing {
+                continue
             } catch {
                 return .rgbaFallback(
-                    "could not read TEXI header for '\(candidate)': \(error)",
-                    malformed: true
+                    "could not resolve texture reference '\(candidate)': \(error)"
                 )
             }
         }

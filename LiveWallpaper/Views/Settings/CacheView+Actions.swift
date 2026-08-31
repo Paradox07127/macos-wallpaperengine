@@ -8,16 +8,31 @@ extension WPECacheManagementView {
         isLoadingInventory = true
         reachableIDs = WPESceneReachability.referencedWorkshopIDs()
         isLoading = false
-        // The engine-assets root now resolves from a main-actor bookmark, so the
-        // walk cannot start off-main; the byte walk itself stays cheap because
-        // only one directory is measured.
-        inventory = WPEStorageInventory.compute(doctor: doctorService)
-        isLoadingInventory = false
+        await refreshInventory()
         workshopCacheBytes = await workshopServices.queryCache.sizeBytes()
         #if DEBUG
         await refreshTestArtifacts()
         #endif
         await refreshVideoStats()
+    }
+
+    /// `wpeHistoryDidChange` fires on every apply/bookmark edit, so passes stack up
+    /// mid-walk. Newest generation wins; older ones are cancelled and their results
+    /// dropped.
+    private func refreshInventory() async {
+        inventoryScan?.cancel()
+        inventoryGeneration &+= 1
+        let generation = inventoryGeneration
+        isLoadingInventory = true
+
+        let scan = Task { await WPEStorageInventory.compute(doctor: doctorService) }
+        inventoryScan = scan
+        let scanned = await scan.value
+
+        guard generation == inventoryGeneration else { return }
+        inventoryScan = nil
+        inventory = scanned
+        isLoadingInventory = false
     }
 
     private func refreshVideoStats() async {

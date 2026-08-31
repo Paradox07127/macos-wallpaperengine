@@ -131,16 +131,62 @@ private struct AdaptiveGlassScrimmedModifier: ViewModifier {
     }
 }
 
+/// Backing chosen for a floating glyph. Extracted so the accessibility decision
+/// is assertable without rendering a view, the same way
+/// `MonitorPanelAppearance.usesGlass` is.
+public enum FloatingGlyphBacking: Equatable, Sendable {
+    /// Liquid Glass — only when transparency is allowed and the OS offers it.
+    case glass
+    /// Opaque disc; `bordered` when Increase Contrast also asks for an edge.
+    case opaque(bordered: Bool)
+    /// Pre-glass translucent tint.
+    case tinted
+
+    /// Reduce Transparency outranks availability: the glyph floats over
+    /// arbitrary wallpaper art, so a see-through disc is precisely what the
+    /// setting asks us to stop drawing.
+    public static func resolve(
+        glassAvailable: Bool,
+        reduceTransparency: Bool,
+        increasedContrast: Bool
+    ) -> FloatingGlyphBacking {
+        if reduceTransparency {
+            return .opaque(bordered: increasedContrast)
+        }
+        return glassAvailable ? .glass : .tinted
+    }
+}
+
 private struct FloatingGlyphGlassModifier: ViewModifier {
     let hovered: Bool
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.glassEffect(
-                .regular.tint(.black.opacity(hovered ? 0.32 : 0.18)).interactive(),
-                in: .circle
+        switch FloatingGlyphBacking.resolve(
+            glassAvailable: AdaptiveGlass.isAvailable,
+            reduceTransparency: reduceTransparency,
+            increasedContrast: contrast == .increased
+        ) {
+        case let .opaque(bordered):
+            content.background(
+                Circle()
+                    .fill(hovered ? Color(white: 0.22) : Color.black)
+                    .overlay {
+                        if bordered {
+                            Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 1)
+                        }
+                    }
             )
-        } else {
+        case .glass:
+            if #available(macOS 26.0, *) {
+                content.glassEffect(
+                    .regular.tint(.black.opacity(hovered ? 0.32 : 0.18)).interactive(),
+                    in: .circle
+                )
+            }
+        case .tinted:
             content.background(Circle().fill(.black.opacity(hovered ? 0.6 : 0.4)))
         }
     }

@@ -326,7 +326,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                         videosDirectory: store.videosDirectory(),
                         persist: { try store.writeManifest($0) },
                         onFileRemovalFailure: { name, error in
-                            wpxLog.error("could not delete \(name, privacy: .public): \(String(describing: error), privacy: .public)")
+                            wpxLog.error("could not delete \(name, privacy: .private): \(WPXLogPrivacy.summary(error), privacy: .public)")
                         }
                     )
                 }
@@ -334,7 +334,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 // Unreadable index or a failed manifest write: nothing was
                 // deleted, so the library is still consistent — report it
                 // rather than claim success.
-                wpxLog.error("removeChoiceRequest failed: \(String(describing: error), privacy: .public)")
+                wpxLog.error("removeChoiceRequest failed: \(WPXLogPrivacy.summary(error), privacy: .public)")
                 reply(error)
                 return
             }
@@ -376,7 +376,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         }
         proxy.updateSettingsViewModels(object) { error in
             if let error {
-                wpxLog.error("updateSettingsViewModels failed: \(String(describing: error), privacy: .public)")
+                wpxLog.error("updateSettingsViewModels failed: \(WPXLogPrivacy.summary(error), privacy: .public)")
             }
         }
     }
@@ -388,7 +388,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         }
         proxy.invalidateSnapshots { error in
             if let error {
-                wpxLog.error("invalidateSnapshots failed: \(String(describing: error), privacy: .public)")
+                wpxLog.error("invalidateSnapshots failed: \(WPXLogPrivacy.summary(error), privacy: .public)")
             }
         }
     }
@@ -465,7 +465,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         }
         let url = store.videoURL(for: item)
         guard FileManager.default.fileExists(atPath: url.path) else {
-            wpxLog.error("video missing: \(url.lastPathComponent, privacy: .public)")
+            wpxLog.error("video missing: \(url.lastPathComponent, privacy: .private)")
             return nil
         }
         return url

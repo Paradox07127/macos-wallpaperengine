@@ -142,6 +142,88 @@ struct FolderURLSchemeHandlerLifecycleTests {
         #expect(response.value(forHTTPHeaderField: "Content-Security-Policy-Report-Only") == nil)
     }
 
+    /// Workshop HTML is third-party code that arrived over the network. It may
+    /// render, but it must not be able to phone home, and that must not depend
+    /// on the user having found the opt-in CSP toggle.
+    @Test("Network isolation attaches an enforced CSP without the opt-in toggle")
+    func networkIsolationAttachesHeaderWithoutOptIn() async throws {
+        let folder = makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data("body {}".utf8).write(to: folder.appendingPathComponent("style.css"))
+
+        let handler = FolderURLSchemeHandler()
+        handler.networkIsolationEnabled = true
+        #expect(handler.cspEnforcementEnabled == false)
+        handler.folderURL = folder
+
+        let request = subresourceRequest(
+            url: "livewallpaper://wallpaper/style.css",
+            mainDocument: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")"
+        )
+        let task = FakeURLSchemeTask(request: request)
+
+        handler.webView(WKWebView(), start: task)
+        try await waitUntilTaskCompletes(task)
+
+        let response = try #require(task.receivedResponse as? HTTPURLResponse)
+        #expect(
+            response.value(forHTTPHeaderField: "Content-Security-Policy")
+                == FolderURLSchemeHandler.networkIsolatedContentSecurityPolicy
+        )
+    }
+
+    @Test("Isolation outranks plain enforcement when both are on")
+    func networkIsolationOutranksPlainEnforcement() async throws {
+        let folder = makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data("body {}".utf8).write(to: folder.appendingPathComponent("style.css"))
+
+        let handler = FolderURLSchemeHandler()
+        handler.cspEnforcementEnabled = true
+        handler.networkIsolationEnabled = true
+        handler.folderURL = folder
+
+        let request = subresourceRequest(
+            url: "livewallpaper://wallpaper/style.css",
+            mainDocument: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")"
+        )
+        let task = FakeURLSchemeTask(request: request)
+
+        handler.webView(WKWebView(), start: task)
+        try await waitUntilTaskCompletes(task)
+
+        let response = try #require(task.receivedResponse as? HTTPURLResponse)
+        #expect(
+            response.value(forHTTPHeaderField: "Content-Security-Policy")
+                == FolderURLSchemeHandler.networkIsolatedContentSecurityPolicy
+        )
+    }
+
+    /// The plain policy deliberately keeps `https:` for authored-content
+    /// compatibility; the isolated one exists precisely to drop it, so assert
+    /// the difference rather than trusting the two strings to stay distinct.
+    @Test("The isolated policy grants no remote origin in any fetch directive")
+    func isolatedPolicyGrantsNoRemoteOrigin() {
+        let policy = FolderURLSchemeHandler.networkIsolatedContentSecurityPolicy
+
+        #expect(!policy.contains("https:"))
+        #expect(!policy.contains("http:"))
+        #expect(!policy.contains("wss:"))
+        #expect(policy.contains("connect-src 'self' livewallpaper: data: blob:;"))
+        #expect(FolderURLSchemeHandler.contentSecurityPolicy.contains("https:"))
+    }
+
+    @Test("Workshop provenance demands network isolation; local content does not")
+    func workshopProvenanceDemandsNetworkIsolation() {
+        var workshop = HTMLConfig()
+        workshop.originKind = .workshopImport
+        var local = HTMLConfig()
+        local.originKind = .userLocal
+
+        #expect(workshop.requiresNetworkIsolation)
+        #expect(!local.requiresNetworkIsolation)
+    }
+
     @Test("Stop after start prevents finish from firing")
     func stopAfterStartCancelsDelivery() async throws {
         let folder = makeTemporaryFolder()

@@ -927,8 +927,6 @@ final class SteamCMDDoctorService {
     /// Download block reason, or nil if ready (`setupIncomplete` → open Doctor).
     enum DownloadBlocker: Equatable {
         case setupIncomplete
-
-        var isFixableInDoctor: Bool { self == .setupIncomplete }
     }
 
     var downloadBlocker: DownloadBlocker? {

@@ -99,7 +99,7 @@ struct WPEOfficialDocsCorpusAuditTests {
         ["name": "applyUserProperties", "status": "partial", "evidence": "L0.5", "producer": "initial effective bag plus changed-key live patch", "limitation": "Not every property/effect/transform script domain receives the event."],
         ["name": "applyGeneralSettings", "status": "implemented", "evidence": "L0.5", "producer": "AppLanguagePreference plus renderer actor FIFO", "limitation": "The app exposes four localized UI languages; unsupported system localizations follow the app's English development fallback."],
         ["name": "cursor", "status": "partial", "evidence": "L1_REQUIRED", "producer": "renderer input dispatch", "limitation": "AABB hit test and broadcast down/up do not implement solid/z-order/capture semantics."],
-        ["name": "media", "status": "missing", "evidence": "L1_REQUIRED", "producer": "none", "limitation": "No platform media-session event bridge."]
+        ["name": "media", "status": "implemented", "evidence": "L0.5", "producer": "WPESceneMediaEventDispatcher + MonitorNowPlayingCoordinator", "limitation": "Playback, properties, thumbnail palette, and timeline handlers are demand-gated; unsupported player fields remain empty and timeline delivery is omitted when the player exposes no position/duration."],
     ]
 
     private static let particleComponentContracts: [[String: String]] = [

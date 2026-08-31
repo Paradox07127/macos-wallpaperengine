@@ -23,19 +23,20 @@ enum WPEScenePreflight {
             flags.insert(.customShaderSource)
         }
 
-        for diagnostic in document.diagnostics {
-            let lowered = diagnostic.message.lowercased()
-            if lowered.contains("particle object") {
-                flags.insert(.particleObject)
-            } else if lowered.contains("text") && lowered.contains("unsupported") {
-                flags.insert(.textObject)
-            } else if lowered.contains("sound") && lowered.contains("unsupported") {
-                flags.insert(.soundObject)
-            } else if lowered.contains("light") && lowered.contains("unsupported") {
-                flags.insert(.lightObject)
-            } else if lowered.contains("animationlayers") {
-                flags.insert(.animationLayer)
-            }
+        // Capability derives from typed parser output, never localized/logging
+        // prose. Diagnostics are presentation evidence and may change wording
+        // independently of the document contract.
+        if !document.particleObjects.isEmpty {
+            flags.insert(.particleObject)
+        }
+        if !document.textObjects.isEmpty {
+            flags.insert(.textObject)
+        }
+        if !document.soundObjects.isEmpty {
+            flags.insert(.soundObject)
+        }
+        if !document.lightObjects.isEmpty {
+            flags.insert(.lightObject)
         }
 
         for object in document.imageObjects {
@@ -110,6 +111,16 @@ struct WPEShaderImplementationInventoryEntry: Equatable, Sendable {
 }
 
 enum WPEShaderImplementationInventory {
+    /// `$mediaThumbnail` and `$mediaPreviousThumbnail` are backed by the scene's
+    /// demand-gated media texture store. Keep only declarations with no runtime
+    /// consumer in the unsupported-metadata inventory; otherwise a working
+    /// builtin image pass is reported as unsupported during preflight.
+    static func containsUnsupportedUserTexture(
+        _ bindings: [WPESceneUserTextureBinding]
+    ) -> Bool {
+        bindings.contains { WPEMediaSystemTexture(bindingName: $0.name) == nil }
+    }
+
     static func merging(
         _ current: [WPEShaderImplementationInventoryEntry],
         with resolved: [WPEShaderImplementationInventoryEntry]
@@ -134,7 +145,7 @@ enum WPEShaderImplementationInventory {
         document.imageObjects.flatMap { object in
             object.effects.flatMap { effect in
                 effect.passOverrides.enumerated().compactMap { index, override in
-                    guard !override.userTextures.isEmpty else { return nil }
+                    guard containsUnsupportedUserTexture(override.userTextures) else { return nil }
                     let identity = WPERenderEffectPassIdentity(
                         objectID: object.id,
                         authoredEffectID: effect.id,
@@ -172,9 +183,16 @@ enum WPEShaderImplementationInventory {
                     return nil
                 }
                 var sources: [String] = []
-                if !pass.userTextureBindings.material.isEmpty { sources.append("effect-material") }
-                if !pass.userTextureBindings.pass.isEmpty { sources.append("material-pass") }
-                if !pass.userTextureBindings.override.isEmpty { sources.append("effect-override") }
+                if containsUnsupportedUserTexture(pass.userTextureBindings.material) {
+                    sources.append("effect-material")
+                }
+                if containsUnsupportedUserTexture(pass.userTextureBindings.pass) {
+                    sources.append("material-pass")
+                }
+                if containsUnsupportedUserTexture(pass.userTextureBindings.override) {
+                    sources.append("effect-override")
+                }
+                guard !sources.isEmpty else { return nil }
                 return WPEShaderImplementationInventoryEntry(
                     stableEffectID: identity.stableEffectID,
                     stablePassID: identity.stablePassID,

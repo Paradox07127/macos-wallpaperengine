@@ -556,6 +556,73 @@ struct WPEParticleSystemTests {
         #expect(untouched == p)
     }
 
+    @Test("Box emitter consumes minimum and directions with the reference -1...1 interpolation")
+    func boxEmitterConsumesMinimumAndDirections() {
+        let point = WPEParticleSystem.boxEmitterDispersal(
+            minimum: SIMD3<Double>(10, 20, 30),
+            maximum: SIMD3<Double>(100, 200, 300),
+            directions: SIMD3<Double>(1, 0, 0.5),
+            samples: SIMD3<Double>(-1, 0, 1)
+        )
+
+        #expect(point == SIMD3<Double>(-80, 0, 150))
+    }
+
+    #if !LITE_BUILD && DEBUG
+    @Test("Box emitter uses fixed min bounds and direction masks without applying sphere-only sign")
+    func boxEmitterRuntimeConsumesBoundsAndMaskWithoutSign() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let json = #"""
+        {
+            "maxcount": 32,
+            "emitter": [{
+                "name": "boxrandom", "rate": 100000,
+                "distancemin": "10 20 30", "distancemax": "10 20 30",
+                "directions": "1 0 0", "sign": "-1 -1 -1"
+            }],
+            "initializer": [{"name": "lifetimerandom", "min": 10, "max": 10}]
+        }
+        """#
+        let definition = try #require(WPEParticleDefinitionParser.parse(data: Data(json.utf8)))
+        let sceneTransform = WPEParticleSceneTransform(
+            sceneSize: SIMD2<Float>(1, 1),
+            objectOrigin: SIMD3<Float>(0.5, 0.5, 0),
+            objectScale: SIMD3<Float>(repeating: 1),
+            objectAngleZ: 0
+        )
+        let system = try #require(
+            WPEParticleSystem(
+                definition: definition,
+                device: device,
+                sceneTransform: sceneTransform,
+                seed: 0xB00B0A
+            )
+        )
+        system.tick(now: 0)
+        system.tick(now: 0.01)
+        try #require(system.liveInstanceCount >= 8)
+
+        var sampled = 0
+        for rawLine in system.particleStateDumpText().split(separator: "\n") {
+            let line = String(rawLine)
+            guard let open = line.range(of: "pos=("),
+                  let close = line.range(of: ")", range: open.upperBound ..< line.endIndex)
+            else { continue }
+            let parts = line[open.upperBound ..< close.lowerBound].split(separator: ",")
+            guard parts.count == 3,
+                  let x = Double(parts[0]),
+                  let y = Double(parts[1]),
+                  let z = Double(parts[2])
+            else { continue }
+            #expect(abs(x - 10) < 0.01)
+            #expect(abs(y) < 0.01)
+            #expect(abs(z) < 0.01)
+            sampled += 1
+        }
+        #expect(sampled >= 8)
+    }
+    #endif
+
     @Test("Emitter radial speed follows the relative dispersal direction")
     func emitterRadialSpeedFollowsDispersal() {
         let velocity = WPEParticleSystem.emitterRadialVelocity(
@@ -3591,6 +3658,32 @@ struct WPEParticleSystemTests {
         let def = try #require(WPEParticleDefinitionParser.parse(data: Data(json.utf8)))
         #expect(def.emitterShape == .sphere)
         #expect(def.dispersalMax == SIMD3<Double>(512, 512, 512))
+    }
+
+    @Test("Unknown and layerimage emitters are diagnosed and do not silently spawn as spheres")
+    func unsupportedEmitterDoesNotFallbackToSphere() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        for name in ["layerimage", "futureemitter"] {
+            let json = """
+            {"maxcount":20,"emitter":[{"name":"\(name)","rate":100000,"distancemax":512}]}
+            """
+            let object = try #require(
+                try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+            )
+            var diagnostics: [WPESceneDiagnostic] = []
+            let definition = WPEParticleDefinitionParser.parse(
+                dictionary: object,
+                diagnostics: &diagnostics
+            )
+            #expect(definition.emitterShape == .unsupported)
+            #expect(diagnostics.contains { $0.message.contains(name) && $0.message.contains("not supported") })
+
+            let system = try #require(WPEParticleSystem(definition: definition, device: device))
+            system.tick(now: 0)
+            system.tick(now: 0.1)
+            #expect(system.liveInstanceCount == 0)
+            #expect(system.isPermanentlyIdle)
+        }
     }
 
     /// `oscillatesize` shares `FrequencyValue`/`GetScale` with `oscillatealpha`, but

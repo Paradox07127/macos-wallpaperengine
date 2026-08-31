@@ -18,6 +18,38 @@ struct LogPrivacySourceAuditTests {
         "LiveWallpaper/Monitor/SourceAuthorization.swift": [
             "provider.defaultDirectoryName": 6,
         ],
+        // Appex: identities and counters only. Paths, filenames and raw errors
+        // are `.private` or reduced to `domain#code` by `WPXLogPrivacy`.
+        "SystemWallpaperProvider/SystemWallpaperProvider.swift": [
+            "Bundle.main.bundleIdentifier??\"?\"": 1,
+            "hostID": 1,
+        ],
+        "SystemWallpaperProvider/VideoRenderer.swift": [
+            "ms": 1,
+            "timeout": 1,
+            "WPXLogPrivacy.summary(reader.error)": 1,
+            "WPXLogPrivacy.summary(error)": 1,
+        ],
+        "SystemWallpaperProvider/SharedLibraryStore.swift": [
+            "WPXLogPrivacy.summary(error)": 2,
+        ],
+        "SystemWallpaperProvider/SettingsShims.swift": [
+            "WPXLogPrivacy.summary(error)": 1,
+        ],
+        "SystemWallpaperProvider/WallpaperXPCHandler.swift": [
+            "uuid.uuidString": 3,
+            "mode": 1,
+            "activity": 1,
+            "choiceID": 3,
+            "what": 1,
+            "WPXLogPrivacy.summary(error)": 4,
+        ],
+        // Private-API symbol names, not user data.
+        "SystemWallpaperProvider/WallpaperXPCBridge.swift": [
+            "missing.joined(separator:\",\")": 1,
+            "check.className": 1,
+            "check.ivarName": 1,
+        ],
         "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/App/Logger.swift": [
             "level.prefix": 1,
             "fileName": 1,
@@ -32,7 +64,12 @@ struct LogPrivacySourceAuditTests {
         let appFiles = RepositoryRoot.swiftFiles(under: "LiveWallpaper")
         let packageSources = RepositoryRoot.swiftFiles(under: "Packages")
             .filter { $0.path.contains("/Sources/") }
-        let files = appFiles + packageSources
+        // The appex ships its own logging and cannot link `LogPrivacyRedactor`,
+        // so it is exactly where an unreviewed public path would survive.
+        let extensionFiles = RepositoryRoot.swiftFiles(under: "SystemWallpaperProvider")
+            + RepositoryRoot.swiftFiles(under: "SteamConnector")
+        #expect(extensionFiles.count > 10, "Extension target sweep collapsed to \(extensionFiles.count) files")
+        let files = appFiles + packageSources + extensionFiles
         #expect(files.count > 450, "Production source sweep collapsed to \(files.count) files")
 
         var observed: [String: [String: Int]] = [:]

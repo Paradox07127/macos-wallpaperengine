@@ -75,11 +75,6 @@ struct WPETexDecoder: Sendable {
     @TaskLocal static var inflateMeter: WPETexInflateMeter?
     #endif
 
-    /// Cheap header probe — used by `WPERenderPipelineBuilder` for texture format resolution.
-    func probe(data: Data) -> Result<WPETexInfo, WPETexDecodeError> {
-        probe(span: WPEMappedByteSpan(data: data))
-    }
-
     func probe(span: WPEMappedByteSpan) -> Result<WPETexInfo, WPETexDecodeError> {
         do {
             return .success(try parseHeader(span: span))

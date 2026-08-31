@@ -137,6 +137,19 @@ extension WPEMetalSceneRenderer {
             pointerFrame: frameContext.layerScriptPointerFrame,
             runtimeSeconds: uniforms.time
         )
+        // AFTER the hover pass, not before it: a press is attributed to whatever
+        // `layerHoverStates` says is under the cursor, so dispatching it from
+        // inside the tick helper — which runs near the top of the frame — matched
+        // presses against the previous frame's hover set. Moving onto a layer and
+        // clicking within one frame then produced no `cursorClick`, or one on the
+        // layer the cursor had just left. Hover cannot move earlier instead: its
+        // hit rects have to come from this frame's live transforms.
+        dispatchPointerButtonEdges(
+            from: previousLayerScriptPointerFrame,
+            to: frameContext.layerScriptPointerFrame,
+            runtimeSeconds: uniforms.time
+        )
+        previousLayerScriptPointerFrame = frameContext.layerScriptPointerFrame
         // Before the text tick: a `mediaPropertiesChanged` that landed since the
         // last frame should reach `update()` on THIS frame, not the next one.
         drainMediaEvents(runtimeSeconds: uniforms.time)
@@ -345,12 +358,6 @@ extension WPEMetalSceneRenderer {
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty else {
             return pipeline
         }
-        dispatchPointerButtonEdges(
-            from: previousLayerScriptPointerFrame,
-            to: layerScriptPointerFrame,
-            runtimeSeconds: uniforms.time
-        )
-        previousLayerScriptPointerFrame = layerScriptPointerFrame
         // Sorted by objectID: these scripts cross-talk through shared state, so a
         // stable tick order keeps the frame deterministic (oracle) and behaviour
         // reproducible (dictionary order was arbitrary).

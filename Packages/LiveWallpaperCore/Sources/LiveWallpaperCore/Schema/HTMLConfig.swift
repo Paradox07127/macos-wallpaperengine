@@ -37,6 +37,16 @@ public struct HTMLConfig: Codable, Equatable, Sendable {
         }
     }
 
+    /// Imported Workshop pages are third-party code that arrived over the
+    /// network, so they render with every remote origin denied regardless of the
+    /// opt-in CSP toggle. Content the user authored locally follows the toggle.
+    public var requiresNetworkIsolation: Bool {
+        switch originKind {
+        case .workshopImport: true
+        case .userLocal: false
+        }
+    }
+
     public var maxRetries: Int = 3
     /// CSP injection before scripts; off by default for authored-content compatibility.
     public var cspEnforcementEnabled: Bool = false

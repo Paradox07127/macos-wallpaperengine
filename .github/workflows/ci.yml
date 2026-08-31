@@ -157,6 +157,17 @@ jobs:
           QUALITY_GATE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: bash scripts/release_contract_check.sh
 
+      # Ratchet, not a sweep: 827 of 940 files still differ from SwiftFormat at
+      # whole-file granularity (measured 2026-08-31), so only lines this PR
+      # touched are judged. A whole-repo gate would either stay red forever or
+      # force a one-shot reformat that buries every semantic diff under it.
+      - name: Install lint tooling
+        run: brew install swiftlint swiftformat
+
+      - name: Lint the lines this change touched
+        run: |
+          python3 scripts/lint_changed_lines.py --base "${{ github.event.pull_request.base.sha || github.event.before }}"
+
   app-tests:
     # Opt-in only (Actions tab -> CI -> Run workflow -> check the box).
     # The LiveWallpaperTests bundle is large and some tests touch

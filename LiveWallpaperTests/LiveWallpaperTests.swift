@@ -102,7 +102,7 @@ struct SettingsWindowLayoutTests {
         #expect(previewSection.contains("diagnosticCell(\"Backing\""))
         #expect(previewSection.contains("diagnosticCell(\"Scale\""))
         #expect(previewSection.contains("diagnosticCell(\"Viewport\""))
-        #expect(previewSection.contains("diagnosticCell(\"DPR\""))
+        #expect(previewSection.contains("diagnosticCell(verbatimLabel: \"DPR\""))
         #expect(previewSection.contains("diagnosticCell(\"Mode\""))
     }
 

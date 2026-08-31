@@ -17,6 +17,9 @@ struct WPECacheManagementView: View {
     /// App-managed engine assets only (Steam Workshop tree is external source data).
     @State var inventory: WPEStorageInventory?
     @State var isLoadingInventory: Bool = true
+    /// Only the newest inventory pass may commit; see `refreshInventory()`.
+    @State var inventoryGeneration: UInt64 = 0
+    @State var inventoryScan: Task<WPEStorageInventory, Never>?
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
 
     #if DEBUG

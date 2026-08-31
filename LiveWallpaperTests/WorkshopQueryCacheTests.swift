@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import Darwin
 import Foundation
 import Security
 import Testing
@@ -168,6 +169,56 @@ struct WorkshopKeychainStoreTests {
 
         #expect(spy.storedKey == Self.sampleKey)
         #expect(FileManager.default.fileExists(atPath: env.fileURL.path) == false)
+    }
+
+    @Test("A legacy symlink is rejected without changing its target")
+    func legacySymlinkIsRejectedWithoutChangingTarget() async throws {
+        let spy = WorkshopKeychainSlotSpy()
+        let env = Self.makeStore(slot: spy)
+        defer { try? FileManager.default.removeItem(at: env.directory) }
+        try FileManager.default.createDirectory(
+            at: env.directory, withIntermediateDirectories: true
+        )
+        let targetURL = env.directory.appendingPathComponent("symlink-target.key")
+        try Data(Self.sampleKey.utf8).write(to: targetURL)
+        try FileManager.default.createSymbolicLink(
+            at: env.fileURL,
+            withDestinationURL: targetURL
+        )
+
+        #expect(try await env.store.loadWebAPIKey() == nil)
+        #expect(spy.storedKey == nil)
+        #expect(FileManager.default.fileExists(atPath: env.fileURL.path) == false)
+        #expect(try String(contentsOf: targetURL, encoding: .utf8) == Self.sampleKey)
+        #expect(await env.store.hasWebAPIKey() == false)
+    }
+
+    @Test("An oversized legacy file is rejected and removed")
+    func oversizedLegacyFileIsRejected() async throws {
+        let spy = WorkshopKeychainSlotSpy()
+        let env = Self.makeStore(slot: spy)
+        defer { try? FileManager.default.removeItem(at: env.directory) }
+        try Self.writeContainerFile(String(repeating: "a", count: 65), at: env.fileURL)
+
+        #expect(try await env.store.loadWebAPIKey() == nil)
+        #expect(spy.storedKey == nil)
+        #expect(FileManager.default.fileExists(atPath: env.fileURL.path) == false)
+    }
+
+    @Test("Legacy metadata requires a regular file owned by the current user")
+    func legacyMetadataRequiresExpectedOwner() throws {
+        let spy = WorkshopKeychainSlotSpy()
+        let env = Self.makeStore(slot: spy)
+        defer { try? FileManager.default.removeItem(at: env.directory) }
+        try Self.writeContainerFile(Self.sampleKey, at: env.fileURL)
+
+        #expect(WorkshopKeychainStore.legacyFileMetadataIsSafe(at: env.fileURL))
+        #expect(
+            WorkshopKeychainStore.legacyFileMetadataIsSafe(
+                at: env.fileURL,
+                expectedOwner: geteuid() &+ 1
+            ) == false
+        )
     }
 
     @Test("A refused keychain write keeps the container file and the key")

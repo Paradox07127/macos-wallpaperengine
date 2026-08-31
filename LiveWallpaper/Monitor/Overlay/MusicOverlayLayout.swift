@@ -29,14 +29,6 @@ enum MusicOverlayLayout {
         )
     }
 
-    static func normalizedRect(_ configuration: MusicOverlayConfiguration) -> CGRect {
-        let footprint = normalizedFootprint(for: configuration.size)
-        return CGRect(
-            x: configuration.x, y: configuration.y,
-            width: footprint.width, height: footprint.height
-        )
-    }
-
     /// The layer's rect in board coordinates (y-down from the top edge), gutters
     /// applied exactly as a tile's are. Nil when the board has no usable area.
     static func renderRect(

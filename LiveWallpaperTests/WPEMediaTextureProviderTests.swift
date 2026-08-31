@@ -284,6 +284,48 @@ struct WPEMediaTextureProviderTests {
         #expect(WPEMediaSystemTexture(bindingName: "$instanceSource") == nil)
     }
 
+    // MARK: - Builtin dispatch
+
+    @Test("A builtin genericimage2 pass declaring $mediaThumbnail renders with the artwork bound")
+    func builtinImagePassBindsArtworkAndKeepsItsComposite() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let store = WPEMediaTextureStore(device: device, slotsByPassID: ["cover.0": [0: .thumbnail]])
+        try store.ingest(artwork: Self.artwork(red: 0.9))
+        executor.mediaTextureStore = store
+
+        let output = try executor.render(
+            pipeline: Self.coverPipeline(),
+            size: CGSize(width: 4, height: 4),
+            textures: ["materials/cover.png": Self.solidTexture(device, red: 0, green: 0, blue: 255)]
+        )
+        let pixel = try Self.readPixel(output, x: 2, y: 2)
+
+        // The whole scene died here before: a builtin pass was routed to the custom-shader
+        // dispatch, which has no program for it, so `cover.0` threw `unsupportedShader`,
+        // never wrote `_a`, and `cover.1`'s read of `_a` failed the render (3660962877).
+        #expect(pixel.r > 150, "the cover slot must carry the artwork, not the blue placeholder")
+        #expect(pixel.b < 100)
+    }
+
+    @Test("A pass whose shader cannot translate leaves its cleared composite readable")
+    func skippedShaderPassStillPublishesItsClearedComposite() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+
+        let output = try executor.render(
+            pipeline: Self.untranslatablePipeline(),
+            size: CGSize(width: 4, height: 4),
+            textures: [:]
+        )
+
+        // Both halves matter: the pass really was skipped (otherwise this asserts nothing),
+        // and the scene still rendered instead of dying on the downstream `_a` read.
+        #expect(executor.untranslatableShaderReasonByPassID["broken.0"] != nil)
+        let pixel = try Self.readPixel(output, x: 2, y: 2)
+        #expect(pixel.a < 10, "a skipped pass publishes its cleared (transparent) target")
+    }
+
     // MARK: - Fixtures
 
     private static func pipeline(bindings: WPERenderUserTextureBindings) -> WPEPreparedRenderPipeline {
@@ -324,6 +366,158 @@ struct WPEMediaTextureProviderTests {
         return WPEPreparedRenderPipeline(layers: [
             WPEPreparedRenderLayer(graphLayer: layer, passes: [prepared])
         ])
+    }
+
+    /// Two passes on one layer: the `$mediaThumbnail` material pass writing the layer
+    /// composite, then a pass that READS that composite. The second pass is the point —
+    /// it is what turned a mis-dispatched cover pass into a dead scene.
+    private static func coverPipeline() -> WPEPreparedRenderPipeline {
+        func prepared(_ pass: WPERenderPass) -> WPEPreparedRenderPass {
+            WPEPreparedRenderPass(pass: pass, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:])
+        }
+        let material = WPERenderPass(
+            id: "cover.0",
+            phase: .material,
+            shader: "genericimage2",
+            source: .image("materials/cover.png"),
+            target: .layerComposite(name: "a"),
+            textures: [0: .image("materials/cover.png")],
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            userTextureBindings: WPERenderUserTextureBindings(
+                material: [WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system", slot: 0)]
+            ),
+            blending: "normal",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+        let toScene = WPERenderPass(
+            id: "cover.1",
+            phase: .material,
+            shader: "genericimage2",
+            source: .fbo("a"),
+            target: .scene,
+            textures: [0: .fbo("a")],
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            blending: "normal",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+        let layer = WPERenderLayer(
+            objectID: "1080",
+            objectName: "Cover",
+            imagePath: "materials/cover.png",
+            materialPath: nil,
+            geometry: .identity,
+            compositeA: "a",
+            compositeB: "b",
+            localFBOs: [],
+            passes: [material, toScene]
+        )
+        return WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(graphLayer: layer, passes: [prepared(material), prepared(toScene)]),
+        ])
+    }
+
+    /// Same shape, but the composite producer is a custom shader that cannot be translated.
+    private static func untranslatablePipeline() -> WPEPreparedRenderPipeline {
+        let broken = WPERenderPass(
+            id: "broken.0",
+            phase: .effect(file: "effects/broken/effect.json"),
+            shader: "effects/broken",
+            source: .image("materials/cover.png"),
+            target: .layerComposite(name: "a"),
+            textures: [:],
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            blending: "normal",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+        let toScene = WPERenderPass(
+            id: "broken.1",
+            phase: .material,
+            shader: "genericimage2",
+            source: .fbo("a"),
+            target: .scene,
+            textures: [0: .fbo("a")],
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            blending: "normal",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+        let layer = WPERenderLayer(
+            objectID: "1",
+            objectName: "Broken",
+            imagePath: "materials/cover.png",
+            materialPath: nil,
+            geometry: .identity,
+            compositeA: "a",
+            compositeB: "b",
+            localFBOs: [],
+            passes: [broken, toScene]
+        )
+        return WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(
+                graphLayer: layer,
+                passes: [
+                    WPEPreparedRenderPass(
+                        pass: broken,
+                        shader: WPEShaderProgram(
+                            name: "effects/broken",
+                            vertexSource: "",
+                            fragmentSource: "void main() { this is not glsl }",
+                            isBuiltin: false
+                        ),
+                        textureBindings: [:],
+                        comboValues: [:],
+                        uniformValues: [:]
+                    ),
+                    WPEPreparedRenderPass(
+                        pass: toScene, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:]
+                    ),
+                ]
+            ),
+        ])
+    }
+
+    private static func solidTexture(_ device: MTLDevice, red: UInt8, green: UInt8, blue: UInt8) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm_srgb, width: 4, height: 4, mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        var bytes = [UInt8]()
+        for _ in 0 ..< (4 * 4) {
+            bytes.append(contentsOf: [red, green, blue, 255])
+        }
+        texture.replace(
+            region: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0, withBytes: bytes, bytesPerRow: 4 * 4
+        )
+        return texture
+    }
+
+    private static func readPixel(_ texture: MTLTexture, x: Int, y: Int) throws -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
+        let staged = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(texture))
+        var bytes = [UInt8](repeating: 0, count: staged.width * staged.height * 4)
+        staged.getBytes(
+            &bytes,
+            bytesPerRow: staged.width * 4,
+            from: MTLRegionMake2D(0, 0, staged.width, staged.height),
+            mipmapLevel: 0
+        )
+        let index = (y * staged.width + x) * 4
+        return (bytes[index], bytes[index + 1], bytes[index + 2], bytes[index + 3])
     }
 
     private static func placeholderTexture(_ device: MTLDevice) throws -> MTLTexture {

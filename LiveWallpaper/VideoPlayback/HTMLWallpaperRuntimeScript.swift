@@ -1371,6 +1371,39 @@ enum HTMLWallpaperRuntimeScript {
 
     /// Opt-in meta CSP (paired with scheme-handler header). Permissive for WPE
     /// corpus; off means no CSP from either path.
+    /// Removes the peer-connection constructors from an isolated page.
+    ///
+    /// Measured 2026-08-31: with the network-isolation CSP in force, a Workshop
+    /// page still built an `RTCPeerConnection`, reached `stun.l.google.com:19302`
+    /// over UDP and gathered an `srflx` candidate — its own public IP, plus a live
+    /// egress path. CSP cannot stop that: the `webrtc` directive is not
+    /// implemented in WebKit (bug 255651) and `connect-src` does not cover ICE.
+    /// `WKPreferences` exposes no `setPeerConnectionEnabled:` on this SDK either,
+    /// so the constructors are taken away in the page instead. Non-configurable so
+    /// the page cannot put them back, and a fresh realm would need an iframe,
+    /// which the same policy denies with `frame-src 'none'`.
+    static func peerConnectionBlocker() -> String {
+        """
+        (function () {
+            var names = [
+                'RTCPeerConnection',
+                'webkitRTCPeerConnection',
+                'mozRTCPeerConnection',
+                'RTCDataChannel'
+            ];
+            for (var i = 0; i < names.length; i++) {
+                try {
+                    Object.defineProperty(window, names[i], {
+                        value: undefined,
+                        writable: false,
+                        configurable: false
+                    });
+                } catch (e) {}
+            }
+        })();
+        """
+    }
+
     static func cspInjection() -> String {
         return """
         (function () {

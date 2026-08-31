@@ -1364,7 +1364,12 @@ final class WPESceneScriptInstance {
                 return s
             }
             if result.isNumber {
-                return String(result.toDouble())
+                // `isNumber` is true for NaN/±Infinity too, and `String(Double.nan)`
+                // is the literal "nan" — which would be DRAWN, and then latched into
+                // `lastValue` so the layer never recovers. Reject like every other
+                // family's coercion so the last good string stands.
+                let number = result.toDouble()
+                return number.isFinite ? String(number) : nil
             }
             return nil
         }
@@ -2641,6 +2646,25 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         }
     }
 
+    /// The handler mutates module state (3146703458's `speed`/`newScale`); the
+    /// next `update()` returns the corrected value, so nothing is published here.
+    @discardableResult
+    func applyUserProperties(_ properties: [String: WPESceneScriptPropertyValue]) -> Bool {
+        guard !isPoisoned, !isDestroyed, !engine.hasRuntimeFault,
+              engine.allows(.event) else { return false }
+        let budget = tickBudget * 2
+        switch engine.applyUserProperties(properties, budget: budget) {
+        case .timedOut:
+            isPoisoned = true
+            Logger.warning("Transform SceneScript applyUserProperties() exceeded \(budget)s — frozen", category: .wpeRender)
+            return false
+        case .capacityUnavailable:
+            return false
+        case let .completed(invoked):
+            return engine.acceptsCompletion() && invoked
+        }
+    }
+
     @discardableResult
     func destroy() -> Bool {
         guard !isDestroyed else { return false }
@@ -2948,6 +2972,16 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             guard allows(.event) else { return .capacityUnavailable }
             return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
                 self.applyGeneralSettingsOnQueue(language: language)
+            }
+        }
+
+        func applyUserProperties(
+            _ properties: [String: WPESceneScriptPropertyValue],
+            budget: TimeInterval
+        ) -> WPESceneScriptBoundedExecutionResult<Bool> {
+            guard allows(.event) else { return .capacityUnavailable }
+            return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline) {
+                self.applyUserPropertiesOnQueue(properties)
             }
         }
 
@@ -3287,6 +3321,24 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private func update(_ vector: JSValue?, x: Double, y: Double) {
             vector?.setObject(x, forKeyedSubscript: "x" as NSString)
             vector?.setObject(y, forKeyedSubscript: "y" as NSString)
+        }
+
+        /// Mirrors the layer engine's handler so effect-constant and dynamic
+        /// transform scripts see the same bag. `false` when the module does not
+        /// export it, so the caller can tell "not interested" from "ran".
+        fileprivate func applyUserPropertiesOnQueue(
+            _ properties: [String: WPESceneScriptPropertyValue]
+        ) -> Bool {
+            guard let context,
+                  let function = context.objectForKeyedSubscript("applyUserProperties"),
+                  !function.isUndefined, function.hasProperty("call"),
+                  let bag = JSValue(newObjectIn: context) else { return false }
+            for (name, value) in properties {
+                bag.setObject(value.jsBridged, forKeyedSubscript: name as NSString)
+            }
+            didThrow = false
+            _ = function.call(withArguments: [bag])
+            return !didThrow
         }
 
         private func installInput(in context: JSContext) {

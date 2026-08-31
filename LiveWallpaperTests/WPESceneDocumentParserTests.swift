@@ -398,6 +398,7 @@ struct WPESceneDocumentParserTests {
         #expect(document.lightObjects.count == 2)
         let point = try #require(document.lightObjects.first { $0.id == "433" })
         #expect(point.type == .point)
+        #expect(point.type.knownShaderArrayValue == 0)
         #expect(point.authoredType == "lpoint")
         #expect(point.origin == SIMD3<Double>(10, 20, 30))
         #expect(point.color == SIMD3<Double>(0.25, 0.5, 0.75))
@@ -424,6 +425,7 @@ struct WPESceneDocumentParserTests {
 
         let directional = try #require(document.lightObjects.first { $0.id == "259" })
         #expect(directional.type == .directional)
+        #expect(directional.type.knownShaderArrayValue == 2)
         #expect(directional.angles == SIMD3<Double>(7, 8, 9))
         #expect(directional.cascadeDistances == SIMD3<Double>(0.3, 0.4, 8))
         #expect(!directional.visible)
@@ -436,6 +438,30 @@ struct WPESceneDocumentParserTests {
         #expect(document.diagnostics.contains {
             $0.message.contains("general.lightconfig") && $0.message.contains("await their L1 gates")
         })
+    }
+
+    @Test("Unknown light type is preserved without fabricating a point-light value")
+    func unknownLightTypeRemainsTypedUnknown() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1, "height": 1, "auto": true]],
+            "objects": [[
+                "id": "future-light",
+                "name": "Future Light",
+                "type": "light",
+                "light": "larea",
+                "color": "1 1 1",
+            ]],
+        ]
+
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload)
+        )
+        let light = try #require(document.lightObjects.first)
+
+        #expect(light.type == .unknown("larea"))
+        #expect(light.type.knownShaderArrayValue == nil)
+        #expect(light.authoredType == "larea")
     }
 
     @Test("Camera object overrides the top-level editor camera")

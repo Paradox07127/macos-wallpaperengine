@@ -32,8 +32,11 @@ final class WorkshopServices {
         self.queryService = WorkshopQueryService(keychain: keychain, cache: cache)
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.queryService.setAuthVerdictHandler { accepted, fingerprint in
-                Task { @MainActor [weak self] in
+            // `self` owns `queryService`, which stores this handler: capturing
+            // strongly here is the cycle, and a `[weak self]` one level further in
+            // does not break it because the handler already holds the reference.
+            await queryService.setAuthVerdictHandler { [weak self] accepted, fingerprint in
+                Task { @MainActor in
                     self?.noteAuthVerdict(accepted: accepted, keyFingerprint: fingerprint)
                 }
             }

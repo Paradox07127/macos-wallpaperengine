@@ -39,6 +39,10 @@ public struct WPESceneDocument: Equatable, Sendable {
     /// so a script cannot show under a hidden group.
     public let objectParentByID: [String: String]
     public let ownVisibilityByID: [String: Bool]
+    /// Parser evidence, not a runtime signal: preflight used to derive capability
+    /// flags by string-matching these messages and now reads the typed object
+    /// arrays instead, so nothing in the app consumes this. It is kept because the
+    /// parser suites and the official-docs corpus audit assert against it.
     public let diagnostics: [WPESceneDiagnostic]
 
     public init(
@@ -190,6 +194,10 @@ public struct WPEScenePropertyBinding: Equatable, Sendable {
 
 public enum WPEScenePropertyBindingTarget: Equatable, Sendable {
     case generalField(name: String)
+    /// A non-rendered group/controller object's direct user-bound visibility.
+    /// It deliberately reloads the scene so the parser can re-fold the group
+    /// through every descendant; there is no duplicate incremental planner.
+    case groupObject(id: String)
     case imageObject(id: String)
     case textObject(id: String)
     case particleObject(id: String)
@@ -340,13 +348,28 @@ public struct WPESceneSoundObject: Equatable, Sendable, Identifiable {
     }
 }
 
-/// WPE light type values used by the global four-light shader arrays.
-/// Keep the authored spelling separately because older scenes use both the
-/// short (`lpoint`) and canonical (`point`) forms.
-public enum WPESceneLightType: Int, Equatable, Sendable {
-    case point = 0
-    case spot = 1
-    case directional = 2
+/// Typed WPE light kind. Unknown authored values remain explicit so a future
+/// renderer cannot silently pack them as point lights.
+///
+/// `knownShaderArrayValue` has no consumer yet — nothing renders lights. It is
+/// carried because this enum used to be `Int`-raw-valued, so the 0/1/2 shader
+/// contract was free; dropping it now would mean re-deriving it from the
+/// reference implementation when the light pass lands. Only the parser suites
+/// read it today.
+public enum WPESceneLightType: Equatable, Sendable {
+    case point
+    case spot
+    case directional
+    case unknown(String)
+
+    public var knownShaderArrayValue: Int? {
+        switch self {
+        case .point: 0
+        case .spot: 1
+        case .directional: 2
+        case .unknown: nil
+        }
+    }
 }
 
 /// `general.lightconfig` declares the authored maximum counts by light/shadow

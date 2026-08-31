@@ -102,7 +102,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
                 )
             }
 
-            let searchableText = item.searchableText
+            let searchableText = item.searchableText()
             guard terms.allSatisfy({ searchableText.localizedCaseInsensitiveContains($0) }) else {
                 return nil
             }
@@ -114,7 +114,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    private static let allItems: [SettingsNavigationItem] = [
+    static let allItems: [SettingsNavigationItem] = [
         SettingsNavigationItem(
             destination: .general,
             title: "General",
@@ -197,8 +197,12 @@ struct SettingsNavigationItem: Identifiable, Equatable {
 
     var id: SettingsNavigation { destination }
 
-    fileprivate var searchableText: String {
-        ([title] + keywords).joined(separator: " ")
+    /// Indexed in the rendered language as well as the English key: matching only
+    /// the key meant a zh-Hans user could not find a row by the words on screen.
+    /// `bundle` is injectable so the four-language contract is assertable without
+    /// switching the process-wide app language.
+    func searchableText(in bundle: Bundle = .appLanguage) -> String {
+        ([title, title.localized(in: bundle)] + keywords).joined(separator: " ")
     }
 
     fileprivate func searchTargets(capabilities: ProductCapabilities) -> [SettingsNavigationSearchTarget] {
@@ -320,7 +324,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         let terms = query.localizedStandardTokens.filter { !$0.isEmpty }
         guard !terms.isEmpty else { return nil }
 
-        let candidates = [title] + keywords
+        let candidates = [title, title.localized(in: .appLanguage)] + keywords
         let exactCandidate = candidates.first { candidate in
             terms.allSatisfy { candidate.localizedCaseInsensitiveContains($0) }
         }
@@ -346,8 +350,10 @@ private struct SettingsNavigationSearchTarget: Equatable {
     let anchor: SettingsSearchAnchor
     let keywords: [String]
 
+    /// No injectable bundle here, unlike `SettingsNavigationItem`: nothing outside
+    /// this file can obtain a target, so there is nothing to assert against.
     private var searchableText: String {
-        ([label] + keywords).joined(separator: " ")
+        ([label, label.localized(in: .appLanguage)] + keywords).joined(separator: " ")
     }
 
     func matches(terms: [String]) -> Bool {
@@ -367,6 +373,14 @@ private struct SettingsNavigationSearchTarget: Equatable {
         }
 
         return "\(label): \(candidate.formattedSearchHint)"
+    }
+}
+
+extension String {
+    /// The catalog's translation of this key. Search has to match the words the
+    /// sidebar shows, and those come from the catalog, not from the key.
+    func localized(in bundle: Bundle) -> String {
+        String(localized: String.LocalizationValue(self), bundle: bundle)
     }
 }
 

@@ -439,10 +439,6 @@ struct PlaybackInspector: View {
         screenManager.updateVideoVolume(value, for: screen)
     }
 
-    private var videoVolumePercent: Int {
-        Int((Self.clampedVolume(currentVolume) * 100).rounded())
-    }
-
     private static func clampedVolume(_ value: Double) -> Double {
         guard value.isFinite else { return 1.0 }
         return min(max(value, 0), 1)
@@ -527,16 +523,27 @@ struct HTMLRenderingDiagnostics {
         let usesPhysicalPixels = Self.effectivePhysicalPixelLayout(source: source, config: config)
         let viewportSize = usesPhysicalPixels ? geometry.backingPixelSize : geometry.pointSize
 
-        measurementText = geometry.usesLiveView ? "Live view" : "Screen frame"
+        // Localized here rather than at the label: the overlay renders these
+        // verbatim because its other cells are raw measurements.
+        measurementText = geometry.usesLiveView
+            ? String(localized: "Live view", bundle: .appLanguage, comment: "Web rendering diagnostics: what was measured.")
+            : String(localized: "Screen frame", bundle: .appLanguage, comment: "Web rendering diagnostics: what was measured.")
         pointSizeText = Self.pointSizeText(geometry.pointSize)
         backingPixelSizeText = Self.pixelSizeText(geometry.backingPixelSize)
         scaleText = Self.scalePairText(x: scaleX, y: scaleY, suffix: true)
         viewportText = Self.cssViewportText(viewportSize)
-        devicePixelRatioText = "\(Self.scalePairText(x: scaleX, y: scaleY, suffix: false)) (native)"
+        devicePixelRatioText = String(
+            format: String(localized: "%@ (native)", bundle: .appLanguage, comment: "Web rendering diagnostics: a device pixel ratio that matches the display's own."),
+            Self.scalePairText(x: scaleX, y: scaleY, suffix: false)
+        )
         modeText = if usesPhysicalPixels {
-            config.physicalPixelLayout ? "Physical pixels" : "Physical pixels (auto)"
+            if config.physicalPixelLayout {
+                String(localized: "Physical pixels", bundle: .appLanguage, comment: "Web rendering diagnostics: canvas sizing mode.")
+            } else {
+                String(localized: "Physical pixels (auto)", bundle: .appLanguage, comment: "Web rendering diagnostics: canvas sizing mode chosen automatically.")
+            }
         } else {
-            "CSS points"
+            String(localized: "CSS points", bundle: .appLanguage, comment: "Web rendering diagnostics: canvas sizing mode.")
         }
     }
 

@@ -1,4 +1,5 @@
 #if !LITE_BUILD
+import Darwin
 import Foundation
 import Security
 
@@ -89,6 +90,7 @@ struct WorkshopKeychainSlot: Sendable {
 actor WorkshopKeychainStore {
 
     private static let keyPattern = #"^[A-Fa-f0-9]{32}$"#
+    private static let maximumLegacyFileBytes = 64
 
     enum WorkshopKeychainError: Error, Equatable, Sendable {
         case osStatus(OSStatus)
@@ -161,19 +163,26 @@ actor WorkshopKeychainStore {
     }
 
     func hasWebAPIKey() async -> Bool {
-        FileManager.default.fileExists(atPath: fileURL.path) || slot.exists()
+        Self.legacyFileMetadataIsSafe(at: fileURL) || slot.exists()
     }
 
     /// Copies the container file into the keychain and drops it — but only once
     /// the keychain verifiably holds the key, so a refused write leaves the key
     /// where it still works rather than losing it.
     private func migrateContainerFileIfPresent() throws -> String? {
-        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        guard Self.legacyEntryExists(at: fileURL) else { return nil }
         // The keychain outranks the file: a save writes the keychain first and
         // only then drops the file, so whenever both exist the file is the
         // stale side (a failed removal, a backup restore, a half-written legacy
         // copy). Migrating it over the keychain resurrected forgotten keys.
         if case .found(let stored) = slot.read(), Self.isValidAPIKeyShape(stored) {
+            try? FileManager.default.removeItem(at: fileURL)
+            return nil
+        }
+        guard let data = Self.readBoundedLegacyFile(at: fileURL) else {
+            // Never follow a symlink or allocate based on an unbounded legacy
+            // file. Removing a rejected symlink only unlinks this directory
+            // entry; its target is left untouched.
             try? FileManager.default.removeItem(at: fileURL)
             return nil
         }
@@ -188,6 +197,67 @@ actor WorkshopKeychainStore {
               case .found(let stored) = slot.read(), stored == key else { return key }
         try? FileManager.default.removeItem(at: fileURL)
         return key
+    }
+
+    /// Metadata-only probe used by `hasWebAPIKey` and directly testable without
+    /// opening the user's Keychain. Legacy migration accepts only a small,
+    /// current-user-owned regular file.
+    static func legacyFileMetadataIsSafe(
+        at url: URL,
+        expectedOwner: uid_t = geteuid()
+    ) -> Bool {
+        var metadata = stat()
+        guard Darwin.lstat(url.path, &metadata) == 0 else { return false }
+        return (metadata.st_mode & S_IFMT) == S_IFREG
+            && metadata.st_uid == expectedOwner
+            && metadata.st_size >= 0
+            && metadata.st_size <= off_t(maximumLegacyFileBytes)
+    }
+
+    private static func legacyEntryExists(at url: URL) -> Bool {
+        var metadata = stat()
+        return Darwin.lstat(url.path, &metadata) == 0
+    }
+
+    /// Opens the already-resolved path without following its final symlink,
+    /// validates the opened descriptor (closing the lstat/open race), and reads
+    /// at most one byte beyond the limit so concurrent growth is rejected too.
+    private static func readBoundedLegacyFile(at url: URL) -> Data? {
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else { return nil }
+        defer { Darwin.close(descriptor) }
+
+        var metadata = stat()
+        guard Darwin.fstat(descriptor, &metadata) == 0,
+              (metadata.st_mode & S_IFMT) == S_IFREG,
+              metadata.st_uid == geteuid(),
+              metadata.st_size >= 0,
+              metadata.st_size <= off_t(maximumLegacyFileBytes) else { return nil }
+
+        var bytes = [UInt8](repeating: 0, count: maximumLegacyFileBytes + 1)
+        var count = 0
+        while count < bytes.count {
+            let result = bytes.withUnsafeMutableBytes { buffer -> Int in
+                guard let baseAddress = buffer.baseAddress else { return 0 }
+                return Darwin.read(
+                    descriptor,
+                    baseAddress.advanced(by: count),
+                    buffer.count - count
+                )
+            }
+            if result == 0 {
+                break
+            }
+            if result < 0 {
+                if errno == EINTR {
+                    continue
+                }
+                return nil
+            }
+            count += result
+        }
+        guard count <= maximumLegacyFileBytes else { return nil }
+        return Data(bytes.prefix(count))
     }
 
     private static func error(for status: OSStatus) -> WorkshopKeychainError {
