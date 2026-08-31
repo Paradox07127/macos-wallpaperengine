@@ -57,9 +57,10 @@ whole look — from the Bookmarks library or straight from the menu bar.
 
 ## 7) Global shortcuts
 
-**Settings → Shortcuts** — a master switch plus seven bindable actions:
+**Settings → Shortcuts** — a master switch plus eight bindable actions:
 play/pause all, next / previous wallpaper (display under cursor), toggle mute,
-toggle mouse interaction, show/hide all wallpapers, reload all wallpapers.
+toggle mouse interaction, show/hide all wallpapers, reload all wallpapers,
+open the settings window.
 
 ## 8) Workshop setup (Pro)
 

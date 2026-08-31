@@ -13,6 +13,7 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
     case toggleMouseInteraction
     case toggleWallpapers
     case reloadWallpapers
+    case openSettings
 
     public var id: String { rawValue }
 
@@ -26,57 +27,63 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
     public var displayNameKey: LocalizedStringKey {
         switch self {
         case .togglePlayback:
-            return "Play / Pause All Wallpapers"
+            "Play / Pause All Wallpapers"
         case .nextWallpaper:
-            return "Next Wallpaper (Active Display)"
+            "Next Wallpaper (Active Display)"
         case .previousWallpaper:
-            return "Previous Wallpaper (Active Display)"
+            "Previous Wallpaper (Active Display)"
         case .toggleMute:
-            return "Toggle Mute"
+            "Toggle Mute"
         case .toggleMouseInteraction:
-            return "Toggle Interaction"
+            "Toggle Interaction"
         case .toggleWallpapers:
-            return "Show / Hide All Wallpapers"
+            "Show / Hide All Wallpapers"
         case .reloadWallpapers:
-            return "Reload All Wallpapers"
+            "Reload All Wallpapers"
+        case .openSettings:
+            "Open Settings Window"
         }
     }
 
     public var displayName: String {
         switch self {
         case .togglePlayback:
-            return String(localized: "Play / Pause All Wallpapers", bundle: .appLanguage)
+            String(localized: "Play / Pause All Wallpapers", bundle: .appLanguage)
         case .nextWallpaper:
-            return String(localized: "Next Wallpaper (Active Display)", bundle: .appLanguage)
+            String(localized: "Next Wallpaper (Active Display)", bundle: .appLanguage)
         case .previousWallpaper:
-            return String(localized: "Previous Wallpaper (Active Display)", bundle: .appLanguage)
+            String(localized: "Previous Wallpaper (Active Display)", bundle: .appLanguage)
         case .toggleMute:
-            return String(localized: "Toggle Mute", bundle: .appLanguage)
+            String(localized: "Toggle Mute", bundle: .appLanguage)
         case .toggleMouseInteraction:
-            return String(localized: "Toggle Interaction", bundle: .appLanguage)
+            String(localized: "Toggle Interaction", bundle: .appLanguage)
         case .toggleWallpapers:
-            return String(localized: "Show / Hide All Wallpapers", bundle: .appLanguage)
+            String(localized: "Show / Hide All Wallpapers", bundle: .appLanguage)
         case .reloadWallpapers:
-            return String(localized: "Reload All Wallpapers", bundle: .appLanguage)
+            String(localized: "Reload All Wallpapers", bundle: .appLanguage)
+        case .openSettings:
+            String(localized: "Open Settings Window", bundle: .appLanguage)
         }
     }
 
     public var displayDescriptionKey: LocalizedStringKey {
         switch self {
         case .togglePlayback:
-            return "Pause every active wallpaper, or resume them all."
+            "Pause every active wallpaper, or resume them all."
         case .nextWallpaper:
-            return "Advance the playlist on the display under the cursor."
+            "Advance the playlist on the display under the cursor."
         case .previousWallpaper:
-            return "Step the playlist back on the display under the cursor."
+            "Step the playlist back on the display under the cursor."
         case .toggleMute:
-            return "Mute or unmute video and scene wallpapers."
+            "Mute or unmute video and scene wallpapers."
         case .toggleMouseInteraction:
-            return "Turn pointer and click input on or off for scene and web wallpapers."
+            "Turn pointer and click input on or off for scene and web wallpapers."
         case .toggleWallpapers:
-            return "Hide every wallpaper to reveal the desktop, or bring them back."
+            "Hide every wallpaper to reveal the desktop, or bring them back."
         case .reloadWallpapers:
-            return "Force every display to re-render its wallpaper."
+            "Force every display to re-render its wallpaper."
+        case .openSettings:
+            "Bring the settings window to the front."
         }
     }
 
@@ -84,19 +91,21 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
     public static func defaultBinding(for action: GlobalShortcutAction) -> GlobalShortcutBinding? {
         switch action {
         case .togglePlayback:
-            return GlobalShortcutBinding(keyCode: 49, modifiers: [.control, .shift])
+            GlobalShortcutBinding(keyCode: 49, modifiers: [.control, .shift])
         case .nextWallpaper:
-            return GlobalShortcutBinding(keyCode: 124, modifiers: [.control, .shift])
+            GlobalShortcutBinding(keyCode: 124, modifiers: [.control, .shift])
         case .previousWallpaper:
-            return GlobalShortcutBinding(keyCode: 123, modifiers: [.control, .shift])
+            GlobalShortcutBinding(keyCode: 123, modifiers: [.control, .shift])
         case .toggleMute:
-            return GlobalShortcutBinding(keyCode: 46, modifiers: [.control, .shift])
+            GlobalShortcutBinding(keyCode: 46, modifiers: [.control, .shift])
         case .toggleMouseInteraction:
-            return GlobalShortcutBinding(keyCode: 34, modifiers: [.control, .shift])
+            GlobalShortcutBinding(keyCode: 34, modifiers: [.control, .shift])
         case .toggleWallpapers:
-            return GlobalShortcutBinding(keyCode: 4, modifiers: [.control, .shift])
+            GlobalShortcutBinding(keyCode: 4, modifiers: [.control, .shift])
         case .reloadWallpapers:
-            return GlobalShortcutBinding(keyCode: 15, modifiers: [.control, .shift])
+            GlobalShortcutBinding(keyCode: 15, modifiers: [.control, .shift])
+        case .openSettings:
+            GlobalShortcutBinding(keyCode: 43, modifiers: [.control, .shift])
         }
     }
 }
