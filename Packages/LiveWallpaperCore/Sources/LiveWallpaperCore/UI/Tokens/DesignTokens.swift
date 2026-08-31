@@ -309,6 +309,31 @@ public enum DesignTokens {
         public static let restShadowYOffset: CGFloat = 1
     }
 
+    /// Shared appear/disappear timing for window-level fades, which run through
+    /// `NSAnimationContext` and so need a duration plus a `CAMediaTimingFunction`
+    /// rather than a SwiftUI `Animation`.
+    public enum Motion {
+        /// Entering decelerates over twice the exit duration. The asymmetry is
+        /// the point: a symmetric fade reads as mechanical, and a slow exit
+        /// makes dismissal feel unresponsive. Matches Material 3's
+        /// emphasized-decelerate / emphasized-accelerate pair.
+        public static let enterDuration: TimeInterval = 0.4
+        public static let exitDuration: TimeInterval = 0.2
+
+        /// Full-screen wallpaper handoff. Deliberately longer than `exitDuration`
+        /// — that value is tuned for widget-sized elements and reads as a jump
+        /// when the whole screen changes.
+        public static let wallpaperCrossfadeDuration: TimeInterval = 0.4
+
+        public static var enterTiming: CAMediaTimingFunction {
+            CAMediaTimingFunction(name: .easeOut)
+        }
+
+        public static var exitTiming: CAMediaTimingFunction {
+            CAMediaTimingFunction(name: .easeIn)
+        }
+    }
+
     /// nil when Reduce Motion is on, so the change applies instantly.
     public static func motion(_ reduceMotion: Bool, _ animation: Animation) -> Animation? {
         reduceMotion ? nil : animation
