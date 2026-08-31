@@ -109,14 +109,7 @@ jobs:
         run: xcodebuild -version
 
       - name: Run package tests (sequential)
-        run: |
-          set -euo pipefail
-          for package in LiveWallpaperCore LiveWallpaperProWPE; do
-            echo "== $package =="
-            swift test \
-              --package-path "Packages/$package" \
-              --scratch-path "$RUNNER_TEMP/SwiftPM/$package"
-          done
+        run: make test-packages SWIFTPM_SCRATCH="$RUNNER_TEMP/SwiftPM"
 
   fast-app-contracts:
     # Hardware-free required shard. It catches source-layer dependency growth,
@@ -138,7 +131,7 @@ jobs:
         run: xcodebuild SWIFT_EMIT_LOC_STRINGS=NO -downloadComponent MetalToolchain
 
       - name: Run hardware-free app contract shard
-        run: bash scripts/fast_app_contract_tests.sh
+        run: make test-app-hosted DERIVED_DATA="$RUNNER_TEMP/DerivedData-contracts"
 
   release-contract:
     name: Release + quality tooling contract
@@ -153,9 +146,12 @@ jobs:
           fetch-depth: 0
 
       - name: Validate portable release and quality tooling
-        env:
-          QUALITY_GATE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: bash scripts/release_contract_check.sh
+        run: make contracts BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+
+      # Boundaries, the LoC ratchet and the whole-app localization scan used to
+      # run only on a developer machine, so drift reached main unchallenged.
+      - name: Structural and localization gates
+        run: make fast BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
 
       # Ratchet, not a sweep: 827 of 940 files still differ from SwiftFormat at
       # whole-file granularity (measured 2026-08-31), so only lines this PR
@@ -165,8 +161,7 @@ jobs:
         run: brew install swiftlint swiftformat
 
       - name: Lint the lines this change touched
-        run: |
-          python3 scripts/lint_changed_lines.py --base "${{ github.event.pull_request.base.sha || github.event.before }}"
+        run: make lint BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
 
   app-tests:
     # Opt-in only (Actions tab -> CI -> Run workflow -> check the box).

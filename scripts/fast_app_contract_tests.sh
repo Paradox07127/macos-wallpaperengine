@@ -12,10 +12,11 @@ export DEVELOPER_DIR
 
 usage() {
   cat <<'EOF'
-Usage: scripts/fast_app_contract_tests.sh [--without-building|--list]
+Usage: scripts/fast_app_contract_tests.sh [--without-building|--pro-only|--list]
 
 Runs the hardware-free architecture/security suites with concise xcresult
-reporting. --without-building reuses products in DERIVED_DATA.
+reporting. --without-building reuses products in DERIVED_DATA. --pro-only skips
+the Lite host, which needs a real signing certificate (see below).
 EOF
 }
 
@@ -55,10 +56,14 @@ SUITES=(
 )
 
 action="test"
+run_lite=1
 case "${1:-}" in
   "") ;;
   --without-building)
     action="test-without-building"
+    ;;
+  --pro-only)
+    run_lite=0
     ;;
   --list)
     printf '%s\n' "${SUITES[@]}"
@@ -107,6 +112,17 @@ python3 scripts/xcode_test_runner.py \
 
 # The Lite host is a different binary, so a Pro-scheme pass says nothing about
 # it. Own derived data: sharing one build.db across two schemes deadlocks.
+#
+# Certificate-bound, so hosted runners must pass --pro-only: LiteHostSmokeTests
+# reads runtime grants through SecTaskCopyValueForEntitlement, which needs the
+# host signed for real. Ad-hoc is not a substitute — measured 2026-08-31, the
+# ad-hoc run's test runner hung before connecting (1 failed) while the control
+# run on the project's own signing passed 3/3.
+if [[ "$run_lite" == "0" ]]; then
+  echo "== Lite host smoke: SKIPPED (--pro-only; needs a signing certificate) =="
+  exit 0
+fi
+
 echo "== Lite host smoke =="
 python3 scripts/xcode_test_runner.py \
   --label "Lite host smoke" \
