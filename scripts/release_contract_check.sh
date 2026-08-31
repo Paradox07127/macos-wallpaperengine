@@ -68,6 +68,23 @@ while read -r referenced_script; do
   fi
 done < <(grep -oE 'scripts/[A-Za-z0-9_.-]+' Makefile | sort -u)
 
+# Gates that shell out to a non-system tool need it installed BEFORE they run.
+# A missing tool exits 127, which reads as "gate failed" rather than "gate never
+# ran" — scripts/i18n_guard.sh died that way on CI run 33425037452 because the
+# brew step sat after `make fast` and the image ships no ripgrep.
+if grep -Fq 'RG="${RG:-rg}"' scripts/i18n_guard.sh; then
+  if ! grep -Eq 'brew install .*\bripgrep\b' .github/workflows/ci.yml; then
+    echo "ERROR: scripts/i18n_guard.sh needs ripgrep, which CI never installs." >&2
+    exit 1
+  fi
+  brew_line="$(grep -n 'brew install' .github/workflows/ci.yml | head -1 | cut -d: -f1)"
+  fast_line="$(grep -n 'run: make fast' .github/workflows/ci.yml | head -1 | cut -d: -f1)"
+  if (( brew_line > fast_line )); then
+    echo "ERROR: CI installs gate tooling (line $brew_line) after 'make fast' (line $fast_line); the localization scan would exit 127." >&2
+    exit 1
+  fi
+fi
+
 # CI must not drift away from the Makefile: every gate the pipeline depends on
 # is reached through a make target, so a locally-green `make verify` means the
 # same thing as a green pipeline.

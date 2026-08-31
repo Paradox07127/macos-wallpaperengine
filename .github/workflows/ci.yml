@@ -145,6 +145,12 @@ jobs:
           # against the PR/push base without depending on external tooling.
           fetch-depth: 0
 
+      # Must precede every gate below, not just the lint one: scripts/i18n_guard.sh
+      # shells out to ripgrep, which the runner image does not ship, and a missing
+      # tool exits 127 rather than reporting a clean scan.
+      - name: Install gate tooling
+        run: brew install swiftlint swiftformat ripgrep
+
       - name: Validate portable release and quality tooling
         run: make contracts BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
 
@@ -157,9 +163,6 @@ jobs:
       # whole-file granularity (measured 2026-08-31), so only lines this PR
       # touched are judged. A whole-repo gate would either stay red forever or
       # force a one-shot reformat that buries every semantic diff under it.
-      - name: Install lint tooling
-        run: brew install swiftlint swiftformat
-
       - name: Lint the lines this change touched
         run: make lint BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
 
