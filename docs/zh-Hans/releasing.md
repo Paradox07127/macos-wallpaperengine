@@ -90,9 +90,15 @@ Gatekeeper 命令里——这也是它在打包时生成、而不是作为静态
 先 Lite 后 Pro，让打包顺序与上传顺序一致：
 
 ```sh
-scripts/release-app.sh --sku lite --version X.Y.Z --skip-checks
-scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks
+scripts/release-app.sh --sku lite --version X.Y.Z --skip-checks \
+  --notes-file .notes/release-notes/X.Y.Z.md
+scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks \
+  --notes-file .notes/release-notes/X.Y.Z.md
 ```
+
+`--notes-file` 实际上不是可选项。不加的话 appcast 会退回到只有 quarantine 那一行，
+于是 Sparkle 的更新弹窗对本次发布只字不提，而 GitHub 页面列得好好的。漏掉某一个 SKU
+很容易且没有提示——打包依然报成功。
 
 `release-app.sh` 默认会为**每个** SKU 重跑一整轮候选门禁，所以不带参数的两条命令
 会在同一个 commit 上把门禁跑三遍。`--skip-checks` 跳过的正是这次重复——只有在上面

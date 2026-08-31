@@ -104,9 +104,16 @@ time instead of committed as a static PNG.
 Expected commands, Lite first so packaging order matches upload order:
 
 ```sh
-scripts/release-app.sh --sku lite --version X.Y.Z --skip-checks
-scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks
+scripts/release-app.sh --sku lite --version X.Y.Z --skip-checks \
+  --notes-file .notes/release-notes/X.Y.Z.md
+scripts/release-app.sh --sku pro  --version X.Y.Z --skip-checks \
+  --notes-file .notes/release-notes/X.Y.Z.md
 ```
+
+`--notes-file` is not optional in practice. Without it the appcast falls back to
+the quarantine line alone, so Sparkle's update dialog says nothing about the
+release while the GitHub page lists everything. Forgetting it on one SKU is easy
+and silent — the packaging run still reports success.
 
 `release-app.sh` re-runs the whole release-candidate gate for **each** SKU by
 default, so an unqualified pair of commands runs it three times on one commit.
