@@ -163,7 +163,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !runtimeOptions.isTesting,
            manager.featureCatalog.isEnabled(.globalShortcuts) {
-            globalShortcutManager = GlobalShortcutManager(screenManager: manager)
+            globalShortcutManager = GlobalShortcutManager(
+                screenManager: manager,
+                onOpenSettings: { [weak self] in
+                    self?.showSettings(opensGeneralSettings: true)
+                }
+            )
             globalShortcutManager?.start()
         }
 

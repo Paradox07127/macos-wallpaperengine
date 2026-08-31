@@ -103,6 +103,18 @@ struct GlobalShortcutBindingTests {
         }
     }
 
+    @Test("Shipped default bindings never collide with each other")
+    func defaultBindingsDoNotCollide() {
+        var seen: [GlobalShortcutBinding: GlobalShortcutAction] = [:]
+        for action in GlobalShortcutAction.allCases {
+            guard let binding = GlobalShortcutAction.defaultBinding(for: action) else { continue }
+            if let owner = seen[binding] {
+                Issue.record("\(action.rawValue) ships the same default binding as \(owner.rawValue)")
+            }
+            seen[binding] = action
+        }
+    }
+
     @Test("Display string includes modifier symbols and key name")
     func displayStringFormatsCorrectly() {
         let binding = GlobalShortcutBinding(keyCode: 49, modifiers: [.control, .shift])

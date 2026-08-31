@@ -8,13 +8,17 @@ import LiveWallpaperCore
 @MainActor
 final class GlobalShortcutManager {
     private weak var screenManager: ScreenManager?
+    /// Injected by `AppDelegate` (which owns the settings window) so this stays
+    /// off the app layer, matching how the onboarding flow gets its callbacks.
+    private let onOpenSettings: () -> Void
     /// MainActor-only; `nonisolated(unsafe)` so deinit can tear down Carbon refs.
     nonisolated(unsafe) private var registrations: [GlobalShortcutAction: HotKeyRegistration] = [:]
     nonisolated(unsafe) private var eventHandler: EventHandlerRef?
     nonisolated(unsafe) private var preferenceObserver: NSObjectProtocol?
 
-    init(screenManager: ScreenManager) {
+    init(screenManager: ScreenManager, onOpenSettings: @escaping () -> Void) {
         self.screenManager = screenManager
+        self.onOpenSettings = onOpenSettings
     }
 
     deinit {
@@ -186,6 +190,8 @@ final class GlobalShortcutManager {
             manager.setWallpapersEnabled(!manager.wallpapersGloballyEnabled)
         case .reloadWallpapers:
             manager.reloadAllScreens()
+        case .openSettings:
+            onOpenSettings()
         }
     }
 
