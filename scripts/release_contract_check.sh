@@ -44,14 +44,44 @@ fi
 grep -Fq 'scheme LiveWallpaperLite' scripts/fast_app_contract_tests.sh
 grep -Fq 'require-suite LiteHostSmokeTests' scripts/fast_app_contract_tests.sh
 
+
 # The changed-lines lint ratchet must stay wired into PR CI, and must stay a
 # ratchet: a whole-repo sweep would force a one-shot reformat of 831 files.
+# The invocation now lives in the Makefile so `make verify` and CI run the same
+# gate; assert it there and that CI still routes through it.
 python3 scripts/lint_changed_lines.py --help >/dev/null
-grep -Fq 'scripts/lint_changed_lines.py --base' .github/workflows/ci.yml
-if grep -Eq 'swiftformat[^-]*\.$|swiftlint lint[[:space:]]*$' .github/workflows/ci.yml; then
+grep -Fq 'scripts/lint_changed_lines.py --base' Makefile
+grep -Fq 'make lint' .github/workflows/ci.yml
+if grep -Eq 'swiftformat[^-]*\.$|swiftlint lint[[:space:]]*$' .github/workflows/ci.yml Makefile; then
   echo "ERROR: CI must lint changed lines, not the whole repository." >&2
   exit 1
 fi
+
+# CI must not drift away from the Makefile: every gate the pipeline depends on
+# is reached through a make target, so a locally-green `make verify` means the
+# same thing as a green pipeline.
+for make_target in 'make test-packages' 'make test-app-hosted' 'make contracts' 'make fast'; do
+  if ! grep -Fq "$make_target" .github/workflows/ci.yml; then
+    echo "ERROR: CI no longer runs '$make_target'; local and CI gates have diverged." >&2
+    exit 1
+  fi
+done
+
+# CI must use the hosted variant, never the bare target: `make test-app` runs the
+# Lite host, whose assertions read runtime entitlements and therefore need a real
+# certificate. Hosted runners have none, and ad-hoc signing hangs its test runner
+# (measured 2026-08-31 — ad-hoc 1 failed, control on real signing 3/3).
+if grep -Eq 'make test-app([^-]|$)' .github/workflows/ci.yml; then
+  echo "ERROR: CI runs the bare 'make test-app'; hosted runners cannot sign the Lite host — use make test-app-hosted." >&2
+  exit 1
+fi
+# ...and the variant must actually skip it, rather than being a renamed alias.
+for lite_skip in '--pro-only' 'run_lite=0' 'if [[ "$run_lite" == "0" ]]; then'; do
+  if ! grep -Fq -- "$lite_skip" scripts/fast_app_contract_tests.sh; then
+    echo "ERROR: fast_app_contract_tests.sh lost '$lite_skip'; --pro-only would run the certificate-bound Lite host." >&2
+    exit 1
+  fi
+done
 python3 scripts/xcode_test_runner_self_test.py
 bash scripts/check_entitlements.sh --sku pro --source
 bash scripts/check_entitlements.sh --sku lite --source
