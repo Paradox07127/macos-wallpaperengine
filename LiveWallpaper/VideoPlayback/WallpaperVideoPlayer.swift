@@ -181,6 +181,12 @@ final class WallpaperVideoPlayer {
             && requestedFrameRateLimit > 0
             && currentVideoComposition == nil
     }
+
+    /// Exposed for `Screen.retire`'s handoff crossfade; nil until playback installs.
+    var playbackWindow: NSWindow? {
+        window
+    }
+
     #if DEBUG
     // Test-only introspection; no production reader.
     var hasInstalledPlaybackWindow: Bool { window != nil }

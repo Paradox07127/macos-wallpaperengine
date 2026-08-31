@@ -329,17 +329,20 @@ final class OverlayController: NSObject {
 
         updateInteractive(host)
         reconcileVisibilityAndRuntime()
-        window.orderFrontRegardless()
+        fadeIn(host)
     }
 
     /// Drops every module host on this display.
     func teardown(screenID: CGDirectDisplayID) {
         for key in Array(hosts.keys) where key.screenID == screenID {
-            teardown(key: key)
+            teardown(key: key, animated: false)
         }
     }
 
-    private func teardown(key: MonitorOverlayHostKey) {
+    /// `animated: false` for displays that are going away — AppKit constrains a
+    /// still-visible window onto a surviving screen, so a fade there parks the
+    /// panel on the wrong display for its duration.
+    private func teardown(key: MonitorOverlayHostKey, animated: Bool = true) {
         guard let host = hosts.removeValue(forKey: key) else { return }
         defer { refreshPointerTracking() }
         if let board = host.board {
@@ -347,21 +350,66 @@ final class OverlayController: NSObject {
             board.onConfigurationEdited = nil
             board.onEditingChanged = nil
         }
-        host.window.orderOut(nil)
+        if animated {
+            fadeOutAndOrderOut(host)
+        } else {
+            host.window.orderOut(nil)
+        }
         reconcileVisibilityAndRuntime()
+    }
+
+    /// Config override wins over the system setting, matching `HostView`.
+    private func reducesMotion(for host: Host) -> Bool {
+        if let override = host.boardConfig?.reduceMotionOverride {
+            return override
+        }
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    private func fadeIn(_ host: Host) {
+        guard !reducesMotion(for: host) else {
+            host.window.orderFrontRegardless()
+            return
+        }
+        host.window.alphaValue = 0
+        host.window.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = DesignTokens.Motion.enterDuration
+            context.timingFunction = DesignTokens.Motion.enterTiming
+            host.window.animator().alphaValue = 1
+        }
+    }
+
+    private func fadeOutAndOrderOut(_ host: Host) {
+        guard !reducesMotion(for: host) else {
+            host.window.orderOut(nil)
+            return
+        }
+        // Captured strongly: the host leaves `hosts` before this fade finishes.
+        let window = host.window
+        // `refreshPointerTracking` has already forgotten this host, so without
+        // this the fading window would still swallow desktop clicks.
+        window.ignoresMouseEvents = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = DesignTokens.Motion.exitDuration
+            context.timingFunction = DesignTokens.Motion.exitTiming
+            window.animator().alphaValue = 0
+        } completionHandler: {
+            window.orderOut(nil)
+        }
     }
 
     /// Drop overlays for displays no longer live (`ScreenManager` pairs with per-screen `apply`).
     func retainOnly(_ liveScreenIDs: Set<CGDirectDisplayID>) {
         // Snapshot keys — teardown mutates `hosts` (can't iterate live key view).
         for key in Array(hosts.keys) where !liveScreenIDs.contains(key.screenID) {
-            teardown(key: key)
+            teardown(key: key, animated: false)
         }
     }
 
     func teardownAll() {
         for key in Array(hosts.keys) {
-            teardown(key: key)
+            teardown(key: key, animated: false)
         }
     }
 

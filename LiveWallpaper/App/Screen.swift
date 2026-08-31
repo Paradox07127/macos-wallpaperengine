@@ -28,6 +28,10 @@ final class Screen: Identifiable, Hashable {
 
     private(set) var runtimeSession: (any WallpaperRuntimeSession)?
 
+    /// Sessions fading out after being replaced. Held so screen teardown can
+    /// flush them instead of leaving an untracked timer owning a live window.
+    private var retiringSessions: [ObjectIdentifier: any WallpaperRuntimeSession] = [:]
+
     var activeWallpaperWindow: NSWindow? {
         runtimeSession?.wallpaperWindow
     }
@@ -121,7 +125,59 @@ final class Screen: Identifiable, Hashable {
         let old = runtimeSession
         handleRuntimeSessionTransition(from: old, to: session)
         runtimeSession = session
-        old?.cleanup()
+        retire(old)
+    }
+
+    /// `WallpaperPreparation.prepareAndCommit` shows the incoming window before
+    /// committing it, behind this one, so fading the outgoing window out reveals
+    /// it — one animation, no compositing of two live scenes.
+    ///
+    /// Video keeps `wallpaperWindow` nil — that property also drives capture
+    /// sharing, the HTML coordinator and the playback inspector, and widening it
+    /// would change all three — so its window is reached through the player.
+    /// A session that never installed a window takes the immediate path below.
+    private func retire(_ old: (any WallpaperRuntimeSession)?) {
+        guard let old else { return }
+        guard let window = old.wallpaperWindow ?? old.videoPlayer?.playbackWindow,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            old.cleanup()
+            return
+        }
+        old.applyPerformanceProfile(.suspended)
+        // The outgoing window outlives this call, so it must stop taking input —
+        // otherwise an interactive scene/HTML wallpaper keeps swallowing desktop
+        // clicks for the whole fade.
+        window.ignoresMouseEvents = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = DesignTokens.Motion.wallpaperCrossfadeDuration
+            context.timingFunction = DesignTokens.Motion.exitTiming
+            window.animator().alphaValue = 0
+        }
+        // Tracked, not fire-and-forget: a display can be removed mid-fade and
+        // `resetRuntimeSession` has to be able to flush what is still fading.
+        let token = ObjectIdentifier(old)
+        retiringSessions[token] = old
+        // Not `runAnimationGroup`'s completion handler: that runs nonisolated, and
+        // handing it this MainActor-bound session is a Swift 6 sending violation.
+        // Started from the MainActor instead, so the session never leaves it.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeDuration))
+            guard let self, retiringSessions.removeValue(forKey: token) != nil else {
+                return
+            }
+            old.cleanup()
+        }
+    }
+
+    /// Drops every still-fading session immediately. Called when the screen goes
+    /// away, where finishing the fade would leave a window AppKit can reposition
+    /// onto a surviving display.
+    private func flushRetiringSessions() {
+        let fading = retiringSessions.values
+        retiringSessions.removeAll()
+        for session in fading {
+            session.cleanup()
+        }
     }
 
     @discardableResult
@@ -149,6 +205,7 @@ final class Screen: Identifiable, Hashable {
     }
 
     func resetRuntimeSession() {
+        flushRetiringSessions()
         let old = runtimeSession
         guard old != nil else { return }
         handleRuntimeSessionTransition(from: old, to: nil)
