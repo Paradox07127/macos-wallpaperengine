@@ -45,6 +45,13 @@ SUITES=(
   WPESceneScriptContainmentCharacterizationTests
   WPEUploadCancellationOracleTests
   InstalledOwnershipCharacterizationTests
+  # Persistence/config/storage correctness. Deterministic, hardware-free, and
+  # each one covers a defect that shipped: a lost settings generation, a refused
+  # Lite/Pro restore, a main-thread library walk.
+  AtomicFileStoreTests
+  ConfigurationPorterTests
+  WPEStorageInventoryTests
+  SettingsSearchLocalizationTests
 )
 
 action="test"
@@ -96,4 +103,23 @@ python3 scripts/xcode_test_runner.py \
   "$action" \
   CODE_SIGN_IDENTITY=- \
   CODE_SIGN_STYLE=Manual \
+  SWIFT_EMIT_LOC_STRINGS=NO
+
+# The Lite host is a different binary, so a Pro-scheme pass says nothing about
+# it. Own derived data: sharing one build.db across two schemes deadlocks.
+echo "== Lite host smoke =="
+python3 scripts/xcode_test_runner.py \
+  --label "Lite host smoke" \
+  --result-bundle "${RESULT_BUNDLE%.xcresult}-lite.xcresult" \
+  --minimum-test-count 3 \
+  --require-suite LiteHostSmokeTests \
+  -- \
+  -project LiveWallpaper.xcodeproj \
+  -scheme LiveWallpaperLite \
+  -configuration Debug \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath "${DERIVED_DATA}Lite" \
+  -enableCodeCoverage NO \
+  -parallel-testing-enabled NO \
+  test \
   SWIFT_EMIT_LOC_STRINGS=NO

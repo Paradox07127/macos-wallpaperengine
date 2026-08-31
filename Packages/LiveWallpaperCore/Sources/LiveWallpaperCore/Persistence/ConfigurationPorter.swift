@@ -82,12 +82,15 @@ public enum ConfigurationPorter {
             )
         }
 
-        // No fallback: guessing a SKU here would compare Lite imports against the
-        // Pro id (or vice versa). A bundle-less host cannot validate provenance.
+        // No fallback: a bundle-less host cannot validate provenance at all.
         guard let expectedBundleID = Bundle.main.bundleIdentifier else {
             throw ImportError.invalidFile(reason: "host bundle has no identifier")
         }
-        guard bundle.appBundleID == expectedBundleID else {
+        // Sibling SKUs and the historical id restore into each other; a Lite host
+        // that reads Pro-only data still fails closed at the capability gate.
+        let isProductFamily = bundle.appBundleID == expectedBundleID
+            || ConfigurationBundle.productFamilyBundleIDs.contains(bundle.appBundleID)
+        guard isProductFamily else {
             throw ImportError.bundleMismatch(
                 expected: expectedBundleID,
                 found: bundle.appBundleID

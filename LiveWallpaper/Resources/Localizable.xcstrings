@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "" : {
+
+    },
     "· %lld-core GPU" : {
       "comment" : "GPU identity: core count.",
       "extractionState" : "manual",
@@ -365,6 +368,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · API 金鑰可選"
+          }
+        }
+      }
+    },
+    "%@ (native)" : {
+      "comment" : "Web rendering diagnostics: a device pixel ratio that matches the display's own.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (native)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（ネイティブ）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（原生）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（原生）"
           }
         }
       }
@@ -1672,6 +1704,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "百分之 %lld"
+          }
+        }
+      }
+    },
+    "%lld points wide" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld points wide"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "幅 %lld ポイント"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宽 %lld 点"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "寬 %lld 點"
           }
         }
       }
@@ -6414,6 +6474,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "背景 Steam 連接器"
+          }
+        }
+      }
+    },
+    "Backing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backing"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バッキング"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "背衬像素"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "背襯像素"
           }
         }
       }
@@ -13100,6 +13188,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "嚴重"
+          }
+        }
+      }
+    },
+    "CSS points" : {
+      "comment" : "Web rendering diagnostics: canvas sizing mode.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CSS points"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CSS ポイント"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CSS 点"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CSS 點"
           }
         }
       }
@@ -24752,6 +24869,35 @@
         }
       }
     },
+    "Live view" : {
+      "comment" : "Web rendering diagnostics: what was measured.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live view"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブビュー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时视图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時視圖"
+          }
+        }
+      }
+    },
     "Live wallpapers for macOS: videos, web pages, and compatible imported scenes across every connected display." : {
       "comment" : "Tagline on the About page describing what the app does.",
       "localizations" : {
@@ -27198,6 +27344,34 @@
         }
       }
     },
+    "Measurement" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Measurement"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "測定対象"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测量对象"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "測量對象"
+          }
+        }
+      }
+    },
     "Medium" : {
       "comment" : "Widget size: medium.",
       "extractionState" : "manual",
@@ -27748,6 +27922,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "霧"
+          }
+        }
+      }
+    },
+    "Mode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模式"
           }
         }
       }
@@ -34385,6 +34587,64 @@
         }
       }
     },
+    "Physical pixels" : {
+      "comment" : "Web rendering diagnostics: canvas sizing mode.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Physical pixels"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理ピクセル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理像素"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理像素"
+          }
+        }
+      }
+    },
+    "Physical pixels (auto)" : {
+      "comment" : "Web rendering diagnostics: canvas sizing mode chosen automatically.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Physical pixels (auto)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理ピクセル（自動）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理像素（自动）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理像素（自動）"
+          }
+        }
+      }
+    },
     "Physical-pixel layout" : {
       "localizations" : {
         "en" : {
@@ -35045,6 +35305,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放清單模式"
+          }
+        }
+      }
+    },
+    "Points" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Points"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポイント"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點"
           }
         }
       }
@@ -41909,6 +42197,35 @@
         }
       }
     },
+    "Screen frame" : {
+      "comment" : "Web rendering diagnostics: what was measured.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screen frame"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面フレーム"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "屏幕框架"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "螢幕框架"
+          }
+        }
+      }
+    },
     "Scripts disabled. Manage in Content Security panel." : {
       "comment" : "Tooltip on the untrusted URL chip — directs the user to manage trust in the inspector.",
       "extractionState" : "manual",
@@ -45389,34 +45706,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "來源"
-          }
-        }
-      }
-    },
-    "Source missing" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Source missing"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ソースがありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "源文件缺失"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少來源"
           }
         }
       }
@@ -55244,6 +55533,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 GitHub 上檢視"
+          }
+        }
+      }
+    },
+    "Viewport" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viewport"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビューポート"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视口"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "視口"
           }
         }
       }

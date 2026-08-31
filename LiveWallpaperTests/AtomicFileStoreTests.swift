@@ -154,6 +154,51 @@ struct AtomicFileStoreTests {
         #expect(store.read() == nil)
     }
 
+    /// Rotation must not consume the backup while it is the only readable
+    /// generation: after a recovery the next save would otherwise delete it and
+    /// promote the corrupt primary into the backup slot, leaving both bad.
+    @Test("A save after backup recovery still leaves a readable generation")
+    func saveAfterRecoveryKeepsAReadableGeneration() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("payload.json")
+        let backupURL = fileURL.appendingPathExtension("bak")
+        let store = AtomicFileStore<TestValue>(fileURL: fileURL)
+
+        try store.write(TestValue(label: "v1", count: 1))
+        try store.write(TestValue(label: "v2", count: 2))
+
+        try Data([0xFF, 0xFE]).write(to: fileURL)
+        #expect(store.read() == TestValue(label: "v1", count: 1))
+
+        try store.write(TestValue(label: "v3", count: 3))
+        #expect(store.read() == TestValue(label: "v3", count: 3))
+        // v1 is still the newest generation known to survive a primary loss.
+        let backup = try JSONDecoder().decode(TestValue.self, from: Data(contentsOf: backupURL))
+        #expect(backup == TestValue(label: "v1", count: 1))
+
+        try Data([0xFF, 0xFE]).write(to: fileURL)
+        #expect(store.read() == TestValue(label: "v1", count: 1))
+    }
+
+    @Test("A healthy primary still rotates into the backup slot")
+    func healthyPrimaryStillRotates() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("payload.json")
+        let store = AtomicFileStore<TestValue>(fileURL: fileURL)
+
+        try store.write(TestValue(label: "v1", count: 1))
+        try store.write(TestValue(label: "v2", count: 2))
+        try store.write(TestValue(label: "v3", count: 3))
+
+        let backup = try JSONDecoder().decode(
+            TestValue.self,
+            from: Data(contentsOf: fileURL.appendingPathExtension("bak"))
+        )
+        #expect(backup == TestValue(label: "v2", count: 2))
+    }
+
     private func makeTempDirectory() throws -> URL {
         let url = FileManager.default
             .temporaryDirectory

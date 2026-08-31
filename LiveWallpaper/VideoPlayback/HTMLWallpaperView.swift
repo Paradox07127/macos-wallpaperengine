@@ -218,6 +218,10 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         let cspInjection = (config?.cspEnforcementEnabled ?? false)
             ? HTMLWallpaperRuntimeScript.cspInjection()
             : ""
+        // The isolation CSP cannot reach WebRTC; see `peerConnectionBlocker`.
+        let peerConnectionBlocker = (config?.requiresNetworkIsolation ?? false)
+            ? HTMLWallpaperRuntimeScript.peerConnectionBlocker()
+            : ""
 
         let audioController = HTMLWallpaperRuntimeScript.masterAudioController(
             initialVolume: config?.audioVolume ?? 1.0,
@@ -234,6 +238,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
         return """
         \(cspInjection)
+        \(peerConnectionBlocker)
         \(msaaForcer)
         (function () {
             \(physicalPixelBootstrap)
@@ -353,6 +358,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         allowMouseInteraction = config.allowMouseInteraction
         // CSP is opt-in; flip triggers documentStart reload below.
         folderHandler.cspEnforcementEnabled = config.cspEnforcementEnabled
+        folderHandler.networkIsolationEnabled = config.requiresNetworkIsolation
 
         if currentDataStoreIsEphemeral != pendingEphemeral {
             let requested = pendingEphemeral ? "ephemeral" : "persistent"
@@ -412,6 +418,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         let needsDocumentStartReload = previous != nil && (
             previous?.physicalPixelLayout != config.physicalPixelLayout
             || previous?.cspEnforcementEnabled != config.cspEnforcementEnabled
+            || previous?.requiresNetworkIsolation != config.requiresNetworkIsolation
             || previous?.aggressiveSuspend != config.aggressiveSuspend
         )
         lastAppliedConfig = config

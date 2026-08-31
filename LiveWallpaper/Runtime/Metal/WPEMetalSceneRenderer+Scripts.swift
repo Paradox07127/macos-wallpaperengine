@@ -66,6 +66,8 @@ extension WPEMetalSceneRenderer {
         textAlphaScriptInstances = [:]
         liveTextAlpha = [:]
         layerHoverStates = [:]
+        layerPressStates = [:]
+        lastHoverPointerPixels = nil
         layerVideoSourceKey = [:]
         layerObjectIDByName = [:]
         liveLayerAlpha = [:]
@@ -287,6 +289,12 @@ extension WPEMetalSceneRenderer {
         // WPE sends the full general-settings bag once during load, before the
         // first update pass. `language` is the only currently documented key.
         applyInitialSceneScriptGeneralSettings()
+        // Same contract for user properties: the layer/text families already get
+        // their initial FULL bag inside their own construction loops, and the
+        // transform families must get it here — before the seeding ticks below,
+        // because a script that initialises state in the handler (3146703458's
+        // `speed`) otherwise computes its very first value from `undefined`.
+        dispatchTransformScriptUserProperties(currentSceneScriptUserProperties())
         // 1. Script hosts: one bounded synchronous update() each, in scene
         //    order, applied exactly like a frame tick.
         for host in document.scriptHostObjects {
@@ -621,11 +629,15 @@ extension WPEMetalSceneRenderer {
         pointerFrame: WPEPointerFrame,
         runtimeSeconds: Double
     ) {
-        guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty else { return }
+        guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
+            || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
+        else { return }
         var geometryByID: [String: WPERenderLayerGeometry] = [:]
         for layer in pipeline.layers {
             let objectID = layer.graphLayer.objectID
-            if layerScriptInstances[objectID] != nil || layerAlphaScriptInstances[objectID] != nil {
+            if layerScriptInstances[objectID] != nil || layerAlphaScriptInstances[objectID] != nil
+                || textVisibleScriptInstances[objectID] != nil
+                || textAlphaScriptInstances[objectID] != nil {
                 geometryByID[objectID] = layer.graphLayer.geometry
             }
         }
@@ -633,16 +645,20 @@ extension WPEMetalSceneRenderer {
         let height = Double(max(sceneRenderSize.height, 1))
         let pointerPixels = pointer.map { SIMD2<Double>($0.x * width, $0.y * height) }
 
-        func dispatch(_ instances: [String: WPELayerScriptInstance]) {
-            for (objectID, instance) in instances {
-                let inside: Bool
-                if let pointerPixels, let geometry = geometryByID[objectID] {
-                    inside = pointerHits(pointerPixels, geometry: geometry)
-                } else {
-                    inside = false
-                }
-                let previous = layerHoverStates[objectID] ?? false
-                guard inside != previous else { continue }
+        // `cursorMove` only on a real change, and only while the pointer is over the
+        // layer: a per-frame broadcast would run every move handler in the scene
+        // sixty times a second whether or not the cursor went anywhere.
+        let moved = pointerPixels != lastHoverPointerPixels
+        lastHoverPointerPixels = pointerPixels
+        forEachCursorScriptInstance { objectID, instance in
+            let inside: Bool
+            if let pointerPixels, let geometry = geometryByID[objectID] {
+                inside = pointerHits(pointerPixels, geometry: geometry)
+            } else {
+                inside = false
+            }
+            let previous = layerHoverStates[objectID] ?? false
+            if inside != previous {
                 layerHoverStates[objectID] = inside
                 dispatchScriptCursorEvent(
                     instance,
@@ -651,9 +667,14 @@ extension WPEMetalSceneRenderer {
                     runtimeSeconds: runtimeSeconds
                 )
             }
+            guard moved, inside else { return }
+            dispatchScriptCursorEvent(
+                instance,
+                event: .move,
+                pointerFrame: pointerFrame,
+                runtimeSeconds: runtimeSeconds
+            )
         }
-        dispatch(layerScriptInstances)
-        dispatch(layerAlphaScriptInstances)
 
         if hoverCursorDebugEnabled, let pointerPixels {
             hoverDebugCounter += 1
@@ -691,28 +712,56 @@ extension WPEMetalSceneRenderer {
     private func hoverHitRect(
         geometry: WPERenderLayerGeometry
     ) -> (center: SIMD2<Double>, half: SIMD2<Double>)? {
-        guard let size = geometry.size, size.width > 0, size.height > 0 else { return nil }
-        let width = Double(max(sceneRenderSize.width, 1))
-        let height = Double(max(sceneRenderSize.height, 1))
-        let minHalf = max(height, 1) * 0.02
-        let center: SIMD2<Double>
-        var half: SIMD2<Double>
+        let projection: (center: SIMD2<Double>, depthScale: Double)?
         if cameraUniforms.usesPerspectiveProjection {
-            guard let projection = cameraUniforms.projectedCenterInScenePixels(
+            guard let projected = cameraUniforms.projectedCenterInScenePixels(
                 worldPoint: geometry.origin,
                 sceneSize: sceneRenderSize
             ) else { return nil }
-            center = SIMD2<Double>(
-                width * 0.5 + Double(projection.center.x),
-                height * 0.5 - Double(projection.center.y)
-            )
-            let depthScale = Double(projection.depthScale)
-            half = SIMD2<Double>(
-                Double(size.width) * abs(geometry.scale.x) * depthScale * 0.5,
-                Double(size.height) * abs(geometry.scale.y) * depthScale * 0.5
+            projection = (
+                SIMD2<Double>(Double(projected.center.x), Double(projected.center.y)),
+                Double(projected.depthScale)
             )
         } else {
-            center = SIMD2<Double>(geometry.origin.x, geometry.origin.y)
+            projection = nil
+        }
+        return Self.hoverHitRect(
+            geometry: geometry,
+            sceneSize: sceneRenderSize,
+            projection: projection
+        )
+    }
+
+    /// Pure geometry so both projection branches are testable without a live
+    /// renderer. `projection` non-nil selects the perspective branch and carries
+    /// the already-projected, scene-CENTRED (Y-up) centre plus its depth scale.
+    static func hoverHitRect(
+        geometry: WPERenderLayerGeometry,
+        sceneSize: CGSize,
+        projection: (center: SIMD2<Double>, depthScale: Double)?
+    ) -> (center: SIMD2<Double>, half: SIMD2<Double>)? {
+        guard let size = geometry.size, size.width > 0, size.height > 0 else { return nil }
+        let width = Double(max(sceneSize.width, 1))
+        let height = Double(max(sceneSize.height, 1))
+        let minHalf = max(height, 1) * 0.02
+        let center: SIMD2<Double>
+        var half: SIMD2<Double>
+        if let projection {
+            center = SIMD2<Double>(
+                width * 0.5 + projection.center.x,
+                height * 0.5 - projection.center.y
+            )
+            half = SIMD2<Double>(
+                Double(size.width) * abs(geometry.scale.x) * projection.depthScale * 0.5,
+                Double(size.height) * abs(geometry.scale.y) * projection.depthScale * 0.5
+            )
+        } else {
+            // Authored origins are Y-UP (the object quad maps them with
+            // `origin.y - sceneHeight/2`, no negation); the pointer arrives Y-DOWN
+            // (`WPEPointerMailbox.pointerSample` returns `1 - y`). Comparing the two
+            // raw inverted every hover — the top of 3146703458's song list hit the
+            // bottom entry.
+            center = SIMD2<Double>(geometry.origin.x, height - geometry.origin.y)
             half = SIMD2<Double>(
                 Double(size.width) * abs(geometry.scale.x) * 0.5,
                 Double(size.height) * abs(geometry.scale.y) * 0.5
@@ -724,7 +773,14 @@ extension WPEMetalSceneRenderer {
     }
 
     /// Detects button edges between two pointer frames and fans each one out to
-    /// every layer/alpha script instance.
+    /// every layer/alpha/text script instance.
+    ///
+    /// `cursorClick` is synthesised from a press and release that both land on the
+    /// SAME layer — the ordinary meaning of a click, and the only reading that fits
+    /// how scenes use it (3146703458 plays one song per title; a broadcast click
+    /// would start all six at once). Official solid/z-order/capture ordering is
+    /// still `L1_REQUIRED`, so this stays a plain per-layer AABB test and does not
+    /// claim to resolve overlapping hit boxes.
     func dispatchPointerButtonEdges(
         from previous: WPEPointerFrame,
         to current: WPEPointerFrame,
@@ -737,22 +793,51 @@ extension WPEMetalSceneRenderer {
         if previous.isRightDown, !current.isRightDown { events.append(.rightUp) }
         guard !events.isEmpty else { return }
 
+        let pressed = events.contains(.down)
+        let released = events.contains(.up)
+        if pressed { layerPressStates = layerHoverStates.filter { $0.value } }
+
+
         for event in events {
-            for instance in layerScriptInstances.values {
+            forEachCursorScriptInstance { objectID, instance in
                 dispatchScriptCursorEvent(
                     instance,
                     event: event,
+                    pointerFrame: current,
+                    runtimeSeconds: runtimeSeconds
+                )
+                guard event == .up,
+                      layerPressStates[objectID] == true,
+                      layerHoverStates[objectID] == true
+                else { return }
+                dispatchScriptCursorEvent(
+                    instance,
+                    event: .click,
                     pointerFrame: current,
                     runtimeSeconds: runtimeSeconds
                 )
             }
-            for instance in layerAlphaScriptInstances.values {
-                dispatchScriptCursorEvent(
-                    instance,
-                    event: event,
-                    pointerFrame: current,
-                    runtimeSeconds: runtimeSeconds
-                )
+        }
+        if released { layerPressStates.removeAll(keepingCapacity: true) }
+    }
+
+    /// Every family whose instances can carry cursor handlers. `textVisible` and
+    /// `textAlpha` are the same `WPELayerScriptInstance` type as the layer families
+    /// and 11 installed scenes bind cursor handlers on text layers, so leaving them
+    /// out silently dropped those handlers.
+    private func forEachCursorScriptInstance(
+        _ body: (String, WPELayerScriptInstance) -> Void
+    ) {
+        var seen: Set<ObjectIdentifier> = []
+        for instances in [
+            layerScriptInstances,
+            layerAlphaScriptInstances,
+            textVisibleScriptInstances,
+            textAlphaScriptInstances,
+        ] {
+            for (objectID, instance) in instances
+            where seen.insert(ObjectIdentifier(instance)).inserted {
+                body(objectID, instance)
             }
         }
     }

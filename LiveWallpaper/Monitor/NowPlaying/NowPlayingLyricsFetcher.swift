@@ -448,7 +448,7 @@ final class NowPlayingLyricsStore {
             await NowPlayingLyricsFetcher.shared.lyrics(for: $0)
         },
         cancelOthers: @escaping @Sendable (String?) async -> Void = {
-            await NowPlayingLyricsFetcher.shared.cancelInFlight(except: $0)
+            NowPlayingLyricsFetcher.shared.cancelInFlight(except: $0)
         },
         now: @escaping @Sendable () -> Date = Date.init
     ) {

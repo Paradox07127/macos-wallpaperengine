@@ -43,7 +43,7 @@ struct WPEScenePreflightTests {
         let project = Self.makeProject()
         let document = Self.makeDocument(
             imageObjects: [Self.makeImageObject()],
-            diagnostics: [WPESceneDiagnostic(severity: .info, message: "Particle object Stars parsed; rendered by the Metal particle simulator")]
+            particleObjects: [Self.makeParticleObject()]
         )
 
         let result = WPEScenePreflight.classify(
@@ -54,6 +54,58 @@ struct WPEScenePreflightTests {
 
         #expect(result.tier == .nativePlayable)
         #expect(result.featureFlags.contains(.particleObject))
+    }
+
+    @Test("Feature flags come from typed objects rather than diagnostic wording")
+    func featureFlagsUseTypedObjects() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                ["id": "bg", "name": "BG", "image": "materials/bg.png"],
+                ["id": "sound", "name": "Loop", "sound": "sounds/loop.ogg"],
+                ["id": "particle", "name": "Sparks", "particle": "particles/sparks.json"],
+                ["id": "text", "name": "Title", "text": "Hello"],
+                ["id": "light", "name": "Lamp", "light": "lpoint", "color": "1 1 1"],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload)
+        )
+
+        let result = WPEScenePreflight.classify(
+            document: document,
+            project: Self.makeProject(),
+            scenePackageEntries: []
+        )
+
+        #expect(result.featureFlags.contains(.particleObject))
+        #expect(result.featureFlags.contains(.textObject))
+        #expect(result.featureFlags.contains(.soundObject))
+        #expect(result.featureFlags.contains(.lightObject))
+        #expect(result.tier == .runtimeSystemsRequired)
+    }
+
+    @Test("Diagnostic prose cannot fabricate feature flags")
+    func diagnosticProseDoesNotDriveClassification() {
+        let document = Self.makeDocument(
+            imageObjects: [Self.makeImageObject()],
+            diagnostics: [
+                WPESceneDiagnostic(
+                    severity: .info,
+                    message: "Particle object Text Sound Light animationlayers unsupported"
+                ),
+            ]
+        )
+
+        let result = WPEScenePreflight.classify(
+            document: document,
+            project: Self.makeProject(),
+            scenePackageEntries: []
+        )
+
+        #expect(result.featureFlags.isEmpty)
+        #expect(result.tier == .nativePlayable)
     }
 
     @Test("Animation layers degrade — base image renders, mesh deformation deferred")
@@ -147,6 +199,67 @@ struct WPEScenePreflightTests {
         #expect(entry.metadataKind == "usertextures")
     }
 
+    @Test("Supported media usertextures are not reported as metadata-only")
+    func mediaUserTexturesUseRuntimeConsumer() {
+        let project = Self.makeProject()
+        let effect = WPESceneImageEffect(
+            id: "effect-media",
+            name: "Media cover",
+            fileRelativePath: "effects/media/effect.json",
+            visible: true,
+            passOverrides: [WPESceneEffectPassOverride(
+                id: 7,
+                combos: [:],
+                constants: [:],
+                textures: [:],
+                userTextures: [
+                    WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system"),
+                    WPESceneUserTextureBinding(name: "$mediaPreviousThumbnail", type: "system"),
+                ]
+            )]
+        )
+
+        let result = WPEScenePreflight.classify(
+            document: Self.makeDocument(imageObjects: [Self.makeImageObject(effects: [effect])]),
+            project: project,
+            scenePackageEntries: []
+        )
+
+        #expect(result.shaderImplementationInventory.isEmpty)
+    }
+
+    @Test("Mixed media and unsupported usertextures keep only the unsupported locus")
+    func mixedUserTexturesRemainDiagnosable() throws {
+        let project = Self.makeProject()
+        let effect = WPESceneImageEffect(
+            id: "effect-mixed",
+            name: "Mixed input",
+            fileRelativePath: "effects/mixed/effect.json",
+            visible: true,
+            passOverrides: [WPESceneEffectPassOverride(
+                id: 8,
+                combos: [:],
+                constants: [:],
+                textures: [:],
+                userTextures: [
+                    WPESceneUserTextureBinding(name: "$mediaThumbnail", type: "system"),
+                    WPESceneUserTextureBinding(name: "$futureSystemTexture", type: "system"),
+                ]
+            )]
+        )
+
+        let result = WPEScenePreflight.classify(
+            document: Self.makeDocument(imageObjects: [Self.makeImageObject(effects: [effect])]),
+            project: project,
+            scenePackageEntries: []
+        )
+
+        let entry = try #require(result.shaderImplementationInventory.first)
+        #expect(result.shaderImplementationInventory.count == 1)
+        #expect(entry.consumerDisposition == .noRuntimeTextureProviderConsumer)
+        #expect(entry.metadataSources == ["effect-override"])
+    }
+
     // MARK: - Fixtures
 
     private static func makeProject(requiresWindowsPlugin: Bool = false) -> WallpaperEngineProject {
@@ -164,13 +277,30 @@ struct WPEScenePreflightTests {
 
     private static func makeDocument(
         imageObjects: [WPESceneImageObject] = [],
+        particleObjects: [WPESceneParticleObject] = [],
         diagnostics: [WPESceneDiagnostic] = []
     ) -> WPESceneDocument {
         WPESceneDocument(
             camera: .defaultCamera,
             general: .defaultGeneral,
             imageObjects: imageObjects,
+            particleObjects: particleObjects,
             diagnostics: diagnostics
+        )
+    }
+
+    private static func makeParticleObject() -> WPESceneParticleObject {
+        WPESceneParticleObject(
+            id: "particle",
+            name: "Stars",
+            particleRelativePath: "particles/stars.json",
+            origin: .zero,
+            scale: SIMD3<Double>(repeating: 1),
+            angles: .zero,
+            visible: true,
+            alpha: 1,
+            color: SIMD3<Double>(repeating: 1),
+            parallaxDepth: .zero
         )
     }
 

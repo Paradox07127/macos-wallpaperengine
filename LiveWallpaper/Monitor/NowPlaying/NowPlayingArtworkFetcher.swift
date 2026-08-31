@@ -174,7 +174,7 @@ actor NowPlayingArtworkFetcher {
         if let running = inFlight[key] { return await running.value }
         let task = Task<Data?, Never> {
             let result = await self.runFetch(strategy: route.strategy, state: state)
-            await self.finish(key: key, result: result)
+            self.finish(key: key, result: result)
             return result
         }
         inFlight[key] = task

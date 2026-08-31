@@ -319,5 +319,46 @@
                 _ = instance.destroy()
             }
         }
+
+        var hasTransformScriptInstances: Bool {
+            !dynamicOriginScriptInstances.isEmpty || !dynamicScaleScriptInstances.isEmpty
+                || !dynamicAnglesScriptInstances.isEmpty || !dynamicColorScriptInstances.isEmpty
+                || !effectConstantScriptInstances.isEmpty
+                || !effectVisibilityScriptInstances.isEmpty
+        }
+
+        /// The transform families' counterpart to the layer/text fan-out. The handler
+        /// only mutates module state — 3146703458's scale script assigns `speed` there
+        /// and nowhere else — so the next tick publishes the corrected value and
+        /// nothing is applied here. De-duplicated by identity because one instance can
+        /// sit in several tables.
+        func dispatchTransformScriptUserProperties(
+            _ properties: [String: WPESceneScriptPropertyValue]
+        ) {
+            guard !properties.isEmpty else { return }
+            var seen: Set<ObjectIdentifier> = []
+            for instances in [
+                dynamicOriginScriptInstances,
+                dynamicScaleScriptInstances,
+                dynamicAnglesScriptInstances,
+                dynamicColorScriptInstances,
+            ] {
+                for key in instances.keys.sorted() {
+                    guard let instance = instances[key],
+                          seen.insert(ObjectIdentifier(instance)).inserted else { continue }
+                    _ = instance.applyUserProperties(properties)
+                }
+            }
+            for (_, instance) in effectConstantScriptInstances.sorted(
+                by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }
+            ) where seen.insert(ObjectIdentifier(instance)).inserted {
+                _ = instance.applyUserProperties(properties)
+            }
+            for key in effectVisibilityScriptInstances.keys.sorted() {
+                guard let instance = effectVisibilityScriptInstances[key],
+                      seen.insert(ObjectIdentifier(instance)).inserted else { continue }
+                _ = instance.applyUserProperties(properties)
+            }
+        }
     }
 #endif

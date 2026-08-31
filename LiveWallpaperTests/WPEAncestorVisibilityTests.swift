@@ -22,6 +22,23 @@ struct WPEAncestorVisibilityTests {
         #expect(doc.objectParentByID["3"] == nil)
         #expect(doc.ownVisibilityByID["1"] == false)
         #expect(doc.ownVisibilityByID["2"] == true)
+
+        let groupBinding = try #require(doc.propertyBindings["feat"]?.first)
+        #expect(groupBinding.target == .groupObject(id: "1"))
+        #expect(groupBinding.kind == .visible)
+        #expect(groupBinding.action == .reload)
+        #expect(WPEScenePropertyPatch(
+            bindingsByProperty: doc.propertyBindings,
+            oldValues: ["feat": .bool(false)],
+            newValues: ["feat": .bool(true)]
+        ).requiresReload)
+
+        let visibleDoc = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: json),
+            userValues: ["feat": .bool(true)]
+        )
+        #expect(visibleDoc.ownVisibilityByID["1"] == true)
+        #expect(visibleDoc.imageObjects.first { $0.id == "2" }?.visible == true)
     }
 
     @Test("Live ancestor chain: hidden group hides child; live toggle re-shows it")

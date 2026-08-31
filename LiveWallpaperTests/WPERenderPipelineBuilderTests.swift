@@ -134,6 +134,72 @@ struct WPERenderPipelineBuilderTests {
         #expect(firstRequest.translationCacheKey != secondRequest.translationCacheKey)
     }
 
+    @Test("TEXnFORMAT follows model and material JSON to the bound TEX")
+    func textureFormatFollowsIndirectImageReference() throws {
+        let fixture = try makeFixture(
+            files: [
+                "models/wrapped.json": #"{"material":"materials/wrapped.json"}"#,
+                "materials/wrapped.json": #"{"passes":[{"textures":["wrapped-normal"]}]}"#,
+                "shaders/effects/format_probe.vert": """
+                attribute vec3 a_Position;
+                void main() { gl_Position = vec4(a_Position, 1.0); }
+                """,
+                "shaders/effects/format_probe.frag": """
+                #include "common_fragment.h"
+                uniform sampler2D g_Texture0;
+                void main() {
+                #if TEX0FORMAT == FORMAT_RG88
+                    gl_FragColor = DecompressNormal(texSample2D(g_Texture0, vec2(0.5))).xyzz;
+                #else
+                    gl_FragColor = texSample2D(g_Texture0, vec2(0.5));
+                #endif
+                }
+                """,
+            ],
+            dataFiles: [
+                "materials/wrapped-normal.tex": makeHeaderOnlyTex(formatCode: 8),
+            ]
+        )
+        defer { fixture.cleanup() }
+
+        let graph = WPERenderGraph(layers: [
+            WPERenderLayer(
+                objectID: "indirect-format",
+                objectName: "Indirect format probe",
+                imagePath: "models/wrapped.json",
+                materialPath: nil,
+                geometry: .identity,
+                compositeA: "a",
+                compositeB: "b",
+                localFBOs: [],
+                passes: [
+                    WPERenderPass(
+                        id: "indirect-format.0",
+                        phase: .effect(file: "effects/format_probe/effect.json"),
+                        shader: "effects/format_probe",
+                        source: .image("models/wrapped.json"),
+                        target: .scene,
+                        textures: [:],
+                        binds: [:],
+                        constants: [:],
+                        combos: [:],
+                        blending: "normal",
+                        cullMode: "nocull",
+                        depthTest: "disabled",
+                        depthWrite: "disabled"
+                    ),
+                ]
+            ),
+        ])
+
+        let pass = try #require(
+            WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+                .build(graph: graph).layers.first?.passes.first
+        )
+        #expect(pass.comboValues["TEX0FORMAT"] == WPEOfficialTextureFormatABI.rg88)
+        #expect(pass.shader?.fragmentSource.contains("#define TEX0FORMAT 8") == true)
+    }
+
     @Test("TEXnFORMAT for an FBO slot comes from the layer's authored FBO format")
     func textureFormatsForFBOSlotsComeFromTheGraph() throws {
         // Corpus shape: `bokeh_blur/effect.json` declares an `rg88` target and

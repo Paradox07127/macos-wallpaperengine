@@ -1856,6 +1856,142 @@ struct WPEMetalRenderExecutorTests {
             geometry: geo(size: nil), sceneSize: scene) == .fullscreen)
     }
 
+    /// 3554161528's media cover: child 411's composite is consumed BY NAME by parent
+    /// 1111's blend, so the child never paints into the scene and the parent is a real
+    /// sub-rect box. Blanket parent-set membership stretched the 220×220 cover fullscreen.
+    @Test("Compose parent of a composite-only compose child keeps its subregion box")
+    func composeParentOfCompositeOnlyChildKeepsSubregionBox() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let coverGeometry = WPERenderLayerGeometry(
+            origin: SIMD3<Double>(2909.9, 1247.9, 0),
+            scale: SIMD3<Double>(1, 1, 1),
+            angles: SIMD3<Double>(0, 0, 0.5236),
+            alignment: .center,
+            size: CGSize(width: 220, height: 220),
+            alpha: 1,
+            color: SIMD3<Double>(1, 1, 1),
+            brightness: 1
+        )
+        let red = try makeRGBAInputTexture(device: device, bytes: Data([
+            255, 0, 0, 255, 255, 0, 0, 255,
+            255, 0, 0, 255, 255, 0, 0, 255,
+        ]))
+        // The child paints ONLY into its own composite — never into the scene.
+        let feedPass = copyPass(
+            id: "feed.0",
+            source: .image("materials/red.png"),
+            target: .layerComposite(name: "_rt_imageLayerComposite_feed_a")
+        )
+        let coverPass = copyPass(
+            id: "cover.0",
+            source: .image("materials/red.png"),
+            target: .scene
+        )
+        let cover = composelayerTestLayer(
+            objectID: "cover",
+            geometry: coverGeometry,
+            passes: [coverPass]
+        )
+        let feed = WPERenderLayer(
+            objectID: "feed",
+            objectName: "Compose",
+            imagePath: "models/util/composelayer.json",
+            materialPath: "materials/util/composelayer.json",
+            parentObjectID: "cover",
+            geometry: coverGeometry,
+            compositeA: "_rt_imageLayerComposite_feed_a",
+            compositeB: "_rt_imageLayerComposite_feed_b",
+            localFBOs: [],
+            passes: [feedPass]
+        )
+        let bindings: [Int: WPETextureReference] = [0: .image("materials/red.png")]
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(
+                graphLayer: feed,
+                passes: [preparedBuiltinPass(feedPass, bindings: bindings)]
+            ),
+            WPEPreparedRenderLayer(
+                graphLayer: cover,
+                passes: [preparedBuiltinPass(coverPass, bindings: bindings)]
+            ),
+        ])
+        _ = try executor.render(
+            pipeline: pipeline,
+            size: CGSize(width: 3840, height: 2160),
+            textures: ["materials/red.png": red]
+        )
+        #expect(executor.sceneCaptureUtilityOutputGeometry(for: cover) == .subregion)
+    }
+
+    /// Control (3632513108's bottom-right panel shape): a child that paints into the
+    /// scene flat makes the parent a layer-group host, whose own sub-rect passthrough
+    /// must stay suppressed or it draws a picture-in-picture scene copy.
+    @Test("Compose parent of a flat scene-painting child keeps fullscreen suppression")
+    func composeParentOfFlatChildStaysFullscreen() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let panelGeometry = WPERenderLayerGeometry(
+            origin: SIMD3<Double>(2909.9, 1247.9, 0),
+            scale: SIMD3<Double>(1, 1, 1),
+            angles: SIMD3<Double>(0, 0, 0),
+            alignment: .center,
+            size: CGSize(width: 1000, height: 500),
+            alpha: 1,
+            color: SIMD3<Double>(1, 1, 1),
+            brightness: 1
+        )
+        let red = try makeRGBAInputTexture(device: device, bytes: Data([
+            255, 0, 0, 255, 255, 0, 0, 255,
+            255, 0, 0, 255, 255, 0, 0, 255,
+        ]))
+        // The child paints FLAT into the scene — this is what makes the parent a host.
+        let buttonPass = copyPass(
+            id: "button.0",
+            source: .image("materials/red.png"),
+            target: .scene
+        )
+        let panelPass = copyPass(
+            id: "panel.0",
+            source: .image("materials/red.png"),
+            target: .scene
+        )
+        let panel = composelayerTestLayer(
+            objectID: "panel",
+            geometry: panelGeometry,
+            passes: [panelPass]
+        )
+        let button = WPERenderLayer(
+            objectID: "button",
+            objectName: "Button",
+            imagePath: "materials/button.png",
+            materialPath: nil,
+            parentObjectID: "panel",
+            geometry: panelGeometry,
+            compositeA: "_rt_imageLayerComposite_button_a",
+            compositeB: "_rt_imageLayerComposite_button_b",
+            localFBOs: [],
+            passes: [buttonPass]
+        )
+        let bindings: [Int: WPETextureReference] = [0: .image("materials/red.png")]
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            WPEPreparedRenderLayer(
+                graphLayer: button,
+                passes: [preparedBuiltinPass(buttonPass, bindings: bindings)]
+            ),
+            WPEPreparedRenderLayer(
+                graphLayer: panel,
+                passes: [preparedBuiltinPass(panelPass, bindings: bindings)]
+            ),
+        ])
+        _ = try executor.render(
+            pipeline: pipeline,
+            size: CGSize(width: 3840, height: 2160),
+            textures: ["materials/red.png": red]
+        )
+        #expect(executor.sceneCaptureUtilityOutputGeometry(for: panel) == .fullscreen)
+    }
+
     @Test("Rotated local composelayer scene composite stays in its object quad")
     func rotatedLocalComposelayerSceneCompositeStaysInObjectQuad() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

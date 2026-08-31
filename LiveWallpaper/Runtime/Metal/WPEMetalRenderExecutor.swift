@@ -689,11 +689,13 @@ final class WPEMetalRenderExecutor {
     }
     #endif
 
-    // Object IDs that are parents of at least one other layer. A `composelayer`
-    // that hosts children is a WPE "layer group" (transform/opacity container),
-    // NOT a scene-capture effect box — its children render as flat layers, so its
-    // own sub-rect scene passthrough must be suppressed (else it paints a
-    // picture-in-picture scene-copy; scene 3632513108's bottom-right control panel).
+    // Object IDs that parent at least one child which paints FLAT INTO THE SCENE.
+    // Such a `composelayer` is a layer group (transform/opacity container), not a
+    // scene-capture effect box, so its own sub-rect passthrough must be suppressed
+    // or it paints a picture-in-picture scene copy (3632513108's control panel).
+    // Not "parents anything": a composite-only child never reaches the scene, so its
+    // parent stays a real sub-rect box — the blanket rule stretched 3554161528's
+    // 220×220 media cover over the whole 3840×2160 frame (oracle before/after).
     private var groupingContainerObjectIDs: Set<String> = []
     /// Scene-centred origin of each parented layer's parallax ROOT, keyed by object id.
     /// WPE shifts a parented subtree by ONE offset — the root's — so a child must
@@ -922,7 +924,14 @@ final class WPEMetalRenderExecutor {
         )
         frameState.cameraParallax = runtimeUniforms.cameraParallax
         currentSceneSize = size
-        groupingContainerObjectIDs = Set(preparedPipeline.layers.compactMap { $0.graphLayer.parentObjectID })
+        groupingContainerObjectIDs = Set(
+            preparedPipeline.layers.compactMap { layer -> String? in
+                guard let parentID = layer.graphLayer.parentObjectID,
+                      layer.graphLayer.passes.contains(where: { $0.target == .scene })
+                else { return nil }
+                return parentID
+            }
+        )
         parallaxRootCenterByObjectID = Self.parallaxRootCenters(
             for: preparedPipeline.layers.map(\.graphLayer),
             sceneSize: size,
@@ -1163,10 +1172,20 @@ final class WPEMetalRenderExecutor {
                         frameState: &frameState
                     )
                 } catch let error as WPEMetalRenderExecutorError where error.untranslatableShaderReason != nil {
-                    // The pass still opened (and therefore cleared) its render target before the
-                    // shader failed, so a downstream pass sampling it reads transparent black
-                    // rather than whatever the pooled/aliased texture last held.
-                    untranslatableShaderReasonByPassID[pass.id] = error.untranslatableShaderReason
+                    // The pass opened (and therefore cleared) its render target before the shader
+                    // failed, and `encode` published that cleared texture, so a downstream pass
+                    // sampling it reads transparent black instead of failing the scene.
+                    // Logged once per pass: an unlogged skip is how a routing bug that sent a
+                    // BUILTIN pass down the custom-shader path surfaced as a downstream "named FBO
+                    // miss" instead of naming the pass that actually failed (3660962877).
+                    let reason = error.untranslatableShaderReason ?? ""
+                    if untranslatableShaderReasonByPassID.updateValue(reason, forKey: pass.id) == nil {
+                        Logger.warning(
+                            "WPE pass \(pass.pass.id) (\(pass.pass.shader)) skipped its draw: \(reason)"
+                                + " — target \(pass.pass.target) keeps its cleared contents.",
+                            category: .wpeRender
+                        )
+                    }
                     skippedShaderError = skippedShaderError ?? error
                     continue
                 }
@@ -1793,15 +1812,25 @@ final class WPEMetalRenderExecutor {
         }
         if !drewSceneModel && !drewPuppetMaterial && !drewPuppetSceneComposite {
             let dispatcher = WPEMetalShaderDispatcher(executor: self)
-            try dispatcher.dispatch(
-                pass: pass,
-                layer: drawLayer,
-                destination: destination,
-                textures: textures,
-                frameState: frameState,
-                encoder: encoder,
-                depthPixelFormat: needsDepth ? .depth32Float : .invalid
-            )
+            do {
+                try dispatcher.dispatch(
+                    pass: pass,
+                    layer: drawLayer,
+                    destination: destination,
+                    textures: textures,
+                    frameState: frameState,
+                    encoder: encoder,
+                    depthPixelFormat: needsDepth ? .depth32Float : .invalid
+                )
+            } catch let error as WPEMetalRenderExecutorError where error.untranslatableShaderReason != nil {
+                // The encoder is already open and has cleared this target, so hand the
+                // cleared texture to `frameState`: the caller skips this pass, and a later
+                // pass sampling the same name reads transparent black instead of failing
+                // the WHOLE scene on an unresolved FBO (3660962877's music-cover layer took
+                // its 127-layer scene down this way).
+                frameState.registerWrite(texture: destination.texture, targetID: destination.id)
+                throw error
+            }
 
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }

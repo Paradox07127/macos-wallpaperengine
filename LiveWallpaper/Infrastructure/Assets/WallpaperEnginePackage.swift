@@ -8,6 +8,15 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         let dataSize: UInt64
     }
 
+    /// Two distinct canonical entry names that collapse onto the same
+    /// case-insensitive lookup key. Lookup compatibility remains first-match-wins,
+    /// but the shadowed entry is retained as evidence instead of disappearing
+    /// silently from the index.
+    struct CaseFoldCollision: Sendable, Equatable {
+        let winningName: String
+        let shadowedName: String
+    }
+
     /// Untrusted PKGV index limits (injectable for tests).
     struct IndexLimits: Sendable, Equatable {
         var maxEntryCount: UInt32 = 262_144
@@ -27,17 +36,20 @@ struct WallpaperEnginePackage: Sendable, Equatable {
     /// lookups are O(1) instead of an O(n) lowercased scan per read (matters for
     /// large packages + multi-root fallback cascades). First match wins.
     let nameIndex: [String: Entry]
+    let caseFoldCollisions: [CaseFoldCollision]
 
     private init(
         magic: String,
         entries: [Entry],
         dataStart: UInt64,
-        nameIndex: [String: Entry]
+        nameIndex: [String: Entry],
+        caseFoldCollisions: [CaseFoldCollision]
     ) {
         self.magic = magic
         self.entries = entries
         self.dataStart = dataStart
         self.nameIndex = nameIndex
+        self.caseFoldCollisions = caseFoldCollisions
     }
 
     /// Per-component cap when writing to disk. APFS rejects a single path
@@ -81,6 +93,7 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         var seenNames = Set<String>()
         var nameIndex: [String: Entry] = [:]
         nameIndex.reserveCapacity(min(Int(entryCount), 65_536))
+        var caseFoldCollisions: [CaseFoldCollision] = []
         var aggregateNameBytes = 0
         var lowercaseIndexBytes = 0
 
@@ -122,7 +135,14 @@ struct WallpaperEnginePackage: Sendable, Equatable {
             let size = UInt64(try streamReadU32(from: handle, headerBytes: &headerBytes))
             let entry = Entry(name: canonicalName, dataOffset: offset, dataSize: size)
             entries.append(entry)
-            if nameIndex[lookupKey] == nil { nameIndex[lookupKey] = entry }
+            if let winner = nameIndex[lookupKey] {
+                caseFoldCollisions.append(CaseFoldCollision(
+                    winningName: winner.name,
+                    shadowedName: entry.name
+                ))
+            } else {
+                nameIndex[lookupKey] = entry
+            }
         }
 
         let dataStart = UInt64(headerBytes)
@@ -141,7 +161,13 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         } catch {
             throw WPEPackageError.truncatedHeader
         }
-        return Self(magic: magic, entries: entries, dataStart: dataStart, nameIndex: nameIndex)
+        return Self(
+            magic: magic,
+            entries: entries,
+            dataStart: dataStart,
+            nameIndex: nameIndex,
+            caseFoldCollisions: caseFoldCollisions
+        )
     }
 
     #if DEBUG

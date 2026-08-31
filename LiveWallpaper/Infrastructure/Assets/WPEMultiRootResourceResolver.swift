@@ -98,6 +98,27 @@ struct WPEMultiRootResourceResolver: Sendable {
         }
     }
 
+    /// Resolves model/material JSON and probes the terminal asset in the same
+    /// mounted root. This prevents a fallback JSON from accidentally pairing
+    /// with a same-named TEX in the primary scene.
+    func resolveTextureFormatProbe(
+        relativePath: String,
+        optional: Bool = false
+    ) throws -> SceneResourceResolver.ResolvedTextureFormatProbe {
+        if let dependency = dependencyReference(relativePath) {
+            return try resolveDependency(
+                relativePath: relativePath,
+                dependency: dependency,
+                optional: optional
+            ) { resolver, path in
+                try resolver.resolveTextureFormatProbe(relativePath: path)
+            }
+        }
+        return try resolveWithFallbacks(relativePath: relativePath, optional: optional) { resolver, path in
+            try resolver.resolveTextureFormatProbe(relativePath: path)
+        }
+    }
+
     func resolveExistingFileURL(relativePath: String) throws -> URL {
         if let dependency = dependencyReference(relativePath) {
             return try resolveDependency(relativePath: relativePath, dependency: dependency) { resolver, path in

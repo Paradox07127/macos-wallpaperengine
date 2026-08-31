@@ -82,6 +82,29 @@ struct WallpaperEnginePackageTests {
         }
     }
 
+    @Test("Records case-fold collisions while preserving first-match lookup")
+    func recordsCaseFoldCollisions() throws {
+        let data = makePackage(entries: [
+            EntrySpec("Material.json", [0x01]),
+            EntrySpec("material.json", [0x02]),
+            EntrySpec("MATERIAL.JSON", [0x03]),
+        ])
+
+        let package = try parseStreaming(data)
+
+        #expect(package.nameIndex["material.json"]?.name == "Material.json")
+        #expect(package.caseFoldCollisions == [
+            WallpaperEnginePackage.CaseFoldCollision(
+                winningName: "Material.json",
+                shadowedName: "material.json"
+            ),
+            WallpaperEnginePackage.CaseFoldCollision(
+                winningName: "Material.json",
+                shadowedName: "MATERIAL.JSON"
+            ),
+        ])
+    }
+
     @Test("Rejects duplicate entries after path normalization")
     func rejectsDuplicateCanonicalEntryPaths() {
         let data = makePackage(entries: [

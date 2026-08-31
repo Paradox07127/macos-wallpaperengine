@@ -13,6 +13,59 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.6.2] — 2026-08-31
+
+### Added
+
+- Web wallpapers imported from the Workshop now run with the network cut off.
+  They render as before, but cannot reach out: no fetch, no WebSocket, and the
+  peer-connection constructors are removed, because a CSP has no say over
+  WebRTC — a page under the isolation policy alone still gathered an ICE
+  candidate from a public STUN server. It does not depend on finding a setting.
+- Scene wallpapers respond to the cursor. Layers receive enter, leave, move and
+  click, so a scene can put a song list or a button on the desktop.
+- Settings search is indexed in the rendered language, not only in the English
+  keys behind it, so the four supported languages all find a row by the words
+  on screen.
+- The inspector's resize handle takes arrow keys and exposes an adjustable
+  action to VoiceOver.
+
+### Changed
+
+- Measuring the Steam library moved off the main thread, with each pass
+  superseding the one before it, so Settings stays responsive while it counts.
+- Floating cards honor Reduce Transparency with an opaque fallback and gain a
+  border under Increase Contrast.
+- A `.lwconfig` exported from either edition imports into the other; Lite still
+  refuses to render what it cannot.
+- The system-wallpaper extension keeps file paths out of its logs.
+- HTML diagnostics are localized instead of English-only.
+- `boxrandom` particle emitters interpolate between the authored bounds and
+  apply `directions`, matching the reference engine. An emitter type the
+  simulator does not implement now stays idle with a diagnostic rather than
+  falling back to a sphere, which is what the reference does with it.
+- Light objects keep their authored type instead of being flattened to point.
+- Scene capability flags derive from typed parser output rather than matching
+  words in diagnostic prose.
+
+### Fixed
+
+- An interrupted write could destroy the last good copy of the settings file:
+  after recovering from the backup the damaged primary was rotated into the
+  backup slot on the next write. The good generation is kept instead.
+- A scene script that initialized its state in `applyUserProperties` computed
+  its first frame from `undefined`, and the JS `Vec3` constructor laundered the
+  resulting NaN into a real zero — the shipped symptom was text at zero scale.
+- Hover hit-testing compared an authored Y-up origin against a Y-down pointer,
+  so the top of a list highlighted the bottom entry.
+- A click is attributed to the layer under the cursor when the button went
+  down. Button edges were dispatched before the frame refreshed hover state, so
+  moving onto a layer and clicking within one frame landed on the previous one.
+- Album art reaches builtin image passes, which had kept the authored
+  placeholder.
+- Storage could report an empty wallpaper library: both trees shared one walk
+  budget, so a large engine-assets folder starved the count beside it.
+
 ## [0.6.1] — 2026-08-30
 
 ### Added

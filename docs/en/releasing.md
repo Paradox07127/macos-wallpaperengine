@@ -22,8 +22,8 @@ still needs the quarantine-clear command — there is no notarization.
    hide every release).
 2. Leave `CURRENT_PROJECT_VERSION` in the Xcode project alone; the app plists
    no longer read it.
-3. Update `CHANGELOG.md` with `## [X.Y.Z] — YYYY-MM-DD` and footer compare
-   links.
+3. Update `CHANGELOG.md` with `## [X.Y.Z] — YYYY-MM-DD`. It carries no footer
+   compare links; adding some for one version only would leave the rest dangling.
 4. Make sure `LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
    is included when Swift package pins changed.
 5. Commit the version and documentation changes before packaging. The local

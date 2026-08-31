@@ -45,6 +45,24 @@ struct WPECachedContentResolver {
         }
     }
 
+    /// Provenance the content's own location can raise but never lower.
+    ///
+    /// `originKind` gates network isolation, and it used to be copied out of
+    /// stored state — which a `.lwconfig` handed to the user gets to write. A
+    /// Workshop path therefore overrides a stored `.userLocal`. It only ever
+    /// goes one way: the cache root is app-managed and matches nothing in the
+    /// `steamapps/workshop/content/431960/<id>` layout, so re-deriving in both
+    /// directions would un-isolate every cached Workshop wallpaper.
+    static func effectiveOriginKind(
+        stored: HTMLOriginKind,
+        sourceFolder: URL
+    ) -> HTMLOriginKind {
+        if stored == .workshopImport {
+            return .workshopImport
+        }
+        return WallpaperEngineImportService.originKind(forSourceFolder: sourceFolder)
+    }
+
     /// Rebuild `.sourceFolder` video/web in place (needed for bookmarking unpackaged items).
     private func sourceFolderContent(for origin: WPEOrigin) -> WallpaperContent? {
         guard let entryFile = origin.entryFile, !entryFile.isEmpty else { return nil }
@@ -81,7 +99,10 @@ struct WPECachedContentResolver {
                         folderURL: folderURL,
                         indexFileName: entryFile
                     ),
-                    originKind: origin.originKind
+                    originKind: Self.effectiveOriginKind(
+                        stored: origin.originKind,
+                        sourceFolder: folderURL
+                    )
                 )
             )
         case .scene, .application, .unknown:
@@ -141,7 +162,10 @@ struct WPECachedContentResolver {
                         folderURL: cacheURL,
                         indexFileName: entryFile
                     ),
-                    originKind: origin.originKind
+                    originKind: Self.effectiveOriginKind(
+                        stored: origin.originKind,
+                        sourceFolder: cacheURL
+                    )
                 )
             )
         case .scene:

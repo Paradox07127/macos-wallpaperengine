@@ -23,6 +23,33 @@ struct WPEMultiRootResourceResolverTests {
         #expect(url.lastPathComponent == "dep.png")
     }
 
+    @Test("Dependency JSON format probe stays inside its declared mount")
+    func dependencyTextureFormatProbeStaysInsideMount() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+        let dependencyModels = fixture.dependencyRoot.appendingPathComponent("models", isDirectory: true)
+        let dependencyMaterials = fixture.dependencyRoot.appendingPathComponent("materials", isDirectory: true)
+        try FileManager.default.createDirectory(at: dependencyModels, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dependencyMaterials, withIntermediateDirectories: true)
+        try Data(#"{"material":"materials/wrapped.json"}"#.utf8)
+            .write(to: dependencyModels.appendingPathComponent("wrapped.json"))
+        try Data(#"{"passes":[{"textures":["dep-normal"]}]}"#.utf8)
+            .write(to: dependencyMaterials.appendingPathComponent("wrapped.json"))
+        try Data("dependency-tex".utf8)
+            .write(to: dependencyMaterials.appendingPathComponent("dep-normal.tex"))
+
+        let resolver = WPEMultiRootResourceResolver(
+            primaryRootURL: fixture.primaryRoot,
+            dependencyMounts: [WPEAssetMount(workshopID: "123", rootURL: fixture.dependencyRoot)]
+        )
+        let probe = try resolver.resolveTextureFormatProbe(
+            relativePath: "../123/models/wrapped.json"
+        )
+
+        #expect(probe.relativePath == "materials/dep-normal.tex")
+        #expect(probe.texPayload?.materializedData() == Data("dependency-tex".utf8))
+    }
+
     @Test("Engine assets fallback resolves only after primary miss")
     func engineAssetsFallbackResolvesOnlyAfterPrimaryMiss() throws {
         let fixture = try makeFixture()
@@ -68,6 +95,37 @@ struct WPEMultiRootResourceResolverTests {
 
         let url = try resolver.resolveExistingFileURL(relativePath: "materials/composelayer.json")
         #expect(String(data: try Data(contentsOf: url), encoding: .utf8) == "project-version")
+    }
+
+    @Test("Engine JSON format probe keeps its terminal TEX in the engine root")
+    func engineTextureFormatProbeKeepsOrigin() throws {
+        let fixture = try makeFixture()
+        defer { fixture.cleanup() }
+
+        let primaryMaterials = fixture.primaryRoot.appendingPathComponent("materials", isDirectory: true)
+        let engineModels = fixture.engineRoot.appendingPathComponent("assets/models", isDirectory: true)
+        let engineMaterials = fixture.engineRoot.appendingPathComponent("assets/materials", isDirectory: true)
+        try FileManager.default.createDirectory(at: primaryMaterials, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: engineModels, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: engineMaterials, withIntermediateDirectories: true)
+        try Data("primary-shadow".utf8)
+            .write(to: primaryMaterials.appendingPathComponent("shared.tex"))
+        try Data(#"{"material":"materials/wrapped.json"}"#.utf8)
+            .write(to: engineModels.appendingPathComponent("wrapped.json"))
+        try Data(#"{"passes":[{"textures":["shared"]}]}"#.utf8)
+            .write(to: engineMaterials.appendingPathComponent("wrapped.json"))
+        try Data("engine-tex".utf8)
+            .write(to: engineMaterials.appendingPathComponent("shared.tex"))
+
+        let resolver = WPEMultiRootResourceResolver(
+            primaryRootURL: fixture.primaryRoot,
+            dependencyMounts: [],
+            engineAssetsRootURL: fixture.engineRoot
+        )
+        let probe = try resolver.resolveTextureFormatProbe(relativePath: "models/wrapped.json")
+
+        #expect(probe.relativePath == "materials/shared.tex")
+        #expect(probe.texPayload?.materializedData() == Data("engine-tex".utf8))
     }
 
     @Test("Engine assets fallback only triggers on .fileMissing")

@@ -146,6 +146,13 @@ final class WPEMetalSceneRenderer: NSObject {
     /// render graph, not in a script, so a scene can want one without the other.
     var mediaTextureSubscription: WPEMediaTextureSubscription?
     var layerHoverStates: [String: Bool] = [:]
+    /// Which layers the pointer was over when the button went DOWN. A click needs
+    /// the press and the release on the same layer, so the press set has to outlive
+    /// the down edge; cleared on the up edge.
+    var layerPressStates: [String: Bool] = [:]
+    /// Last hover-test pointer position, so `cursorMove` fires on movement rather
+    /// than once per frame.
+    var lastHoverPointerPixels: SIMD2<Double>?
     var sceneScriptSharedState: WPESharedScriptState?
     /// Per-renderer workers so a script-heavy display cannot delay a light one's ticks.
     let sceneScriptBatchDispatcher = WPESceneScriptBatchDispatcher(

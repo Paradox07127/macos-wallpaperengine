@@ -22,13 +22,13 @@ struct SharedLibraryStore {
     func loadManifest() -> SystemWallpaperManifest {
         let url = SystemWallpaperPaths.manifestURL(hostBundleID: hostBundleID)
         guard let data = try? Data(contentsOf: url) else {
-            wpxLog.info("manifest missing at \(url.path, privacy: .public)")
+            wpxLog.info("manifest missing at \(url.path, privacy: .private)")
             return .empty
         }
         do {
             return try SystemWallpaperCoding.decoder.decode(SystemWallpaperManifest.self, from: data)
         } catch {
-            wpxLog.error("manifest decode failed: \(String(describing: error), privacy: .public)")
+            wpxLog.error("manifest decode failed: \(WPXLogPrivacy.summary(error), privacy: .public)")
             return .empty
         }
     }
@@ -92,7 +92,7 @@ struct SharedLibraryStore {
             )
             try data.write(to: url, options: .atomic)
         } catch {
-            wpxLog.error("heartbeat write failed: \(String(describing: error), privacy: .public)")
+            wpxLog.error("heartbeat write failed: \(WPXLogPrivacy.summary(error), privacy: .public)")
         }
     }
 }

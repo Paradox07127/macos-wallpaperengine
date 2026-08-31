@@ -141,8 +141,10 @@ scripts/*
 !scripts/entitlement_fingerprint.py
 !scripts/check_quality_exclusions.py
 # Ships with .swiftformat: whole-repo formatting produces thousands of lines of
-# churn here, so contributors need the changed-files-only helper.
+# churn here, so contributors need the changed-files-only helper. The lint
+# ratchet is not optional — ci.yml and release_contract_check.sh both invoke it.
 !scripts/format-changed.sh
+!scripts/lint_changed_lines.py
 !scripts/check_module_import_boundaries.py
 !scripts/wpe-corpus-manifest.py
 !scripts/wpe-corpus-manifest.schema.json

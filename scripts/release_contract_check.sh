@@ -20,6 +20,38 @@ bash scripts/check_entitlements.sh --help >/dev/null
 python3 scripts/entitlement_fingerprint.py --help >/dev/null
 bash scripts/app_tests.sh --help >/dev/null
 bash scripts/fast_app_contract_tests.sh --list >/dev/null
+
+# The required PR shard must keep covering persistence, config portability,
+# storage and localized search. Each of these guards a defect that already
+# shipped once, and dropping one from the list would be silent.
+shard_suites="$(bash scripts/fast_app_contract_tests.sh --list)"
+for required_suite in \
+  AtomicFileStoreTests \
+  ConfigurationPorterTests \
+  WPEStorageInventoryTests \
+  SettingsSearchLocalizationTests; do
+  if ! printf '%s\n' "$shard_suites" | grep -Fxq "$required_suite"; then
+    echo "ERROR: $required_suite dropped from the required PR shard." >&2
+    exit 1
+  fi
+done
+# Metal/display suites deadlock the headless runner; keep them out by name.
+if printf '%s\n' "$shard_suites" | grep -Eq 'Metal|Renderer(Frame|Pass)'; then
+  echo "ERROR: the headless shard must not run Metal/display suites." >&2
+  exit 1
+fi
+# The Lite host is a separate binary; a Pro-scheme shard cannot vouch for it.
+grep -Fq 'scheme LiveWallpaperLite' scripts/fast_app_contract_tests.sh
+grep -Fq 'require-suite LiteHostSmokeTests' scripts/fast_app_contract_tests.sh
+
+# The changed-lines lint ratchet must stay wired into PR CI, and must stay a
+# ratchet: a whole-repo sweep would force a one-shot reformat of 831 files.
+python3 scripts/lint_changed_lines.py --help >/dev/null
+grep -Fq 'scripts/lint_changed_lines.py --base' .github/workflows/ci.yml
+if grep -Eq 'swiftformat[^-]*\.$|swiftlint lint[[:space:]]*$' .github/workflows/ci.yml; then
+  echo "ERROR: CI must lint changed lines, not the whole repository." >&2
+  exit 1
+fi
 python3 scripts/xcode_test_runner_self_test.py
 bash scripts/check_entitlements.sh --sku pro --source
 bash scripts/check_entitlements.sh --sku lite --source

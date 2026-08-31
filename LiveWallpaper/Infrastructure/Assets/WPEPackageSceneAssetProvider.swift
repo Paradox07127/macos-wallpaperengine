@@ -35,6 +35,7 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         }
         self.handle = handle
         self.packageURL = packageURL
+        Self.logCaseFoldCollisions(in: package)
     }
 
     /// Async construction seam for MainActor import/session paths. Blocking
@@ -60,6 +61,22 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         self.package = prepared.package
         self.handle = prepared.handle
         self.packageURL = packageURL
+        Self.logCaseFoldCollisions(in: prepared.package)
+    }
+
+    /// Test-only seam: the warning above is what production consumes. Kept so a
+    /// test can assert the collisions survive the in-place package backing.
+    var caseFoldCollisions: [WallpaperEnginePackage.CaseFoldCollision] {
+        package.caseFoldCollisions
+    }
+
+    private static func logCaseFoldCollisions(in package: WallpaperEnginePackage) {
+        guard !package.caseFoldCollisions.isEmpty else { return }
+        Logger.warning(
+            "PKG_CASE_FOLD_COLLISION: package contains \(package.caseFoldCollisions.count) "
+                + "case-insensitive entry collision(s); the first entry remains authoritative",
+            category: .fileAccess
+        )
     }
 
     deinit {
@@ -94,15 +111,19 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
     }
 
     /// Backstop for directories orphaned by abnormal termination, where `deinit`
-    /// never ran. Call once, early in startup, before any provider is created so
-    /// it can never race a live provider's staging dir.
-    static func sweepStaleStagingDirectoriesAtLaunch() {
-        DispatchQueue.global(qos: .utility).async {
-            let removed = sweepStaleStagingDirectories()
+    /// never ran. The caller awaits this utility task before constructing
+    /// `ScreenManager`, establishing a launch barrier against live providers.
+    @discardableResult
+    static func sweepStaleStagingDirectoriesAtLaunch(
+        in directory: URL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    ) async -> Int {
+        await Task.detached(priority: .utility) {
+            let removed = sweepStaleStagingDirectories(in: directory)
             if removed > 0 {
                 Logger.notice("Swept \(removed) stale WPE package staging dir(s)", category: .startup)
             }
-        }
+            return removed
+        }.value
     }
 
     func data(atRelativePath relativePath: String) throws -> Data {

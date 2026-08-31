@@ -534,11 +534,16 @@ public struct WPEParticleTurbulenceOperator: Equatable, Sendable {
 }
 
 /// WPE emitter geometry. `sphererandom` scatters within a radius; `boxrandom`
-/// scatters within an axis-aligned box (per-axis `distancemax` half-extents) —
+/// samples each axis from its authored distance range and applies `directions` —
 /// how full-screen effects like rain spread across the frame.
 public enum WPEParticleEmitterShape: String, Sendable, Equatable {
     case sphere
     case box
+    case unsupported
+
+    public var isRuntimeSupported: Bool {
+        self != .unsupported
+    }
 }
 
 /// Lossless-enough, Sendable preservation for authored particle-emitter fields whose runtime
@@ -703,11 +708,12 @@ public struct WPEParticleDefinition: Equatable, Sendable {
     public let originOffset: SIMD3<Double>
     /// Emission distribution. `.sphere` (the WPE default `sphererandom`) uses the `.x` of
     /// dispersalMin/Max as a scalar radius; `.box` (`boxrandom`) samples each axis independently
-    /// within ±dispersalMax (per-axis half-extents). A box emitter parsed as a sphere collapses its
-    /// vector `distancemax` to one point (scene 3351072238: 500 rain halos piled into a white blob).
+    /// with `min + U(-1...1) * (max - min)`, then multiplies by `directions`. A box emitter parsed
+    /// as a sphere collapses its vector `distancemax` to one point (scene 3351072238: 500 rain
+    /// halos piled into a white blob).
     public let emitterShape: WPEParticleEmitterShape
     /// Per-axis emission bounds. Sphere reads `.x` as the radius; box reads all
-    /// three as half-extents. Stored as a vector so `boxrandom`'s
+    /// three as interpolation endpoints. Stored as a vector so `boxrandom`'s
     /// `distancemax: "1200 1000 0"` survives instead of failing scalar parsing.
     public let dispersalMin: SIMD3<Double>
     public let dispersalMax: SIMD3<Double>
@@ -1321,8 +1327,9 @@ public enum WPEParticleDefinitionParser {
             origin = WPEValueParser.vector3(first["origin"]) ?? SIMD3(0, 0, 0)
             emitterSpeedMin = WPEValueParser.double(first["speedmin"]) ?? 0
             emitterSpeedMax = WPEValueParser.double(first["speedmax"]) ?? emitterSpeedMin
-            if (first["name"] as? String)?.lowercased() == "boxrandom" {
-                // `boxrandom` distances are per-axis half-extents (e.g.
+            let emitterName = (first["name"] as? String)?.lowercased()
+            if emitterName == "boxrandom" {
+                // `boxrandom` distances are per-axis interpolation endpoints (e.g.
                 // "1200 1000 0"). Scalar parsing would fail → collapse the box to
                 // a point and pile every particle on the origin (scene 3351072238).
                 emitterShape = .box
@@ -1332,11 +1339,17 @@ public enum WPEParticleDefinitionParser {
                 }
                 dispersalMin = absVec(WPEValueParser.vector3(first["distancemin"]))
                 dispersalMax = absVec(WPEValueParser.vector3(first["distancemax"]))
-            } else {
+            } else if emitterName == nil || emitterName == "sphererandom" {
                 let scalarMin = max(0, WPEValueParser.double(first["distancemin"]) ?? 0)
                 let scalarMax = max(scalarMin, WPEValueParser.double(first["distancemax"]) ?? 0)
                 dispersalMin = SIMD3(scalarMin, scalarMin, scalarMin)
                 dispersalMax = SIMD3(scalarMax, scalarMax, scalarMax)
+            } else {
+                emitterShape = .unsupported
+                diagnostics.append(.init(
+                    severity: .info,
+                    message: "Particle emitter '\(emitterName ?? "<invalid>")' is not supported by the particle simulator"
+                ))
             }
             if let mask = WPEValueParser.vector3(first["directions"]) {
                 directionMask = SIMD3<Double>(abs(mask.x), abs(mask.y), abs(mask.z))

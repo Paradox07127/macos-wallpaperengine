@@ -454,6 +454,8 @@
             lastStableScriptTransforms = LiveScriptTransforms()
             lastStableScriptTextByID.removeAll(keepingCapacity: false)
             layerHoverStates.removeAll(keepingCapacity: false)
+            layerPressStates.removeAll(keepingCapacity: false)
+            lastHoverPointerPixels = nil
             liveLayerVisibility.removeAll(keepingCapacity: false)
             liveTextVisibility.removeAll(keepingCapacity: false)
             liveLayerAlpha.removeAll(keepingCapacity: false)

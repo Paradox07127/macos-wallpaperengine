@@ -212,9 +212,10 @@ extension WPEMetalSceneRenderer {
             return false
         }
 
-        // Feed changed values through every layer/text `applyUserProperties`.
+        // Feed changed values through every script family's `applyUserProperties`.
         if !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
-            || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty {
+            || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
+            || hasTransformScriptInstances {
             let changed = Self.bridgeUserProperties(
                 patch.newValues.filter { patch.changedKeys.contains($0.key) }
             )
@@ -255,6 +256,7 @@ extension WPEMetalSceneRenderer {
                         liveTextAlpha[objectID] = output.own.alpha
                     }
                 }
+                dispatchTransformScriptUserProperties(changed)
             }
         }
 

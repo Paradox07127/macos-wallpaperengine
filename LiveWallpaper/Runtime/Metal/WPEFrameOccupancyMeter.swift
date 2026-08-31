@@ -30,7 +30,6 @@ enum WPEFrameOccupancyMeter {
         case colorCorrectionEncoder
         case presentEncoder
         case textEncoder
-        case videoConversionCommandBuffer
         case videoMarkerCommandBuffer
         case aliasHeapTextureCreate
         case largeUniformBufferCreate
@@ -53,7 +52,6 @@ enum WPEFrameOccupancyMeter {
             case .colorCorrectionEncoder: "ccEnc"
             case .presentEncoder: "presentEnc"
             case .textEncoder: "textEnc"
-            case .videoConversionCommandBuffer: "videoConvCB"
             case .videoMarkerCommandBuffer: "videoMarkCB"
             case .aliasHeapTextureCreate: "aliasTex"
             case .largeUniformBufferCreate: "bigUniformBuf"

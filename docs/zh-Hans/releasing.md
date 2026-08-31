@@ -18,7 +18,8 @@ Developer ID，也没有公证。
    设为 `X.Y.Z`。`CFBundleVersion` 跟这个值走（Sparkle 比的是 `CFBundleVersion`，
    构建号冻在 `1` 会让每一版看起来都一样）。
 2. Xcode 工程里的 `CURRENT_PROJECT_VERSION` 不用动；应用 plist 已经不读它。
-3. 更新 `CHANGELOG.md`，加上 `## [X.Y.Z] — YYYY-MM-DD` 与页脚的 compare 链接。
+3. 更新 `CHANGELOG.md`，加上 `## [X.Y.Z] — YYYY-MM-DD`。这个文件没有页脚 compare
+   链接，只给某一个版本补一条会让其余版本显得缺失。
 4. Swift 包的 pin 有变动时，确保带上
    `LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`。
 5. 打包前先提交版本号与文档改动。本地打包脚本拒绝脏工作树，但允许

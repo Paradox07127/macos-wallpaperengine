@@ -138,6 +138,12 @@ struct WPEInPlaceAssetReadingTests {
         let provider = try WPEPackageSceneAssetProvider(packageURL: pkgURL)
         #expect(try provider.data(atRelativePath: "material.json") == Data("first".utf8))
         #expect(try provider.data(atRelativePath: "MATERIAL.JSON") == Data("first".utf8))
+        #expect(provider.caseFoldCollisions == [
+            WallpaperEnginePackage.CaseFoldCollision(
+                winningName: "Material.json",
+                shadowedName: "material.json"
+            ),
+        ])
     }
 
     // MARK: - Stale staging-dir sweep
@@ -187,6 +193,25 @@ struct WPEInPlaceAssetReadingTests {
         let missing = FileManager.default.temporaryDirectory
             .appendingPathComponent("does-not-exist-\(UUID().uuidString)", isDirectory: true)
         #expect(WPEPackageSceneAssetProvider.sweepStaleStagingDirectories(in: missing) == 0)
+    }
+
+    @Test("launch sweep is an awaitable barrier and returns after reclamation")
+    func launchSweepWaitsForReclamation() async throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stale = root.appendingPathComponent(
+            "\(WPEPackageSceneAssetProvider.stagingDirectoryNamePrefix)orphan",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
+        try Data([0xAB]).write(to: stale.appendingPathComponent("asset.bin"))
+
+        let removed = await WPEPackageSceneAssetProvider.sweepStaleStagingDirectoriesAtLaunch(
+            in: root
+        )
+
+        #expect(removed == 1)
+        #expect(!FileManager.default.fileExists(atPath: stale.path))
     }
 
     // MARK: - SceneDescriptor.assetStorage

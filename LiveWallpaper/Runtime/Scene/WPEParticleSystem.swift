@@ -623,6 +623,24 @@ final class WPEParticleSystem {
         )
     }
 
+    /// WPE `boxrandom`: each axis lerps from the authored minimum to maximum
+    /// using a sample in -1...1, then applies the authored directions mask.
+    /// Unlike `sphererandom`, the box emitter does not apply `sign`.
+    static func boxEmitterDispersal(
+        minimum: SIMD3<Double>,
+        maximum: SIMD3<Double>,
+        directions: SIMD3<Double>,
+        samples: SIMD3<Double>
+    ) -> SIMD3<Double> {
+        let clampedSamples = SIMD3<Double>(
+            min(max(samples.x, -1), 1),
+            min(max(samples.y, -1), 1),
+            min(max(samples.z, -1), 1)
+        )
+        let sampled = minimum + clampedSamples * (maximum - minimum)
+        return sampled * directions
+    }
+
     static func emitterRadialVelocity(dispersal: SIMD3<Float>, speed: Float) -> SIMD3<Float> {
         let length = simd_length(dispersal)
         guard length > 0.000_001, speed != 0 else { return .zero }
@@ -785,9 +803,15 @@ final class WPEParticleSystem {
         let localSpawnDepth: Double
         switch definition.emitterShape {
         case .box:
-            localSpawnDepth = abs(definition.dispersalMax.z)
+            let minimum = definition.dispersalMin.z
+            let maximum = definition.dispersalMax.z
+            let lowEndpoint = minimum - (maximum - minimum)
+            localSpawnDepth = max(abs(lowEndpoint), abs(maximum))
+                * abs(definition.directionMask.z)
         case .sphere:
             localSpawnDepth = abs(definition.dispersalMax.z * definition.directionMask.z)
+        case .unsupported:
+            localSpawnDepth = 0
         }
         let spawnDepth = Float(localSpawnDepth) * max(0.0001, abs(sceneTransform.objectScale.z))
         let lifetime = Float(max(definition.lifetimeMin, definition.lifetimeMax, 0))
@@ -1200,7 +1224,8 @@ final class WPEParticleSystem {
         let isWithinDuration = definition.duration.map {
             elapsed <= emissionStart + $0
         } ?? true
-        if hasStartedEmitting {
+        let emitterCanSpawn = definition.emitterShape.isRuntimeSupported
+        if hasStartedEmitting, emitterCanSpawn {
             if definition.instantaneousCount > 0 {
                 if requiresFollowParent {
                     // eventfollow: burst once per parent birth, not once per system.
@@ -1239,14 +1264,13 @@ final class WPEParticleSystem {
         // every gate is closed no later tick can reopen one. A pointer-blocked burst keeps
         // `hasEmittedBurst` false and an eventfollow child without a duration stays emittable —
         // both remain not-exhausted, the conservative direction for the frame-demand gate.
-        let rateExhausted = definition.rate <= 0 || !isWithinDuration
-        let burstExhausted: Bool
-        if definition.instantaneousCount <= 0 {
-            burstExhausted = true
+        let rateExhausted = !emitterCanSpawn || definition.rate <= 0 || !isWithinDuration
+        let burstExhausted: Bool = if !emitterCanSpawn || definition.instantaneousCount <= 0 {
+            true
         } else if requiresFollowParent {
-            burstExhausted = !isWithinDuration
+            !isWithinDuration
         } else {
-            burstExhausted = hasEmittedBurst
+            hasEmittedBurst
         }
         emissionExhausted = hasStartedEmitting && rateExhausted && burstExhausted
     }
@@ -1374,11 +1398,20 @@ final class WPEParticleSystem {
         let dispersal: SIMD3<Float>
         switch definition.emitterShape {
         case .box:
-            let ext = definition.dispersalMax
+            let point = Self.boxEmitterDispersal(
+                minimum: definition.dispersalMin,
+                maximum: definition.dispersalMax,
+                directions: definition.directionMask,
+                samples: SIMD3<Double>(
+                    uniform(-1, 1),
+                    uniform(-1, 1),
+                    uniform(-1, 1)
+                )
+            )
             dispersal = SIMD3<Float>(
-                Float(uniform(-ext.x, ext.x)),
-                Float(uniform(-ext.y, ext.y)),
-                Float(uniform(-ext.z, ext.z))
+                Float(point.x),
+                Float(point.y),
+                Float(point.z)
             )
         case .sphere:
             let radius = Self.sphereRadius(
@@ -1394,6 +1427,8 @@ final class WPEParticleSystem {
             dispersal = SIMD3<Float>(
                 Float(signedPoint.x), Float(signedPoint.y), Float(signedPoint.z)
             )
+        case .unsupported:
+            return false
         }
         let emitterOriginLocal = SIMD3<Float>(
             Float(definition.originOffset.x),

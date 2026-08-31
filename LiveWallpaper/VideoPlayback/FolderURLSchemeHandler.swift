@@ -28,11 +28,32 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         "form-action 'none';"
     ].joined(separator: " ")
 
+    /// `contentSecurityPolicy` minus every remote origin. Imported Workshop code
+    /// may render — it is a JS medium, and the shipped corpus loads all of its
+    /// assets relatively — but it may not reach the network. Local file reads are
+    /// already refused by path containment, so this closes the egress path that
+    /// made a downloaded page usable as a resident tracking client.
+    nonisolated static let networkIsolatedContentSecurityPolicy: String = [
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: livewallpaper:;",
+        "connect-src 'self' livewallpaper: data: blob:;",
+        "img-src 'self' data: blob: livewallpaper:;",
+        "media-src 'self' data: blob: livewallpaper:;",
+        "font-src 'self' data: livewallpaper:;",
+        "frame-src 'none';",
+        "object-src 'none';",
+        "base-uri 'none';",
+        "form-action 'none';",
+    ].joined(separator: " ")
+
     /// Test override (often Report-Only); nil defers to `cspEnforcementEnabled`.
     var cspOverride: ContentSecurityPolicyOverride?
 
     /// Opt-in CSP header on scheme responses; host reloads on flip.
     var cspEnforcementEnabled = false
+
+    /// Provenance-driven, not user-driven: set for Workshop imports and it
+    /// outranks `cspEnforcementEnabled`, which only ever relaxes the policy.
+    var networkIsolationEnabled = false
 
     struct ContentSecurityPolicyOverride: Sendable, Equatable {
         enum Disposition: Sendable, Equatable {
@@ -150,6 +171,9 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         let cspHeader: (name: String, value: String)? = {
             if let override = cspOverride {
                 return (override.headerName, override.directives)
+            }
+            if networkIsolationEnabled {
+                return ("Content-Security-Policy", Self.networkIsolatedContentSecurityPolicy)
             }
             guard cspEnforcementEnabled else { return nil }
             return ("Content-Security-Policy", Self.contentSecurityPolicy)

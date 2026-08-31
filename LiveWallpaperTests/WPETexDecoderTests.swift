@@ -108,7 +108,7 @@ struct WPETexDecoderTests {
     @Test("Probe of a complete RGBA8888 file yields valid info")
     func probeReturnsInfo() {
         let buffer = makeRGBA8888TestImage(width: 4, height: 4)
-        let result = WPETexDecoder().probe(data: buffer)
+        let result = WPETexDecoder().probe(span: WPEMappedByteSpan(data: buffer))
         guard case .success(let info) = result else {
             Issue.record("Expected probe success, got \(result)")
             return
@@ -255,7 +255,7 @@ struct WPETexDecoderTests {
             flags: WPETexInfo.clampUVsFlag
         )
 
-        let info = try WPETexDecoder().probe(data: buffer).get()
+        let info = try WPETexDecoder().probe(span: WPEMappedByteSpan(data: buffer)).get()
 
         #expect(info.width == 4)
         #expect(info.height == 4)
@@ -309,7 +309,7 @@ struct WPETexDecoderTests {
         // rather than pass because it was not in the list.
         for url in Self.officialLUTTexURLs {
             let data = try Data(contentsOf: url)
-            let info = try WPETexDecoder().probe(data: data).get()
+            let info = try WPETexDecoder().probe(span: WPEMappedByteSpan(data: data)).get()
             guard info.flags & WPETexInfo.rawExtensionFlag != 0 else { continue }
             flag0x40Count += 1
 

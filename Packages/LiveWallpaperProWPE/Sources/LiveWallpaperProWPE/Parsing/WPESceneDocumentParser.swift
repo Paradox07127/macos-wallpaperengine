@@ -533,11 +533,11 @@ public enum WPESceneDocumentParser {
             return nil
         }
         let authoredType = nonEmptyString(dict["light"])?.lowercased() ?? "point"
-        let type: WPESceneLightType
-        switch authoredType {
-        case "spot", "lspot": type = .spot
-        case "directional", "ldirectional": type = .directional
-        default: type = .point
+        let type: WPESceneLightType = switch authoredType {
+        case "point", "lpoint": .point
+        case "spot", "lspot": .spot
+        case "directional", "ldirectional": .directional
+        default: .unknown(authoredType)
         }
         let local = localTransform(in: dict)
         var fieldBindings: [String: WPESceneLightFieldBinding] = [:]
@@ -872,6 +872,16 @@ public enum WPESceneDocumentParser {
             default:
                 // Pure SceneScript hosts are object-kind `.unknown`: they draw
                 // nothing but their visible script still consumes settings.
+                // A direct user envelope belongs to the group itself, not to a
+                // child image. Reloading lets the existing ancestor fold remain
+                // the single effective-visibility authority.
+                append(
+                    raw: object["visible"],
+                    target: .groupObject(id: objectID),
+                    kind: .visible,
+                    action: .reload,
+                    includeNestedScriptProperties: false
+                )
                 appendScriptProperties(in: object["visible"], objectID: objectID, role: .layerVisible)
                 break
             }

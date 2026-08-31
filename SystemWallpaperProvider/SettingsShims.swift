@@ -164,7 +164,7 @@ enum SettingsViewModelsEncoder {
             if object == nil { wpxLog.error("viewmodels unarchive returned nil") }
             return object
         } catch {
-            wpxLog.error("viewmodels archive failed: \(String(describing: error), privacy: .public)")
+            wpxLog.error("viewmodels archive failed: \(WPXLogPrivacy.summary(error), privacy: .public)")
             return nil
         }
     }

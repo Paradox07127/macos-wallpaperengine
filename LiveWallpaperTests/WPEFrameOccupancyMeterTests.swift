@@ -11,7 +11,7 @@ struct WPEFrameOccupancyMeterTests {
         try #require(!WPEFrameOccupancyMeter.isEnabled)
         WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
         WPEFrameOccupancyMeter.count(.renderPassEncoder, by: 5)
-        WPEFrameOccupancyMeter.count(.videoConversionCommandBuffer)
+        WPEFrameOccupancyMeter.count(.videoMarkerCommandBuffer)
         #expect(WPEFrameOccupancyMeter.countsForTesting().allSatisfy { $0 == 0 })
     }
 
