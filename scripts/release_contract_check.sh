@@ -57,6 +57,17 @@ if grep -Eq 'swiftformat[^-]*\.$|swiftlint lint[[:space:]]*$' .github/workflows/
   exit 1
 fi
 
+# Every script the Makefile reaches must be in the repository. scripts/ is
+# ignored wholesale with a per-file allowlist, so a gate can be locally green and
+# missing from a clean clone — which is exactly how `make fast` died on CI with
+# "scripts/i18n_guard.sh: No such file or directory" (run 33422444404).
+while read -r referenced_script; do
+  if ! git ls-files --error-unmatch "$referenced_script" >/dev/null 2>&1; then
+    echo "ERROR: Makefile runs $referenced_script, which is not tracked by git; add a .gitignore allowlist entry for it." >&2
+    exit 1
+  fi
+done < <(grep -oE 'scripts/[A-Za-z0-9_.-]+' Makefile | sort -u)
+
 # CI must not drift away from the Makefile: every gate the pipeline depends on
 # is reached through a make target, so a locally-green `make verify` means the
 # same thing as a green pipeline.
