@@ -17,21 +17,53 @@ final class SparkleUpdaterController {
 
     @ObservationIgnored private var controller: SPUStandardUpdaterController!
     @ObservationIgnored private var driverDelegate: GentleReminderDelegate!
+    @ObservationIgnored private var updaterDelegate: UpdateAvailabilityDelegate!
 
     private init() {
         driverDelegate = GentleReminderDelegate()
+        updaterDelegate = UpdateAvailabilityDelegate()
         controller = SPUStandardUpdaterController(
             startingUpdater: false,
-            updaterDelegate: nil,
+            updaterDelegate: updaterDelegate,
             userDriverDelegate: driverDelegate
         )
+        updaterDelegate.onUpdateFound = { [weak self] version in
+            self?.noteUpdateFound(version: version)
+        }
+        updaterDelegate.onNoUpdateFound = { [weak self] in
+            self?.noteNoUpdateFound()
+        }
+        // Also from the user driver, not just `didFindValidUpdate`: an update that
+        // was already downloaded is shown again on the next launch by resuming the
+        // session, and no new check runs, so the updater-side callback never fires.
         driverDelegate.onUpdateFound = { [weak self] version in
-            self?.availableVersion = version
+            self?.noteUpdateFound(version: version)
         }
         driverDelegate.onSessionFinished = { [weak self] in
-            self?.availableVersion = nil
+            self?.noteUpdateSessionFinished()
         }
     }
+
+    /// Sparkle found a release newer than this build.
+    func noteUpdateFound(version: String) {
+        availableVersion = version
+    }
+
+    /// A completed check that turned up nothing — the only thing that withdraws
+    /// a pending update. Also covers "the newest release needs a newer macOS"
+    /// and "you already have it", which are the same fact to every surface here.
+    func noteNoUpdateFound() {
+        availableVersion = nil
+    }
+
+    /// Sparkle's update-alert session ended: installed, skipped, or dismissed
+    /// with "Remind Me Later". Deliberately leaves `availableVersion` alone.
+    /// Clearing it here is what made dismissing the alert flip the About line to
+    /// a checkmark and drop the menu bar Update button, telling a user on 0.6.1
+    /// that 0.6.1 was current. Availability belongs to `SPUUpdaterDelegate`;
+    /// this callback only reports that the UI session is over. An install ends
+    /// with a relaunch, so the new process starts with no pending update anyway.
+    func noteUpdateSessionFinished() {}
 
     /// Starts the scheduled-check machinery. Kept out of `init` so tests can
     /// touch the type without it reaching the network.
@@ -92,6 +124,36 @@ final class SparkleUpdaterController {
 
 /// Separate object because `SPUStandardUserDriverDelegate` requires NSObject
 /// conformance, which does not mix with `@Observable`'s generated storage.
+/// Availability, as opposed to UI-session lifetime. Sparkle reports the two
+/// through different delegates and only this one means "there is / is not an
+/// update".
+@MainActor
+final class UpdateAvailabilityDelegate: NSObject, SPUUpdaterDelegate {
+    var onUpdateFound: ((String) -> Void)?
+    var onNoUpdateFound: (() -> Void)?
+
+    /// Same reasoning as `GentleReminderDelegate.onMain`: the protocol header
+    /// does not promise a thread, so hop rather than assume.
+    private nonisolated func onMain(_ body: @escaping @MainActor () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated(body)
+        } else {
+            Task { @MainActor in body() }
+        }
+    }
+
+    nonisolated func updater(_: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        let version = item.displayVersionString
+        onMain { [weak self] in self?.onUpdateFound?(version) }
+    }
+
+    /// The plain variant, not `updaterDidNotFindUpdate(_:error:)`: the reason a
+    /// check came back empty does not change what these surfaces show.
+    nonisolated func updaterDidNotFindUpdate(_: SPUUpdater) {
+        onMain { [weak self] in self?.onNoUpdateFound?() }
+    }
+}
+
 @MainActor
 final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
     var onUpdateFound: ((String) -> Void)?

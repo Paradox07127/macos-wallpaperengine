@@ -155,4 +155,39 @@ struct SparkleUpdaterOwnershipTests {
         #expect(source.contains("appcast-lite.xml"))
         #expect(source.contains("ACTUAL_BUNDLE_VERSION"))
     }
+    /// "Remind Me Later" ends Sparkle's update SESSION; it does not withdraw the
+    /// update. The two arrive through different delegates — availability from
+    /// `SPUUpdaterDelegate`, session lifetime from `SPUStandardUserDriverDelegate`
+    /// — and wiring the session's end to "no update" made dismissing the alert
+    /// report the old version as current: the About line flipped to a checkmark
+    /// and the menu bar Update button disappeared until the next scheduled check.
+    @MainActor
+    @Test("Dismissing the update alert leaves the found version standing")
+    func remindMeLaterKeepsTheFoundVersion() {
+        let updater = SparkleUpdaterController.shared
+        defer { updater.noteNoUpdateFound() }
+
+        updater.noteUpdateFound(version: "0.6.2")
+        #expect(updater.availableVersion == "0.6.2")
+
+        // What Sparkle calls when the user picks "Remind Me Later".
+        updater.noteUpdateSessionFinished()
+
+        #expect(
+            updater.availableVersion == "0.6.2",
+            "dismissing the alert cleared the pending update, so every surface says the app is current"
+        )
+    }
+
+    /// The one thing that *does* withdraw it: a later check that finds nothing.
+    @MainActor
+    @Test("A check that finds nothing clears the pending update")
+    func aCheckWithNoUpdateClearsIt() {
+        let updater = SparkleUpdaterController.shared
+        updater.noteUpdateFound(version: "0.6.2")
+
+        updater.noteNoUpdateFound()
+
+        #expect(updater.availableVersion == nil)
+    }
 }
