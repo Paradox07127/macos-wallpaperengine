@@ -160,7 +160,7 @@ struct HTMLPreviewSection: View {
             loadFailed = false
             startLoadIfNeeded(force: true)
         } label: {
-            previewCornerGlyph("arrow.clockwise")
+            PreviewCornerGlyph("arrow.clockwise")
         }
         .buttonStyle(.plain)
         .help(Text("Refresh web snapshot"))
@@ -386,12 +386,18 @@ struct HTMLInformationOverlay: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func tag(_ text: Text, background: Color = Color.white.opacity(0.18)) -> some View {
+    /// Secondary pill inside the glass info panel; padding matches the shared
+    /// flat-pill standard (`TypeBadge`), and the default background is the
+    /// over-media foreground token at panel-tag strength.
+    private func tag(
+        _ text: Text,
+        background: Color = DesignTokens.Colors.overlayForeground.opacity(0.18)
+    ) -> some View {
         text
             .font(DesignTokens.Typography.badge)
             .textCase(.uppercase)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
             .background(background, in: Capsule())
     }
 
@@ -419,13 +425,25 @@ struct HTMLInformationOverlay: View {
 /// Render-geometry badges on the web preview (not the inspector list).
 /// The preview's two corner controls sit side by side, so their glyph frame and
 /// backing live in one place — spelled twice, they drift the first time one moves.
-@MainActor
-private func previewCornerGlyph(_ systemImage: String) -> some View {
-    Image(systemName: systemImage)
-        .imageScale(.medium)
-        .foregroundStyle(DesignTokens.Colors.overlayForeground)
-        .frame(width: 26, height: 26)
-        .thumbnailBadgeGlass(opacity: 0.7, in: .circle)
+/// A view rather than a function so each control carries its own hover state
+/// for the interactive-corner-glyph glass API.
+private struct PreviewCornerGlyph: View {
+    private let systemImage: String
+
+    @State private var isHovering = false
+
+    init(_ systemImage: String) {
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .imageScale(.medium)
+            .foregroundStyle(DesignTokens.Colors.overlayForeground)
+            .frame(width: 26, height: 26)
+            .floatingGlyphGlass(hovered: isHovering, opacity: 0.7)
+            .onHover { isHovering = $0 }
+    }
 }
 
 struct HTMLRenderingDiagnosticsOverlay: View {
@@ -456,7 +474,7 @@ struct HTMLRenderingDiagnosticsOverlay: View {
                     .onTapGesture { toggle() }
             } else {
                 Button(action: toggle) {
-                    previewCornerGlyph("info.circle")
+                    PreviewCornerGlyph("info.circle")
                 }
                 .buttonStyle(.plain)
                 .help(Text("Web Rendering"))

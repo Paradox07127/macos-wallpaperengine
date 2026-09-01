@@ -131,33 +131,31 @@ extension GeneralSettingsView {
                 info: "Caching keeps each looping video in RAM so it doesn't re-read your disk every cycle — saving SSD wear and power. Drag to Off to stream straight from disk and use the least memory. The value below is the budget per screen (and the total across all displays)."
             ) {
                 VStack(alignment: .trailing, spacing: 4) {
-                    Slider(
-                        value: Binding(
-                            get: { videoCacheBudgetMB },
-                            set: { newValue in
-                                let snapped = (newValue / 32).rounded() * 32
-                                videoCacheBudgetMB = snapped
-                                updateGlobalSettings()
-                            }
-                        ),
-                        in: 0...Double(GlobalSettings.maxVideoCacheBytes / (1024 * 1024)),
-                        step: 32
-                    ) {
-                        Text("Video preload (RAM)")
-                    } minimumValueLabel: {
+                    HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
                         Text("Off")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                    } maximumValueLabel: {
-                        Text("1 GB")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+
+                        CoalescedSlider(
+                            value: videoCacheBudgetMB,
+                            in: 0 ... Double(GlobalSettings.maxVideoCacheBytes / (1024 * 1024)),
+                            step: 32,
+                            owner: "videoCacheBudgetMB",
+                            sizing: .flexible(minimum: 0, maximum: .infinity),
+                            accessibilityLabel: Text("Video preload (RAM)"),
+                            accessibilityValue: { Text(verbatim: videoCacheValueLabel(forMB: $0)) },
+                            write: { newValue in
+                                videoCacheBudgetMB = (newValue / 32).rounded() * 32
+                                updateGlobalSettings()
+                            },
+                            readout: { _ in
+                                Text("1 GB")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        )
                     }
-                    .labelsHidden()
-                    .controlSize(.small)
                     .frame(width: DesignTokens.Settings.sliderWidth)
-                    .accessibilityLabel(Text("Video preload (RAM)"))
-                    .accessibilityValue(Text(videoCacheValueLabel))
 
                     Text(videoCacheValueLabel)
                         .font(.caption2.monospacedDigit())
@@ -184,6 +182,10 @@ extension GeneralSettingsView {
     /// `150 MB · 300 MB total` (per-screen · total). Off collapses to
     /// "Streaming only" to avoid a misleading "0 MB total".
     private var videoCacheValueLabel: String {
+        videoCacheValueLabel(forMB: videoCacheBudgetMB)
+    }
+
+    private func videoCacheValueLabel(forMB videoCacheBudgetMB: Double) -> String {
         guard videoCacheBudgetMB > 0 else {
             return String(localized: "Streaming only", bundle: .appLanguage, comment: "Video cache budget set to off / stream from disk.")
         }

@@ -149,17 +149,21 @@ struct DisplayDefaultsView: View {
             title: "Volume",
             subtitle: "Default output level"
         ) {
-            HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
-                Slider(value: playbackBinding(\.videoVolume, for: kind), in: 0...1)
-                    .controlSize(.small)
-                    .frame(width: DesignTokens.Settings.sliderWidth)
-                    .accessibilityLabel(Text("Default volume"))
-
-                Text(verbatim: "\(Int((playback(for: kind).videoVolume * 100).rounded()))%")
-                    .font(DesignTokens.Typography.metric)
-                    .foregroundStyle(.secondary)
-                    .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
-            }
+            CoalescedSlider(
+                value: playback(for: kind).videoVolume,
+                in: 0 ... 1,
+                owner: kind,
+                sizing: .fixed(DesignTokens.Settings.sliderWidth),
+                accessibilityLabel: Text("Default volume"),
+                accessibilityValue: { Text("\(Int(($0 * 100).rounded())) percent") },
+                write: { playbackBinding(\.videoVolume, for: kind).wrappedValue = $0 },
+                readout: { live in
+                    Text(verbatim: "\(Int((live * 100).rounded()))%")
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                        .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+                }
+            )
         }
     }
 

@@ -59,11 +59,11 @@ struct LibraryGuideCard: View {
 
             VStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: DesignTokens.GuidedLibrary.titleSize, weight: .semibold))
+                    .font(DesignTokens.Typography.pageTitle.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
 
                 Text(message)
-                    .font(.system(size: DesignTokens.GuidedLibrary.messageSize))
+                    .font(DesignTokens.Typography.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: DesignTokens.GuidedLibrary.messageWidth)
@@ -127,7 +127,7 @@ struct LibraryGuideCard: View {
     private func featureRow(_ feature: LibraryGuideFeature) -> some View {
         HStack(spacing: 12) {
             Image(systemName: feature.icon)
-                .font(.system(size: 14, weight: .medium))
+                .font(DesignTokens.Typography.body.weight(.medium))
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 22)
                 .symbolRenderingMode(.hierarchical)

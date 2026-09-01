@@ -73,20 +73,21 @@ struct WidgetSettingsPopover: View {
         let allowed = placement.kind.allowedSizes
         if allowed.count > 1 {
             optionRow("Size") {
-                Picker("", selection: Binding(
-                    get: { placement.size },
-                    set: { newSize in
-                        var next = placement
-                        next.size = newSize
-                        onUpdate(next)
-                    }
-                )) {
-                    ForEach(allowed, id: \.self) { size in
-                        Text(Self.sizeLabel(size)).tag(size)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
+                GlassSegmentedPicker(
+                    selection: Binding(
+                        get: { placement.size },
+                        set: { newSize in
+                            var next = placement
+                            next.size = newSize
+                            onUpdate(next)
+                        }
+                    ),
+                    values: allowed,
+                    shell: .flat,
+                    title: { Self.sizeLabel($0) }
+                )
+                .frame(width: 170)
+                .accessibilityElement(children: .contain)
                 .accessibilityLabel(Text("Widget size"))
             }
         }
@@ -172,16 +173,19 @@ struct WidgetSettingsPopover: View {
     /// GPU IOAccelerator sample cadence (default 6s).
     private var gpuSamplingPicker: some View {
         optionRow("Sampling interval") {
-            Picker("", selection: Binding(
-                get: { MonitorWidgetDraft.gpuSampleSeconds(placement) ?? 6 },
-                set: { onUpdate(MonitorWidgetDraft.settingGPUSampleSeconds($0, on: placement)) }
-            )) {
-                ForEach(MonitorWidgetDraft.gpuSampleChoices, id: \.self) { seconds in
-                    Text(verbatim: "\(Int(seconds))s").tag(seconds)
-                }
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { MonitorWidgetDraft.gpuSampleSeconds(placement) ?? 6 },
+                    set: { onUpdate(MonitorWidgetDraft.settingGPUSampleSeconds($0, on: placement)) }
+                ),
+                values: MonitorWidgetDraft.gpuSampleChoices,
+                shell: .flat
+            ) { seconds, isSelected in
+                Text(verbatim: "\(Int(seconds))s")
+                    .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
+            .frame(width: 120)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("GPU sampling interval"))
         }
     }
@@ -266,31 +270,36 @@ struct WidgetSettingsPopover: View {
     @ViewBuilder
     private func historyWindowPicker(defaultWindow: Int) -> some View {
         optionRow("History window") {
-            Picker("", selection: Binding(
-                get: { MonitorWidgetDraft.historyWindowTag(placement, clearValue: defaultWindow) },
-                set: { onUpdate(MonitorWidgetDraft.settingHistoryWindow(tag: $0, clearValue: defaultWindow, on: placement)) }
-            )) {
-                Text(verbatim: "30s").tag(30)
-                Text(verbatim: "60s").tag(60)
-                Text(verbatim: "120s").tag(120)
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { MonitorWidgetDraft.historyWindowTag(placement, clearValue: defaultWindow) },
+                    set: { onUpdate(MonitorWidgetDraft.settingHistoryWindow(tag: $0, clearValue: defaultWindow, on: placement)) }
+                ),
+                values: [30, 60, 120],
+                shell: .flat
+            ) { seconds, isSelected in
+                Text(verbatim: "\(seconds)s")
+                    .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
+            .frame(width: 140)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("History window"))
         }
     }
 
     private var breakdownPicker: some View {
         optionRow("Breakdown") {
-            Picker("", selection: Binding(
-                get: { MonitorWidgetDraft.breakdownCompact(placement) },
-                set: { onUpdate(MonitorWidgetDraft.settingBreakdownCompact($0, on: placement)) }
-            )) {
-                Text("Full").tag(false)
-                Text("Compact").tag(true)
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { MonitorWidgetDraft.breakdownCompact(placement) },
+                    set: { onUpdate(MonitorWidgetDraft.settingBreakdownCompact($0, on: placement)) }
+                ),
+                values: [false, true],
+                shell: .flat,
+                title: { $0 ? "Compact" : "Full" }
+            )
+            .frame(width: 140)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Breakdown"))
         }
     }
@@ -298,16 +307,25 @@ struct WidgetSettingsPopover: View {
     /// Agent Session provider filter (`all`/`claude`/`codex`).
     private func providerPicker(key: String) -> some View {
         optionRow("Provider") {
-            Picker("", selection: Binding(
-                get: { MonitorWidgetDraft.providerTag(placement, key: key) },
-                set: { onUpdate(MonitorWidgetDraft.settingProvider($0, key: key, on: placement)) }
-            )) {
-                Text("All").tag("all")
-                Text(verbatim: "Claude").tag("claude")
-                Text(verbatim: "Codex").tag("codex")
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { MonitorWidgetDraft.providerTag(placement, key: key) },
+                    set: { onUpdate(MonitorWidgetDraft.settingProvider($0, key: key, on: placement)) }
+                ),
+                values: ["all", "claude", "codex"],
+                shell: .flat
+            ) { provider, isSelected in
+                Group {
+                    switch provider {
+                    case "claude": Text(verbatim: "Claude")
+                    case "codex": Text(verbatim: "Codex")
+                    default: Text("All")
+                    }
+                }
+                .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
+            .frame(width: 160)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Provider"))
         }
     }

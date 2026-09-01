@@ -144,14 +144,9 @@ struct SceneSection: View {
         ScrollView {
             VStack(spacing: 16) {
                 HStack {
-                    Button {
+                    GlassIconButton("chevron.left", size: .regular) {
                         selectedHistoryEntry = nil
-                    } label: {
-                        Image(systemName: "chevron.left")
                     }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.circle)
-                    .controlSize(.regular)
                     .help(Text("Back to library"))
                     .accessibilityLabel(Text("Back to library"))
                     .accessibilityHint(Text("Return to the recent linked projects grid"))

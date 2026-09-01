@@ -69,7 +69,7 @@ public struct ThumbnailBadge: View {
         HStack(spacing: 3) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(DesignTokens.Typography.badge)
             }
             if let label {
                 label

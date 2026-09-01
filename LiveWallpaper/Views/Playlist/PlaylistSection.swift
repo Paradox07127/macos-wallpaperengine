@@ -22,6 +22,8 @@ struct PlaylistSection: View {
     @State private var insertionIndex: Int?
     @State private var rotatePopoverShown = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// Default minutes when enabling auto-rotate from Off.
     private static let defaultRotationMinutes = 30
     private static let rotationMinutesRange = 1...1440
@@ -135,10 +137,10 @@ struct PlaylistSection: View {
                 .foregroundStyle(isOn ? Color.white : .secondary)
                 .frame(width: 28, height: 24)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                         .fill(isOn ? Color.accentColor : Color.clear)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -160,10 +162,10 @@ struct PlaylistSection: View {
                 .foregroundStyle(isActive ? Color.white : .secondary)
                 .frame(width: 28, height: 24)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                         .fill(isActive ? Color.accentColor : Color.clear)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -211,6 +213,7 @@ struct PlaylistSection: View {
                 }
             }
         }
+        .animation(DesignTokens.motion(reduceMotion, .easeInOut(duration: 0.2)), value: rotationMinutes != nil)
         .padding(DesignTokens.Spacing.cardInset)
         .frame(minWidth: 200)
     }
@@ -255,9 +258,9 @@ struct PlaylistSection: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 28, height: 24)
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .disabled(disabled)
         .opacity(disabled ? 0.4 : 1)
         .help(help)
@@ -310,6 +313,10 @@ struct PlaylistSection: View {
             onSetPrimary: { setAsPrimary(entry) },
             onPlayNow: { playNow(entry) },
             onRemove: { remove(entry) },
+            canMoveUp: index > 0,
+            canMoveDown: index < entries.count - 1,
+            onMoveUp: { move(entry, by: -1) },
+            onMoveDown: { move(entry, by: 1) },
             onDragChanged: { translationY, locationY in
                 if draggingID != entry.id {
                     draggingID = entry.id
@@ -354,6 +361,17 @@ struct PlaylistSection: View {
             }
         }
         return sorted.count
+    }
+
+    /// Menu-driven single-step reorder; persists through the same
+    /// `commitEntries` path the drag reorder uses.
+    private func move(_ entry: PlaylistEntry, by offset: Int) {
+        guard let sourceIndex = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        let target = sourceIndex + offset
+        guard entries.indices.contains(target) else { return }
+        var newEntries = entries
+        newEntries.swapAt(sourceIndex, target)
+        commitEntries(newEntries)
     }
 
     private func commitReorder(sourceID: PlaylistEntry.ID, toIndex destination: Int) {

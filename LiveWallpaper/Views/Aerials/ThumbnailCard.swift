@@ -68,10 +68,10 @@ struct ThumbnailCard: View {
         thumbnailTile
             .frame(maxWidth: .infinity, alignment: .leading)
         .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
-        .onHover { hovering in
-            guard !screens.isEmpty else { return }
-            isHovering = hovering
-        }
+            .settledHover { hovering in
+                guard !screens.isEmpty else { return }
+                isHovering = hovering
+            }
         .contextMenu { contextMenu }
         .task { await loadThumbnailIfNeeded() }
         .accessibilityElement(children: .combine)

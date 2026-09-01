@@ -78,7 +78,7 @@ struct PowerWidgetView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         hero(size: model.hasBattery ? scale.hero : scale.hero * 0.82)
                         Text(LocalizedStringKey(model.status))
-                            .font(.system(size: scale.caption, weight: .semibold, design: .rounded))
+                            .font(Design.captionFont(size: scale.caption))
                             .foregroundStyle(Design.inkPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
@@ -115,7 +115,7 @@ struct PowerWidgetView: View {
         if let temp = socTempC {
             HStack(spacing: scale.caption * 0.4) {
                 Image(systemName: "thermometer.medium")
-                    .font(.system(size: scale.caption * 0.95))
+                    .font(Design.captionFont(size: scale.caption * 0.95))
                     .foregroundStyle(Design.temperatureColor(temp))
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
                     Text(verbatim: MonitorTemperature.valueText(temp))
@@ -167,11 +167,11 @@ struct PowerWidgetView: View {
     private func timeLine(_ time: MonitorPowerModel.TimeLine, size: CGFloat) -> some View {
         HStack(spacing: 3) {
             Text(verbatim: time.value)
-                .font(.system(size: size, weight: .semibold, design: .rounded))
+                .font(Design.subFont(size: size))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkPrimary)
             Text(LocalizedStringKey(time.suffix))
-                .font(.system(size: size, weight: .regular, design: .rounded))
+                .font(Design.captionFont(size: size))
                 .foregroundStyle(Design.inkMuted)
         }
         .lineLimit(1)
@@ -223,11 +223,11 @@ struct PowerWidgetView: View {
         let tint = MonitorPowerModel.accessoryTint(acc.percent)
         HStack(spacing: 7) {
             Image(systemName: MonitorPowerModel.accessorySymbol(acc.kind))
-                .font(.system(size: size * 1.05))
+                .font(Design.captionFont(size: size * 1.05))
                 .foregroundStyle(Design.inkMuted)
                 .frame(width: size * 1.3, alignment: .center)
             Text(verbatim: acc.name)
-                .font(.system(size: size, weight: .regular, design: .rounded))
+                .font(Design.captionFont(size: size))
                 .foregroundStyle(Design.inkMuted)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -235,7 +235,7 @@ struct PowerWidgetView: View {
             accessoryBar(percent: acc.percent, tint: tint)
                 .frame(width: 34, height: 6)
             Text(verbatim: "\(Int(acc.percent.rounded()))%")
-                .font(.system(size: size, weight: .semibold, design: .rounded))
+                .font(Design.subFont(size: size))
                 .monospacedDigit()
                 .foregroundStyle(tint.label)
                 .lineLimit(1)

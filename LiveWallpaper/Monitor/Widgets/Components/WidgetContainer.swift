@@ -44,7 +44,7 @@ struct WidgetContainer<Content: View, Status: View>: View {
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: titleSize, weight: .semibold))
+                    .font(Design.labelFont(size: titleSize))
                     .foregroundStyle(Design.inkFaint)
             }
             Text(verbatim: label.uppercased())

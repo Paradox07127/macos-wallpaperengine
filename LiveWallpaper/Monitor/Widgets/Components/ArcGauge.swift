@@ -1,4 +1,5 @@
 import AppKit
+import LiveWallpaperCore
 import SwiftUI
 
 struct ArcBand: Equatable {
@@ -85,7 +86,7 @@ struct ArcGauge<Center: View>: View {
             )
             let on = i < lit
             let strokeColor: Color = isEmpty
-                ? Design.hairlineHi.opacity(0.7)
+                ? Design.hairlineHi.opacity(DesignTokens.Opacity.dimmedIcon)
                 : (on ? segmentColor(i, fallback: litColor) : Design.track)
             let style = StrokeStyle(
                 lineWidth: stroke,

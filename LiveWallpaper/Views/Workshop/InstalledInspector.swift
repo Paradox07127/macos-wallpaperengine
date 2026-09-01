@@ -180,7 +180,7 @@ struct WPEInstalledInspectorContent: View {
                 .frame(minWidth: 22, minHeight: 22)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .help(Text(titleKey))
         .accessibilityLabel(Text(titleKey))
     }
@@ -254,7 +254,7 @@ struct WPEInstalledInspectorContent: View {
             } label: {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .help(Text("Cancel update"))
             .accessibilityLabel(Text("Cancel update"))
         }

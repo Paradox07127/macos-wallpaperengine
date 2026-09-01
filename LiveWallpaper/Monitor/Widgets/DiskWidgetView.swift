@@ -71,7 +71,7 @@ struct DiskWidgetView: View {
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: size * 0.06) {
             Text(verbatim: letter)
-                .font(.system(size: size, weight: .bold, design: .rounded))
+                .font(Design.heroFont(size: size))
                 .foregroundStyle(color)
             Self.rateHero(rate, size: size)
         }
@@ -130,7 +130,7 @@ struct DiskWidgetView: View {
                 Text(verbatim: Format.rate(sys.diskWriteBytesPerSec))
                     .foregroundStyle(Design.inkPrimary)
             }
-            .font(.system(size: scale.caption, weight: .semibold, design: .rounded))
+            .font(Design.captionFont(size: scale.caption))
             .monospacedDigit()
         }
         .lineLimit(1)
@@ -283,7 +283,7 @@ struct DiskWidgetView: View {
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.caption * 0.3) {
             Text(verbatim: letter)
-                .font(.system(size: scale.caption * 0.86, weight: .bold, design: .rounded))
+                .font(Design.captionFont(size: scale.caption * 0.86))
                 .foregroundStyle(color)
             Text(verbatim: Format.rate(rate))
                 .font(Design.subFont(size: scale.caption * 0.94)).monospacedDigit()
@@ -354,7 +354,7 @@ struct DiskWidgetView: View {
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.label * 0.3) {
             Text(verbatim: letter)
-                .font(.system(size: scale.label, weight: .bold, design: .rounded))
+                .font(Design.labelFont(size: scale.label))
                 .foregroundStyle(color)
             Text(verbatim: Format.bytes(bytes))
                 .font(Design.subFont(size: scale.label)).monospacedDigit()
@@ -372,7 +372,7 @@ struct DiskWidgetView: View {
 
     private func legendKey(_ text: String, color: Color, size: CGFloat) -> some View {
         Text(verbatim: text)
-            .font(.system(size: size, weight: .bold, design: .rounded))
+            .font(Design.labelFont(size: size))
             .foregroundStyle(color)
     }
 
@@ -389,7 +389,7 @@ struct DiskWidgetView: View {
                 .foregroundStyle(Design.inkPrimary)
             if !unit.isEmpty {
                 Text(verbatim: unit)
-                    .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
+                    .font(Design.captionFont(size: size * 0.4))
                     .foregroundStyle(Design.inkFaint)
             }
         }
@@ -408,7 +408,7 @@ struct DiskWidgetView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(Design.inkFaint)
             Text(verbatim: value)
-                .font(.system(size: size, weight: .semibold, design: .rounded)).monospacedDigit()
+                .font(Design.subFont(size: size)).monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
         }
         .lineLimit(1)

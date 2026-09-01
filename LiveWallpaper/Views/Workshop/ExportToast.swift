@@ -17,7 +17,7 @@ struct ExportToast: View {
                             .fill(DesignTokens.Colors.Status.active.opacity(0.18))
                             .frame(width: 28, height: 28)
                         Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(DesignTokens.Typography.bodyEmphasized)
                             .foregroundStyle(DesignTokens.Colors.Status.active)
                     }
                     VStack(alignment: .leading, spacing: 2) {
@@ -30,14 +30,9 @@ struct ExportToast: View {
                 }
                 .padding(.horizontal, DesignTokens.Spacing.cardInset)
                 .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
-                        .fill(DesignTokens.Colors.surfaceRaised)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
-                        .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
-                )
+                // Same glass chrome as `DownloadToastHost` — the two toasts share
+                // every other metric and had drifted on background material only.
+                .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
                 .shadow(color: .black.opacity(DesignTokens.Card.shadowOpacity), radius: 14, x: 0, y: 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: isPresented) {

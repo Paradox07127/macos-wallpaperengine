@@ -22,7 +22,7 @@ struct OnboardingWorkshopSetupView: View {
     @State private var showingPrivacy = false
 
     var body: some View {
-        VStack(spacing: DesignTokens.Spacing.lg) {
+        VStack(spacing: DesignTokens.Spacing.xl) {
             VStack(spacing: DesignTokens.Spacing.md) {
                 Text("Set Up Steam Workshop")
                     .font(DesignTokens.Typography.pageTitle)
@@ -386,7 +386,7 @@ private struct TreeRow<Control: View>: View {
         HStack(alignment: .center, spacing: DesignTokens.Spacing.sm) {
             TreeConnector(isLast: isLast)
             Image(systemName: icon)
-                .font(.system(size: 13))
+                .font(DesignTokens.Typography.body)
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
                 .accessibilityHidden(true)

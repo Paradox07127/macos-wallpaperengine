@@ -19,6 +19,7 @@ public struct CoalescedSlider<Readout: View>: View {
     private let step: Double?
     private let owner: AnyHashable
     private let quietWindow: Duration
+    private let controlSize: ControlSize
     private let sizing: CoalescedSliderSizing
     private let accessibilityLabel: Text
     private let accessibilityValue: (Double) -> Text
@@ -37,6 +38,7 @@ public struct CoalescedSlider<Readout: View>: View {
         step: Double? = nil,
         owner: AnyHashable,
         quietWindow: Duration = .milliseconds(180),
+        controlSize: ControlSize = .small,
         sizing: CoalescedSliderSizing = .fixed(DesignTokens.Inspector.sliderWidth),
         accessibilityLabel: Text,
         accessibilityValue: @escaping (Double) -> Text,
@@ -48,6 +50,7 @@ public struct CoalescedSlider<Readout: View>: View {
         self.step = step
         self.owner = owner
         self.quietWindow = quietWindow
+        self.controlSize = controlSize
         self.sizing = sizing
         self.accessibilityLabel = accessibilityLabel
         self.accessibilityValue = accessibilityValue
@@ -68,7 +71,7 @@ public struct CoalescedSlider<Readout: View>: View {
     public var body: some View {
         HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
             slider
-                .controlSize(.small)
+                .controlSize(controlSize)
                 .accessibilityLabel(accessibilityLabel)
                 .accessibilityValue(accessibilityValue(value))
                 .modifier(SliderSizing(sizing: sizing))

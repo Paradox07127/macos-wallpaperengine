@@ -69,7 +69,7 @@ public struct DetailHeaderBar<Title: View, Metadata: View, Actions: View>: View 
 
             VStack(alignment: .leading, spacing: DesignTokens.DetailHeader.textSpacing) {
                 title
-                    .font(.system(size: DesignTokens.DetailHeader.titleSize, weight: .semibold))
+                    .font(DesignTokens.Typography.pageTitle.weight(.semibold))
                     .lineLimit(1)
 
                 metadata

@@ -46,6 +46,7 @@ struct InspectorResizeHandle: View {
     @State private var isHovering = false
     @State private var isDragging = false
     @State private var isClosingArmed = false
+    @FocusState private var isFocused: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -70,6 +71,11 @@ struct InspectorResizeHandle: View {
                 }
             }
             .focusable()
+            .focused($isFocused)
+            // The focusable view is the full-height hit strip, not the little
+            // pill, so the system ring draws a tall blue frame down the window
+            // edge. The handle shows focus itself instead (see `isActive`).
+            .focusEffectDisabled()
             .onKeyPress(.leftArrow) { adjust(.wider); return .handled }
             .onKeyPress(.rightArrow) { adjust(.narrower); return .handled }
             .help(Text("Drag to resize properties panel"))
@@ -95,15 +101,19 @@ struct InspectorResizeHandle: View {
                 .frame(width: 1, height: handleHeight * hairlineHeightRatio)
                 .opacity(isActive ? 0 : 1)
 
+            // Armed keeps an opaque accent fill over the glass so the "release
+            // to close" state stays unmistakable; `stroked: false` because the
+            // two-state stroke below already draws the edge on the same shape.
             Capsule()
-                .fill(isClosingArmed ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.regularMaterial))
+                .fill(isClosingArmed ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.clear))
                 .overlay(
                     Capsule()
                         .strokeBorder(
-                            isClosingArmed ? Color.accentColor.opacity(0.9) : Color.primary.opacity(0.28),
+                            isClosingArmed ? Color.accentColor.opacity(0.9) : Color.primary.opacity(DesignTokens.Opacity.quietStroke),
                             lineWidth: 0.75
                         )
                 )
+                .adaptiveGlassSurface(.capsule, interactive: true, stroked: false)
                 .frame(width: handleWidth, height: isClosingArmed ? handleHeight + 18 : handleHeight)
                 .shadow(
                     color: isClosingArmed ? Color.accentColor.opacity(0.45) : Color.black.opacity(0.08),
@@ -157,8 +167,10 @@ struct InspectorResizeHandle: View {
         onCommitWidth(next)
     }
 
+    /// Focus counts: with the system ring suppressed, the handle appearing is
+    /// the only thing that tells a keyboard user the arrow keys will resize.
     private var isActive: Bool {
-        isHovering || isDragging
+        isHovering || isDragging || isFocused
     }
 
     /// Only ever true when the parent wired up drag-to-close.

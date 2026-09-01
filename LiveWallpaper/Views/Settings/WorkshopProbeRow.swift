@@ -66,7 +66,7 @@ struct WorkshopProbeRow: View {
 
                 if hasDetail {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DesignTokens.Typography.captionEmphasized)
                         .foregroundStyle(.tertiary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .accessibilityHidden(true)

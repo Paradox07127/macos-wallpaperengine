@@ -74,7 +74,7 @@ public struct SystemMonitorPill: View {
                 }
 
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(DesignTokens.Typography.captionEmphasized)
                     .foregroundStyle(DesignTokens.Colors.textTertiary)
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
             }

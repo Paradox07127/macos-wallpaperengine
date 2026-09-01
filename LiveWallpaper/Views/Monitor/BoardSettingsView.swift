@@ -169,16 +169,19 @@ struct BoardSettingsView: View {
             title: "Temperature",
             info: "Unit for the CPU / GPU temperature readouts"
         ) {
-            Picker("", selection: Binding(
-                get: { temperatureFahrenheit },
-                set: { temperatureFahrenheit = $0 }
-            )) {
-                Text(verbatim: "°C").tag(false)
-                Text(verbatim: "°F").tag(true)
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { temperatureFahrenheit },
+                    set: { temperatureFahrenheit = $0 }
+                ),
+                values: [false, true],
+                shell: .flat
+            ) { fahrenheit, isSelected in
+                Text(verbatim: fahrenheit ? "°F" : "°C")
+                    .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            .frame(width: 100)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Temperature unit"))
         }
     }

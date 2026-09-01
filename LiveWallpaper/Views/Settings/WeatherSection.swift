@@ -26,14 +26,20 @@ extension GeneralSettingsView {
                         .fixedSize()
                     }
 
-                    Picker("Source", selection: weatherSourceBinding) {
-                        Text("Off").tag(WeatherLocationPreference.Source.off)
-                        Text("System").tag(WeatherLocationPreference.Source.coreLocation)
-                        Text("Manual").tag(WeatherLocationPreference.Source.manual)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
+                    GlassSegmentedPicker(
+                        selection: weatherSourceBinding,
+                        values: [.off, .coreLocation, .manual],
+                        shell: .flat,
+                        title: { (source: WeatherLocationPreference.Source) in
+                            switch source {
+                            case .off: "Off"
+                            case .coreLocation: "System"
+                            case .manual: "Manual"
+                            }
+                        }
+                    )
+                    .frame(width: 180)
+                    .accessibilityElement(children: .contain)
                     .accessibilityLabel(Text("Weather location source"))
                 }
             }

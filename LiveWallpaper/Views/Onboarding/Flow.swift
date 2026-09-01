@@ -137,7 +137,7 @@ struct Flow: View {
                             .frame(width: 30, height: 30)
                             .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
                     .accessibilityLabel(Text("Back"))
                 }
                 Spacer()

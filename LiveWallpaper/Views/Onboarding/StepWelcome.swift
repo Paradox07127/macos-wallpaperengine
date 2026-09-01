@@ -76,7 +76,7 @@ struct StepWelcome: View {
     private func typeChip(icon: String, title: LocalizedStringKey) -> some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .medium))
+                .font(DesignTokens.Typography.caption.weight(.medium))
                 .foregroundStyle(DesignTokens.Colors.accent)
             Text(title)
                 .font(DesignTokens.Typography.caption)

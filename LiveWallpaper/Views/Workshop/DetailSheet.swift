@@ -99,16 +99,30 @@ struct WorkshopInspectorContent: View {
     // MARK: - Hero
 
     private var hero: some View {
-        AnimatedGIFThumbnail(url: item.previewImageURL, playbackMode: .autoPlay, previewSize: .hero, isBlurred: shouldBlurHero)
-            .aspectRatio(1, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(DesignTokens.Card.strokeOpacity), lineWidth: DesignTokens.Card.strokeWidth)
+        // A Button keeps one stable view identity across the reveal (branching
+        // on `shouldBlurHero` would rebuild the thumbnail and lose its unblur
+        // animation); hit-testing gates instead of `.disabled` so `.plain`
+        // never dims the artwork. Keyboard activation bypasses hit-testing,
+        // hence the guard in the action.
+        Button {
+            if shouldBlurHero {
+                requestReveal()
             }
-            .contentShape(Rectangle())
-            .onTapGesture { if shouldBlurHero { requestReveal() } }
-            .padding([.horizontal, .top], DesignTokens.Spacing.lg)
+        } label: {
+            AnimatedGIFThumbnail(url: item.previewImageURL, playbackMode: .autoPlay, previewSize: .hero, isBlurred: shouldBlurHero)
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(DesignTokens.Card.strokeOpacity), lineWidth: DesignTokens.Card.strokeWidth)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .allowsHitTesting(shouldBlurHero)
+        .accessibilityHidden(!shouldBlurHero)
+        .accessibilityLabel(Text("Show mature content?"))
+        .padding([.horizontal, .top], DesignTokens.Spacing.lg)
             .alert("Show mature content?", isPresented: $showingAgeConfirm) {
                 Button(role: .cancel) {} label: { Text("Cancel") }
                 Button(role: .destructive) {
@@ -156,7 +170,7 @@ struct WorkshopInspectorContent: View {
                         Text("by \(author)", comment: "Workshop item author line. Placeholder is the creator's Steam persona name.")
                             .lineLimit(1)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(DesignTokens.Typography.captionEmphasized)
                     }
                     .font(.subheadline)
                     .foregroundStyle(Color.accentColor)
@@ -225,7 +239,7 @@ struct WorkshopInspectorContent: View {
                 .frame(minWidth: 22, minHeight: 22)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .help(Text(titleKey))
         .accessibilityLabel(Text(titleKey))
     }
@@ -365,7 +379,7 @@ struct WorkshopInspectorContent: View {
         } label: {
             Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .help(Text("Cancel download"))
         .accessibilityLabel(Text("Cancel download"))
     }
@@ -649,15 +663,16 @@ struct CollapsibleDescription: View {
                 .mask(collapsed ? AnyView(fadeMask) : AnyView(Rectangle()))
 
             if isExpandable {
-                Text(isExpanded ? "Show less" : "Show more")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(Color.accentColor)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.28)) { isExpanded.toggle() }
+                } label: {
+                    Text(isExpanded ? "Show less" : "Show more")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(Text(isExpanded ? "Show less" : "Show more"))
             }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard isExpandable else { return }
-            withAnimation(.easeInOut(duration: 0.28)) { isExpanded.toggle() }
         }
         .onChange(of: text) { _, _ in
             fullHeight = 0

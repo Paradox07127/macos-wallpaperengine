@@ -131,14 +131,14 @@ extension GeneralSettingsView {
     }
 
     private var appearancePicker: some View {
-        Picker("", selection: appearanceSelection) {
-            ForEach(AppAppearance.allCases, id: \.self) { appearance in
-                Text(Self.appearanceTitle(appearance)).tag(appearance)
-            }
-        }
-        .labelsHidden()
-        .pickerStyle(.segmented)
-        .fixedSize()
+        GlassSegmentedPicker(
+            selection: appearanceSelection,
+            values: AppAppearance.allCases,
+            shell: .flat,
+            title: { Self.appearanceTitle($0) }
+        )
+        .frame(width: 180)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Appearance"))
     }
 

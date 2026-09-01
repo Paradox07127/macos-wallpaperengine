@@ -72,13 +72,9 @@ struct AerialsLibraryView: View {
             },
             actions: {
                 HStack(spacing: 8) {
-                    Button {
+                    GlassIconButton("arrow.clockwise") {
                         Task { await library.refresh() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
                     }
-                    .adaptiveGlassButton(.regular, shape: .circle)
-                    .controlSize(.large)
                     .help(Text("Refresh — rescan the Aerials library for new content"))
                     .accessibilityLabel(Text("Refresh Aerials library"))
                     .disabled(library.isScanning)
@@ -92,16 +88,15 @@ struct AerialsLibraryView: View {
     /// A single destructive action doesn't earn an overflow menu, and the icon
     /// now says what it does — unlink a folder, not dismiss something.
     private var disconnectButton: some View {
-        Button(role: .destructive) {
+        GlassIconButton(
+            "folder.badge.minus",
+            tint: DesignTokens.Colors.Status.danger,
+            role: .destructive
+        ) {
             pendingDestructive = PendingDestructive(.disconnectAerialsLibrary) {
                 library.clearAccess()
             }
-        } label: {
-            Image(systemName: "folder.badge.minus")
         }
-        .adaptiveGlassButton(.regular, shape: .circle)
-        .tint(DesignTokens.Colors.Status.danger)
-        .controlSize(.large)
         .help(Text("Disconnect the Apple Aerials library folder"))
         .accessibilityLabel(Text("Disconnect Aerials Library"))
     }

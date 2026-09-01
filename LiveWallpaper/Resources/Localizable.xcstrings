@@ -63,6 +63,66 @@
         }
       }
     },
+    "'%@' will be removed from your saved schemes. Displays it was applied to keep what is on screen." : {
+      "comment" : "Destructive confirm message. Placeholder is the scheme name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%@' will be removed from your saved schemes. Displays it was applied to keep what is on screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」は保存済みの構成から削除されます。適用したディスプレイは現在の表示のままです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”将从已保存的方案中移除。已套用过它的显示器会保持当前画面不变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」將從已儲存的方案中移除。已套用過它的顯示器會維持目前畫面不變。"
+          }
+        }
+      }
+    },
+    "'%1$@' replaces the wallpaper, overlay layout, and every setting on %2$@. Save that display's current setup as a scheme first if you want it back." : {
+      "comment" : "Confirm message for applying a saved scheme. Placeholders are the scheme name and the target display name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%1$@' replaces the wallpaper, overlay layout, and every setting on %2$@. Save that display's current setup as a scheme first if you want it back."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」が %2$@ の壁紙、オーバーレイの配置、すべての設定を置き換えます。元に戻したい場合は、先に現在の設定を構成として保存してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@”会替换 %2$@ 的壁纸、叠加层布局与全部设置。想留住现在这套，先把它保存为方案。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」會取代 %2$@ 的桌布、疊加層配置與全部設定。想留住現在這套，先把它儲存為方案。"
+          }
+        }
+      }
+    },
     "“%@” and its copy in Loomscreen's shared folder are deleted. Your original video is untouched." : {
       "comment" : "Destructive confirm message for removing a published system wallpaper. Placeholder is the video title.",
       "extractionState" : "manual",
@@ -993,6 +1053,35 @@
         }
       }
     },
+    "%@, display scheme captured from %@" : {
+      "comment" : "Scheme tile accessibility label. %1$@ is the scheme name, %2$@ is the display it was captured from.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@, display scheme captured from %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@、%@ から取り込んだディスプレイ構成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，捕获自 %@ 的显示器方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，擷取自 %@ 的顯示器方案"
+          }
+        }
+      }
+    },
     "%@, failed: %@" : {
       "comment" : "Workshop paste row accessibility label. Placeholders are the item title and a short error label.",
       "localizations" : {
@@ -1145,6 +1234,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@，已就緒，可在系統設定中選擇"
+          }
+        }
+      }
+    },
+    "%@, saved display scheme" : {
+      "comment" : "Scheme tile accessibility label when no source display was recorded. %@ is the scheme name.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, saved display scheme"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@、保存されたディスプレイ構成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，已保存的显示器方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，已儲存的顯示器方案"
           }
         }
       }
@@ -1762,6 +1880,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 項待處理"
+          }
+        }
+      }
+    },
+    "%lld saved setups" : {
+      "comment" : "Subtitle showing the number of schemes saved in the Schemes library page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld saved setups"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件の保存済み構成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个已保存方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個已儲存方案"
           }
         }
       }
@@ -5005,6 +5152,35 @@
         }
       }
     },
+    "Apply a saved display setup — wallpaper, overlay layout, and settings" : {
+      "comment" : "Accessibility hint for the Schemes item in the sidebar.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply a saved display setup — wallpaper, overlay layout, and settings"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存したディスプレイ構成（壁紙・オーバーレイの配置・設定）を適用します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用已保存的显示器设置——壁纸、叠加层布局与参数"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用已儲存的顯示器設定——桌布、疊加層配置與參數"
+          }
+        }
+      }
+    },
     "Apply Failed" : {
       "localizations" : {
         "en" : {
@@ -7152,6 +7328,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "亮度"
+          }
+        }
+      }
+    },
+    "Bring the settings window to the front." : {
+      "comment" : "Global shortcut action description.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bring the settings window to the front."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定ウインドウを最前面に表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将设置窗口置于最前。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將設定視窗置於最前。"
           }
         }
       }
@@ -14101,6 +14307,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要刪除這個預設嗎？"
+          }
+        }
+      }
+    },
+    "Delete this scheme?" : {
+      "comment" : "Destructive confirm title for deleting a saved scheme.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this scheme?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この構成を削除しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除此方案吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要刪除此方案嗎？"
           }
         }
       }
@@ -26779,34 +27015,6 @@
         }
       }
     },
-    "Manage" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manage"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理"
-          }
-        }
-      }
-    },
     "Manage — open the LiveWallpaper settings window" : {
       "localizations" : {
         "en" : {
@@ -26859,6 +27067,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "管理桌布"
+          }
+        }
+      }
+    },
+    "Manage…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理…"
           }
         }
       }
@@ -30060,6 +30296,64 @@
         }
       }
     },
+    "No schemes match your search" : {
+      "comment" : "Title of an empty state when no scheme matches the current search.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No schemes match your search"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索に一致する構成がありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有与搜索匹配的方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有符合搜尋的方案"
+          }
+        }
+      }
+    },
+    "No schemes yet" : {
+      "comment" : "Title of the empty state on the Schemes library page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No schemes yet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成はまだありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒有方案"
+          }
+        }
+      }
+    },
     "No settings found" : {
       "localizations" : {
         "en" : {
@@ -31935,6 +32229,35 @@
         }
       }
     },
+    "Open a display, set it up the way you like, then use Save as Scheme in its header. Saved setups land here and can be applied to any display." : {
+      "comment" : "Message of the empty state on the Schemes library page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open a display, set it up the way you like, then use Save as Scheme in its header. Saved setups land here and can be applied to any display."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイを開いて好みに設定したら、ヘッダーの「構成として保存」を使います。保存した構成はここに並び、どのディスプレイにも適用できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开一块屏幕，按你的喜好设置好，然后用页头的“保存为方案”。保存的方案会出现在这里，可以套用到任何一块屏幕。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打開一台顯示器，按你的喜好設定好，然後用頁首的「儲存為方案」。已儲存的方案會出現在這裡，可以套用到任何一台顯示器。"
+          }
+        }
+      }
+    },
     "Open all in Steam" : {
       "comment" : "Tooltip for opening all queued workshop URLs/IDs in Steam.",
       "extractionState" : "manual",
@@ -32304,6 +32627,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟設定分類"
+          }
+        }
+      }
+    },
+    "Open Settings Window" : {
+      "comment" : "Global shortcut action name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings Window"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定ウインドウを開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开设置窗口"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟設定視窗"
           }
         }
       }
@@ -39248,6 +39601,66 @@
         }
       }
     },
+    "Replace Setup" : {
+      "comment" : "Confirm button title for applying a saved scheme to a display.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Setup"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定を置き換える"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取代設定"
+          }
+        }
+      }
+    },
+    "Replace this display's entire setup?" : {
+      "comment" : "Confirm title for applying a saved scheme to a display.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace this display's entire setup?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイの設定をすべて置き換えますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换这块屏幕的全部设置？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取代這台顯示器的全部設定？"
+          }
+        }
+      }
+    },
     "Report a bug" : {
       "comment" : "A button that opens a GitHub issue for a bug report.",
       "isCommentAutoGenerated" : true,
@@ -41288,6 +41701,64 @@
         }
       }
     },
+    "Save as Scheme" : {
+      "comment" : "Title of the capture popover and accessibility label of the display header button that opens it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save as Scheme"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成として保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存为方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存為方案"
+          }
+        }
+      }
+    },
+    "Save as Scheme — archive this display's wallpaper, overlay layout, and every setting" : {
+      "comment" : "Tooltip for the Save as Scheme button in the display header.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save as Scheme — archive this display's wallpaper, overlay layout, and every setting"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成として保存 — このディスプレイの壁紙、オーバーレイの配置、すべての設定を保存します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存为方案 — 存下这块屏幕的壁纸、叠加层布局与全部设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存為方案 — 存下這台顯示器的桌布、疊加層配置與全部設定"
+          }
+        }
+      }
+    },
     "Save Bookmark" : {
       "comment" : "A label for a button that saves a wallpaper as a bookmark.",
       "isCommentAutoGenerated" : true,
@@ -41457,6 +41928,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你儲存的"
+          }
+        }
+      }
+    },
+    "Saves this display's wallpaper, overlay layout, and every setting. Apply it to any display from the Schemes page." : {
+      "comment" : "Explanatory caption inside the Save as Scheme popover.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saves this display's wallpaper, overlay layout, and every setting. Apply it to any display from the Schemes page."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイの壁紙、オーバーレイの配置、すべての設定を保存します。「構成」ページからどのディスプレイにも適用できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存这块屏幕的壁纸、叠加层布局与全部设置。之后可以在“方案”页里套用到任何一块屏幕。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存這台顯示器的桌布、疊加層配置與全部設定。之後可以在「方案」頁裡套用到任何一台顯示器。"
           }
         }
       }
@@ -42167,6 +42667,35 @@
         }
       }
     },
+    "Schemes" : {
+      "comment" : "Sidebar item and page title for the library of saved whole-display setups.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schemes"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方案"
+          }
+        }
+      }
+    },
     "Scratch directories created by the test suites under the container's tmp folder. Debug builds only — no shipping code path writes them. Deleting them affects nothing but disk usage." : {
       "comment" : "Storage tab, debug-only Test Artifacts info popover explaining what the leftover files are.",
       "extractionState" : "manual",
@@ -42589,6 +43118,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜尋結果"
+          }
+        }
+      }
+    },
+    "Search schemes" : {
+      "comment" : "Search field prompt on the Schemes library page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search schemes"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成を検索"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜尋方案"
           }
         }
       }
@@ -53436,6 +53994,35 @@
         }
       }
     },
+    "Try a different keyword, or clear the search field to see every saved scheme." : {
+      "comment" : "Message displayed in an empty state when no scheme matches the current search.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try a different keyword, or clear the search field to see every saved scheme."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のキーワードを試すか、検索フィールドを消去して保存済みの構成をすべて表示してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尝试其他关键词，或清空搜索栏以查看所有已保存的方案。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "嘗試其他關鍵字，或清除搜尋欄位以查看所有已儲存的方案。"
+          }
+        }
+      }
+    },
     "Try a different keyword, or clear the search field to see every saved wallpaper." : {
       "comment" : "Message displayed in an empty state when there are no bookmarks that match the current search.",
       "isCommentAutoGenerated" : true,
@@ -54470,6 +55057,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "螢幕鎖定時，使用已啟用的影片顯示器更新 macOS 桌面圖片"
+          }
+        }
+      }
+    },
+    "Update…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新…"
           }
         }
       }
@@ -59027,66 +59642,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 工作階段已過期。請在終端機重新登入後再檢查。"
-          }
-        }
-      }
-    },
-    "Bring the settings window to the front." : {
-      "comment" : "Global shortcut action description.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bring the settings window to the front."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定ウインドウを最前面に表示します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将设置窗口置于最前。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將設定視窗置於最前。"
-          }
-        }
-      }
-    },
-    "Open Settings Window" : {
-      "comment" : "Global shortcut action name.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Settings Window"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定ウインドウを開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开设置窗口"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟設定視窗"
           }
         }
       }

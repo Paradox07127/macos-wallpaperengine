@@ -1,4 +1,3 @@
-#if !LITE_BUILD
 import LiveWallpaperCore
 import SwiftUI
 
@@ -9,9 +8,10 @@ import SwiftUI
 // MARK: - Header
 
 /// Icon + title + optional one-line subtitle, the shape every Steam sheet had
-/// converged on by hand.
+/// converged on by hand. Lives outside the LITE guard because the Settings
+/// sheets (both SKUs) share it; `icon` is optional for their text-only headers.
 struct SteamSheetHeader: View {
-    let icon: String
+    var icon: String?
     let title: LocalizedStringKey
     /// Defaults to the "this is fine" tint. Callers whose icon changes with
     /// state must pass the matching colour — a warning glyph in green reads as
@@ -24,10 +24,12 @@ struct SteamSheetHeader: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 22))
-                .foregroundStyle(iconTint)
-                .accessibilityHidden(true)
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 22))
+                    .foregroundStyle(iconTint)
+                    .accessibilityHidden(true)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.xs) {
@@ -50,6 +52,8 @@ struct SteamSheetHeader: View {
         }
     }
 }
+
+#if !LITE_BUILD
 
 // MARK: - Width
 

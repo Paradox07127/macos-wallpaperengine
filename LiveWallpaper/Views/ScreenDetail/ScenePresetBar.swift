@@ -60,7 +60,9 @@ struct ScenePresetBar: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
+            // Deliberate delete via the menu item above — the confirmation button
+            // doesn't take the destructive style (HIG, Alerts).
+            Button("Delete") {
                 if let pendingDeletion { onDelete(pendingDeletion) }
                 pendingDeletion = nil
             }

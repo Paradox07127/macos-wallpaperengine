@@ -13,14 +13,20 @@ private struct HTMLSourceChrome: ViewModifier {
             // Capsule, matching the scene preview's info bar — same role, same shape.
             content.adaptiveGlassSurface(.capsule)
         } else {
+            // Field-for-field the flat look of `ContainerGroupBoxStyle` (same
+            // `Corner.panel` / `Card.strokeWidth` source); kept hand-built only
+            // because this chrome needs the glass/flat dual state above.
             content
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
                         .fill(DesignTokens.Colors.surfaceRaised)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
+                        .strokeBorder(
+                            DesignTokens.Colors.separator.opacity(0.55),
+                            lineWidth: DesignTokens.Card.strokeWidth
+                        )
                 )
         }
     }

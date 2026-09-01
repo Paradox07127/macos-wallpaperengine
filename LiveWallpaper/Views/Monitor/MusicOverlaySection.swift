@@ -134,17 +134,20 @@ struct MusicOverlaySection: View {
             title: "Layer",
             info: "Desktop keeps the layer under your windows; On Top floats it above everything"
         ) {
-            Picker("", selection: Binding(
-                get: { music.level },
-                set: { screenManager.setMusicOverlayLevel($0, for: screen) }
-            )) {
-                Text("Desktop").tag(MonitorOverlayLevel.desktop)
-                Text("On Top").tag(MonitorOverlayLevel.front)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { music.level },
+                    set: { screenManager.setMusicOverlayLevel($0, for: screen) }
+                ),
+                values: [.desktop, .front],
+                shell: .flat,
+                title: { (level: MonitorOverlayLevel) in
+                    level == .desktop ? "Desktop" : "On Top"
+                }
+            )
+            .frame(width: 180)
             .disabled(!isOn)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Music layer"))
         }
     }
@@ -155,15 +158,21 @@ struct MusicOverlaySection: View {
             iconColor: .purple,
             title: "Style"
         ) {
-            Picker("", selection: styleBinding) {
-                Text("Poster").tag(NowPlayingWidgetView.Style.poster)
-                Text("Vinyl").tag(NowPlayingWidgetView.Style.vinyl)
-                Text("Aurora").tag(NowPlayingWidgetView.Style.aurora)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            GlassSegmentedPicker(
+                selection: styleBinding,
+                values: [.poster, .vinyl, .aurora],
+                shell: .flat,
+                title: { (style: NowPlayingWidgetView.Style) in
+                    switch style {
+                    case .poster: "Poster"
+                    case .vinyl: "Vinyl"
+                    case .aurora: "Aurora"
+                    }
+                }
+            )
+            .frame(width: 180)
             .disabled(!isOn)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Style"))
         }
     }
@@ -181,15 +190,15 @@ struct MusicOverlaySection: View {
             iconColor: .blue,
             title: "Size"
         ) {
-            Picker("", selection: sizeBinding) {
-                ForEach(MusicOverlaySize.allCases, id: \.self) { size in
-                    Text(Self.sizeLabel(size)).tag(size)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            GlassSegmentedPicker(
+                selection: sizeBinding,
+                values: MusicOverlaySize.allCases,
+                shell: .flat,
+                title: { Self.sizeLabel($0) }
+            )
+            .frame(width: 170)
             .disabled(!isOn)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Widget size"))
         }
     }
@@ -324,13 +333,16 @@ struct MusicOverlaySection: View {
             title: "Accent",
             info: "Tint the progress line and glow from the cover, or pick your own color"
         ) {
-            Picker("", selection: optionBinding(\.accentSource)) {
-                Text("Album art").tag(NowPlayingOptions.AccentSource.albumArt)
-                Text("Custom color").tag(NowPlayingOptions.AccentSource.custom)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            GlassSegmentedPicker(
+                selection: optionBinding(\.accentSource),
+                values: [.albumArt, .custom],
+                shell: .flat,
+                title: { (source: NowPlayingOptions.AccentSource) in
+                    source == .albumArt ? "Album art" : "Custom color"
+                }
+            )
+            .frame(width: 210)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Accent"))
         }
     }
@@ -405,34 +417,46 @@ struct MusicOverlaySection: View {
             SettingRow(icon: "character.book.closed", iconColor: .indigo, title: "Title font") {
                 EmptyView()
             }
-            Picker("", selection: Binding(
-                get: { options.resolvedTitleFont },
-                set: { font in updateOptions { $0.titleFont = font } }
-            )) {
-                Text("Serif").tag(NowPlayingOptions.TitleFont.serif)
-                Text("Rounded").tag(NowPlayingOptions.TitleFont.rounded)
-                Text("Mono").tag(NowPlayingOptions.TitleFont.monospaced)
-                Text("System").tag(NowPlayingOptions.TitleFont.system)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { options.resolvedTitleFont },
+                    set: { font in updateOptions { $0.titleFont = font } }
+                ),
+                values: [.serif, .rounded, .monospaced, .system],
+                shell: .flat,
+                title: { (font: NowPlayingOptions.TitleFont) in
+                    switch font {
+                    case .serif: "Serif"
+                    case .rounded: "Rounded"
+                    case .monospaced: "Mono"
+                    case .system: "System"
+                    }
+                }
+            )
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Title font"))
         }
     }
 
     private var alignmentRow: some View {
         SettingRow(icon: "text.alignleft", iconColor: .blue, title: "Alignment") {
-            Picker("", selection: Binding(
-                get: { options.resolvedAlignment },
-                set: { value in updateOptions { $0.alignment = value } }
-            )) {
-                Text("Left").tag(NowPlayingOptions.Alignment.leading)
-                Text("Center").tag(NowPlayingOptions.Alignment.center)
-                Text("Right").tag(NowPlayingOptions.Alignment.trailing)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { options.resolvedAlignment },
+                    set: { value in updateOptions { $0.alignment = value } }
+                ),
+                values: [.leading, .center, .trailing],
+                shell: .flat,
+                title: { (alignment: NowPlayingOptions.Alignment) in
+                    switch alignment {
+                    case .leading: "Left"
+                    case .center: "Center"
+                    case .trailing: "Right"
+                    }
+                }
+            )
+            .frame(width: 160)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Alignment"))
         }
     }
@@ -515,13 +539,19 @@ struct MusicOverlaySection: View {
             SettingRow(icon: "square.on.circle", iconColor: .purple, title: "Artwork shape") {
                 EmptyView()
             }
-            Picker("", selection: optionBinding(\.artworkShape)) {
-                Text("Rounded corners").tag(NowPlayingOptions.ArtworkShape.rounded)
-                Text("Circle").tag(NowPlayingOptions.ArtworkShape.circle)
-                Text("Square").tag(NowPlayingOptions.ArtworkShape.square)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            GlassSegmentedPicker(
+                selection: optionBinding(\.artworkShape),
+                values: [.rounded, .circle, .square],
+                shell: .flat,
+                title: { (shape: NowPlayingOptions.ArtworkShape) in
+                    switch shape {
+                    case .rounded: "Rounded corners"
+                    case .circle: "Circle"
+                    case .square: "Square"
+                    }
+                }
+            )
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Artwork shape"))
         }
     }
@@ -560,14 +590,15 @@ struct MusicOverlaySection: View {
             title: "Lyric lines",
             info: "Three lines put the previous and next line around the current one, on large layers"
         ) {
-            Picker("", selection: optionBinding(\.lyricsLines)) {
-                Text("1 line").tag(1)
-                Text("3 lines").tag(3)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            GlassSegmentedPicker(
+                selection: optionBinding(\.lyricsLines),
+                values: [1, 3],
+                shell: .flat,
+                title: { $0 == 1 ? "1 line" : "3 lines" }
+            )
+            .frame(width: 120)
             .disabled(!options.showLyrics)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Lyric lines"))
         }
     }

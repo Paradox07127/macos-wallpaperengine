@@ -20,16 +20,11 @@ struct AppExceptionsSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Application Exceptions")
-                .font(.headline)
-            Text("Pause wallpapers on all displays while these apps are in use, to free up the GPU.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        SteamSheetHeader(
+            title: "Application Exceptions",
+            subtitle: "Pause wallpapers on all displays while these apps are in use, to free up the GPU."
+        )
+        .padding(DesignTokens.Spacing.lg)
     }
 
     @ViewBuilder
@@ -83,13 +78,9 @@ struct AppExceptionsSheet: View {
             primaryTitle: "Done",
             primaryAction: { dismiss() }
         ) {
-            Button {
+            GlassIconButton("plus", size: .regular) {
                 addApp()
-            } label: {
-                Image(systemName: "plus")
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.circle)
             .help(Text("Add an application"))
             .accessibilityLabel(Text("Add an application"))
         }

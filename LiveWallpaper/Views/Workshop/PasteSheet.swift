@@ -36,6 +36,10 @@ struct PasteSheet: View {
             queueHeader
             queueArea
 
+            // Lone Done, no Cancel (HIG pairs them): queue actions commit
+            // incrementally, so there is no staged state a Cancel could
+            // discard — a Cancel here would be a second Close. Registered
+            // exemption, W3-S3 (.notes/plan/w3-s3 audit).
             SheetFooterBar(
                 primaryTitle: "Done",
                 primaryAction: { dismiss() },

@@ -438,7 +438,7 @@ struct SceneDetailView: View {
                         .font(.body)
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .help(Text("Open renderer diagnostics"))
                 .accessibilityLabel(Text("Open renderer diagnostics"))
             }
@@ -723,6 +723,10 @@ private struct DiagnosticLogSheet: View {
             terminal
         }
         .frame(minWidth: 540, idealWidth: 680, minHeight: 380, idealHeight: 540)
+        // Registered exception (w1-contracts §4, W2-B7): content-layer wash on a
+        // system-presented sheet — the HIG "standard material on the content
+        // layer" case, which AdaptiveGlass has no API for. The system material
+        // already goes opaque under Reduce Transparency.
         .background(.ultraThinMaterial)
         .task { if rendered == nil { rendered = Self.colourise(log) } }
     }
@@ -880,12 +884,18 @@ struct SceneInformationOverlay: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func tag(_ text: Text, background: Color = Color.white.opacity(0.18)) -> some View {
+    /// Secondary pill inside the glass info panel; padding matches the shared
+    /// flat-pill standard (`TypeBadge`), and the default background is the
+    /// over-media foreground token at panel-tag strength.
+    private func tag(
+        _ text: Text,
+        background: Color = DesignTokens.Colors.overlayForeground.opacity(0.18)
+    ) -> some View {
         text
             .font(DesignTokens.Typography.badge)
             .textCase(.uppercase)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
             .background(background, in: Capsule())
     }
 

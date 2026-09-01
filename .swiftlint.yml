@@ -106,3 +106,54 @@ custom_rules:
     regex: '\.font\(\.custom\('
     message: "Custom fonts are banned on Text/Label — use DesignTokens.Typography (DESIGN.md rule 1)"
     severity: warning
+  # W0 (HIG UI-consistency program, 2026-08-31): token-bypass + wrapper-bypass
+  # guards. Probes live in .claude/lint-probes/ — run verify.py after ANY edit
+  # to this section; expected.json defines both sides (caught + not caught).
+  # NOTE: `.font(.system(size:))` stays unenforced — DESIGN.md rule 1 exempts
+  # standalone SF Symbol sizing and regex cannot tell symbol from text (G4).
+  token_bypass_literal_color:
+    name: "Literal color value"
+    regex: '(?<![A-Za-z0-9_])Color\((red:|\.sRGB\w*, *red:) *[0-9.]'
+    message: "Use DesignTokens.Colors — literal RGB bypasses light/dark and Increase Contrast (DESIGN.md rule 2)"
+    excluded: '.*/DesignTokens\.swift'
+    severity: warning
+  token_bypass_literal_corner_radius:
+    name: "Literal corner radius"
+    regex: 'cornerRadius:\s*[0-9]|\.cornerRadius\(\s*[0-9]'
+    message: "Radii come from DesignTokens.Corner — no stray numbers (DESIGN.md rule 5)"
+    excluded: '.*/DesignTokens\.swift'
+    severity: warning
+  glass_outside_wrapper:
+    name: "Raw Liquid Glass API outside AdaptiveGlass"
+    regex: '\.glassEffect\(|GlassEffectContainer|\.buttonStyle\(\.glass'
+    message: "Use AdaptiveGlass (adaptiveGlassSurface/adaptiveGlassButton/…) — raw glass skips the macOS 26/14 tiering and Reduce Transparency (DESIGN.md rule 4)"
+    excluded: '.*/AdaptiveGlass\.swift'
+    severity: warning
+  material_outside_wrapper:
+    name: "Raw standard material outside AdaptiveGlass"
+    regex: '\.(ultraThinMaterial|thinMaterial|regularMaterial|thickMaterial)\b'
+    message: "Use AdaptiveGlass surfaces — raw materials skip Reduce Transparency handling (DESIGN.md rule 4)"
+    excluded: '.*/AdaptiveGlass\.swift'
+    severity: warning
+  appex_tautological_availability:
+    name: "Tautological macOS 26 gate in appex"
+    regex: '(#|@)available\(macOS 26'
+    message: "SystemWallpaperProvider deploys at 26.0 — this gate is always true; write the 26+ path unconditionally"
+    included: '.*/SystemWallpaperProvider/.*'
+    severity: warning
+  circle_button_outside_wrapper:
+    name: "Hand-rolled circular button"
+    regex: '\.buttonBorderShape\(\.circle\)'
+    message: "Circular icon buttons go through GlassIconButton — hand-rolled shapes miss the macOS 26 glass tier (w5-p2-spec §R1)"
+    excluded: '.*/(AdaptiveGlass|GlassIconButton)\.swift'
+    severity: warning
+  # W5 (2026-08-31): a `Menu` with `.menuStyle(.borderlessButton)` is an AppKit
+  # popup — it ignores the label's `foregroundStyle` and paints the glyph in the
+  # system control colour. Over artwork or dark chrome that reads as a black,
+  # invisible glyph (three sites shipped that way). Over-media glyph controls
+  # must be real Buttons; put the list in a popover.
+  over_media_menu_style:
+    name: "Over-media glyph uses a Menu"
+    regex: 'foregroundStyle\(DesignTokens\.Colors\.(overlayForeground|onAccentFill)\)[\s\S]{0,240}?menuStyle\(\.borderlessButton\)'
+    message: "An AppKit popup paints its label in the system control colour — use a Button + popover for glyph controls over media (w5, HistoryRow/LibraryTileApplyControl)"
+    severity: warning

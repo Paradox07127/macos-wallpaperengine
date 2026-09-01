@@ -92,6 +92,10 @@ struct SettingsSidebar: View {
     }
 }
 
+/// Deliberately NOT `LibrarySearchField`: sidebar chrome (rounded-rect +
+/// surfaceRaised + full-width) differs from the library capsule spec, so
+/// sharing would mean parameterizing the entire shell. Only the clear-button
+/// size is unified (captionEmphasized, same as LibrarySearchField).
 private struct SettingsSidebarSearchField: View {
     @Binding var text: String
 
@@ -115,7 +119,7 @@ private struct SettingsSidebarSearchField: View {
                         .font(DesignTokens.Typography.captionEmphasized)
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .help(Text("Clear search"))
                 .accessibilityLabel(Text("Clear search"))
             }
@@ -145,7 +149,6 @@ private struct SettingsSidebarRow: View {
     var body: some View {
         HStack(spacing: SettingsSidebarMetrics.rowContentSpacing) {
             Image(systemName: result.systemImage)
-                .foregroundStyle(.secondary)
                 .frame(width: SettingsSidebarMetrics.rowIconWidth)
                 .accessibilityHidden(true)
 
