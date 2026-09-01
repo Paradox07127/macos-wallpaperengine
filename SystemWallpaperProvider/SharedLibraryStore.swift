@@ -78,7 +78,8 @@ struct SharedLibraryStore {
             activeChoiceID: activeChoiceID,
             activeChoiceIDs: activeChoiceIDs,
             runtimeHealthy: runtimeHealthy,
-            osVersion: SystemWallpaperHeartbeat.currentOSVersion()
+            osVersion: SystemWallpaperHeartbeat.currentOSVersion(),
+            provider: .current()
         )
         guard let data = try? SystemWallpaperCoding.encoder.encode(beat) else { return }
         let url = SystemWallpaperPaths.heartbeatURL(hostBundleID: hostBundleID)

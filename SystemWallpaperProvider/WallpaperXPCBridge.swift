@@ -123,8 +123,17 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         }
     }
 
-    private let libraryObserver: LibraryChangeObserver
-    private let powerObserver: PowerConditionObserver
+    /// Built on the first accepted connection, not in `init`. WallpaperAgent
+    /// re-runs extension discovery every time the LaunchServices database
+    /// changes — which an Xcode build or an app update does — and instantiates
+    /// every registered provider, ours included. A discovery pass that never
+    /// leads to a connection should not leave Darwin, NotificationCenter and
+    /// IOKit run-loop observers behind. Both are `let`-once under `observerLock`;
+    /// they are never torn down, because a process that has served one
+    /// connection keeps them for its whole life (see the class comments).
+    private let observerLock = NSLock()
+    private var libraryObserver: LibraryChangeObserver?
+    private var powerObserver: PowerConditionObserver?
 
     init(store: SharedLibraryStore) {
         self.store = store
@@ -132,9 +141,16 @@ final class WallpaperXPCBridge: @unchecked Sendable {
             store: store,
             providerID: Bundle.main.bundleIdentifier ?? "com.loomscreen.wallpaper"
         )
-        self.libraryObserver = LibraryChangeObserver(registry: registry, store: store)
-        self.powerObserver = PowerConditionObserver(registry: registry, store: store)
-        self.libraryObserver.owner = self
+    }
+
+    private func activateObserversIfNeeded() {
+        observerLock.lock()
+        defer { observerLock.unlock() }
+        guard libraryObserver == nil else { return }
+        let library = LibraryChangeObserver(registry: registry, store: store)
+        library.owner = self
+        libraryObserver = library
+        powerObserver = PowerConditionObserver(registry: registry, store: store)
     }
 
     /// Fans a library change out to every live connection. Only a handler holds
@@ -186,10 +202,14 @@ final class WallpaperXPCBridge: @unchecked Sendable {
     }
 
     func accept(connection: NSXPCConnection) -> Bool {
+        // The system is about to put this process to work — the last moment a
+        // build that is no longer installed may still bow out.
+        ProviderStaleness.exitIfStale()
         guard Self.verifyRuntimeLayout() else {
             store.writeHeartbeat(activeChoiceID: nil, runtimeHealthy: false)
             return false
         }
+        activateObserversIfNeeded()
 
         let exported = NSXPCInterface(with: WallpaperExtensionXPCProtocol.self)
         let allowed = Self.allowedClasses()

@@ -44,6 +44,12 @@ struct LogPrivacySourceAuditTests {
             "what": 1,
             "WPXLogPrivacy.summary(error)": 4,
         ],
+        // CFBundleVersion values, not user data — the bundle *path* on the same
+        // lines is `.private`.
+        "SystemWallpaperProvider/ProviderStaleness.swift": [
+            "loadedBuild": 1,
+            "onDisk": 1,
+        ],
         // Private-API symbol names, not user data.
         "SystemWallpaperProvider/WallpaperXPCBridge.swift": [
             "missing.joined(separator:\",\")": 1,

@@ -66,6 +66,86 @@ struct SystemWallpaperManifest: Codable, Equatable {
     }
 }
 
+/// Which appex process wrote a heartbeat. Two builds of the extension can be
+/// live at once — a Sparkle update replaces the bundle under a running process,
+/// and a rebuild registers a second copy at another path — and the old one keeps
+/// writing beats. Without a stamp the app reads the stale process's state as
+/// current: it reported "in use" for a wallpaper the shipped build was no longer
+/// serving.
+struct SystemWallpaperProviderIdentity: Codable, Equatable {
+    /// `CFBundleVersion` of the appex bundle. This is the half that separates
+    /// the two processes an in-place update leaves behind, where the path is
+    /// identical.
+    var build: String
+    /// Absolute path of the appex bundle. This is the other half: two copies
+    /// installed at different paths share a bundle id and both stay registered.
+    var bundlePath: String
+    /// Diagnostics only — which process to look at when a stale beat shows up.
+    var pid: Int32
+
+    static func current(bundle: Bundle = .main) -> SystemWallpaperProviderIdentity {
+        SystemWallpaperProviderIdentity(
+            build: bundle.infoDictionary?["CFBundleVersion"] as? String ?? "",
+            bundlePath: bundle.bundlePath,
+            pid: ProcessInfo.processInfo.processIdentifier
+        )
+    }
+
+    /// The stamp the extension *this* app ships would write. Read off the
+    /// bundled appex on disk rather than the app's own Info.plist — the two
+    /// carry separate `CFBundleVersion`s. The directory is scanned rather than
+    /// named so Lite and Pro share one code path.
+    static func bundledProvider(host hostBundle: Bundle = .main) -> SystemWallpaperProviderIdentity? {
+        let extensions = hostBundle.bundleURL
+            .appendingPathComponent("Contents/Extensions", isDirectory: true)
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: extensions,
+            includingPropertiesForKeys: nil
+        ) else { return nil }
+        guard let appex = entries.first(where: { $0.pathExtension == "appex" }),
+              let bundle = Bundle(url: appex) else { return nil }
+        return SystemWallpaperProviderIdentity(
+            build: bundle.infoDictionary?["CFBundleVersion"] as? String ?? "",
+            bundlePath: bundle.bundlePath,
+            // The bundled copy is not a process; only beats carry a real pid.
+            pid: 0
+        )
+    }
+}
+
+/// Should a running appex process retire itself? An appex outlives the bundle
+/// it was launched from: Sparkle replaces `Loomscreen.app` under it, and a
+/// rebuild writes a new copy elsewhere — launchd leaves the old process alone
+/// either way, and it goes on serving its wallpaper and writing keep-alive
+/// heartbeats with code the user no longer has installed. Observed 2026-09-01:
+/// two extensions still running out of `build/w5d-dd` and `build/w5d-lite-dd`,
+/// directories that were no longer even registered.
+///
+/// Lives here rather than in the appex so the decision is unit-testable — appex
+/// sources compile into their own targets only, never into the test bundle.
+enum SystemWallpaperProviderStaleness {
+    enum Verdict: Equatable {
+        case current
+        /// The bundle this process was launched from is gone from disk.
+        case bundleGone
+        /// The bundle is still there but now holds a different build.
+        case buildChanged(loaded: String, onDisk: String)
+
+        var shouldRetire: Bool {
+            self != .current
+        }
+    }
+
+    /// `onDiskBuild` is nil when the bundle (or its `Info.plist`) cannot be read.
+    static func verdict(loadedBuild: String, onDiskBuild: String?) -> Verdict {
+        guard let onDiskBuild else { return .bundleGone }
+        guard onDiskBuild == loadedBuild else {
+            return .buildChanged(loaded: loadedBuild, onDisk: onDiskBuild)
+        }
+        return .current
+    }
+}
+
 /// Written by the appex whenever the system drives it, so the sandboxed app
 /// can infer "in use" without pluginkit (which it cannot exec).
 struct SystemWallpaperHeartbeat: Codable, Equatable {
@@ -85,6 +165,10 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     /// heartbeats written before this field existed, which were all written by
     /// revision 1.
     var runtimeCheckVersion: Int?
+    /// Who wrote this beat. `nil` in beats written before the field existed —
+    /// absent is treated as "unknown", never as a mismatch, so a missing stamp
+    /// can never make a live extension look dead.
+    var provider: SystemWallpaperProviderIdentity?
 
     /// Bump whenever the appex's private-API layout check changes. An unhealthy verdict hides the publish
     /// UI, and the extension only runs once something has been published — so without a build stamp, a
@@ -94,17 +178,20 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
 
     init(timestamp: Date, activeChoiceID: String?, activeChoiceIDs: [String]? = nil,
          runtimeHealthy: Bool = true, osVersion: String? = nil,
-         runtimeCheckVersion: Int? = SystemWallpaperHeartbeat.currentRuntimeCheckVersion) {
+         runtimeCheckVersion: Int? = SystemWallpaperHeartbeat.currentRuntimeCheckVersion,
+         provider: SystemWallpaperProviderIdentity? = nil) {
         self.timestamp = timestamp
         self.activeChoiceID = activeChoiceID
         self.activeChoiceIDs = activeChoiceIDs
         self.runtimeHealthy = runtimeHealthy
         self.osVersion = osVersion
         self.runtimeCheckVersion = runtimeCheckVersion
+        self.provider = provider
     }
 
     private enum CodingKeys: String, CodingKey {
         case timestamp, activeChoiceID, activeChoiceIDs, runtimeHealthy, osVersion, runtimeCheckVersion
+        case provider
     }
 
     init(from decoder: Decoder) throws {
@@ -115,6 +202,16 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         runtimeHealthy = try c.decodeIfPresent(Bool.self, forKey: .runtimeHealthy) ?? true
         osVersion = try c.decodeIfPresent(String.self, forKey: .osVersion)
         runtimeCheckVersion = try c.decodeIfPresent(Int.self, forKey: .runtimeCheckVersion)
+        provider = try c.decodeIfPresent(SystemWallpaperProviderIdentity.self, forKey: .provider)
+    }
+
+    /// Did the extension this app ships write this beat? A stamped beat that
+    /// disagrees came from a process left over by an update or a second install
+    /// — its state is not ours to report. An unstamped beat passes: it predates
+    /// the field, and refusing it would misreport a live extension as dead.
+    func isFromProvider(matching expected: SystemWallpaperProviderIdentity?) -> Bool {
+        guard let provider, let expected else { return true }
+        return provider.build == expected.build && provider.bundlePath == expected.bundlePath
     }
 
     /// Does this verdict still bar the app from publishing? Only when it was

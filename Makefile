@@ -12,6 +12,7 @@
 #   make test-app      hardware-free app contract shard (Pro + Lite hosts)
 #   make test-app-hosted  same, minus the Lite host — for machines with no cert
 #   make hooks         local agent-gate self-test (skipped where .claude is absent)
+#   make unregister-build-appex  drop LaunchServices records for throwaway build dirs
 
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
@@ -29,7 +30,8 @@ SWIFTPM_SCRATCH ?= /tmp/LiveWallpaperVerify-SwiftPM
 PACKAGES := LiveWallpaperCore LiveWallpaperProWPE
 
 .DEFAULT_GOAL := help
-.PHONY: help verify fast contracts lint hooks test-packages test-app test-app-hosted
+.PHONY: help verify fast contracts lint hooks test-packages test-app test-app-hosted \
+        unregister-build-appex
 
 help:
 	@sed -n '/^#   make/s/^#   //p' $(MAKEFILE_LIST)
@@ -84,3 +86,37 @@ hooks:
 	else \
 	  echo "== Agent gate self-test: skipped (.claude absent) =="; \
 	fi
+
+# Every build registers its .app — and the wallpaper appex inside it — with
+# LaunchServices, and the newest record displaces the installed app's. Observed
+# 2026-09-01: /Applications/Loomscreen Pro.app was not registered at all, while
+# 16 build directories were. WallpaperAgent instantiates every registered
+# provider on each discovery pass, so these are also what it spuriously launches.
+# The processes retire themselves (ProviderStaleness); this clears the records.
+#
+# Driven off pluginkit, not `lsregister -dump`: pluginkit lists exactly the
+# wallpaper-extension providers, so nothing else in the database is touched.
+# lsregister surfaces an older record whenever a newer one goes, hence the loop.
+#
+# Deliberately NOT part of `verify` — a gate must not mutate the machine's
+# LaunchServices state.
+LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+unregister-build-appex:
+	@echo "== Wallpaper providers registered outside /Applications =="
+	@removed=0; \
+	for _ in $$(seq 1 60); do \
+	  appex=$$(/usr/bin/pluginkit -mAvvv -p com.apple.wallpaper 2>/dev/null \
+	    | awk '/loomscreen/ { getline; sub(/^[ \t]*Path = /, ""); print }' \
+	    | grep -v '^/Applications/' | head -1); \
+	  [ -z "$$appex" ] && break; \
+	  app="$${appex%%.app/Contents/Extensions/*}.app"; \
+	  echo "  unregister $$app"; \
+	  "$(LSREGISTER)" -u "$$app" >/dev/null 2>&1; \
+	  removed=$$((removed + 1)); \
+	done; \
+	echo "== removed $$removed record(s) =="
+	@echo "== remaining =="
+	@/usr/bin/pluginkit -mAvvv -p com.apple.wallpaper 2>/dev/null \
+	  | awk '/loomscreen/ { id=$$1; getline; sub(/^[ \t]*Path = /, ""); print "  "id"  <- "$$0 }' \
+	  || true
