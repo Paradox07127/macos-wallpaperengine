@@ -2,17 +2,23 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Inspector-header popover for quick-saving the current wallpaper.
+///
+/// The name draft lives in the presenting header, not here: dismissing the
+/// popover by clicking outside must keep an unsaved name (there is no discard
+/// path), and this view is destroyed on every dismissal. The draft only resets
+/// when the bookmark it was seeded from actually changes.
 struct Popover: View {
     let screen: Screen
     /// Inspector tab's content (not necessarily the committed active wallpaper).
     let candidateContent: WallpaperContent?
+    @Binding var nameDraft: String
+    /// Identity+label of the bookmark the current draft was seeded from.
+    @Binding var draftBaseline: String?
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var store = BookmarkStore.shared
-    @State private var nameDraft: String = ""
-    @State private var draftInitializedFor: UUID?
     @State private var pendingDestructive: PendingDestructive?
 
     var body: some View {
@@ -61,13 +67,13 @@ struct Popover: View {
             actionRow(content: content, existing: existing)
         }
         .onAppear { syncDraft(with: existing) }
-        .onChange(of: existing?.id) { _, _ in syncDraft(with: existing) }
+        .onChange(of: Self.baselineKey(for: existing)) { _, _ in syncDraft(with: existing) }
     }
 
     private func header(systemImage: String, title: Text) -> some View {
         HStack(spacing: 6) {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .font(DesignTokens.Typography.bodyEmphasized)
                 .foregroundStyle(.tint)
             title
                 .font(DesignTokens.Typography.bodyEmphasized)
@@ -132,18 +138,22 @@ struct Popover: View {
             store.add(
                 label: trimmed,
                 content: content,
-                sourceDisplayName: sourceDisplayName(for: content),
-                playbackSettings: currentPlaybackSettings()
+                sourceDisplayName: sourceDisplayName(for: content)
             )
         }
         dismiss()
     }
 
     private func syncDraft(with existing: WallpaperBookmark?) {
-        let key = existing?.id
-        guard draftInitializedFor != key else { return }
-        draftInitializedFor = key
+        let key = Self.baselineKey(for: existing)
+        guard draftBaseline != key else { return }
+        draftBaseline = key
         nameDraft = existing?.label ?? ""
+    }
+
+    private static func baselineKey(for existing: WallpaperBookmark?) -> String {
+        guard let existing else { return "" }
+        return "\(existing.id)|\(existing.label)"
     }
 
     private func updateDisabled(existing: WallpaperBookmark) -> Bool {
@@ -153,14 +163,6 @@ struct Popover: View {
 
     // MARK: - Data sources
 
-    /// Full playback + effect snapshot (not just the content pointer).
-    private func currentPlaybackSettings() -> BookmarkPlaybackSettings? {
-        guard let config = screenManager.getConfiguration(for: screen) else { return nil }
-        return BookmarkPlaybackSettings.snapshot(
-            of: config,
-            monitorOverlay: screenManager.monitorOverlay(for: screen)
-        )
-    }
 
     private func defaultLabel(for content: WallpaperContent) -> String {
         BookmarkStore.defaultLabel(

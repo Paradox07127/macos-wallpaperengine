@@ -42,6 +42,9 @@ public struct ConfigurationBundle: Codable, Sendable {
     public var screenConfigurations: [ScreenConfiguration]?
     public var globalSettings: GlobalSettings?
     public var wallpaperBookmarks: [WallpaperBookmark]?
+    /// Absent in every backup written before schemes existed. Optional, so an
+    /// old `.lwconfig` still decodes — it just restores no schemes.
+    public var screenSchemes: [ScreenScheme]?
 
     public init(
         schemaVersion: Int = ConfigurationBundle.currentSchemaVersion,
@@ -50,7 +53,8 @@ public struct ConfigurationBundle: Codable, Sendable {
         exportedAt: Date = Date(),
         screenConfigurations: [ScreenConfiguration]? = nil,
         globalSettings: GlobalSettings? = nil,
-        wallpaperBookmarks: [WallpaperBookmark]? = nil
+        wallpaperBookmarks: [WallpaperBookmark]? = nil,
+        screenSchemes: [ScreenScheme]? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.appBundleID = appBundleID
@@ -59,5 +63,6 @@ public struct ConfigurationBundle: Codable, Sendable {
         self.screenConfigurations = screenConfigurations
         self.globalSettings = globalSettings
         self.wallpaperBookmarks = wallpaperBookmarks
+        self.screenSchemes = screenSchemes
     }
 }

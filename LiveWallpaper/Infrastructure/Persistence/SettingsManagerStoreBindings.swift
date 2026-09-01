@@ -16,6 +16,23 @@ extension BookmarkStore {
     static let shared = BookmarkStore(persistence: SettingsManagerBookmarkPersistence())
 }
 
+/// Wires the shared scheme store to the app's settings persistence.
+@MainActor
+struct SettingsManagerSchemePersistence: SchemePersisting {
+    func load() -> [ScreenScheme] {
+        SettingsManager.shared.loadScreenSchemes()
+    }
+
+    func save(_ schemes: [ScreenScheme]) {
+        SettingsManager.shared.saveScreenSchemes(schemes)
+    }
+}
+
+extension SchemeStore {
+    /// App-wide singleton backed by `SettingsManager.shared`.
+    static let shared = SchemeStore(persistence: SettingsManagerSchemePersistence())
+}
+
 /// Wires the shared trusted-host store to app settings persistence.
 @MainActor
 struct SettingsManagerTrustedHostPersistence: TrustedHostPersisting {

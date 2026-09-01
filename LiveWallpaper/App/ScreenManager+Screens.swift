@@ -386,9 +386,10 @@ extension ScreenManager {
 
             sourceConfiguration.videoDisplayMode = .spanAllDisplays
             for target in screens {
-                var copy = sourceConfiguration
-                copy.screenID = target.id
-                copy.displayFingerprint = target.displayFingerprint
+                let copy = sourceConfiguration.reboundToDisplay(
+                    target.id,
+                    fingerprint: target.displayFingerprint
+                )
 
                 restoreProposedWallpaperSession(
                     for: target,
@@ -485,11 +486,12 @@ extension ScreenManager {
               let template = configurationStore.get(for: source.id, fingerprint: source.displayFingerprint) else { return }
 
         for target in screens where target.id != source.id {
-            var copy = template
-            copy.screenID = target.id
-            // Re-stamp with the TARGET's fingerprint; keeping the source's would
-            // make this row unreachable by fingerprint after a display-ID reshuffle.
-            copy.displayFingerprint = target.displayFingerprint
+            // Shared with `applyScheme`: one rebind implementation, so the two
+            // paths cannot drift on which identity fields have to move.
+            let copy = template.reboundToDisplay(
+                target.id,
+                fingerprint: target.displayFingerprint
+            )
             restoreProposedWallpaperSession(for: target, configuration: copy)
             Logger.info("Apply to All: copied configuration from screen \(source.id) → \(target.id)", category: .screenManager)
         }

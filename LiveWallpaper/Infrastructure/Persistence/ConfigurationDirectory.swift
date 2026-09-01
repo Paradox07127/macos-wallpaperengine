@@ -6,6 +6,7 @@ struct ConfigurationDirectory {
         case screenConfigurations = "screen-configurations.json"
         case globalSettings = "global-settings.json"
         case wallpaperBookmarks = "wallpaper-bookmarks.json"
+        case screenSchemes = "screen-schemes.json"
     }
 
     let root: URL

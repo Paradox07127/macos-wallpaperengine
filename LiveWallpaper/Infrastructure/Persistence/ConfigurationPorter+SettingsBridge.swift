@@ -9,7 +9,8 @@ extension ConfigurationPorter {
         return ConfigurationBundle(
             screenConfigurations: manager.loadConfigurations(),
             globalSettings: manager.loadGlobalSettings(),
-            wallpaperBookmarks: manager.loadWallpaperBookmarks()
+            wallpaperBookmarks: manager.loadWallpaperBookmarks(),
+            screenSchemes: manager.loadScreenSchemes()
         )
     }
 
@@ -41,8 +42,19 @@ extension ConfigurationPorter {
             summary.bookmarkCount = bookmarks.count
         }
 
+        // Schemes are per-machine archives like bookmarks, so a backup that
+        // ignored them would silently drop every saved scheme on restore.
+        if let schemes = bundle.screenSchemes {
+            let merged = mergingScreenSchemes(
+                existing: manager.loadScreenSchemes(),
+                imported: schemes
+            )
+            manager.saveScreenSchemes(merged)
+            SchemeStore.shared.reload()
+        }
+
         Logger.info(
-            "Configuration import applied (displays=\(summary.displayCount ?? 0), global=\(summary.didRestoreGlobalSettings), bookmarks=\(summary.bookmarkCount ?? 0))",
+            "Configuration import applied (displays=\(summary.displayCount ?? 0), global=\(summary.didRestoreGlobalSettings), bookmarks=\(summary.bookmarkCount ?? 0), schemes=\(bundle.screenSchemes?.count ?? 0))",
             category: .settings
         )
 
@@ -64,6 +76,19 @@ extension ConfigurationPorter {
             if !alreadyPresent {
                 merged.append(candidate)
             }
+        }
+        return merged
+    }
+
+    /// Same merge rule as bookmarks: an existing scheme wins over an imported
+    /// one with the same id, and only genuinely new archives are appended.
+    static func mergingScreenSchemes(
+        existing: [ScreenScheme],
+        imported: [ScreenScheme]
+    ) -> [ScreenScheme] {
+        var merged = existing
+        for candidate in imported where !merged.contains(where: { $0.id == candidate.id }) {
+            merged.append(candidate)
         }
         return merged
     }

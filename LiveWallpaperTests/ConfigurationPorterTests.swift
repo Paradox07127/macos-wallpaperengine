@@ -173,6 +173,112 @@ struct ConfigurationPorterTests {
         #expect(actual.hasPrefix(expectedYearPrefix.prefix("LiveWallpaper-".count)))
     }
 
+    // MARK: - Screen schemes
+
+    private func sampleScheme(name: String) -> ScreenScheme {
+        // Whole-second timestamps: the porter encodes dates as ISO-8601, which
+        // has no sub-second field, so `Date()` would not survive a round-trip
+        // and the equality check below would fail on the timestamps alone.
+        let stamp = Date(timeIntervalSince1970: 1_750_000_000)
+        return ScreenScheme(
+            name: name,
+            configuration: ScreenConfiguration(
+                screenID: 91,
+                wallpaper: .video(bookmarkData: Data([0xC0, 0xDE]))
+            ),
+            overlay: MonitorOverlayConfiguration(enabled: true, level: .front),
+            createdAt: stamp,
+            updatedAt: stamp,
+            sourceDisplayName: "Studio Display"
+        )
+    }
+
+    @Test("A backup carries saved schemes through encode and decode")
+    func roundTripsScreenSchemes() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let scheme = sampleScheme(name: "Desk setup")
+        let bundle = try ConfigurationBundle(
+            appBundleID: #require(Bundle.main.bundleIdentifier),
+            screenSchemes: [scheme]
+        )
+        let destination = directory.appendingPathComponent("schemes.lwconfig")
+        let encoded = try ConfigurationPorter.encode(bundle)
+        try encoded.write(to: destination)
+
+        let decoded = try ConfigurationPorter.decode(from: destination)
+
+        #expect(decoded.screenSchemes == [scheme])
+        #expect(decoded.screenSchemes?.first?.name == "Desk setup")
+        #expect(decoded.screenSchemes?.first?.overlay.level == MonitorOverlayLevel.front)
+        // Identity is stripped at capture, so a restored scheme is still unbound.
+        #expect(decoded.screenSchemes?.first?.configuration.screenID == ScreenScheme.unboundScreenID)
+    }
+
+    @Test("A backup written before schemes existed still decodes, with no schemes")
+    func decodesLegacyBundleWithoutSchemesField() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Hand-built to match what shipped builds wrote: no `screenSchemes` key
+        // at all. Encoding a nil-schemes bundle would prove nothing, because the
+        // encoder omits it either way.
+        let legacy: [String: Any] = try [
+            "schemaVersion": ConfigurationBundle.currentSchemaVersion,
+            "appBundleID": #require(Bundle.main.bundleIdentifier),
+            "exportedAt": "2026-01-01T00:00:00Z",
+            "wallpaperBookmarks": [],
+        ]
+        let destination = directory.appendingPathComponent("legacy.lwconfig")
+        let encoded = try JSONSerialization.data(withJSONObject: legacy, options: [])
+        try encoded.write(to: destination)
+
+        let decoded = try ConfigurationPorter.decode(from: destination)
+
+        #expect(decoded.screenSchemes?.isEmpty ?? true)
+        #expect(decoded.wallpaperBookmarks?.isEmpty == true)
+    }
+
+    @Test("Scheme merge keeps the existing archive when an imported id collides")
+    func mergeKeepsExistingSchemeOnIDCollision() {
+        let mine = sampleScheme(name: "Mine")
+        var renamed = mine
+        renamed.name = "FromBackup"
+        let fresh = sampleScheme(name: "New")
+
+        let merged = ConfigurationPorter.mergingScreenSchemes(
+            existing: [mine],
+            imported: [renamed, fresh]
+        )
+
+        #expect(merged.count == 2)
+        #expect(merged.first?.name == "Mine")
+        #expect(merged.last?.id == fresh.id)
+    }
+
+    @Test("apply merges backup schemes into the current archive instead of replacing it")
+    func applyMergesSchemesIntoArchive() {
+        let manager = SettingsManager.shared
+        let previous = manager.loadScreenSchemes()
+        defer {
+            manager.saveScreenSchemes(previous)
+            SchemeStore.shared.reload()
+        }
+
+        let existing = sampleScheme(name: "Existing")
+        manager.saveScreenSchemes([existing])
+
+        let incoming = sampleScheme(name: "FromBackup")
+        _ = ConfigurationPorter.apply(ConfigurationBundle(screenSchemes: [incoming]))
+
+        let archive = manager.loadScreenSchemes()
+        #expect(archive.count == 2, "Import must merge into the archive, not replace it")
+        #expect(archive.contains { $0.id == existing.id })
+        #expect(archive.contains { $0.id == incoming.id })
+        #expect(SchemeStore.shared.schemes.count == 2, "The observable store must see the import")
+    }
+
     private func makeTempDirectory() throws -> URL {
         let url = FileManager.default
             .temporaryDirectory

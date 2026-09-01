@@ -16,7 +16,7 @@ Authoritative capability gate: [`ProductCapabilities.swift`](../../Packages/Live
   - Live usage strip (CPU / GPU / RAM / thermal pressure).
   - Manage, General Settings, reload-all, quit.
 - **Settings window** (`LiveWallpaper/Views/ContentView.swift`, `LiveWallpaper/Views/Settings/Navigation.swift`)
-  - Sidebar: per-display pages, Bookmarks, Apple Aerials, Steam Workshop (Pro).
+  - Sidebar: per-display pages, Bookmarks, Schemes, Apple Aerials, Steam Workshop (Pro).
   - Settings tabs — availability varies by SKU:
 
 | Tab | Edition | Contents |
@@ -104,7 +104,8 @@ preset be renamed, re-saved, and exported like a local one.
 - **Playlists** (`LiveWallpaper/Views/Playlist/PlaylistSection.swift`, `LiveWallpaper/Policies/PlaylistPolicy.swift`) — drag-reorder, shuffle, 1–1440 min rotation, apply to one or all displays.
 - **Schedule** (`LiveWallpaper/Views/ScheduleSection/`, `LiveWallpaper/Policies/SchedulePolicy.swift`) — time slots with presets, conflict detection, fallback to the primary wallpaper.
 - **Coordinator** (`LiveWallpaper/Policies/WallpaperAutomationCoordinator.swift`) — one 60-second tick, running only while some display actually has automation; stops entirely during lock/sleep and reconciles once on wake.
-- **Bookmarks** (`Schema/WallpaperBookmark.swift`, `LiveWallpaper/App/ScreenManager+Bookmarks.swift`) — snapshot content plus playback/overlay state. The Monitor board layout deliberately stays per-display and is not part of a bookmark.
+- **Bookmarks** (`Schema/WallpaperBookmark.swift`, `LiveWallpaper/App/ScreenManager+Bookmarks.swift`) — a favourite wallpaper and nothing else. Applying one swaps the content and leaves every setting on the target display untouched.
+- **Schemes** (`Schema/ScreenScheme.swift`, `LiveWallpaper/App/ScreenManager+Schemes.swift`) — one display's complete setup: wallpaper, overlay (Monitor board and Now Playing layer) and every playback, effect, playlist and schedule setting. Applying one replaces the whole setup on the target display, behind a confirmation. Widget and overlay positions are stored normalized, so a scheme captured on one display lands correctly on a differently-sized one. Local archive only — a scheme references media through per-machine security-scoped bookmarks, so it is not portable between machines.
 - **Import routing** (`LiveWallpaper/Infrastructure/Assets/WallpaperImportRouter.swift`) — one classifier behind the toolbar picker, drag & drop, and onboarding: video / scene project / scene library / html / unsupported.
 
 ## 3) Overlays

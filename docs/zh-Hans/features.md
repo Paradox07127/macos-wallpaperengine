@@ -16,7 +16,7 @@
   - 实时占用条（CPU / GPU / 内存 / 温度压力）。
   - 管理、通用设置、全部重新加载、退出。
 - **设置窗口**（`LiveWallpaper/Views/ContentView.swift`、`LiveWallpaper/Views/Settings/Navigation.swift`）
-  - 侧栏：每台显示器的页面、书签、Apple Aerials、Steam 创意工坊（Pro）。
+  - 侧栏：每台显示器的页面、书签、方案、Apple Aerials、Steam 创意工坊（Pro）。
   - 设置页——是否可用取决于 SKU：
 
 | 页 | 版本 | 内容 |
@@ -83,7 +83,8 @@ Retina 物理像素布局、临时存储（创意工坊导入强制开启）、C
 - **播放列表**（`LiveWallpaper/Views/Playlist/PlaylistSection.swift`、`LiveWallpaper/Policies/PlaylistPolicy.swift`）—— 拖拽排序、随机、1–1440 分钟轮换、应用到一台或所有显示器。
 - **计划**（`LiveWallpaper/Views/ScheduleSection/`、`LiveWallpaper/Policies/SchedulePolicy.swift`）—— 带预设时段、冲突检测、回落到主壁纸。
 - **协调器**（`LiveWallpaper/Policies/WallpaperAutomationCoordinator.swift`）—— 单个 60 秒 tick，只在确实有显示器启用了自动化时才运行；锁屏/休眠期间完全停止，唤醒后只对齐一次。
-- **书签**（`Schema/WallpaperBookmark.swift`、`LiveWallpaper/App/ScreenManager+Bookmarks.swift`）—— 快照内容加播放/叠加层状态。监控面板的布局刻意保持按显示器独立，不进书签。
+- **书签**（`Schema/WallpaperBookmark.swift`、`LiveWallpaper/App/ScreenManager+Bookmarks.swift`）—— 只收藏一张壁纸,别的什么都不带。套用书签只替换内容,目标显示器上的所有设置原样不动。
+- **方案**（`Schema/ScreenScheme.swift`、`LiveWallpaper/App/ScreenManager+Schemes.swift`）—— 一台显示器的完整设置:壁纸、叠加层(监控面板与 Now Playing 层)、以及全部播放/滤镜/播放列表/排程参数。套用会整套替换目标显示器的设置,并有确认框。组件与叠加层位置按归一化存储,所以在一块屏上捕获的方案落到不同尺寸的屏上仍然正确。仅限本机存档 —— 方案通过每台机器独有的安全作用域书签引用媒体文件,不能跨机器搬运。
 - **导入路由**（`LiveWallpaper/Infrastructure/Assets/WallpaperImportRouter.swift`）—— 工具栏选择器、拖放和引导流程背后共用一个分类器：视频 / 场景工程 / 场景库 / html / 不支持。
 
 ## 3）叠加层

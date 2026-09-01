@@ -9,11 +9,13 @@ final class SettingsManager {
     private var cachedGlobalSettings: GlobalSettings?
     private var cachedConfigurations: [ScreenConfiguration]?
     private var cachedWallpaperBookmarks: [WallpaperBookmark]?
+    private var cachedScreenSchemes: [ScreenScheme]?
 
     /// Three big JSON blobs that used to live in `UserDefaults`.
     private let screenConfigStore: AtomicFileStore<[ScreenConfiguration]>
     private let globalSettingsStore: AtomicFileStore<GlobalSettings>
     private let wallpaperBookmarksStore: AtomicFileStore<[WallpaperBookmark]>
+    private let screenSchemesStore: AtomicFileStore<[ScreenScheme]>
     let bookmarkResolver: SecurityScopedBookmarkResolver
     private let loginItemController = LoginItemController()
     let persistWPEBookmarkOwnerRefresh: @MainActor (WPEOrigin, Data) -> Void
@@ -26,6 +28,7 @@ final class SettingsManager {
     private var configurationWriteGeneration: UInt64 = 0
     private var globalSettingsWriteGeneration: UInt64 = 0
     private var bookmarksWriteGeneration: UInt64 = 0
+    private var schemesWriteGeneration: UInt64 = 0
 
     private enum Keys {
         static let screenConfigurations = "screenConfigurations"
@@ -33,6 +36,7 @@ final class SettingsManager {
         static let lastUsedDirectory = "lastUsedDirectory"
         static let aerialsDirectoryBookmark = "AerialsLibrary.DirectoryBookmark"
         static let bookmarks = "WallpaperBookmarks.v1"
+        static let screenSchemes = "ScreenSchemes.v1"
         static let trustedHosts = "TrustedHTMLHosts.v1"
         static let wpeEngineAssetsRootBookmark = "WPEEngineAssets.RootBookmark.v1"
         /// Set only when the engine assets came from the in-app SteamCMD download (the pruned container install).
@@ -74,15 +78,20 @@ final class SettingsManager {
         let wallpaperBookmarksStore = AtomicFileStore<[WallpaperBookmark]>(
             fileURL: directory.url(for: .wallpaperBookmarks)
         )
+        let screenSchemesStore = AtomicFileStore<[ScreenScheme]>(
+            fileURL: directory.url(for: .screenSchemes)
+        )
         self.globalSettingsStore = globalSettingsStore
         self.wallpaperBookmarksStore = wallpaperBookmarksStore
+        self.screenSchemesStore = screenSchemesStore
         self.bookmarkResolver = bookmarkResolver
         self.persistWPEBookmarkOwnerRefresh = persistWPEBookmarkOwnerRefresh
         self.defaults = defaults
         self.configurationPersistenceActor = WallpaperPersistenceActor(
             store: screenConfigStore,
             globalSettingsStore: globalSettingsStore,
-            bookmarksStore: wallpaperBookmarksStore
+            bookmarksStore: wallpaperBookmarksStore,
+            schemesStore: screenSchemesStore
         )
 
         migrateLegacyUserDefaultsIfNeeded()
@@ -286,6 +295,16 @@ final class SettingsManager {
                 try await configurationPersistenceActor.writeBookmarks(bookmarks, generation: generation)
             } catch {
                 Logger.error("Final bookmarks flush failed: \(error.localizedDescription)", category: .settings)
+            }
+        }
+
+        if let schemes = cachedScreenSchemes {
+            schemesWriteGeneration &+= 1
+            let generation = schemesWriteGeneration
+            do {
+                try await configurationPersistenceActor.writeSchemes(schemes, generation: generation)
+            } catch {
+                Logger.error("Final screen-schemes flush failed: \(error.localizedDescription)", category: .settings)
             }
         }
     }
@@ -544,24 +563,29 @@ final class SettingsManager {
         cachedGlobalSettings = GlobalSettings()
         cachedConfigurations = []
         cachedWallpaperBookmarks = []
+        cachedScreenSchemes = []
 
         // Route deletes through the same serial actor with bumped generations so an in-flight async write (older generation) can't resurrect the file after the reset.
         configurationWriteGeneration &+= 1
         globalSettingsWriteGeneration &+= 1
         bookmarksWriteGeneration &+= 1
+        schemesWriteGeneration &+= 1
         let configGeneration = configurationWriteGeneration
         let globalGeneration = globalSettingsWriteGeneration
         let bookmarksGeneration = bookmarksWriteGeneration
+        let schemesGeneration = schemesWriteGeneration
         Task { [configurationPersistenceActor] in
             await configurationPersistenceActor.delete(generation: configGeneration)
             await configurationPersistenceActor.deleteGlobalSettings(generation: globalGeneration)
             await configurationPersistenceActor.deleteBookmarks(generation: bookmarksGeneration)
+            await configurationPersistenceActor.deleteSchemes(generation: schemesGeneration)
         }
 
         defaults.removeObject(forKey: Keys.screenConfigurations)
         defaults.removeObject(forKey: Keys.globalSettings)
         defaults.removeObject(forKey: Keys.aerialsDirectoryBookmark)
         defaults.removeObject(forKey: Keys.bookmarks)
+        defaults.removeObject(forKey: Keys.screenSchemes)
         defaults.removeObject(forKey: Keys.trustedHosts)
         defaults.removeObject(forKey: Keys.wpeEngineAssetsRootBookmark)
         defaults.removeObject(forKey: Keys.appLanguage)
@@ -579,6 +603,7 @@ final class SettingsManager {
         defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // SourceAuthorization
 
         BookmarkStore.shared.resetAfterSettingsCleared()
+        SchemeStore.shared.resetAfterSettingsCleared()
         TrustedHostStore.shared.resetAfterSettingsCleared()
         if applyLoginSetting {
             loginItemController.apply(startOnLogin: false)
@@ -710,6 +735,38 @@ final class SettingsManager {
                           self.bookmarksWriteGeneration == generation else { return }
                     Logger.error("Failed to persist wallpaper bookmarks: \(error.localizedDescription)", category: .settings)
                     self.cachedWallpaperBookmarks = nil
+                }
+            }
+        }
+    }
+
+    // MARK: - Screen Schemes
+
+    func loadScreenSchemes() -> [ScreenScheme] {
+        if let cached = cachedScreenSchemes {
+            return cached
+        }
+        let schemes = screenSchemesStore.read() ?? []
+        cachedScreenSchemes = schemes
+        return schemes
+    }
+
+    /// Same shape as `saveWallpaperBookmarks`: the cache is updated
+    /// synchronously so a following load can't read the not-yet-flushed disk
+    /// copy, and the write is queued async behind a generation.
+    func saveScreenSchemes(_ schemes: [ScreenScheme]) {
+        cachedScreenSchemes = schemes
+        schemesWriteGeneration &+= 1
+        let generation = schemesWriteGeneration
+        Task { [weak self, configurationPersistenceActor] in
+            do {
+                try await configurationPersistenceActor.writeSchemes(schemes, generation: generation)
+            } catch {
+                await MainActor.run {
+                    guard let self,
+                          self.schemesWriteGeneration == generation else { return }
+                    Logger.error("Failed to persist screen schemes: \(error.localizedDescription)", category: .settings)
+                    self.cachedScreenSchemes = nil
                 }
             }
         }

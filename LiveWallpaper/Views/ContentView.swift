@@ -375,6 +375,7 @@ enum Navigation: Hashable {
     case screen(CGDirectDisplayID)
     case appleAerials
     case bookmarks
+    case schemes
     case workshop
     case systemWallpaper
 }
@@ -417,6 +418,10 @@ struct Sidebar: View {
                 NavigationLink(value: Navigation.bookmarks) {
                     Label("Bookmarks", systemImage: "bookmark.fill")
                 }
+                NavigationLink(value: Navigation.schemes) {
+                    Label("Schemes", systemImage: "square.stack.3d.up.fill")
+                }
+                .accessibilityHint(Text("Apply a saved display setup — wallpaper, overlay layout, and settings"))
                 NavigationLink(value: Navigation.appleAerials) {
                     Label("Apple Aerials", systemImage: "sparkles.tv")
                 }
@@ -558,6 +563,17 @@ struct ScreenRow: View {
             Image(systemName: iconName(for: summary))
                 .foregroundStyle(iconColor(for: summary))
                 .frame(width: 22, height: 22)
+                .overlay(alignment: .bottomTrailing) {
+                    // Non-color redundancy (WCAG 1.4.1): error/paused states are
+                    // otherwise conveyed by icon tint alone.
+                    if let badge = statusBadge(for: summary) {
+                        Image(systemName: badge.symbol)
+                            .font(.system(size: 9, weight: .semibold))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, badge.color)
+                            .accessibilityHidden(true)
+                    }
+                }
 
             Text(verbatim: screen.name)
                 .fontWeight(.medium)
@@ -605,7 +621,30 @@ struct ScreenRow: View {
         }
     }
 
+    /// Error / paused / policy-suspended badge over the type icon. Active and
+    /// idle states stay clean — the badge only marks something needing attention.
+    private func statusBadge(for summary: WallpaperSessionSummary) -> (symbol: String, color: Color)? {
+        switch summary.activity {
+        case .error:
+            ("exclamationmark.circle.fill", DesignTokens.Colors.Status.danger)
+        case .paused, .policySuspended:
+            ("pause.circle.fill", DesignTokens.Colors.Status.warning)
+        case .active, .restoring, .off, .inactive:
+            nil
+        }
+    }
+
     private func accessibilityValue(for summary: WallpaperSessionSummary) -> Text {
+        switch summary.activity {
+        case .error:
+            return Text("Error")
+        case .paused:
+            return Text("Wallpaper paused")
+        case .policySuspended:
+            return Text("Paused by system")
+        case .active, .restoring, .off, .inactive:
+            break
+        }
         switch summary.wallpaperType {
         case .html:
             return Text("Web wallpaper active")
@@ -638,9 +677,9 @@ struct DetailContent: View {
                 if let screen = screenManager.screens.first(where: { $0.id == screenId }) {
                     DetailView(screen: screen)
                 } else {
-                    EmptyStateView(
-                        icon: "display.trianglebadge.exclamationmark",
-                        message: "The selected display is no longer available."
+                    IllustratedEmptyState(
+                        symbol: "display.trianglebadge.exclamationmark",
+                        title: "The selected display is no longer available."
                     )
                 }
 
@@ -649,6 +688,9 @@ struct DetailContent: View {
 
             case .bookmarks:
                 LibraryView()
+
+            case .schemes:
+                SchemeLibraryView()
 
             case .workshop:
                 #if !LITE_BUILD
@@ -661,42 +703,20 @@ struct DetailContent: View {
                 if #available(macOS 26.0, *) {
                     SystemWallpaperLibraryView()
                 } else {
-                    EmptyStateView(
-                        icon: "macwindow.on.rectangle",
-                        message: "System Wallpaper requires macOS 26 or later."
+                    IllustratedEmptyState(
+                        symbol: "macwindow.on.rectangle",
+                        title: "System Wallpaper requires macOS 26 or later."
                     )
                 }
 
             case .none:
-                EmptyStateView(
-                    icon: "display",
-                    message: "Choose a display from the sidebar to configure your live wallpaper."
+                IllustratedEmptyState(
+                    symbol: "display",
+                    title: "Choose a display from the sidebar to configure your live wallpaper."
                 )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DesignTokens.Colors.pageBackground)
-    }
-}
-
-// MARK: - Empty State View
-struct EmptyStateView: View {
-    let icon: String
-    let message: LocalizedStringKey
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 42, weight: .regular))
-                .foregroundStyle(.tertiary)
-                .symbolRenderingMode(.hierarchical)
-
-            Text(message)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
