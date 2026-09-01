@@ -576,7 +576,12 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             repeating: .seconds(heartbeatKeepAliveInterval),
             leeway: .seconds(30)
         )
-        timer.setEventHandler { writeActiveHeartbeat(registry: registry, store: store) }
+        timer.setEventHandler {
+            // The tick is this process's only guaranteed wake-up, so it is also
+            // where it notices its own bundle was replaced or deleted under it.
+            ProviderStaleness.exitIfStale()
+            writeActiveHeartbeat(registry: registry, store: store)
+        }
         heartbeatKeepAlive = timer
         timer.resume()
     }

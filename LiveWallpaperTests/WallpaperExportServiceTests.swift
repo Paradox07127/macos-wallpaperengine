@@ -97,7 +97,8 @@ struct WallpaperExportServiceTests {
         osSupported: Bool = true,
         thumbnailJPEG: Data? = Data([0xFF, 0xD8, 0xFF, 0xE0]),
         now: Date = referenceNow,
-        duringThumbnail: PublishHook? = nil
+        duringThumbnail: PublishHook? = nil,
+        expectedProvider: SystemWallpaperProviderIdentity? = nil
     ) throws -> Rig {
         let base = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("WallpaperExportServiceTests-\(UUID().uuidString)")
@@ -122,7 +123,8 @@ struct WallpaperExportServiceTests {
                 if let duringThumbnail { await MainActor.run { duringThumbnail.fire() } }
                 return thumbnailJPEG
             },
-            osSupported: osSupported
+            osSupported: osSupported,
+            expectedProvider: expectedProvider
         ))
         return Rig(service: service, root: root, sourceDirectory: sources)
     }
@@ -840,6 +842,56 @@ struct WallpaperExportServiceTests {
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
             timestamp: Self.referenceNow.addingTimeInterval(-60),
             activeChoiceID: bookmark.id.uuidString
+        ))
+        rig.service.refresh()
+        #expect(rig.service.status == .inUse(itemTitle: "Aurora"))
+    }
+
+    @Test("A fresh beat from a stale appex does not read as in-use")
+    func statusIgnoresForeignProvider() async throws {
+        // After an in-place update the old process keeps its 120 s keep-alive
+        // running, so the beat is recent — only the stamp separates it from the
+        // installed build's.
+        let installed = SystemWallpaperProviderIdentity(
+            build: "42",
+            bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
+            pid: 0
+        )
+        let rig = try makeRig(expectedProvider: installed)
+        let bookmark = try rig.makeVideoBookmark(label: "Aurora")
+        try await rig.service.publish(bookmark: bookmark)
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(
+            timestamp: Self.referenceNow.addingTimeInterval(-60),
+            activeChoiceID: bookmark.id.uuidString,
+            provider: SystemWallpaperProviderIdentity(
+                build: "41",
+                bundlePath: installed.bundlePath,
+                pid: 999
+            )
+        ))
+        rig.service.refresh()
+        #expect(rig.service.status == .publishedNotSelected)
+        #expect(!rig.service.isItemInUse(bookmark.id.uuidString))
+    }
+
+    @Test("A fresh beat from the installed appex still reads as in-use")
+    func statusAcceptsMatchingProvider() async throws {
+        let installed = SystemWallpaperProviderIdentity(
+            build: "42",
+            bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
+            pid: 0
+        )
+        let rig = try makeRig(expectedProvider: installed)
+        let bookmark = try rig.makeVideoBookmark(label: "Aurora")
+        try await rig.service.publish(bookmark: bookmark)
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(
+            timestamp: Self.referenceNow.addingTimeInterval(-60),
+            activeChoiceID: bookmark.id.uuidString,
+            provider: SystemWallpaperProviderIdentity(
+                build: installed.build,
+                bundlePath: installed.bundlePath,
+                pid: 999
+            )
         ))
         rig.service.refresh()
         #expect(rig.service.status == .inUse(itemTitle: "Aurora"))

@@ -17,6 +17,12 @@ final class WallpaperExportService {
         /// JPEG data (480×270 target) for the already-copied video, nil on failure.
         let makeThumbnailJPEG: @Sendable (URL) async -> Data?
         let osSupported: Bool
+        /// The appex this app ships. A heartbeat stamped with anything else came
+        /// from a process an update or a second install left behind, and is not
+        /// evidence about our extension. `nil` disables the check.
+        /// A `var` optional so the memberwise init defaults it, keeping call
+        /// sites that do not care about provider identity source-compatible.
+        var expectedProvider: SystemWallpaperProviderIdentity?
 
         static func live(hostBundleID: String? = Bundle.main.bundleIdentifier) -> Dependencies {
             let supported: Bool
@@ -26,7 +32,8 @@ final class WallpaperExportService {
                 resolver: .live,
                 now: Date.init,
                 makeThumbnailJPEG: WallpaperExportService.generateThumbnailJPEG,
-                osSupported: supported
+                osSupported: supported,
+                expectedProvider: SystemWallpaperProviderIdentity.bundledProvider()
             )
         }
     }
@@ -145,8 +152,14 @@ final class WallpaperExportService {
         return heartbeat.showsChoice(itemID)
     }
 
+    /// Recent *and* ours. The second half matters because a stale appex keeps
+    /// its 120 s keep-alive running: after an in-place update the old process
+    /// goes on writing fresh-looking beats about the wallpaper it is still
+    /// serving, and without the stamp check the app reports that as the shipped
+    /// extension's state.
     private func isFresh(_ heartbeat: SystemWallpaperHeartbeat) -> Bool {
-        dependencies.now().timeIntervalSince(heartbeat.timestamp) < Self.heartbeatFreshnessInterval
+        guard heartbeat.isFromProvider(matching: dependencies.expectedProvider) else { return false }
+        return dependencies.now().timeIntervalSince(heartbeat.timestamp) < Self.heartbeatFreshnessInterval
     }
 
     // MARK: - Publish / remove
