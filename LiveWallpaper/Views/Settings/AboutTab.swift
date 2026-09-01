@@ -67,7 +67,7 @@ extension GeneralSettingsView {
                         Image(systemName: "doc.on.doc")
                             .font(.caption)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .help(Text("Copy version to clipboard"))
                     .accessibilityLabel(Text("Copy version"))
@@ -100,7 +100,7 @@ extension GeneralSettingsView {
             spacing: 10
         ) {
             ForEach(aboutActions, id: \.id) { action in
-                aboutTile(action, layout: layout)
+                AboutActionTile(action: action, layout: layout)
             }
         }
         .frame(maxWidth: layout.gridWidth)
@@ -139,42 +139,6 @@ extension GeneralSettingsView {
         ]
     }
 
-    private func aboutTile(_ action: AboutAction, layout: AboutLayout) -> some View {
-        Button {
-            if let handler = action.action {
-                handler()
-            } else if let url = action.url {
-                NSWorkspace.shared.open(url)
-            }
-        } label: {
-            VStack(spacing: layout.tileSpacing) {
-                Image(systemName: action.systemImage)
-                    .font(.system(size: layout.tileIcon, weight: .regular))
-                    .foregroundStyle(action.accent)
-                    .frame(height: layout.tileIcon + 4)
-
-                Text(action.title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .marqueeOnHover(truncationMode: .tail)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, layout.tilePadding)
-            .padding(.horizontal, 10)
-            .background(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: DesignTokens.Card.strokeWidth)
-            )
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .disabled(action.action == nil && action.url == nil)
-    }
-
     private var aboutFooter: some View {
         VStack(spacing: 4) {
             Text("Made by Paradox07127")
@@ -204,6 +168,55 @@ struct AboutAction {
     let accent: Color
     var url: URL?
     var action: (() -> Void)?
+}
+
+private struct AboutActionTile: View {
+    let action: AboutAction
+    let layout: AboutLayout
+
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            if let handler = action.action {
+                handler()
+            } else if let url = action.url {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            VStack(spacing: layout.tileSpacing) {
+                Image(systemName: action.systemImage)
+                    .font(.system(size: layout.tileIcon, weight: .regular))
+                    .foregroundStyle(action.accent)
+                    .frame(height: layout.tileIcon + 4)
+
+                Text(action.title)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .marqueeOnHover(truncationMode: .tail)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, layout.tilePadding)
+            .padding(.horizontal, 10)
+            // Settings window cards deliberately run a lighter register —
+            // surfaceRaised at 0.72 with Corner.sm/md — distinct from the
+            // opaque Corner.panel inspector cards; user-ratified 2026-08-31.
+            .background(
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                    .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                    .stroke(DesignTokens.Colors.separator.opacity(0.55), lineWidth: DesignTokens.Card.strokeWidth)
+            )
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(action.action == nil && action.url == nil)
+        .cardHoverEffect(isActive: isHovering, reduceMotion: reduceMotion)
+        .onHover { isHovering = $0 }
+    }
 }
 
 /// The three rungs `aboutTab` steps down through. Only sizes and the tile

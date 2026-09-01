@@ -218,7 +218,7 @@ private struct ShortcutRow: View {
                 )
                 .frame(width: 140)
                 .disabled(!isEnabled)
-                .opacity(isEnabled ? 1 : 0.55)
+                .opacity(isEnabled ? 1 : DesignTokens.Opacity.disabledContent)
                 .onChange(of: isEnabled) { _, enabled in
                     if !enabled { isCapturing = false }
                 }
@@ -232,11 +232,11 @@ private struct ShortcutRow: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .disabled(!isEnabled)
-                .opacity(isEnabled ? 1 : 0.55)
+                .opacity(isEnabled ? 1 : DesignTokens.Opacity.disabledContent)
                 .accessibilityLabel(Text("More options for \(action.displayName)", comment: "Shortcut row menu a11y label. The placeholder is the shortcut action name."))
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DesignTokens.Spacing.xs)
     }
 }
 
@@ -266,13 +266,13 @@ private struct ShortcutCaptureField: View {
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                     .fill(isCapturing ? Color.accentColor.opacity(0.18) : Color(NSColor.controlBackgroundColor))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                     .strokeBorder(
-                        isCapturing ? Color.accentColor : Color.primary.opacity(0.10),
+                        isCapturing ? Color.accentColor : Color.primary.opacity(DesignTokens.Opacity.activeFill),
                         lineWidth: isCapturing ? 1.5 : 0.5
                     )
             )

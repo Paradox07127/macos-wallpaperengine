@@ -182,7 +182,7 @@ struct TimelineEditor: View {
         let proposedConflict = isPreview && drag?.conflictsKnown == true && drag?.hasConflict == true
         let fill: Color = proposedConflict
             ? DesignTokens.Colors.Status.danger.opacity(0.55)
-            : (slot.videoBookmarkData == nil ? accent.opacity(0.45) : accent.opacity(0.70))
+            : (slot.videoBookmarkData == nil ? accent.opacity(DesignTokens.Opacity.dimmedContent) : accent.opacity(0.70))
 
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 3)

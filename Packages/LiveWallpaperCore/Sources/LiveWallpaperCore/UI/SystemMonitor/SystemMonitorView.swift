@@ -319,7 +319,9 @@ struct RAMScopePicker: View {
             // Explicit LocalizedStringKey: a bare string ternary would type as
             // String and render verbatim, silently skipping the catalog.
             Text(value == "system" ? LocalizedStringKey("All") : LocalizedStringKey("App"))
-                .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
+                .font(isSelected
+                    ? DesignTokens.Typography.captionEmphasized
+                    : DesignTokens.Typography.caption)
                 .accessibilityLabel(value == "system"
                     ? Text("Show whole-system memory usage", comment: "RAM scope toggle a11y label when scope is the whole system.")
                     : Text("Show this app's memory usage", comment: "RAM scope toggle a11y label when scope is the LiveWallpaper app only."))

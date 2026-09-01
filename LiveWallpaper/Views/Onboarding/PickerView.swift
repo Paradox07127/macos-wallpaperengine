@@ -365,16 +365,12 @@ private struct ActionRowCard: View {
                 Spacer(minLength: 4)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DesignTokens.Typography.captionEmphasized)
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, DesignTokens.Spacing.cardInset)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)
-                    .fill(DesignTokens.Colors.surfaceRaised)
-            )
             .galleryTileChrome(
                 isHovering: isActive,
                 shadowRadius: Metrics.cardShadowRadius,

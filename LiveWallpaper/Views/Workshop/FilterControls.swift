@@ -24,7 +24,7 @@ struct WorkshopFiltersToggle: View {
                         .background(Color.accentColor, in: Capsule())
                 }
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(DesignTokens.Typography.badge)
                     .foregroundStyle(.secondary)
             }
             .font(DesignTokens.Typography.caption)

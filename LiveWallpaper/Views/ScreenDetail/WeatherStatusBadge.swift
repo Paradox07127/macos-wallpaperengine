@@ -85,7 +85,7 @@ struct WeatherStatusBadge: View {
                 Image(systemName: "arrow.clockwise")
                     .font(.caption.weight(.semibold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .help(Text(
                 "Refresh weather now",
                 comment: "Tooltip on the weather badge refresh icon."

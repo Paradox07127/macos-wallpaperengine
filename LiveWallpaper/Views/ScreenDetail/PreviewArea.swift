@@ -229,8 +229,6 @@ struct PreviewArea: View {
         if isDraggingOver {
             ZStack {
                 RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
                     .fill(Color.accentColor.opacity(0.08))
                 RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
                     .strokeBorder(Color.accentColor.opacity(0.85), lineWidth: 1.5)
@@ -256,6 +254,9 @@ struct PreviewArea: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            // `stroked: false`: the accent strokeBorder above already draws
+            // this shape's edge, and it doubles as the drop affordance.
+            .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.preview), stroked: false)
             .padding(20)
             .transition(.opacity)
             .allowsHitTesting(false)
@@ -273,16 +274,13 @@ struct PreviewArea: View {
 
 struct DetailLoadingView: View {
     var body: some View {
-        VStack(spacing: 24) {
-            ProgressView()
-                .scaleEffect(1.5)
-                .padding(.bottom, 8)
-            Text("Loading video...")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.preview))
+        // No visible label on the spinner (HIG); the copy survives as its
+        // accessibility label.
+        ProgressView()
+            .scaleEffect(1.5)
+            .accessibilityLabel(Text("Loading video..."))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.preview))
     }
 }

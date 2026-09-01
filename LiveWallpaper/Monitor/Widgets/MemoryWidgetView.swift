@@ -190,11 +190,21 @@ struct MemoryWidgetView: View {
                         .tracking(Design.labelTracking(size: scale.label))
                         .foregroundStyle(Design.inkFaint)
                 }
-                MemoryBreakdownBar(segments: segments,
-                                   freeFraction: MemoryWidgetView.freeFraction(
-                                       breakdown: breakdown, total: total))
-                    .frame(height: scale.caption * 1.05)
-                if !breakdownCompact {
+                let bar = MemoryBreakdownBar(
+                    segments: segments,
+                    freeFraction: MemoryWidgetView.freeFraction(breakdown: breakdown, total: total)
+                )
+                .frame(height: scale.caption * 1.05)
+                if breakdownCompact {
+                    // Compact drops the legend, so the bar itself must carry the
+                    // per-segment detail for VoiceOver and as a hover tooltip.
+                    let summary = MemoryWidgetView.breakdownSummary(segments)
+                    bar
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(verbatim: summary))
+                        .help(Text(verbatim: summary))
+                } else {
+                    bar
                     MemoryBreakdownLegend(segments: segments, labelSize: scale.label,
                                           columns: legendColumns)
                 }
@@ -390,6 +400,18 @@ struct MemoryWidgetView: View {
                 case .swap: return "Swap"
                 }
             }
+
+            /// Same catalog keys as `displayKey`, as plain strings for the
+            /// compact bar's spoken/tooltip breakdown.
+            var displayName: String {
+                switch self {
+                case .app: String(localized: "App", bundle: .appLanguage, comment: "Memory widget breakdown segment: app memory.")
+                case .wired: String(localized: "Wired", bundle: .appLanguage, comment: "Memory widget breakdown segment: wired memory.")
+                case .compressed: String(localized: "Compressed", bundle: .appLanguage, comment: "Memory widget breakdown segment: compressed memory.")
+                case .cached: String(localized: "Cached Files", bundle: .appLanguage, comment: "Memory widget breakdown segment: cached files.")
+                case .swap: String(localized: "Swap", bundle: .appLanguage, comment: "Memory widget breakdown segment: swap usage.")
+                }
+            }
         }
         var kind: Kind
         var label: String
@@ -415,6 +437,13 @@ struct MemoryWidgetView: View {
             Segment(kind: .swap, label: "Swap", bytes: Double(swap),
                     fraction: frac(swap)),
         ]
+    }
+
+    /// "App 4.2G, Wired 1.1G, …" — the compact bar's spoken/tooltip detail.
+    nonisolated static func breakdownSummary(_ segments: [Segment]) -> String {
+        segments
+            .map { "\($0.kind.displayName) \(String(format: "%.1fG", Format.gib($0.bytes)))" }
+            .joined(separator: ", ")
     }
 
     nonisolated static func freeFraction(breakdown: MonitorMemoryBreakdown, total: Double) -> Double {

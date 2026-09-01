@@ -11,6 +11,13 @@ struct Row: View {
     let onPlayNow: () -> Void
     let onRemove: () -> Void
 
+    /// Keyboard/menu alternative to the drag handle; parent persists through
+    /// the same reorder path the drag uses.
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
+
     /// Parent owns the reorder state machine; the row only forwards the
     /// translation + pointer coordinates upward.
     let onDragChanged: (_ translationY: CGFloat, _ locationY: CGFloat) -> Void
@@ -98,6 +105,16 @@ struct Row: View {
         .accessibilityAction { onPlayNow() }
         .accessibilityAction(named: Text("Set as Primary")) { onSetPrimary() }
         .accessibilityAction(named: Text("Play Now")) { onPlayNow() }
+        .accessibilityAction(named: Text("Move Up")) {
+            if canMoveUp {
+                onMoveUp()
+            }
+        }
+        .accessibilityAction(named: Text("Move Down")) {
+            if canMoveDown {
+                onMoveDown()
+            }
+        }
         .accessibilityAction(named: Text("Remove")) { onRemove() }
         .task(id: entry.bookmark) {
             let loaded = await MetadataService.shared.metadata(for: entry.bookmark)
@@ -119,6 +136,11 @@ struct Row: View {
             .disabled(entry.isPrimary)
         Button("Play Now", systemImage: "play.fill", action: onPlayNow)
             .disabled(entry.isPlaying)
+        Divider()
+        Button("Move Up", systemImage: "arrow.up", action: onMoveUp)
+            .disabled(!canMoveUp)
+        Button("Move Down", systemImage: "arrow.down", action: onMoveDown)
+            .disabled(!canMoveDown)
         Divider()
         Button("Remove", systemImage: "trash", role: .destructive, action: onRemove)
     }
@@ -163,15 +185,25 @@ struct Row: View {
     }
 
     private var backgroundFill: Color {
-        if entry.isPlaying { return Color.accentColor.opacity(0.10) }
-        if isBeingDragged { return Color.primary.opacity(0.08) }
-        if isHovering { return Color.primary.opacity(0.05) }
+        if entry.isPlaying {
+            return Color.accentColor.opacity(DesignTokens.Opacity.activeFill)
+        }
+        if isBeingDragged {
+            return Color.primary.opacity(DesignTokens.Opacity.dragFill)
+        }
+        if isHovering {
+            return Color.primary.opacity(DesignTokens.Opacity.hoverFill)
+        }
         return Color.clear
     }
 
     private var strokeColor: Color {
-        if isBeingDragged { return Color.accentColor.opacity(0.55) }
-        if entry.isPlaying { return Color.accentColor.opacity(0.30) }
+        if isBeingDragged {
+            return Color.accentColor.opacity(DesignTokens.Opacity.strongStroke)
+        }
+        if entry.isPlaying {
+            return Color.accentColor.opacity(DesignTokens.Opacity.quietStroke)
+        }
         return .clear
     }
 

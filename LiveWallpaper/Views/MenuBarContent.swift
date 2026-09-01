@@ -122,7 +122,7 @@ struct MenuBarContent: View {
                 updater.checkForUpdates()
                 dismiss()
             } label: {
-                Label("Update", systemImage: "arrow.down.circle.fill")
+                Label("Update…", systemImage: "arrow.down.circle.fill")
                     .font(.caption.weight(.semibold))
             }
             .adaptiveGlassButton(.regular, size: .small)
@@ -155,6 +155,7 @@ struct MenuBarContent: View {
                         isPlaying: summary.activity == .active,
                         supportsPlayback: summary.supportsPlaybackControl,
                         canStepPlaylist: canStepPlaylist(for: screen),
+                        screenID: screen.id,
                         audioVolume: audioVolumeBinding(for: screen),
                         addAction: summary.wallpaperType == nil
                             ? { invokeAddWallpaper(screen.id) }
@@ -263,7 +264,7 @@ struct MenuBarContent: View {
                 HStack(spacing: 7) {
                     Image(systemName: "slider.horizontal.3")
                         .font(DesignTokens.Typography.bodyEmphasized)
-                    Text("Manage")
+                    Text("Manage…")
                         .font(DesignTokens.Typography.bodyEmphasized)
                         .lineLimit(1)
                 }
@@ -275,29 +276,19 @@ struct MenuBarContent: View {
             .help(Text("Manage — open the LiveWallpaper settings window"))
             .accessibilityLabel(Text("Manage wallpapers"))
 
-            MenuBarFooterUtility(
-                systemImage: "gearshape",
-                role: .neutral,
-                action: invokeOpenSettings,
-                help: Text("Open General Settings"),
-                accessibilityLabel: Text("Open General Settings")
-            )
+            GlassIconButton("gearshape", action: invokeOpenSettings)
+                .help(Text("Open General Settings"))
+                .accessibilityLabel(Text("Open General Settings"))
 
-            MenuBarFooterUtility(
-                systemImage: "arrow.clockwise",
-                role: .neutral,
-                action: { screenManager.reloadAllScreens() },
-                help: Text("Reload all wallpapers"),
-                accessibilityLabel: Text("Reload all wallpapers")
-            )
+            GlassIconButton("arrow.clockwise") { screenManager.reloadAllScreens() }
+                .help(Text("Reload all wallpapers"))
+                .accessibilityLabel(Text("Reload all wallpapers"))
 
-            MenuBarFooterUtility(
-                systemImage: "power",
-                role: .destructiveGlyph,
-                action: { NSApp.terminate(nil) },
-                help: Text("Quit LiveWallpaper"),
-                accessibilityLabel: Text("Quit LiveWallpaper")
-            )
+            GlassIconButton("power", tint: DesignTokens.Colors.Status.danger) {
+                NSApp.terminate(nil)
+            }
+            .help(Text("Quit LiveWallpaper"))
+            .accessibilityLabel(Text("Quit LiveWallpaper"))
         }
         .frame(maxWidth: .infinity)
     }
@@ -588,6 +579,8 @@ private struct MenuBarDisplayRow: View {
     let isPlaying: Bool
     let supportsPlayback: Bool
     let canStepPlaylist: Bool
+    /// Keys the volume slider's pending commit to this display (`CoalescedSlider` owner).
+    let screenID: AnyHashable
     let audioVolume: Binding<Double>?
     /// Non-nil only while this display has no wallpaper assigned.
     let addAction: (() -> Void)?
@@ -624,39 +617,26 @@ private struct MenuBarDisplayRow: View {
                 .accessibilityElement(children: .combine)
 
                 if let addAction {
-                    IconControlButton(
-                        systemImage: "plus",
-                        isEnabled: true,
-                        action: addAction,
-                        accessibilityLabel: "Add wallpaper to this display",
-                        isProminent: true
-                    )
+                    GlassIconButton("plus", prominence: .prominent, size: .regular, action: addAction)
+                        .accessibilityLabel(Text("Add wallpaper to this display"))
                 } else if supportsPlayback {
                     HStack(spacing: 4) {
                         if canStepPlaylist {
-                            IconControlButton(
-                                systemImage: "chevron.left",
-                                isEnabled: true,
-                                action: previousAction,
-                                accessibilityLabel: "Previous wallpaper"
-                            )
+                            GlassIconButton("chevron.left", size: .regular, action: previousAction)
+                                .accessibilityLabel(Text("Previous wallpaper"))
                         }
 
-                        IconControlButton(
-                            systemImage: isPlaying ? "pause.fill" : "play.fill",
-                            isEnabled: true,
-                            action: playbackAction,
-                            accessibilityLabel: isPlaying ? "Pause wallpaper" : "Play wallpaper",
-                            isProminent: true
+                        GlassIconButton(
+                            isPlaying ? "pause.fill" : "play.fill",
+                            prominence: .prominent,
+                            size: .regular,
+                            action: playbackAction
                         )
+                        .accessibilityLabel(Text(isPlaying ? "Pause wallpaper" : "Play wallpaper"))
 
                         if canStepPlaylist {
-                            IconControlButton(
-                                systemImage: "chevron.right",
-                                isEnabled: true,
-                                action: nextAction,
-                                accessibilityLabel: "Next wallpaper"
-                            )
+                            GlassIconButton("chevron.right", size: .regular, action: nextAction)
+                                .accessibilityLabel(Text("Next wallpaper"))
                         }
                     }
                 }
@@ -664,7 +644,7 @@ private struct MenuBarDisplayRow: View {
             .accessibilityElement(children: .contain)
 
             if let audioVolume {
-                VolumeControlRow(audioVolume: audioVolume)
+                VolumeControlRow(owner: screenID, audioVolume: audioVolume)
             }
         }
         .padding(.horizontal, MenuBarMetrics.rowPaddingHorizontal)
@@ -697,48 +677,37 @@ private struct DisplayIconTile: View {
 }
 
 private struct VolumeControlRow: View {
+    let owner: AnyHashable
     let audioVolume: Binding<Double>
-
-    /// Local mirror of the upstream binding.
-    @State private var liveValue: Double = 0
 
     var body: some View {
         HStack(spacing: 7) {
-            Image(systemName: volumeIcon(for: liveValue))
-                .font(.system(size: 12, weight: .semibold))
+            Image(systemName: volumeIcon(for: audioVolume.wrappedValue))
+                .font(DesignTokens.Typography.metric.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
                 .accessibilityHidden(true)
 
-            Slider(value: liveBinding, in: 0...1)
-                .controlSize(.mini)
-                .tint(.secondary)
-                .accessibilityLabel(Text("Wallpaper volume"))
-                .accessibilityValue(Text("\(volumePercent(liveValue)) percent"))
-
-            Text(verbatim: "\(volumePercent(liveValue))%")
-                .font(DesignTokens.Typography.metric)
-                .foregroundStyle(.secondary)
-                .frame(width: 38, alignment: .trailing)
-                .monospacedDigit()
+            CoalescedSlider(
+                value: audioVolume.wrappedValue,
+                in: 0 ... 1,
+                owner: owner,
+                controlSize: .mini,
+                sizing: .flexible(minimum: 0, maximum: .infinity),
+                accessibilityLabel: Text("Wallpaper volume"),
+                accessibilityValue: { Text("\(volumePercent($0)) percent") },
+                write: { audioVolume.wrappedValue = $0 },
+                readout: { live in
+                    Text(verbatim: "\(volumePercent(live))%")
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, alignment: .trailing)
+                        .monospacedDigit()
+                }
+            )
+            .tint(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .onAppear { liveValue = audioVolume.wrappedValue }
-        .onChange(of: audioVolume.wrappedValue) { _, newValue in
-            if abs(liveValue - newValue) > 0.001 {
-                liveValue = newValue
-            }
-        }
-    }
-
-    private var liveBinding: Binding<Double> {
-        Binding(
-            get: { liveValue },
-            set: { newValue in
-                liveValue = newValue
-                audioVolume.wrappedValue = newValue
-            }
-        )
     }
 
     private func volumePercent(_ value: Double) -> Int {
@@ -754,62 +723,6 @@ private struct VolumeControlRow: View {
         default:
             return "speaker.wave.2.fill"
         }
-    }
-}
-
-private struct IconControlButton: View {
-    let systemImage: String
-    let isEnabled: Bool
-    let action: () -> Void
-    let accessibilityLabel: LocalizedStringKey
-    var isProminent: Bool = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(isProminent ? Color.white : Color.primary)
-                .frame(width: 28, height: 28)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .adaptiveGlassSurface(.circle, tint: isProminent ? Color.accentColor : nil, interactive: true)
-        .disabled(!isEnabled)
-        .accessibilityLabel(Text(accessibilityLabel))
-    }
-}
-
-private enum FooterUtilityRole {
-    case neutral
-    case destructiveGlyph
-}
-
-private struct MenuBarFooterUtility: View {
-    let systemImage: String
-    let role: FooterUtilityRole
-    let action: () -> Void
-    let help: Text
-    let accessibilityLabel: Text
-
-    private var glyphTint: Color {
-        switch role {
-        case .destructiveGlyph: DesignTokens.Colors.Status.danger
-        case .neutral:          Color.primary
-        }
-    }
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(glyphTint)
-                .frame(width: 38, height: 38)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .adaptiveGlassSurface(.circle, interactive: true)
-        .help(help)
-        .accessibilityLabel(accessibilityLabel)
     }
 }
 

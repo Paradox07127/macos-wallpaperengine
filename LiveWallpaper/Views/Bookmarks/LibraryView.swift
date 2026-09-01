@@ -196,7 +196,7 @@ private struct BookmarkTile: View {
         thumbnailTile
             .frame(maxWidth: .infinity, alignment: .leading)
         .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
-        .onHover { isHovering = $0 }
+            .settledHover { isHovering = $0 }
         .contextMenu { contextMenu }
         .task(id: bookmark.id) { await loadThumbnail() }
         .accessibilityElement(children: .combine)
@@ -242,9 +242,12 @@ private struct BookmarkTile: View {
     @ViewBuilder
     private var bottomBand: some View {
         if isRenaming {
+            // Square glass panel (radius 0): the band sits flush against the
+            // tile's clipped bottom edge. Its controls are adaptive-coloured,
+            // not light-on-dark, so this is not a `thumbnailBadgeGlass` case.
             renameField
                 .padding(DesignTokens.Spacing.sm)
-                .background(Rectangle().fill(.regularMaterial))
+                .adaptiveGlassSurface(.roundedRectangle(0), stroked: false)
         } else {
             ThumbnailTitleBand(title: bookmark.label, isHovering: isHovering) {
                 applyControl
@@ -300,7 +303,7 @@ private struct BookmarkTile: View {
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .help(Text("Delete bookmark"))
     }
 

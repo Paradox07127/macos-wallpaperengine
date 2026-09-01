@@ -455,7 +455,7 @@ struct InstalledView: View {
                     .font(.system(size: 16))
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .padding(DesignTokens.Spacing.sm)
             .help(Text("Cancel"))
             .accessibilityLabel(Text("Cancel"))

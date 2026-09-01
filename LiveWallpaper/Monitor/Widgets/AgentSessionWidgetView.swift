@@ -182,7 +182,7 @@ struct AgentSessionWidgetView: View {
                 .fill(actionStripFill(alert: alert))
                 .overlay(
                     RoundedRectangle(cornerRadius: AgentSessionRowStyle.radius, style: .continuous)
-                        .strokeBorder(alert ? Design.signalCoral.opacity(0.85)
+                        .strokeBorder(alert ? Design.signalCoral.opacity(DesignTokens.Opacity.emphasisStroke)
                                             : Design.panelStroke,
                                       lineWidth: 1)
                 )
@@ -377,7 +377,7 @@ private struct AgentSessionCompactRow: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: AgentSessionRowStyle.radius, style: .continuous))
         .overlay(AgentSessionRowStyle.border(isBlocked: isBlocked))
-        .opacity(status == .ended ? 0.55 : 1)
+        .opacity(status == .ended ? DesignTokens.Opacity.disabledContent : 1)
     }
 }
 
@@ -414,7 +414,7 @@ private struct AgentSessionFullRow: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: AgentSessionRowStyle.radius, style: .continuous))
         .overlay(AgentSessionRowStyle.border(isBlocked: isBlocked))
-        .opacity(status == .ended ? 0.55 : (status == .idle ? 0.62 : 1))
+        .opacity(status == .ended ? DesignTokens.Opacity.disabledContent : (status == .idle ? 0.62 : 1))
     }
 
     private var header: some View {
@@ -523,7 +523,7 @@ private enum AgentSessionRowStyle {
 
     static func border(isBlocked: Bool) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .strokeBorder(isBlocked ? Design.signalCoral.opacity(0.85) : Design.panelStroke,
+            .strokeBorder(isBlocked ? Design.signalCoral.opacity(DesignTokens.Opacity.emphasisStroke) : Design.panelStroke,
                           lineWidth: 1)
     }
 }

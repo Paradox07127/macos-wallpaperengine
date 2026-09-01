@@ -31,7 +31,7 @@ struct PasteRowCard: View {
         .padding(DesignTokens.Spacing.cardInset)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(DesignTokens.Colors.surfaceRaised)
         )
         .overlay {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)

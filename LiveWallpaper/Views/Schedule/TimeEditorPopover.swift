@@ -2,34 +2,21 @@ import SwiftUI
 import LiveWallpaperCore
 
 /// Popover anchored to a slot row's time-range label.
+///
+/// The draft lives in the presenting row, not here: dismissing the popover by
+/// clicking outside must keep unapplied edits (only an explicit Cancel may
+/// discard them), and this view is destroyed on every dismissal.
 struct TimeEditorPopover: View {
     let slotID: UUID
     let initialStart: Int
     let initialEnd: Int
+    @Binding var draftStart: Int
+    @Binding var draftEnd: Int
     let otherSlots: [ScheduleSlot]
     let onCommit: (_ start: Int, _ end: Int) -> Void
     let onCancel: () -> Void
 
-    @State private var draftStart: Int
-    @State private var draftEnd: Int
-
-    init(
-        slotID: UUID,
-        initialStart: Int,
-        initialEnd: Int,
-        otherSlots: [ScheduleSlot],
-        onCommit: @escaping (Int, Int) -> Void,
-        onCancel: @escaping () -> Void
-    ) {
-        self.slotID = slotID
-        self.initialStart = initialStart
-        self.initialEnd = initialEnd
-        self.otherSlots = otherSlots
-        self.onCommit = onCommit
-        self.onCancel = onCancel
-        _draftStart = State(initialValue: initialStart)
-        _draftEnd = State(initialValue: initialEnd)
-    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -85,6 +72,8 @@ struct TimeEditorPopover: View {
                 .disabled(applyDisabled)
             }
         }
+        .animation(DesignTokens.motion(reduceMotion, .easeInOut(duration: 0.2)), value: conflictBanner)
+        .animation(DesignTokens.motion(reduceMotion, .easeInOut(duration: 0.2)), value: isZeroLength)
         .settingsPopoverChrome(width: 280)
     }
 

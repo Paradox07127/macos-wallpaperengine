@@ -32,7 +32,7 @@ struct DownloadToastHost: View {
             ZStack {
                 Circle().fill(tint.opacity(0.18)).frame(width: 28, height: 28)
                 Image(systemName: event.isSuccess ? "checkmark" : "exclamationmark.triangle.fill")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DesignTokens.Typography.bodyEmphasized)
                     .foregroundStyle(tint)
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -58,7 +58,7 @@ struct DownloadToastHost: View {
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .accessibilityLabel(Text("Dismiss"))
         }
         .padding(.horizontal, DesignTokens.Spacing.cardInset)

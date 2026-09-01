@@ -190,6 +190,37 @@ public enum DesignTokens {
         /// targets). Promoted from a 16pt literal already used by
         /// `ScreenPreviewChrome` and every large preview surface.
         public static let preview: CGFloat = 16
+        /// Inspector panel cards, promoted from the literal both
+        /// `ContainerGroupBoxStyle` and `HTMLSourceChrome` carried.
+        public static let panel: CGFloat = 12
+    }
+
+    /// Semantic opacity steps for state-conveying alpha (hover / drag / selected /
+    /// disabled / alert). Fixed decorative strokes, shadows, and media scrims stay
+    /// literal by design — only interaction-state opacity routes through these.
+    public enum Opacity {
+        /// Hovered row/chip background fill.
+        public static let hoverFill: Double = 0.05
+        /// Background fill while the element is being dragged.
+        public static let dragFill: Double = 0.08
+        /// Active / playing / conflict background; also the unselected stroke.
+        public static let activeFill: Double = 0.10
+        /// Selected-state tinted fill.
+        public static let selectedFill: Double = 0.12
+        /// Quiet outline in its resting / not-armed state.
+        public static let quietStroke: Double = 0.28
+        /// Strong stroke around selected or dragged elements.
+        public static let strongStroke: Double = 0.55
+        /// Conflict / warning border.
+        public static let alertStroke: Double = 0.75
+        /// Emphasis border for alert / blocked states.
+        public static let emphasisStroke: Double = 0.85
+        /// Unselected or empty content dimming.
+        public static let dimmedContent: Double = 0.45
+        /// Whole-control dimming for disabled / ended states.
+        public static let disabledContent: Double = 0.55
+        /// Dimmed glyph in its off state; empty-slot strokes.
+        public static let dimmedIcon: Double = 0.70
     }
 
     /// Page-top status bars (storage breakdown, Workshop setup). Shared because the
@@ -212,7 +243,7 @@ public enum DesignTokens {
         /// sites don't need a separate `.monospacedDigit()`.
         public static let sliderWidth: CGFloat = 96
         public static let sliderValueWidth: CGFloat = 40
-        public static let sliderValueSpacing: CGFloat = 4
+        public static let sliderValueSpacing: CGFloat = Spacing.xs
         /// Horizontal padding floor when the inspector is dragged to its min width.
         /// Vertical padding stays constant — only horizontal compresses with width.
         public static let minHorizontalPadding: CGFloat = 9
@@ -236,13 +267,12 @@ public enum DesignTokens {
 
     public enum DetailHeader {
         public static let horizontalPadding: CGFloat = Spacing.xl
-        public static let verticalPadding: CGFloat = 14
-        public static let contentSpacing: CGFloat = 14
+        public static let verticalPadding: CGFloat = Spacing.cardInset
+        public static let contentSpacing: CGFloat = Spacing.cardInset
         public static let iconSize: CGFloat = 40
         public static let iconSymbolSize: CGFloat = 20
-        public static let titleSize: CGFloat = 18
-        public static let textSpacing: CGFloat = 2
-        public static let metadataSpacing: CGFloat = 8
+        public static let textSpacing: CGFloat = Spacing.xxs
+        public static let metadataSpacing: CGFloat = Spacing.sm
     }
 
     /// Detail-page secondary control row (library filter bar). Anchored under
@@ -274,17 +304,15 @@ public enum DesignTokens {
 
     public enum GuidedLibrary {
         public static let outerPadding: CGFloat = 40
-        public static let topSpacerHeight: CGFloat = 24
+        public static let topSpacerHeight: CGFloat = Spacing.xl
         public static let iconSize: CGFloat = 48
-        public static let titleSize: CGFloat = 18
-        public static let messageSize: CGFloat = 13
         public static let featureWidth: CGFloat = 380
         public static let messageWidth: CGFloat = 360
     }
 
     public enum Settings {
         public static let formHorizontalMargin: CGFloat = 18
-        public static let formVerticalMargin: CGFloat = 12
+        public static let formVerticalMargin: CGFloat = Spacing.md
         /// Settings-window sliders get a much longer throw than the inspector's
         /// `Inspector.sliderWidth`: this window has no 268pt panel floor to fit
         /// into, and these tracks (volume, RAM budget) are dragged for a value

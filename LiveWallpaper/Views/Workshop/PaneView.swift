@@ -264,6 +264,7 @@ struct WorkshopPaneHeader: View {
     @Environment(WorkshopSetupController.self) private var setupController
 
     @State private var showingSignIn = false
+    @State private var showingAccountMenu = false
 
     /// Same `DetailHeaderBar` as Bookmarks and Apple Aerials — this pane used to
     /// hand-roll an identical icon/title/metadata/actions row, so the three
@@ -294,35 +295,49 @@ struct WorkshopPaneHeader: View {
         // outlives the Steam profile it came from, and a menu with nothing to
         // switch between is a menu that only knows how to sign in.
         if setupController.discoveredAccounts.isEmpty {
-            headerAction {
-                Button { showingSignIn = true } label: {
-                    headerGlyph("person.crop.circle.badge.plus")
-                }
-                .buttonStyle(.plain)
-            }
-            .help(Text("Sign In"))
-            .accessibilityLabel(Text("Steam sign-in"))
+            GlassIconButton("person.crop.circle.badge.plus", action: { showingSignIn = true })
+                .help(Text("Sign In"))
+                .accessibilityLabel(Text("Steam sign-in"))
         } else {
-            headerAction {
-                Menu {
-                    steamAccountMenuItems(
-                        accounts: setupController.discoveredAccounts,
-                        current: doctor.username,
-                        onSelect: setupController.selectAccount,
-                        onSignIn: { showingSignIn = true },
-                        onRescan: { Task { await setupController.loadAccounts() } }
-                    )
-                } label: {
-                    headerGlyph(doctor.username == nil
-                        ? "person.crop.circle.badge.plus"
-                        : "person.crop.circle.fill")
+            // Not a Menu: an AppKit popup's label takes neither `glassEffect`
+            // nor the `adaptiveGlassButton` pipeline (both probed on 26,
+            // 2026-08-31 — the disc rendered flat). A real Button through
+            // GlassIconButton is pixel-identical to its paste-link neighbour,
+            // so the account list moved into a popover instead.
+            let glyph = doctor.username == nil ? "person.crop.circle.badge.plus" : "person.crop.circle.fill"
+            GlassIconButton(glyph, action: { showingAccountMenu = true })
+                .help(Text(verbatim: setupController.setupError ?? doctor.username ?? ""))
+                .accessibilityLabel(Text("Steam account"))
+                .popover(isPresented: $showingAccountMenu, arrowEdge: .bottom) {
+                    accountMenuPopover
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-            }
-            .help(Text(verbatim: setupController.setupError ?? doctor.username ?? ""))
-            .accessibilityLabel(Text("Steam account"))
         }
+    }
+
+    /// The account list the neighbouring Menu used to drop down, re-hosted in a
+    /// popover so the control itself can be a real (glass) Button.
+    private var accountMenuPopover: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            steamAccountMenuItems(
+                accounts: setupController.discoveredAccounts,
+                current: doctor.username,
+                onSelect: { account in
+                    showingAccountMenu = false
+                    setupController.selectAccount(account)
+                },
+                onSignIn: {
+                    showingAccountMenu = false
+                    showingSignIn = true
+                },
+                onRescan: {
+                    showingAccountMenu = false
+                    Task { await setupController.loadAccounts() }
+                }
+            )
+            .buttonStyle(.borderless)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .settingsPopoverChrome(width: 220)
     }
 
     /// On Workshop, prefixes the request count with the API-key status seal so
@@ -331,7 +346,7 @@ struct WorkshopPaneHeader: View {
         HStack(spacing: 4) {
             if selectedTab == .browseOnline, services.hasWebAPIKey {
                 Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 10))
+                    .font(DesignTokens.Typography.caption)
                     .foregroundStyle(DesignTokens.Colors.Status.active)
                     .accessibilityHidden(true)
             }
@@ -359,39 +374,11 @@ struct WorkshopPaneHeader: View {
         }
     }
 
-    private static let headerGlyphSize: CGFloat = 30
-
-    private func headerGlyph(_ systemImage: String) -> some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(Color.primary)
-            .frame(width: Self.headerGlyphSize, height: Self.headerGlyphSize)
-            .contentShape(Circle())
-    }
-
-    /// The glass disc is a sibling layer behind the control, not a modifier on it: `Menu` is an
-    /// AppKit popup that swallows `glassEffect` applied to it or to its label, so the account
-    /// control kept coming out a bare glyph beside its glass twin. One disc, drawn on plain content, serves button and menu alike.
-    private func headerAction<C: View>(@ViewBuilder _ control: () -> C) -> some View {
-        ZStack {
-            Color.clear
-                .frame(width: Self.headerGlyphSize, height: Self.headerGlyphSize)
-                .adaptiveGlassSurface(.circle, interactive: true)
-            control()
-        }
-        .frame(width: Self.headerGlyphSize, height: Self.headerGlyphSize)
-    }
-
     private var headerActions: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            headerAction {
-                Button(action: onPaste) {
-                    headerGlyph("link.badge.plus")
-                }
-                .buttonStyle(.plain)
-            }
-            .help(Text("Add a Steam Workshop item by URL or ID"))
-            .accessibilityLabel(Text("Add from Workshop URL or ID"))
+            GlassIconButton("link.badge.plus", action: onPaste)
+                .help(Text("Add a Steam Workshop item by URL or ID"))
+                .accessibilityLabel(Text("Add from Workshop URL or ID"))
 
             accountControl
         }

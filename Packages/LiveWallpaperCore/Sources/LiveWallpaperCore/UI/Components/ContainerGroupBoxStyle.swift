@@ -11,12 +11,15 @@ public struct ContainerGroupBoxStyle: GroupBoxStyle {
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
                 .fill(DesignTokens.Colors.surfaceRaised)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
+                .strokeBorder(
+                    DesignTokens.Colors.separator.opacity(0.55),
+                    lineWidth: DesignTokens.Card.strokeWidth
+                )
         )
     }
 }

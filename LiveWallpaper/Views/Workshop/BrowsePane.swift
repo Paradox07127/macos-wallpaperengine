@@ -462,7 +462,7 @@ struct BrowsePane: View {
         .overlay {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DesignTokens.Typography.bodyEmphasized)
                     .foregroundStyle(.tint)
                     .accessibilityHidden(true)
                 label
@@ -636,7 +636,7 @@ private struct WorkshopSkeletonCard: View {
             }
             .padding(DesignTokens.Spacing.md)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(DesignTokens.Colors.surfaceRaised)
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)

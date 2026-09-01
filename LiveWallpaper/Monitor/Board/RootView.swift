@@ -46,6 +46,12 @@ struct RootView: View {
         .background(Color.clear)
         .focusable(model.isEditing)
         .focused($boardFocused)
+        // Focusable for arrow-key nudge and Delete, but without the system focus
+        // ring: this is a full-bleed canvas, so the ring traces the whole board
+        // (the inspector preview's entire frame) in accent blue the moment it is
+        // clicked. Which widget is active is already shown by its own selection
+        // chrome, so the ring adds noise, not information.
+        .focusEffectDisabled()
         .onMoveCommand(perform: handleMoveCommand)
         .onDeleteCommand {
             model.deleteSelectedWidget()
@@ -112,7 +118,7 @@ struct RootView: View {
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(.secondary.opacity(0.5))
             Text(MonitorBoardStrings.emptyBoardHint)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(DesignTokens.Typography.body.weight(.medium))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary.opacity(0.6))
         }

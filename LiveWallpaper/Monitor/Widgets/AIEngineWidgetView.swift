@@ -313,7 +313,7 @@ private struct AIEngineContent: View {
                     .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
                     .opacity(0.85)
                 Text(verbatim: proc.name)
-                    .font(.system(size: scale.caption, weight: .medium, design: .rounded))
+                    .font(Design.captionFont(size: scale.caption))
                     .foregroundStyle(Design.inkPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)

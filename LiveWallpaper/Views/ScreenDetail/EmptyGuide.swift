@@ -197,15 +197,7 @@ private struct GuideCard: View {
         }
         .buttonStyle(.plain)
         .focused($isFocused)
-        .scaleEffect(isActive && !reduceMotion ? 1.015 : 1.0)
-        .shadow(
-            color: .black.opacity(isActive ? DesignTokens.Card.shadowOpacity : DesignTokens.Card.restShadowOpacity),
-            radius: isActive ? DesignTokens.Card.shadowRadius : DesignTokens.Card.restShadowRadius,
-            x: 0,
-            y: isActive ? DesignTokens.Card.shadowYOffset : DesignTokens.Card.restShadowYOffset
-        )
-        .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.32, dampingFraction: 0.86)), value: isHovering)
-        .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.32, dampingFraction: 0.86)), value: isFocused)
+        .cardHoverEffect(isActive: isActive, reduceMotion: reduceMotion)
         .onHover { isHovering = $0 }
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityHint(Text(subtitle))

@@ -20,6 +20,11 @@ struct SlotRow: View {
     @State private var videoName: String?
     @State private var isHovering = false
     @State private var timePopoverShown = false
+    /// Unapplied time-editor edits, kept across popover dismissals: clicking
+    /// outside must not discard them — only Cancel (or Apply) clears them.
+    /// `nil` = no pending draft, the popover shows the committed hours.
+    @State private var draftStart: Int?
+    @State private var draftEnd: Int?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -51,6 +56,9 @@ struct SlotRow: View {
         .onHover { isHovering = $0 }
         .onAppear { resolveVideoName() }
         .onChange(of: slot.videoBookmarkData) { resolveVideoName() }
+        // A committed change from anywhere else invalidates the pending draft.
+        .onChange(of: slot.startHour) { clearTimeDraft() }
+        .onChange(of: slot.endHour) { clearTimeDraft() }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAction(named: Text("Edit Time Range")) { timePopoverShown = true }
@@ -122,7 +130,7 @@ struct SlotRow: View {
                     .padding(.vertical, 2)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(Color.primary.opacity(isHovering ? 0.06 : 0.0))
+                            .fill(Color.primary.opacity(isHovering ? DesignTokens.Opacity.hoverFill : 0.0))
                     )
                     .contentShape(Capsule())
             }
@@ -136,12 +144,24 @@ struct SlotRow: View {
                         slotID: slot.id,
                         initialStart: slot.startHour,
                         initialEnd: slot.endHour,
+                        draftStart: Binding(
+                            get: { draftStart ?? slot.startHour },
+                            set: { draftStart = $0 }
+                        ),
+                        draftEnd: Binding(
+                            get: { draftEnd ?? slot.endHour },
+                            set: { draftEnd = $0 }
+                        ),
                         otherSlots: otherSlots,
                         onCommit: { start, end in
+                            clearTimeDraft()
                             timePopoverShown = false
                             onCommitTimeChange(start, end)
                         },
-                        onCancel: { timePopoverShown = false }
+                        onCancel: {
+                            clearTimeDraft()
+                            timePopoverShown = false
+                        }
                     )
                 }
             }
@@ -212,20 +232,35 @@ struct SlotRow: View {
     }
 
     private var backgroundFill: Color {
-        if isHighlightedConflict { return DesignTokens.Colors.Status.danger.opacity(0.10) }
-        if isActive { return accent.opacity(0.10) }
-        if isHovering { return Color.primary.opacity(0.04) }
-        return Color.primary.opacity(0.025)
+        if isHighlightedConflict {
+            return DesignTokens.Colors.Status.danger.opacity(DesignTokens.Opacity.activeFill)
+        }
+        if isActive {
+            return accent.opacity(DesignTokens.Opacity.activeFill)
+        }
+        if isHovering {
+            return Color.primary.opacity(DesignTokens.Opacity.hoverFill)
+        }
+        return Color.clear
     }
 
     private var borderColor: Color {
-        if isHighlightedConflict { return DesignTokens.Colors.Status.danger.opacity(0.75) }
-        if isActive { return accent.opacity(0.30) }
+        if isHighlightedConflict {
+            return DesignTokens.Colors.Status.danger.opacity(DesignTokens.Opacity.alertStroke)
+        }
+        if isActive {
+            return accent.opacity(DesignTokens.Opacity.quietStroke)
+        }
         return Color.primary.opacity(0.06)
     }
 
     private var borderWidth: CGFloat {
         isHighlightedConflict || isActive ? 1 : 0.5
+    }
+
+    private func clearTimeDraft() {
+        draftStart = nil
+        draftEnd = nil
     }
 
     private func resolveVideoName() {

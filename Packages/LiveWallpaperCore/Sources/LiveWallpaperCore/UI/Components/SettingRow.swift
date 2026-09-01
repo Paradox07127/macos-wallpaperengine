@@ -178,7 +178,7 @@ public struct SettingRow<Content: View>: View {
             content
         }
         .controlSize(.small)
-        .padding(.vertical, 3)
+        .padding(.vertical, DesignTokens.Spacing.xs)
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
     }
 }
@@ -203,7 +203,7 @@ public struct InfoTooltipButton: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .help(localizedText)
         .accessibilityLabel(Text("More information"))
         .accessibilityHint(Text(verbatim: localizedText))

@@ -393,7 +393,7 @@ struct NowPlayingWidgetView: View {
     private func permissionNotice(in size: CGSize) -> some View {
         if showsPermissionNotice {
             Text("Allow control in System Settings → Privacy & Security → Automation.")
-                .font(.system(size: max(9, min(13, size.height * 0.06)), weight: .medium))
+                .font(DesignTokens.Typography.body.weight(.medium))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.white.opacity(0.92))
                 .padding(.horizontal, 10)
@@ -572,7 +572,10 @@ struct NowPlayingWidgetView: View {
                 // scrim. The frame stays full-size so the target does not
                 // shrink with the glyph.
                 .frame(width: side, height: side)
-                .contentShape(Circle())
+                // side bottoms out at 22pt on small overlays; pad the target
+                // (not the glyph) up to the 28pt minimum hit region.
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Self.controlLabel(for: button))
@@ -1042,7 +1045,7 @@ struct NowPlayingWidgetView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
                 .strokeBorder(
                     .white.opacity(0.35),
                     style: StrokeStyle(lineWidth: 1, dash: [5, 4])

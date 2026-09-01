@@ -92,9 +92,16 @@ public extension View {
 
     /// Dark-tinted interactive glass circle for a single-glyph control over artwork
     /// (e.g. the hero close button). The dark tint keeps a white glyph legible over
-    /// bright previews and firms up on hover.
-    func floatingGlyphGlass(hovered: Bool) -> some View {
-        modifier(FloatingGlyphGlassModifier(hovered: hovered))
+    /// bright previews and firms up on hover. `opacity: nil` keeps the dark
+    /// constants tuned for that role; pass a `thumbnailBadgeGlass`-strength value
+    /// (with a `tint`) to move an identity-tinted glyph control onto this hover
+    /// API without changing its resting look.
+    func floatingGlyphGlass(
+        hovered: Bool,
+        tint: Color = .black,
+        opacity: Double? = nil
+    ) -> some View {
+        modifier(FloatingGlyphGlassModifier(hovered: hovered, tint: tint, opacity: opacity))
     }
 }
 
@@ -159,9 +166,24 @@ public enum FloatingGlyphBacking: Equatable, Sendable {
 
 private struct FloatingGlyphGlassModifier: ViewModifier {
     let hovered: Bool
+    var tint: Color = .black
+    /// nil = the dark backing this modifier has always drawn; a value follows
+    /// `thumbnailBadgeGlass` strength (glass = value × 0.6, fallback = value)
+    /// so migrated call sites keep their resting look on every path.
+    var opacity: Double?
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+
+    private var glassOpacity: Double {
+        guard let opacity else { return hovered ? 0.32 : 0.18 }
+        return (hovered ? min(opacity * 1.3, 1) : opacity) * 0.6
+    }
+
+    private var tintedOpacity: Double {
+        guard let opacity else { return hovered ? 0.6 : 0.4 }
+        return hovered ? min(opacity + 0.1, 1) : opacity
+    }
 
     func body(content: Content) -> some View {
         switch FloatingGlyphBacking.resolve(
@@ -172,7 +194,11 @@ private struct FloatingGlyphGlassModifier: ViewModifier {
         case let .opaque(bordered):
             content.background(
                 Circle()
-                    .fill(hovered ? Color(white: 0.22) : Color.black)
+                    .fill(tint)
+                    // White at 0.22 over the default black composites to exactly
+                    // the `Color(white: 0.22)` this path hovered with before it
+                    // took a tint; over a tint it reads as the same brightening.
+                    .overlay(Circle().fill(Color.white.opacity(hovered ? 0.22 : 0)))
                     .overlay {
                         if bordered {
                             Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 1)
@@ -182,12 +208,12 @@ private struct FloatingGlyphGlassModifier: ViewModifier {
         case .glass:
             if #available(macOS 26.0, *) {
                 content.glassEffect(
-                    .regular.tint(.black.opacity(hovered ? 0.32 : 0.18)).interactive(),
+                    .regular.tint(tint.opacity(glassOpacity)).interactive(),
                     in: .circle
                 )
             }
         case .tinted:
-            content.background(Circle().fill(.black.opacity(hovered ? 0.6 : 0.4)))
+            content.background(Circle().fill(tint.opacity(tintedOpacity)))
         }
     }
 }

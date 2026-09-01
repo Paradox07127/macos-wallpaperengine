@@ -82,9 +82,9 @@ struct MonitorWidgetControlBar: View {
                         if !model.setSize(placement.id, to: size) { flashDeny() }
                     } label: {
                         Text(verbatim: size.rawValue.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(DesignTokens.Typography.badge)
                             .tracking(0.8)
-                            .foregroundStyle(placement.size == size ? Color.white : Color.white.opacity(0.45))
+                            .foregroundStyle(placement.size == size ? Color.white : Color.white.opacity(DesignTokens.Opacity.dimmedContent))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(
@@ -112,33 +112,25 @@ struct MonitorWidgetControlBar: View {
 
     private var settingsButton: some View {
         let isOpen = model.settingsOpenID == placement.id
-        return Button {
+        return GlassIconButton(
+            "gearshape",
+            prominence: isOpen ? .prominent : .regular,
+            size: .regular
+        ) {
             model.settingsOpenID = isOpen ? nil : placement.id
-        } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isOpen ? Color.white : Color.white.opacity(0.7))
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(isOpen ? DesignTokens.Colors.BoardChrome.selected : DesignTokens.Colors.BoardChrome.surface))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         }
-        .buttonStyle(.plain)
         .help(MonitorBoardStrings.widgetSettings)
         .accessibilityLabel(Text(MonitorBoardStrings.widgetSettings))
     }
 
     private var removeButton: some View {
-        Button {
+        GlassIconButton(
+            "trash",
+            size: .regular,
+            tint: DesignTokens.Colors.Status.danger
+        ) {
             model.perform(.delete(id: placement.id))
-        } label: {
-            Image(systemName: "trash")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.7))
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(DesignTokens.Colors.BoardChrome.surface))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
         }
-        .buttonStyle(.plain)
         .help(MonitorBoardStrings.removeWidget)
     }
 
@@ -165,9 +157,9 @@ struct MonitorBoardEditToolbar: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(DesignTokens.Typography.captionEmphasized)
                     Text(MonitorBoardStrings.addWidget)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DesignTokens.Typography.captionEmphasized)
                 }
                 .foregroundStyle(model.isCatalogOpen ? Color.white : Color.white.opacity(0.82))
                 .padding(.horizontal, 10)
@@ -193,7 +185,7 @@ struct MonitorBoardEditToolbar: View {
                     model.setEditing(false)
                 } label: {
                     Text(MonitorBoardStrings.doneEditing)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DesignTokens.Typography.captionEmphasized)
                         .foregroundStyle(Color.white.opacity(0.82))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -227,7 +219,7 @@ struct MonitorCatalogView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(MonitorBoardStrings.widgetCatalog)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(DesignTokens.Typography.bodyEmphasized)
                     .foregroundStyle(Color.white.opacity(0.9))
                 Spacer()
                 Button {
@@ -237,13 +229,15 @@ struct MonitorCatalogView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.white.opacity(0.6))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
             }
 
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(MonitorWidgetKind.allCases) { kind in
-                        catalogItem(kind)
+                        CatalogItemCard(kind: kind) {
+                            model.addWidget(kind: kind)
+                        }
                     }
                 }
                 .modifier(MonitorPanelSizeReader(size: $contentSize))
@@ -252,17 +246,24 @@ struct MonitorCatalogView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(white: 0.11).opacity(0.96))
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous).fill(Color(white: 0.11).opacity(0.96))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous).strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
         )
     }
 
-    private func catalogItem(_ kind: MonitorWidgetKind) -> some View {
-        Button {
-            model.addWidget(kind: kind)
-        } label: {
+}
+
+private struct CatalogItemCard: View {
+    let kind: MonitorWidgetKind
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color(white: 0.17))
@@ -274,24 +275,26 @@ struct MonitorCatalogView: View {
                     )
                 HStack(spacing: 4) {
                     Text(WidgetFactory.displayName(kind))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(DesignTokens.Typography.bodyEmphasized)
                         .foregroundStyle(Color.white.opacity(0.85))
                     Spacer(minLength: 0)
                 }
                 Text(verbatim: kind.allowedSizes.map { $0.rawValue.uppercased() }.joined(separator: " · "))
-                    .font(.system(size: 9, weight: .medium))
+                    .font(DesignTokens.Typography.caption.weight(.medium))
                     .foregroundStyle(Color.white.opacity(0.4))
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color(white: 0.15))
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous).fill(Color(white: 0.15))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
+        .cardHoverEffect(isActive: isHovering, reduceMotion: reduceMotion)
+        .onHover { isHovering = $0 }
     }
 }
 

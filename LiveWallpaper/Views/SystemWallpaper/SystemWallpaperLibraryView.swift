@@ -185,16 +185,20 @@ struct SystemWallpaperLibraryView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: DesignTokens.Spacing.sm)
-            Picker("On the desktop", selection: Binding(
-                get: { service.playbackMode },
-                set: { service.setPlaybackMode($0) }
-            )) {
-                Text("Keep playing").tag(SystemWallpaperPlaybackMode.always)
-                Text("Ease to a still").tag(SystemWallpaperPlaybackMode.stillOnDesktop)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { service.playbackMode },
+                    set: { service.setPlaybackMode($0) }
+                ),
+                values: [.always, .stillOnDesktop],
+                shell: .flat,
+                title: { (mode: SystemWallpaperPlaybackMode) in
+                    mode == .always ? "Keep playing" : "Ease to a still"
+                }
+            )
+            .frame(width: 230)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(Text("On the desktop"))
         }
         .padding(DesignTokens.Spacing.md)
         .background(
@@ -212,7 +216,7 @@ struct SystemWallpaperLibraryView: View {
             // delete its container, so that claim was simply false.
             Text("Removing a video here also deletes the system's copy from disk.")
             if !service.items.isEmpty {
-                Button("Remove All from System Wallpaper") {
+                Button("Remove All from System Wallpaper", role: .destructive) {
                     pendingDestructive = PendingDestructive(
                         .clearSystemWallpaperLibrary(
                             itemCount: service.items.count,
@@ -222,7 +226,9 @@ struct SystemWallpaperLibraryView: View {
                         )
                     ) { try? service.clearLibrary() }
                 }
-                .buttonStyle(.link)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(DesignTokens.Colors.Status.danger)
                 .padding(.top, DesignTokens.Spacing.xs)
             }
         }
@@ -285,9 +291,9 @@ struct SystemWallpaperLibraryView: View {
 struct SystemWallpaperAddMenu: View {
     @Environment(WallpaperExportService.self) private var service
     @State private var store = BookmarkStore.shared
+    @State private var showingAddMenu = false
 
     /// Same disc as the Workshop header's actions.
-    private static let glyphSize: CGFloat = 30
 
     /// Already-published entries are dropped rather than shown disabled: a menu
     /// is a list of things you can do, not a status display.
@@ -298,31 +304,22 @@ struct SystemWallpaperAddMenu: View {
         }
     }
 
-    /// The glass disc is a sibling layer behind the menu rather than a modifier
-    /// on it: `Menu` is an AppKit popup and swallows `glassEffect` applied to
-    /// the menu *and* to its label, which is why the Workshop header draws its
-    /// discs this way too.
+    /// A real Button, not a Menu: an AppKit popup takes neither `glassEffect`
+    /// nor the `adaptiveGlassButton` pipeline, and it paints its label in the
+    /// system control colour regardless of `foregroundStyle`. The list it used
+    /// to drop down lives in a popover so the control itself can be glass.
     var body: some View {
-        ZStack {
-            Color.clear
-                .frame(width: Self.glyphSize, height: Self.glyphSize)
-                .adaptiveGlassSurface(.circle, interactive: true)
-            Menu {
-                menuItems
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Color.primary)
-                    .frame(width: Self.glyphSize, height: Self.glyphSize)
-                    .contentShape(Circle())
+        GlassIconButton("plus", action: { showingAddMenu = true })
+            .help(Text("Add a video to System Wallpaper"))
+            .accessibilityLabel(Text("Add Video"))
+            .popover(isPresented: $showingAddMenu, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    menuItems
+                }
+                .buttonStyle(.borderless)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .settingsPopoverChrome(width: 240)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-        }
-        .frame(width: Self.glyphSize, height: Self.glyphSize)
-        .help(Text("Add a video to System Wallpaper"))
-        .accessibilityLabel(Text("Add Video"))
     }
 
     @ViewBuilder
@@ -413,7 +410,7 @@ private struct SystemWallpaperTile: View {
     var body: some View {
         preview
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
-        .onHover { isHovering = $0 }
+            .settledHover { isHovering = $0 }
         .contextMenu {
             Button("Remove from System Wallpaper", role: .destructive, action: onRemove)
         }

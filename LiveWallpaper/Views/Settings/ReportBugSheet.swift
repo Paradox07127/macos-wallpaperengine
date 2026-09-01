@@ -41,20 +41,12 @@ struct ReportBugSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Image(systemName: "ladybug.fill")
-                    .foregroundStyle(.red)
-                    .font(.title3)
-                Text("Report a Bug")
-                    .font(.title3.weight(.semibold))
-            }
-
-            Text("The information below will be pre-filled into a GitHub issue. **Review it before posting** — once an issue is created, anyone can read it.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        SteamSheetHeader(
+            icon: "ladybug.fill",
+            title: "Report a Bug",
+            iconTint: DesignTokens.Colors.Status.danger,
+            subtitle: "The information below will be pre-filled into a GitHub issue. **Review it before posting** — once an issue is created, anyone can read it."
+        )
     }
 
     private var diagnosticPreview: some View {
@@ -70,9 +62,9 @@ struct ReportBugSheet: View {
                     .padding(10)
             }
             .background(Color(nsColor: .textBackgroundColor),
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                     .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
             )
             .frame(maxHeight: .infinity)

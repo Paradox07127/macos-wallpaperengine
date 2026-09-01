@@ -37,7 +37,6 @@ struct BrowseFilterRibbon: View {
     let hasWebAPIKey: Bool
 
     @State private var isFilterPanelExpanded = false
-    @FocusState private var isSearchFocused: Bool
     @State private var filterRowsHeight: CGFloat = 240
 
     /// Cap on the chip area; beyond it the rows scroll internally rather than growing the ribbon unbounded — at narrow widths Genre wraps onto many rows that would otherwise overrun the layout.
@@ -205,58 +204,19 @@ struct BrowseFilterRibbon: View {
     // MARK: - Search / refresh / status
 
     private var searchField: some View {
-        HStack(spacing: 7) {
-            // Typing auto-searches after the view-model's debounce; clicking the
-            // glass or pressing Return skips the wait and runs it now.
-            Button {
-                Task { await viewModel.submitSearch() }
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .disabled(controlsDisabled)
-            .help(Text("Search"))
-
-            TextField("Search the Workshop", text: Binding(
+        // Typing auto-searches after the view-model's debounce; clicking the
+        // glass or pressing Return (`onSubmit`) skips the wait and runs it now.
+        LibrarySearchField(
+            text: Binding(
                 get: { viewModel.searchInput },
                 set: { viewModel.searchInput = $0 }
-            ))
-            .textFieldStyle(.plain)
-            .font(DesignTokens.Typography.body)
-            .focused($isSearchFocused)
-            .disabled(controlsDisabled)
-            .onSubmit { Task { await viewModel.submitSearch() } }
-
-            if !viewModel.searchInput.isEmpty {
-                Button {
-                    Task { await viewModel.clearSearch() }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(Text("Clear search"))
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(
-            minWidth: DesignTokens.LibraryFilterBar.searchMinWidth,
-            idealWidth: DesignTokens.LibraryFilterBar.searchIdealWidth,
-            maxWidth: DesignTokens.LibraryFilterBar.searchMaxWidth
+            ),
+            prompt: "Search the Workshop",
+            isDisabled: controlsDisabled,
+            showsFocusRing: true,
+            onSubmit: { Task { await viewModel.submitSearch() } },
+            onClear: { Task { await viewModel.clearSearch() } }
         )
-        .background(Capsule().fill(Color.primary.opacity(0.04)))
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
-        .contentShape(Capsule())
-        .overlay {
-            if isSearchFocused {
-                Capsule().strokeBorder(Color.accentColor, lineWidth: 1.5)
-            }
-        }
-        .opacity(controlsDisabled ? 0.5 : 1)
     }
 
     // MARK: - Helpers

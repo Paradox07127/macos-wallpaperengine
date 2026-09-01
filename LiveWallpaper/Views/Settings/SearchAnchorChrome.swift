@@ -47,7 +47,7 @@ struct SettingsSearchSectionHeader: View {
             .id(anchor)
             .background {
                 if isHighlighted {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                         .fill(DesignTokens.Colors.accent.opacity(0.14))
                         .padding(.horizontal, -6)
                         .padding(.vertical, -3)
@@ -55,7 +55,7 @@ struct SettingsSearchSectionHeader: View {
             }
             .overlay {
                 if isHighlighted {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                         .stroke(DesignTokens.Colors.accent.opacity(0.28), lineWidth: 0.5)
                         .padding(.horizontal, -6)
                         .padding(.vertical, -3)

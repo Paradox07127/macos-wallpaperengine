@@ -140,7 +140,7 @@ private struct GPUWidgetBody: View {
                 .strokeBorder(stale ? Design.staleWarm : Design.signalSteel,
                               lineWidth: 1.5)
                 .frame(width: 6, height: 6)
-                .opacity(stale ? 0.85 : 0.7)
+                .opacity(stale ? DesignTokens.Opacity.emphasisStroke : DesignTokens.Opacity.dimmedIcon)
             (Text("sampled") + Text(verbatim: " ")
              + Text(verbatim: GPUWidgetView.freshnessText(sampledAt: system?.gpuSampledAt, now: context.now))
                 .foregroundStyle(Design.inkMuted)

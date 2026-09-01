@@ -108,16 +108,19 @@ struct WPEPreviewView: View {
     /// Tap-gesture'd view, not a `Button`: the parent grid cell is itself a `Button`, and AppKit-bridged buttons nested inside another SwiftUI button race for hit-tests + confuse VoiceOver focus.
     @ViewBuilder
     private var retryBadge: some View {
-        HStack(spacing: 4) {
+        // `ThumbnailBadge` metrics (badge font, 6/3 padding, glass backing),
+        // spelled out here because the badge carries two glyphs and a tap
+        // gesture the component doesn't model.
+        HStack(spacing: 3) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(DesignTokens.Colors.Status.warning)
             Image(systemName: "arrow.clockwise")
+                .foregroundStyle(DesignTokens.Colors.overlayForeground)
         }
-        .font(.system(size: 10, weight: .semibold))
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(Color.primary.opacity(0.06)))
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+        .font(DesignTokens.Typography.badge)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .thumbnailBadgeGlass()
         .contentShape(Capsule())
         .onTapGesture {
             retryLoad()

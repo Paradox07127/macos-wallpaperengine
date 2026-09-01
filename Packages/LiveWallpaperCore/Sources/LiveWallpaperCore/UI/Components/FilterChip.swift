@@ -14,12 +14,12 @@ public struct FilterChipBackground: ViewModifier {
     public func body(content: Content) -> some View {
         if isSelected {
             content
-                .background(Capsule().fill(Color.accentColor.opacity(0.12)))
-                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1))
+                .background(Capsule().fill(Color.accentColor.opacity(DesignTokens.Opacity.selectedFill)))
+                .overlay(Capsule().strokeBorder(Color.accentColor.opacity(DesignTokens.Opacity.strongStroke), lineWidth: 1))
         } else {
             content
                 .background(Capsule().fill(Color.primary.opacity(0.04)))
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(DesignTokens.Opacity.activeFill), lineWidth: 0.5))
         }
     }
 }

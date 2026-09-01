@@ -28,12 +28,18 @@ struct VideoInformationOverlay: View {
         HStack(spacing: 12) {
             if !formatBadges.isEmpty {
                 HStack(spacing: 4) {
+                    // Secondary pill inside the glass info panel; same metrics as
+                    // the `tag()` pills in `SceneInformationOverlay` /
+                    // `HTMLInformationOverlay` (shared flat-pill standard).
                     ForEach(formatBadges, id: \.self) { badge in
                         Text(verbatim: badge.displayLabel)
                             .font(DesignTokens.Typography.badge)
-                            .padding(.horizontal, 5)
+                            .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.white.opacity(0.18), in: Capsule())
+                            .background(
+                                DesignTokens.Colors.overlayForeground.opacity(0.18),
+                                in: Capsule()
+                            )
                     }
                 }
             }

@@ -113,20 +113,21 @@ struct WPEProjectCustomSettingsCard: View {
             }
         case .slider:
             SettingRow(icon: WPEPropertyRowIcon.symbol(for: property.type), verbatimTitle: property.displayText) {
-                HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
-                    Slider(
-                        value: numberBinding(for: property),
-                        in: ValueLogic.sliderRange(for: property),
-                        step: ValueLogic.displaySliderStep(for: property)
-                    )
-                    .frame(width: DesignTokens.Inspector.sliderWidth)
-                    .controlSize(.small)
-
-                    Text(verbatim: ValueLogic.formattedNumber(ValueLogic.value(for: property, in: values).numberValue ?? 0, for: property))
-                        .font(DesignTokens.Typography.metric)
-                        .foregroundStyle(.secondary)
-                        .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
-                }
+                CoalescedSlider(
+                    value: numberBinding(for: property).wrappedValue,
+                    in: ValueLogic.sliderRange(for: property),
+                    step: ValueLogic.displaySliderStep(for: property),
+                    owner: [AnyHashable(screen.id), AnyHashable(projectKey ?? "")],
+                    accessibilityLabel: Text(verbatim: property.displayText),
+                    accessibilityValue: { Text(verbatim: ValueLogic.formattedNumber($0, for: property)) },
+                    write: { numberBinding(for: property).wrappedValue = $0 },
+                    readout: { live in
+                        Text(verbatim: ValueLogic.formattedNumber(live, for: property))
+                            .font(DesignTokens.Typography.metric)
+                            .foregroundStyle(.secondary)
+                            .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+                    }
+                )
             }
         case .combo:
             let currentValue = ValueLogic.value(for: property, in: values)
@@ -190,7 +191,7 @@ struct WPEProjectCustomSettingsCard: View {
                 EmptyView()
             }
             .disabled(true)
-            .opacity(0.55)
+            .opacity(DesignTokens.Opacity.disabledContent)
         case .group:
             WPEProjectTextBlock(text: property.displayText, isHeader: true)
         case .text:

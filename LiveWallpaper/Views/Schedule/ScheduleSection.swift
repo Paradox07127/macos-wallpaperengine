@@ -150,7 +150,7 @@ struct ScheduleSection: View {
                     Image(systemName: "plus.circle.fill")
                     Text("Add Slot")
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(DesignTokens.Typography.captionEmphasized)
                 }
             }
             .menuStyle(.borderlessButton)
@@ -176,7 +176,7 @@ struct ScheduleSection: View {
     private func conflictBanner(message: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11))
+                .font(DesignTokens.Typography.caption)
                 .foregroundStyle(DesignTokens.Colors.Status.danger)
             Text(verbatim: message)
                 .font(DesignTokens.Typography.caption)

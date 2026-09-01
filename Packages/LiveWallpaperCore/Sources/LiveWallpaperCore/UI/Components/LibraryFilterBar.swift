@@ -29,7 +29,7 @@ public struct LibraryFilterBar<Filters: View>: View {
 
     public var body: some View {
         HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
-            searchField
+            LibrarySearchField(text: $searchText, prompt: searchPrompt)
 
             filters
 
@@ -44,45 +44,6 @@ public struct LibraryFilterBar<Filters: View>: View {
         .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
         .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
         .disabled(isDisabled)
-    }
-
-    // MARK: - Search
-
-    private var searchField: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
-            TextField(searchPrompt, text: $searchText)
-                .textFieldStyle(.plain)
-                .font(DesignTokens.Typography.body)
-                .accessibilityLabel(Text(searchPrompt))
-
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(Text("Clear search"))
-                .accessibilityLabel(Text("Clear search"))
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .frame(
-            minWidth: DesignTokens.LibraryFilterBar.searchMinWidth,
-            idealWidth: DesignTokens.LibraryFilterBar.searchIdealWidth,
-            maxWidth: DesignTokens.LibraryFilterBar.searchMaxWidth
-        )
-        .background(Capsule().fill(Color.primary.opacity(0.04)))
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
-        .contentShape(Capsule())
     }
 
     // MARK: - Result counter

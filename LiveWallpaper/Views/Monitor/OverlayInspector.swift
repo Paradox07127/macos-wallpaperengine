@@ -60,17 +60,20 @@ struct MonitorOverlaySection: View {
             title: "Layer",
             info: "Desktop keeps the board under your windows; On Top floats it above everything"
         ) {
-            Picker("", selection: Binding(
-                get: { overlay.level },
-                set: { screenManager.setMonitorOverlayLevel($0, for: screen) }
-            )) {
-                Text("Desktop").tag(MonitorOverlayLevel.desktop)
-                Text("On Top").tag(MonitorOverlayLevel.front)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            GlassSegmentedPicker(
+                selection: Binding(
+                    get: { overlay.level },
+                    set: { screenManager.setMonitorOverlayLevel($0, for: screen) }
+                ),
+                values: [.desktop, .front],
+                shell: .flat,
+                title: { (level: MonitorOverlayLevel) in
+                    level == .desktop ? "Desktop" : "On Top"
+                }
+            )
+            .frame(width: 180)
             .disabled(!overlay.enabled)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Overlay layer"))
         }
     }

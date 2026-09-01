@@ -37,6 +37,8 @@ struct HistoryRow: View {
     var onUpdate: (() -> Void)?
 
     @State private var isHovering = false
+    @State private var showingFileActions = false
+    @State private var bookmarkHovering = false
     @State private var resolutionLabel: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Read once per pane and handed down, not five `@AppStorage` per tile —
@@ -52,7 +54,7 @@ struct HistoryRow: View {
                 reduceMotion: reduceMotion
             )
             .accessibilityAddTraits(isSelected ? .isSelected : [])
-            .onHover { isHovering = $0 }
+            .settledHover { isHovering = $0 }
             .accessibilityElement(children: allowsInlineApply ? .contain : .ignore)
             .accessibilityLabel(accessibilityCardLabel)
             .accessibilityHint(applyAccessibilityHint)
@@ -108,6 +110,9 @@ struct HistoryRow: View {
                                 accessibility: badge.accessibility
                             )
                         }
+                        if let onBookmark {
+                            bookmarkControl(onBookmark)
+                        }
                     }
                 }
                 .padding(DesignTokens.Spacing.sm)
@@ -130,21 +135,64 @@ struct HistoryRow: View {
                         ThumbnailPresenceCheck()
                             .accessibilityLabel(Text("In use"))
                     }
-                    if let onBookmark {
-                        Button(action: onBookmark) {
-                            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                                .font(.system(size: 11))
-                                .foregroundStyle(isBookmarked
-                                    ? DesignTokens.Colors.rating
-                                    : DesignTokens.Colors.overlayForeground)
-                        }
-                        .buttonStyle(.plain)
-                        .help(isBookmarked ? Text("Remove Bookmark") : Text("Add Bookmark"))
-                        .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
+                    // Primary-UI path to the context menu's file actions — the
+                    // right-click menu must not be the only way to reach them.
+                    // A Button, not a Menu: `.menuStyle(.borderlessButton)` is an
+                    // AppKit popup that ignores the label's `foregroundStyle` and
+                    // paints the glyph in the system control colour, which is
+                    // invisible on the band (reported on 26, 2026-08-31).
+                    Button { showingFileActions = true } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DesignTokens.Colors.overlayForeground)
+                            .frame(width: 18, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(isHovering ? 1 : 0)
+                    .accessibilityLabel(Text("More actions"))
+                    .popover(isPresented: $showingFileActions, arrowEdge: .bottom) {
+                        fileActionsPopover
                     }
                 }
             }
         }
+    }
+
+    /// Bookmark toggle in the picture's top-right corner. Glass-backed like the
+    /// badges beside it: a bare glyph over arbitrary artwork has no guaranteed
+    /// contrast, and this is an interactive glyph over media (see W5 R1c).
+    private func bookmarkControl(_ toggle: @escaping () -> Void) -> some View {
+        Button(action: toggle) {
+            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                .font(.system(size: 11))
+                .foregroundStyle(isBookmarked
+                    ? DesignTokens.Colors.rating
+                    : DesignTokens.Colors.overlayForeground)
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .floatingGlyphGlass(hovered: bookmarkHovering)
+        .onHover { bookmarkHovering = $0 }
+        .help(isBookmarked ? Text("Remove Bookmark") : Text("Add Bookmark"))
+        .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
+    }
+
+    private var fileActionsPopover: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            Button("Show in Finder") {
+                showingFileActions = false
+                showInFinder()
+            }
+            Button("Remove", role: .destructive) {
+                showingFileActions = false
+                onRemove()
+            }
+        }
+        .buttonStyle(.borderless)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .settingsPopoverChrome(width: 200)
     }
 
     /// Only video projects have a resolution — a WPE scene renders at whatever the display is,
