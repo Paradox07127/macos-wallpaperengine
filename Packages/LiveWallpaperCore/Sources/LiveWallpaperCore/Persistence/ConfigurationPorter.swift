@@ -104,16 +104,23 @@ public enum ConfigurationPorter {
     public struct ApplySummary: Sendable {
         public var displayCount: Int?
         public var bookmarkCount: Int?
+        public var schemeCount: Int?
         public var didRestoreGlobalSettings: Bool
 
-        public init(displayCount: Int? = nil, bookmarkCount: Int? = nil, didRestoreGlobalSettings: Bool = false) {
+        public init(
+            displayCount: Int? = nil,
+            bookmarkCount: Int? = nil,
+            schemeCount: Int? = nil,
+            didRestoreGlobalSettings: Bool = false
+        ) {
             self.displayCount = displayCount
             self.bookmarkCount = bookmarkCount
+            self.schemeCount = schemeCount
             self.didRestoreGlobalSettings = didRestoreGlobalSettings
         }
 
         public var isEmpty: Bool {
-            displayCount == nil && bookmarkCount == nil && !didRestoreGlobalSettings
+            displayCount == nil && bookmarkCount == nil && schemeCount == nil && !didRestoreGlobalSettings
         }
     }
 
