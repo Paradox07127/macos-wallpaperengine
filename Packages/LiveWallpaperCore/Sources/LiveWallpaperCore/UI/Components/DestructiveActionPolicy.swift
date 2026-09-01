@@ -8,6 +8,11 @@ public enum DestructiveAction: Identifiable, Equatable {
     case removePlaylistItem(isLast: Bool, displayName: String)
     case removeSceneHistory(sceneName: String)
     case deleteBookmark(bookmarkName: String)
+    case deleteScheme(schemeName: String)
+    /// Whole-display overwrite: wallpaper, both overlay layers, and every
+    /// per-display setting land at once, so the target's current setup is gone
+    /// unless it was saved as a scheme first.
+    case applyScheme(schemeName: String, displayName: String)
     case removeScheduleSlot(slotLabel: String)
     case disableSchedule(slotCount: Int)
     case clearAllStorageCaches(byteSize: String)
@@ -35,6 +40,8 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .removeSceneHistory(let s): return "removeSceneHistory-\(s)"
         case .removeSystemWallpaper(let t, let u): return "removeSystemWallpaper-\(t)-\(u)"
         case .deleteBookmark(let n): return "deleteBookmark-\(n)"
+        case let .deleteScheme(n): return "deleteScheme-\(n)"
+        case let .applyScheme(n, d): return "applyScheme-\(n)-\(d)"
         case .removeScheduleSlot(let l): return "removeScheduleSlot-\(l)"
         case .disableSchedule(let c): return "disableSchedule-\(c)"
         case .clearAllStorageCaches(let b): return "clearAllStorageCaches-\(b)"
@@ -57,6 +64,8 @@ public enum DestructiveAction: Identifiable, Equatable {
             return isLast ? "Remove the last playlist item?" : "Remove this playlist item?"
         case .removeSceneHistory:        return "Remove this scene from history?"
         case .deleteBookmark:            return "Delete this bookmark?"
+        case .deleteScheme: return "Delete this scheme?"
+        case .applyScheme: return "Replace this display's entire setup?"
         case .removeScheduleSlot:        return "Remove this schedule slot?"
         case .disableSchedule:           return "Disable schedule?"
         case .clearAllStorageCaches:      return "Clear all storage caches?"
@@ -105,6 +114,16 @@ public enum DestructiveAction: Identifiable, Equatable {
             return String(
                 localized: "'\(name)' will be removed from your library. Displays using this bookmark fall back to their saved wallpaper.",
                 bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the bookmark name."
+            )
+        case let .deleteScheme(name):
+            return String(
+                localized: "'\(name)' will be removed from your saved schemes. Displays it was applied to keep what is on screen.",
+                bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the scheme name."
+            )
+        case let .applyScheme(schemeName, displayName):
+            return String(
+                localized: "'\(schemeName)' replaces the wallpaper, overlay layout, and every setting on \(displayName). Save that display's current setup as a scheme first if you want it back.",
+                bundle: .appLanguage, comment: "Confirm message for applying a saved scheme. Placeholders are the scheme name and the target display name."
             )
         case .removeScheduleSlot(let slotLabel):
             return String(
@@ -172,6 +191,8 @@ public enum DestructiveAction: Identifiable, Equatable {
             return isLast ? "Remove & Clear" : "Remove"
         case .removeSceneHistory:        return "Remove"
         case .deleteBookmark:            return "Delete"
+        case .deleteScheme: return "Delete"
+        case .applyScheme: return "Replace Setup"
         case .removeScheduleSlot:        return "Remove Slot"
         case .disableSchedule:           return "Disable Schedule"
         case .clearAllStorageCaches:      return "Clear All Caches"
@@ -219,7 +240,11 @@ private struct DestructiveConfirmationModifier: ViewModifier {
             ),
             presenting: pending
         ) { current in
-            Button(current.action.destructiveButtonTitle, role: .destructive) {
+            // HIG (Alerts): "when people deliberately choose a destructive action —
+            // such as Empty Trash — the resulting alert doesn't apply the destructive
+            // style." Every confirmDestructive call site is that shape: the user just
+            // clicked an explicitly labelled Reset/Clear/Remove control.
+            Button(current.action.destructiveButtonTitle) {
                 let captured = current.perform
                 pending = nil
                 captured()

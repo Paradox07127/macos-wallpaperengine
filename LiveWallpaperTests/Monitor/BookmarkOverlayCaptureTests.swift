@@ -3,74 +3,76 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// A bookmark restores whether the Monitor overlay was showing, and on which
-/// layer — but never the board's own layout. The board is arranged against one
-/// display and shared by every wallpaper on it, so a bookmark carrying its own
-/// copy would silently overwrite arrangement work done after the bookmark was
-/// saved.
-@Suite("Bookmark Monitor overlay capture")
-struct BookmarkMonitorOverlayCaptureTests {
-
-    private func configuration() -> ScreenConfiguration {
-        ScreenConfiguration(screenID: 1, wallpaper: .video(bookmarkData: Data([0x01])), particleEffect: .snow)
-    }
-
-    @Test("A snapshot records the overlay's enabled state and layer")
-    func snapshotCapturesOverlayState() {
-        var overlay = MonitorOverlayConfiguration(enabled: true, level: .front)
-        overlay.board.widgets = [MonitorWidgetPlacement(kind: .cpu, size: .medium, x: 0.4, y: 0.2)]
-
-        let snapshot = BookmarkPlaybackSettings.snapshot(of: configuration(), monitorOverlay: overlay)
-
-        #expect(snapshot.monitorOverlayEnabled == true)
-        #expect(snapshot.monitorOverlayLevel == .front)
-    }
-
-    @Test("A snapshot taken without an overlay leaves the fields nil")
-    func snapshotWithoutOverlayIsNil() {
-        let snapshot = BookmarkPlaybackSettings.snapshot(of: configuration())
-        #expect(snapshot.monitorOverlayEnabled == nil)
-        #expect(snapshot.monitorOverlayLevel == nil)
-    }
-
-    /// Nil means "leave the target unchanged" for every other field on this
-    /// type; the overlay fields must not become an exception.
-    @Test("A legacy snapshot without the overlay fields still decodes")
-    func legacySnapshotDecodes() throws {
-        let legacy = Data("""
-        {"playbackSpeed":1.5,"muted":true}
-        """.utf8)
-        let decoded = try JSONDecoder().decode(BookmarkPlaybackSettings.self, from: legacy)
-        #expect(decoded.playbackSpeed == 1.5)
-        #expect(decoded.monitorOverlayEnabled == nil, "an old bookmark must not claim the overlay was off")
-        #expect(decoded.monitorOverlayLevel == nil)
-    }
-
-    @Test("The overlay fields survive a round-trip")
-    func roundTrip() throws {
-        let overlay = MonitorOverlayConfiguration(enabled: false, level: .desktop)
-        let snapshot = BookmarkPlaybackSettings.snapshot(of: configuration(), monitorOverlay: overlay)
-        let restored = try JSONDecoder().decode(
-            BookmarkPlaybackSettings.self, from: JSONEncoder().encode(snapshot)
+/// A bookmark is a favourite wallpaper, nothing more: applying one swaps the
+/// content and leaves every setting on the target display alone. The
+/// whole-screen counterpart is `ScreenScheme`.
+///
+/// This suite used to assert the opposite — that a bookmark captured playback
+/// settings plus the overlay's enabled/level state. That contract was reversed
+/// on 2026-08-31 (`.notes/plan/screen-schemes.md`), so the old assertions were
+/// replaced rather than left passing against behaviour the app no longer has.
+/// `playbackSettings` itself stays on `WallpaperBookmark`, written by nothing
+/// and read by nothing, so existing archives are not rewritten (plan D1 = A).
+@Suite("Bookmarks carry content only")
+@MainActor
+struct BookmarkContentOnlyTests {
+    @Test("Saving a bookmark records no playback settings")
+    func addStoresNoPlaybackSettings() {
+        let store = BookmarkStore(persistence: InMemoryBookmarkPersistence())
+        let bookmark = store.add(
+            label: "Aurora",
+            content: .video(bookmarkData: Data([0x01]), packageEntryName: nil)
         )
-        #expect(restored.monitorOverlayEnabled == false)
-        #expect(restored.monitorOverlayLevel == .desktop)
+        #expect(bookmark.playbackSettings == nil)
     }
 
-    /// The guard that keeps a bookmark from carrying board layout. If someone
-    /// later adds a board field, this test should be the thing that makes them
-    /// argue for it rather than slip it in.
-    @Test("The snapshot carries no board layout")
-    func snapshotOmitsBoardLayout() throws {
-        var overlay = MonitorOverlayConfiguration(enabled: true, level: .desktop)
-        overlay.board.widgets = [
-            MonitorWidgetPlacement(kind: .cpu, size: .medium, x: 0.11, y: 0.22),
-            MonitorWidgetPlacement(kind: .fleet, size: .large, x: 0.33, y: 0.44),
-        ]
-        let snapshot = BookmarkPlaybackSettings.snapshot(of: configuration(), monitorOverlay: overlay)
-        let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
+    /// D1 = A: the field is kept so older archives are not rewritten. If it is
+    /// ever dropped from the schema, this stops compiling — which is the point.
+    @Test("A legacy bookmark's settings survive a decode untouched")
+    func legacySettingsStillRoundTrip() throws {
+        let legacy = WallpaperBookmark(
+            label: "Old",
+            content: .video(bookmarkData: Data([0x01]), packageEntryName: nil),
+            playbackSettings: BookmarkPlaybackSettings(playbackSpeed: 1.5, muted: true)
+        )
+        let restored = try JSONDecoder().decode(
+            WallpaperBookmark.self,
+            from: JSONEncoder().encode(legacy)
+        )
+        #expect(restored.playbackSettings?.playbackSpeed == 1.5)
+        #expect(restored.playbackSettings?.muted == true)
+    }
 
-        #expect(!json.contains("widgets"), "board layout must not ride along in a bookmark")
-        #expect(!json.contains("refreshHz"))
+    /// Provenance is not a setting: a scene bookmark still has to know where it
+    /// came from, or applying it cannot restore the source-folder grant.
+    @Test("Workshop provenance is still carried")
+    func provenanceSurvivesTheSlimming() {
+        let store = BookmarkStore(persistence: InMemoryBookmarkPersistence())
+        let origin = WPEOrigin(
+            workshopID: "12345",
+            title: "Scene",
+            originalType: .scene,
+            sourceFolderBookmark: Data([0xAA]),
+            cacheRelativePath: nil,
+            previewFileName: nil
+        )
+        let bookmark = store.add(
+            label: "Scene",
+            content: .video(bookmarkData: Data([0x02]), packageEntryName: nil),
+            wpeOrigin: origin
+        )
+        #expect(bookmark.wpeOrigin?.workshopID == "12345")
+    }
+}
+
+@MainActor
+private final class InMemoryBookmarkPersistence: BookmarkPersisting {
+    private var stored: [WallpaperBookmark] = []
+    func load() -> [WallpaperBookmark] {
+        stored
+    }
+
+    func save(_ bookmarks: [WallpaperBookmark]) {
+        stored = bookmarks
     }
 }

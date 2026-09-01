@@ -92,6 +92,13 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.music = music }
     }
 
+    /// Whole-struct overwrite, for applying a saved scheme. Assigns the config
+    /// rather than copying its four fields across so a field added to
+    /// `MonitorOverlayConfiguration` later cannot be silently dropped on apply.
+    func setMonitorOverlay(_ overlay: MonitorOverlayConfiguration, for screen: Screen) {
+        mutateMonitorOverlays(of: [screen]) { $0 = overlay }
+    }
+
     /// Copies one overlay from `source` onto every other display, leaving each target's wallpaper —
     /// and the overlays the user is not looking at — exactly as they were. Deliberately not folded
     /// into "Apply to All Displays" on the wallpaper header: that action means "put this picture on
@@ -437,6 +444,7 @@ extension ScreenManager {
             matching: original,
             with: refreshed
         )
+        SchemeStore.shared.replaceHTMLBookmark(matching: original, with: refreshed)
         for workshopID in wpeWorkshopIDs {
             _ = SettingsManager.shared.replaceWPEHistorySourceBookmark(
                 workshopID: workshopID,
@@ -444,6 +452,11 @@ extension ScreenManager {
                 with: refreshed
             )
             _ = BookmarkStore.shared.replaceWPEOriginBookmark(
+                workshopID: workshopID,
+                matching: original,
+                with: refreshed
+            )
+            SchemeStore.shared.replaceWPEOriginBookmark(
                 workshopID: workshopID,
                 matching: original,
                 with: refreshed
@@ -472,6 +485,11 @@ extension ScreenManager {
             with: refreshed
         )
         _ = BookmarkStore.shared.replaceWPEOriginBookmark(
+            workshopID: origin.workshopID,
+            matching: original,
+            with: refreshed
+        )
+        SchemeStore.shared.replaceWPEOriginBookmark(
             workshopID: origin.workshopID,
             matching: original,
             with: refreshed

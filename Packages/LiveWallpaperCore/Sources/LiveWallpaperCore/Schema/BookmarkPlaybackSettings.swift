@@ -2,6 +2,10 @@ import Foundation
 
 /// Optional playback/effect snapshot on a bookmark. Nil fields = leave target
 /// unchanged (legacy). Playlist/schedule/mode stay screen-level, not here.
+/// Retained for archives written before the bookmark/scheme split
+/// (2026-08-31): nothing writes it and nothing reads it, but dropping the field
+/// would rewrite every existing user's bookmarks. Whole-screen state now lives
+/// in `ScreenScheme`. See `.notes/plan/screen-schemes.md` D1.
 public struct BookmarkPlaybackSettings: Codable, Equatable, Sendable {
     public var playbackSpeed: Double?
     public var fitMode: VideoFitMode?
@@ -40,25 +44,5 @@ public struct BookmarkPlaybackSettings: Codable, Equatable, Sendable {
         self.setAsLockScreen = setAsLockScreen
         self.monitorOverlayEnabled = monitorOverlayEnabled
         self.monitorOverlayLevel = monitorOverlayLevel
-    }
-
-    /// `monitorOverlay` is passed in rather than read from `config` because the
-    /// overlay lives outside `ScreenConfiguration`, keyed by display fingerprint.
-    public static func snapshot(
-        of config: ScreenConfiguration,
-        monitorOverlay: MonitorOverlayConfiguration? = nil
-    ) -> BookmarkPlaybackSettings {
-        BookmarkPlaybackSettings(
-            playbackSpeed: config.playbackSpeed,
-            fitMode: config.fitMode,
-            frameRateLimit: config.frameRateLimit,
-            particleEffect: config.particleEffect,
-            effectConfig: config.effectConfig,
-            muted: config.muted,
-            videoVolume: config.videoVolume,
-            setAsLockScreen: config.setAsLockScreen,
-            monitorOverlayEnabled: monitorOverlay?.enabled,
-            monitorOverlayLevel: monitorOverlay?.level
-        )
     }
 }

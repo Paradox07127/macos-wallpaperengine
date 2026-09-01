@@ -6,10 +6,11 @@ extension ScreenManager {
         guard !isTerminating else { return }
         Logger.info("Applying bookmark to screen \(screen.id): \(bookmark.wallpaperType.rawValue)", category: .ui)
 
-        if let settings = bookmark.playbackSettings {
-            applyPlaybackSettings(settings, to: screen)
-        }
-
+        // Content only. A bookmark is a favourite wallpaper, not a screen setup —
+        // applying one leaves this display's volume, effects, fit mode and overlay
+        // exactly as they were. The whole-screen counterpart is a Scheme
+        // (`ScreenManager+Schemes.swift`). `playbackSettings` on older bookmarks is
+        // deliberately left on disk, unread: see .notes/plan/screen-schemes.md D1.
         switch bookmark.content {
         case .video(let bookmarkData, let packageEntryName):
             guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(
@@ -36,18 +37,5 @@ extension ScreenManager {
         case .scene(let descriptor):
             setSceneWallpaper(descriptor: descriptor, origin: bookmark.wpeOrigin, for: screen)
         }
-    }
-
-    private func applyPlaybackSettings(_ settings: BookmarkPlaybackSettings, to screen: Screen) {
-        if let value = settings.playbackSpeed   { updatePlaybackSpeed(value, for: screen) }
-        if let value = settings.fitMode         { updateFitMode(value, for: screen) }
-        if let value = settings.frameRateLimit  { updateFrameRateLimit(value, for: screen) }
-        if let value = settings.particleEffect  { updateParticleEffect(value, for: screen) }
-        if let value = settings.effectConfig    { updateEffectConfig(value, for: screen) }
-        if let value = settings.muted           { updateMuted(value, for: screen) }
-        if let value = settings.videoVolume     { updateVideoVolume(value, for: screen) }
-        if let value = settings.setAsLockScreen { updateSetAsDesktopPicture(value, for: screen) }
-        if let value = settings.monitorOverlayEnabled { setMonitorOverlayEnabled(value, for: screen) }
-        if let value = settings.monitorOverlayLevel { setMonitorOverlayLevel(value, for: screen) }
     }
 }

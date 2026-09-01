@@ -14,6 +14,15 @@ struct Header: View {
     let onApplyToAll: () -> Void
     let onClearWallpaper: () -> Void
 
+    /// Bookmark-popover name draft, held here so it survives the popover being
+    /// dismissed by a click outside (see `Popover`).
+    @State private var bookmarkNameDraft = ""
+    @State private var bookmarkDraftBaseline: String?
+
+    /// Scheme-popover name draft, held here for the same reason as the bookmark one.
+    @State private var schemeNameDraft = ""
+    @State private var showSchemeCapture = false
+
     var body: some View {
         DetailHeaderBar(
             systemImage: "display",
@@ -57,34 +66,40 @@ struct Header: View {
                     // Offer the bookmark action only when this type has
                     // bookmarkable content — no empty icon on an unconfigured display.
                     if inspectorContent != nil {
-                        Button {
+                        GlassIconButton(
+                            isCurrentBookmarked ? "bookmark.fill" : "bookmark",
+                            prominence: isCurrentBookmarked ? .prominent : .regular
+                        ) {
                             showBookmarks = true
-                        } label: {
-                            Image(systemName: isCurrentBookmarked ? "bookmark.fill" : "bookmark")
                         }
-                        .adaptiveGlassButton(isCurrentBookmarked ? .prominent : .regular, shape: .circle)
-                        .controlSize(.large)
                         .help(Text(isCurrentBookmarked
                             ? "Bookmarked — click to rename or remove"
                             : "Bookmark this wallpaper"))
                         .accessibilityLabel(Text(isCurrentBookmarked ? "Bookmarked" : "Bookmark"))
                         .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
                             AppLanguageScope(defaults: .appScoped()) {
-                                Popover(screen: screen, candidateContent: inspectorContent)
-                                    .environment(screenManager)
+                                Popover(
+                                    screen: screen,
+                                    candidateContent: inspectorContent,
+                                    nameDraft: $bookmarkNameDraft,
+                                    draftBaseline: $bookmarkDraftBaseline
+                                )
+                                .environment(screenManager)
                             }
                         }
                     }
 
+                    saveAsSchemeButton
+
                     // No per-type import button here: the toolbar's + picker
                     // routes any file or folder by what it is, for this display.
                     if showsHeaderWallpaperActions {
-                        Button(role: .destructive, action: onClearWallpaper) {
-                            Image(systemName: "trash")
-                        }
-                        .adaptiveGlassButton(.regular, shape: .circle)
-                        .tint(DesignTokens.Colors.Status.danger)
-                        .controlSize(.large)
+                        GlassIconButton(
+                            "trash",
+                            tint: DesignTokens.Colors.Status.danger,
+                            role: .destructive,
+                            action: onClearWallpaper
+                        )
                         .help(Text(clearHelpText))
                         .accessibilityLabel(Text(clearAccessibilityLabel))
                     }
@@ -109,12 +124,29 @@ struct Header: View {
         }
     }
 
+    /// Same gate as `applyToAllButton`: with no stored configuration there is
+    /// nothing for `captureScheme` to read, and it would return nil silently.
+    @ViewBuilder
+    private var saveAsSchemeButton: some View {
+        if screenManager.getConfiguration(for: screen) != nil {
+            GlassIconButton("square.stack.3d.up") {
+                showSchemeCapture = true
+            }
+            .help(Text("Save as Scheme — archive this display's wallpaper, overlay layout, and every setting"))
+            .accessibilityLabel(Text("Save as Scheme"))
+            .popover(isPresented: $showSchemeCapture, arrowEdge: .bottom) {
+                AppLanguageScope(defaults: .appScoped()) {
+                    SchemeCapturePopover(screen: screen, nameDraft: $schemeNameDraft)
+                        .environment(screenManager)
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var applyToAllButton: some View {
         if screenManager.screens.count > 1 && screenManager.getConfiguration(for: screen) != nil {
-            Button(action: onApplyToAll) {
-                Image(systemName: "square.on.square")
-            }
+            GlassIconButton("square.on.square", action: onApplyToAll)
             // The button copies whatever tab you are on. On the overlay tab
             // that is the layer in front of you and nothing else — taking the
             // wallpaper along with it would replace content the user never
@@ -126,8 +158,6 @@ struct Header: View {
             .accessibilityHint(appliesOverlayOnly
                 ? Text("Copies this overlay to every other connected display; their wallpapers are not changed")
                 : Text("Copies the current wallpaper and settings to every other connected display"))
-            .adaptiveGlassButton(.regular, shape: .circle)
-            .controlSize(.large)
         }
     }
 
