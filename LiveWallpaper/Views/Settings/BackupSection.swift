@@ -144,6 +144,12 @@ extension GeneralSettingsView {
                 bundle: .appLanguage, comment: "Import success line: how many bookmarks were restored. xcstrings provides a pluralized variant."
             ))
         }
+        if let count = summary.schemeCount {
+            lines.append(String(
+                localized: "Restored \(count) saved schemes.",
+                bundle: .appLanguage, comment: "Import success line: how many display schemes were restored. xcstrings provides a pluralized variant."
+            ))
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -166,6 +172,12 @@ extension GeneralSettingsView {
             lines.append(String(
                 localized: "• \(count) saved bookmarks",
                 bundle: .appLanguage, comment: "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant."
+            ))
+        }
+        if let count = bundle.screenSchemes?.count {
+            lines.append(String(
+                localized: "• \(count) saved schemes",
+                bundle: .appLanguage, comment: "Import confirmation bullet: how many display schemes the bundle includes. xcstrings provides a pluralized variant."
             ))
         }
 

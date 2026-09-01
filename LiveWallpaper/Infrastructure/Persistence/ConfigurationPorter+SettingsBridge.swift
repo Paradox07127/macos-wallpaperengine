@@ -51,6 +51,7 @@ extension ConfigurationPorter {
             )
             manager.saveScreenSchemes(merged)
             SchemeStore.shared.reload()
+            summary.schemeCount = schemes.count
         }
 
         Logger.info(
