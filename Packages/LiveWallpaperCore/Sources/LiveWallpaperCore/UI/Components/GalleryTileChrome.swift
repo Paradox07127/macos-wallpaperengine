@@ -68,14 +68,11 @@ struct GalleryTileChrome: ViewModifier {
                     : DesignTokens.Card.restShadowYOffset
             )
             .scaleEffect(isHovering ? 1.02 : 1.0)
-            .animation(
-                DesignTokens.motion(reduceMotion, .spring(response: 0.28, dampingFraction: 0.85)),
-                value: isHovering
-            )
-            .animation(
-                DesignTokens.motion(reduceMotion, .spring(response: 0.28, dampingFraction: 0.85)),
-                value: isSelected
-            )
+            // Same 150ms as the title band and the hover-in delay: the lift and
+            // the band grow together, so two curves of different lengths read as
+            // the card settling twice.
+            .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isHovering)
+            .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isSelected)
     }
 }
 

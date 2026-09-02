@@ -144,7 +144,11 @@ final class WallpaperExportService {
     }
 
     func isPublished(bookmarkID: UUID) -> Bool {
-        items.contains { $0.id == bookmarkID.uuidString }
+        isPublished(itemID: bookmarkID.uuidString)
+    }
+
+    func isPublished(itemID: String) -> Bool {
+        items.contains { $0.id == itemID }
     }
 
     func isItemInUse(_ itemID: String) -> Bool {
@@ -224,14 +228,18 @@ final class WallpaperExportService {
 
     /// Content resolved from an installed Workshop entry that the user has not
     /// bookmarked (the Workshop library keeps its own list).
-    func publish(content: WallpaperContent, title: String) async throws {
+    ///
+    /// `id` must be stable for a given source. It used to be a fresh `UUID` each
+    /// time, which made `isPublished` blind to Workshop entries: adding the same
+    /// wallpaper twice produced two copies with no way to tell they were the same.
+    func publish(content: WallpaperContent, title: String, id: String) async throws {
         guard case .video(let data, let entryName) = content else {
             let error = ServiceError.unsupportedContent
             lastError = error.localizedDescription
             throw error
         }
         try await publish(
-            id: UUID().uuidString,
+            id: id,
             title: title,
             source: .bookmark(data: data, packageEntryName: entryName)
         )

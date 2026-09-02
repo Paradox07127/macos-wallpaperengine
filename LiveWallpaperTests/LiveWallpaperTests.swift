@@ -95,8 +95,8 @@ struct SettingsWindowLayoutTests {
         #expect(previewSection.contains("@State private var isExpanded = false"))
         // The collapsed ⓘ and the refresh button are one pair — same glyph frame,
         // same backing — so both must come from the single shared recipe.
-        #expect(previewSection.contains("previewCornerGlyph(\"info.circle\")"))
-        #expect(previewSection.contains("previewCornerGlyph(\"arrow.clockwise\")"))
+        #expect(previewSection.contains("PreviewCornerGlyph(\"info.circle\")"))
+        #expect(previewSection.contains("PreviewCornerGlyph(\"arrow.clockwise\")"))
         #expect(previewSection.contains("diagnosticCell(\"Measurement\""))
         #expect(previewSection.contains("diagnosticCell(\"Points\""))
         #expect(previewSection.contains("diagnosticCell(\"Backing\""))
@@ -181,13 +181,18 @@ struct SettingsWindowLayoutTests {
         #expect(VideoFitMode.sceneModes == [.aspectFill, .aspectFit, .stretch, .center])
 
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
-        let playbackInspector = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PlaybackInspector.swift")
+        let sceneDetail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
 
         // The fit-mode picker is a GlassSegmentedPicker fed `values:`; the probe
-        // pins WHICH mode list each surface iterates, not the control used.
+        // pins WHICH mode list each surface offers, not the control used. Both
+        // now live on their type's preview overlay.
         #expect(previewArea.contains("values: VideoFitMode.videoModes"))
         #expect(!previewArea.contains("VideoFitMode.sceneModes"))
-        #expect(playbackInspector.contains("ForEach(VideoFitMode.sceneModes)"))
+        #expect(sceneDetail.contains("values: VideoFitMode.sceneModes"))
+
+        // Scale must reach a running scene, not just the video player: the two
+        // ScreenManager entry points are different code paths.
+        #expect(previewArea.contains("updateSceneFitMode"))
     }
 
     private static func readSourceFile(_ relativePath: String) throws -> String {

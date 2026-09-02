@@ -16,7 +16,7 @@ import SwiftUI
 /// card the pointer has already left, which reads as a stuck frame.
 public extension View {
     func settledHover(
-        delay: Duration = .milliseconds(100),
+        delay: Duration = .milliseconds(150),
         _ action: @escaping (Bool) -> Void
     ) -> some View {
         modifier(SettledHoverModifier(delay: delay, action: action))

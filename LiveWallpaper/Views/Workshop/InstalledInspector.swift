@@ -62,37 +62,15 @@ struct WPEInstalledInspectorContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
                 hero
+                // Three groups under the hero instead of eight blocks separated
+                // by spacing alone: what this is, what you can do with it, what
+                // the author said. Same `GroupBox` container the settings pages
+                // use, so the inspector doesn't invent a fourth card style.
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                    Text(verbatim: entry.origin.title)
-                        .font(.title3.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: DesignTokens.Spacing.xs) {
-                        typePill
-                        if let rating = localInfo?.contentRating, !rating.isEmpty {
-                            contentRatingPill(rating)
-                        }
-                    }
-                    metaRow
-                    if state.hasUpdate { updateSection }
-                    unsupportedWarning
-                    if !activeScreenIDs.isEmpty { inUseRow }
-
-                    applySection
-
-                    // Presets for a wallpaper you already own are worth
-                    // reaching without going back to the online tab. Workshop
-                    // items only — a folder import has no id to look up.
-                    if let itemID, let steamURL {
-                        Divider()
-                        DetailPresetsSection(
-                            wallpaperID: itemID,
-                            communityURL: steamURL,
-                            doctor: doctor
-                        )
-                    }
-
-                    infoSection
+                    identityBlock
+                    actionsGroup
+                    presetsGroup
+                    aboutGroup
                 }
                 .padding(.horizontal, DesignTokens.Spacing.lg)
                 .padding(.bottom, DesignTokens.Spacing.lg)
@@ -108,6 +86,77 @@ struct WPEInstalledInspectorContent: View {
             localInfo = loadedInfo
         }
         .onDisappear { localInfoLoadOwner.invalidate() }
+    }
+
+    /// Uncarded on purpose: it names the thing the cards below act on, so a
+    /// container around it would read as one more peer section.
+    private var identityBlock: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Text(verbatim: entry.origin.title)
+                .font(.title3.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                typePill
+                if let rating = localInfo?.contentRating, !rating.isEmpty {
+                    contentRatingPill(rating)
+                }
+            }
+            metaRow
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var actionsGroup: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                if state.hasUpdate {
+                    updateSection
+                }
+                unsupportedWarning
+                if !activeScreenIDs.isEmpty {
+                    inUseRow
+                }
+                applySection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .groupBoxStyle(ContainerGroupBoxStyle())
+    }
+
+    /// Presets for a wallpaper you already own are worth reaching without going
+    /// back to the online tab. Workshop items only — a folder import has no id.
+    @ViewBuilder
+    private var presetsGroup: some View {
+        if let itemID, let steamURL {
+            GroupBox {
+                DetailPresetsSection(
+                    wallpaperID: itemID,
+                    communityURL: steamURL,
+                    doctor: doctor
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .groupBoxStyle(ContainerGroupBoxStyle())
+        }
+    }
+
+    @ViewBuilder
+    private var aboutGroup: some View {
+        if let info = localInfo, info.hasContent {
+            GroupBox {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                    if let description = info.cleanedDescription, !description.isEmpty {
+                        descriptionSection(description)
+                    }
+                    if !info.tags.isEmpty {
+                        tagsSection(info.tags)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .groupBoxStyle(ContainerGroupBoxStyle())
+        }
     }
 
     private var hero: some View {
@@ -323,17 +372,6 @@ struct WPEInstalledInspectorContent: View {
     }
 
     @ViewBuilder
-    private var infoSection: some View {
-        if let info = localInfo, info.hasContent {
-            if let description = info.cleanedDescription, !description.isEmpty {
-                descriptionSection(description)
-            }
-            if !info.tags.isEmpty {
-                tagsSection(info.tags)
-            }
-        }
-    }
-
     private func descriptionSection(_ text: String) -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             Text("Description").font(.headline)

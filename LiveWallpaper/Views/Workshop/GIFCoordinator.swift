@@ -6,8 +6,12 @@ import Foundation
 struct ThumbnailPlaybackGate: Equatable {
     enum Trigger: Equatable { case hover, auto }
 
-    /// Hover debounce so a fast sweep across a grid doesn't thrash the decoder.
-    static let hoverPreviewDelayNanoseconds: UInt64 = 250_000_000
+    /// No decoder debounce of its own any more. Every `.hoverToPlay` caller
+    /// (Workshop-Installed's `HistoryRow`, Workshop-Online's `BrowseCard`) already
+    /// gates its hover through `settledHover`, so this 250 ms stacked on top of
+    /// that 150 ms and made a sweep take 400 ms to start playing — the same delay
+    /// on both grids, but twice as long as either intended.
+    static let hoverPreviewDelayNanoseconds: UInt64 = 0
 
     var isVisible: Bool
     /// False while the host panel is mounted but not shown — a collapsed inspector clips its

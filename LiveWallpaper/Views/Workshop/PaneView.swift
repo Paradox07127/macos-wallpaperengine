@@ -17,15 +17,17 @@ struct PaneView: View {
     @State private var isShowingKeyEntry = false
     @State private var isShowingInstallConsent = false
     @State private var isShowingSetupAlert = false
-    @State private var installedCount = 0
 
     var body: some View {
-        DetailPageScaffold(showsHeader: false, header: { EmptyView() }) {
+        DetailPageScaffold {
             tabBody
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 tabSwitcher
+            }
+            ToolbarItem(placement: .primaryAction) {
+                WorkshopPaneActions(onPaste: { presentPasteFlow() })
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -38,16 +40,12 @@ struct PaneView: View {
             await folderImport.ingestExistingDownloads(using: doctor)
         }
         .onAppear {
-            refreshInstalledCount()
             consumePendingDeepLink()
             // The tab is persisted, so a returning user can land on Online
             // without ever changing it.
             presentOnboardingIfNeeded()
         }
         .onChange(of: selectedTab) { _, _ in presentOnboardingIfNeeded() }
-        .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
-            refreshInstalledCount()
-        }
         .onReceive(NotificationCenter.default.publisher(for: .openWorkshopPane)) { _ in
             consumePendingDeepLink()
         }
@@ -95,17 +93,15 @@ struct PaneView: View {
         }
     }
 
-    private func refreshInstalledCount() {
-        installedCount = SettingsManager.shared.loadGlobalSettings().recentWPEImports.count
-    }
-
     private var tabSwitcher: some View {
         Picker("Workshop tab", selection: $selectedTab) {
             ForEach(WorkshopPaneTab.allCases) { tab in
-                Text(tab.title).tag(tab)
+                Label(tab.title, systemImage: tab.systemImage).tag(tab)
             }
         }
         .pickerStyle(.segmented)
+        // Without this a segmented picker renders the label icon-only.
+        .labelStyle(.titleAndIcon)
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityLabel(Text("Workshop tab"))
     }
@@ -121,23 +117,11 @@ struct PaneView: View {
                 onBrowseOnline: { selectedTab = .browseOnline },
                 onInstallSteamCMD: { isShowingInstallConsent = true },
                 onOpenWorkshopSettings: { openWorkshopSettings() },
-                isInstallingSteamCMD: isInstallingSteamCMD,
-                paneHeader: makePaneHeader
+                isInstallingSteamCMD: isInstallingSteamCMD
             )
         case .browseOnline:
             browseTab
         }
-    }
-
-    /// Builds the shared pane header so both tabs render an identical one.
-    private func makePaneHeader() -> AnyView {
-        AnyView(
-            WorkshopPaneHeader(
-                selectedTab: selectedTab,
-                installedCount: installedCount,
-                onPaste: { presentPasteFlow() }
-            )
-        )
     }
 
     @ViewBuilder
@@ -147,8 +131,7 @@ struct PaneView: View {
                 viewModel: viewModel,
                 doctor: doctor,
                 onRequestKeyEntry: { isShowingKeyEntry = true },
-                onDownloadByLink: { presentPasteFlow() },
-                paneHeader: makePaneHeader
+                onDownloadByLink: { presentPasteFlow() }
             )
         } else {
             Color.clear
@@ -234,6 +217,15 @@ enum WorkshopPaneTab: String, CaseIterable, Identifiable {
             return String(localized: "Workshop", bundle: .appLanguage, comment: "Workshop pane tab for the online Steam Workshop catalog (zh: 创意工坊).")
         }
     }
+
+    /// The capsule carries this page's identity now that the in-page header is
+    /// gone, so each segment says what it is with a glyph as well as a word.
+    var systemImage: String {
+        switch self {
+        case .installed: "square.grid.2x2"
+        case .browseOnline: "cube.transparent.fill"
+        }
+    }
 }
 
 /// One-shot hand-off for "open Workshop scoped to this item" deep links.
@@ -253,10 +245,11 @@ enum WorkshopDeepLink {
     }
 }
 
-/// Shared Workshop header hosted inside each tab's main split column.
-struct WorkshopPaneHeader: View {
-    let selectedTab: WorkshopPaneTab
-    let installedCount: Int
+/// Workshop's toolbar actions. Was an in-page header row; the title moved to the
+/// `.principal` capsule and the installed count to the floating filter bar's
+/// counter, leaving these three controls, which belong on the toolbar's trailing
+/// edge because they act on the whole page rather than on any one card.
+struct WorkshopPaneActions: View {
     let onPaste: () -> Void
 
     @Environment(WorkshopServices.self) private var services
@@ -266,16 +259,18 @@ struct WorkshopPaneHeader: View {
     @State private var showingSignIn = false
     @State private var showingAccountMenu = false
 
-    /// Same `DetailHeaderBar` as Bookmarks and Apple Aerials — this pane used to
-    /// hand-roll an identical icon/title/metadata/actions row, so the three
-    /// library headers drifted apart on spacing and type.
     var body: some View {
-        DetailHeaderBar(
-            systemImage: "cube.transparent.fill",
-            title: { Text("Steam Workshop") },
-            metadata: { headerStatView },
-            actions: { headerActions }
-        )
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            Button {
+                onPaste()
+            } label: {
+                Image(systemName: "link.badge.plus")
+            }
+            .help(Text("Add a Steam Workshop item by URL or ID"))
+            .accessibilityLabel(Text("Add from Workshop URL or ID"))
+
+            accountControl
+        }
         .task { await setupController.loadAccounts() }
         .sheet(isPresented: $showingSignIn) {
             AppLanguageScope(defaults: .appScoped()) {
@@ -295,22 +290,29 @@ struct WorkshopPaneHeader: View {
         // outlives the Steam profile it came from, and a menu with nothing to
         // switch between is a menu that only knows how to sign in.
         if setupController.discoveredAccounts.isEmpty {
-            GlassIconButton("person.crop.circle.badge.plus", action: { showingSignIn = true })
-                .help(Text("Sign In"))
-                .accessibilityLabel(Text("Steam sign-in"))
+            Button {
+                showingSignIn = true
+            } label: {
+                Image(systemName: "person.crop.circle.badge.plus")
+            }
+            .help(Text("Sign In"))
+            .accessibilityLabel(Text("Steam sign-in"))
         } else {
-            // Not a Menu: an AppKit popup's label takes neither `glassEffect`
-            // nor the `adaptiveGlassButton` pipeline (both probed on 26,
-            // 2026-08-31 — the disc rendered flat). A real Button through
-            // GlassIconButton is pixel-identical to its paste-link neighbour,
-            // so the account list moved into a popover instead.
+            // Still not a Menu: an AppKit popup ignores its label's
+            // `foregroundStyle` and paints the system control colour, which goes
+            // invisible over dark chrome (probed 2026-08-31). A real Button with
+            // a popover keeps the glyph ours.
             let glyph = doctor.username == nil ? "person.crop.circle.badge.plus" : "person.crop.circle.fill"
-            GlassIconButton(glyph, action: { showingAccountMenu = true })
-                .help(Text(verbatim: setupController.setupError ?? doctor.username ?? ""))
-                .accessibilityLabel(Text("Steam account"))
-                .popover(isPresented: $showingAccountMenu, arrowEdge: .bottom) {
-                    accountMenuPopover
-                }
+            Button {
+                showingAccountMenu = true
+            } label: {
+                Image(systemName: glyph)
+            }
+            .help(Text(verbatim: setupController.setupError ?? doctor.username ?? ""))
+            .accessibilityLabel(Text("Steam account"))
+            .popover(isPresented: $showingAccountMenu, arrowEdge: .bottom) {
+                accountMenuPopover
+            }
         }
     }
 
@@ -336,52 +338,33 @@ struct WorkshopPaneHeader: View {
             )
             .buttonStyle(.borderless)
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider()
+
+            webAPIKeyStatusLine
         }
-        .settingsPopoverChrome(width: 220)
+        .settingsPopoverChrome(width: 240)
     }
 
-    /// On Workshop, prefixes the request count with the API-key status seal so
-    /// key health and today's request count read in one place.
-    private var headerStatView: some View {
-        HStack(spacing: 4) {
-            if selectedTab == .browseOnline, services.hasWebAPIKey {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(DesignTokens.Colors.Status.active)
-                    .accessibilityHidden(true)
+    /// Key health and today's request count. Both were a caption in the page
+    /// header; they read as connection status, so they live with the account
+    /// controls rather than as a glyph wedged into the toolbar.
+    private var webAPIKeyStatusLine: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            Image(systemName: services.hasWebAPIKey ? "checkmark.seal.fill" : "key.slash")
+                .foregroundStyle(services.hasWebAPIKey ? DesignTokens.Colors.Status.active : .secondary)
+                .accessibilityHidden(true)
+            if services.hasWebAPIKey {
+                Text("\(WorkshopRequestCounter.countForToday()) API requests today")
+                    .help(Text("Steam doesn't expose remaining quota; this counts only the requests this Mac has issued today."))
+            } else {
+                Text("Browsing without an API key")
             }
-            Text(verbatim: headerStat)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
-        .help(selectedTab == .browseOnline && services.hasWebAPIKey
-            ? Text("Steam doesn't expose remaining quota; this counts only the requests this Mac has issued today.")
-            : Text(verbatim: ""))
+        .font(DesignTokens.Typography.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var headerStat: String {
-        switch selectedTab {
-        case .installed:
-            return String(localized: "\(installedCount) installed", bundle: .appLanguage, comment: "Workshop header stat: number of installed wallpapers.")
-        case .browseOnline:
-            if !services.hasWebAPIKey {
-                // Browse still works without a key — it just runs off Valve's
-                // public page, which issues no Web API requests to count.
-                return String(localized: "Browsing without an API key", bundle: .appLanguage, comment: "Workshop header stat when no Steam Web API key is set and Browse uses Valve's public search page.")
-            }
-            return String(localized: "\(WorkshopRequestCounter.countForToday()) API requests today", bundle: .appLanguage, comment: "Workshop header stat: Steam Web API requests issued today.")
-        }
-    }
-
-    private var headerActions: some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            GlassIconButton("link.badge.plus", action: onPaste)
-                .help(Text("Add a Steam Workshop item by URL or ID"))
-                .accessibilityLabel(Text("Add from Workshop URL or ID"))
-
-            accountControl
-        }
-    }
 }
 #endif

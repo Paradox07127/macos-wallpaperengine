@@ -22,6 +22,10 @@ EOF
 
 SUITES=(
   GeneralSettingsOwnershipCharacterizationTests
+  # Source probes pinning window/page geometry and where each preview overlay's
+  # controls live. Added 2026-09-01: it had been red since 2a94727 and nobody saw
+  # it, because a contract test outside this list never runs.
+  SettingsWindowLayoutTests
   InfrastructureRuntimeBoundaryTests
   ModuleImportBoundaryTests
   EntitlementAuditTests

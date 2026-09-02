@@ -11,8 +11,6 @@ struct DetailInspectorPanel: View {
     let inspectorPanelWidth: CGFloat
     @Binding var isColorExpanded: Bool
     let onWallpaperModeChange: (WallpaperMode) -> Void
-    let showsResetPlayback: Bool
-    let onResetPlaybackSettings: () -> Void
     let showsResetDisplaySettings: Bool
     let onResetDisplaySettings: () -> Void
     #if !LITE_BUILD
@@ -28,24 +26,18 @@ struct DetailInspectorPanel: View {
                     wallpaperModeCard
                 }
 
-                PlaybackInspector(
-                    screen: screen,
-                    wallpaperType: draft.selectedWallpaperType,
-                    muted: $draft.videoMuted,
-                    videoVolume: $draft.videoVolume,
-                    videoDisplayMode: $draft.selectedVideoDisplayMode,
-                    frameRateLimit: $draft.selectedFrameRateLimit,
-                    syncToLockScreen: $draft.setAsLockScreen,
-                    sceneMouseInteractionEnabled: $draft.sceneMouseInteractionEnabled,
-                    sceneClickCaptureEnabled: $draft.sceneClickCaptureEnabled,
-                    sceneFitMode: $draft.selectedFitMode,
-                    htmlConfig: draft.selectedWallpaperType == .html ? $draft.htmlConfig : nil,
-                    videoColorSpace: draft.videoColorSpace,
-                    showsResetPlayback: showsResetPlayback,
-                    onResetPlayback: onResetPlaybackSettings
-                )
+                // Span-all-displays left the playback glyph row: its effect is on
+                // a display other than the one the preview shows, so the preview
+                // can never confirm it. A labelled row in this column can.
+                if draft.selectedWallpaperType == .video {
+                    displayGroup
+                }
 
-                if draft.selectedWallpaperType == .html {
+                // Nothing is loaded yet, so there is nothing for security, options
+                // or transforms to be *about*: the picker in the preview is the
+                // only step, and a column of settings beside it reads as a page
+                // the user has already finished.
+                if draft.selectedWallpaperType == .html, draft.htmlSource != nil {
                     SecurityInspector(
                         screen: screen,
                         source: draft.htmlSource,
@@ -88,7 +80,8 @@ struct DetailInspectorPanel: View {
                     WPESceneCustomSettingsCard(
                         screen: screen,
                         schema: schema,
-                        descriptor: sceneDescriptorBinding
+                        descriptor: sceneDescriptorBinding,
+                        availableWidth: inspectorPanelWidth
                     )
                 }
                 #endif
@@ -126,9 +119,7 @@ struct DetailInspectorPanel: View {
                     capabilityTier: .unsupported
                 )
             },
-            set: { newValue in
-                draft.sceneDescriptor = newValue
-            }
+            set: { draft.sceneDescriptor = $0 }
         )
     }
 
@@ -202,6 +193,39 @@ struct DetailInspectorPanel: View {
         wpeProjectCustomSettingsSchema = outcome.schema
     }
     #endif
+
+    private var displayGroup: some View {
+        GroupBox {
+            SettingRow(
+                icon: "rectangle.on.rectangle",
+                title: "Span All Displays",
+                info: "Stretches one video across every display as a single picture, instead of playing a copy on each."
+            ) {
+                // Disabled, never hidden: unplugging the second display must not
+                // hide a persisted `.spanAllDisplays` — it would keep spanning
+                // when that display came back, with no way to see or clear it.
+                Toggle("", isOn: spanDisplaysBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .disabled(screenManager.screens.count <= 1)
+                    .accessibilityLabel(Text("Span All Displays"))
+            }
+        }
+        .groupBoxStyle(ContainerGroupBoxStyle())
+    }
+
+    private var spanDisplaysBinding: Binding<Bool> {
+        Binding(
+            get: { draft.selectedVideoDisplayMode == .spanAllDisplays },
+            set: { newValue in
+                let target: VideoDisplayMode = newValue ? .spanAllDisplays : .perDisplay
+                guard draft.selectedVideoDisplayMode != target else { return }
+                draft.selectedVideoDisplayMode = target
+                screenManager.updateVideoDisplayMode(target, for: screen)
+            }
+        )
+    }
 
     private var colorGroup: some View {
         GroupBox {

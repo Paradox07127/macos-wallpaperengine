@@ -18,6 +18,7 @@ struct PreviewArea: View {
     let onSelectVideoFile: () -> Void
     let onStartPreview: () -> Void
     let onPlaybackSpeedChange: (Double) -> Void
+    let onResetPlayback: () -> Void
     let onFitModeChange: (VideoFitMode) -> Void
 
     var body: some View {
@@ -37,7 +38,21 @@ struct PreviewArea: View {
             } else if draft.selectedWallpaperType == .scene,
                       featureCatalog.isEnabled(.scene) {
                 #if !LITE_BUILD
-                SceneSection(screen: screen)
+                SceneSection(
+                    screen: screen,
+                    fitMode: Binding(
+                        get: { draft.selectedFitMode },
+                        set: { mode in
+                            guard draft.selectedFitMode != mode else { return }
+                            draft.selectedFitMode = mode
+                            // Not `onFitModeChange`: that is the video path
+                            // (`updateFitMode` only reaches `videoPlayer`), so a
+                            // running scene kept its old scale until reload.
+                            screenManager.updateSceneFitMode(mode, for: screen)
+                        }
+                    ),
+                    playbackControls: AnyView(playbackControls)
+                )
                 #else
                 EmptyView()
                 #endif
@@ -105,12 +120,18 @@ struct PreviewArea: View {
                     wpePreviewBookmark: draft.wpeOrigin?.sourceFolderBookmark
                 )
             } controls: {
-                HTMLSourceSection(
-                    screen: screen,
-                    source: $draft.htmlSource,
-                    config: $draft.htmlConfig,
-                    floating: true
-                )
+                HStack(spacing: DesignTokens.Spacing.md) {
+                    HTMLSourceSection(
+                        screen: screen,
+                        source: $draft.htmlSource,
+                        config: $draft.htmlConfig,
+                        floating: true
+                    )
+                    playbackControls
+                        .padding(.horizontal, DesignTokens.Spacing.md)
+                        .padding(.vertical, 6)
+                        .adaptiveGlassSurface(.capsule)
+                }
             }
         } else {
             // Nothing picked yet: the picker is the page, not an overlay.
@@ -134,14 +155,45 @@ struct PreviewArea: View {
         #endif
     }
 
+    /// One shape for all three wallpaper types' preview overlays: what this is on
+    /// the left, controls that change what the preview shows on the right. The
+    /// scene's bar carries its title, link and diagnostics; the web preview's
+    /// carries its source picker; this one names the file.
+    /// Every playback control for this display, as glyphs. Shared by all three
+    /// wallpaper types' overlays so the same setting is always in the same place.
+    private var playbackControls: some View {
+        PlaybackControls(
+            screen: screen,
+            wallpaperType: draft.selectedWallpaperType,
+            muted: $draft.videoMuted,
+            videoVolume: $draft.videoVolume,
+            frameRateLimit: $draft.selectedFrameRateLimit,
+            syncToLockScreen: $draft.setAsLockScreen,
+            sceneMouseInteractionEnabled: $draft.sceneMouseInteractionEnabled,
+            sceneClickCaptureEnabled: $draft.sceneClickCaptureEnabled,
+            htmlConfig: draft.selectedWallpaperType == .html ? $draft.htmlConfig : nil,
+            videoColorSpace: draft.videoColorSpace,
+            showsResetPlayback: screenManager.displayPlaybackDiffersFromDefaults(for: screen),
+            onResetPlayback: onResetPlayback
+        )
+    }
+
     private var videoCommandBar: some View {
         AdaptiveGlassContainer(spacing: 14) {
             HStack(spacing: 14) {
-                Spacer(minLength: 0)
+                if let name = screenManager.currentVideoDisplayName(for: screen), !name.isEmpty {
+                    Text(verbatim: name)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(Text(verbatim: name))
+                }
+                Spacer(minLength: 8)
                 fitModeGroup
                 Divider().frame(height: 30)
                 speedSlider
-                Spacer(minLength: 0)
+                Divider().frame(height: 30)
+                playbackControls
             }
             .padding(.horizontal, DesignTokens.Spacing.cardInset)
             .padding(.vertical, 6)

@@ -61,9 +61,9 @@ struct SettingsSidebar: View {
             .listStyle(.sidebar)
         }
         .navigationSplitViewColumnWidth(
-            min: SettingsWindowMetrics.sidebarColumnWidth,
-            ideal: SettingsWindowMetrics.sidebarColumnWidth,
-            max: SettingsWindowMetrics.sidebarColumnMaxWidth
+            min: SettingsWindowMetrics.settingsSidebarColumnWidth,
+            ideal: SettingsWindowMetrics.settingsSidebarColumnWidth,
+            max: SettingsWindowMetrics.settingsSidebarColumnMaxWidth
         )
         .onAppear {
             if selection == nil {

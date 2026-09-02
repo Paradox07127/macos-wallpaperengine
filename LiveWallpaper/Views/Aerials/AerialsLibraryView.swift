@@ -3,6 +3,7 @@ import AppKit
 import LiveWallpaperCore
 
 struct AerialsLibraryView: View {
+    @Environment(\.libraryTileSize) private var tileSize
     private let library = AppleAerialsLibrary.shared
     @Environment(ScreenManager.self) private var screenManager
     @State private var searchText: String = ""
@@ -10,26 +11,55 @@ struct AerialsLibraryView: View {
 
 
     var body: some View {
-        DetailPageScaffold(
-            showsHeader: library.isAuthorized,
-            header: { inlineHeader },
-            content: {
-                if !library.isAuthorized {
-                    unauthorizedState
-                } else if let err = library.lastScanError, !err.isEmpty, library.assets.isEmpty {
-                    scanErrorView(message: err)
-                } else if library.assets.isEmpty {
-                    emptyState
-                } else {
-                    galleryWithFilter
+        DetailPageScaffold {
+            if !library.isAuthorized {
+                unauthorizedState
+            } else if let err = library.lastScanError, !err.isEmpty, library.assets.isEmpty {
+                scanErrorView(message: err)
+            } else if library.assets.isEmpty {
+                emptyState
+            } else {
+                galleryWithFilter
+            }
+        }
+        .confirmDestructive($pendingDestructive)
+        .toolbar {
+            LibraryIdentityToolbarItem(systemImage: "sparkles.tv", title: Text("Apple Aerials"))
+            // Nothing to refresh or disconnect until a folder is linked.
+            if library.isAuthorized {
+                ToolbarItem(placement: .primaryAction) {
+                    libraryActions
                 }
             }
-        )
-        .confirmDestructive($pendingDestructive)
+        }
         .task {
             if library.isAuthorized && library.assets.isEmpty {
                 await library.refresh()
             }
+        }
+    }
+
+    /// The scan spinner rides beside the refresh button rather than inside it:
+    /// `GlassIconButton` takes a symbol, not an arbitrary view, and a toolbar
+    /// spinner beside the control it belongs to is what Mail does while fetching.
+    private var libraryActions: some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            if library.isScanning {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel(Text("Scanning the Aerials library", comment: "A11y label for the toolbar spinner shown while the Apple Aerials library is being rescanned."))
+            }
+
+            Button {
+                Task { await library.refresh() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .help(Text("Refresh — rescan the Aerials library for new content"))
+            .accessibilityLabel(Text("Refresh Aerials library"))
+            .disabled(library.isScanning)
+
+            disconnectButton
         }
     }
 
@@ -58,44 +88,16 @@ struct AerialsLibraryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var inlineHeader: some View {
-        DetailHeaderBar(
-            systemImage: "sparkles.tv",
-            title: { Text("Apple Aerials") },
-            metadata: {
-                HStack(spacing: DesignTokens.DetailHeader.metadataSpacing) {
-                    Text("\(library.assets.count) downloaded videos")
-                    if library.isScanning {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-            },
-            actions: {
-                HStack(spacing: 8) {
-                    GlassIconButton("arrow.clockwise") {
-                        Task { await library.refresh() }
-                    }
-                    .help(Text("Refresh — rescan the Aerials library for new content"))
-                    .accessibilityLabel(Text("Refresh Aerials library"))
-                    .disabled(library.isScanning)
-
-                    disconnectButton
-                }
-            }
-        )
-    }
-
     /// A single destructive action doesn't earn an overflow menu, and the icon
     /// now says what it does — unlink a folder, not dismiss something.
     private var disconnectButton: some View {
-        GlassIconButton(
-            "folder.badge.minus",
-            tint: DesignTokens.Colors.Status.danger,
-            role: .destructive
-        ) {
+        Button(role: .destructive) {
             pendingDestructive = PendingDestructive(.disconnectAerialsLibrary) {
                 library.clearAccess()
             }
+        } label: {
+            Image(systemName: "folder.badge.minus")
+                .foregroundStyle(DesignTokens.Colors.Status.danger)
         }
         .help(Text("Disconnect the Apple Aerials library folder"))
         .accessibilityLabel(Text("Disconnect Aerials Library"))
@@ -109,6 +111,7 @@ struct AerialsLibraryView: View {
                 resultCount: filteredAssets.count,
                 totalCount: library.assets.count
             )
+            Divider()
             galleryGrid
         }
     }
@@ -187,7 +190,7 @@ struct AerialsLibraryView: View {
                         .padding(.horizontal, 4)
                     }
 
-                    LazyVGrid(columns: DesignTokens.LibraryGrid.columns, spacing: DesignTokens.LibraryGrid.spacing) {
+                    LazyVGrid(columns: DesignTokens.LibraryGrid.columns(for: tileSize), spacing: DesignTokens.LibraryGrid.spacing) {
                         ForEach(filteredAssets) { asset in
                             ThumbnailCard(
                                 asset: asset,

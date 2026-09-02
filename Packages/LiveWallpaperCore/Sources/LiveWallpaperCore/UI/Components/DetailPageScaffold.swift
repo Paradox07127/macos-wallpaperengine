@@ -1,33 +1,24 @@
 import SwiftUI
 import AppKit
 
-public struct DetailPageScaffold<Header: View, Content: View>: View {
-    public let showsHeader: Bool
-    private let header: Header
+/// Shared frame for a library page: the page background and the size floor.
+///
+/// It used to also host an in-page `DetailHeaderBar`. Every library page moved
+/// its identity to the toolbar and its search to a floating bar over the grid
+/// (2026-09-01), which left the header slot with no callers, so the slot is gone
+/// rather than sitting there as a second way to build a page.
+public struct DetailPageScaffold<Content: View>: View {
     private let content: Content
 
-    public init(
-        showsHeader: Bool = true,
-        @ViewBuilder header: () -> Header,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.showsHeader = showsHeader
-        self.header = header()
+    public init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            if showsHeader {
-                header
-                Divider()
-            }
-
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .background(DesignTokens.Colors.pageBackground)
-        .frame(minWidth: DesignTokens.LibraryPage.minWidth, minHeight: DesignTokens.LibraryPage.minHeight)
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DesignTokens.Colors.pageBackground)
+            .frame(minWidth: DesignTokens.LibraryPage.minWidth, minHeight: DesignTokens.LibraryPage.minHeight)
     }
 }
 

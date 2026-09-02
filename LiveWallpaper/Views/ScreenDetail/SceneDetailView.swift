@@ -53,6 +53,9 @@ struct SceneDetailView: View {
     /// Session-derived state misses failures that never produced a scene session
     /// (`ScreenManager.transientRuntimeErrors`). Narrower than "any runtime error" on purpose: a revoked bookmark or unplayable file isn't something an engine-assets install fixes.
     let hasSceneRenderingError: Bool
+    /// Scale: a preview-view control, the same role video's overlay has always had.
+    @Binding var fitMode: VideoFitMode
+    let playbackControls: AnyView
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.featureCatalog) private var featureCatalog
@@ -419,6 +422,23 @@ struct SceneDetailView: View {
     }
 
     /// Floating glass info bar under the preview — the scene-type analog of the video command bar.
+    /// Same control as the video overlay's, so "how does this fill the screen"
+    /// is answered in the same place whatever the wallpaper is.
+    private var fitModeGroup: some View {
+        GlassSegmentedPicker(
+            selection: $fitMode,
+            values: VideoFitMode.sceneModes,
+            shell: .flat
+        ) { mode, isSelected in
+            Image(systemName: mode.iconName)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 26, height: 18)
+                .opacity(isSelected ? 1 : 0.7)
+                .accessibilityLabel(Text(mode.titleKey))
+        }
+        .help(Text("How the scene fills the display"))
+    }
+
     private var infoBar: some View {
         HStack(spacing: 10) {
             Text(verbatim: origin.title)
@@ -426,6 +446,12 @@ struct SceneDetailView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 8)
+
+            fitModeGroup
+            Divider().frame(height: 22)
+            playbackControls
+            Divider().frame(height: 22)
+
             workshopLinkButton
             // Only when the log has something in it. A scene that loaded cleanly
             // has nothing to show a user here, and the context menu below keeps

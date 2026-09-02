@@ -6,14 +6,13 @@ import UniformTypeIdentifiers
 
 /// Installed Workshop tab (import history + Steam Workshop repository).
 struct InstalledView: View {
+    @Environment(\.libraryTileSize) private var tileSize
     /// Tag tap → Browse Online scoped to that tag.
     var onBrowseTag: ((String) -> Void)?
     var onBrowseOnline: (() -> Void)?
     var onInstallSteamCMD: (() -> Void)?
     var onOpenWorkshopSettings: (() -> Void)?
     var isInstallingSteamCMD = false
-    /// nil = no header / toolbar (embeddable like Browse).
-    var paneHeader: (() -> AnyView)?
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(SteamCMDDoctorService.self) private var doctor
@@ -30,58 +29,62 @@ struct InstalledView: View {
     var body: some View {
         @Bindable var model = model
         InspectorSplit(
-                isMounted: true,
-                isVisible: isInspectorVisible,
-                animationTrigger: AnyHashable(isInspectorVisible),
-                reduceMotion: reduceMotion,
-                storedWidth: $inspectorWidth,
-                liveWidth: $liveInspectorWidth,
-                minWidth: DesignTokens.Inspector.minWidth,
-                maxWidth: DesignTokens.Inspector.maxWidth,
-                onClose: { model.inspectorHidden = true },
-                main: { mainColumn },
-                inspector: { width in installedInspectorColumn(width: width) }
-            )
-            .background(DesignTokens.Colors.pageBackground)
-            .toolbar {
-                if paneHeader != nil, model.selectedEntry != nil {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            model.inspectorHidden.toggle()
-                        } label: {
-                            Image(systemName: "sidebar.right")
-                        }
-                        .help(Text(model.inspectorHidden ? "Show details" : "Hide details"))
-                        .accessibilityLabel(Text("Toggle details panel"))
+            isMounted: true,
+            isVisible: isInspectorVisible,
+            animationTrigger: AnyHashable(isInspectorVisible),
+            reduceMotion: reduceMotion,
+            storedWidth: $inspectorWidth,
+            liveWidth: $liveInspectorWidth,
+            minWidth: DesignTokens.Inspector.minWidth,
+            maxWidth: DesignTokens.Inspector.maxWidth,
+            onClose: { model.inspectorHidden = true },
+            main: { mainColumn },
+            inspector: { width in installedInspectorColumn(width: width) }
+        )
+        .background(DesignTokens.Colors.pageBackground)
+        .toolbar {
+            if model.selectedEntry != nil {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        model.inspectorHidden.toggle()
+                    } label: {
+                        Image(systemName: "sidebar.right")
+                    }
+                    .help(Text(model.inspectorHidden ? "Show details" : "Hide details"))
+                    .accessibilityLabel(Text("Toggle details panel"))
+                }
+            }
+        }
+        .onAppear { model.onAppear() }
+        .onDisappear { model.onDisappear() }
+        .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
+            model.historyDidChange()
+        }
+        .confirmationDialog(
+            Text("Delete this wallpaper?"),
+            isPresented: Binding(
+                get: { model.pendingDelete != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        model.cancelDelete()
                     }
                 }
+            ),
+            presenting: model.pendingDelete
+        ) { entry in
+            Button(role: .destructive) {
+                performDelete(entry)
+            } label: {
+                Text(model.deletesFiles(entry) ? "Delete & Free Up Space" : "Remove from Library")
             }
-            .onAppear { model.onAppear() }
-            .onDisappear { model.onDisappear() }
-            .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
-                model.historyDidChange()
+            Button("Cancel", role: .cancel) { model.cancelDelete() }
+        } message: { entry in
+            if model.deletesFiles(entry) {
+                Text("“\(entry.origin.title)” will be deleted from your Steam library on this Mac and removed from Loomscreen. This frees up disk space and can't be undone — you can download it again anytime. Your Steam subscription is unaffected.")
+            } else {
+                Text("“\(entry.origin.title)” will be removed from your library. Its original files (imported from your own folder) are left untouched.")
             }
-            .confirmationDialog(
-                Text("Delete this wallpaper?"),
-                isPresented: Binding(
-                    get: { model.pendingDelete != nil },
-                    set: { if !$0 { model.cancelDelete() } }
-                ),
-                presenting: model.pendingDelete
-            ) { entry in
-                Button(role: .destructive) {
-                    performDelete(entry)
-                } label: {
-                    Text(model.deletesFiles(entry) ? "Delete & Free Up Space" : "Remove from Library")
-                }
-                Button("Cancel", role: .cancel) { model.cancelDelete() }
-            } message: { entry in
-                if model.deletesFiles(entry) {
-                    Text("“\(entry.origin.title)” will be deleted from your Steam library on this Mac and removed from Loomscreen. This frees up disk space and can't be undone — you can download it again anytime. Your Steam subscription is unaffected.")
-                } else {
-                    Text("“\(entry.origin.title)” will be removed from your library. Its original files (imported from your own folder) are left untouched.")
-                }
-            }
+        }
     }
 
     private func installedInspectorColumn(width: CGFloat) -> some View {
@@ -131,13 +134,7 @@ struct InstalledView: View {
     private var isInspectorVisible: Bool { model.selectedEntry != nil && !model.inspectorHidden }
 
     private var mainColumn: some View {
-        VStack(spacing: 0) {
-            if let paneHeader {
-                paneHeader()
-                Divider()
-            }
-            content
-        }
+        content
     }
 
     // MARK: - Content
@@ -153,39 +150,48 @@ struct InstalledView: View {
             // grid — so a single keystroke in the search field paid for it three times over.
             let visibleEntries = model.visibleEntries
             VStack(spacing: 0) {
-                LibraryFilterBar(
-                    searchText: $model.searchText,
-                    searchPrompt: "Search library",
-                    resultCount: visibleEntries.count,
-                    totalCount: model.entries.count
-                ) {
-                    HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
-                        WorkshopFiltersToggle(isExpanded: $model.showFilters, activeFilterCount: model.activeFilterCount)
+                VStack(spacing: DesignTokens.Spacing.sm) {
+                    LibraryFilterBar(
+                        searchText: $model.searchText,
+                        searchPrompt: "Search library",
+                        resultCount: nil,
+                        totalCount: model.entries.count
+                    ) {
+                        HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+                            WorkshopFiltersToggle(isExpanded: $model.showFilters, activeFilterCount: model.activeFilterCount)
 
-                        Spacer(minLength: 0)
+                            Spacer(minLength: 0)
 
-                        Picker("Sort", selection: $model.sortOrder) {
-                            ForEach(WPELibrarySortOrder.allCases) { order in
-                                Text(verbatim: order.title).tag(order)
+                            Picker("Sort", selection: $model.sortOrder) {
+                                ForEach(WPELibrarySortOrder.allCases) { order in
+                                    Text(verbatim: order.title).tag(order)
+                                }
                             }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .controlSize(.small)
+                            .fixedSize()
+                            .help(Text("Sort the library"))
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .controlSize(.small)
-                        .fixedSize()
-                        .help(Text("Sort the library"))
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
-                }
 
-                if model.showFilters {
-                    installedFilterPanel
-                }
+                    if model.showFilters {
+                        installedFilterPanel
+                    }
 
-                if importCoordinator.isImporting {
-                    importingBanner
+                    if importCoordinator.isImporting {
+                        importingBanner
+                    }
                 }
+                // One curve for the whole band: the drawer's transition and the
+                // band's height key off this.
+                .animation(
+                    DesignTokens.motion(reduceMotion, .smooth(duration: 0.24)),
+                    value: model.showFilters
+                )
 
+                Divider()
                 gallery(visibleEntries)
             }
         }
@@ -206,7 +212,7 @@ struct InstalledView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, DesignTokens.Spacing.sm)
                 }
-                LazyVGrid(columns: DesignTokens.LibraryGrid.columns, spacing: DesignTokens.LibraryGrid.spacing) {
+                LazyVGrid(columns: DesignTokens.LibraryGrid.columns(for: tileSize), spacing: DesignTokens.LibraryGrid.spacing) {
                     ForEach(visibleEntries, id: \.id) { entry in
                         let bookmarked = bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID)
                         HistoryRow(
@@ -303,6 +309,7 @@ struct InstalledView: View {
                 WorkshopFilterChip(
                     title: Text(verbatim: kind.title),
                     isSelected: model.selectedTypes.contains(kind),
+                    count: model.entries.count(where: kind.matches),
                     onIsolate: { model.isolateType(kind) }
                 ) {
                     model.toggleType(kind)
@@ -357,7 +364,7 @@ struct InstalledView: View {
         .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
         .padding(.bottom, DesignTokens.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(.opacity)
     }
 
     // MARK: - Actions

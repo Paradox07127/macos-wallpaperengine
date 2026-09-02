@@ -8,9 +8,14 @@ struct WorkshopFiltersToggle: View {
     let activeFilterCount: Int
     var isDisabled: Bool = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
+        // The plate that holds the drawer animates the change declaratively, so
+        // the toggle only flips state — an imperative `withAnimation` here would
+        // run a second, competing curve on the same layout pass.
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            isExpanded.toggle()
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "line.3.horizontal.decrease")
@@ -23,9 +28,13 @@ struct WorkshopFiltersToggle: View {
                         .padding(.vertical, 2)
                         .background(Color.accentColor, in: Capsule())
                 }
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                Image(systemName: "chevron.down")
                     .font(DesignTokens.Typography.badge)
                     .foregroundStyle(.secondary)
+                    // Rotate rather than swap glyphs: swapping pops, and the
+                    // chevron is the only thing that moves when nothing is open.
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .animation(DesignTokens.motion(reduceMotion, .smooth(duration: 0.24)), value: isExpanded)
             }
             .font(DesignTokens.Typography.caption)
         }

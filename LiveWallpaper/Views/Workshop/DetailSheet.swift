@@ -43,36 +43,68 @@ struct WorkshopInspectorContent: View {
         downloadCoordinator.progressBytes[item.id]
     }
 
+    /// Uncarded: it names the thing the cards below act on.
+    private var identityBlock: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Text(item.title)
+                .font(.title3.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            authorRatingRow
+            metaRow
+            statusBadge
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var actionsGroup: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                actionsColumn
+                downloadStatusNote
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .groupBoxStyle(ContainerGroupBoxStyle())
+    }
+
+    private var presetsGroup: some View {
+        GroupBox {
+            DetailPresetsSection(
+                wallpaperID: item.id,
+                communityURL: item.steamCommunityURL,
+                doctor: doctor
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .groupBoxStyle(ContainerGroupBoxStyle())
+    }
+
+    private var aboutGroup: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                if !item.tags.isEmpty {
+                    tagsSection
+                }
+                descriptionSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .groupBoxStyle(ContainerGroupBoxStyle())
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
                 hero
 
+                // Same three groups as the Installed inspector — what this is,
+                // what you can do with it, what the author said — so the two
+                // Workshop tabs read as one page with two sources.
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                    Text(item.title)
-                        .font(.title3.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    authorRatingRow
-
-                    metaRow
-                    statusBadge
-
-                    actionsColumn
-                    downloadStatusNote
-
-                    Divider()
-                    DetailPresetsSection(
-                        wallpaperID: item.id,
-                        communityURL: item.steamCommunityURL,
-                        doctor: doctor
-                    )
-
-                    if !item.tags.isEmpty {
-                        tagsSection
-                    }
-
-                    descriptionSection
+                    identityBlock
+                    actionsGroup
+                    presetsGroup
+                    aboutGroup
                 }
                 .padding(.horizontal, DesignTokens.Spacing.lg)
                 .padding(.bottom, DesignTokens.Spacing.lg)

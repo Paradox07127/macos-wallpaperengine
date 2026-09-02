@@ -2,6 +2,7 @@ import SwiftUI
 import LiveWallpaperCore
 
 struct LibraryView: View {
+    @Environment(\.libraryTileSize) private var tileSize
     @Environment(ScreenManager.self) private var screenManager
     @State private var store = BookmarkStore.shared
     @State private var renamingID: UUID?
@@ -12,24 +13,8 @@ struct LibraryView: View {
 
 
     var body: some View {
-        DetailPageScaffold(
-            header: { header },
-            content: { content }
-        )
-        .confirmDestructive($pendingDestructive)
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        DetailHeaderBar(
-            systemImage: "bookmark.fill",
-            title: { Text("Bookmarks") },
-            metadata: {
-                Text("\(store.bookmarks.count) saved wallpapers")
-            },
-            actions: { EmptyView() }
-        )
+        DetailPageScaffold { content }
+            .confirmDestructive($pendingDestructive)
     }
 
     // MARK: - Content
@@ -41,6 +26,7 @@ struct LibraryView: View {
         } else {
             VStack(spacing: 0) {
                 filterBar
+                Divider()
                 gallery
             }
         }
@@ -77,7 +63,7 @@ struct LibraryView: View {
             )
         } else {
             ScrollView {
-                LazyVGrid(columns: DesignTokens.LibraryGrid.columns, spacing: DesignTokens.LibraryGrid.spacing) {
+                LazyVGrid(columns: DesignTokens.LibraryGrid.columns(for: tileSize), spacing: DesignTokens.LibraryGrid.spacing) {
                     ForEach(filteredBookmarks) { bookmark in
                         BookmarkTile(
                             bookmark: bookmark,

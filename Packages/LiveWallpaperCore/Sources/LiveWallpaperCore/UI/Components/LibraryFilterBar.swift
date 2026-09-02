@@ -35,9 +35,13 @@ public struct LibraryFilterBar<Filters: View>: View {
 
             Spacer(minLength: DesignTokens.LibraryFilterBar.contentSpacing)
 
-            // Only surface the counter when filtering narrowed the set; an
-            // unfiltered count just duplicates the header's own count.
-            if let resultCount, let totalCount, resultCount != totalCount {
+            // Always on. It used to hide unless filtering had narrowed the set,
+            // because the page header carried the same total; the headers are
+            // gone, so this is now the only place the library's size is stated.
+            // `resultCount: nil` means the page states its own composition
+            // elsewhere (Workshop puts per-type counts on the filter chips), so
+            // only the library size belongs here.
+            if let totalCount {
                 resultCounter(resultCount, totalCount)
             }
         }
@@ -48,13 +52,14 @@ public struct LibraryFilterBar<Filters: View>: View {
 
     // MARK: - Result counter
 
-    private func resultCounter(_ visible: Int, _ total: Int) -> some View {
-        Text(verbatim: visible == total ? "\(total)" : "\(visible)/\(total)")
+    private func resultCounter(_ visible: Int?, _ total: Int) -> some View {
+        let narrowed = visible.map { $0 != total } ?? false
+        return Text(verbatim: narrowed ? "\(visible ?? total)/\(total)" : "\(total)")
             .font(DesignTokens.Typography.metric)
             .foregroundStyle(.secondary)
-            .help(visible == total
-                  ? Text("\(total) items")
-                  : Text("\(visible) of \(total) shown"))
+            .help(narrowed
+                ? Text("\(visible ?? total) of \(total) shown")
+                : Text("\(total) items"))
     }
 }
 
