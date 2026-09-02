@@ -1,6 +1,8 @@
 import Foundation
 
-/// Global saved shortcut. Nil `playbackSettings` = legacy (apply leaves target settings).
+/// A favourite wallpaper — content only. Applying one never touches the target
+/// display's settings; `playbackSettings` is kept for older files and never read
+/// (`.notes/plan/screen-schemes.md` D1).
 public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public var label: String

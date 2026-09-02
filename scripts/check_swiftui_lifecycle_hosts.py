@@ -20,8 +20,11 @@ import sys
 from pathlib import Path
 
 LIFECYCLE = re.compile(r"^\.(task|onAppear|onDisappear|refreshable)\b")
-GROUP_OPEN = re.compile(r"(^|[^\w.])Group\s*\{\s*$")
-ELSE = re.compile(r"(^|\})\s*else\b")
+GROUP_OPEN = re.compile(r"(^|[^\w.]|SwiftUI\.)Group\s*\{\s*(//.*)?$")
+# A bare `else {` closes the chain; `else if` is one more branch of it, and a
+# chain that ends on `else if` can still fall through to nothing.
+ELSE = re.compile(r"(^|\})\s*else\s*\{")
+ELSE_IF = re.compile(r"(^|\})\s*else\s+if\b")
 BRANCHING = re.compile(r"^\s*(if|switch)\b")
 
 # `switch` over a Swift enum is exhaustive by compiler rule, so it always yields
@@ -42,7 +45,7 @@ def group_can_be_empty(body: list[str]) -> bool:
                 return False
             if ELSE.search(stripped):
                 has_fallback = True
-            elif BRANCHING.match(raw):
+            elif ELSE_IF.search(stripped) or BRANCHING.match(raw):
                 has_branch = True
         depth += raw.count("{") - raw.count("}")
     return has_branch and not has_fallback
@@ -103,7 +106,47 @@ struct Bad: View {
         .task { schema = 1 }
     }
 }
+
+struct BadElseIfChain: View {
+    @State private var a = false
+    @State private var b = false
+    var body: some View {
+        Group {
+            if a {
+                Text("a")
+            } else if b {
+                Text("b")
+            }
+        }
+        .task { a = true }
+    }
+}
+
+struct BadQualifiedName: View {
+    @State private var schema: Int?
+    var body: some View {
+        SwiftUI.Group {
+            if let schema {
+                Text("\\(schema)")
+            }
+        }
+        .onAppear { schema = 1 }
+    }
+}
+
+struct BadTrailingComment: View {
+    @State private var schema: Int?
+    var body: some View {
+        Group { // one of the branches
+            if let schema {
+                Text("\\(schema)")
+            }
+        }
+        .task { schema = 1 }
+    }
+}
 """
+VIOLATION_FIXTURE_COUNT = 4
 
 LEGAL_FIXTURE = """
 struct GoodContainer: View {
@@ -132,6 +175,23 @@ struct GoodExhaustive: View {
     }
 }
 
+struct GoodElseIfChainClosed: View {
+    @State private var a = false
+    @State private var b = false
+    var body: some View {
+        Group {
+            if a {
+                Text("a")
+            } else if b {
+                Text("b")
+            } else {
+                ProgressView()
+            }
+        }
+        .task { a = true }
+    }
+}
+
 struct GoodNoLifecycle: View {
     @State private var schema: Int?
     var body: some View {
@@ -150,8 +210,8 @@ def self_test() -> int:
     bad = scan_text(VIOLATION_FIXTURE, "fixture-bad.swift")
     good = scan_text(LEGAL_FIXTURE, "fixture-good.swift")
     ok = True
-    if len(bad) != 1:
-        print(f"SELF-TEST FAIL: violating fixture produced {len(bad)} findings, expected 1", file=sys.stderr)
+    if len(bad) != VIOLATION_FIXTURE_COUNT:
+        print(f"SELF-TEST FAIL: violating fixture produced {len(bad)} findings, expected {VIOLATION_FIXTURE_COUNT}: {bad}", file=sys.stderr)
         ok = False
     if good:
         print(f"SELF-TEST FAIL: legal fixture produced findings: {good}", file=sys.stderr)

@@ -12,18 +12,19 @@ import SwiftUI
 ///
 ///   viewport ⎪ playback ⎪ actions
 ///
-/// The name is NOT here. It used to be, as the one flexible item among fixed-width
-/// clusters, which meant it was always the thing that gave way; it now has its own
-/// row above the picture (`WallpaperPreviewStage`).
+/// The name is NOT here: as the one flexible item among fixed-width clusters it
+/// was always what gave way, so it has its own row above the picture
+/// (`WallpaperPreviewStage`).
 ///
 /// * **viewport** — how it fills the display (scale).
 /// * **playback** — how it runs (volume, speed, frame rate, input).
 /// * **actions** — everything else the type offers.
 ///
-/// Every control in the fixed zones is icon-only. The bar sits over arbitrary
-/// wallpaper artwork at a width that shrinks with the window, and a label that
-/// grows 1.5–2× in Japanese is the thing that pushes the name off the bar.
-/// Values live in tooltips, in the popover, and in the accessibility value.
+/// Every control is a glyph over a fixed-width caption (`PreviewControlLabel`),
+/// never a free-width label: the bar sits over arbitrary artwork at a width that
+/// shrinks with the window, and text that grows 1.5–2× in Japanese would push
+/// its neighbours off the bar. Values live in tooltips, popovers and the
+/// accessibility value.
 struct WallpaperPreviewHUD<Viewport: View, Playback: View, Actions: View>: View {
     @ViewBuilder var viewport: Viewport
     @ViewBuilder var playback: Playback

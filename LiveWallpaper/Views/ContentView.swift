@@ -380,7 +380,6 @@ enum Navigation: Hashable {
     case screen(CGDirectDisplayID)
     case appleAerials
     case bookmarks
-    case schemes
     case workshop
     case systemWallpaper
 }
@@ -690,10 +689,7 @@ struct DetailContent: View {
                 AerialsLibraryView()
 
             case .bookmarks:
-                SavedLibraryPane(initialTab: .bookmarks)
-
-            case .schemes:
-                SavedLibraryPane(initialTab: .schemes)
+                SavedLibraryPane()
 
             case .workshop:
                 #if !LITE_BUILD

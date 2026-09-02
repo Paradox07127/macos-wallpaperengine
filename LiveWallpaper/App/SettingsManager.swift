@@ -11,7 +11,7 @@ final class SettingsManager {
     private var cachedWallpaperBookmarks: [WallpaperBookmark]?
     private var cachedScreenSchemes: [ScreenScheme]?
 
-    /// Three big JSON blobs that used to live in `UserDefaults`.
+    /// Four JSON blobs that used to live in `UserDefaults`.
     private let screenConfigStore: AtomicFileStore<[ScreenConfiguration]>
     private let globalSettingsStore: AtomicFileStore<GlobalSettings>
     private let wallpaperBookmarksStore: AtomicFileStore<[WallpaperBookmark]>
@@ -21,7 +21,7 @@ final class SettingsManager {
     let persistWPEBookmarkOwnerRefresh: @MainActor (WPEOrigin, Data) -> Void
     private let defaults: UserDefaults
 
-    /// Serial off-MainActor writer for all three file stores (configs, global settings, bookmarks).
+    /// Serial off-MainActor writer for all four file stores (configs, global settings, bookmarks, schemes).
     private let configurationPersistenceActor: WallpaperPersistenceActor
 
     /// Per-store monotonic counters: the actor drops any submission whose generation is older than the last it committed, so a stale in-flight write can't overwrite a newer MainActor mutation (or resurrect a reset).

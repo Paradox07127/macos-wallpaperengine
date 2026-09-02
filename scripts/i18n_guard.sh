@@ -18,6 +18,7 @@ if [[ -z "$ROOT" ]]; then
 fi
 
 APP="$ROOT/LiveWallpaper"
+PACKAGES="$ROOT/Packages/LiveWallpaperCore/Sources $ROOT/Packages/LiveWallpaperProWPE/Sources"
 RG="${RG:-rg}"
 SCOPE="${I18N_GUARD_SCOPE:-staged}"
 fail=0
@@ -30,11 +31,12 @@ fi
 collect_files() {
   case "$SCOPE" in
     all)
-      "$RG" --files "$APP" -g '*.swift'
+      # shellcheck disable=SC2086 — PACKAGES is a space-separated list on purpose
+      "$RG" --files "$APP" $PACKAGES -g '*.swift'
       ;;
     staged)
       git -C "$ROOT" diff --cached --name-only --diff-filter=ACMR \
-        | "$RG" '^LiveWallpaper/.*\.swift$' \
+        | "$RG" '^(LiveWallpaper|Packages/LiveWallpaper(Core|ProWPE)/Sources)/.*\.swift$' \
         | sed "s#^#$ROOT/#" || true
       ;;
     *)

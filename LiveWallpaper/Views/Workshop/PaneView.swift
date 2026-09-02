@@ -316,8 +316,8 @@ struct WorkshopPaneActions: View {
         }
     }
 
-    /// The account list the neighbouring Menu used to drop down, re-hosted in a
-    /// popover so the control itself can be a real (glass) Button.
+    /// A popover rather than a Menu so the control itself can be a real (glass)
+    /// Button.
     private var accountMenuPopover: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             steamAccountMenuItems(

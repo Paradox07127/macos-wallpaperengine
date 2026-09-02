@@ -362,13 +362,9 @@ struct HTMLSourceSection: View {
 }
 
 /// HTML layout transforms, as the content of the web preview bar's viewport
-/// control.
-///
-/// It was a collapsible card in the inspector column. Scale, translate and
-/// rotation are viewport geometry — the same role the other two wallpaper types
-/// fill with a fit-mode picker — and the web bar's viewport zone was empty, so
-/// this is where they belong. Hosted in a popover for the same reason speed and
-/// volume are: three sliders will not fit inline on a bar.
+/// control: scale, translate and rotation are viewport geometry, the role the
+/// other two types fill with a fit-mode picker. A popover for the same reason
+/// speed and volume are: three sliders will not fit inline on a bar.
 struct HTMLTransformControls: View {
     var screen: Screen
     @Binding var config: HTMLConfig
@@ -413,8 +409,7 @@ struct HTMLTransformControls: View {
         }
     }
 
-    /// A footer row rather than the section accessory it used to be: a popover
-    /// has no section header to hang one on.
+    /// A footer row: a popover has no section header to hang an accessory on.
     private var resetRow: some View {
         HStack {
             Spacer(minLength: 0)

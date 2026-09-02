@@ -38,9 +38,9 @@ public struct SecurityScopedBookmarkResolver: Sendable {
         public var errorDescription: String? {
             switch self {
             case .missing:
-                return "No bookmark is stored for this resource."
+                String(localized: "No bookmark is stored for this resource.", bundle: .appLanguage, comment: "Bookmark resolution error.")
             case .resolutionFailed(let reason):
-                return "Failed to resolve bookmark: \(reason)"
+                String(localized: "Failed to resolve bookmark: \(reason)", bundle: .appLanguage, comment: "Bookmark resolution error. The placeholder is the system reason.")
             }
         }
     }

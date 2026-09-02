@@ -68,9 +68,9 @@ struct SystemWallpaperCandidate: Identifiable {
         }
     }
 
-    /// Poster frame, when the source can produce one. Workshop entries reuse the
-    /// preview the import already stored; bookmarks decode a frame the same way
-    /// the Bookmarks grid does, through the shared cache.
+    /// Poster frame, when the source can produce one: bookmarks decode a frame the
+    /// same way the Bookmarks grid does, through the shared cache. Workshop
+    /// entries have none yet and fall back to the tile's placeholder.
     @MainActor
     func thumbnail() async -> NSImage? {
         switch source {

@@ -2,22 +2,13 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Playback controls as a row of glyphs on the preview's own overlay.
+/// Playback controls as a row of glyphs on the preview's own overlay: every one
+/// of them acts on the wallpaper *this display is playing right now*, which is
+/// the thing the preview shows. Span-all-displays is not here — its effect is on
+/// a different screen — and scale lives in each type's viewport zone.
 ///
-/// These were a form of labelled rows, first in the inspector column and then in
-/// a shelf under the preview. Both readings were wrong about what they are: every
-/// one of them acts on the wallpaper *this display is playing right now*, which is
-/// the thing the preview shows — so they belong on the preview, the way a media
-/// player puts its transport under the picture.
-///
-/// Two of them do not follow that rule and left:
-/// * span-all-displays moved to the inspector's Display group — its effect is on a
-///   different screen, so the preview can never show it;
-/// * scale moved to each type's own overlay bar earlier, next to the title.
-///
-/// The bindings below are unchanged from the form version, deliberately: the audio
-/// dead zone, the coalesced volume write, and the click-capture confirmation are
-/// the parts with teeth, and re-typing them for a new layout is how they get lost.
+/// The audio dead zone, the coalesced volume write and the click-capture
+/// confirmation are the parts with teeth; keep them when the layout changes.
 struct PlaybackControls: View {
     var screen: Screen
     var wallpaperType: WallpaperType
@@ -103,10 +94,8 @@ struct PlaybackControls: View {
 
     // MARK: - Row layout
 
-    /// Which rows this wallpaper type shows, in order. Held as data rather than
-    /// a chain of `if`s inside the stack so the shelf can balance them across
-    /// columns — 1 row for web up to 5 for scene, and stacking all five in the
-    /// wide shelf forced it to scroll.
+    /// Which controls this wallpaper type shows, in order — 1 for web up to 5 for
+    /// scene.
     private enum PlaybackRow: Hashable {
         case speed, frameRate, mouseInteraction, clickInteraction, syncToLockScreen
         case webJavaScript, webInteraction
@@ -241,9 +230,9 @@ struct PlaybackControls: View {
         }
     }
 
-    /// The speed slider used to sit inline: a tortoise, a 110pt Slider, a hare and
-    /// a readout, ~180pt of a bar that was already overflowing. Behind a glyph it
-    /// costs 24pt and matches audio, the other continuous control here.
+    /// Behind a glyph, not inline: a tortoise, a 110pt Slider, a hare and a
+    /// readout are ~180pt of a bar that overflows; the glyph costs 24pt and
+    /// matches audio, the other continuous control here.
     private func speedControl(_ speed: Binding<Double>) -> some View {
         Button {
             showingSpeed = true
@@ -271,10 +260,9 @@ struct PlaybackControls: View {
         abs(speed - speed.rounded()) < 0.001 ? "\(Int(speed))×" : String(format: "%.2g×", speed)
     }
 
-    /// Icon-only, with the needle angle carrying the cap. It used to spell the
-    /// value out ("60 FPS"), which made it the one control on the bar with text —
-    /// uneven next to the icon clusters, and 1.5–2× wider in Japanese. The exact
-    /// value is in the tooltip, the menu's checkmark, and the accessibility value.
+    /// Icon-only, with the needle angle carrying the cap; "60 FPS" spelled out
+    /// would be the one free-width text on the bar, 1.5–2× wider in Japanese.
+    /// The exact value is in the tooltip and the accessibility value.
     /// A slider over the caps, not a menu, so it matches speed and audio — the
     /// three of them are one row of controls and a menu among two popovers reads
     /// as a different kind of thing. The steps are discrete (`FrameRateLimit` is
@@ -370,7 +358,7 @@ struct PlaybackControls: View {
     }
 
     /// One shape for every on/off control here: tinted when on, secondary when
-    /// off, with the sentence that used to be the row's `info` as its tooltip.
+    /// off, the explanatory sentence as its tooltip.
     private func glyphToggle(
         on symbol: String,
         title: LocalizedStringKey,

@@ -32,12 +32,8 @@ enum SavedLibraryTab: String, CaseIterable, Identifiable {
 /// second place to look. The capsule is this page's title: with the sidebar row
 /// selected and the segments named, a separate heading would say it a third time.
 struct SavedLibraryPane: View {
-    let initialTab: SavedLibraryTab
-
     @AppStorage("loomscreen.savedLibrary.selectedTab.v1", store: .appScoped())
     private var selectedTab: SavedLibraryTab = .bookmarks
-
-    @State private var didApplyInitialTab = false
 
     var body: some View {
         Group {
@@ -58,14 +54,6 @@ struct SavedLibraryPane: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .accessibilityLabel(Text("Saved library tab"))
             }
-        }
-        // Once, not on every appearance: `onAppear` fires again each time the
-        // page is navigated back to, and re-applying there overwrote whichever
-        // tab the user had left the capsule on.
-        .onAppear {
-            guard !didApplyInitialTab else { return }
-            didApplyInitialTab = true
-            selectedTab = initialTab
         }
     }
 }

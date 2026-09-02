@@ -1,8 +1,6 @@
 import Foundation
 
-/// Optional playback/effect snapshot on a bookmark. Nil fields = leave target
-/// unchanged (legacy). Playlist/schedule/mode stay screen-level, not here.
-/// Retained for archives written before the bookmark/scheme split
+/// Playback/effect snapshot older bookmarks carried. Retained for archives written before the bookmark/scheme split
 /// (2026-08-31): nothing writes it and nothing reads it, but dropping the field
 /// would rewrite every existing user's bookmarks. Whole-screen state now lives
 /// in `ScreenScheme`. See `.notes/plan/screen-schemes.md` D1.

@@ -10,9 +10,6 @@ struct WPESceneCustomSettingsCard: View {
     var screen: Screen
     var schema: WallpaperEngineProjectPropertySchema
     @Binding var descriptor: SceneDescriptor
-    /// Width the card gets to lay out in. Drives `columnCount` — the card is
-    /// hosted in the wide area under the preview, not in the inspector column.
-    var availableWidth: CGFloat
 
     @Environment(ScreenManager.self) private var screenManager
     @AppStorage("Inspector.WPESceneCustomSettingsExpanded") private var isExpanded = true
@@ -265,64 +262,17 @@ struct WPESceneCustomSettingsCard: View {
             return false
         }
 
-        return HStack(alignment: .top, spacing: DesignTokens.Spacing.xl) {
-            ForEach(Array(columnPartition(of: rows).enumerated()), id: \.offset) { _, column in
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(column.enumerated()), id: \.element.id) { index, row in
-                        settingRowView(
-                            for: row,
-                            values: values,
-                            showsDivider: index < column.count - 1,
-                            showsSectionAffiliation: showsSectionAffiliation
-                        )
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        return LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                settingRowView(
+                    for: row,
+                    values: values,
+                    showsDivider: index < rows.count - 1,
+                    showsSectionAffiliation: showsSectionAffiliation
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// A row needs about 340pt before the label starts truncating against the
-    /// slider and its readout.
-    private var columnCount: Int {
-        max(1, min(3, Int(availableWidth / 340)))
-    }
-
-    /// Balances rows across `columnCount` columns without ever splitting a
-    /// section header from the properties beneath it. An ungrouped schema yields
-    /// one block per property, so it balances evenly.
-    private func columnPartition(
-        of rows: [WPEProjectSettingsPresentation.SettingsRow]
-    ) -> [[WPEProjectSettingsPresentation.SettingsRow]] {
-        let count = columnCount
-        guard count > 1, rows.count > count else { return [rows] }
-
-        var blocks: [[WPEProjectSettingsPresentation.SettingsRow]] = []
-        for row in rows {
-            if case .sectionHeader = row {
-                blocks.append([row])
-            } else if let last = blocks.last, case .sectionHeader = last[0] {
-                blocks[blocks.count - 1].append(row)
-            } else {
-                blocks.append([row])
-            }
-        }
-
-        let target = max(1, Int((Double(rows.count) / Double(count)).rounded(.up)))
-        var columns: [[WPEProjectSettingsPresentation.SettingsRow]] = []
-        var current: [WPEProjectSettingsPresentation.SettingsRow] = []
-        for block in blocks {
-            if !current.isEmpty, current.count + block.count > target, columns.count < count - 1 {
-                columns.append(current)
-                current = []
-            }
-            current.append(contentsOf: block)
-        }
-        if !current.isEmpty {
-            columns.append(current)
-        }
-        return columns
     }
 
     @ViewBuilder

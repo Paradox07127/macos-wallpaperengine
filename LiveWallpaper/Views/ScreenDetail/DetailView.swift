@@ -389,9 +389,6 @@ struct DetailView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // The shelf and the preview share this column's height, so the
-                // split has to be measured here rather than negotiated between
-                // two views that each want to expand.
                 wallpaperPreviewArea
             }
         }

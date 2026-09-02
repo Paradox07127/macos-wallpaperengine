@@ -13,10 +13,8 @@ enum WallpaperPreviewMetrics {
 /// other two centred. `controls` is overlaid *before* the expanding frame on purpose: the frame
 /// is the pane, the aspect-fit box is the picture, and controls after the frame drift past its edges — keeping this order means no caller can get it wrong.
 /// `title` floats on the picture's top edge, mirroring the control bar on its
-/// bottom edge. It used to sit inside that bar, and being the only flexible item
-/// among fixed-width clusters it was always what gave way — a video's filename
-/// had a few dozen points left once the controls had taken theirs. On its own
-/// edge it has the whole width, and the bar is controls only.
+/// bottom edge — not inside the bar, where as the only flexible item it was
+/// always what gave way. On its own edge it has the whole width.
 struct WallpaperPreviewStage<Title: View, Content: View, Controls: View>: View {
     @ViewBuilder let title: () -> Title
     @ViewBuilder let content: () -> Content

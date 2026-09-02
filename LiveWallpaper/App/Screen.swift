@@ -193,7 +193,12 @@ final class Screen: Identifiable, Hashable {
         return true
     }
 
+    /// Also closes whatever was still fading out on `existingScreen`: that screen
+    /// is about to be dropped, and its fade task holds it weakly, so the fade
+    /// would end without ever running `cleanup()` — a full-screen window left in
+    /// the AppKit window list over the new wallpaper.
     func adoptRuntimeSession(from existingScreen: Screen) {
+        existingScreen.flushRetiringSessions()
         let new = existingScreen.runtimeSession
         guard !isSameSession(runtimeSession, new) else { return }
         handleRuntimeSessionTransition(from: runtimeSession, to: new)

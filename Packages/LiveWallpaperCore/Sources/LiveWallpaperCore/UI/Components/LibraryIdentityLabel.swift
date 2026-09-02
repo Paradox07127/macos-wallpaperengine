@@ -13,16 +13,16 @@ import SwiftUI
 /// placed there came out inside a control cluster. Centre matches the pages that
 /// switch scopes with a capsule (Workshop, Saved), so all five library pages name
 /// themselves in the same place.
-public struct LibraryIdentityLabel: View {
+struct LibraryIdentityLabel: View {
     private let systemImage: String
     private let title: Text
 
-    public init(systemImage: String, title: Text) {
+    init(systemImage: String, title: Text) {
         self.systemImage = systemImage
         self.title = title
     }
 
-    public var body: some View {
+    var body: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Image(systemName: systemImage)
                 .font(DesignTokens.Typography.body)

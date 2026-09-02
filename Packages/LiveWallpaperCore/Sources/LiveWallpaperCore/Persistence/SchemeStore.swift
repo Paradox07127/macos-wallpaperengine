@@ -60,28 +60,6 @@ public final class SchemeStore {
         Logger.info("Scheme renamed", category: .ui)
     }
 
-    /// Re-captures an existing scheme in place: same id, name and `createdAt`,
-    /// new contents. Identity stripping goes through `ScreenScheme.stripped`
-    /// here too, because assigning `configuration` directly would bypass the
-    /// initializer that normally does it.
-    public func update(
-        _ id: UUID,
-        configuration: ScreenConfiguration,
-        overlay: MonitorOverlayConfiguration,
-        sourceDisplayName: String? = nil
-    ) {
-        guard let index = schemes.firstIndex(where: { $0.id == id }) else { return }
-        schemes[index].configuration = ScreenScheme.stripped(configuration)
-        schemes[index].overlay = overlay
-        if let sourceDisplayName {
-            schemes[index].sourceDisplayName = sourceDisplayName
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        schemes[index].updatedAt = Date()
-        persist()
-        Logger.info("Scheme updated: total \(schemes.count)", category: .ui)
-    }
-
     public func reload() {
         schemes = persistence.load()
     }

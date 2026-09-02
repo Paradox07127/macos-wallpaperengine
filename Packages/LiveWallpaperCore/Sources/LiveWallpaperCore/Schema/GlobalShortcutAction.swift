@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Identifies a global shortcut command. Adding a case requires:
 /// 1) extending `default(for:)` with a sensible default binding (or `nil`),
-/// 2) implementing the dispatcher in `GlobalShortcutManager.handle(_:)`.
+/// 2) handling it in `GlobalShortcutManager.dispatchHotKey(signatureID:)`.
 public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, Sendable {
     case togglePlayback
     case nextWallpaper
