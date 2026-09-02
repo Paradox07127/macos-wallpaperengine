@@ -156,15 +156,24 @@ public enum DesignTokens {
     public enum LibraryGrid {
         public static let minimumColumnWidth: CGFloat = 184
         public static let maximumColumnWidth: CGFloat = 220
+
+        /// Tile-size steps for every library grid. The medium step is the pair
+        /// above, kept as the default so existing windows look unchanged.
+        public static func columnWidths(for size: LibraryTileSize) -> (min: CGFloat, max: CGFloat) {
+            switch size {
+            case .small: (128, 152)
+            case .medium: (minimumColumnWidth, maximumColumnWidth)
+            case .large: (248, 300)
+            }
+        }
+
         /// Off the spacing scale on purpose: the tiles are square and read as a
         /// mosaic, where `lg` opened the rows wider than the columns look.
         public static let spacing: CGFloat = 14
 
-        public static var columns: [GridItem] {
-            [GridItem(
-                .adaptive(minimum: minimumColumnWidth, maximum: maximumColumnWidth),
-                spacing: spacing
-            )]
+        public static func columns(for size: LibraryTileSize) -> [GridItem] {
+            let widths = columnWidths(for: size)
+            return [GridItem(.adaptive(minimum: widths.min, maximum: widths.max), spacing: spacing)]
         }
     }
 
@@ -234,7 +243,10 @@ public enum DesignTokens {
     public enum Inspector {
         public static let minWidth: CGFloat = 268
         public static let idealWidth: CGFloat = 292
-        public static let maxWidth: CGFloat = 392
+        /// Raised from 392 when the scene property list (20–35 authored rows)
+        /// moved back into this column: the default stays 292, but a scene with
+        /// long property names can be given room without a layout of its own.
+        public static let maxWidth: CGFloat = 480
         public static let defaultWidth: CGFloat = idealWidth
         public static let horizontalPadding: CGFloat = Spacing.md
         /// Shared geometry for every inspector "label … [slider][value]" row so
@@ -256,8 +268,17 @@ public enum DesignTokens {
     }
 
     public enum Sidebar {
-        public static let width: CGFloat = 180
+        /// Rows here are an icon plus a display or library name, so 180 was
+        /// paying navigation-bar prices for a list that has no second line yet.
+        /// Raising the density is a separate piece of work; until then the
+        /// column shouldn't reserve room it doesn't use.
+        public static let width: CGFloat = 160
+        /// The Settings sidebar keeps the wider column: it carries a search
+        /// field and the longest labels in the app ("Backup & Restore", and its
+        /// German and Japanese translations), which truncate at 160.
+        public static let settingsWidth: CGFloat = 180
         public static let maxWidth: CGFloat = width * 1.2
+        public static let settingsMaxWidth: CGFloat = settingsWidth * 1.2
         public static let sectionHeaderBottomPadding: CGFloat = 0
         /// Negative inset pulled above each sidebar section header to tighten the
         /// otherwise-airy default gap between sections (macOS has no public
@@ -298,7 +319,10 @@ public enum DesignTokens {
     /// sections (Displays + Library) out of view. Workshop hit this first
     /// and pinned its own floor; promoted here for Bookmarks / Apple Aerials.
     public enum LibraryPage {
-        public static let minWidth: CGFloat = 760
+        /// Main-column floor (360) plus a fully expanded inspector (480).
+        /// Raised with `Inspector.maxWidth`; `SettingsWindowLayoutTests` pins the
+        /// relationship so the two cannot drift apart again.
+        public static let minWidth: CGFloat = 840
         public static let minHeight: CGFloat = 540
     }
 

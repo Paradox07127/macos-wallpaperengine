@@ -48,7 +48,7 @@ struct BrowseCard: View, Equatable {
         .galleryTileChrome(isHovering: isHovered, isSelected: isSelected, cornerRadius: DesignTokens.Corner.lg, reduceMotion: reduceMotion)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .settledHover { isHovered = $0 }
-        .help(item.title)
+        .settledHelp(Text(verbatim: item.title), isHovering: isHovered)
         .contextMenu { contextMenuItems }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(accessibilityLabelText))

@@ -5,6 +5,7 @@ import SwiftUI
 
 /// The "Browse Online" tab content, embedded headerless inside `PaneView`.
 struct BrowsePane: View {
+    @Environment(\.libraryTileSize) private var tileSize
     let viewModel: BrowseViewModel
     let doctor: SteamCMDDoctorService
     let onRequestKeyEntry: () -> Void
@@ -13,7 +14,6 @@ struct BrowsePane: View {
     var onDownloadByLink: (() -> Void)?
     /// nil when embedded without the tabbed pane chrome (e.g. the standalone
     /// Browse sheet), which then renders no header and contributes no toolbar items.
-    var paneHeader: (() -> AnyView)?
 
     @Environment(WorkshopServices.self) private var services
     @State private var selectedItem: WorkshopQueryItem?
@@ -40,7 +40,9 @@ struct BrowsePane: View {
     /// Stable scroll anchor pinned at the top of the grid (for page steps).
     private static let gridTopAnchor = "workshop.browse.grid.top"
 
-    private var gridColumns: [GridItem] { DesignTokens.LibraryGrid.columns }
+    private var gridColumns: [GridItem] {
+        DesignTokens.LibraryGrid.columns(for: tileSize)
+    }
 
     var body: some View {
         InspectorSplit(
@@ -58,7 +60,7 @@ struct BrowsePane: View {
         )
         .background(DesignTokens.Colors.pageBackground)
         .toolbar {
-            if paneHeader != nil, selectedItem != nil {
+            if selectedItem != nil {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         inspectorHidden.toggle()
@@ -109,40 +111,40 @@ struct BrowsePane: View {
 
     private var isInspectorVisible: Bool { selectedItem != nil && !inspectorHidden }
 
-    /// Header hosted here so the panel runs full-height alongside it; absent when
-    /// embedded without the tabbed pane chrome.
     private var mainColumn: some View {
+        gridColumn
+    }
+
+    /// The ribbon and the creator/tag banners float over the grid on one plate;
+    /// only one of the three is ever showing, so the plate stays a single row
+    /// tall except while the ribbon's own second row is open.
+    private var gridColumn: some View {
         VStack(spacing: 0) {
-            if let paneHeader {
-                paneHeader()
-                Divider()
-            }
-            gridColumn
+            filterBand
+            Divider()
+            content
+                .overlay(alignment: .top) { rateLimitBanner }
         }
     }
 
-    private var gridColumn: some View {
-        VStack(spacing: 0) {
-            if let creator = viewModel.creatorFilter {
-                creatorFilterBanner(creator)
-                    .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
-                    .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
-            } else if let tag = viewModel.pinnedTag {
-                tagFilterBanner(tag)
-                    .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
-                    .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
-            } else {
-                // The keyless path applies the same server-side filters
-                // (browsesort / days / requiredtags / excludedtags), so the
-                // ribbon stays live without a key.
-                BrowseFilterRibbon(
-                    viewModel: viewModel,
-                    hasWebAPIKey: services.hasWebAPIKey || viewModel.usesKeylessSearch
-                )
-            }
-
-            content
-                .overlay(alignment: .top) { rateLimitBanner }
+    @ViewBuilder
+    private var filterBand: some View {
+        if let creator = viewModel.creatorFilter {
+            creatorFilterBanner(creator)
+                .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
+                .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
+        } else if let tag = viewModel.pinnedTag {
+            tagFilterBanner(tag)
+                .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
+                .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
+        } else {
+            // The keyless path applies the same server-side filters
+            // (browsesort / days / requiredtags / excludedtags), so the ribbon
+            // stays live without a key.
+            BrowseFilterRibbon(
+                viewModel: viewModel,
+                hasWebAPIKey: services.hasWebAPIKey || viewModel.usesKeylessSearch
+            )
         }
     }
 

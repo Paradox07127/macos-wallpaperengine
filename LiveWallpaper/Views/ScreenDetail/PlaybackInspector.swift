@@ -2,8 +2,23 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Playback controls kept positionally stable across wallpaper types.
-struct PlaybackInspector: View {
+/// Playback controls as a row of glyphs on the preview's own overlay.
+///
+/// These were a form of labelled rows, first in the inspector column and then in
+/// a shelf under the preview. Both readings were wrong about what they are: every
+/// one of them acts on the wallpaper *this display is playing right now*, which is
+/// the thing the preview shows — so they belong on the preview, the way a media
+/// player puts its transport under the picture.
+///
+/// Two of them do not follow that rule and left:
+/// * span-all-displays moved to the inspector's Display group — its effect is on a
+///   different screen, so the preview can never show it;
+/// * scale moved to each type's own overlay bar earlier, next to the title.
+///
+/// The bindings below are unchanged from the form version, deliberately: the audio
+/// dead zone, the coalesced volume write, and the click-capture confirmation are
+/// the parts with teeth, and re-typing them for a new layout is how they get lost.
+struct PlaybackControls: View {
     var screen: Screen
     var wallpaperType: WallpaperType
 
@@ -13,14 +28,11 @@ struct PlaybackInspector: View {
 
     @Binding var muted: Bool
     @Binding var videoVolume: Double
-    @Binding var videoDisplayMode: VideoDisplayMode
     @Binding var frameRateLimit: FrameRateLimit
     @Binding var syncToLockScreen: Bool
     @Binding var sceneMouseInteractionEnabled: Bool
     /// Real pointer input; steals desktop clicks while on.
     @Binding var sceneClickCaptureEnabled: Bool
-    /// Draft `fitMode`; applies via `ScreenManager.updateSceneFitMode`.
-    @Binding var sceneFitMode: VideoFitMode
 
     /// First enable confirms; later toggles are silent.
     @AppStorage("Scene.ClickCapture.Acknowledged") private var clickCaptureAcknowledged = false
@@ -32,47 +44,22 @@ struct PlaybackInspector: View {
     var showsResetPlayback: Bool = false
     var onResetPlayback: () -> Void = {}
 
-    @AppStorage("Inspector.PlaybackExpanded") private var isPlaybackExpanded = true
+    @State private var showingVolume = false
     @State private var lockScreenExtracted = false
     /// Drop stale "clear ✓" Tasks when a newer toggle wins (same pattern as schedule conflict flash).
     @State private var lockScreenFeedbackGeneration = 0
 
     var body: some View {
-        GroupBox {
-            CollapsibleSection(
-                title: "Playback",
-                systemImage: "play.circle",
-                isExpanded: $isPlaybackExpanded,
-                trailingAccessory: { resetPlaybackAccessory }
-            ) {
-                VStack(spacing: 8) {
-                    audioRow
-                    if showsFrameRateRow {
-                        Divider()
-                        frameRateRow
-                    }
-                    if showsVideoDisplayModeRow {
-                        Divider()
-                        videoDisplayModeRow
-                    }
-                    if showsFitModeRow {
-                        Divider()
-                        fitModeRow
-                    }
-                    if showsMouseInteractionRow {
-                        Divider()
-                        mouseInteractionRow
-                        Divider()
-                        clickInteractionRow
-                    }
-                    if showsSyncToLockScreenRow {
-                        Divider()
-                        syncToLockScreenRow
-                    }
-                }
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            audioControl
+            ForEach(visibleRows, id: \.self) { kind in
+                control(kind)
+            }
+            if showsResetPlayback {
+                resetPlaybackAccessory
             }
         }
-        .groupBoxStyle(ContainerGroupBoxStyle())
+        .buttonStyle(.borderless)
         .alert("Enable Wallpaper Interaction?", isPresented: $showClickCaptureConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Enable") {
@@ -97,80 +84,184 @@ struct PlaybackInspector: View {
         }
     }
 
-    // MARK: - Row availability
+    // MARK: - Row layout
 
-    private var showsFrameRateRow: Bool {
-        switch wallpaperType {
-        case .video, .scene: return true
-        case .html: return false
+    /// Which rows this wallpaper type shows, in order. Held as data rather than
+    /// a chain of `if`s inside the stack so the shelf can balance them across
+    /// columns — 1 row for web up to 5 for scene, and stacking all five in the
+    /// wide shelf forced it to scroll.
+    private enum PlaybackRow: Hashable {
+        case frameRate, mouseInteraction, clickInteraction, syncToLockScreen
+    }
+
+    /// Audio is rendered ahead of this list because every type has it.
+    private var visibleRows: [PlaybackRow] {
+        var rows: [PlaybackRow] = []
+        if showsFrameRateRow {
+            rows.append(.frameRate)
+        }
+        if showsMouseInteractionRow {
+            rows.append(contentsOf: [.mouseInteraction, .clickInteraction])
+        }
+        if showsSyncToLockScreenRow {
+            rows.append(.syncToLockScreen)
+        }
+        return rows
+    }
+
+    /// Audio is always first and always present: every wallpaper type can make
+    /// sound, and the speaker is the one glyph in this row nobody has to learn.
+    private var audioControl: some View {
+        let isMuted = audioMutedBinding.wrappedValue
+        return Button {
+            showingVolume = true
+        } label: {
+            Image(systemName: isMuted ? "speaker.slash" : "speaker.wave.2")
+                .foregroundStyle(isMuted ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.primary))
+        }
+        .help(Text("Audio"))
+        .accessibilityLabel(Text("Audio"))
+        .accessibilityValue(audioAccessibilityValue(
+            isMuted: isMuted,
+            percent: Self.audioPercent(atSliderValue: unifiedAudioBinding.wrappedValue)
+        ))
+        .popover(isPresented: $showingVolume, arrowEdge: .bottom) {
+            volumePopover
         }
     }
 
-    /// Always shown for video so a persisted `.spanAllDisplays` isn't hidden when a second display unplugs (row disables instead).
-    private var showsVideoDisplayModeRow: Bool {
-        wallpaperType == .video
+    /// The slider lives behind the speaker rather than beside it: a continuous
+    /// control in a glyph row is the one thing that cannot shrink to an icon, and
+    /// stretched across the overlay it would crowd out everything else.
+    private var volumePopover: some View {
+        CoalescedSlider(
+            value: unifiedAudioBinding.wrappedValue,
+            in: 0 ... 1,
+            owner: screen.id,
+            accessibilityLabel: Text("Audio"),
+            accessibilityValue: { live in
+                audioAccessibilityValue(
+                    isMuted: Self.audioIsMuted(atSliderValue: live),
+                    percent: Self.audioPercent(atSliderValue: live)
+                )
+            },
+            write: { unifiedAudioBinding.wrappedValue = $0 },
+            readout: { live in
+                audioLevelLabel(
+                    isMuted: Self.audioIsMuted(atSliderValue: live),
+                    percent: Self.audioPercent(atSliderValue: live)
+                )
+                .font(DesignTokens.Typography.metric)
+                .foregroundStyle(.secondary)
+                .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
+            }
+        )
+        .frame(width: 200)
+        .padding(DesignTokens.Spacing.md)
     }
 
-    private var hasMultipleDisplays: Bool {
-        screenManager.screens.count > 1
+    @ViewBuilder
+    private func control(_ kind: PlaybackRow) -> some View {
+        switch kind {
+        case .frameRate:
+            frameRateControl
+        case .mouseInteraction:
+            glyphToggle(
+                on: "cursorarrow.rays",
+                isOn: sceneMouseInteractionEnabled,
+                binding: mouseInteractionBinding,
+                label: Text("Follow cursor"),
+                help: Text("Camera parallax and pointer-driven effects follow your cursor. Passive — safe for desktop icon clicks.")
+            )
+        case .clickInteraction:
+            glyphToggle(
+                on: "cursorarrow.click",
+                isOn: sceneClickCaptureEnabled,
+                binding: clickInteractionBinding,
+                label: Text("Interaction"),
+                help: Text("Lets the scene receive real clicks. While on, clicks go to the wallpaper instead of the desktop on this display.")
+            )
+        case .syncToLockScreen:
+            lockScreenControl
+        }
     }
 
-    private var showsMouseInteractionRow: Bool {
-        wallpaperType == .scene
+    /// Carries its value in the label — a frame-rate cap is a number, and an icon
+    /// alone cannot say which one is in force.
+    private var frameRateControl: some View {
+        let forceSDRActive = videoColorSpace == .forceSDR
+        return Menu {
+            Picker("", selection: frameRateBinding) {
+                ForEach(FrameRateLimit.allCases) { limit in
+                    Text(limit.titleKey).tag(limit)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "gauge.with.dots.needle.bottom.50percent")
+                Text(frameRateLimit.titleKey)
+                    .font(DesignTokens.Typography.caption)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(forceSDRActive)
+        .help(forceSDRActive
+            ? Text("Disabled while Force SDR is active")
+            : Text("Caps below 30 FPS force a compositing pass — useful when effects are active or to extend battery."))
+        .accessibilityLabel(Text("Frame rate limit"))
+        .accessibilityValue(forceSDRActive
+            ? Text("Disabled — Force SDR is active", comment: "Accessibility value when the frame-rate picker is dimmed because Force SDR owns the video composition slot.")
+            : Text(frameRateLimit.titleKey))
     }
 
-    private var showsFitModeRow: Bool {
-        wallpaperType == .scene
+    private var lockScreenControl: some View {
+        glyphToggle(
+            on: "photo.on.rectangle",
+            isOn: syncToLockScreen,
+            binding: syncToLockScreenBinding,
+            label: Text("Capture this video's frame when locking"),
+            help: Text("Captures this video's current frame at lock and sets it as the macOS desktop picture."),
+            badge: lockScreenExtracted
+        )
     }
 
-    private var showsSyncToLockScreenRow: Bool {
-        wallpaperType == .video && featureCatalog.isEnabled(.lockScreenSnapshots)
+    /// One shape for every on/off control here: tinted when on, secondary when
+    /// off, with the sentence that used to be the row's `info` as its tooltip.
+    private func glyphToggle(
+        on symbol: String,
+        isOn: Bool,
+        binding: Binding<Bool>,
+        label: Text,
+        help: Text,
+        badge: Bool = false
+    ) -> some View {
+        Button {
+            binding.wrappedValue.toggle()
+        } label: {
+            Image(systemName: symbol)
+                .foregroundStyle(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                .overlay(alignment: .topTrailing) {
+                    if badge {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(DesignTokens.Colors.Status.active)
+                            .offset(x: 4, y: -4)
+                            .accessibilityHidden(true)
+                    }
+                }
+        }
+        .help(help)
+        .accessibilityLabel(label)
+        .accessibilityValue(isOn ? Text("On") : Text("Off"))
     }
-
-    // MARK: - Rows
 
     /// Mute dead zone on the volume slider (avoids leaking 1–2% from a stray drag).
     private static let audioDeadZone: Double = 0.04
 
-    private var audioRow: some View {
-        // The readout follows the drag; this icon follows the committed value, so mid-drag it
-        // can lag the word next to it by up to one quiet window. Deliberate: the icon is a
-        // parameter of `SettingRow`, so making it live means re-rendering this row on every
-        // gesture sample — the cost coalescing exists to remove, spent on a transient cosmetic mismatch.
-        let isMuted = audioMutedBinding.wrappedValue
-        return SettingRow(
-            icon: isMuted ? "speaker.slash" : "speaker.wave.2",
-            iconColor: isMuted ? .secondary : .blue,
-            title: "Audio"
-        ) {
-            // Coalesced: the binding writes the draft and, for HTML wallpapers,
-            // reaches the live session on every sample.
-            CoalescedSlider(
-                value: unifiedAudioBinding.wrappedValue,
-                in: 0...1,
-                owner: screen.id,
-                accessibilityLabel: Text("Audio"),
-                accessibilityValue: { live in
-                    audioAccessibilityValue(
-                        isMuted: Self.audioIsMuted(atSliderValue: live),
-                        percent: Self.audioPercent(atSliderValue: live)
-                    )
-                },
-                write: { unifiedAudioBinding.wrappedValue = $0 },
-                readout: { live in
-                    audioLevelLabel(
-                        isMuted: Self.audioIsMuted(atSliderValue: live),
-                        percent: Self.audioPercent(atSliderValue: live)
-                    )
-                        .font(DesignTokens.Typography.metric)
-                        .foregroundStyle(.secondary)
-                        .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
-                }
-            )
-        }
-    }
-
-    @ViewBuilder
     private func audioLevelLabel(isMuted: Bool, percent: Int) -> some View {
         if isMuted {
             Text("Muted", comment: "Audio level display when the wallpaper is muted")
@@ -181,112 +272,18 @@ struct PlaybackInspector: View {
 
     private func audioAccessibilityValue(isMuted: Bool, percent: Int) -> Text {
         if isMuted {
-            return Text("Muted", comment: "Audio level display when the wallpaper is muted")
-        }
-        return Text("\(percent) percent", comment: "Audio level accessibility value, e.g. \"35 percent\".")
-    }
-
-    private var frameRateRow: some View {
-        let forceSDRActive = videoColorSpace == .forceSDR
-        return SettingRow(
-            icon: "gauge.with.dots.needle.bottom.50percent",
-            iconColor: forceSDRActive ? .secondary : .blue,
-            title: "Frame Rate",
-            subtitle: forceSDRActive ? "Disabled while Force SDR is active" : nil,
-            info: "Caps below 30 FPS force a compositing pass — useful when effects are active or to extend battery on long sessions. 60 FPS and Unlimited use the native playback path."
-        ) {
-            Picker("", selection: frameRateBinding) {
-                ForEach(FrameRateLimit.allCases) { limit in
-                    Text(limit.titleKey).tag(limit)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
-            .disabled(forceSDRActive)
-            .accessibilityLabel(Text("Frame rate limit"))
-            .accessibilityValue(forceSDRActive
-                ? Text("Disabled — Force SDR is active", comment: "Accessibility value when the frame-rate picker is dimmed because Force SDR owns the video composition slot.")
-                : Text(frameRateLimit.titleKey))
+            Text("Muted", comment: "Audio level display when the wallpaper is muted")
+        } else {
+            Text("\(percent) percent", comment: "Audio level accessibility value, e.g. \"35 percent\".")
         }
     }
 
-    private var fitModeRow: some View {
-        SettingRow(
-            icon: "aspectratio",
-            iconColor: .blue,
-            title: "Scaling",
-            info: "How the scene maps onto the display. Fill crops to cover, Fit adds letterbox bars, Center keeps the render at original size, Stretch distorts to fill."
-        ) {
-            Picker("", selection: fitModeBinding) {
-                ForEach(VideoFitMode.sceneModes) { mode in
-                    Text(mode.titleKey).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
-            .accessibilityLabel(Text("Scaling"))
-            .accessibilityValue(Text(sceneFitMode.titleKey))
-        }
-    }
+    // MARK: - Row availability
 
-    private var fitModeBinding: Binding<VideoFitMode> {
-        Binding(
-            get: { sceneFitMode },
-            set: { newValue in
-                guard sceneFitMode != newValue else { return }
-                sceneFitMode = newValue
-                screenManager.updateSceneFitMode(newValue, for: screen)
-            }
-        )
-    }
-
-    private var videoDisplayModeRow: some View {
-        SettingRow(
-            icon: "rectangle.split.2x1",
-            iconColor: videoDisplayMode == .spanAllDisplays ? .blue : .secondary,
-            title: "Span Displays",
-            subtitle: hasMultipleDisplays ? nil : "Connect another display to enable",
-            info: "When on, all connected displays render one stretched video. When off, each display plays its own copy independently — multi-display sync is not possible."
-        ) {
-            Toggle("", isOn: spanDisplaysBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .disabled(!hasMultipleDisplays)
-                .accessibilityLabel(Text("Span across displays"))
-                .accessibilityHint(hasMultipleDisplays
-                    ? Text(verbatim: "")
-                    : Text("Disabled — connect another display to enable"))
-        }
-    }
-
-    private var spanDisplaysBinding: Binding<Bool> {
-        Binding(
-            get: { videoDisplayMode == .spanAllDisplays },
-            set: { newValue in
-                let target: VideoDisplayMode = newValue ? .spanAllDisplays : .perDisplay
-                guard videoDisplayMode != target else { return }
-                videoDisplayMode = target
-                screenManager.updateVideoDisplayMode(target, for: screen)
-            }
-        )
-    }
-
-    private var mouseInteractionRow: some View {
-        SettingRow(
-            icon: "cursorarrow.rays",
-            iconColor: sceneMouseInteractionEnabled ? .blue : .secondary,
-            title: "Follow Cursor",
-            info: "Camera parallax and pointer-driven effects follow your cursor. Passive — safe for desktop icon clicks. Turn off to keep the scene perfectly still regardless of where the cursor is."
-        ) {
-            Toggle("", isOn: mouseInteractionBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .accessibilityLabel(Text("Follow cursor"))
-                .accessibilityHint(Text("When off, the scene stops following the cursor"))
+    private var showsFrameRateRow: Bool {
+        switch wallpaperType {
+        case .video, .scene: true
+        case .html: false
         }
     }
 
@@ -301,21 +298,21 @@ struct PlaybackInspector: View {
         )
     }
 
-    private var clickInteractionRow: some View {
-        SettingRow(
-            icon: "cursorarrow.click",
-            iconColor: sceneClickCaptureEnabled ? .blue : .secondary,
-            title: "Interaction",
-            info: "Lets the scene receive real clicks and drags (for interactive scenes). While on, clicks go to the wallpaper instead of the desktop on this display — you won't be able to click desktop icons until you turn it back off."
-        ) {
-            Toggle("", isOn: clickInteractionBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .accessibilityLabel(Text("Interaction"))
-                .accessibilityHint(Text("When on, the scene captures mouse clicks and the desktop can't be clicked on this display"))
-        }
+    private func setClickCapture(_ enabled: Bool) {
+        guard sceneClickCaptureEnabled != enabled else { return }
+        sceneClickCaptureEnabled = enabled
+        screenManager.updateSceneClickCapture(enabled, for: screen)
     }
+
+    private var showsMouseInteractionRow: Bool {
+        wallpaperType == .scene
+    }
+
+    private var showsSyncToLockScreenRow: Bool {
+        wallpaperType == .video && featureCatalog.isEnabled(.lockScreenSnapshots)
+    }
+
+    // MARK: - Rows
 
     private var clickInteractionBinding: Binding<Bool> {
         Binding(
@@ -329,35 +326,6 @@ struct PlaybackInspector: View {
                 setClickCapture(newValue)
             }
         )
-    }
-
-    private func setClickCapture(_ enabled: Bool) {
-        guard sceneClickCaptureEnabled != enabled else { return }
-        sceneClickCaptureEnabled = enabled
-        screenManager.updateSceneClickCapture(enabled, for: screen)
-    }
-
-    private var syncToLockScreenRow: some View {
-        SettingRow(
-            icon: "photo.on.rectangle",
-            iconColor: .blue,
-            title: "Capture on Lock",
-            info: "When the global lock-capture setting is on, captures this video's current frame at lock and sets it as the macOS desktop picture. It does not restore a wallpaper after unlock, and the desktop picture remains changed."
-        ) {
-            HStack(spacing: 6) {
-                if lockScreenExtracted {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(DesignTokens.Colors.Status.active)
-                        .transition(.scale.combined(with: .opacity))
-                        .accessibilityHidden(true)
-                }
-                Toggle("", isOn: syncToLockScreenBinding)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .accessibilityLabel(Text("Capture this video's frame when locking"))
-            }
-        }
     }
 
     // MARK: - Bindings

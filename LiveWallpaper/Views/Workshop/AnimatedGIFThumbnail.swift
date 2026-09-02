@@ -184,7 +184,8 @@ final class GIFAnimationController {
         displayedFrame = asset?.posterFrame
     }
 
-    /// `debounced` adds a 250 ms hover delay so a rapid mouse sweep across a grid
+    /// `debounced` waits `ThumbnailPlaybackGate.hoverPreviewDelayNanoseconds`
+    /// (now zero — the caller's `settledHover` owns the delay) so a mouse sweep
     /// doesn't thrash the decoder; hover-exit in the window cancels before decode.
     func play(debounced: Bool) {
         guard case .animatedGIF = asset, playbackTask == nil else { return }

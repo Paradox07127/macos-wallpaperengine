@@ -16,6 +16,10 @@ struct ContentView: View {
     @State private var didConsumeInitialAddWallpaperPrompt = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isReloading = false
+    /// Published into the environment here rather than read by each grid, so the
+    /// five library pages cannot disagree about tile size.
+    @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped())
+    private var libraryTileSizeRaw = LibraryTileSize.medium.rawValue
     private let initialAddWallpaperPromptKind: String?
 
     init(initialNavigation: Navigation? = nil, initialAddWallpaperPromptKind: String? = nil) {
@@ -41,6 +45,7 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .medium)
         .providesGalleryCardPreferences()
         .toolbar { toolbarContent }
         .frame(
@@ -415,13 +420,11 @@ struct Sidebar: View {
             }
 
             Section {
+                // One row for both archives; the page's capsule switches them.
                 NavigationLink(value: Navigation.bookmarks) {
-                    Label("Bookmarks", systemImage: "bookmark.fill")
+                    Label("Saved", systemImage: "bookmark.fill")
                 }
-                NavigationLink(value: Navigation.schemes) {
-                    Label("Schemes", systemImage: "square.stack.3d.up.fill")
-                }
-                .accessibilityHint(Text("Apply a saved display setup — wallpaper, overlay layout, and settings"))
+                .accessibilityHint(Text("Saved wallpapers and saved display setups"))
                 NavigationLink(value: Navigation.appleAerials) {
                     Label("Apple Aerials", systemImage: "sparkles.tv")
                 }
@@ -687,10 +690,10 @@ struct DetailContent: View {
                 AerialsLibraryView()
 
             case .bookmarks:
-                LibraryView()
+                SavedLibraryPane(initialTab: .bookmarks)
 
             case .schemes:
-                SchemeLibraryView()
+                SavedLibraryPane(initialTab: .schemes)
 
             case .workshop:
                 #if !LITE_BUILD

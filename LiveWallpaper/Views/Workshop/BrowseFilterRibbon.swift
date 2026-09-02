@@ -287,6 +287,9 @@ struct BrowseFilterRibbon: View {
 struct WorkshopFilterChip: View {
     let title: Text
     let isSelected: Bool
+    /// How many library entries this option matches. `nil` on categories where a
+    /// count says nothing (Browse's server-side sort, day range).
+    var count: Int?
     /// Option-click: collapse the category to just this option. `nil` disables
     /// the shortcut (and its hint).
     var onIsolate: (() -> Void)?
@@ -300,15 +303,25 @@ struct WorkshopFilterChip: View {
                 action()
             }
         } label: {
-            title
-                .font(DesignTokens.Typography.caption)
-                .lineLimit(1)
-                .strikethrough(!isSelected, color: .secondary)
-                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                .opacity(isSelected ? 1 : 0.5)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .filterChipBackground(isSelected: isSelected)
+            HStack(spacing: 5) {
+                title
+                    .lineLimit(1)
+                    .strikethrough(!isSelected, color: .secondary)
+                if let count {
+                    // The library's composition, read straight off the chips that
+                    // filter by it — one place instead of a ratio in the search
+                    // bar that said how many were showing but not of what.
+                    Text(verbatim: "\(count)")
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(DesignTokens.Typography.caption)
+            .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            .opacity(isSelected ? 1 : 0.5)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .filterChipBackground(isSelected: isSelected)
         }
         .buttonStyle(.plain)
         .help(onIsolate != nil

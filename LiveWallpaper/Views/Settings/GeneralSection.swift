@@ -21,6 +21,15 @@ extension GeneralSettingsView {
             }
 
             SettingRow(
+                icon: "square.grid.2x2",
+                iconColor: .orange,
+                title: "Library tile size",
+                subtitle: "How large wallpaper tiles are drawn in Bookmarks, Workshop and the other libraries"
+            ) {
+                libraryTileSizePicker
+            }
+
+            SettingRow(
                 icon: "power.circle.fill",
                 iconColor: loginItemShowsInlineStatus ? loginItemStatusColor : .green,
                 title: "Start at login",
@@ -128,6 +137,25 @@ extension GeneralSettingsView {
         .fixedSize()
         .accessibilityLabel(Text("Language"))
         .accessibilityHint(Text("Choose the display language used by LiveWallpaper"))
+    }
+
+    private var libraryTileSizePicker: some View {
+        GlassSegmentedPicker(
+            selection: libraryTileSizeSelection,
+            values: LibraryTileSize.allCases,
+            shell: .flat,
+            title: { $0.title }
+        )
+        .frame(width: 180)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Library tile size"))
+    }
+
+    private var libraryTileSizeSelection: Binding<LibraryTileSize> {
+        Binding(
+            get: { LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .medium },
+            set: { libraryTileSizeRaw = $0.rawValue }
+        )
     }
 
     private var appearancePicker: some View {

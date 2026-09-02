@@ -386,6 +386,9 @@ struct DetailView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                // The shelf and the preview share this column's height, so the
+                // split has to be measured here rather than negotiated between
+                // two views that each want to expand.
                 wallpaperPreviewArea
             }
         }
@@ -408,6 +411,7 @@ struct DetailView: View {
             onSelectVideoFile: showFilePicker,
             onStartPreview: setupPreviewPlayer,
             onPlaybackSpeedChange: { screenManager.updatePlaybackSpeed($0, for: screen) },
+            onResetPlayback: resetPlaybackSettings,
             onFitModeChange: { screenManager.updateFitMode($0, for: screen) }
         )
     }
@@ -472,8 +476,6 @@ struct DetailView: View {
             inspectorPanelWidth: width,
             isColorExpanded: $isColorExpanded,
             onWallpaperModeChange: { screenManager.updateWallpaperMode($0, for: screen) },
-            showsResetPlayback: screenManager.displayPlaybackDiffersFromDefaults(for: screen),
-            onResetPlaybackSettings: resetPlaybackSettings,
             showsResetDisplaySettings: screenManager.displaySettingsDifferFromDefaults(for: screen),
             onResetDisplaySettings: requestResetDisplaySettings
         )

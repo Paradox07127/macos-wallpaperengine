@@ -5,6 +5,10 @@ import SwiftUI
 @MainActor
 struct SceneSection: View {
     let screen: Screen
+    /// Scale lives on the preview overlay, not in the playback shelf.
+    @Binding var fitMode: VideoFitMode
+    /// The shared playback glyph row, built by `PreviewArea` which owns the draft.
+    let playbackControls: AnyView
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -189,7 +193,9 @@ struct SceneSection: View {
                 origin: origin,
                 descriptor: descriptor,
                 session: session,
-                hasSceneRenderingError: isSceneRenderingFailure
+                hasSceneRenderingError: isSceneRenderingFailure,
+                fitMode: $fitMode,
+                playbackControls: playbackControls
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {

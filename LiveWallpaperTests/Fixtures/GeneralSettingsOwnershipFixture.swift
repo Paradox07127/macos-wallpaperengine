@@ -26,6 +26,7 @@ enum OwnershipFixture {
         .behavior: [
             "appLanguageRawValue",
             "appearanceRawValue",
+            "libraryTileSizeRaw",
             "checksUpdatesAtLaunch",
             "startOnLogin",
             "loginItemStatus",

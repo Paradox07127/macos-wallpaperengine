@@ -55,7 +55,7 @@ public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .bottom) { scrim }
         .background(alignment: .leading) { lineSizer }
-        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.18)), value: isHovering)
+        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isHovering)
     }
 
     /// Sized to the band it backs plus a fixed fade above it. A fixed overall

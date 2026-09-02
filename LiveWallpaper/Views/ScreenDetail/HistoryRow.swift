@@ -173,7 +173,10 @@ struct HistoryRow: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .floatingGlyphGlass(hovered: bookmarkHovering)
+        // Explicit strength rather than the 0.18/0.32 default: the badge sits on
+        // arbitrary wallpaper stills, and the default backing disappeared into
+        // bright ones. Reads as a dark chip on every card.
+        .floatingGlyphGlass(hovered: bookmarkHovering, opacity: 0.72)
         .onHover { bookmarkHovering = $0 }
         .help(isBookmarked ? Text("Remove Bookmark") : Text("Add Bookmark"))
         .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))

@@ -6,6 +6,7 @@ import SwiftUI
 /// Bookmarks library — scaffold, filter bar, gallery grid — because a scheme is
 /// another archived thing you apply to a display; only the payload differs.
 struct SchemeLibraryView: View {
+    @Environment(\.libraryTileSize) private var tileSize
     @Environment(ScreenManager.self) private var screenManager
     @State private var store = SchemeStore.shared
     @State private var renamingID: UUID?
@@ -14,28 +15,15 @@ struct SchemeLibraryView: View {
     @State private var pendingDestructive: PendingDestructive?
 
     var body: some View {
-        DetailPageScaffold(
-            header: { header },
-            content: { content }
-        )
-        .confirmDestructive($pendingDestructive)
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        DetailHeaderBar(
-            systemImage: "square.stack.3d.up.fill",
-            title: { Text("Schemes") },
-            metadata: {
-                Text("\(store.schemes.count) saved setups")
-            },
-            actions: { EmptyView() }
-        )
+        DetailPageScaffold { content }
+            .confirmDestructive($pendingDestructive)
     }
 
     // MARK: - Content
 
+    /// The filter bar floats over the grid rather than sitting above it, and it
+    /// stays up over the no-search-match state too — that is the one state where
+    /// the user most needs the field they typed into.
     @ViewBuilder
     private var content: some View {
         if store.schemes.isEmpty {
@@ -48,6 +36,7 @@ struct SchemeLibraryView: View {
                     resultCount: filteredSchemes.count,
                     totalCount: store.schemes.count
                 )
+                Divider()
                 gallery
             }
         }
@@ -63,7 +52,7 @@ struct SchemeLibraryView: View {
             )
         } else {
             ScrollView {
-                LazyVGrid(columns: DesignTokens.LibraryGrid.columns, spacing: DesignTokens.LibraryGrid.spacing) {
+                LazyVGrid(columns: DesignTokens.LibraryGrid.columns(for: tileSize), spacing: DesignTokens.LibraryGrid.spacing) {
                     ForEach(filteredSchemes) { scheme in
                         SchemeTile(
                             scheme: scheme,

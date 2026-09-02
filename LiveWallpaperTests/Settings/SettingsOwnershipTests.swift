@@ -15,8 +15,9 @@ struct GeneralSettingsOwnershipCharacterizationTests {
 
         #expect(fixtureValues.count == Set(fixtureValues).count, "A state field must have exactly one candidate owner")
         #expect(actual == Set(fixtureValues))
-        // 42 = 41 + appearanceRawValue (app window light/dark override, behavior domain).
-        #expect(actual.count == 42, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
+        // 43 = 42 + libraryTileSizeRaw (global library tile size, behavior domain,
+        // approved 2026-09-01 when the five library grids stopped hard-coding it).
+        #expect(actual.count == 43, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
     }
 
     @Test("Each page mounts only its own system-capability probe")

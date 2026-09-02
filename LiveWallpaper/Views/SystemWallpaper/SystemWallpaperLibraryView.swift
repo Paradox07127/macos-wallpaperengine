@@ -8,50 +8,32 @@ import SwiftUI
 /// we write, the heartbeat the appex writes back) — never a system-side state it can't observe.
 @available(macOS 26.0, *)
 struct SystemWallpaperLibraryView: View {
+    @Environment(\.libraryTileSize) private var tileSize
     @Environment(WallpaperExportService.self) private var service
     @State private var pendingDestructive: PendingDestructive?
 
     var body: some View {
-        DetailPageScaffold(
-            header: { header },
-            content: { content }
-        )
-        .confirmDestructive($pendingDestructive)
-        .onAppear { service.refresh() }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        DetailHeaderBar(
-            systemImage: "macwindow.on.rectangle",
-            title: { Text("System Wallpaper") },
-            metadata: { headerMetadata },
-            actions: {
+        DetailPageScaffold { content }
+            .confirmDestructive($pendingDestructive)
+            .toolbar {
+                LibraryIdentityToolbarItem(
+                    systemImage: "macwindow.on.rectangle",
+                    title: Text("System Wallpaper")
+                )
                 if isFunctional {
-                    HStack(spacing: DesignTokens.Spacing.sm) {
-                        SystemWallpaperAddMenu()
-                        Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
-                            .adaptiveGlassButton(.regular, size: .small)
-                            .fixedSize()
+                    ToolbarItem(placement: .primaryAction) {
+                        HStack(spacing: DesignTokens.Spacing.sm) {
+                            SystemWallpaperAddMenu()
+                            // No `adaptiveGlassButton` here: the toolbar section
+                            // is already the visible container, and stacking our
+                            // own glass on top reads as a button inside a button.
+                            Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
+                                .fixedSize()
+                        }
                     }
                 }
             }
-        )
-    }
-
-    @ViewBuilder
-    private var headerMetadata: some View {
-        switch service.status {
-        case .unsupported:
-            Text("Requires macOS 26 or later")
-        case .systemIncompatible:
-            Text("Not available on this version of macOS")
-        case .empty:
-            Text("Nothing handed to the system yet")
-        case .failed, .publishedNotSelected, .inUse:
-            Text("\(Int64(service.items.count)) videos handed to the system")
-        }
+            .onAppear { service.refresh() }
     }
 
     // MARK: - Content
@@ -80,7 +62,7 @@ struct SystemWallpaperLibraryView: View {
             LazyVStack(spacing: DesignTokens.Spacing.lg) {
                 notice
                 LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns,
+                    columns: DesignTokens.LibraryGrid.columns(for: tileSize),
                     spacing: DesignTokens.LibraryGrid.spacing
                 ) {
                     ForEach(service.items) { item in
@@ -289,56 +271,24 @@ struct SystemWallpaperLibraryView: View {
 /// is the only source that works on a fresh install.
 @available(macOS 26.0, *)
 struct SystemWallpaperAddMenu: View {
-    @Environment(WallpaperExportService.self) private var service
-    @State private var store = BookmarkStore.shared
-    @State private var showingAddMenu = false
+    @State private var showingAddSheet = false
 
-    /// Same disc as the Workshop header's actions.
-
-    /// Already-published entries are dropped rather than shown disabled: a menu
-    /// is a list of things you can do, not a status display.
-    private var libraryVideos: [WallpaperBookmark] {
-        store.bookmarks.filter {
-            guard case .video = $0.content else { return false }
-            return !service.isPublished(bookmarkID: $0.id)
-        }
-    }
-
-    /// A real Button, not a Menu: an AppKit popup takes neither `glassEffect`
-    /// nor the `adaptiveGlassButton` pipeline, and it paints its label in the
-    /// system control colour regardless of `foregroundStyle`. The list it used
-    /// to drop down lives in a popover so the control itself can be glass.
     var body: some View {
-        GlassIconButton("plus", action: { showingAddMenu = true })
-            .help(Text("Add a video to System Wallpaper"))
-            .accessibilityLabel(Text("Add Video"))
-            .popover(isPresented: $showingAddMenu, arrowEdge: .bottom) {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                    menuItems
-                }
-                .buttonStyle(.borderless)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .settingsPopoverChrome(width: 240)
-            }
-    }
-
-    @ViewBuilder
-    private var menuItems: some View {
-        Button("Import from Files", systemImage: "folder.badge.plus") {
-            SystemWallpaperVideoImport.present(publishingInto: service)
+        // Labelled, not a bare `plus`: the window toolbar already carries a
+        // `plus` for "pick a wallpaper for the selected display", and two
+        // identical glyphs in the same slot did different things.
+        Button {
+            showingAddSheet = true
+        } label: {
+            Label("Add Video", systemImage: "plus")
         }
-        if !libraryVideos.isEmpty {
-            Section("In your library") {
-                ForEach(libraryVideos) { bookmark in
-                    Button {
-                        Task { try? await service.publish(bookmark: bookmark) }
-                    } label: {
-                        Text(verbatim: bookmark.label)
-                    }
-                }
+        .help(Text("Add a video to System Wallpaper"))
+        .accessibilityLabel(Text("Add Video"))
+        .sheet(isPresented: $showingAddSheet) {
+            AppLanguageScope(defaults: .appScoped()) {
+                SystemWallpaperAddSheet()
             }
         }
-        workshopSection
     }
 }
 
@@ -358,41 +308,6 @@ enum SystemWallpaperVideoImport {
         Task { await service.publish(fileURLs: urls) }
     }
 }
-
-// MARK: - Workshop source
-
-#if LITE_BUILD
-@available(macOS 26.0, *)
-extension SystemWallpaperAddMenu {
-    @ViewBuilder fileprivate var workshopSection: some View { EmptyView() }
-}
-#else
-@available(macOS 26.0, *)
-extension SystemWallpaperAddMenu {
-    /// Installed Workshop wallpapers keep their own list, so they are
-    /// publishable without being added to Bookmarks first.
-    private var workshopVideos: [WPEHistoryEntry] {
-        SettingsManager.shared.loadGlobalSettings().recentWPEImports.filter {
-            $0.origin.originalType == .video && !(($0.origin.entryFile ?? "").isEmpty)
-        }
-    }
-
-    @ViewBuilder fileprivate var workshopSection: some View {
-        if !workshopVideos.isEmpty {
-            Section("Installed from Workshop") {
-                ForEach(workshopVideos, id: \.origin.workshopID) { entry in
-                    Button {
-                        guard let content = WPECachedContentResolver().content(for: entry.origin) else { return }
-                        Task { try? await service.publish(content: content, title: entry.origin.title) }
-                    } label: {
-                        Text(verbatim: entry.origin.title)
-                    }
-                }
-            }
-        }
-    }
-}
-#endif
 
 // MARK: - Tile
 
