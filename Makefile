@@ -45,6 +45,9 @@ fast:
 	python3 scripts/check_module_import_boundaries.py
 	@echo "== Quality exclusion ratchet =="
 	python3 scripts/check_quality_exclusions.py
+	@echo "== SwiftUI lifecycle hosts =="
+	python3 scripts/check_swiftui_lifecycle_hosts.py --self-test
+	python3 scripts/check_swiftui_lifecycle_hosts.py
 	@echo "== Localization guard (whole app) =="
 	I18N_GUARD_SCOPE=all bash scripts/i18n_guard.sh
 

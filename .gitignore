@@ -146,6 +146,7 @@ scripts/*
 !scripts/format-changed.sh
 !scripts/lint_changed_lines.py
 !scripts/check_module_import_boundaries.py
+!scripts/check_swiftui_lifecycle_hosts.py
 # Invoked by `make fast` and by an Xcode Run Script phase, so a clean clone that
 # lacks it fails the build rather than skipping a check.
 !scripts/i18n_guard.sh
