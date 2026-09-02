@@ -3,20 +3,13 @@ import CryptoKit
 import Foundation
 
 /// Pure-Swift frontend for the WPE shader dialect. Runs before the Swift
-/// transpiler: parses `// [COMBO]` / `// [BIND]` annotations, resolves
-/// `#include "header.h"` against the scene's `shaders/` directory, applies
+/// transpiler: parses `// [COMBO]` / `// [BIND]` annotations, applies
 /// WPE→canonical-GLSL macro fixups, and bakes combo `#define`s into the
-/// preamble so translation only has to deal with vanilla GLSL.
+/// preamble so translation only has to deal with vanilla GLSL. `#include`
+/// expansion and the `gl_FragColor` rewrite already happened at graph-build
+/// time (`WPERenderPipelineBuilder.preprocess`), which is the only producer of
+/// the sources this sees.
 struct WPEShaderPreprocessor {
-
-    /// Files looked up via `#include`, keyed by relative include path (e.g. `"common.h"`).
-    typealias IncludeResolver = (_ path: String, _ requestedBy: String) -> String?
-
-    let includeResolver: IncludeResolver
-
-    init(includeResolver: @escaping IncludeResolver) {
-        self.includeResolver = includeResolver
-    }
 
     func process(
         shaderName: String,
@@ -27,13 +20,11 @@ struct WPEShaderPreprocessor {
     ) throws -> WPEShaderCompileRequest {
         let vertResult = try processStage(
             stage: .vertex,
-            shaderName: shaderName,
             source: vertexSource,
             comboValues: comboValues
         )
         let fragResult = try processStage(
             stage: .fragment,
-            shaderName: shaderName,
             source: fragmentSource,
             comboValues: comboValues
         )
@@ -77,24 +68,21 @@ struct WPEShaderPreprocessor {
 
     func processStage(
         stage: Stage,
-        shaderName: String,
         source: String,
         comboValues: [String: Int]
     ) throws -> StageResult {
         var combos: [String: WPEComboDeclaration] = [:]
         var bindings: [Int: String] = [:]
-        var includedAlready = Set<String>()
-        let resolved = try resolveIncludes(
-            // Normalize CRLF/CR → LF first. Swift treats "\r\n" as one grapheme, so the
-            // line-based passes below (`split(separator: "\n")`) would see a CRLF file as a
-            // SINGLE line, collapsing the whole shader onto its first line — when that line is
-            // `#include "…"` the entire body is swallowed and silently dropped. WPE shaders (and most Windows-authored workshop shaders) ship CRLF.
+        // Normalize CRLF/CR → LF first. Swift treats "\r\n" as one grapheme, so the
+        // line-based passes below (`split(separator: "\n")`) would see a CRLF file as a
+        // SINGLE line, collapsing the whole shader onto its first line. WPE shaders (and
+        // most Windows-authored workshop shaders) ship CRLF.
+        let scanned = scanAnnotations(
             source: Self.normalizeNewlines(source),
-            requestedBy: shaderName,
-            visited: &includedAlready
+            combos: &combos,
+            bindings: &bindings
         )
-        let scanned = scanAnnotations(source: resolved, combos: &combos, bindings: &bindings)
-        let canonical = applyMacroFixups(source: scanned, stage: stage)
+        let canonical = applyMacroFixups(source: scanned)
 
         let merged = mergeComboDefaults(from: combos, overriddenBy: comboValues)
         let preamble = makePreamble(
@@ -114,61 +102,6 @@ struct WPEShaderPreprocessor {
         source
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-    }
-
-    // MARK: - Includes
-
-    private func resolveIncludes(
-        source: String,
-        requestedBy: String,
-        visited: inout Set<String>
-    ) throws -> String {
-        var lines: [String] = []
-        for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("#include") {
-                let path = Self.extractIncludePath(from: trimmed)
-                guard let path else {
-                    lines.append(String(line))
-                    continue
-                }
-                if visited.contains(path) {
-                    continue
-                }
-                visited.insert(path)
-                guard let payload = includeResolver(path, requestedBy) else {
-                    throw WPEShaderCompilerError.glslPreprocessFailed(
-                        "missing include '\(path)' requested by '\(requestedBy)'"
-                    )
-                }
-                let inner = try resolveIncludes(
-                    // Included files carry their own line endings (often CRLF) —
-                    // normalize before recursing so they split into real lines.
-                    source: Self.normalizeNewlines(payload),
-                    requestedBy: path,
-                    visited: &visited
-                )
-                lines.append("// [BEGIN INCLUDE \(path)]")
-                lines.append(inner)
-                lines.append("// [END INCLUDE \(path)]")
-            } else {
-                lines.append(String(line))
-            }
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private static func extractIncludePath(from line: String) -> String? {
-        guard let openIndex = line.firstIndex(where: { $0 == "\"" || $0 == "<" }) else {
-            return nil
-        }
-        let opener = line[openIndex]
-        let closer: Character = opener == "<" ? ">" : "\""
-        let afterOpen = line.index(after: openIndex)
-        guard let closeIndex = line[afterOpen...].firstIndex(of: closer) else {
-            return nil
-        }
-        return String(line[afterOpen..<closeIndex])
     }
 
     // MARK: - Annotations
@@ -198,16 +131,12 @@ struct WPEShaderPreprocessor {
 
     // MARK: - Macro fixups
 
-    private func applyMacroFixups(source: String, stage: Stage) -> String {
+    private func applyMacroFixups(source: String) -> String {
         var s = source
 
         s = s.replacingOccurrences(of: "texSample2DLod(", with: "textureLod(")
         s = s.replacingOccurrences(of: "texSample2D(", with: "texture(")
         s = s.replacingOccurrences(of: "texSampleNorm2D(", with: "texture(")
-
-        if stage == .fragment, s.contains("gl_FragColor") {
-            s = "out vec4 wpe_fragColor;\n" + s.replacingOccurrences(of: "gl_FragColor", with: "wpe_fragColor")
-        }
 
         return s
     }

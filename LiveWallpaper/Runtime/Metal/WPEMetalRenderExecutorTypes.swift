@@ -191,6 +191,12 @@ final class WPEGPUErrorSink: @unchecked Sendable {
 /// Custom-shader compile failures, deduped by shader name, surfaced in the scene
 /// diagnostic log — the `WPESceneDebugArtifacts` dump is hard-off in Release, so
 /// otherwise a skipped (non-compiling) pass is invisible in a bug report.
+///
+/// Scoped to the CURRENT scene: `reset()` runs alongside the other pass-keyed
+/// reload state, so a shader that failed before a reload does not keep haunting
+/// the inspector for a scene that no longer contains it. Corpus-wide translation
+/// statistics come from `WPETranspileCoverageAggregator`, never from this sink —
+/// name-deduping makes it the wrong shape for counting.
 final class WPEShaderErrorSink: @unchecked Sendable {
     private let lock = NSLock()
     private var failures: [String: String] = [:]
@@ -198,6 +204,12 @@ final class WPEShaderErrorSink: @unchecked Sendable {
     func record(shader: String, reason: String) {
         lock.lock()
         failures[shader] = reason
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        failures.removeAll()
         lock.unlock()
     }
 

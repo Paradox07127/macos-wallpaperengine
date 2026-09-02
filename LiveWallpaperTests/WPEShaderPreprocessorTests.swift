@@ -22,7 +22,7 @@ struct WPEShaderPreprocessorTests {
 
     @Test("Bakes combo defaults into preamble")
     func bakesCombosIntoPreamble() throws {
-        let processor = WPEShaderPreprocessor { _, _ in nil }
+        let processor = WPEShaderPreprocessor()
         let source = #"""
         // [COMBO] {"combo":"BLUR", "type":"options", "default":2}
         void main() { gl_FragColor = vec4(0,0,0,1); }
@@ -30,7 +30,6 @@ struct WPEShaderPreprocessorTests {
 
         let result = try processor.processStage(
             stage: .fragment,
-            shaderName: "test",
             source: source,
             comboValues: [:]
         )
@@ -41,7 +40,7 @@ struct WPEShaderPreprocessorTests {
 
     @Test("Combo values override declared defaults")
     func comboValuesOverrideDefaults() throws {
-        let processor = WPEShaderPreprocessor { _, _ in nil }
+        let processor = WPEShaderPreprocessor()
         let source = #"""
         // [COMBO] {"combo":"GLOW", "type":"options", "default":0}
         void main() {}
@@ -49,7 +48,6 @@ struct WPEShaderPreprocessorTests {
 
         let result = try processor.processStage(
             stage: .vertex,
-            shaderName: "x",
             source: source,
             comboValues: ["GLOW": 1]
         )
@@ -60,11 +58,10 @@ struct WPEShaderPreprocessorTests {
 
     @Test("Translates texSample2D to texture")
     func translatesTexSample2D() throws {
-        let processor = WPEShaderPreprocessor { _, _ in nil }
+        let processor = WPEShaderPreprocessor()
         let source = "void main() { gl_FragColor = texSample2D(g_Texture0, vec2(0.5)); }"
         let result = try processor.processStage(
             stage: .fragment,
-            shaderName: "x",
             source: source,
             comboValues: [:]
         )
@@ -72,78 +69,21 @@ struct WPEShaderPreprocessorTests {
         #expect(!result.source.contains("texSample2D("))
     }
 
-    @Test("Replaces gl_FragColor with explicit out variable")
-    func replacesGLFragColor() throws {
-        let processor = WPEShaderPreprocessor { _, _ in nil }
-        let source = "void main() { gl_FragColor = vec4(1.0); }"
-        let result = try processor.processStage(
-            stage: .fragment,
-            shaderName: "x",
-            source: source,
-            comboValues: [:]
-        )
-        #expect(result.source.contains("out vec4 wpe_fragColor"))
-        #expect(result.source.contains("wpe_fragColor = vec4(1.0)"))
-        #expect(!result.source.contains("gl_FragColor"))
-    }
-
-    @Test("Resolves include via resolver")
-    func resolvesInclude() throws {
-        let processor = WPEShaderPreprocessor { path, _ in
-            path == "common.h" ? "#define COMMON_OK 1" : nil
-        }
-        let source = #"""
-        #include "common.h"
-        void main() {}
-        """#
+    @Test("CRLF source is normalized so annotations on later lines are still seen")
+    func crlfSourceIsNormalized() throws {
+        let processor = WPEShaderPreprocessor()
+        let source = "uniform vec4 g_Color4;\r\n// [COMBO] {\"combo\":\"CRLF\", \"type\":\"options\", \"default\":1}\r\nvoid main() { out_FragColor = g_Color4; }\r\n"
 
         let result = try processor.processStage(
             stage: .fragment,
-            shaderName: "x",
             source: source,
             comboValues: [:]
         )
 
-        #expect(result.source.contains("#define COMMON_OK 1"))
-        #expect(result.source.contains("// [BEGIN INCLUDE common.h]"))
-    }
-
-    @Test("CRLF source keeps the body after an #include (newline normalization)")
-    func crlfIncludeKeepsBody() throws {
-        let processor = WPEShaderPreprocessor { path, _ in
-            path == "common.h" ? "#define COMMON_OK 1\r\nfloat helper() { return 1.0; }" : nil
-        }
-        let source = "#include \"common.h\"\r\nuniform vec4 g_Color4;\r\nvoid main() { gl_FragColor = g_Color4; }\r\n"
-
-        let result = try processor.processStage(
-            stage: .fragment,
-            shaderName: "font",
-            source: source,
-            comboValues: [:]
-        )
-
+        #expect(result.combos["CRLF"]?.defaultValue == 1)
         #expect(result.source.contains("void main"))
         #expect(result.source.contains("g_Color4"))
-        #expect(result.source.contains("helper"))
         #expect(!result.source.contains("\r"))
-    }
-
-    @Test("Throws when include cannot be resolved")
-    func includeMissingThrows() {
-        let processor = WPEShaderPreprocessor { _, _ in nil }
-        let source = #"""
-        #include "nope.h"
-        void main() {}
-        """#
-
-        #expect(throws: WPEShaderCompilerError.self) {
-            _ = try processor.processStage(
-                stage: .vertex,
-                shaderName: "x",
-                source: source,
-                comboValues: [:]
-            )
-        }
     }
 
     @Test("Hash is stable across runs and combo ordering")
@@ -173,7 +113,7 @@ struct WPEShaderPreprocessorTests {
 
     @Test("Material textures override shader bind defaults")
     func materialTexturesOverrideBindDefaults() throws {
-        let processor = WPEShaderPreprocessor { _, _ in nil }
+        let processor = WPEShaderPreprocessor()
         let vert = "void main() {}"
         let frag = #"""
         // [BIND] {"name":"baseShaderDefault", "index":0}
