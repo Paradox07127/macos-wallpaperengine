@@ -39,12 +39,29 @@ struct PlaybackControls: View {
     @State private var showClickCaptureConfirm = false
     /// HTML-only: mute path for WKWebView media (`AVPlayer.muted` is a no-op here).
     var htmlConfig: Binding<HTMLConfig>?
+    /// Video only. `nil` leaves the speed control out entirely.
+    var playbackSpeed: Binding<Double>?
     /// `.forceSDR` owns `videoComposition`, so the frame-rate cap is dimmed/ignored.
     var videoColorSpace: VideoColorSpace = .auto
     var showsResetPlayback: Bool = false
     var onResetPlayback: () -> Void = {}
 
     @State private var showingVolume = false
+    @State private var showingSpeed = false
+    @State private var showingFrameRate = false
+    @State private var draggingFrameRateIndex: Double?
+
+    /// Needle angle tracks the cap, so the glyph says "low / medium / uncapped"
+    /// without a word of text.
+    private var frameRateSymbol: String {
+        switch displayedFrameRate {
+        case .fps15, .fps24: "gauge.with.dots.needle.0percent"
+        case .fps30: "gauge.with.dots.needle.33percent"
+        case .fps60: "gauge.with.dots.needle.67percent"
+        case .unlimited: "gauge.with.dots.needle.100percent"
+        }
+    }
+
     @State private var lockScreenExtracted = false
     /// Drop stale "clear ✓" Tasks when a newer toggle wins (same pattern as schedule conflict flash).
     @State private var lockScreenFeedbackGeneration = 0
@@ -91,12 +108,16 @@ struct PlaybackControls: View {
     /// columns — 1 row for web up to 5 for scene, and stacking all five in the
     /// wide shelf forced it to scroll.
     private enum PlaybackRow: Hashable {
-        case frameRate, mouseInteraction, clickInteraction, syncToLockScreen
+        case speed, frameRate, mouseInteraction, clickInteraction, syncToLockScreen
+        case webJavaScript, webInteraction
     }
 
     /// Audio is rendered ahead of this list because every type has it.
     private var visibleRows: [PlaybackRow] {
         var rows: [PlaybackRow] = []
+        if playbackSpeed != nil {
+            rows.append(.speed)
+        }
         if showsFrameRateRow {
             rows.append(.frameRate)
         }
@@ -105,6 +126,9 @@ struct PlaybackControls: View {
         }
         if showsSyncToLockScreenRow {
             rows.append(.syncToLockScreen)
+        }
+        if htmlConfig != nil {
+            rows.append(contentsOf: [.webJavaScript, .webInteraction])
         }
         return rows
     }
@@ -116,8 +140,11 @@ struct PlaybackControls: View {
         return Button {
             showingVolume = true
         } label: {
-            Image(systemName: isMuted ? "speaker.slash" : "speaker.wave.2")
-                .foregroundStyle(isMuted ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.primary))
+            PreviewControlLabel(
+                systemImage: isMuted ? "speaker.slash" : "speaker.wave.2",
+                title: "Audio",
+                isActive: !isMuted
+            )
         }
         .help(Text("Audio"))
         .accessibilityLabel(Text("Audio"))
@@ -163,11 +190,16 @@ struct PlaybackControls: View {
     @ViewBuilder
     private func control(_ kind: PlaybackRow) -> some View {
         switch kind {
+        case .speed:
+            if let playbackSpeed {
+                speedControl(playbackSpeed)
+            }
         case .frameRate:
             frameRateControl
         case .mouseInteraction:
             glyphToggle(
                 on: "cursorarrow.rays",
+                title: "Cursor",
                 isOn: sceneMouseInteractionEnabled,
                 binding: mouseInteractionBinding,
                 label: Text("Follow cursor"),
@@ -176,6 +208,7 @@ struct PlaybackControls: View {
         case .clickInteraction:
             glyphToggle(
                 on: "cursorarrow.click",
+                title: "Interaction",
                 isOn: sceneClickCaptureEnabled,
                 binding: clickInteractionBinding,
                 label: Text("Interaction"),
@@ -183,44 +216,151 @@ struct PlaybackControls: View {
             )
         case .syncToLockScreen:
             lockScreenControl
+        case .webJavaScript:
+            if let htmlConfig {
+                glyphToggle(
+                    on: "curlybraces",
+                    title: "JavaScript",
+                    isOn: htmlConfig.wrappedValue.allowJavaScript,
+                    binding: htmlConfigBinding(htmlConfig, keyPath: \.allowJavaScript),
+                    label: Text("JavaScript"),
+                    help: Text("Turning this off stops scripted wallpapers rendering at all.")
+                )
+            }
+        case .webInteraction:
+            if let htmlConfig {
+                glyphToggle(
+                    on: "cursorarrow.click",
+                    title: "Interaction",
+                    isOn: htmlConfig.wrappedValue.allowMouseInteraction,
+                    binding: htmlConfigBinding(htmlConfig, keyPath: \.allowMouseInteraction),
+                    label: Text("Interaction"),
+                    help: Text("When on, clicks and scrolls reach the wallpaper but desktop icons and the Dock become unclickable. Off lets you use Finder normally.")
+                )
+            }
         }
     }
 
-    /// Carries its value in the label — a frame-rate cap is a number, and an icon
-    /// alone cannot say which one is in force.
+    /// The speed slider used to sit inline: a tortoise, a 110pt Slider, a hare and
+    /// a readout, ~180pt of a bar that was already overflowing. Behind a glyph it
+    /// costs 24pt and matches audio, the other continuous control here.
+    private func speedControl(_ speed: Binding<Double>) -> some View {
+        Button {
+            showingSpeed = true
+        } label: {
+            PreviewControlLabel(systemImage: "gauge.with.needle", title: "Speed")
+        }
+        .help(Text("Playback speed"))
+        .accessibilityLabel(Text("Playback speed"))
+        .accessibilityValue(Text(verbatim: Self.speedLabel(speed.wrappedValue)))
+        .popover(isPresented: $showingSpeed, arrowEdge: .bottom) {
+            VStack(spacing: DesignTokens.Spacing.sm) {
+                Slider(value: speed, in: 0.5 ... 2.0, step: 0.25)
+                    .controlSize(.small)
+                    .accessibilityLabel(Text("Playback speed"))
+                Text(verbatim: Self.speedLabel(speed.wrappedValue))
+                    .font(DesignTokens.Typography.metric)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 180)
+            .padding(DesignTokens.Spacing.md)
+        }
+    }
+
+    static func speedLabel(_ speed: Double) -> String {
+        abs(speed - speed.rounded()) < 0.001 ? "\(Int(speed))×" : String(format: "%.2g×", speed)
+    }
+
+    /// Icon-only, with the needle angle carrying the cap. It used to spell the
+    /// value out ("60 FPS"), which made it the one control on the bar with text —
+    /// uneven next to the icon clusters, and 1.5–2× wider in Japanese. The exact
+    /// value is in the tooltip, the menu's checkmark, and the accessibility value.
+    /// A slider over the caps, not a menu, so it matches speed and audio — the
+    /// three of them are one row of controls and a menu among two popovers reads
+    /// as a different kind of thing. The steps are discrete (`FrameRateLimit` is
+    /// an enum, not a number), so the slider indexes into `allCases`, which is
+    /// declared low-to-high and ends at Unlimited — dragging right asks for more.
     private var frameRateControl: some View {
         let forceSDRActive = videoColorSpace == .forceSDR
-        return Menu {
-            Picker("", selection: frameRateBinding) {
-                ForEach(FrameRateLimit.allCases) { limit in
-                    Text(limit.titleKey).tag(limit)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.inline)
+        return Button {
+            showingFrameRate = true
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "gauge.with.dots.needle.bottom.50percent")
-                Text(frameRateLimit.titleKey)
-                    .font(DesignTokens.Typography.caption)
-            }
+            PreviewControlLabel(systemImage: frameRateSymbol, title: "Frame Rate")
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .disabled(forceSDRActive)
         .help(forceSDRActive
             ? Text("Disabled while Force SDR is active")
-            : Text("Caps below 30 FPS force a compositing pass — useful when effects are active or to extend battery."))
+            : Text(frameRateLimit.titleKey))
         .accessibilityLabel(Text("Frame rate limit"))
         .accessibilityValue(forceSDRActive
             ? Text("Disabled — Force SDR is active", comment: "Accessibility value when the frame-rate picker is dimmed because Force SDR owns the video composition slot.")
             : Text(frameRateLimit.titleKey))
+        .popover(isPresented: $showingFrameRate, arrowEdge: .bottom) {
+            frameRatePopover
+        }
+    }
+
+    private var frameRatePopover: some View {
+        VStack(spacing: DesignTokens.Spacing.sm) {
+            Slider(
+                value: frameRateIndexBinding,
+                in: 0 ... Double(FrameRateLimit.allCases.count - 1),
+                step: 1,
+                onEditingChanged: { editing in
+                    if editing {
+                        draggingFrameRateIndex = frameRateIndexBinding.wrappedValue
+                    } else {
+                        commitDraggedFrameRate()
+                    }
+                }
+            )
+            .controlSize(.small)
+            .accessibilityLabel(Text("Frame rate limit"))
+            .accessibilityValue(Text(displayedFrameRate.titleKey))
+            Text(displayedFrameRate.titleKey)
+                .font(DesignTokens.Typography.metric)
+                .foregroundStyle(.secondary)
+        }
+        .frame(width: 180)
+        .padding(DesignTokens.Spacing.md)
+    }
+
+    /// The cap being dragged towards, before it is written. Dragging from
+    /// Unlimited to 15 crosses four other caps, and writing each one persists the
+    /// setting and reconfigures the running session — the same reason the sliders
+    /// elsewhere in this app go through `CoalescedSlider`.
+    private var displayedFrameRate: FrameRateLimit {
+        guard let index = draggingFrameRateIndex else { return frameRateLimit }
+        return Self.frameRate(atIndex: index)
+    }
+
+    private func commitDraggedFrameRate() {
+        defer { draggingFrameRateIndex = nil }
+        guard let index = draggingFrameRateIndex else { return }
+        frameRateBinding.wrappedValue = Self.frameRate(atIndex: index)
+    }
+
+    /// Slider position → case. An out-of-range position clamps rather than
+    /// trapping, which a raw subscript would.
+    private static func frameRate(atIndex position: Double) -> FrameRateLimit {
+        let index = min(max(Int(position.rounded()), 0), FrameRateLimit.allCases.count - 1)
+        return FrameRateLimit.allCases[index]
+    }
+
+    private var frameRateIndexBinding: Binding<Double> {
+        Binding(
+            get: {
+                draggingFrameRateIndex
+                    ?? Double(FrameRateLimit.allCases.firstIndex(of: frameRateLimit) ?? 0)
+            },
+            set: { draggingFrameRateIndex = $0 }
+        )
     }
 
     private var lockScreenControl: some View {
         glyphToggle(
             on: "photo.on.rectangle",
+            title: "On Lock",
             isOn: syncToLockScreen,
             binding: syncToLockScreenBinding,
             label: Text("Capture this video's frame when locking"),
@@ -233,6 +373,7 @@ struct PlaybackControls: View {
     /// off, with the sentence that used to be the row's `info` as its tooltip.
     private func glyphToggle(
         on symbol: String,
+        title: LocalizedStringKey,
         isOn: Bool,
         binding: Binding<Bool>,
         label: Text,
@@ -242,14 +383,12 @@ struct PlaybackControls: View {
         Button {
             binding.wrappedValue.toggle()
         } label: {
-            Image(systemName: symbol)
-                .foregroundStyle(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+            PreviewControlLabel(systemImage: symbol, title: title, isActive: isOn)
                 .overlay(alignment: .topTrailing) {
                     if badge {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 8))
                             .foregroundStyle(DesignTokens.Colors.Status.active)
-                            .offset(x: 4, y: -4)
                             .accessibilityHidden(true)
                     }
                 }

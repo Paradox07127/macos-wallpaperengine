@@ -44,6 +44,12 @@ struct HTMLPreviewSection: View {
     let screen: Screen
     let source: HTMLSource?
     let config: HTMLConfig
+    /// Bumped by the refresh control in the row above; each change forces a recapture.
+    var refreshToken: Int = 0
+    /// True while the displayed image came from the running wallpaper, whose
+    /// WebView already has the CSS transform applied. Anything drawing the
+    /// transform on top of this view has to know, or it doubles it.
+    var isShowingLiveCapture: Binding<Bool>?
     /// WPE web project shipped preview; always nil in Lite.
     let wpePreviewURL: URL?
     let wpePreviewBookmark: Data?
@@ -57,48 +63,42 @@ struct HTMLPreviewSection: View {
         screen: Screen,
         source: HTMLSource?,
         config: HTMLConfig,
+        refreshToken: Int = 0,
+        isShowingLiveCapture: Binding<Bool>? = nil,
         wpePreviewURL: URL? = nil,
         wpePreviewBookmark: Data? = nil
     ) {
         self.screen = screen
         self.source = source
         self.config = config
+        self.refreshToken = refreshToken
+        self.isShowingLiveCapture = isShowingLiveCapture
         self.wpePreviewURL = wpePreviewURL
         self.wpePreviewBookmark = wpePreviewBookmark
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            snapshotCard
-                .screenPreviewChrome()
-
-            if source != nil {
-                HTMLInformationOverlay(source: source, config: config)
-                    .padding(DesignTokens.Spacing.cardInset)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .allowsHitTesting(false)
-
-                // Both live in the top-right corner so the source capsule owns the
-                // bottom edge of the preview outright — they used to collide there.
-                HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
-                    HTMLRenderingDiagnosticsOverlay(screen: screen, source: source, config: config)
-                    refreshButton
+        snapshotCard
+            .screenPreviewChrome()
+            // Reports the drawn 16:9 box, not the column width — an overlay hung
+            // on this view has to be clipped to the picture, not to the page.
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .onChange(of: refreshToken) { _, _ in
+                if let key = cacheKey {
+                    WallpaperThumbnailService.shared.invalidate(cacheKey: key)
                 }
-                .padding(DesignTokens.Spacing.cardInset)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                snapshot = nil
+                loadFailed = false
+                startLoadIfNeeded(force: true)
             }
-        }
-        // Reports the drawn 16:9 box, not the column width — an overlay hung on
-        // this view has to be clipped to the picture, not to the page.
-        .aspectRatio(16/9, contentMode: .fit)
-        .onChange(of: cacheKey) { _, _ in
-            cancelPreviewLoad()
-            snapshot = nil
-            loadFailed = false
-            startLoadIfNeeded()
-        }
-        .onAppear { startLoadIfNeeded() }
-        .onDisappear { cancelPreviewLoad() }
+            .onChange(of: cacheKey) { _, _ in
+                cancelPreviewLoad()
+                snapshot = nil
+                loadFailed = false
+                startLoadIfNeeded()
+            }
+            .onAppear { startLoadIfNeeded() }
+            .onDisappear { cancelPreviewLoad() }
     }
 
     @ViewBuilder
@@ -151,22 +151,6 @@ struct HTMLPreviewSection: View {
         }
     }
 
-    private var refreshButton: some View {
-        Button {
-            if let key = cacheKey {
-                WallpaperThumbnailService.shared.invalidate(cacheKey: key)
-            }
-            snapshot = nil
-            loadFailed = false
-            startLoadIfNeeded(force: true)
-        } label: {
-            PreviewCornerGlyph("arrow.clockwise")
-        }
-        .buttonStyle(.plain)
-        .help(Text("Refresh web snapshot"))
-        .accessibilityLabel(Text("Refresh web preview"))
-    }
-
     // MARK: - Loading
 
     private var cacheKey: String? {
@@ -187,6 +171,7 @@ struct HTMLPreviewSection: View {
 
             let cachedImage = force ? nil : WallpaperThumbnailService.shared.cachedThumbnail(forKey: key)
             let image: NSImage?
+            isShowingLiveCapture?.wrappedValue = liveImage != nil
             if let liveImage {
                 image = liveImage
             } else if let cachedImage {
@@ -353,14 +338,6 @@ struct HTMLInformationOverlay: View {
                 tag(Text(verbatim: "HTTP"), background: DesignTokens.Colors.Status.warning.opacity(0.55))
             }
 
-            HStack(spacing: 4) {
-                Image(systemName: icon(for: source))
-                Text(verbatim: identifier(for: source))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .frame(maxWidth: 200, alignment: .leading)
-
             if case .url = source {
                 if config.allowJavaScript {
                     tag(Text(verbatim: "JS"))
@@ -400,26 +377,6 @@ struct HTMLInformationOverlay: View {
             .padding(.vertical, 2)
             .background(background, in: Capsule())
     }
-
-    private func icon(for source: HTMLSource) -> String {
-        switch source {
-        case .url:    return "globe"
-        case .file:   return "doc.richtext"
-        case .folder: return "folder"
-        case .inline: return "curlybraces"
-        }
-    }
-
-    private func identifier(for source: HTMLSource) -> String {
-        switch source {
-        case .url(let url):
-            return url.host ?? url.absoluteString
-        case .file, .folder:
-            return source.displayName
-        case .inline:
-            return String(localized: "Inline web content", bundle: .appLanguage, comment: "HTML source identifier for inline HTML content.")
-        }
-    }
 }
 
 /// Render-geometry badges on the web preview (not the inspector list).
@@ -427,7 +384,9 @@ struct HTMLInformationOverlay: View {
 /// backing live in one place — spelled twice, they drift the first time one moves.
 /// A view rather than a function so each control carries its own hover state
 /// for the interactive-corner-glyph glass API.
-private struct PreviewCornerGlyph: View {
+/// Shared with the web title row, which owns the refresh and diagnostics
+/// controls that used to sit inside the preview.
+struct PreviewCornerGlyph: View {
     private let systemImage: String
 
     @State private var isHovering = false

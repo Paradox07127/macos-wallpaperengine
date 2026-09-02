@@ -616,26 +616,25 @@ private struct MenuBarDisplayRow: View {
                 .accessibilityLabel(Text("\(title), \(subtitleAccessibilityText), \(visualState.accessibilityLabel)"))
                 .accessibilityElement(children: .combine)
 
+                // All four at the component's default `.large`, all on plain
+                // glass. They used to mix `.regular` sizes with `.prominent` on
+                // the two main ones, which tinted those accent-blue and made a
+                // transport cluster read as three unrelated controls.
                 if let addAction {
-                    GlassIconButton("plus", prominence: .prominent, size: .regular, action: addAction)
+                    GlassIconButton("plus", action: addAction)
                         .accessibilityLabel(Text("Add wallpaper to this display"))
                 } else if supportsPlayback {
-                    HStack(spacing: 4) {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
                         if canStepPlaylist {
-                            GlassIconButton("chevron.left", size: .regular, action: previousAction)
+                            GlassIconButton("chevron.left", action: previousAction)
                                 .accessibilityLabel(Text("Previous wallpaper"))
                         }
 
-                        GlassIconButton(
-                            isPlaying ? "pause.fill" : "play.fill",
-                            prominence: .prominent,
-                            size: .regular,
-                            action: playbackAction
-                        )
-                        .accessibilityLabel(Text(isPlaying ? "Pause wallpaper" : "Play wallpaper"))
+                        GlassIconButton(isPlaying ? "pause.fill" : "play.fill", action: playbackAction)
+                            .accessibilityLabel(Text(isPlaying ? "Pause wallpaper" : "Play wallpaper"))
 
                         if canStepPlaylist {
-                            GlassIconButton("chevron.right", size: .regular, action: nextAction)
+                            GlassIconButton("chevron.right", action: nextAction)
                                 .accessibilityLabel(Text("Next wallpaper"))
                         }
                     }

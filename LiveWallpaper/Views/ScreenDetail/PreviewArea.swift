@@ -19,6 +19,15 @@ struct PreviewArea: View {
     let onStartPreview: () -> Void
     let onPlaybackSpeedChange: (Double) -> Void
     let onResetPlayback: () -> Void
+
+    @State private var showingWebTransform = false
+    /// Off by default: the preview is a picture you look at, and a stray drag
+    /// across it should not move the wallpaper. Armed from the transform popover.
+    @State private var webTransformArmed = false
+    @State private var webRefreshToken = 0
+    /// The preview is showing a capture of the running wallpaper, which already
+    /// has the CSS transform applied — so the canvas must not draw it again.
+    @State private var webPreviewIsLive = false
     let onFitModeChange: (VideoFitMode) -> Void
 
     var body: some View {
@@ -74,6 +83,10 @@ struct PreviewArea: View {
         } else if draft.hasPreviewSource || previewController.hasPreviewContent {
             if featureCatalog.isEnabled(.inspectorPreview) {
                 WallpaperPreviewStage {
+                    if let name = screenManager.currentVideoDisplayName(for: screen), !name.isEmpty {
+                        WallpaperPreviewTitle(text: name)
+                    }
+                } content: {
                     VideoPreviewSection(
                         previewController: previewController,
                         hasPreviewSource: draft.hasPreviewSource,
@@ -112,25 +125,31 @@ struct PreviewArea: View {
     private var htmlContent: some View {
         if featureCatalog.isEnabled(.inspectorPreview), draft.htmlSource != nil {
             WallpaperPreviewStage {
-                HTMLPreviewSection(
+                webTitleRow
+            } content: {
+                WebTransformCanvas(
                     screen: screen,
-                    source: draft.htmlSource,
-                    config: draft.htmlConfig,
-                    wpePreviewURL: wpeWebPreviewURL,
-                    wpePreviewBookmark: draft.wpeOrigin?.sourceFolderBookmark
-                )
-            } controls: {
-                HStack(spacing: DesignTokens.Spacing.md) {
-                    HTMLSourceSection(
+                    config: $draft.htmlConfig,
+                    isArmed: webTransformArmed,
+                    baseIncludesTransform: webPreviewIsLive
+                ) {
+                    HTMLPreviewSection(
                         screen: screen,
-                        source: $draft.htmlSource,
-                        config: $draft.htmlConfig,
-                        floating: true
+                        source: draft.htmlSource,
+                        config: draft.htmlConfig,
+                        refreshToken: webRefreshToken,
+                        isShowingLiveCapture: $webPreviewIsLive,
+                        wpePreviewURL: wpeWebPreviewURL,
+                        wpePreviewBookmark: draft.wpeOrigin?.sourceFolderBookmark
                     )
+                }
+            } controls: {
+                WallpaperPreviewHUD {
+                    webTransformControl
+                } playback: {
                     playbackControls
-                        .padding(.horizontal, DesignTokens.Spacing.md)
-                        .padding(.vertical, 6)
-                        .adaptiveGlassSurface(.capsule)
+                } actions: {
+                    EmptyView()
                 }
             }
         } else {
@@ -155,10 +174,65 @@ struct PreviewArea: View {
         #endif
     }
 
-    /// One shape for all three wallpaper types' preview overlays: what this is on
-    /// the left, controls that change what the preview shows on the right. The
-    /// scene's bar carries its title, link and diagnostics; the web preview's
-    /// carries its source picker; this one names the file.
+    /// One row, one layer. The source picker, the badges, the diagnostics popover
+    /// and the refresh button all used to be drawn separately — the picker above
+    /// the picture and the rest inside it, both hugging the top edge, so they
+    /// overlapped and the page's name appeared twice. The picker already names the
+    /// source, so the badge strip lost its copy of the name and everything else
+    /// joined it here.
+    private var webTitleRow: some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            HTMLSourceSection(
+                screen: screen,
+                source: $draft.htmlSource,
+                config: $draft.htmlConfig,
+                floating: true
+            )
+
+            HTMLInformationOverlay(source: draft.htmlSource, config: draft.htmlConfig)
+
+            HTMLRenderingDiagnosticsOverlay(
+                screen: screen,
+                source: draft.htmlSource,
+                config: draft.htmlConfig
+            )
+
+            Button {
+                webRefreshToken &+= 1
+            } label: {
+                PreviewCornerGlyph("arrow.clockwise")
+            }
+            .buttonStyle(.plain)
+            .help(Text("Refresh web snapshot"))
+            .accessibilityLabel(Text("Refresh web preview"))
+        }
+    }
+
+    /// Web's viewport control. Video and scene fill this zone with a fit-mode
+    /// picker; a web wallpaper has no fit mode, but it does have scale, translate
+    /// and rotation, which are the same question about the same thing.
+    private var webTransformControl: some View {
+        Button {
+            showingWebTransform = true
+        } label: {
+            PreviewControlLabel(
+                systemImage: "move.3d",
+                title: "Transform",
+                isActive: webTransformArmed || draft.htmlConfig.hasActiveTransform
+            )
+        }
+        .buttonStyle(.borderless)
+        .help(Text("Scale, move, and rotate the page inside the display"))
+        .accessibilityLabel(Text("Transform"))
+        .popover(isPresented: $showingWebTransform, arrowEdge: .bottom) {
+            HTMLTransformControls(
+                screen: screen,
+                config: $draft.htmlConfig,
+                isDragEnabled: $webTransformArmed
+            )
+        }
+    }
+
     /// Every playback control for this display, as glyphs. Shared by all three
     /// wallpaper types' overlays so the same setting is always in the same place.
     private var playbackControls: some View {
@@ -172,6 +246,7 @@ struct PreviewArea: View {
             sceneMouseInteractionEnabled: $draft.sceneMouseInteractionEnabled,
             sceneClickCaptureEnabled: $draft.sceneClickCaptureEnabled,
             htmlConfig: draft.selectedWallpaperType == .html ? $draft.htmlConfig : nil,
+            playbackSpeed: draft.selectedWallpaperType == .video ? speedBinding : nil,
             videoColorSpace: draft.videoColorSpace,
             showsResetPlayback: screenManager.displayPlaybackDiffersFromDefaults(for: screen),
             onResetPlayback: onResetPlayback
@@ -180,24 +255,13 @@ struct PreviewArea: View {
 
     private var videoCommandBar: some View {
         AdaptiveGlassContainer(spacing: 14) {
-            HStack(spacing: 14) {
-                if let name = screenManager.currentVideoDisplayName(for: screen), !name.isEmpty {
-                    Text(verbatim: name)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(Text(verbatim: name))
-                }
-                Spacer(minLength: 8)
+            WallpaperPreviewHUD {
                 fitModeGroup
-                Divider().frame(height: 30)
-                speedSlider
-                Divider().frame(height: 30)
+            } playback: {
                 playbackControls
+            } actions: {
+                EmptyView()
             }
-            .padding(.horizontal, DesignTokens.Spacing.cardInset)
-            .padding(.vertical, 6)
-            .adaptiveGlassSurface(.capsule)
         }
     }
 
@@ -214,15 +278,11 @@ struct PreviewArea: View {
             values: VideoFitMode.videoModes,
             shell: .flat
         ) { mode, isSelected in
-            VStack(spacing: 2) {
-                Image(systemName: mode.iconName)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 28, height: 18)
-                Text(mode.titleKey)
-                    .font(isSelected ? DesignTokens.Typography.captionEmphasized : DesignTokens.Typography.caption)
-            }
-            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-            .padding(.horizontal, 6)
+            PreviewControlLabel(
+                systemImage: mode.iconName,
+                title: mode.titleKey,
+                isActive: isSelected
+            )
             .help(Text(mode.tooltipKey))
             .accessibilityLabel(Text(mode.titleKey))
         }
@@ -230,28 +290,6 @@ struct PreviewArea: View {
         .accessibilityLabel(Text("Video fit mode"))
     }
 
-    private var speedSlider: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "tortoise.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Slider(value: speedBinding, in: 0.5...2.0, step: 0.25)
-                .controlSize(.small)
-                .frame(width: 110)
-                .accessibilityLabel(Text("Playback speed"))
-                .accessibilityValue(Text(speedAccessibilityValue))
-            Image(systemName: "hare.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(speedDisplayLabel)
-                .font(DesignTokens.Typography.metric)
-                .foregroundStyle(.secondary)
-                .frame(width: 32, alignment: .trailing)
-        }
-        .help(Text("Playback speed"))
-    }
 
     private var speedBinding: Binding<Double> {
         Binding(
@@ -264,17 +302,7 @@ struct PreviewArea: View {
         )
     }
 
-    private var speedDisplayLabel: String {
-        let speed = draft.playbackSpeed
-        if abs(speed - speed.rounded()) < 0.001 {
-            return "\(Int(speed))×"
-        }
-        return String(format: "%.2g×", speed)
-    }
 
-    private var speedAccessibilityValue: String {
-        String(format: "%.2g×", draft.playbackSpeed)
-    }
 
     @ViewBuilder
     private var dragHintOverlay: some View {

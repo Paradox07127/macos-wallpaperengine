@@ -76,27 +76,36 @@ struct SettingsWindowLayoutTests {
         #expect(htmlContent.contains(".frame(maxWidth: .infinity, maxHeight: .infinity)"))
     }
 
-    @Test("HTML rendering diagnostics live inside the preview overlay")
-    func htmlRenderingDiagnosticsLiveInsidePreviewOverlay() throws {
+    @Test("The web preview's top band is one row, not stacked layers")
+    func webPreviewTopBandIsOneRow() throws {
         let inspectorPanel = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/DetailInspectorPanel.swift")
         let previewSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLPreviewSection.swift")
+        let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
 
         #expect(!inspectorPanel.contains("HTMLRenderingDiagnosticsInspector("))
-        #expect(previewSection.contains("HTMLRenderingDiagnosticsOverlay("))
+
+        // The source picker, the badges, the diagnostics and the refresh control
+        // all belong to one row above the picture. They used to be drawn on two
+        // layers hugging the same top edge, which overlapped and printed the
+        // page's name twice.
+        #expect(previewArea.contains("private var webTitleRow"))
+        #expect(previewArea.contains("HTMLSourceSection("))
+        #expect(previewArea.contains("HTMLInformationOverlay("))
+        #expect(previewArea.contains("HTMLRenderingDiagnosticsOverlay("))
+        #expect(previewArea.contains("PreviewCornerGlyph(\"arrow.clockwise\")"))
+
+        // …and none of them are drawn a second time inside the picture.
+        #expect(!previewSection.contains("HTMLInformationOverlay("))
+        #expect(!previewSection.contains("HTMLRenderingDiagnosticsOverlay("))
+        #expect(!previewSection.contains("PreviewCornerGlyph(\"arrow.clockwise\")"))
+
         #expect(previewSection.contains("HTMLRenderingDiagnostics(screen: screen"))
         // Names the diagnostics panel's own call, not the bare one that
         // HTMLInformationOverlay happens to share the file with.
         #expect(previewSection.contains(".thumbnailBadgeGlass(opacity: 0.7, in: .roundedRectangle("))
-        #expect(previewSection.contains("alignment: .topLeading"))
-        // Info and refresh share the top-right corner; the source capsule owns the
-        // bottom edge. They overlapped when the diagnostics sat bottom-left.
-        #expect(previewSection.contains("alignment: .topTrailing"))
         // Collapsed until asked: expanded, the grid covers the frame it measures.
         #expect(previewSection.contains("@State private var isExpanded = false"))
-        // The collapsed ⓘ and the refresh button are one pair — same glyph frame,
-        // same backing — so both must come from the single shared recipe.
         #expect(previewSection.contains("PreviewCornerGlyph(\"info.circle\")"))
-        #expect(previewSection.contains("PreviewCornerGlyph(\"arrow.clockwise\")"))
         #expect(previewSection.contains("diagnosticCell(\"Measurement\""))
         #expect(previewSection.contains("diagnosticCell(\"Points\""))
         #expect(previewSection.contains("diagnosticCell(\"Backing\""))

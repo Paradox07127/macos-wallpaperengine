@@ -63,9 +63,7 @@ struct AppStartupPlan: Equatable {
 
 enum SettingsWindowMetrics {
     static let sidebarColumnWidth = DesignTokens.Sidebar.width
-    static let settingsSidebarColumnWidth = DesignTokens.Sidebar.settingsWidth
     static let sidebarColumnMaxWidth = DesignTokens.Sidebar.maxWidth
-    static let settingsSidebarColumnMaxWidth = DesignTokens.Sidebar.settingsMaxWidth
     static let defaultContentSize = CGSize(width: 1180, height: 720)
     // Floor must fit the sidebar plus the shared library-page floor.
     static let minimumContentSize = CGSize(width: 1160, height: DesignTokens.LibraryPage.minHeight)

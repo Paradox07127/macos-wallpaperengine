@@ -211,7 +211,10 @@ struct DetailView: View {
             case .video:
                 return config?.wallpaperType == .video && (config?.hasConfiguredVideoSource ?? false)
             case .html:
-                return true
+                // Nothing loaded yet means nothing for security, options or
+                // transforms to be about; the picker in the preview is the only
+                // step, so the column should not be there to open at all.
+                return draft.htmlSource != nil
             case .scene:
                 return config?.wallpaperType == .scene
             }

@@ -268,17 +268,12 @@ public enum DesignTokens {
     }
 
     public enum Sidebar {
-        /// Rows here are an icon plus a display or library name, so 180 was
-        /// paying navigation-bar prices for a list that has no second line yet.
-        /// Raising the density is a separate piece of work; until then the
-        /// column shouldn't reserve room it doesn't use.
-        public static let width: CGFloat = 160
-        /// The Settings sidebar keeps the wider column: it carries a search
-        /// field and the longest labels in the app ("Backup & Restore", and its
-        /// German and Japanese translations), which truncate at 160.
-        public static let settingsWidth: CGFloat = 180
+        /// Back to 180 after a spell at 160: the 20pt bought nothing on a ~1000pt
+        /// content column, and the app and Settings sidebars had to diverge into
+        /// two tokens to keep the longest labels ("Backup & Restore") intact.
+        /// Raising the rows' information density is the change worth making here.
+        public static let width: CGFloat = 180
         public static let maxWidth: CGFloat = width * 1.2
-        public static let settingsMaxWidth: CGFloat = settingsWidth * 1.2
         public static let sectionHeaderBottomPadding: CGFloat = 0
         /// Negative inset pulled above each sidebar section header to tighten the
         /// otherwise-airy default gap between sections (macOS has no public

@@ -1568,6 +1568,64 @@
         }
       }
     },
+    "%lld changed from the scene's defaults" : {
+      "comment" : "Status line under the preset picker when no preset is applied.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld changed from the scene's defaults"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンの初期値から %lld 項目変更"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相比场景默认值已改动 %lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相比場景預設值已變更 %lld 項"
+          }
+        }
+      }
+    },
+    "%lld changed since this preset" : {
+      "comment" : "Status line under the preset picker: how many settings differ from the applied preset.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld changed since this preset"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプリセットから %lld 項目変更"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相比该预设已改动 %lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相比該預設已變更 %lld 項"
+          }
+        }
+      }
+    },
     "%lld duplicate" : {
       "comment" : "Paste queue ingestion summary fragment.",
       "localizations" : {
@@ -2686,6 +2744,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清單中的套件名稱格式有誤。"
+          }
+        }
+      }
+    },
+    "A preset with this name already exists" : {
+      "comment" : "Warning under the preset name field when the typed name is taken.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A preset with this name already exists"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この名前のプリセットはすでにあります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已经有同名的预设了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已經有同名的預設了"
           }
         }
       }
@@ -6933,31 +7020,31 @@
         }
       }
     },
-    "Bookmark a video, or install one from the Workshop, and it shows up here. You can also choose a file directly." : {
+    "Bookmark a video and it shows up here. You can also choose a file directly." : {
       "comment" : "Empty state message in the System Wallpaper add sheet.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bookmark a video, or install one from the Workshop, and it shows up here. You can also choose a file directly."
+            "value" : "Bookmark a video and it shows up here. You can also choose a file directly."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "動画をブックマークするか、ワークショップからインストールするとここに表示されます。ファイルを直接選ぶこともできます。"
+            "value" : "動画をブックマークするとここに表示されます。ファイルを直接選ぶこともできます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "收藏一个视频,或从创意工坊安装一个,它就会出现在这里。也可以直接选择文件。"
+            "value" : "收藏一个视频,它就会出现在这里。也可以直接选择文件。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "收藏一個影片,或從創意工坊安裝一個,它就會出現在這裡。也可以直接選擇檔案。"
+            "value" : "收藏一個影片,它就會出現在這裡。也可以直接選擇檔案。"
           }
         }
       }
@@ -8256,35 +8343,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "能力：%@"
-          }
-        }
-      }
-    },
-    "Caps below 30 FPS force a compositing pass — useful when effects are active or to extend battery." : {
-      "comment" : "Tooltip for the frame-rate control on the preview overlay.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Caps below 30 FPS force a compositing pass — useful when effects are active or to extend battery."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "30 FPS 未満の上限は合成パスを強制します。エフェクト使用時やバッテリー延長に有効です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "低于 30 FPS 的上限会强制走一次合成 —— 开着特效或想延长续航时有用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "低於 30 FPS 的上限會強制走一次合成 —— 開著特效或想延長續航時有用。"
           }
         }
       }
@@ -13436,6 +13494,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "目前使用中。點一下可重新啟用。"
+          }
+        }
+      }
+    },
+    "Cursor" : {
+      "comment" : "Caption under the follow-cursor toggle on the scene preview bar.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cursor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カーソル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "光标"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游標"
           }
         }
       }
@@ -20095,24 +20183,31 @@
         }
       }
     },
-    "Find in Workshop" : {
+    "Find this item in the Workshop" : {
+      "comment" : "Tooltip for the Workshop button on the scene preview bar.",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find this item in the Workshop"
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ワークショップ で検索"
+            "value" : "この項目をワークショップで探す"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 创意工坊 中查找"
+            "value" : "在创意工坊中找到这一项"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 創意工坊 中尋找"
+            "value" : "在創意工坊中找到這一項"
           }
         }
       }
@@ -30852,35 +30947,6 @@
         }
       }
     },
-    "None saved" : {
-      "comment" : "Scene preset bar: shown instead of a picker when this wallpaper has no presets.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None saved"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存済みなし"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未保存"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未儲存"
-          }
-        }
-      }
-    },
     "Normal" : {
       "comment" : "Thermal state label.",
       "extractionState" : "manual",
@@ -31817,6 +31883,36 @@
         }
       }
     },
+    "On Lock" : {
+      "comment" : "Caption under the capture-on-lock toggle on the video preview bar.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On Lock"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロック時"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "锁屏时"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鎖定時"
+          }
+        }
+      }
+    },
     "On screen" : {
       "comment" : "Badge on the tile whose video the system is currently showing.",
       "localizations" : {
@@ -32616,28 +32712,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟設定視窗"
-          }
-        }
-      }
-    },
-    "Open Steam Page" : {
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam ページを開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开 Steam 页面"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟 Steam 頁面"
           }
         }
       }
@@ -41688,6 +41762,64 @@
         }
       }
     },
+    "Save as new preset" : {
+      "comment" : "A11y label for the + button beside the preset picker.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save as new preset"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新規プリセットとして保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另存为新预设"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另存為新預設"
+          }
+        }
+      }
+    },
+    "Save as New Preset…" : {
+      "comment" : "Preset menu item: save the current values as a new preset.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save as New Preset…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新規プリセットとして保存…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另存为新预设…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另存為新預設…"
+          }
+        }
+      }
+    },
     "Save as preset" : {
       "comment" : "Tooltip and accessibility label for the button that stores the scene's current property values as a new preset.",
       "extractionState" : "manual",
@@ -41806,35 +41938,6 @@
         }
       }
     },
-    "Save current values as a preset" : {
-      "comment" : "Scene preset menu item that saves the current settings as a new preset.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save current values as a preset"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在の値をプリセットとして保存"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将当前参数保存为预设"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將目前參數儲存為預設"
-          }
-        }
-      }
-    },
     "Save key and close" : {
       "comment" : "A button that saves a Steam Web API key on this Mac and closes the sheet.",
       "localizations" : {
@@ -41916,6 +42019,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將目前設定、顯示器預設值、書籤和各顯示器設定儲存到備份檔案"
+          }
+        }
+      }
+    },
+    "Save the scene's current values as a new preset" : {
+      "comment" : "Tooltip for the + button beside the preset picker.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save the scene's current values as a new preset"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンの現在の値を新規プリセットとして保存します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把场景当前的数值另存为一个新预设"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把場景目前的數值另存為一個新預設"
           }
         }
       }
@@ -46575,6 +46707,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "頻譜、光暈與粒子會跟隨正在外放的聲音起伏"
+          }
+        }
+      }
+    },
+    "Speed" : {
+      "comment" : "Caption under the playback-speed control on the preview bar.",
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "速度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "速度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "速度"
           }
         }
       }
@@ -53878,7 +54040,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "変換"
+            "value" : "変形"
           }
         },
         "zh-Hans" : {
@@ -53890,10 +54052,11 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "變換"
+            "value" : "變形"
           }
         }
-      }
+      },
+      "comment" : "Caption under the transform control on the web preview bar."
     },
     "Translate" : {
       "localizations" : {
@@ -54983,6 +55146,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新"
+          }
+        }
+      }
+    },
+    "Update “%@”" : {
+      "comment" : "Preset menu item: fold the current changes back into the applied preset. Placeholder is the preset's name.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update “%@”"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」を更新"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新“%@”"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新「%@」"
           }
         }
       }
@@ -59027,48 +59219,31 @@
         }
       }
     },
-    "Workshop ID %@. Find in Workshop or open the Steam page." : {
-      "comment" : "A11y label for the Workshop ID menu. The placeholder is the numeric Workshop ID.",
+    "Workshop ID %@. Find in Workshop." : {
+      "comment" : "A11y label for the Workshop button on the scene preview bar. The placeholder is the numeric Workshop ID.",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workshop ID %@. Find in Workshop."
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ワークショップ ID %@。ワークショップ で探すか Steam ページを開きます。"
+            "value" : "ワークショップ ID %@。ワークショップで探します。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "创意工坊 ID %@。在 创意工坊 中查找或打开 Steam 页面。"
+            "value" : "创意工坊 ID %@。在创意工坊中查找。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊 ID %@。在 創意工坊 中尋找或開啟 Steam 頁面。"
-          }
-        }
-      }
-    },
-    "Workshop ID %@. Opens the Steam Workshop page." : {
-      "comment" : "A11y label for the Workshop ID link. The placeholder is the numeric Workshop ID.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップ ID %@。Steam ワークショップ ページを開きます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "创意工坊 ID %@。打开 Steam 创意工坊 页面。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "創意工坊 ID %@。開啟 Steam 創意工坊 頁面。"
+            "value" : "創意工坊 ID %@。在創意工坊中尋找。"
           }
         }
       }
@@ -59701,6 +59876,180 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Steam 工作階段已過期。請在終端機重新登入後再檢查。"
+          }
+        }
+      }
+    },
+    "Turning this off stops scripted wallpapers rendering at all." : {
+      "comment" : "Tooltip for the JavaScript toggle on the web preview bar.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turning this off stops scripted wallpapers rendering at all."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフにすると、スクリプト駆動の壁紙はまったく描画されなくなります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关掉之后,靠脚本驱动的壁纸会完全不显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關掉之後,靠腳本驅動的桌布會完全不顯示。"
+          }
+        }
+      }
+    },
+    "Scale, move, and rotate the page inside the display" : {
+      "comment" : "Tooltip for the Transform control on the web preview bar.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scale, move, and rotate the page inside the display"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページをディスプレイ内で拡大・移動・回転します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在显示器内缩放、移动和旋转页面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在顯示器內縮放、移動和旋轉頁面"
+          }
+        }
+      }
+    },
+    "Drag to move · pinch to scale · twist to rotate · double-click to reset" : {
+      "comment" : "Tooltip on the web preview, describing the direct-manipulation gestures.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to move · pinch to scale · twist to rotate · double-click to reset"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドラッグで移動 · ピンチで拡大縮小 · 回転ジェスチャで回転 · ダブルクリックでリセット"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖动移动 · 捏合缩放 · 旋转手势旋转 · 双击重置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖曳移動 · 捏合縮放 · 旋轉手勢旋轉 · 按兩下重設"
+          }
+        }
+      }
+    },
+    "Adjust on the Preview" : {
+      "comment" : "Row title: switch that arms direct manipulation on the web preview.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjust on the Preview"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビュー上で調整"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在预览上调整"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在預覽上調整"
+          }
+        }
+      }
+    },
+    "Adjust on the preview" : {
+      "comment" : "A11y label for the switch that arms direct manipulation on the web preview.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjust on the preview"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビュー上で調整"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在预览上调整"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在預覽上調整"
+          }
+        }
+      }
+    },
+    "Drag to move, pinch to scale, and twist to rotate directly on the preview. Off by default so a stray drag can't move the page." : {
+      "comment" : "Info tooltip for the arm-direct-manipulation switch.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag to move, pinch to scale, and twist to rotate directly on the preview. Off by default so a stray drag can't move the page."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビュー上で直接、ドラッグして移動、ピンチで拡大縮小、ひねって回転できます。誤ったドラッグでページが動かないよう、既定はオフです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以直接在预览上拖动移动、捏合缩放、旋转。默认关闭,免得手滑把页面拖走。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以直接在預覽上拖曳移動、捏合縮放、旋轉。預設關閉,免得手滑把頁面拖走。"
           }
         }
       }
