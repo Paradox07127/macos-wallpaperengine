@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 struct SceneSection: View {
     let screen: Screen
-    /// Scale lives on the preview overlay, not in the playback shelf.
+    /// Scale lives in the preview bar's viewport zone.
     @Binding var fitMode: VideoFitMode
     /// The shared playback glyph row, built by `PreviewArea` which owns the draft.
     let playbackControls: AnyView

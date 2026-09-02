@@ -2599,6 +2599,46 @@ struct ScreenRuntimeOwnershipTests {
         #expect(candidate.cleanupCallCount == 1)
     }
 
+    @Test(
+        "Screen refresh mid-crossfade closes the session that was still fading out",
+        .enabled(if: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                 "Reduce Motion takes the immediate-cleanup path; there is no fade to orphan")
+    )
+    func screenRefreshMidCrossfadeCleansUpRetiringSession() {
+        guard let nsScreen = NSScreen.screens.first else {
+            Issue.record("No NSScreen available for test")
+            return
+        }
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 8, height: 8),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: true
+        )
+        // AppKit releases a closed window by default; the fade animation and
+        // ARC would then both let go of it.
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let original = Screen(nsScreen: nsScreen)
+        let fading = TestWallpaperRuntimeSession(
+            summary: .notConfigured,
+            wallpaperType: .video,
+            wallpaperWindow: window
+        )
+        let current = TestWallpaperRuntimeSession(summary: .notConfigured, wallpaperType: .video)
+        original.installRuntimeSession(fading)
+        original.installRuntimeSession(current)
+        // Control: with a window to fade, replacement retires rather than cleans up.
+        #expect(fading.cleanupCallCount == 0)
+
+        let refreshed = Screen(nsScreen: nsScreen)
+        refreshed.adoptRuntimeSession(from: original)
+
+        #expect(fading.cleanupCallCount == 1)
+        #expect(current.cleanupCallCount == 0)
+        #expect((refreshed.runtimeSession as AnyObject?) === current)
+    }
+
     @Test("Invalid proposal keeps the current runtime and skips configuration commit")
     func invalidProposalKeepsCurrentRuntimeAndConfiguration() {
         guard let nsScreen = NSScreen.screens.first else {
@@ -2901,7 +2941,7 @@ private final class TestWallpaperRuntimeSession: WallpaperRuntimeSession {
     let wallpaperType: WallpaperType
     let summary: WallpaperSessionSummary
     let videoPlayer: WallpaperVideoPlayer? = nil
-    let wallpaperWindow: NSWindow? = nil
+    let wallpaperWindow: NSWindow?
     private(set) var cleanupCallCount = 0
     private(set) var prepareCallCount = 0
     private var preparationResult: WallpaperPreparationResult?
@@ -2910,11 +2950,13 @@ private final class TestWallpaperRuntimeSession: WallpaperRuntimeSession {
     init(
         summary: WallpaperSessionSummary,
         wallpaperType: WallpaperType,
-        preparationResult: WallpaperPreparationResult? = .ready
+        preparationResult: WallpaperPreparationResult? = .ready,
+        wallpaperWindow: NSWindow? = nil
     ) {
         self.summary = summary
         self.wallpaperType = wallpaperType
         self.preparationResult = preparationResult
+        self.wallpaperWindow = wallpaperWindow
     }
 
     func updateFrame(to frame: CGRect) {}

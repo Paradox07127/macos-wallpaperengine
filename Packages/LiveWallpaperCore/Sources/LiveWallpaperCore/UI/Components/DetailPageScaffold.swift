@@ -2,11 +2,8 @@ import SwiftUI
 import AppKit
 
 /// Shared frame for a library page: the page background and the size floor.
-///
-/// It used to also host an in-page `DetailHeaderBar`. Every library page moved
-/// its identity to the toolbar and its search to a floating bar over the grid
-/// (2026-09-01), which left the header slot with no callers, so the slot is gone
-/// rather than sitting there as a second way to build a page.
+/// No header slot: a page's identity lives in the toolbar and its search in
+/// `LibraryFilterBar`, so a second way to build a page is deliberately absent.
 public struct DetailPageScaffold<Content: View>: View {
     private let content: Content
 

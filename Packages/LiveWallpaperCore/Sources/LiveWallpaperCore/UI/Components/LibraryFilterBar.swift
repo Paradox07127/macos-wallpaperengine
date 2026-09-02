@@ -35,9 +35,7 @@ public struct LibraryFilterBar<Filters: View>: View {
 
             Spacer(minLength: DesignTokens.LibraryFilterBar.contentSpacing)
 
-            // Always on. It used to hide unless filtering had narrowed the set,
-            // because the page header carried the same total; the headers are
-            // gone, so this is now the only place the library's size is stated.
+            // Always on: this is the only place the library's size is stated.
             // `resultCount: nil` means the page states its own composition
             // elsewhere (Workshop puts per-type counts on the filter chips), so
             // only the library size belongs here.

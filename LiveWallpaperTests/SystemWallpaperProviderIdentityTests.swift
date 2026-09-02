@@ -45,11 +45,12 @@ struct SystemWallpaperProviderIdentityTests {
         #expect(!beat(provider: stale).isFromProvider(matching: identity()))
     }
 
-    @Test("An unstamped beat passes — absent must not read as mismatched")
-    func unstampedAccepted() {
-        // Beats written before the field existed. Rejecting them would report a
-        // live extension as dead, which is worse than the bug being fixed.
-        #expect(beat(provider: nil).isFromProvider(matching: identity()))
+    @Test("An unstamped beat is rejected — it is the pre-stamp process still running")
+    func unstampedRejected() {
+        // The 0.6.2 appex keeps its 120 s keep-alive going after an in-place
+        // update and never stamps. Accepting its beats made the app report that
+        // process's wallpaper as the shipped extension's state.
+        #expect(!beat(provider: nil).isFromProvider(matching: identity()))
     }
 
     @Test("No expectation disables the check")

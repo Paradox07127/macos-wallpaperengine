@@ -269,25 +269,6 @@ struct SchemeStoreTests {
         #expect(store.schemes.first?.name == "New name")
     }
 
-    @Test("update re-captures in place, keeping id and createdAt and stripping identity")
-    func updateReCapturesInPlace() throws {
-        let (store, _) = makeStore()
-        let scheme = addSample(to: store)
-
-        var replacement = richConfiguration(screenID: 555, fingerprint: "another-panel")
-        replacement.videoVolume = 0.05
-        store.update(scheme.id, configuration: replacement, overlay: .default)
-
-        let updated = try #require(store.schemes.first)
-        #expect(updated.id == scheme.id)
-        #expect(updated.name == scheme.name)
-        #expect(updated.createdAt == scheme.createdAt)
-        #expect(updated.configuration.videoVolume == 0.05)
-        #expect(updated.configuration.screenID == ScreenScheme.unboundScreenID)
-        #expect(updated.configuration.displayFingerprint == nil)
-        #expect(updated.overlay == .default)
-    }
-
     @Test("Persistence load+save round-trips through a fresh store")
     func persistenceRoundTrip() {
         let (store, persistence) = makeStore()

@@ -617,9 +617,8 @@ private struct MenuBarDisplayRow: View {
                 .accessibilityElement(children: .combine)
 
                 // All four at the component's default `.large`, all on plain
-                // glass. They used to mix `.regular` sizes with `.prominent` on
-                // the two main ones, which tinted those accent-blue and made a
-                // transport cluster read as three unrelated controls.
+                // glass: mixing sizes or tinting the two main ones `.prominent`
+                // made a transport cluster read as three unrelated controls.
                 if let addAction {
                     GlassIconButton("plus", action: addAction)
                         .accessibilityLabel(Text("Add wallpaper to this display"))

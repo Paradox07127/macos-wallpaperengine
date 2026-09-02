@@ -174,12 +174,9 @@ struct PreviewArea: View {
         #endif
     }
 
-    /// One row, one layer. The source picker, the badges, the diagnostics popover
-    /// and the refresh button all used to be drawn separately — the picker above
-    /// the picture and the rest inside it, both hugging the top edge, so they
-    /// overlapped and the page's name appeared twice. The picker already names the
-    /// source, so the badge strip lost its copy of the name and everything else
-    /// joined it here.
+    /// One row, one layer: picker, badges, diagnostics and refresh together, so
+    /// nothing above the picture overlaps anything inside it. The picker already
+    /// names the source, so the badge strip does not repeat it.
     private var webTitleRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             HTMLSourceSection(

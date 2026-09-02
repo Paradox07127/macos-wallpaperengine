@@ -13,6 +13,49 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.6.3] — 2026-09-02
+
+### Added
+
+- Schemes: a display's whole setup — wallpaper, both overlay layers and every
+  setting — is saved with its identity stripped and applied to any display.
+  Bookmarks go back to being a favourite wallpaper; applying one no longer
+  touches the target's settings.
+- Web wallpapers can be placed by hand on the preview: with Transform switched
+  on, drag, pinch and rotate move the page's scale, offset and rotation.
+- A wallpaper change crossfades over the incoming window instead of cutting,
+  and the monitor overlay animates when shown or hidden. Fades are skipped
+  where the window is going away with its display.
+- An eighth global shortcut opens the settings window, default ⌃⇧,.
+
+### Changed
+
+- The detail page is rebuilt around the preview: name, playback, scale and
+  frame-rate controls sit on its edges, and the inspector keeps only what the
+  preview cannot show (span-all-displays, the scene's authored properties).
+- Library pages drop their in-page header: identity goes to the toolbar and
+  search sits in the flow under it. Bookmarks and Schemes share one page
+  behind a capsule; tile size is a global setting.
+- Scene pages show only the badges that differ between scenes, and the preset
+  block has a permanent save button.
+- GLSL preprocessing is memoized per shader instead of per pass, so a scene no
+  longer re-derives the same shader dozens of times while loading. The
+  "unlimited" frame rate is pinned to the display's own refresh ceiling.
+- Same-role controls converge on one component each (circular icon buttons,
+  search fields, cards), enforced by lint rules rather than review.
+
+### Fixed
+
+- "Remind Me Later" in the update dialog reported the app as up to date and
+  dropped the menu bar Update button; availability now comes from the updater,
+  not from the dialog closing.
+- After an in-place update the previous version's system-wallpaper extension
+  kept running and was reported as "in use". The extension retires itself when
+  its bundle is gone, and the app ignores keep-alive beats that do not carry
+  the shipped build's stamp — including unstamped beats from a pre-0.6.3 copy.
+- A display change during a crossfade dropped the fading session without
+  closing it, leaving the outgoing wallpaper window in AppKit's window list.
+
 ## [0.6.2] — 2026-08-31
 
 ### Added

@@ -26,6 +26,8 @@ SUITES=(
   # controls live. Added 2026-09-01: it had been red since 2a94727 and nobody saw
   # it, because a contract test outside this list never runs.
   SettingsWindowLayoutTests
+  # Screen ↔ runtime-session ownership, including the crossfade retire path.
+  ScreenRuntimeOwnershipTests
   InfrastructureRuntimeBoundaryTests
   ModuleImportBoundaryTests
   EntitlementAuditTests

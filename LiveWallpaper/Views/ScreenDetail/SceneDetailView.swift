@@ -58,7 +58,6 @@ struct SceneDetailView: View {
     let playbackControls: AnyView
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.featureCatalog) private var featureCatalog
     /// Observed for `isAuthorized` only — the cheap published flag, not a
     /// bookmark resolve on every layout pass.
     @State private var engineAssets = WPEEngineAssetsLibrary.shared
@@ -468,13 +467,9 @@ struct SceneDetailView: View {
     }
 
     /// Jumps to the Workshop tab. One action, so a button rather than a menu with
-    /// a single item in it.
-    ///
-    /// It used to also offer "Open Steam Page", which left the app for a browser
-    /// to show what the Workshop tab shows in place. The capability-disabled
-    /// fallback that opened that page went with it: this file compiles only into
-    /// the Pro binary, whose sole capability set (`ProductCapabilities.pro`)
-    /// carries `.scene` and `.wpeImport` together, so the branch could not run.
+    /// a single item in it. No capability-disabled fallback: this file compiles
+    /// only into the Pro binary, whose sole capability set (`ProductCapabilities.pro`)
+    /// carries `.scene` and `.wpeImport` together, so such a branch could not run.
     @ViewBuilder
     private var workshopLinkButton: some View {
         if isSteamWorkshopID {
@@ -835,11 +830,10 @@ struct SceneInformationOverlay: View {
 
     /// Only what differs between scenes AND changes what the user should expect.
     ///
-    /// The row used to open with a "Scene" chip on the scene page, and close with
-    /// the whole `preflightFeatureFlags` set spelled out — Shader, Particle, Text,
-    /// Audio, Anim, FX. Those flags are genuinely computed per scene, but almost
-    /// every non-trivial Wallpaper Engine scene uses all of them, so the row read
-    /// the same on every wallpaper. The consequence of the flags is already
+    /// Not the `preflightFeatureFlags` set (Shader, Particle, Text, Audio, Anim,
+    /// FX): those are genuinely computed per scene, but almost every non-trivial
+    /// Wallpaper Engine scene uses all of them, so spelling them out reads the
+    /// same on every wallpaper. The consequence of the flags is already
     /// summarized by `capabilityTier`, and the flags themselves are listed in the
     /// diagnostics report (`WPERenderDiagnosticReport`), which is where someone
     /// debugging goes.

@@ -47,7 +47,7 @@
 - **Menu bar first** — global on/off, per-display play/pause and prev/next, plus a live CPU / GPU / RAM / thermal strip.
 - **Overlays on any wallpaper** — nine particle effects (snow, rain, sakura, fireflies…), weather-reactive mode driven by live conditions, and a system-monitor board with CPU/GPU/network widgets and an AI-agent session tracker.
 - **Laptop-friendly by default** — auto-pauses on full-screen apps, window occlusion, battery power, Low Power Mode, and per-app rules you define.
-- **Global shortcuts** — seven bindable actions, from play/pause-all to reload.
+- **Global shortcuts** — eight bindable actions, from play/pause-all to reload.
 - **Portable settings** — export/import your whole setup as a `.lwconfig` bundle.
 - **Private by design** — no accounts, no telemetry.
 

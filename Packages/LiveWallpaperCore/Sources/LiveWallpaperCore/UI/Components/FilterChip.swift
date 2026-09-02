@@ -4,14 +4,10 @@ import SwiftUI
 /// an accent ring (selection stays unmistakable), deselected chips keep a quieter
 /// flat fill. The single source of truth for chip chrome — bespoke twins of this
 /// recipe drifted (0.07 vs 0.04 fills) before it existed.
-public struct FilterChipBackground: ViewModifier {
+struct FilterChipBackground: ViewModifier {
     let isSelected: Bool
 
-    public init(isSelected: Bool) {
-        self.isSelected = isSelected
-    }
-
-    public func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
         if isSelected {
             content
                 .background(Capsule().fill(Color.accentColor.opacity(DesignTokens.Opacity.selectedFill)))

@@ -205,12 +205,16 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         provider = try c.decodeIfPresent(SystemWallpaperProviderIdentity.self, forKey: .provider)
     }
 
-    /// Did the extension this app ships write this beat? A stamped beat that
-    /// disagrees came from a process left over by an update or a second install
-    /// — its state is not ours to report. An unstamped beat passes: it predates
-    /// the field, and refusing it would misreport a live extension as dead.
+    /// Did the extension this app ships write this beat? A beat that disagrees
+    /// came from a process left over by an update or a second install — its
+    /// state is not ours to report. An unstamped beat is rejected too: every
+    /// extension shipped since the field existed stamps it, so an unstamped one
+    /// is the 0.6.2 process still running after an in-place update — exactly
+    /// the leftover this check exists for. Only a missing expectation (the
+    /// appex could not be read) disables the check.
     func isFromProvider(matching expected: SystemWallpaperProviderIdentity?) -> Bool {
-        guard let provider, let expected else { return true }
+        guard let expected else { return true }
+        guard let provider else { return false }
         return provider.build == expected.build && provider.bundlePath == expected.bundlePath
     }
 

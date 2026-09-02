@@ -5,17 +5,12 @@ import SwiftUI
 /// Preset selection and management for the scene settings card.
 ///
 /// A preset is not one more setting — it is a saved state of every setting below
-/// it. It used to render as a single row that looked like a peer of those
-/// settings: a label, a right-aligned "None saved" where a value belongs, and an
-/// ellipsis that was the *only* way to do anything. On a scene with no presets —
-/// which is every scene until the user makes one — that row offered a dead label
-/// and a hidden menu.
-///
-/// Now it is a small block: a heading line carrying the label, a `+` that always
-/// saves the current values as a NEW preset, and the menu holding the rare and
-/// destructive ones; then a full-width picker; then a status line saying how far
-/// the current values have drifted. The drift was previously legible only as a
-/// pencil badge on each changed row.
+/// it, so it is a block set apart from the rows rather than a peer of them: a
+/// heading line carrying the label, a `+` that always saves the current values
+/// as a NEW preset, and the menu holding the rare and destructive ones; then a
+/// full-width picker; then a status line saying how far the current values have
+/// drifted. The `+` is visible even with no presets — which is every scene until
+/// the user makes one — because a menu-only affordance there was never found.
 ///
 /// Naming happens in a popover anchored to whichever control started it. Inline,
 /// it grew the block and pushed all 20-35 property rows down the column.

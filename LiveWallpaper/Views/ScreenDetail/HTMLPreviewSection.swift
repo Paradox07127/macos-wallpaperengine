@@ -383,9 +383,7 @@ struct HTMLInformationOverlay: View {
 /// The preview's two corner controls sit side by side, so their glyph frame and
 /// backing live in one place — spelled twice, they drift the first time one moves.
 /// A view rather than a function so each control carries its own hover state
-/// for the interactive-corner-glyph glass API.
-/// Shared with the web title row, which owns the refresh and diagnostics
-/// controls that used to sit inside the preview.
+/// for the interactive-corner-glyph glass API. Shared with the web title row.
 struct PreviewCornerGlyph: View {
     private let systemImage: String
 

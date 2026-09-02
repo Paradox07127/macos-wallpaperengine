@@ -76,8 +76,7 @@ struct DetailInspectorPanel: View {
                     WPESceneCustomSettingsCard(
                         screen: screen,
                         schema: schema,
-                        descriptor: sceneDescriptorBinding,
-                        availableWidth: inspectorPanelWidth
+                        descriptor: sceneDescriptorBinding
                     )
                 }
                 #endif

@@ -26,7 +26,7 @@ Authoritative capability gate: [`ProductCapabilities.swift`](../../Packages/Live
 | Performance | both | Pause rules, app exceptions, RAM preload budget; **Pro adds** adaptive frame rate & per-display render threads |
 | Audio Response | Pro | System audio capture for audio-reactive scenes |
 | Weather | both | Off / system location / manual location for weather-reactive overlays |
-| Shortcuts | both | Master switch + seven bindable global shortcuts |
+| Shortcuts | both | Master switch + eight bindable global shortcuts |
 | Storage | Pro | Downloaded projects, engine assets, caches |
 | Backup & Restore | both | `.lwconfig` export / import |
 | Workshop | Pro | API key, SteamCMD doctor, engine-asset updates, content filters |
