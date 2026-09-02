@@ -31,7 +31,13 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Varyings.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspilerTypes.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderPreprocessor.swift",
-        "LiveWallpaper/Runtime/Metal/WPESwiftShaderCompiler.swift"
+        "LiveWallpaper/Runtime/Metal/WPESwiftShaderCompiler.swift",
+        // Stage 3: `#include` expansion, prelude, implicit combo defines and the
+        // `gl_FragColor` rewrite all happen HERE, before the preprocessor above ever
+        // sees the source — so this file shapes the MSL just as directly. It was
+        // missing from this list until 2026-09-01; a stage-3 edit would have
+        // silently kept serving stale warm-cache translations.
+        "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
     /// Bump together with `schemaVersion`.
@@ -40,7 +46,12 @@ struct WPEShaderTranslationCacheSchemaTests {
     /// fingerprint without touching a line of code, so the MSL is byte-identical and
     /// `schemaVersion` deliberately stayed at 1 — bumping it would have thrown away every
     /// user's warm cache to re-translate to the same output.
-    static let expectedFingerprint = "c92560371a945045c7b70606426a4e9cbb384ec8c7e36ac7aef838735dbf61cf"
+    /// 2026-09-01, MSL-neutral, so `schemaVersion` stays at 1: `WPEShaderPreprocessor`
+    /// lost its never-reached include resolver and `gl_FragColor` branch (stage 3
+    /// already handles both), and `WPERenderPipelineBuilder` joined `translatorSources`
+    /// above — its memo wrapper is a pure cache. Both are proven byte-for-byte by
+    /// `WPEPreprocessGoldenBaselineTests` against a 2342-entry corpus baseline: 0 diffs.
+    static let expectedFingerprint = "be1b9ddd8d6cba06ebb120169b510a43c030ad29641b77d808edbd9e6f4606b7"
 
     @Test("A translator edit forces a cache schema bump")
     func translatorFingerprintMatchesSchemaVersion() throws {

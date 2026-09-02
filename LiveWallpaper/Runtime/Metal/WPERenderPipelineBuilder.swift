@@ -128,6 +128,31 @@ struct WPERenderPipelineBuilder: Sendable {
                 materialUniformNames: shader.materialUniformNames
         )
     }
+
+    /// Test seam for the stage-3 preprocess memo. `WPEShaderSourceLoader` is
+    /// fileprivate, and the memo's key completeness is only observable by calling
+    /// the memoized function twice on ONE builder — `build(graph:)` cannot vary a
+    /// single key dimension in isolation (stage and logical path move together
+    /// with the shader name). Not a production entry point.
+    func preprocessShaderStageForTesting(
+        source: String,
+        logicalPath: String,
+        stage: WPEShaderStage,
+        comboValues: [String: Int]
+    ) throws -> String {
+        try shaderLoader.preprocess(
+            source: source,
+            logicalPath: logicalPath,
+            stage: stage,
+            comboValues: comboValues,
+            includeStack: []
+        )
+    }
+
+    /// Test seam for the builtin-program memo, same reasoning as above.
+    func builtinProgramForTesting(shaderName: String, combos: [String: Int]) -> WPEShaderProgram? {
+        shaderLoader.builtinProgram(shaderName: shaderName, combos: combos)
+    }
 }
 
 private struct WPEShaderLoadResult: Equatable, Sendable {
@@ -138,9 +163,17 @@ private struct WPEShaderLoadResult: Equatable, Sendable {
     let materialUniformNames: [String: String]
 }
 
-private enum WPEShaderStage: Sendable {
+enum WPEShaderStage: Hashable, Sendable {
     case vertex
     case fragment
+}
+
+/// Key for `WPEShaderSourceLoader.builtinProgram`. The builtin bodies are static
+/// strings; the only per-pass inputs are the name (selects the body and is
+/// stored on the program) and the combos (baked into `shaderPrelude`).
+struct WPEBuiltinProgramMemoKey: Hashable, Sendable {
+    let shaderName: String
+    let combos: [String: Int]
 }
 
 /// Wallpaper Engine's shader-visible texture format ABI. These values are copied
@@ -220,6 +253,26 @@ private struct WPEShaderUniformAnnotation {
 private struct WPEShaderSourceLoader: Sendable {
     private let resolver: WPEMultiRootResourceResolver
     private let textureFormatProbeCache = TextureFormatProbeCache()
+    /// Include expansion + prelude for one stage, memoized per loader = per
+    /// builder = per scene build. That scope is what makes it sound to leave the
+    /// included headers' CONTENTS out of the key (see
+    /// `WPEShaderPreprocessSourceKey`): this loader's `resolver` never changes.
+    /// Bounded because the values are fully expanded GLSL; the loader itself is
+    /// discarded when `build(graph:)` returns, so the bound only guards a single
+    /// pathological scene.
+    private let preprocessCache = WPEBoundedMemo<WPEShaderPreprocessSourceKey, String>(
+        maxEntries: 256,
+        maxCost: 8 * 1024 * 1024,
+        cost: { $0.utf8.count }
+    )
+    /// Builtin programs are constructed per PASS, so a heavy native-approximation
+    /// scene re-runs the prelude concatenation + `gl_FragColor` rewrite thousands
+    /// of times for the same (name, combos). Same lifetime as `preprocessCache`.
+    private let builtinProgramCache = WPEBoundedMemo<WPEBuiltinProgramMemoKey, WPEShaderProgram?>(
+        maxEntries: 256,
+        maxCost: 4 * 1024 * 1024,
+        cost: { ($0?.vertexSource.utf8.count ?? 0) + ($0?.fragmentSource.utf8.count ?? 0) }
+    )
 
     init(
         cacheRootURL: URL,
@@ -553,7 +606,13 @@ private struct WPEShaderSourceLoader: Sendable {
         ]
     }
 
-    private func builtinProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram? {
+    fileprivate func builtinProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram? {
+        builtinProgramCache.value(for: WPEBuiltinProgramMemoKey(shaderName: shaderName, combos: combos)) {
+            resolveBuiltinProgram(shaderName: shaderName, combos: combos)
+        }
+    }
+
+    private func resolveBuiltinProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram? {
         let normalized = WPEBuiltinShaderName.normalized(shaderName)
         switch WPEBuiltinShaderKind(rawValue: normalized) {
         case .solidColor?:
@@ -786,7 +845,45 @@ private struct WPEShaderSourceLoader: Sendable {
         return source
     }
 
-    private func preprocess(
+    fileprivate func preprocess(
+        source: String,
+        logicalPath: String,
+        stage: WPEShaderStage,
+        comboValues: [String: Int],
+        includeStack: [String]
+    ) throws -> String {
+        // Recursion lives in `expandIncludes`, so every call that reaches here is
+        // a top-level stage expansion with an empty stack. Memoizing only that
+        // case keeps `includeStack` out of the key by construction: a future
+        // recursive caller falls through to the uncached path instead of
+        // colliding with a top-level entry.
+        guard includeStack.isEmpty else {
+            return try expandAndCanonicalize(
+                source: source,
+                logicalPath: logicalPath,
+                stage: stage,
+                comboValues: comboValues,
+                includeStack: includeStack
+            )
+        }
+        let key = WPEShaderPreprocessSourceKey(
+            sourceDigest: WPEShaderSourceDigest.hex(source),
+            logicalPath: logicalPath,
+            stage: stage,
+            comboValues: comboValues
+        )
+        return try preprocessCache.value(for: key) {
+            try expandAndCanonicalize(
+                source: source,
+                logicalPath: logicalPath,
+                stage: stage,
+                comboValues: comboValues,
+                includeStack: includeStack
+            )
+        }
+    }
+
+    private func expandAndCanonicalize(
         source: String,
         logicalPath: String,
         stage: WPEShaderStage,

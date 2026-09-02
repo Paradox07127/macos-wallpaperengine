@@ -786,9 +786,9 @@ final class WPEMetalRenderExecutor {
         // a legitimate second buffer in the same fail-close frame.
         let usesLegacyCommandBufferBudget = asyncSubmission && frameSubmission == nil
         if usesLegacyCommandBufferBudget {
-            // Poll, don't block: a blocking wait here holds the @MainActor
-            // (this runs from MTKView.draw, shared across every display) and would
-            // stall other displays' draw callbacks, dropping dual-60fps to 30fps.
+            // Poll, don't block: a blocking wait would stall this display's frame
+            // loop — and in `.main` backing mode the shared main thread, stalling
+            // other displays' callbacks and dropping dual-60fps to 30fps.
             // Thrown before the `defer` below is armed, so no stray signal.
             if inFlightSemaphore.wait(timeout: .now()) == .timedOut {
                 throw WPEMetalFrameInFlightBudgetExhausted()
@@ -1276,8 +1276,9 @@ final class WPEMetalRenderExecutor {
             // Bound in-flight depth (signal mirrors the wait above) and surface
             // GPU errors from the handler — they land after we've returned, so we
             // log rather than throw; the wallpaper just renders the next frame.
-            // GPU-side ordering on the shared queue still guarantees the text and
-            // present buffers (committed later) observe this frame's writes.
+            // GPU-side ordering on the shared queue still guarantees any buffer
+            // committed later (sync-path present, static re-present) observes
+            // this frame's writes.
             let semaphore = usesLegacyCommandBufferBudget ? inFlightSemaphore : nil
             let sink = gpuErrorSink
             commandBuffer.addCompletedHandler { cb in
@@ -3469,28 +3470,51 @@ final class WPEMetalRenderExecutor {
         recordFailure: Bool
     ) throws -> WPEShaderCompileRequest? {
         guard let program = pass.shader, !program.isBuiltin else { return nil }
-        // The null include-resolver is load-bearing: program.*Source is already
-        // #include-expanded at graph-build time (WPERenderPipelineBuilder.preprocess),
-        // so a real resolver here could diverge the cache key. Keep it nil.
-        let processor = WPEShaderPreprocessor { _, _ in nil }
         let premultipliedInputSlots = premultipliedInputSlots(for: pass)
         let premultipliedOutput = usesPremultipliedOutput(blendMode: pass.pass.blending)
+        let materialTextureBindings = Dictionary(
+            uniqueKeysWithValues: pass.textureBindings.compactMap { (slot, ref) -> (Int, String)? in
+                switch ref {
+                case .image(let p), .asset(let p): return (slot, p)
+                case .fbo(let n): return (slot, n)
+                case .previous: return nil
+                }
+            }
+        )
         do {
-            return try processor.process(
-                shaderName: program.name,
-                vertexSource: program.vertexSource,
-                fragmentSource: program.fragmentSource,
-                comboValues: pass.comboValues,
-                materialTextureBindings: Dictionary(
-                    uniqueKeysWithValues: pass.textureBindings.compactMap { (slot, ref) -> (Int, String)? in
-                        switch ref {
-                        case .image(let p), .asset(let p): return (slot, p)
-                        case .fbo(let n): return (slot, n)
-                        case .previous: return nil
-                        }
-                    }
+            // Memoized on the four inputs of `process` (see
+            // `WPEShaderPreprocessMemoKey`). A shader is preprocessed once per
+            // PASS, so a scene re-derives the same processed source dozens of
+            // times; the memo is upstream of every shader cache, which is why a
+            // warm disk cache does not already cover this.
+            // Builtins carry no fingerprint and are already excluded above; a nil
+            // here would mean the source identity is unknown, so degrade to the
+            // uncached path rather than key on a placeholder.
+            let key = program.sourceFingerprint.map { fingerprint in
+                WPEShaderPreprocessMemoKey(
+                    shaderName: program.name,
+                    sourceFingerprint: fingerprint,
+                    comboValues: pass.comboValues,
+                    materialTextureBindings: materialTextureBindings
                 )
-            ).replacingPremultipliedAlphaSettings(
+            }
+            let processed = try WPEShaderPreprocessMemoStore.shared.value(for: key) {
+                // program.*Source is already #include-expanded at graph-build time
+                // (WPERenderPipelineBuilder.preprocess); this stage does no include
+                // resolution of its own.
+                let processor = WPEShaderPreprocessor()
+                return try processor.process(
+                    shaderName: program.name,
+                    vertexSource: program.vertexSource,
+                    fragmentSource: program.fragmentSource,
+                    comboValues: pass.comboValues,
+                    materialTextureBindings: materialTextureBindings
+                )
+            }
+            // Applied after the memo on purpose: the PMA flags come from the
+            // pass's blend mode and bound targets, not from `process`'s inputs,
+            // so they must not widen the memo key.
+            return processed.replacingPremultipliedAlphaSettings(
                 inputSlots: premultipliedInputSlots,
                 output: premultipliedOutput
             )

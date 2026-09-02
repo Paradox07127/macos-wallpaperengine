@@ -103,6 +103,11 @@ extension WPEMetalSceneRenderer {
         // on a heavy scene.
         hasAnimatedShaderPasses = false
         sceneSupportsAudioProcessing = false
+        // Scene-scoped, so it is retired HERE rather than inside
+        // `releaseTransientResources()`: that is also the `.suspended` profile's
+        // release path, and a fullscreen-app occlusion would otherwise blank the
+        // inspector's failure list for a scene that is still loaded.
+        executor.shaderErrorSink.reset()
         executor.releaseTransientResources()
     }
 

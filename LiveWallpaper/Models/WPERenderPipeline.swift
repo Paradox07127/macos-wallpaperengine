@@ -193,6 +193,17 @@ struct WPEShaderProgram: Equatable, Sendable {
     let fragmentSource: String
     let isBuiltin: Bool
     let executionClassification: WPEShaderExecutionClassification
+    /// SHA-256 of the (vertex, fragment) source pair, so the stage-4 preprocess
+    /// memo can key on source identity without re-hashing both sources on every
+    /// pass that runs this program. Derived here and nowhere else: a
+    /// caller-supplied fingerprint could silently disagree with the sources and
+    /// hand one shader another's processed GLSL.
+    ///
+    /// `nil` for builtins. They never reach the preprocess memo —
+    /// `makeCompileRequest` guards on `!program.isBuiltin` first — so hashing their
+    /// sources would be pure load-time cost for nothing (the builder's own
+    /// `builtinProgram` memo is keyed on name + combos and needs no fingerprint).
+    let sourceFingerprint: String?
 
     init(
         name: String,
@@ -205,6 +216,9 @@ struct WPEShaderProgram: Equatable, Sendable {
         self.vertexSource = vertexSource
         self.fragmentSource = fragmentSource
         self.isBuiltin = isBuiltin
+        sourceFingerprint = isBuiltin
+            ? nil
+            : WPEShaderSourceDigest.pair(vertexSource: vertexSource, fragmentSource: fragmentSource)
         self.executionClassification = executionClassification
             ?? (isBuiltin ? .nativeApproximation : .officialSource)
     }

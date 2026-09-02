@@ -57,11 +57,9 @@ extension WPEMetalRenderExecutor {
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)?,
         into commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
-        // Pull the drawable straight from the layer. `MTKView.currentDrawable`
-        // is exactly a cached `layer.nextDrawable()`, so this is equivalent while
-        // MTKView remains the pacing source — but the executor no longer needs
-        // the view. The MTKView draw path never touches `currentDrawable`, so
-        // there's no double-acquire.
+        // Pull the drawable straight from the layer. The MTKView host is paused
+        // (a CADisplayLink on the render thread paces frames), so nothing else
+        // acquires `currentDrawable` — no double-acquire.
         #if DEBUG
         let forceDrawableMiss = remainingForcedDrawableMissesForTesting > 0
         if forceDrawableMiss {
