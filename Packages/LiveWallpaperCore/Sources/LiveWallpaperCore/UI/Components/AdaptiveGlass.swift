@@ -78,6 +78,27 @@ public extension View {
         modifier(ThumbnailBadgeGlassModifier(tint: tint, opacity: opacity, shape: shape))
     }
 
+    /// Chrome floating over the user's wallpaper rather than over the app's own
+    /// background — the preview's title capsule and its control bar.
+    ///
+    /// `adaptiveGlassSurface` is the wrong tool there and looked it: its tint
+    /// shifts the material's hue but not its luminance (measured on 27 — raising
+    /// a tint 0.55 → 0.82 moved median luminance 132 → 138), so over a bright
+    /// wallpaper the labels wash out. This puts an opaque scrim BETWEEN the
+    /// material and the content, which is the same fix `adaptiveGlassScrimmed`
+    /// applies to the monitor panels; the edge keeps its glass ring and
+    /// refraction while the content sits on a known floor.
+    ///
+    /// Unlike `adaptiveGlassScrimmed` this carries its own pre-26 path, because
+    /// its callers cannot simply render nothing: a bare capsule of labels over a
+    /// wallpaper is unreadable on every OS.
+    func adaptiveGlassOverMedia(
+        _ shape: AdaptiveGlassShape = .capsule,
+        scrim: Double = 0.45
+    ) -> some View {
+        modifier(AdaptiveGlassOverMediaModifier(shape: shape, scrim: scrim))
+    }
+
     /// Liquid Glass behind content that is drawn light-on-dark. `.regular.tint()` shifts the
     /// material's hue but not its luminance — measured on macOS 27, raising a tint from 0.55 to 0.82
     /// alpha moved a card's median luminance only 132 → 138 — so a light-on-dark readout placed
@@ -463,5 +484,54 @@ private struct AdaptiveGlassButtonModifier: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+private struct AdaptiveGlassOverMediaModifier: ViewModifier {
+    let shape: AdaptiveGlassShape
+    let scrim: Double
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    /// Raised on the painted path: without the material's own blur separating the
+    /// bar from the wallpaper, the scrim is doing all of the work.
+    private var paintedScrim: Double {
+        min(scrim + 0.22, 0.92)
+    }
+
+    private var increasedContrastScrim: Double {
+        min(scrim + 0.2, 0.95)
+    }
+
+    func body(content: Content) -> some View {
+        switch shape {
+        case .capsule:
+            backing(content, Capsule())
+        case .circle:
+            backing(content, Circle())
+        case let .roundedRectangle(radius):
+            backing(content, RoundedRectangle(cornerRadius: radius, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private func backing(_ content: Content, _ shape: some InsettableShape) -> some View {
+        let level = contrast == .increased ? increasedContrastScrim : scrim
+        if reduceTransparency {
+            painted(content, shape, opacity: 1)
+        } else if #available(macOS 26.0, *) {
+            content
+                .background(shape.fill(Color.black.opacity(level)))
+                .glassEffect(.regular, in: shape)
+        } else {
+            painted(content, shape, opacity: contrast == .increased ? 1 : paintedScrim)
+        }
+    }
+
+    private func painted(_ content: Content, _ shape: some InsettableShape, opacity: Double) -> some View {
+        content
+            .background(shape.fill(Color.black.opacity(opacity)))
+            .overlay(shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5))
     }
 }

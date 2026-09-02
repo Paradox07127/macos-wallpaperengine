@@ -2,7 +2,9 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Toggle-style behavior settings, kept visually separate from the continuous geometry controls in `HTMLTransformInspector`.
+/// Toggle-style behaviour settings that the preview cannot show the effect of;
+/// the ones it can (JavaScript, Interaction) and the geometry controls both live
+/// on the preview bar.
 struct HTMLOptionsInspector: View {
     var screen: Screen
     @Binding var config: HTMLConfig
@@ -19,11 +21,13 @@ struct HTMLOptionsInspector: View {
                 systemImage: "globe",
                 isExpanded: $isExpanded
             ) {
+                // JavaScript and Interaction moved to the preview bar: turning
+                // scripts off visibly blanks a scripted wallpaper, and Interaction
+                // is the same control — with the same consequence for desktop
+                // clicks — that a scene already offers there. What is left here
+                // either has no visible effect (auto-refresh is a schedule) or is
+                // a one-time compatibility switch.
                 VStack(spacing: 8) {
-                    javaScriptRow
-                    Divider()
-                    mouseInteractionRow
-                    Divider()
                     physicalPixelRow
                     Divider()
                     autoRefreshRow
@@ -36,35 +40,6 @@ struct HTMLOptionsInspector: View {
     }
 
     // MARK: - Rows
-
-    private var javaScriptRow: some View {
-        SettingRow(
-            icon: "curlybraces",
-            iconColor: .orange,
-            title: "JavaScript"
-        ) {
-            Toggle("", isOn: configBinding(\.allowJavaScript))
-                .labelsHidden()
-                .accessibilityLabel(Text("JavaScript"))
-                .toggleStyle(.switch)
-                .controlSize(.small)
-        }
-    }
-
-    private var mouseInteractionRow: some View {
-        SettingRow(
-            icon: "cursorarrow.click",
-            iconColor: .blue,
-            title: "Interaction",
-            info: "When on, clicks and scrolls reach the wallpaper but desktop icons and the Dock become unclickable. Off lets you use Finder normally."
-        ) {
-            Toggle("", isOn: configBinding(\.allowMouseInteraction))
-                .labelsHidden()
-                .accessibilityLabel(Text("Interaction"))
-                .toggleStyle(.switch)
-                .controlSize(.small)
-        }
-    }
 
     private var physicalPixelRow: some View {
         SettingRow(

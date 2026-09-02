@@ -361,46 +361,71 @@ struct HTMLSourceSection: View {
     }
 }
 
-/// HTML layout transforms; Reset is a CollapsibleSection trailing accessory.
-struct HTMLTransformInspector: View {
+/// HTML layout transforms, as the content of the web preview bar's viewport
+/// control.
+///
+/// It was a collapsible card in the inspector column. Scale, translate and
+/// rotation are viewport geometry — the same role the other two wallpaper types
+/// fill with a fit-mode picker — and the web bar's viewport zone was empty, so
+/// this is where they belong. Hosted in a popover for the same reason speed and
+/// volume are: three sliders will not fit inline on a bar.
+struct HTMLTransformControls: View {
     var screen: Screen
     @Binding var config: HTMLConfig
+    /// Whether dragging on the preview itself moves the page.
+    @Binding var isDragEnabled: Bool
 
     @Environment(ScreenManager.self) private var screenManager
-    @AppStorage("Inspector.HTMLTransformExpanded") private var isExpanded = true
 
     var body: some View {
-        GroupBox {
-            CollapsibleSection(
-                title: "Transform",
-                systemImage: "slider.horizontal.3",
-                isExpanded: $isExpanded,
-                trailingAccessory: { resetAccessory }
-            ) {
-                VStack(spacing: 8) {
-                    scaleRow
-                    Divider()
-                    translateRow
-                    Divider()
-                    rotationRow
-                }
+        VStack(spacing: 8) {
+            dragRow
+            Divider()
+            scaleRow
+            Divider()
+            translateRow
+            Divider()
+            rotationRow
+            if config.hasActiveTransform {
+                Divider()
+                resetRow
             }
         }
-        .groupBoxStyle(ContainerGroupBoxStyle())
+        .frame(width: 300)
+        .padding(DesignTokens.Spacing.md)
     }
 
-    @ViewBuilder
-    private var resetAccessory: some View {
-        if isTransformActive {
+    /// Opt-in, and first in the list. The sliders are safe to leave available;
+    /// dragging is not — the preview fills most of the page, and without a switch
+    /// the first accidental drag across it throws the wallpaper off-centre.
+    private var dragRow: some View {
+        SettingRow(
+            icon: "hand.draw",
+            iconColor: .teal,
+            title: "Adjust on the Preview",
+            info: "Drag to move, pinch to scale, and twist to rotate directly on the preview. Off by default so a stray drag can't move the page."
+        ) {
+            Toggle("", isOn: $isDragEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .accessibilityLabel(Text("Adjust on the preview"))
+        }
+    }
+
+    /// A footer row rather than the section accessory it used to be: a popover
+    /// has no section header to hang one on.
+    private var resetRow: some View {
+        HStack {
+            Spacer(minLength: 0)
             Button(action: resetTransform) {
-                Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(DesignTokens.Colors.Status.danger)
+                Label("Reset", systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(.borderless)
+            .controlSize(.small)
+            .tint(DesignTokens.Colors.Status.danger)
             .help(Text("Reset scale, translate, and rotation"))
             .accessibilityLabel(Text("Reset transform"))
-            .transition(.opacity)
         }
     }
 
@@ -543,15 +568,8 @@ struct HTMLTransformInspector: View {
         }
     }
 
-    private var isTransformActive: Bool {
-        abs(config.transformScale - 1.0) > 0.001
-            || abs(config.transformTranslateX) > 0.5
-            || abs(config.transformTranslateY) > 0.5
-            || abs(config.transformRotationDegrees) > 0.1
-    }
-
     private func resetTransform() {
-        guard isTransformActive else { return }
+        guard config.hasActiveTransform else { return }
         var next = config
         next.transformScale = 1.0
         next.transformTranslateX = 0

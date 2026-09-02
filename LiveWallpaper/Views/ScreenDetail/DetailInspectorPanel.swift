@@ -61,10 +61,6 @@ struct DetailInspectorPanel: View {
                     }
                     #endif
 
-                    HTMLTransformInspector(
-                        screen: screen,
-                        config: $draft.htmlConfig
-                    )
                 }
 
                 if draft.selectedWallpaperType == .video,

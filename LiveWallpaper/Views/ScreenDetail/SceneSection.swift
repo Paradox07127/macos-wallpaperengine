@@ -233,8 +233,14 @@ struct SceneSection: View {
         screenManager.getConfiguration(for: screen)?.wpeOrigin?.workshopID
     }
 
+    /// Scene imports only. This grid is the Scene tab's "pick something to run
+    /// here"; a video or web import listed among them applies a wallpaper of a
+    /// different type than the tab the user is standing on. The full library,
+    /// across every type, is the Workshop tab's job.
     private func reloadHistory() {
-        recentImports = SettingsManager.shared.loadGlobalSettings().recentWPEImports
+        recentImports = SettingsManager.shared.loadGlobalSettings().recentWPEImports.filter {
+            $0.origin.originalType == .scene
+        }
     }
 
     /// Auto-promote unsupported import for THIS screen into the placeholder card.

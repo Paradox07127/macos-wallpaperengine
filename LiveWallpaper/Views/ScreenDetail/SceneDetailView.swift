@@ -92,6 +92,12 @@ struct SceneDetailView: View {
 
     var body: some View {
         WallpaperPreviewStage {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                WallpaperPreviewTitle(text: origin.title)
+                Spacer(minLength: DesignTokens.Spacing.sm)
+                SceneInformationOverlay(origin: origin, descriptor: descriptor)
+            }
+        } content: {
             previewCard
         } controls: {
             VStack(spacing: stackSpacing) {
@@ -148,21 +154,10 @@ struct SceneDetailView: View {
     // MARK: - Subviews
 
     private var previewCard: some View {
-        ZStack {
-            ZStack { stateBackground }
-                .screenPreviewChrome()
-            VStack {
-                HStack {
-                    SceneInformationOverlay(origin: origin, descriptor: descriptor)
-                    Spacer(minLength: 0)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(16)
-            .allowsHitTesting(false)
-        }
-        .transition(.opacity)
-        .animation(.easeInOut(duration: 0.2), value: stateKey)
+        ZStack { stateBackground }
+            .screenPreviewChrome()
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.2), value: stateKey)
     }
 
     @ViewBuilder
@@ -430,49 +425,39 @@ struct SceneDetailView: View {
             values: VideoFitMode.sceneModes,
             shell: .flat
         ) { mode, isSelected in
-            Image(systemName: mode.iconName)
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 26, height: 18)
-                .opacity(isSelected ? 1 : 0.7)
-                .accessibilityLabel(Text(mode.titleKey))
+            PreviewControlLabel(
+                systemImage: mode.iconName,
+                title: mode.titleKey,
+                isActive: isSelected
+            )
+            .accessibilityLabel(Text(mode.titleKey))
         }
         .help(Text("How the scene fills the display"))
     }
 
     private var infoBar: some View {
-        HStack(spacing: 10) {
-            Text(verbatim: origin.title)
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 8)
-
+        WallpaperPreviewHUD {
             fitModeGroup
-            Divider().frame(height: 22)
+        } playback: {
             playbackControls
-            Divider().frame(height: 22)
-
-            workshopLinkButton
-            // Only when the log has something in it. A scene that loaded cleanly
-            // has nothing to show a user here, and the context menu below keeps
-            // the report reachable for a bug report either way.
-            if hasDiagnosticFindings {
-                Button {
-                    showLogSheet = true
-                } label: {
-                    Image(systemName: "terminal")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
+        } actions: {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                workshopLinkButton
+                // Only when the log has something in it. A scene that loaded
+                // cleanly has nothing to show here, and the context menu keeps
+                // the report reachable for a bug report either way.
+                if hasDiagnosticFindings {
+                    Button {
+                        showLogSheet = true
+                    } label: {
+                        PreviewControlLabel(systemImage: "terminal", title: "Diagnostics")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(Text("Open renderer diagnostics"))
+                    .accessibilityLabel(Text("Open renderer diagnostics"))
                 }
-                .buttonStyle(.borderless)
-                .help(Text("Open renderer diagnostics"))
-                .accessibilityLabel(Text("Open renderer diagnostics"))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .adaptiveGlassSurface(.capsule)
         .contextMenu {
             Button {
                 showLogSheet = true
@@ -482,58 +467,31 @@ struct SceneDetailView: View {
         }
     }
 
-    /// Steam Workshop link only (local imports have no web page).
+    /// Jumps to the Workshop tab. One action, so a button rather than a menu with
+    /// a single item in it.
+    ///
+    /// It used to also offer "Open Steam Page", which left the app for a browser
+    /// to show what the Workshop tab shows in place. The capability-disabled
+    /// fallback that opened that page went with it: this file compiles only into
+    /// the Pro binary, whose sole capability set (`ProductCapabilities.pro`)
+    /// carries `.scene` and `.wpeImport` together, so the branch could not run.
     @ViewBuilder
     private var workshopLinkButton: some View {
-        if isSteamWorkshopID, let url = steamWorkshopURL {
-            if featureCatalog.isEnabled(.wpeImport) {
-                Menu {
-                    Button {
-                        WorkshopDeepLink.requestSearch(origin.title)
-                        NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
-                    } label: {
-                        Label("Find in Workshop", systemImage: "magnifyingglass")
-                    }
-                    Button {
-                        NSWorkspace.shared.open(url)
-                    } label: {
-                        Label("Open Steam Page", systemImage: "safari")
-                    }
-                } label: {
-                    Image(systemName: "safari")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help(Text("Find this item in the Workshop, or open its Steam page"))
-                .accessibilityLabel(Text("Workshop ID \(origin.workshopID). Find in Workshop or open the Steam page.", comment: "A11y label for the Workshop ID menu. The placeholder is the numeric Workshop ID."))
-            } else {
-                workshopWebLinkButton(url)
+        if isSteamWorkshopID {
+            Button {
+                WorkshopDeepLink.requestSearch(origin.title)
+                NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
+            } label: {
+                PreviewControlLabel(systemImage: "cube.transparent.fill", title: "Workshop")
             }
+            .buttonStyle(.borderless)
+            .help(Text("Find this item in the Workshop"))
+            .accessibilityLabel(Text("Workshop ID \(origin.workshopID). Find in Workshop.", comment: "A11y label for the Workshop button on the scene preview bar. The placeholder is the numeric Workshop ID."))
         }
-    }
-
-    private func workshopWebLinkButton(_ url: URL) -> some View {
-        Button {
-            NSWorkspace.shared.open(url)
-        } label: {
-            Image(systemName: "safari")
-                .font(.body)
-                .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .help(Text("Open this item's Steam Workshop page"))
-        .accessibilityLabel(Text("Workshop ID \(origin.workshopID). Opens the Steam Workshop page.", comment: "A11y label for the Workshop ID link. The placeholder is the numeric Workshop ID."))
     }
 
     private var isSteamWorkshopID: Bool {
         !origin.workshopID.isEmpty && origin.workshopID.allSatisfy(\.isNumber)
-    }
-
-    private var steamWorkshopURL: URL? {
-        URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(origin.workshopID)")
     }
 
     // MARK: - State derivation
@@ -875,12 +833,36 @@ struct SceneInformationOverlay: View {
     let origin: WPEOrigin
     let descriptor: SceneDescriptor
 
+    /// Only what differs between scenes AND changes what the user should expect.
+    ///
+    /// The row used to open with a "Scene" chip on the scene page, and close with
+    /// the whole `preflightFeatureFlags` set spelled out — Shader, Particle, Text,
+    /// Audio, Anim, FX. Those flags are genuinely computed per scene, but almost
+    /// every non-trivial Wallpaper Engine scene uses all of them, so the row read
+    /// the same on every wallpaper. The consequence of the flags is already
+    /// summarized by `capabilityTier`, and the flags themselves are listed in the
+    /// diagnostics report (`WPERenderDiagnosticReport`), which is where someone
+    /// debugging goes.
+    ///
+    /// What is left says "something here is limited or unusual", so an empty row
+    /// means "nothing to look at" and renders nothing. Without this guard the
+    /// padding and the glass backing still drew, leaving a capsule with nothing
+    /// in it on every scene that is simply fine.
+    private var hasContent: Bool {
+        requiresWindowsPlugin
+            || descriptor.capabilityTier == .unsupported
+            || storageLabel != nil
+            || !descriptor.dependencyWorkshopIDs.isEmpty
+    }
+
     var body: some View {
+        if hasContent {
+            badges
+        }
+    }
+
+    private var badges: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 4) {
-                Image(systemName: "cube.transparent")
-                Text(verbatim: origin.originalType.localizedDisplayName)
-            }
             if requiresWindowsPlugin {
                 tag(Text("Win plugin"), background: DesignTokens.Colors.Status.danger.opacity(0.55))
             }
@@ -900,13 +882,14 @@ struct SceneInformationOverlay: View {
                     Text(verbatim: "\(descriptor.dependencyWorkshopIDs.count)")
                 }
             }
-            ForEach(Array(featureLabels.enumerated()), id: \.offset) { tag(Text($1)) }
         }
         .font(DesignTokens.Typography.code)
         .foregroundStyle(DesignTokens.Colors.overlayForeground)
         .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 8)
-        .thumbnailBadgeGlass()
+        // Same treatment as the title capsule beside it: white badges over a
+        // wallpaper need a scrim under the material, not a tint on it.
+        .adaptiveGlassOverMedia(.capsule)
         .accessibilityElement(children: .combine)
     }
 
@@ -925,31 +908,17 @@ struct SceneInformationOverlay: View {
             .background(background, in: Capsule())
     }
 
-    private var storageLabel: LocalizedStringKey? {
-        switch descriptor.assetStorage {
-        case .cache:           return nil
-        case .sourceDirectory: return "Folder"
-        case .packageSource:   return "Packaged"
-        }
-    }
-
+    /// "Packaged" is what a Workshop item always is, so it said nothing. A linked
+    /// source folder is the unusual case, and it is the one that means edits on
+    /// disk reach the wallpaper.
     private var requiresWindowsPlugin: Bool {
         origin.requiresWindowsPlugin || descriptor.preflightFeatureFlags.contains(.windowsPlugin)
     }
 
-    private var featureLabels: [LocalizedStringKey] {
-        descriptor.preflightFeatureFlags.compactMap { flag in
-            switch flag {
-            case .customShaderSource: return "Shader"
-            case .particleObject:     return "Particle"
-            case .textObject:         return "Text"
-            case .soundObject:        return "Audio"
-            case .lightObject:        return "Lighting"
-            case .animationLayer:     return "Anim"
-            case .imageEffect:        return "FX"
-            case .unknownObject:      return nil
-            case .windowsPlugin:      return nil
-            }
+    private var storageLabel: LocalizedStringKey? {
+        switch descriptor.assetStorage {
+        case .sourceDirectory: "Folder"
+        case .cache, .packageSource: nil
         }
     }
 }

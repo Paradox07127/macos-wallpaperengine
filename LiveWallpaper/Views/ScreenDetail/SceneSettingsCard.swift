@@ -33,15 +33,8 @@ struct WPESceneCustomSettingsCard: View {
                     resetAccessory(hasIncrement: editor.hasVisibleIncrement)
                 }
             ) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ScenePresetBar(
-                        presets: availablePresets,
-                        activePreset: activePreset,
-                        onSelect: { applyPreset($0) },
-                        onSave: { name in Task { @MainActor in await saveAsPreset(name: name) } },
-                        onRename: { renamePreset($0, to: $1) },
-                        onDelete: { deletePreset($0) }
-                    )
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                    presetWell
 
                     if let presentation = editor.presentation {
                         settingsList(rows: editor.rows, values: presentation.values)
@@ -92,6 +85,35 @@ struct WPESceneCustomSettingsCard: View {
         .onDisappear { flushPendingCommit() }
     }
 
+    /// A sunken well inside the card's raised surface. The preset block governs
+    /// every setting listed under it rather than sitting among them, and with no
+    /// boundary it read as one more row — the settings list even had a negative
+    /// top inset pulling the two together.
+    private var presetWell: some View {
+        ScenePresetBar(
+            presets: availablePresets,
+            activePreset: activePreset,
+            changedCount: changedSettingCount,
+            onSelect: { applyPreset($0) },
+            onSave: { name in Task { @MainActor in await saveAsPreset(name: name) } },
+            onRename: { renamePreset($0, to: $1) },
+            onDelete: { deletePreset($0) }
+        )
+        .padding(DesignTokens.Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .fill(DesignTokens.Colors.surfaceSunken)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .strokeBorder(
+                    DesignTokens.Colors.separator.opacity(DesignTokens.Opacity.quietStroke),
+                    lineWidth: DesignTokens.Card.strokeWidth
+                )
+        )
+    }
+
     // MARK: - Presets
 
     private var activePreset: ScenePreset? {
@@ -104,6 +126,16 @@ struct WPESceneCustomSettingsCard: View {
     /// Keys the user moved away from the applied preset. Cached for the same
     /// reason — `badge(for:)` runs once per row per body pass.
     @State private var divergingKeys: Set<String> = []
+
+    /// Diverging keys when a preset is applied; otherwise the increment over the
+    /// scene's own defaults. Both are "what you changed", counted the same way
+    /// the pencil badges mark rows, and restricted to settings actually on screen
+    /// so a hidden conditional row can't inflate it.
+    private var changedSettingCount: Int {
+        guard let presentation = editor.presentation else { return 0 }
+        let keys = activePreset == nil ? Set(editor.overrides.keys) : divergingKeys
+        return keys.count { presentation.visibleKeys.contains($0) }
+    }
 
     private func refreshPresetDerivedState() {
         availablePresets = presetLibrary.values
@@ -249,7 +281,6 @@ struct WPESceneCustomSettingsCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, -10)
     }
 
     /// A row needs about 340pt before the label starts truncating against the

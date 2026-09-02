@@ -23,6 +23,18 @@ public struct HTMLConfig: Codable, Equatable, Sendable {
     public var transformTranslateX: Double = 0
     public var transformTranslateY: Double = 0
     public var transformRotationDegrees: Double = 0
+
+    /// Whether the page is moved from its identity transform. The thresholds live
+    /// here rather than in a view because two surfaces ask the same question —
+    /// the preview bar's control tints itself by it, and the popover shows its
+    /// Reset by it — and a copy in each is a copy that drifts.
+    public var hasActiveTransform: Bool {
+        abs(transformScale - 1.0) > 0.001
+            || abs(transformTranslateX) > 0.5
+            || abs(transformTranslateY) > 0.5
+            || abs(transformRotationDegrees) > 0.1
+    }
+
     /// Retina physical-pixel canvas upgrade; off by default (double-scales with dPR-aware pages).
     public var physicalPixelLayout: Bool = false
     /// Nonpersistent data store on next rebuild; Workshop always forces nonpersistent.
