@@ -1,6 +1,17 @@
 import LiveWallpaperCore
 import SwiftUI
 
+/// Raised by the Scene tab while it is showing the recent-projects grid: that
+/// grid's actions live in this header, so the grid does not carry a title row of
+/// its own. Declared here rather than beside the Scene view so the Lite build,
+/// which has no Scene tab, still compiles the header.
+struct SceneQuickActionsVisibleKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
 struct Header: View {
     let screen: Screen
     @Binding var draft: DraftState
@@ -8,6 +19,9 @@ struct Header: View {
     let wallpaperSessionSummary: WallpaperSessionSummary
     let reduceMotion: Bool
     let showsHeaderWallpaperActions: Bool
+    /// The Scene tab is showing its recent-projects grid, whose Workshop and
+    /// Apply actions belong up here next to the display's own.
+    var showsSceneQuickActions: Bool = false
     /// The overlay tab is showing, so "Apply to All" means this overlay only.
     var appliesOverlayOnly: Bool = false
     @Binding var showBookmarks: Bool
@@ -61,6 +75,12 @@ struct Header: View {
             },
             actions: {
                 HStack(spacing: 8) {
+                    if showsSceneQuickActions {
+                        #if !LITE_BUILD
+                        SceneHistoryHeaderActions(screen: screen)
+                        #endif
+                    }
+
                     applyToAllButton
 
                     // Offer the bookmark action only when this type has

@@ -16,6 +16,9 @@ struct DetailInspectorPanel: View {
     #if !LITE_BUILD
     @State private var wpeProjectCustomSettingsSchema: WallpaperEngineProjectPropertySchema?
     @State private var wpeSceneCustomSettingsSchema: WallpaperEngineProjectPropertySchema?
+    /// A nil schema means "loading" until the read finishes, and "this scene has
+    /// none" after — the notice must only speak for the second.
+    @State private var wpeSceneCustomSettingsResolved = false
     #endif
 
     var body: some View {
@@ -69,15 +72,21 @@ struct DetailInspectorPanel: View {
                 }
 
                 #if !LITE_BUILD
-                if draft.selectedWallpaperType == .scene,
-                   let schema = wpeSceneCustomSettingsSchema,
-                   schema.properties.contains(where: WPESceneCustomSettingsCard.isSceneSettingCandidate),
-                   draft.sceneDescriptor != nil {
-                    WPESceneCustomSettingsCard(
-                        screen: screen,
-                        schema: schema,
-                        descriptor: sceneDescriptorBinding
-                    )
+                if draft.selectedWallpaperType == .scene, draft.sceneDescriptor != nil {
+                    if let schema = wpeSceneCustomSettingsSchema,
+                       schema.properties.contains(where: WPESceneCustomSettingsCard.isSceneSettingCandidate) {
+                        WPESceneCustomSettingsCard(
+                            screen: screen,
+                            schema: schema,
+                            descriptor: sceneDescriptorBinding
+                        )
+                    } else if wpeSceneCustomSettingsResolved {
+                        // Most scenes publish no properties at all, and the panel
+                        // opens anyway (a scene is configured), so without this the
+                        // column is a blank rectangle with no way to tell "nothing
+                        // to adjust" from "still loading".
+                        sceneWithoutOptionsNotice
+                    }
                 }
                 #endif
 
@@ -127,14 +136,25 @@ struct DetailInspectorPanel: View {
         return "\(screen.id):scene:\(descriptor.workshopID):\(originFingerprint)"
     }
 
+    private var sceneWithoutOptionsNotice: some View {
+        IllustratedEmptyState(
+            symbol: "slider.horizontal.3",
+            title: "No scene options",
+            message: "This scene's author published no adjustable properties. Playback, sound and interaction stay on the preview controls.",
+            variant: .compact
+        )
+    }
+
     @MainActor
     private func loadWPESceneCustomSettingsSchema() async {
         guard draft.selectedWallpaperType == .scene,
               let descriptor = draft.sceneDescriptor else {
             wpeSceneCustomSettingsSchema = nil
+            wpeSceneCustomSettingsResolved = false
             return
         }
         wpeSceneCustomSettingsSchema = nil
+        wpeSceneCustomSettingsResolved = false
         let outcome = await WPESceneProjectSchemaLoader.load(
             descriptor: descriptor,
             wpeOrigin: draft.wpeOrigin
@@ -146,6 +166,9 @@ struct DetailInspectorPanel: View {
             Logger.warning("WPESceneCustomSettings: \(outcome.log)", category: .screenManager)
         }
         wpeSceneCustomSettingsSchema = outcome.schema
+        // A read that failed (unreadable project, denied bookmark) is not an
+        // answer about the scene, so the notice must stay away.
+        wpeSceneCustomSettingsResolved = outcome.schema != nil || outcome.isExpectedAbsence
     }
 
     /// Drives schema reloads from the panel rather than the card: the panel is always mounted while HTML properties are visible, so the async read can't deadlock behind an initially empty card body.

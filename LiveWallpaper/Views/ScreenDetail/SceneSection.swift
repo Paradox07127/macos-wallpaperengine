@@ -36,6 +36,7 @@ struct SceneSection: View {
                     unsupportedDetail(for: selected)
                 } else {
                     historyList
+                        .preference(key: SceneQuickActionsVisibleKey.self, value: true)
                 }
             }
         }
@@ -105,35 +106,11 @@ struct SceneSection: View {
         .padding(40)
     }
 
+    /// No title row: the grid fills the tab, so naming it restates the tab, and
+    /// its two actions moved up to the display header (`SceneHistoryHeaderActions`).
     private var historyList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Centre, not first-baseline: the trailing controls are now
-                // icon-only circles with no text to share a baseline with.
-                HStack(spacing: 12) {
-                    Text("Recent Linked Projects")
-                        .font(DesignTokens.Typography.sectionTitle)
-                    Spacer()
-                    HStack(spacing: 8) {
-                        if featureCatalog.isEnabled(.wpeImport) {
-                            // The Workshop pane's own glyph (sidebar + its
-                            // online tab), so the icon names the destination.
-                            GlassIconButton("cube.transparent.fill", size: .regular) {
-                                NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
-                            }
-                            .help(Text("Browse all in Workshop"))
-                            .accessibilityLabel(Text("Browse all in Workshop"))
-                            .accessibilityHint(Text("Opens the Steam Workshop tab to browse and manage your full library"))
-                        }
-                        GlassIconButton("plus", size: .regular) {
-                            presentFolderPicker()
-                        }
-                        .help(Text("Apply Project"))
-                        .accessibilityLabel(Text("Apply Project"))
-                        .accessibilityHint(Text("Opens a folder chooser to link and apply a local project in place"))
-                    }
-                }
-
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 16)],
                     alignment: .leading,
@@ -314,6 +291,38 @@ struct SceneSection: View {
             await screenManager.importWallpaperEngineProject(at: url, for: screen)
             reloadHistory()
         }
+    }
+}
+
+/// The recent-projects grid's two actions, hosted by the display header.
+/// `SceneSection` reloads off `.wpeHistoryDidChange`, so the import posted here
+/// reaches the grid without a callback back down.
+@MainActor
+struct SceneHistoryHeaderActions: View {
+    let screen: Screen
+    @Environment(ScreenManager.self) private var screenManager
+    @Environment(\.featureCatalog) private var featureCatalog
+
+    var body: some View {
+        if featureCatalog.isEnabled(.wpeImport) {
+            // The Workshop pane's own glyph (sidebar + its online tab), so the
+            // icon names the destination.
+            GlassIconButton("cube.transparent.fill", size: .regular) {
+                NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
+            }
+            .help(Text("Browse all in Workshop"))
+            .accessibilityLabel(Text("Browse all in Workshop"))
+            .accessibilityHint(Text("Opens the Steam Workshop tab to browse and manage your full library"))
+        }
+        GlassIconButton("plus", size: .regular) {
+            guard let url = WPEFolderPicker.chooseImportFolder() else { return }
+            Task { @MainActor in
+                await screenManager.importWallpaperEngineProject(at: url, for: screen)
+            }
+        }
+        .help(Text("Apply Project"))
+        .accessibilityLabel(Text("Apply Project"))
+        .accessibilityHint(Text("Opens a folder chooser to link and apply a local project in place"))
     }
 }
 #endif
