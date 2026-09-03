@@ -13,6 +13,48 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.6.4] — 2026-09-03
+
+### Added
+
+- Settings ▸ Advanced gains **Reset All Settings**. Clearing the store is only
+  half a reset, so it also drops the display caches and rebuilds every running
+  wallpaper session.
+- The scene inspector says so when a scene publishes no properties, instead of
+  showing a blank column that looks like it is still loading.
+
+### Changed
+
+- The frame-rate cap is expressed as a divisor of the display's refresh rate —
+  full, half, third or quarter — because the display link only wakes on a vsync
+  multiple: on a 60 Hz panel a "24 FPS" request actually ran at 30 and saved
+  nothing, and a 144 Hz panel had nothing between 60 and uncapped. Video divides
+  the lower of the panel and the source, so a 30 fps file no longer gets four
+  steps that all sit above it. Existing settings migrate on load.
+- Failures name their cause wherever one was already known: a blocked network
+  read no longer reports "unrecognized response", a wallpaper that stopped no
+  longer shows the bare word "Error", and a rejected API key no longer claims it
+  was stored.
+- The browse placeholder is one square with the title over its bottom edge, the
+  same shape as a real result, so arriving results no longer reflow the grid.
+  The recent-projects actions moved up into the display header.
+- Every silent wallpaper rejection now records why it was dropped — the
+  still-current checks, both prepare/commit discard paths, and span grouping.
+
+### Fixed
+
+- A display whose overlay board could not be read came back wearing a default
+  layout the user never chose. The corrupt entry is dropped instead. Schemes
+  keep their own tolerance so one bad record cannot take the whole archive down.
+- Cursor events for a scene are delivered as one batch, so a cursor-up no longer
+  swallowed the click that went with it.
+- A timer-only layer script returned a hardcoded "visible" instead of its real
+  output, and video commands written from a timer callback did not survive the
+  tick.
+- A cancelled lyrics lookup was recorded as a miss in both cache layers.
+- Test runs left one preferences file per suite behind in the container — 5597
+  of them at the last count — because the suites were named by UUID.
+
 ## [0.6.3] — 2026-09-02
 
 ### Added
