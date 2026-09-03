@@ -67,10 +67,11 @@ func loadWPELocalProjectInfo(for entry: WPEHistoryEntry) async -> LocalProjectIn
 
 /// Recursively sum every regular file under `folder`. Reads only file metadata
 /// (no content), so it's cheap even for large scenes.
-private func directorySize(of folder: URL) -> Int64 {
+func directorySize(of folder: URL) -> Int64 {
     let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileSizeKey]
+    // `enumerator(at:)` yields nothing when the root itself is a symlink.
     guard let enumerator = FileManager.default.enumerator(
-        at: folder,
+        at: folder.standardizedFileURL.resolvingSymlinksInPath(),
         includingPropertiesForKeys: Array(keys),
         options: [.skipsHiddenFiles]
     ) else { return 0 }

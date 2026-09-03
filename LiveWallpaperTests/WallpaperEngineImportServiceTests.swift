@@ -658,6 +658,36 @@ struct WallpaperEngineImportServiceTests {
         #expect(origin.cacheRelativePath == nil)
     }
 
+    /// `FileManager.enumerator(at:)` yields nothing when its root is a symlink,
+    /// and the plugin probe roots at `bin`, so a symlinked `bin` read as "no plugin".
+    @Test("A symlinked bin/ still reports its .dll plugin")
+    func symlinkedBinDirectoryStillDetectsPlugin() throws {
+        let fixture = try makePluginFixture()
+        defer { fixture.cleanup() }
+        try FileManager.default.createSymbolicLink(
+            at: fixture.folder.appendingPathComponent("bin", isDirectory: true),
+            withDestinationURL: fixture.realBin
+        )
+
+        let project = try WallpaperEngineProject.read(from: fixture.folder)
+
+        #expect(project.requiresWindowsPlugin)
+    }
+
+    /// `<root>/workshop/project.json` plus a detached `<root>/realbin/plugin.dll`.
+    private func makePluginFixture() throws -> (root: URL, folder: URL, realBin: URL, cleanup: () -> Void) {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = root.appendingPathComponent("workshop", isDirectory: true)
+        let realBin = root.appendingPathComponent("realbin", isDirectory: true)
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: realBin, withIntermediateDirectories: true)
+        try Data(#"{"workshopid":"plugin-test","title":"Plugin","type":"scene","file":"scene.json"}"#.utf8)
+            .write(to: folder.appendingPathComponent("project.json"))
+        try Data([0x4D, 0x5A]).write(to: realBin.appendingPathComponent("plugin.dll"))
+        return (root, folder, realBin, { try? fileManager.removeItem(at: root) })
+    }
+
     @Test("Project.json with non-numeric dependency entries silently filters them out")
     func projectFiltersNonNumericDependencies() throws {
         let manifest = """

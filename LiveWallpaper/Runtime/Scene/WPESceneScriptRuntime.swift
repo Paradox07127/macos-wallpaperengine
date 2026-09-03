@@ -47,6 +47,8 @@ protocol WPESceneScriptEngineExecutionGuarding: AnyObject {
     var participant: WPESceneScriptExecutionGovernor.Participant { get }
     var instanceLimitToken: WPESceneScriptInstanceLimitToken? { get }
     var asyncExecutionSafety: WPESceneScriptAsyncExecutionSafety { get }
+    var timerScheduler: WPESceneScriptTimerScheduler? { get set }
+    var didThrow: Bool { get set }
 }
 
 extension WPESceneScriptEngineExecutionGuarding {
@@ -108,6 +110,46 @@ extension WPESceneScriptEngineExecutionGuarding {
             return .timedOut
         }
         return box.value ?? .timedOut
+    }
+
+    func advanceTimers(to runtimeSeconds: Double?) -> Bool {
+        guard let runtimeSeconds, let timerScheduler else { return true }
+        guard timerScheduler.advance(
+            to: runtimeSeconds,
+            beforeEachCallback: { self.didThrow = false },
+            callbackDidThrow: { self.didThrow }
+        ) == .completed else {
+            instanceLimitToken?.failClosed(.timerCallbackLimitExceeded(
+                limit: WPESceneScriptTimerScheduler.maximumCallbacksPerAdvance
+            ))
+            return false
+        }
+        return true
+    }
+
+    func update(_ vector: JSValue?, x: Double, y: Double) {
+        vector?.setObject(x, forKeyedSubscript: "x" as NSString)
+        vector?.setObject(y, forKeyedSubscript: "y" as NSString)
+    }
+}
+
+/// Engines whose canvas and screen sizes are both known at construction.
+protocol WPESceneScriptCanvasSizedEngine: WPESceneScriptEngineExecutionGuarding {
+    var canvasSize: SIMD2<Double> { get }
+    var screenSize: SIMD2<Double> { get }
+    var screenResolution: JSValue? { get set }
+}
+
+extension WPESceneScriptCanvasSizedEngine {
+    func installCanvasSize(in context: JSContext) {
+        guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
+              let canvas = JSValue(newObjectIn: context),
+              let screen = JSValue(newObjectIn: context) else { return }
+        update(canvas, x: canvasSize.x, y: canvasSize.y)
+        update(screen, x: screenSize.x, y: screenSize.y)
+        engine.setObject(canvas, forKeyedSubscript: "canvasSize" as NSString)
+        engine.setObject(screen, forKeyedSubscript: "screenResolution" as NSString)
+        screenResolution = screen
     }
 }
 
@@ -1014,7 +1056,7 @@ final class WPESceneScriptInstance {
         /// Rewrites every `registerAudioBuffers` array from the shared audio
         /// broker at the top of each tick; nil until `setUp` builds the context.
         private var audioBridge: WPESceneScriptAudioBridge?
-        private var timerScheduler: WPESceneScriptTimerScheduler?
+        fileprivate var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
         private var screenResolution: JSValue?
         private var lastRuntimeSeconds: Double?
@@ -1029,7 +1071,7 @@ final class WPESceneScriptInstance {
         /// Latches after the first uncaught JS exception is logged, so a script
         /// that throws every tick surfaces once instead of spamming per frame.
         private var didLogException = false
-        private var didThrow = false
+        fileprivate var didThrow = false
         private var faultPolicy = WPEScriptFaultPolicy()
         /// Scene render size, or nil to leave the sandbox's 1920x1080.
         private let canvasSize: SIMD2<Double>?
@@ -1230,11 +1272,6 @@ final class WPESceneScriptInstance {
             return invoked
         }
 
-        private func update(_ vector: JSValue?, x: Double, y: Double) {
-            vector?.setObject(x, forKeyedSubscript: "x" as NSString)
-            vector?.setObject(y, forKeyedSubscript: "y" as NSString)
-        }
-
         private func setUpOnQueue(
             script: String,
             scriptProperties: [String: WPESceneScriptPropertyValue],
@@ -1386,21 +1423,6 @@ final class WPESceneScriptInstance {
                 wpeRefreshEngineClock(in: context, runtime: runtime, frameTime: frameTime)
             }
             return supplied == nil ? nil : runtime
-        }
-
-        private func advanceTimers(to runtimeSeconds: Double?) -> Bool {
-            guard let runtimeSeconds, let timerScheduler else { return true }
-            guard timerScheduler.advance(
-                to: runtimeSeconds,
-                beforeEachCallback: { self.didThrow = false },
-                callbackDidThrow: { self.didThrow }
-            ) == .completed else {
-                instanceLimitToken?.failClosed(.timerCallbackLimitExceeded(
-                    limit: WPESceneScriptTimerScheduler.maximumCallbacksPerAdvance
-                ))
-                return false
-            }
-            return true
         }
 
         deinit {
@@ -2756,7 +2778,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         return (lastAsyncInner == nil ? nil : lastValue, job)
     }
 
-    private final class Engine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding {
+    private final class Engine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding, WPESceneScriptCanvasSizedEngine {
         enum SetupOutcome {
             case ready(hasUpdate: Bool, initialResult: SIMD3<Double>?, media: WPESceneMediaHandlerSet)
             case contextUnavailable
@@ -2771,8 +2793,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private let virtualMachine: JSVirtualMachine
         private let seed: SIMD3<Double>
         private let valueShape: WPEScriptValueShape
-        private let canvasSize: SIMD2<Double>
-        private var screenSize: SIMD2<Double>
+        fileprivate let canvasSize: SIMD2<Double>
+        fileprivate var screenSize: SIMD2<Double>
         private let ownLayerName: String?
         private let ownObjectID: String?
         private let shared: WPESharedScriptState?
@@ -2784,9 +2806,9 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         /// Rewrites every `registerAudioBuffers` array from the shared audio
         /// broker at the top of each tick; nil until `setUp` builds the context.
         private var audioBridge: WPESceneScriptAudioBridge?
-        private var timerScheduler: WPESceneScriptTimerScheduler?
+        fileprivate var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
-        private var screenResolution: JSValue?
+        fileprivate var screenResolution: JSValue?
         private var cursorWorldPosition: JSValue?
         /// One-crossing clock updates; nil until setUp (then falls back to
         /// `wpeRefreshEngineClock` should construction ever fail).
@@ -2802,7 +2824,7 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
         private var layerHandles: [String: JSValue] = [:]
         private var neutralLayerHandle: JSValue?
         private var lastRuntimeSeconds: Double?
-        private var didThrow = false
+        fileprivate var didThrow = false
         /// Repeated update() exceptions back off through the shared policy so
         /// JSC reporting cannot thrash every tick.
         private var faultPolicy = WPEScriptFaultPolicy()
@@ -3246,34 +3268,8 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             return runtimeSeconds?.isFinite == true ? runtime : nil
         }
 
-        private func advanceTimers(to runtimeSeconds: Double?) -> Bool {
-            guard let runtimeSeconds, let timerScheduler else { return true }
-            guard timerScheduler.advance(
-                to: runtimeSeconds,
-                beforeEachCallback: { self.didThrow = false },
-                callbackDidThrow: { self.didThrow }
-            ) == .completed else {
-                instanceLimitToken?.failClosed(.timerCallbackLimitExceeded(
-                    limit: WPESceneScriptTimerScheduler.maximumCallbacksPerAdvance
-                ))
-                return false
-            }
-            return true
-        }
-
         deinit {
             timerScheduler?.invalidate()
-        }
-
-        private func installCanvasSize(in context: JSContext) {
-            guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
-                  let canvas = JSValue(newObjectIn: context),
-                  let screen = JSValue(newObjectIn: context) else { return }
-            update(canvas, x: canvasSize.x, y: canvasSize.y)
-            update(screen, x: screenSize.x, y: screenSize.y)
-            engine.setObject(canvas, forKeyedSubscript: "canvasSize" as NSString)
-            engine.setObject(screen, forKeyedSubscript: "screenResolution" as NSString)
-            screenResolution = screen
         }
 
         private func resizeScreenOnQueue(_ requestedSize: SIMD2<Double>) -> Bool {
@@ -3316,11 +3312,6 @@ final class WPEDynamicTransformScriptInstance: @unchecked Sendable {
             timerScheduler?.invalidate()
             updateFunction = nil
             return invoked
-        }
-
-        private func update(_ vector: JSValue?, x: Double, y: Double) {
-            vector?.setObject(x, forKeyedSubscript: "x" as NSString)
-            vector?.setObject(y, forKeyedSubscript: "y" as NSString)
         }
 
         /// Mirrors the layer engine's handler so effect-constant and dynamic

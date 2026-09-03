@@ -575,7 +575,7 @@ final class WPELayerScriptInstance {
         return merged
     }
 
-    private final class LayerEngine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding {
+    private final class LayerEngine: @unchecked Sendable, WPESceneScriptEngineExecutionGuarding, WPESceneScriptCanvasSizedEngine {
         enum SetupOutcome {
             case ready(
                 hasUpdate: Bool,
@@ -604,13 +604,13 @@ final class WPELayerScriptInstance {
         /// Rewrites every `registerAudioBuffers` array from the shared audio
         /// broker at the top of each tick; nil until `setUp` builds the context.
         private var audioBridge: WPESceneScriptAudioBridge?
-        private var timerScheduler: WPESceneScriptTimerScheduler?
+        fileprivate var timerScheduler: WPESceneScriptTimerScheduler?
         private var updateFunction: JSValue?
-        private var screenResolution: JSValue?
+        fileprivate var screenResolution: JSValue?
         private var thisLayer: JSValue?
         /// Set by the context exception handler so `init()` failures can degrade
         /// safely (run on the engine queue, so no synchronization needed).
-        private var didThrow = false
+        fileprivate var didThrow = false
         private var faultPolicy = WPEScriptFaultPolicy()
         /// One-shot latch for `logFirstThrow` (per instance, not per tick).
         private var hasLoggedThrow = false
@@ -647,8 +647,8 @@ final class WPELayerScriptInstance {
         private var assignedSoundVolume: [String: Double] = [:]
         private let nowProviderMillis: (@Sendable () -> Double)?
         private let shared: WPESharedScriptState?
-        private let canvasSize: SIMD2<Double>
-        private var screenSize: SIMD2<Double>
+        fileprivate let canvasSize: SIMD2<Double>
+        fileprivate var screenSize: SIMD2<Double>
         private let outputMode: WPELayerScriptOutputMode
         /// Parsed visible/alpha seeds — fallback when script never assigns.
         private let initialOwnVisible: Bool
@@ -1293,39 +1293,8 @@ final class WPELayerScriptInstance {
             return supplied == nil ? nil : runtime
         }
 
-        private func advanceTimers(to runtimeSeconds: Double?) -> Bool {
-            guard let runtimeSeconds, let timerScheduler else { return true }
-            guard timerScheduler.advance(
-                to: runtimeSeconds,
-                beforeEachCallback: { self.didThrow = false },
-                callbackDidThrow: { self.didThrow }
-            ) == .completed else {
-                instanceLimitToken?.failClosed(.timerCallbackLimitExceeded(
-                    limit: WPESceneScriptTimerScheduler.maximumCallbacksPerAdvance
-                ))
-                return false
-            }
-            return true
-        }
-
         deinit {
             timerScheduler?.invalidate()
-        }
-
-        private func installCanvasSize(in context: JSContext) {
-            guard let engine = context.objectForKeyedSubscript("engine"), engine.isObject,
-                  let canvas = JSValue(newObjectIn: context),
-                  let screen = JSValue(newObjectIn: context) else { return }
-            update(canvas, x: canvasSize.x, y: canvasSize.y)
-            update(screen, x: screenSize.x, y: screenSize.y)
-            engine.setObject(canvas, forKeyedSubscript: "canvasSize" as NSString)
-            engine.setObject(screen, forKeyedSubscript: "screenResolution" as NSString)
-            screenResolution = screen
-        }
-
-        private func update(_ vector: JSValue?, x: Double, y: Double) {
-            vector?.setObject(x, forKeyedSubscript: "x" as NSString)
-            vector?.setObject(y, forKeyedSubscript: "y" as NSString)
         }
 
         private func installInput(in context: JSContext) {

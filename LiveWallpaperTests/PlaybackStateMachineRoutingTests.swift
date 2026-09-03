@@ -197,7 +197,7 @@ private final class RoutingPresenceProbe: UserPresenceProbing, @unchecked Sendab
 /// shared one on install.
 private final class RoutingFakePlaybackController: WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
     var isPlaying: Bool
-    private var playbackMachine: WallpaperPlaybackStateMachine
+    var playbackMachine: WallpaperPlaybackStateMachine
     var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
     var playCount = 0
     var pauseCount = 0
@@ -211,17 +211,6 @@ private final class RoutingFakePlaybackController: WallpaperPlaybackControllable
         // `isPlaying: false` alone means a user pause; intends-to-play while
         // not playing describes a policy suspend.
         policyAllowsPlayback = isPlaying || !(userIntendsToPlay ?? isPlaying)
-    }
-
-    func adoptPlaybackStateMachine(_ machine: WallpaperPlaybackStateMachine) {
-        if machine.userIntendsToPlay != playbackMachine.userIntendsToPlay {
-            if playbackMachine.userIntendsToPlay {
-                machine.userPlay()
-            } else {
-                machine.userPause()
-            }
-        }
-        playbackMachine = machine
     }
 
     var wallpaperType: WallpaperType { .video }

@@ -24,11 +24,6 @@ struct LogPrivacyBoundaryTests {
         #expect(output.contains("private.wallpaper"))
     }
 
-    @Test("Persistent sink applies the same redaction defensively")
-    func persistentSinkUsesSameBoundary() {
-        #expect(LogFileSink.sanitizedMessage(sensitive) == Logger.sanitizedBody(sensitive))
-    }
-
     @Test("Persistent file and diagnostic export contain only redacted content")
     func persistentFileRoundTripIsRedacted() throws {
         let directory = FileManager.default.temporaryDirectory

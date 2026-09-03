@@ -64,7 +64,7 @@ struct WPEMultiRootResourceResolver: Sendable {
     /// Existence probe across the cascade, without staging or reading bytes —
     /// used by shader-include resolution to pick the right candidate.
     func exists(relativePath: String) -> Bool {
-        if let dependency = dependencyReference(relativePath) {
+        if let dependency = Self.dependencyReference(relativePath) {
             return dependencyMounts[dependency.workshopID]?.exists(relativePath: dependency.childPath) ?? false
         }
         if primary.exists(relativePath: relativePath) { return true }
@@ -74,7 +74,7 @@ struct WPEMultiRootResourceResolver: Sendable {
 
     /// optional=true probes skip miss tracing (expected absences like .tex-json).
     func data(relativePath: String, optional: Bool = false) throws -> Data {
-        if let dependency = dependencyReference(relativePath) {
+        if let dependency = Self.dependencyReference(relativePath) {
             return try resolveDependency(relativePath: relativePath, dependency: dependency, optional: optional) { resolver, path in
                 try resolver.data(relativePath: path)
             }
@@ -88,7 +88,7 @@ struct WPEMultiRootResourceResolver: Sendable {
         relativePath: String,
         maxSourceEdge: Int? = nil
     ) throws -> SceneResourceResolver.ResolvedImage {
-        if let dependency = dependencyReference(relativePath) {
+        if let dependency = Self.dependencyReference(relativePath) {
             return try resolveDependency(relativePath: relativePath, dependency: dependency) { resolver, path in
                 try resolver.resolveImage(relativePath: path, maxSourceEdge: maxSourceEdge)
             }
@@ -105,7 +105,7 @@ struct WPEMultiRootResourceResolver: Sendable {
         relativePath: String,
         optional: Bool = false
     ) throws -> SceneResourceResolver.ResolvedTextureFormatProbe {
-        if let dependency = dependencyReference(relativePath) {
+        if let dependency = Self.dependencyReference(relativePath) {
             return try resolveDependency(
                 relativePath: relativePath,
                 dependency: dependency,
@@ -120,7 +120,7 @@ struct WPEMultiRootResourceResolver: Sendable {
     }
 
     func resolveExistingFileURL(relativePath: String) throws -> URL {
-        if let dependency = dependencyReference(relativePath) {
+        if let dependency = Self.dependencyReference(relativePath) {
             return try resolveDependency(relativePath: relativePath, dependency: dependency) { resolver, path in
                 try resolver.resolveExistingFileURL(relativePath: path)
             }
@@ -136,7 +136,7 @@ struct WPEMultiRootResourceResolver: Sendable {
         relativePath: String,
         scope: WPETexMipInflateScope = .fullChain
     ) throws -> WPETexTexturePayload {
-        if let dependency = dependencyReference(relativePath) {
+        if let dependency = Self.dependencyReference(relativePath) {
             return try resolveDependency(relativePath: relativePath, dependency: dependency) { resolver, path in
                 try resolver.resolveTexturePayload(relativePath: path, scope: scope)
             }
@@ -147,7 +147,7 @@ struct WPEMultiRootResourceResolver: Sendable {
     }
 
     func resolveStreamingTexturePayload(relativePath: String) throws -> WPETexStreamingPayload {
-        if let dependency = dependencyReference(relativePath) {
+        if let dependency = Self.dependencyReference(relativePath) {
             return try resolveDependency(relativePath: relativePath, dependency: dependency) { resolver, path in
                 try resolver.resolveStreamingTexturePayload(relativePath: path)
             }
@@ -265,7 +265,7 @@ struct WPEMultiRootResourceResolver: Sendable {
         tracer.record(event)
     }
 
-    private func dependencyReference(_ relativePath: String) -> (workshopID: String, childPath: String)? {
+    static func dependencyReference(_ relativePath: String) -> (workshopID: String, childPath: String)? {
         guard relativePath.hasPrefix("../") else { return nil }
         let parts = relativePath.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count >= 3, parts[0] == ".." else { return nil }

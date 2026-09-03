@@ -469,7 +469,7 @@ final class WallpaperEngineImportService {
         let workshopRoot = sourceFolderURL.deletingLastPathComponent()
         var hits: Set<String> = []
         for id in declared {
-            guard WPEPathSafety.isSafeWorkshopID(id) else { continue }
+            guard WPEPathSafety.isSafeProjectID(id) else { continue }
             let dependencyURL = workshopRoot.appendingPathComponent(id, isDirectory: true)
             var isDirectory: ObjCBool = false
             guard fileManager.fileExists(atPath: dependencyURL.path, isDirectory: &isDirectory),

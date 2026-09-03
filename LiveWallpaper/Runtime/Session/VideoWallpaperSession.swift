@@ -31,7 +31,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
     /// suspend never clears it). Self-built so an independently constructed
     /// session stands alone; `ScreenManager` swaps in the screen's shared
     /// machine via `adoptPlaybackStateMachine` on install.
-    private var playbackMachine = WallpaperPlaybackStateMachine()
+    var playbackMachine = WallpaperPlaybackStateMachine()
     var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
     /// Last policy profile; manual play re-derives effective state from this + intent.
     private var currentProfile: WallpaperPerformanceProfile = .quality
@@ -176,17 +176,6 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
     func pause() {
         playbackMachine.userPause()
         applyPerformanceProfile(currentProfile)
-    }
-
-    func adoptPlaybackStateMachine(_ machine: WallpaperPlaybackStateMachine) {
-        if machine.userIntendsToPlay != playbackMachine.userIntendsToPlay {
-            if playbackMachine.userIntendsToPlay {
-                machine.userPlay()
-            } else {
-                machine.userPause()
-            }
-        }
-        playbackMachine = machine
     }
 
     func show() {

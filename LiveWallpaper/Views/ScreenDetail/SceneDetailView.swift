@@ -858,17 +858,15 @@ struct SceneInformationOverlay: View {
     private var badges: some View {
         HStack(spacing: 10) {
             if requiresWindowsPlugin {
-                tag(Text("Win plugin"), background: DesignTokens.Colors.Status.danger.opacity(0.55))
+                Text("Win plugin").informationOverlayTag(background: DesignTokens.Colors.Status.danger.opacity(0.55))
             }
             // Only the "nothing renders" verdict earns a badge.
             if descriptor.capabilityTier == .unsupported {
-                tag(
-                    Text(verbatim: descriptor.capabilityTier.localizedLabel),
-                    background: DesignTokens.Colors.Status.danger.opacity(0.55)
-                )
+                Text(verbatim: descriptor.capabilityTier.localizedLabel)
+                    .informationOverlayTag(background: DesignTokens.Colors.Status.danger.opacity(0.55))
             }
             if let storageLabel {
-                tag(Text(storageLabel))
+                Text(storageLabel).informationOverlayTag()
             }
             if !descriptor.dependencyWorkshopIDs.isEmpty {
                 HStack(spacing: 3) {
@@ -885,21 +883,6 @@ struct SceneInformationOverlay: View {
         // wallpaper need a scrim under the material, not a tint on it.
         .adaptiveGlassOverMedia(.capsule)
         .accessibilityElement(children: .combine)
-    }
-
-    /// Secondary pill inside the glass info panel; padding matches the shared
-    /// flat-pill standard (`TypeBadge`), and the default background is the
-    /// over-media foreground token at panel-tag strength.
-    private func tag(
-        _ text: Text,
-        background: Color = DesignTokens.Colors.overlayForeground.opacity(0.18)
-    ) -> some View {
-        text
-            .font(DesignTokens.Typography.badge)
-            .textCase(.uppercase)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(background, in: Capsule())
     }
 
     /// "Packaged" is what a Workshop item always is, so it said nothing. A linked

@@ -317,7 +317,7 @@ extension WPEMetalRenderExecutor {
                     )
                 }
                 var readFBONames: [String] = []
-                for reference in textureReferences(for: pass) {
+                for reference in pass.textureReferences {
                     if case .fbo(let name) = reference { readFBONames.append(name) }
                 }
                 let index = items.count

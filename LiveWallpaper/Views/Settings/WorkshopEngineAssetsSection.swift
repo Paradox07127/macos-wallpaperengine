@@ -108,9 +108,7 @@ struct WorkshopEngineAssetsSection: View {
               let downloaded = bytes.downloaded, let total = bytes.total, total > 0 else {
             return "\(percent)%"
         }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.allowedUnits = [.useMB, .useGB]
+        let formatter = WorkshopByteFormatter.megabytesAndUp
         return "\(percent)%  ·  \(formatter.string(fromByteCount: Int64(downloaded))) / \(formatter.string(fromByteCount: Int64(total)))"
     }
 

@@ -340,17 +340,8 @@ struct NowPlayingOptions: Equatable, Sendable {
 extension NowPlayingOptions {
     /// `#RRGGBB` or `RRGGBB`, any case. Anything else is not a color.
     static func accentColor(fromHex hex: String) -> NowPlayingAccentColor? {
-        var text = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.hasPrefix("#") { text.removeFirst() }
-        guard text.count == 6,
-              text.allSatisfy(\.isHexDigit),
-              let value = UInt32(text, radix: 16)
-        else { return nil }
-        return NowPlayingAccentColor(
-            red: Double((value >> 16) & 0xFF) / 255,
-            green: Double((value >> 8) & 0xFF) / 255,
-            blue: Double(value & 0xFF) / 255
-        )
+        guard let rgb = MonitorPanelAppearance.parseHexRGB(hex) else { return nil }
+        return NowPlayingAccentColor(red: rgb.red, green: rgb.green, blue: rgb.blue)
     }
 
     static func canonicalHex(_ hex: String) -> String? {

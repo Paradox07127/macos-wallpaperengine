@@ -88,20 +88,6 @@ extension WorkshopAnimatedGIF {
     /// a cache entry priced at poster + encoded bytes.
     nonisolated(unsafe) private static let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
 
-    /// Thumbnail rather than full decode: the grid draws these at ~220 pt, and a 1920×1080 poster costs ~8 MB of RGBA plus a per-frame GPU resample.
-    /// `CreateThumbnailAtIndex` composes partial GIF frames before scaling (verified against a hand-built partial-frame fixture), so animation frames can take the same path as the poster.
-    private static func thumbnailOptions(maxPixelSize: Int) -> CFDictionary {
-        [
-            kCGImageSourceShouldCache: false,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            // Decode here, on this background thread, rather than lazily on
-            // whichever thread first draws the image.
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-        ] as CFDictionary
-    }
-
     /// Returns `nil` on decode failure or any budget violation.
     static func make(
         from data: Data,
@@ -112,11 +98,13 @@ extension WorkshopAnimatedGIF {
             return nil
         }
 
-        let decodeOptions = thumbnailOptions(maxPixelSize: size.maxPixelSize)
+        // Thumbnail rather than full decode: the grid draws these at ~220 pt, and a 1920×1080 poster costs ~8 MB of RGBA plus a per-frame GPU resample.
+        // `CreateThumbnailAtIndex` composes partial GIF frames before scaling (verified against a hand-built partial-frame fixture), so animation frames can take the same path as the poster.
+        let decodeOptions = WPEPreviewImageDecodeBudget.thumbnailOptions(maxPixelSize: size.maxPixelSize)
         let count = CGImageSourceGetCount(source)
         // Reject decompression bombs via metadata dims before poster decode.
         guard count > 0,
-              let dimensions = imageDimensions(from: source, index: 0),
+              let dimensions = WPEPreviewImageDecodeBudget.imageDimensions(from: source, index: 0),
               isWithinPixelBudget(width: dimensions.width, height: dimensions.height, frameCount: 1),
               let poster = CGImageSourceCreateThumbnailAtIndex(source, 0, decodeOptions) else {
             return nil
@@ -151,16 +139,6 @@ extension WorkshopAnimatedGIF {
         let totalPixels = pixelsPerFrame * n
         guard totalPixels <= UInt64.max / 4 else { return false }
         return totalPixels * 4 <= UInt64(maxDecodedPixelBytes)
-    }
-
-    /// From source metadata — cheap, no full decode.
-    static func imageDimensions(from source: CGImageSource, index: Int) -> (width: Int, height: Int)? {
-        guard let props = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [String: Any],
-              let width = (props[kCGImagePropertyPixelWidth as String] as? NSNumber)?.intValue,
-              let height = (props[kCGImagePropertyPixelHeight as String] as? NSNumber)?.intValue else {
-            return nil
-        }
-        return (width, height)
     }
 
     static func readFrameDelays(from source: CGImageSource, frameCount: Int) -> [TimeInterval] {

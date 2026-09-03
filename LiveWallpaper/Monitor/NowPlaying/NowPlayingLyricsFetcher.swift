@@ -210,12 +210,7 @@ actor NowPlayingLyricsFetcher {
 
     private let transport: Transport
     private let now: @Sendable () -> Date
-
-    private var cache: [String: [LyricLine]] = [:]
-    /// Least-recently-used first.
-    private var cacheOrder: [String] = []
-    private var negativeCache: [String: Date] = [:]
-    private var inFlight: [String: Task<[LyricLine]?, Never>] = [:]
+    private var memo = NowPlayingMemoCache<[LyricLine]>(capacity: positiveCacheLimit, negativeTTL: negativeTTL)
 
     init(
         transport: @escaping Transport = NowPlayingNetwork.boundedTransport(byteCap: maxBodyBytes),
@@ -305,49 +300,26 @@ actor NowPlayingLyricsFetcher {
     /// nil means "no lyrics for this track", cached either way.
     func lyrics(for state: MonitorNowPlayingState) async -> [LyricLine]? {
         guard let key = NowPlayingArtworkFetcher.trackKey(for: state) else { return nil }
-        if let hit = cache[key] {
-            touch(key)
+        if let hit = memo.cached(key) {
             return hit
         }
-        if let expiry = negativeCache[key] {
-            if now() < expiry { return nil }
-            negativeCache.removeValue(forKey: key)
+        if memo.isNegative(key, now: now()) {
+            return nil
         }
-        if let running = inFlight[key] { return await running.value }
+        if let running = memo.inFlight[key] {
+            return await running.value
+        }
         let task = Task<[LyricLine]?, Never> {
             let result = await self.runFetch(state: state)
-            self.finish(key: key, result: result)
+            self.memo.finish(key: key, result: result, cancelled: Task.isCancelled, now: self.now())
             return result
         }
-        inFlight[key] = task
+        memo.inFlight[key] = task
         return await task.value
     }
 
-    /// Drops every merged fetch except the one the caller still wants — see
-    /// `NowPlayingArtworkFetcher.cancelInFlight(except:)` for why.
     func cancelInFlight(except key: String?) {
-        for (running, task) in inFlight where running != key {
-            task.cancel()
-            inFlight.removeValue(forKey: running)
-        }
-    }
-
-    private func finish(key: String, result: [LyricLine]?) {
-        inFlight.removeValue(forKey: key)
-        if let result, !result.isEmpty {
-            cache[key] = result
-            touch(key)
-            while cacheOrder.count > Self.positiveCacheLimit {
-                cache.removeValue(forKey: cacheOrder.removeFirst())
-            }
-        } else {
-            negativeCache[key] = now().addingTimeInterval(Self.negativeTTL)
-        }
-    }
-
-    private func touch(_ key: String) {
-        if let index = cacheOrder.firstIndex(of: key) { cacheOrder.remove(at: index) }
-        cacheOrder.append(key)
+        memo.cancelInFlight(except: key)
     }
 
     // MARK: Network

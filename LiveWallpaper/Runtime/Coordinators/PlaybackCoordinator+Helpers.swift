@@ -114,17 +114,6 @@ extension PlaybackCoordinator {
         return path + "#" + packageEntryName
     }
 
-    static func runtimeError(from error: Error, url: URL) -> WallpaperRuntimeError {
-        let nsError = error as NSError
-        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorNotConnectedToInternet {
-            return .networkOffline
-        }
-        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoPermissionError {
-            return .fileAccessDenied(url)
-        }
-        return .mediaNotPlayable(url, code: nsError.code)
-    }
-
     func bookmarkResolves(to url: URL, bookmark: Data?) -> Bool {
         guard let bookmark else { return false }
         guard case .success(let resolved) = bookmarkResolver.resolve(

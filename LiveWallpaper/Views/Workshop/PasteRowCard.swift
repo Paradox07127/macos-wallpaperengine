@@ -439,20 +439,25 @@ struct WorkshopPreviewImage: View {
     }
 }
 
-enum WorkshopByteFormatter {
-    static func string(_ bytes: UInt64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useAll]
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
-    }
-}
-
 enum WorkshopRelativeDateFormatter {
     static func string(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+/// Views and favorites put the magnitude suffix inside the number, so one
+/// catalog key covers all three magnitudes.
+enum WorkshopCountFormatter {
+    static func compact(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1fM", locale: .current, Double(count) / 1_000_000.0)
+        }
+        if count >= 1000 {
+            return String(format: "%.1fK", locale: .current, Double(count) / 1000.0)
+        }
+        return count.formatted()
     }
 }
 #endif

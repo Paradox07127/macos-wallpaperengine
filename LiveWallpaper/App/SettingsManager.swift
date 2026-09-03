@@ -457,8 +457,8 @@ final class SettingsManager {
     /// Upper bound on the delete-tombstone list.
     static let maxDeletedWorkshopTombstones = 500
 
-    /// SKU-neutral equivalent of `WPEPathSafety.isSafeWorkshopID` (which is Pro-only): rejects empty, `.`/`..`, and any separator so a persisted tombstone can never carry an escape-capable component.
-    private static func isSafeWorkshopIDComponent(_ value: String) -> Bool {
+    /// SKU-neutral equivalent of `WPEPathSafety.isSafeProjectID` (which is Pro-only): rejects empty, `.`/`..`, and any separator so a persisted tombstone can never carry an escape-capable component.
+    private static func isSafeProjectIDComponent(_ value: String) -> Bool {
         !value.isEmpty
             && value != "."
             && value != ".."
@@ -510,7 +510,7 @@ final class SettingsManager {
         workshopID: String,
         into settings: inout GlobalSettings
     ) -> Bool {
-        guard isSafeWorkshopIDComponent(workshopID),
+        guard isSafeProjectIDComponent(workshopID),
               !settings.deletedWorkshopIDs.contains(workshopID) else { return false }
         settings.deletedWorkshopIDs.insert(workshopID, at: 0)
         if settings.deletedWorkshopIDs.count > maxDeletedWorkshopTombstones {

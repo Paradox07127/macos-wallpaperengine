@@ -2030,7 +2030,7 @@ final class WPEMetalRenderExecutor {
         }
 
         var seen = Set<String>()
-        for reference in textureReferences(for: pass) {
+        for reference in pass.textureReferences {
             guard case .fbo(let alias) = reference,
                   WPETextureReference.isSceneAliasName(alias),
                   seen.insert(alias).inserted,
@@ -3020,14 +3020,6 @@ final class WPEMetalRenderExecutor {
             || pass.pass.textures.values.contains(where: reads)
             || pass.pass.binds.values.contains(where: reads)
             || pass.textureBindings.values.contains(where: reads)
-    }
-
-    func textureReferences(for pass: WPEPreparedRenderPass) -> [WPETextureReference] {
-        var references: [WPETextureReference] = [pass.pass.source]
-        references.append(contentsOf: pass.pass.textures.values)
-        references.append(contentsOf: pass.pass.binds.values)
-        references.append(contentsOf: pass.textureBindings.values)
-        return references
     }
 
     /// Build (or fetch from cache) an `MTLRenderPipelineState` for a translated shader's fragment function.

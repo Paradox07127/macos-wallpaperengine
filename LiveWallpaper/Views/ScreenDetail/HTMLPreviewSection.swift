@@ -335,24 +335,24 @@ struct HTMLInformationOverlay: View {
     private func content(for source: HTMLSource) -> some View {
         HStack(spacing: 10) {
             if source.isInsecureURL {
-                tag(Text(verbatim: "HTTP"), background: DesignTokens.Colors.Status.warning.opacity(0.55))
+                Text(verbatim: "HTTP").informationOverlayTag(background: DesignTokens.Colors.Status.warning.opacity(0.55))
             }
 
             if case .url = source {
                 if config.allowJavaScript {
-                    tag(Text(verbatim: "JS"))
+                    Text(verbatim: "JS").informationOverlayTag()
                 } else {
-                    tag(Text("No JS"), background: DesignTokens.Colors.Status.danger.opacity(0.55))
+                    Text("No JS").informationOverlayTag(background: DesignTokens.Colors.Status.danger.opacity(0.55))
                 }
             } else if !config.allowJavaScript {
-                tag(Text("No JS"), background: DesignTokens.Colors.Status.danger.opacity(0.55))
+                Text("No JS").informationOverlayTag(background: DesignTokens.Colors.Status.danger.opacity(0.55))
             }
 
             if config.physicalPixelLayout {
-                tag(Text("Phys PX"))
+                Text("Phys PX").informationOverlayTag()
             }
             if config.allowMouseInteraction {
-                tag(Text("Clicks"))
+                Text("Clicks").informationOverlayTag()
             }
         }
         .font(DesignTokens.Typography.code)
@@ -362,16 +362,16 @@ struct HTMLInformationOverlay: View {
         .thumbnailBadgeGlass()
         .accessibilityElement(children: .combine)
     }
+}
 
-    /// Secondary pill inside the glass info panel; padding matches the shared
-    /// flat-pill standard (`TypeBadge`), and the default background is the
-    /// over-media foreground token at panel-tag strength.
-    private func tag(
-        _ text: Text,
+/// Secondary pill inside the glass info panel; padding matches the shared
+/// flat-pill standard (`TypeBadge`), and the default background is the
+/// over-media foreground token at panel-tag strength.
+extension Text {
+    func informationOverlayTag(
         background: Color = DesignTokens.Colors.overlayForeground.opacity(0.18)
     ) -> some View {
-        text
-            .font(DesignTokens.Typography.badge)
+        font(DesignTokens.Typography.badge)
             .textCase(.uppercase)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

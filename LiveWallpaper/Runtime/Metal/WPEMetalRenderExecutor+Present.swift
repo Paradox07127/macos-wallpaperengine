@@ -365,14 +365,14 @@ extension WPEMetalRenderExecutor {
             let sizeAndAlign = device.heapTextureSizeAndAlign(descriptor: descriptor)
             guard sizeAndAlign.size > 0 else { heapSize = 0; break }
             maxAlign = max(maxAlign, sizeAndAlign.align)
-            heapSize += Self.alignUp(sizeAndAlign.size, to: sizeAndAlign.align)
+            heapSize += WPEMetalRenderTargetPool.align(sizeAndAlign.size, to: sizeAndAlign.align)
         }
         if heapSize > 0 {
             let heapDescriptor = MTLHeapDescriptor()
             heapDescriptor.type = .automatic
             heapDescriptor.storageMode = .private
             heapDescriptor.hazardTrackingMode = .tracked
-            heapDescriptor.size = Self.alignUp(heapSize + maxAlign, to: maxAlign)
+            heapDescriptor.size = WPEMetalRenderTargetPool.align(heapSize + maxAlign, to: maxAlign)
             bloomLevelHeap = device.makeHeap(descriptor: heapDescriptor)
         }
 
@@ -392,12 +392,6 @@ extension WPEMetalRenderExecutor {
         bloomLevelBaseHeight = 0
         bloomLevelPixelFormat = .invalid
         bloomLevelRequestedCount = 0
-    }
-
-    private static func alignUp(_ size: Int, to alignment: Int) -> Int {
-        guard alignment > 0 else { return size }
-        let remainder = size % alignment
-        return remainder == 0 ? size : size + alignment - remainder
     }
 
 }

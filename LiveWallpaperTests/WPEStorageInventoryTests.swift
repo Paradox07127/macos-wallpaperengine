@@ -80,6 +80,21 @@ struct WPEStorageInventoryTests {
         #expect(inventory.projectsTotalBytes > 0)
     }
 
+    /// `FileManager.enumerator(at:)` yields nothing when the root itself is a
+    /// symlink, and the engine-assets root comes from a user-picked folder.
+    @Test("A symlink as the root still measures the tree behind it")
+    func symlinkRootIsMeasured() throws {
+        let directory = try makeFixture(fileCount: 4, bytesPerFile: 16)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let link = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEStorageInventoryTests-link-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: directory)
+        defer { try? FileManager.default.removeItem(at: link) }
+
+        #expect(WPEStoragePaths.allocatedBytes(at: link) == WPEStoragePaths.allocatedBytes(at: directory))
+        #expect(WPEStoragePaths.allocatedBytes(at: link) > 0)
+    }
+
     @Test("A missing engine-assets root yields an empty inventory")
     func missingRootYieldsEmptyInventory() async {
         let missing = FileManager.default.temporaryDirectory
@@ -95,7 +110,7 @@ struct WPEStorageInventoryTests {
     }
 
     /// `steamapps/workshop/content/<appID>/<workshopID>/` is the only shape
-    /// `scanProjects` walks, and the id folders must pass `isSafeWorkshopID`.
+    /// `scanProjects` walks, and the id folders must pass `isSafeProjectID`.
     private func makeSteamFixture(
         projectCount: Int, filesPerProject: Int, bytesPerFile: Int
     ) throws -> URL {

@@ -762,7 +762,7 @@ private func referenceFBOAliasIntervals(
                 secondaryKeys.insert(targetKey)
             }
         }
-        for reference in executor.textureReferences(for: item.pass) {
+        for reference in item.pass.textureReferences {
             switch reference {
             case .fbo(let name):
                 for namedKey in keysByName[name] ?? [] { touch(namedKey, index) }

@@ -2678,59 +2678,10 @@ private struct SceneObjectTransform {
     )
 
     func combining(child: SceneObjectTransform) -> SceneObjectTransform {
-        let scaled = SIMD3<Double>(
-            child.origin.x * scale.x,
-            child.origin.y * scale.y,
-            child.origin.z * scale.z
+        let combined = WPEEulerTransform.combine(
+            origin: origin, scale: scale, angles: angles,
+            childOrigin: child.origin, childScale: child.scale, childAngles: child.angles
         )
-        let rotated = Self.rotate(scaled, by: angles)
-
-        return SceneObjectTransform(
-            origin: SIMD3<Double>(
-                origin.x + rotated.x,
-                origin.y + rotated.y,
-                origin.z + rotated.z
-            ),
-            scale: SIMD3<Double>(
-                scale.x * child.scale.x,
-                scale.y * child.scale.y,
-                scale.z * child.scale.z
-            ),
-            angles: angles + child.angles
-        )
-    }
-
-    private static func rotate(_ value: SIMD3<Double>, by angles: SIMD3<Double>) -> SIMD3<Double> {
-        var result = value
-
-        if angles.x != 0 {
-            let c = cos(angles.x)
-            let s = sin(angles.x)
-            result = SIMD3<Double>(
-                result.x,
-                result.y * c - result.z * s,
-                result.y * s + result.z * c
-            )
-        }
-        if angles.y != 0 {
-            let c = cos(angles.y)
-            let s = sin(angles.y)
-            result = SIMD3<Double>(
-                result.x * c + result.z * s,
-                result.y,
-                -result.x * s + result.z * c
-            )
-        }
-        if angles.z != 0 {
-            let c = cos(angles.z)
-            let s = sin(angles.z)
-            result = SIMD3<Double>(
-                result.x * c - result.y * s,
-                result.x * s + result.y * c,
-                result.z
-            )
-        }
-
-        return result
+        return SceneObjectTransform(origin: combined.origin, scale: combined.scale, angles: combined.angles)
     }
 }

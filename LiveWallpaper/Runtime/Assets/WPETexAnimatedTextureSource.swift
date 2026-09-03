@@ -46,10 +46,6 @@ struct WPETexAnimatedAtlasProvider {
     private let mapping: WPEMetalTextureFormatMapping
     private let needsRG88Swizzle: Bool
 
-    /// Anti-OOM cap on an untrusted `decompressedByteCount`; mirrors the lazy
-    /// source (`WPETexLazyAnimatedTextureSource.maxDecompressedByteCount`).
-    private static let maxDecompressedByteCount = 268_435_456
-
     init?(payload: WPETexStreamingPayload, device: MTLDevice, label: String) {
         guard let format = payload.info.format,
               let mapping = try? WPEMetalTextureFormatMapper.mapping(
@@ -134,20 +130,67 @@ struct WPETexAnimatedAtlasProvider {
             }
             return mipmap.compressedBytes.prefix(mipmap.decompressedByteCount).materializedData()
         }
-        let outputCount = mipmap.decompressedByteCount
-        guard outputCount > 0, outputCount <= Self.maxDecompressedByteCount else {
-            throw Failure.decompressionFailed(mipmap.index)
-        }
+        guard let output = mipmap.lz4Inflated() else { throw Failure.decompressionFailed(mipmap.index) }
+        return output
+    }
+}
+
+extension WPETexCompressedMipmap {
+    /// Anti-OOM cap on an untrusted `decompressedByteCount`; same 256 MB ceiling as
+    /// `WPETexDecoder.inflateIfNeeded`, without its per-format `expectedByteCount` clamp.
+    static let maxDecompressedByteCount = 268_435_456
+
+    /// LZ4-raw inflate to exactly `decompressedByteCount` bytes; nil on an out-of-range
+    /// size or a short decode.
+    func lz4Inflated() -> Data? {
+        let outputCount = decompressedByteCount
+        guard outputCount > 0, outputCount <= Self.maxDecompressedByteCount else { return nil }
         var output = Data(count: outputCount)
         let written = output.withUnsafeMutableBytes { outRaw -> Int in
-            mipmap.compressedBytes.withUnsafeBytes { srcRaw -> Int in
+            compressedBytes.withUnsafeBytes { srcRaw -> Int in
                 guard let dst = outRaw.bindMemory(to: UInt8.self).baseAddress,
                       let src = srcRaw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
                 return compression_decode_buffer(dst, outputCount, src, srcRaw.count, nil, COMPRESSION_LZ4_RAW)
             }
         }
-        guard written == outputCount else { throw Failure.decompressionFailed(mipmap.index) }
-        return output
+        return written == outputCount ? output : nil
+    }
+}
+
+/// Clip-time → frame-index lookup shared by the eager and lazy animated sources
+/// (same timeline semantics, different frame stores).
+enum WPETexFrameTimeline {
+    static func frameIndex(
+        at time: TimeInterval,
+        frameCount: Int,
+        frameStartTimes: [TimeInterval],
+        totalDuration: TimeInterval,
+        loop: Bool
+    ) -> Int {
+        guard frameCount > 0 else { return 0 }
+        let bounded: TimeInterval
+        if loop {
+            let positive = max(time, 0)
+            bounded = totalDuration > 0 ? positive.truncatingRemainder(dividingBy: totalDuration) : 0
+        } else {
+            bounded = min(max(time, 0), max(totalDuration - .ulpOfOne, 0))
+        }
+
+        var lo = 0
+        var hi = frameStartTimes.count - 1
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            let start = frameStartTimes[mid]
+            let next = mid + 1 < frameStartTimes.count ? frameStartTimes[mid + 1] : totalDuration
+            if bounded < start {
+                hi = mid - 1
+            } else if bounded >= next {
+                lo = mid + 1
+            } else {
+                return mid
+            }
+        }
+        return max(min(lo, frameCount - 1), 0)
     }
 }
 
@@ -379,32 +422,13 @@ final class WPETexAnimatedTextureSource: WPEDynamicTextureSource {
     }
 
     func frameIndex(at time: TimeInterval) -> Int {
-        guard !frameMetadata.isEmpty else { return 0 }
-        let bounded: TimeInterval
-        if loop {
-            let positive = max(time, 0)
-            bounded = totalDuration > 0
-                ? positive.truncatingRemainder(dividingBy: totalDuration)
-                : 0
-        } else {
-            bounded = min(max(time, 0), max(totalDuration - .ulpOfOne, 0))
-        }
-
-        var lo = 0
-        var hi = frameStartTimes.count - 1
-        while lo <= hi {
-            let mid = (lo + hi) / 2
-            let start = frameStartTimes[mid]
-            let next = mid + 1 < frameStartTimes.count ? frameStartTimes[mid + 1] : totalDuration
-            if bounded < start {
-                hi = mid - 1
-            } else if bounded >= next {
-                lo = mid + 1
-            } else {
-                return mid
-            }
-        }
-        return max(min(lo, frameMetadata.count - 1), 0)
+        WPETexFrameTimeline.frameIndex(
+            at: time,
+            frameCount: frameMetadata.count,
+            frameStartTimes: frameStartTimes,
+            totalDuration: totalDuration,
+            loop: loop
+        )
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {

@@ -342,7 +342,7 @@ struct InstalledOwnershipCharacterizationTests {
         let commit = try sourceSlice(
             update,
             from: "lifecycleOwner.commitUpdate(replacement)",
-            to: "\n            }\n        }"
+            to: "\n        }\n    }"
         )
         #expect(commit.contains("cachedRemoteUpdateEpochs = remoteEpochs"))
         #expect(commit.contains("dependencies.saveRemoteUpdateEpochs(remoteEpochs)"))

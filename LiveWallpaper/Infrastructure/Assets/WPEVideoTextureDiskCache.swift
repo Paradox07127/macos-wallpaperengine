@@ -148,7 +148,7 @@ actor WPEVideoTextureDiskCache {
             let isDirectory = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
             let referenced = isDirectory
                 && name != Self.unattributedBucket
-                && WPEPathSafety.isSafeWorkshopID(name)
+                && WPEPathSafety.isSafeProjectID(name)
                 && referencedWorkshopIDs.contains(name)
             if referenced || containsLeasedFile(child) { continue }
 
@@ -284,7 +284,7 @@ actor WPEVideoTextureDiskCache {
     // MARK: - Helpers
 
     private func bucketName(for workshopID: String) -> String {
-        WPEPathSafety.isSafeWorkshopID(workshopID) ? workshopID : Self.unattributedBucket
+        WPEPathSafety.isSafeProjectID(workshopID) ? workshopID : Self.unattributedBucket
     }
 
     /// No size comparison: stored files are audio-stripped, so their size

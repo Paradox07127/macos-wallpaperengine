@@ -77,7 +77,21 @@ protocol HTMLWallpaperRetrying: AnyObject {
 /// never rewrites user intent.
 @MainActor
 protocol WallpaperIntentMachineAdopting: AnyObject {
+    var playbackMachine: WallpaperPlaybackStateMachine { get set }
     func adoptPlaybackStateMachine(_ machine: WallpaperPlaybackStateMachine)
+}
+
+extension WallpaperIntentMachineAdopting {
+    func adoptPlaybackStateMachine(_ machine: WallpaperPlaybackStateMachine) {
+        if machine.userIntendsToPlay != playbackMachine.userIntendsToPlay {
+            if playbackMachine.userIntendsToPlay {
+                machine.userPlay()
+            } else {
+                machine.userPause()
+            }
+        }
+        playbackMachine = machine
+    }
 }
 
 @MainActor

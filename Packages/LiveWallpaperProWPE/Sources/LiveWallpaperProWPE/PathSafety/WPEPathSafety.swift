@@ -10,7 +10,11 @@ public enum WPEPathSafety {
             && !value.contains("..")
     }
 
-    public static func isSafeWorkshopID(_ value: String) -> Bool {
+    /// A project's identity is either a Steam PublishedFileId or, for a folder
+    /// import, the folder name — so this is only the path-component check, not
+    /// "is a Steam id". The connector's `SteamLibraryPaths.isSafeWorkshopID`
+    /// (digits only) is the gate for anything that touches the Steam library.
+    public static func isSafeProjectID(_ value: String) -> Bool {
         isSafePathComponent(value)
     }
 

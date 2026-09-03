@@ -182,7 +182,7 @@ struct WPEInstalledInspectorContent: View {
             Group {
                 if let bytes = entry.sizeBytes ?? localInfo?.sizeBytes, bytes > 0 {
                     Label {
-                        Text(verbatim: Self.byteFormatter.string(fromByteCount: bytes))
+                        Text(verbatim: WorkshopByteFormatter.kilobytesAndUp.string(fromByteCount: bytes))
                     } icon: {
                         Image(systemName: "internaldrive")
                     }
@@ -233,13 +233,6 @@ struct WPEInstalledInspectorContent: View {
         .help(Text(titleKey))
         .accessibilityLabel(Text(titleKey))
     }
-
-    private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter
-    }()
 
     private var typePill: some View {
         TypeBadge(entry.origin.localizedDisplayTypeName, systemImage: entry.origin.originalType.symbolName)

@@ -259,7 +259,7 @@ struct BrowseCard: View, Equatable {
         guard let bytes = item.fileSizeBytes else { return nil }
         // `fileSizeBytes` is `UInt64`; clamp before the `Int64` formatter to
         // avoid a trap on a pathological value.
-        return Self.byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
+        return WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
     }
 
     /// Single source for the restricted/banned badge, reused by VoiceOver.
@@ -291,7 +291,7 @@ struct BrowseCard: View, Equatable {
             parts.append(resolutionLabel)
         }
         if let subs = item.subscriptionCount, subs > 0 {
-            parts.append(String(localized: "\(formatSubs(subs)) subscribers", bundle: .appLanguage, comment: "Workshop card VoiceOver subscriber count."))
+            parts.append(String(localized: "\(WorkshopCountFormatter.compact(subs)) subscribers", bundle: .appLanguage, comment: "Workshop card VoiceOver subscriber count."))
         }
         if let size = formattedSize {
             parts.append(size)
@@ -305,27 +305,10 @@ struct BrowseCard: View, Equatable {
         return parts.joined(separator: ", ")
     }
 
-    private func formatSubs(_ count: Int) -> String {
-        if count >= 1_000_000 {
-            return String(format: "%.1fM", locale: .current, Double(count) / 1_000_000.0)
-        }
-        if count >= 1_000 {
-            return String(format: "%.1fK", locale: .current, Double(count) / 1_000.0)
-        }
-        return count.formatted()
-    }
-
     private func copy(_ value: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.declareTypes([.string], owner: nil)
         pasteboard.setString(value, forType: .string)
     }
-
-    private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter
-    }()
 }
 #endif

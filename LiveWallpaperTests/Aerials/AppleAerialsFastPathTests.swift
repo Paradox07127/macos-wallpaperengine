@@ -6,6 +6,47 @@ import Testing
 /// Running without host entitlements can make these checks false-green; machines without the store skip dependent cases.
 struct AppleAerialsFastPathTests {
 
+    /// The user-picked Aerials folder is the enumeration root, and
+    /// `FileManager.enumerator(at:)` yields nothing when that root is a symlink.
+    @Test("A recursive scan rooted at a symlink still finds the .mov files")
+    func recursiveScanThroughSymlinkRoot() throws {
+        let fixture = try makeMovFixture()
+        defer { fixture.cleanup() }
+
+        let assets = try AppleAerialsLibrary.scanAssets(
+            in: fixture.link, recursively: true, bookmarkCreator: { _ in Data() }
+        )
+
+        #expect(assets.map(\.id) == ["clip"])
+    }
+
+    @Test("A recursive scan rooted at a real directory finds the .mov files")
+    func recursiveScanThroughRealRoot() throws {
+        let fixture = try makeMovFixture()
+        defer { fixture.cleanup() }
+
+        let assets = try AppleAerialsLibrary.scanAssets(
+            in: fixture.directory, recursively: true, bookmarkCreator: { _ in Data() }
+        )
+
+        #expect(assets.map(\.id) == ["clip"])
+    }
+
+    /// `<directory>/nested/clip.mov` plus `<link>` -> `<directory>`.
+    private func makeMovFixture() throws -> (directory: URL, link: URL, cleanup: () -> Void) {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let nested = directory.appendingPathComponent("nested", isDirectory: true)
+        try fileManager.createDirectory(at: nested, withIntermediateDirectories: true)
+        try Data([0x00]).write(to: nested.appendingPathComponent("clip.mov"))
+        let link = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createSymbolicLink(at: link, withDestinationURL: directory)
+        return (directory, link, {
+            try? fileManager.removeItem(at: link)
+            try? fileManager.removeItem(at: directory)
+        })
+    }
+
     @Test("realHomeDirectory resolves the true home, not the sandbox container")
     func realHomeIsNotContainer() {
         let real = AppleAerialsLibrary.realHomeDirectory().path
@@ -29,7 +70,7 @@ struct AppleAerialsFastPathTests {
             return
         }
 
-        let bookmark = try AppleAerialsLibrary.createReadOnlyBookmark(for: mov)
+        let bookmark = try DirectoryBookmarks.createReadOnlyBookmark(for: mov)
         var stale = false
         let resolved = try URL(
             resolvingBookmarkData: bookmark,

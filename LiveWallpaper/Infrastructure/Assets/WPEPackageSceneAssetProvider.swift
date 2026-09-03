@@ -155,19 +155,6 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         }
     }
 
-    /// `.mappedIfSafe` is advisory: Foundation refuses to map files on network and removable volumes and silently reads them onto the heap instead.
-    /// Whole-package mapping is only worth it when the mapping really happens — otherwise the entire pkg would sit resident, pinned by every span, which inverts the point of the mapping.
-    private static func isPackageVolumeMappable(_ url: URL) -> Bool {
-        guard let values = try? url.resourceValues(
-            forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]
-        ) else {
-            // Unknown volume: keep the mapping path rather than silently
-            // changing behaviour for ordinary local libraries.
-            return true
-        }
-        return (values.volumeIsLocal ?? true) && !(values.volumeIsRemovable ?? false)
-    }
-
     /// Windows the entry inside a single whole-package mapping: no per-entry heap copy, and every span from this package shares one mmap owner.
     /// Lifetime contract: spans keep the mapping alive for the whole session (lazy animated sources decompress out of it every frame). Deleting or rename-replacing the pkg is safe on APFS; truncating or rewriting it IN PLACE while a scene plays would SIGBUS on the next page fault.
     /// The pkg reclaimer already skips in-use packages (its in-playback deletion bug was fixed); any future writer must swap by rename.
@@ -178,7 +165,7 @@ final class WPEPackageSceneAssetProvider: WPESceneAssetProvider, @unchecked Send
         // On a volume that cannot actually be mapped, fall back to the
         // per-entry path: same bytes, but residency stays bounded by the entry
         // instead of pinning the whole package on the heap for the session.
-        guard Self.isPackageVolumeMappable(packageURL) else {
+        guard InMemoryVideoAssetLoader.isVolumeMappable(packageURL) else {
             return WPEMappedByteSpan(
                 data: try entryDataLocked(entry, relativePath: relativePath)
             )
