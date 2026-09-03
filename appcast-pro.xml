@@ -7,36 +7,33 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.6.3</title>
-      <pubDate>Wed, 02 Sep 2026 17:46:53 +0000</pubDate>
-      <sparkle:version>0.6.3</sparkle:version>
-      <sparkle:shortVersionString>0.6.3</sparkle:shortVersionString>
+      <title>Version 0.6.4</title>
+      <pubDate>Thu, 03 Sep 2026 23:42:38 +0000</pubDate>
+      <sparkle:version>0.6.4</sparkle:version>
+      <sparkle:shortVersionString>0.6.4</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Schemes: save a display's whole setup — wallpaper, overlays and every setting — and apply it to any display. Bookmarks go back to being just a favourite wallpaper; applying one no longer touches the target's settings</li>
-<li>Web wallpapers can be placed by hand on the preview: switch on Transform, then drag, pinch and rotate the page</li>
-<li>A wallpaper change crossfades instead of cutting; showing and hiding the monitor overlay animates too</li>
-<li>A global shortcut opens the settings window, default ⌃⇧,</li>
+<li>Settings ▸ Advanced gains Reset All Settings — it also drops the display caches and rebuilds every running wallpaper, so the reset is a real one</li>
+<li>The scene inspector now says when a scene publishes nothing to adjust, instead of showing a blank column that looks like it is still loading</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>The detail page is rebuilt: the wallpaper's name and its playback, scale and frame-rate controls sit on the preview itself, and the inspector keeps only what the preview cannot show</li>
-<li>Library pages lose their in-page header — the page name lives in the toolbar and search sits under it, so the grid starts higher. Bookmarks and Schemes share one page behind a capsule, and tile size is a global setting</li>
-<li>Scene pages show only the badges that differ between scenes, and the preset block has a permanent save button</li>
-<li>Loading a scene no longer re-derives the same shader dozens of times; the "unlimited" frame rate follows the display's own refresh rate</li>
-<li>Buttons, search fields and cards that play the same role now share one component, so they look and behave alike everywhere</li>
+<li>The frame-rate cap is now a fraction of your display's refresh rate — full, half, third or quarter. A display only ever wakes on its own refresh, so the old fixed numbers could not all be honoured: on a 60 Hz panel "24 FPS" actually ran at 30. Existing settings migrate on load</li>
+<li>Failures say what went wrong: a blocked network no longer reports "unrecognized response", a wallpaper that stopped no longer shows the bare word "Error", and a rejected API key no longer claims it was stored</li>
+<li>Results in Browse no longer reflow the grid as they arrive — the placeholder is the same shape as a real card</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>"Remind Me Later" in the update dialog no longer reports the app as up to date</li>
-<li>After an in-place update, the previous version's system-wallpaper extension could keep running and be reported as "in use"; it now retires itself, and the app ignores its keep-alive beats</li>
-<li>A display change during a wallpaper crossfade could leave the outgoing wallpaper window behind over the new one</li>
+<li>A display whose overlay layout could not be read came back wearing a default layout you never chose; the unreadable entry is dropped instead</li>
+<li>A click on a scene could be swallowed by the release that followed it</li>
+<li>A layer script driven only by a timer reported a fixed value instead of its real output, and video commands sent from a timer were dropped</li>
+<li>A cancelled lyrics lookup was remembered as "no lyrics found"</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.3">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.3">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.4">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.4">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.3/Loomscreen-Pro-0.6.3.dmg" type="application/octet-stream" sparkle:edSignature="lGmWrhoHrLhOmomONoqpjI2siSzMUP3oYYyn//ZAe26ztd+33MIb0ZAYqBaPU1KsQ5e510W+3wxsNjSqf5aHDQ==" length="9676682" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.4/Loomscreen-Pro-0.6.4.dmg" type="application/octet-stream" sparkle:edSignature="U2Xn4RAbm0Qrv+ZV6unYpFyF+j5ZdfZxfJvfZgSPqsDIrxD1fVi6nxGYfOc8O0hYeVyLY9wgsG8j2KFBnkSeAw==" length="9714997" />
     </item>
   </channel>
 </rss>
