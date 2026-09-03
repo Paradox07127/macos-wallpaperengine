@@ -1255,11 +1255,6 @@ final class WPEMetalRenderExecutor {
         if let frameSlot = currentUniformArenaSlot {
             uniformArena.trackSubmission(of: commandBuffer, frameSlot: frameSlot)
         }
-        if WPEFrameGPUTimingProbe.isEnabled {
-            commandBuffer.addCompletedHandler { cb in
-                WPEFrameGPUTimingProbe.recordScene(gpuStart: cb.gpuStartTime, gpuEnd: cb.gpuEndTime)
-            }
-        }
         let frameSubmissionCompletion = frameSubmission?.registerSubmission()
         if let frameSubmissionCompletion {
             commandBuffer.addCompletedHandler { _ in

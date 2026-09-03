@@ -356,12 +356,15 @@ struct BookmarkStoreTests {
         #expect(label == "shadertoy.com")
     }
 
-    @Test("defaultLabel: html .inline uses generic name")
+    /// Compared against the source's own display name rather than the English
+    /// string: the app language comes from the user's real preference, so a
+    /// pinned literal turns this red on any non-English machine.
+    @Test("defaultLabel: html .inline uses the inline source's generic name")
     func defaultLabelHTMLInline() {
-        let label = BookmarkStore.defaultLabel(
-            for: .html(source: .inline("<html></html>"), config: .default)
-        )
-        #expect(label == "Inline web content")
+        let source = HTMLSource.inline("<html></html>")
+        let label = BookmarkStore.defaultLabel(for: .html(source: source, config: .default))
+        #expect(label == source.displayName)
+        #expect(!label.isEmpty)
     }
 
 }

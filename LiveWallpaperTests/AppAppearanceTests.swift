@@ -6,8 +6,8 @@ import Testing
 @Suite("App appearance preference")
 struct AppAppearanceTests {
 
-    private func scratchDefaults(_ name: String = UUID().uuidString) -> UserDefaults {
-        UserDefaults(suiteName: name)!
+    private func scratchDefaults(function: String = #function) throws -> UserDefaults {
+        try TestScratch.defaultsSuite(prefix: "AppAppearanceTests", function: function).defaults
     }
 
     @Test("System means no override, which is the only way to keep tracking macOS")
@@ -18,8 +18,8 @@ struct AppAppearanceTests {
     }
 
     @Test("An unset or unrecognized stored value reads as system, never as a pinned mode")
-    func unknownStoredValueFallsBackToSystem() {
-        let defaults = scratchDefaults()
+    func unknownStoredValueFallsBackToSystem() throws {
+        let defaults = try scratchDefaults()
         #expect(AppAppearance.stored(in: defaults) == .system)
 
         defaults.set("sepia", forKey: AppAppearance.defaultsKey)

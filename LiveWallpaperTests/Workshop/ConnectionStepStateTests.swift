@@ -7,11 +7,12 @@ import Testing
 @Suite("Workshop connection step state", .serialized)
 @MainActor
 struct ConnectionStepStateTests {
-    private func makeService() -> (SteamCMDDoctorService, UserDefaults) {
-        let suiteName = "LiveWallpaperTests.ConnectionStepState.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        let service = SteamCMDDoctorService(defaults: defaults)
-        return (service, defaults)
+    private func makeService(function: String = #function) throws -> (SteamCMDDoctorService, UserDefaults) {
+        let scratch = try TestScratch.defaultsSuite(
+            prefix: "LiveWallpaperTests.ConnectionStepState", function: function
+        )
+        let service = SteamCMDDoctorService(defaults: scratch.defaults)
+        return (service, scratch.defaults)
     }
 
     /// A bookmark the shared resolver can actually resolve (plain bookmark to a
@@ -30,7 +31,7 @@ struct ConnectionStepStateTests {
     /// read as "failing".
     @Test("A step that has not been checked yet is not a failure")
     func uncheckedStepDoesNotReadAsFailure() throws {
-        let (service, _) = makeService()
+        let (service, _) = try makeService()
         service.workdirBookmarkData = try resolvableBookmark()
         service.binaryPath = "/tmp/steamcmd"
         service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
@@ -47,8 +48,8 @@ struct ConnectionStepStateTests {
     /// Those are computed, and `@Observable` does not track computed properties
     /// — the status bar stayed on "not started" for the rest of the session.
     @Test("Configuring the library notifies observers of the step state")
-    func libraryStepStateNotifiesWhenConfiguredFromEmpty() async {
-        let (service, _) = makeService()
+    func libraryStepStateNotifiesWhenConfiguredFromEmpty() async throws {
+        let (service, _) = try makeService()
         #expect(service.libraryStepState == .notStarted)
 
         await confirmation("observer fired") { fired in
@@ -62,8 +63,8 @@ struct ConnectionStepStateTests {
     }
 
     @Test("Binding a binary notifies observers of the step state")
-    func binaryStepStateNotifiesWhenBoundFromEmpty() async {
-        let (service, _) = makeService()
+    func binaryStepStateNotifiesWhenBoundFromEmpty() async throws {
+        let (service, _) = try makeService()
         #expect(service.binaryStepState == .notStarted)
 
         await confirmation("observer fired") { fired in
@@ -77,8 +78,8 @@ struct ConnectionStepStateTests {
     }
 
     @Test("Setting the account notifies observers of the step state")
-    func accountStepStateNotifiesWhenSetFromEmpty() async {
-        let (service, _) = makeService()
+    func accountStepStateNotifiesWhenSetFromEmpty() async throws {
+        let (service, _) = try makeService()
         #expect(service.accountStepState == .notStarted)
 
         await confirmation("observer fired") { fired in
@@ -96,8 +97,8 @@ struct ConnectionStepStateTests {
     /// the strict flag, so an already-installed SteamCMD was greeted with
     /// "Install SteamCMD" — clicking it reinstalls what is already there.
     @Test("A binding carried across launches does not offer to install again")
-    func boundBinarySurvivesRelaunchWithoutOfferingInstall() {
-        let (service, _) = makeService()
+    func boundBinarySurvivesRelaunchWithoutOfferingInstall() throws {
+        let (service, _) = try makeService()
         service.binaryPath = "/tmp/steamcmd"
         // Fresh launch: bound, nothing probed yet.
 
@@ -106,8 +107,8 @@ struct ConnectionStepStateTests {
     }
 
     @Test("A binary whose identity probe failed does offer to install")
-    func failedIdentityProbeOffersInstall() {
-        let (service, _) = makeService()
+    func failedIdentityProbeOffersInstall() throws {
+        let (service, _) = try makeService()
         service.binaryPath = "/tmp/steamcmd"
         service.setProbe(
             .binaryIdentity,
@@ -119,8 +120,8 @@ struct ConnectionStepStateTests {
     }
 
     @Test("A binary bound but never probed reads as unverified, not broken")
-    func boundButUnprobedBinaryIsNotAFailure() {
-        let (service, _) = makeService()
+    func boundButUnprobedBinaryIsNotAFailure() throws {
+        let (service, _) = try makeService()
         service.binaryPath = "/tmp/steamcmd"
 
         #expect(service.binaryStepState == .working)
@@ -128,8 +129,8 @@ struct ConnectionStepStateTests {
     }
 
     @Test("A failing probe is what turns the bar amber")
-    func failingProbeReadsAsAttention() {
-        let (service, _) = makeService()
+    func failingProbeReadsAsAttention() throws {
+        let (service, _) = try makeService()
         service.workdirBookmarkData = Data([0x01])
         service.binaryPath = "/tmp/steamcmd"
         service.setProbe(.binaryIdentity, status: .red(message: "not Valve's binary", command: nil))
@@ -140,7 +141,7 @@ struct ConnectionStepStateTests {
 
     @Test("All three steps green is the only way to read ready")
     func allStepsGreenReadsAsReady() throws {
-        let (service, _) = makeService()
+        let (service, _) = try makeService()
         service.workdirBookmarkData = try resolvableBookmark()
         service.binaryPath = "/tmp/steamcmd"
         service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
@@ -155,8 +156,8 @@ struct ConnectionStepStateTests {
     /// Bytes that no longer resolve are the "Not authorized + Ready badge"
     /// contradiction — the badge must say attention.
     @Test("Green probes cannot outrank a library grant that no longer resolves")
-    func unresolvableLibraryGrantIsNotReady() {
-        let (service, _) = makeService()
+    func unresolvableLibraryGrantIsNotReady() throws {
+        let (service, _) = try makeService()
         service.workdirBookmarkData = Data([0x01])
         service.binaryPath = "/tmp/steamcmd"
         service.setProbe(.binaryIdentity, status: .green(detail: "ok"))
@@ -168,8 +169,8 @@ struct ConnectionStepStateTests {
     }
 
     @Test("Nothing set up at all reads as not started")
-    func nothingSetUpReadsAsNotStarted() {
-        let (service, _) = makeService()
+    func nothingSetUpReadsAsNotStarted() throws {
+        let (service, _) = try makeService()
 
         #expect(service.connectionStepState == .notStarted)
     }

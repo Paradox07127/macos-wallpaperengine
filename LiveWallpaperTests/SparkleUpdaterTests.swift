@@ -84,10 +84,14 @@ struct SparkleUpdaterOwnershipTests {
         (true, false, true as Bool?),
         (false, true, nil as Bool?),
     ])
-    func legacyOptOutMigration(_ legacy: Bool, _ sparkleStored: Bool, _ expected: Bool?) {
-        let suite = "SparkleMigrationTests-\(UUID().uuidString)"
-        let defaults = try! #require(UserDefaults(suiteName: suite))
-        defer { UserDefaults().removePersistentDomain(forName: suite) }
+    func legacyOptOutMigration(_ legacy: Bool, _ sparkleStored: Bool, _ expected: Bool?) throws {
+        // Parameterized: the case's arguments are part of the name, since all three
+        // cases share one `#function` and Swift Testing may run them concurrently.
+        let scratch = try TestScratch.defaultsSuite(
+            "SparkleMigrationTests.legacyOptOut.\(legacy)-\(sparkleStored)"
+        )
+        let defaults = scratch.defaults
+        defer { scratch.discard() }
         defaults.set(legacy, forKey: SparkleUpdaterController.legacyCheckAtLaunchKey)
 
         let carried = SparkleUpdaterController.legacyOptOutToCarryOver(
@@ -101,10 +105,10 @@ struct SparkleUpdaterOwnershipTests {
     }
 
     @Test("With no 0.5.7 key there is nothing to carry over")
-    func migrationIsANoOpWithoutTheLegacyKey() {
-        let suite = "SparkleMigrationTests-\(UUID().uuidString)"
-        let defaults = try! #require(UserDefaults(suiteName: suite))
-        defer { UserDefaults().removePersistentDomain(forName: suite) }
+    func migrationIsANoOpWithoutTheLegacyKey() throws {
+        let scratch = try TestScratch.defaultsSuite(prefix: "SparkleMigrationTests")
+        let defaults = scratch.defaults
+        defer { scratch.discard() }
 
         #expect(
             SparkleUpdaterController.legacyOptOutToCarryOver(
