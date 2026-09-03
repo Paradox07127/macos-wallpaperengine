@@ -125,10 +125,15 @@ struct SteamCachedLoginParserTests {
     /// community forums (Rate Limit Exceeded, Account Logon Denied).
     @Test("Any other Steam refusal keeps its reason instead of the raw tail")
     func keepsRefusalReason() {
-        let refused = "Logging in user 'x' [U:1:0] to Steam Public...FAILED (Rate Limit Exceeded)"
-        let result = SteamCachedLoginParser.parse(stdout: refused)
+        let denied = "Logging in user 'x' [U:1:0] to Steam Public...FAILED (Account Logon Denied)"
+        let result = SteamCachedLoginParser.parse(stdout: denied)
         #expect(result.outcome == .loginFailed)
-        #expect(result.failureReason == "Rate Limit Exceeded")
+        #expect(result.failureReason == "Account Logon Denied")
+        // Throttling is its own verdict: waiting is the remedy, so it must not
+        // inherit `loginFailed`'s "sign in again" instruction.
+        let throttled = "Logging in user 'x' [U:1:0] to Steam Public...FAILED (Rate Limit Exceeded)"
+        #expect(SteamCachedLoginParser.parse(stdout: throttled).outcome == .rateLimited)
+        #expect(SteamCachedLoginParser.parse(stdout: throttled).failureReason == "Rate Limit Exceeded")
         // Control: the no-prompt refusal is still the cached-session verdict,
         // not a generic refusal, even though it is also a `FAILED (…)` line.
         #expect(SteamCachedLoginParser.parse(stdout: Self.noCachedSessionOutput).outcome == .noCachedSession)
