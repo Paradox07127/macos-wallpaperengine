@@ -658,19 +658,15 @@ extension WPEMetalSceneRenderer {
                 inside = false
             }
             let previous = layerHoverStates[objectID] ?? false
+            var events: [WPELayerScriptCursorEvent] = []
             if inside != previous {
                 layerHoverStates[objectID] = inside
-                dispatchScriptCursorEvent(
-                    instance,
-                    event: inside ? .enter : .leave,
-                    pointerFrame: pointerFrame,
-                    runtimeSeconds: runtimeSeconds
-                )
+                events.append(inside ? .enter : .leave)
             }
-            guard moved, inside else { return }
-            dispatchScriptCursorEvent(
+            if moved, inside { events.append(.move) }
+            dispatchScriptCursorEvents(
                 instance,
-                event: .move,
+                events: events,
                 pointerFrame: pointerFrame,
                 runtimeSeconds: runtimeSeconds
             )
@@ -798,25 +794,22 @@ extension WPEMetalSceneRenderer {
         if pressed { layerPressStates = layerHoverStates.filter { $0.value } }
 
 
-        for event in events {
-            forEachCursorScriptInstance { objectID, instance in
-                dispatchScriptCursorEvent(
-                    instance,
-                    event: event,
-                    pointerFrame: current,
-                    runtimeSeconds: runtimeSeconds
-                )
-                guard event == .up,
-                      layerPressStates[objectID] == true,
-                      layerHoverStates[objectID] == true
-                else { return }
-                dispatchScriptCursorEvent(
-                    instance,
-                    event: .click,
-                    pointerFrame: current,
-                    runtimeSeconds: runtimeSeconds
-                )
+        forEachCursorScriptInstance { objectID, instance in
+            var batch: [WPELayerScriptCursorEvent] = []
+            for event in events {
+                batch.append(event)
+                if event == .up,
+                   layerPressStates[objectID] == true,
+                   layerHoverStates[objectID] == true {
+                    batch.append(.click)
+                }
             }
+            dispatchScriptCursorEvents(
+                instance,
+                events: batch,
+                pointerFrame: current,
+                runtimeSeconds: runtimeSeconds
+            )
         }
         if released { layerPressStates.removeAll(keepingCapacity: true) }
     }

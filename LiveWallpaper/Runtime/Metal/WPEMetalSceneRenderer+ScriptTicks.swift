@@ -151,14 +151,17 @@ extension WPEMetalSceneRenderer {
     /// tick (`batchTick` takes it off `asyncOutcomeSlot`), and the frame never
     /// waits on a script engine. Returning nothing is the point — an optional
     /// return here reads like the caller can apply the output in the same frame.
-    func dispatchScriptCursorEvent(
+    /// Everything one instance gets in one frame goes as ONE batch: the async
+    /// slot admits a single in-flight dispatch per instance, so a second event
+    /// sent separately in the same frame was silently dropped.
+    func dispatchScriptCursorEvents(
         _ instance: WPELayerScriptInstance,
-        event: WPELayerScriptCursorEvent,
+        events: [WPELayerScriptCursorEvent],
         pointerFrame: WPEPointerFrame,
         runtimeSeconds: Double
     ) {
-        instance.liveDispatchCursorEvent(
-            event,
+        instance.liveDispatchCursorEvents(
+            events,
             pointerFrame: pointerFrame,
             runtimeSeconds: runtimeSeconds
         )
