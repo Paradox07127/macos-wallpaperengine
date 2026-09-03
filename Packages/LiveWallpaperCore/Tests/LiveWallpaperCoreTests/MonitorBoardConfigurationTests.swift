@@ -419,15 +419,15 @@ struct MonitorBoardConfigurationTests {
 
     // MARK: - decodeIfPresent: board decode boundary
 
-    /// Drives `MonitorBoardConfiguration.decodeIfPresent` from a nested `config`
-    /// object, mirroring the `WallpaperContent` / `ScreenConfiguration` call sites.
-    /// `decoded` is nil exactly when the decoder returns nil.
+    /// Decodes a board from a nested `config` object the way
+    /// `MonitorOverlayConfiguration` does. `decoded` is nil when the slot is
+    /// absent; a present-but-corrupt slot throws out of the whole probe.
     private struct DecodeProbe: Decodable {
         let decoded: MonitorBoardConfiguration?
         enum Key: String, CodingKey { case config }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Key.self)
-            decoded = MonitorBoardConfiguration.decodeIfPresent(from: c, forKey: .config)
+            decoded = try c.decodeIfPresent(MonitorBoardConfiguration.self, forKey: .config)
         }
     }
 
@@ -436,20 +436,21 @@ struct MonitorBoardConfigurationTests {
         return try JSONDecoder().decode(DecodeProbe.self, from: Data(json.utf8)).decoded
     }
 
-    @Test("A corrupt board payload returns nil — never a fabricated default board")
-    func corruptBoardReturnsNil() throws {
-        // `widgets` is present but is a string, not an array, so the decode throws.
-        // The decoder returns nil so the caller treats the slot as absent rather than
+    @Test("A corrupt board payload throws — never a fabricated default board")
+    func corruptBoardThrows() throws {
+        // `widgets` is present but is a string, not an array, so the decode throws
+        // and the error reaches the caller, which drops the record rather than
         // substituting a bogus default board for the user's real layout.
-        let result = try decodeConfig(#"{ "widgets": "not-an-array", "schemaVersion": 2 }"#)
-        #expect(result == nil)
+        #expect(throws: (any Error).self) {
+            try decodeConfig(#"{ "widgets": "not-an-array", "schemaVersion": 2 }"#)
+        }
     }
 
-    @Test("A wrong-typed field makes the board decode fail closed to nil")
-    func wrongTypedFieldReturnsNil() throws {
-        let result = try decodeConfig(#"{ "refreshHz": [1,2,3] }"#)  // refreshHz wrong type → throws
-        #expect(result == nil)
-        #expect(result?.widgets.map(\.kind) != [.cpu, .memory, .gpu])
+    @Test("A wrong-typed field makes the board decode throw")
+    func wrongTypedFieldThrows() throws {
+        #expect(throws: (any Error).self) {
+            try decodeConfig(#"{ "refreshHz": [1,2,3] }"#)
+        }
     }
 
     @Test("An intact board decodes straight through")

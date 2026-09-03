@@ -255,15 +255,6 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
 // MARK: Board decode + default layout
 
 extension MonitorBoardConfiguration {
-    /// Absent or corrupt key → nil (do not invent a default over real layout).
-    public static func decodeIfPresent<K: CodingKey>(
-        from container: KeyedDecodingContainer<K>,
-        forKey key: K
-    ) -> MonitorBoardConfiguration? {
-        guard container.contains(key) else { return nil }
-        return try? container.decode(MonitorBoardConfiguration.self, forKey: key)
-    }
-
     static let defaultSystemKinds: [(MonitorWidgetKind, MonitorWidgetSize)] = [
         (.cpu, .medium), (.memory, .medium), (.gpu, .medium),
     ]
