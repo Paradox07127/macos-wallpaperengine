@@ -782,7 +782,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.6.3;
+				MARKETING_VERSION = 0.6.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				PRODUCT_NAME = "Loomscreen Pro";
@@ -816,7 +816,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.6.3;
+				MARKETING_VERSION = 0.6.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen.pro;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				PRODUCT_NAME = "Loomscreen Pro";
@@ -888,7 +888,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.6.3;
+				MARKETING_VERSION = 0.6.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				PRODUCT_NAME = Loomscreen;
@@ -923,7 +923,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.6.3;
+				MARKETING_VERSION = 0.6.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.loomscreen;
 				PRODUCT_MODULE_NAME = LiveWallpaper;
 				PRODUCT_NAME = Loomscreen;
