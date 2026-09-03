@@ -105,3 +105,47 @@ struct WPESceneSectionStateTests {
         #expect(!EngineAssetsBanner.shouldShow(isFeatureEnabled: false, hasEngineAssets: false))
     }
 }
+
+@Suite("ColorAdjustmentsView reset")
+struct ColorAdjustmentsViewResetTests {
+    @MainActor
+    @Test("Reset Color & Filters only touches the six promised fields")
+    func resetPreservesWeatherAndParticleFields() {
+        var config = VideoEffectConfig()
+        config.blurRadius = 12
+        config.brightness = 0.3
+        config.saturation = 1.8
+        config.warmth = 3200
+        config.vignetteIntensity = 2.5
+        config.autoTimeTint = true
+        config.weatherReactive = true
+        config.weatherWind = true
+        config.weatherIntensity = false
+        config.particleDensity = 2.5
+
+        let result = ColorAdjustmentsView.resettingColorAdjustments(config)
+
+        #expect(result.blurRadius == VideoEffectConfig.default.blurRadius)
+        #expect(result.brightness == VideoEffectConfig.default.brightness)
+        #expect(result.saturation == VideoEffectConfig.default.saturation)
+        #expect(result.warmth == VideoEffectConfig.default.warmth)
+        #expect(result.vignetteIntensity == VideoEffectConfig.default.vignetteIntensity)
+        #expect(result.autoTimeTint == VideoEffectConfig.default.autoTimeTint)
+
+        #expect(result.weatherReactive == true)
+        #expect(result.weatherWind == true)
+        #expect(result.weatherIntensity == false)
+        #expect(result.particleDensity == 2.5)
+    }
+}
+
+@Suite("OverlaysInspectorPanel particle picker")
+struct OverlaysInspectorPanelPickerTests {
+    @MainActor
+    @Test("Picker excludes .none — closing it must go through the toggle")
+    func pickerEffectsExcludesNone() {
+        let effects = OverlaysInspectorPanel.pickerEffects
+        #expect(!effects.contains(.none))
+        #expect(effects == ParticleEffect.allCases.filter { $0 != .none })
+    }
+}

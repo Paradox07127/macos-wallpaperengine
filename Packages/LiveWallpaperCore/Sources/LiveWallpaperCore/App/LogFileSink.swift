@@ -164,6 +164,27 @@ public final class LogFileSink: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
+        // Rotation truncates the current file to empty, so a failure that lands
+        // right on the threshold gets moved into `runtime.1.log` in the same
+        // call — read oldest → newest generation before the current file so
+        // that line survives here instead of vanishing until the next error.
+        var lines: [String] = []
+        for index in stride(from: Self.rotationKeepCount, through: 1, by: -1) {
+            let rotated = url.deletingPathExtension().appendingPathExtension("\(index).log")
+            lines += Self.tailLines(from: rotated, maxReadBytes: maxReadBytes, maxLineLength: maxLineLength)
+        }
+        lines += Self.tailLines(from: url, maxReadBytes: maxReadBytes, maxLineLength: maxLineLength)
+
+        let failures = lines.filter { line in
+            line.contains("[WARNING]") || line.contains("[ERROR]") || line.contains("[FAULT]")
+        }
+        // `[NOTICE]` carries the wallpaper-identity timeline, which is what makes
+        // the failures attributable to a scene.
+        let context = lines.filter { $0.contains("[NOTICE]") }
+        return Array(context.suffix(maxContextLines)) + Array(failures.suffix(maxLines))
+    }
+
+    private static func tailLines(from url: URL, maxReadBytes: UInt64, maxLineLength: Int) -> [String] {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }
 
@@ -177,7 +198,7 @@ public final class LogFileSink: @unchecked Sendable {
         let data = (try? handle.readToEnd()) ?? Data()
         guard let text = String(data: data, encoding: .utf8) else { return [] }
 
-        let lines = text
+        return text
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map(String.init)
             // Re-scrub on read so diagnostics written by older app versions
@@ -188,13 +209,6 @@ public final class LogFileSink: @unchecked Sendable {
                     ? String(line.prefix(maxLineLength)) + "…"
                     : line
             }
-        let failures = lines.filter { line in
-            line.contains("[WARNING]") || line.contains("[ERROR]") || line.contains("[FAULT]")
-        }
-        // `[NOTICE]` carries the wallpaper-identity timeline, which is what makes
-        // the failures attributable to a scene.
-        let context = lines.filter { $0.contains("[NOTICE]") }
-        return Array(context.suffix(maxContextLines)) + Array(failures.suffix(maxLines))
     }
 
     private static func prepareLogFileURL() -> URL? {

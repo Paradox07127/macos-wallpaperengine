@@ -2934,6 +2934,47 @@ struct ScreenRuntimeOwnershipTests {
 
         #expect(session.cleanupCallCount == 1)
     }
+
+    @Test("Resetting all sessions then refreshing without preserving sessions restores still-connected screens' saved wallpapers")
+    func resetThenRefreshWithoutPreservingSessionsRestoresSavedWallpapers() async throws {
+        guard let nsScreen = NSScreen.screens.first else {
+            Issue.record("No NSScreen available for test")
+            return
+        }
+        let screen = Screen(nsScreen: nsScreen)
+
+        let originalConfigurations = SettingsManager.shared.loadConfigurations()
+        defer { SettingsManager.shared.replaceAllConfigurations(originalConfigurations) }
+        SettingsManager.shared.replaceAllConfigurations([
+            ScreenConfiguration(screenID: screen.id, wallpaper: .html(source: .inline("<p>restore</p>"), config: .default)),
+        ])
+
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: true,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .pro)
+        ))
+        defer { screen.resetRuntimeSession() }
+
+        for _ in 0 ..< 200 where screen.runtimeSession == nil {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(screen.runtimeSession != nil, "precondition: construction should have restored the saved wallpaper")
+
+        manager.resetAllWallpaperSessions()
+        #expect(screen.runtimeSession == nil, "precondition: reset should have torn the session down")
+
+        manager.refreshScreens(preserveRuntimeSessions: false)
+
+        for _ in 0 ..< 200 where screen.runtimeSession == nil {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(screen.runtimeSession != nil, "screen wallpaper should be restored after resetAllWallpaperSessions() + refreshScreens(preserveRuntimeSessions: false), mirroring an imported backup")
+    }
 }
 
 @MainActor

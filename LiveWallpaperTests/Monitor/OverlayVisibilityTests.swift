@@ -69,6 +69,15 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         )
     }
 
+    @Test("same-level stacking puts Music above Monitor regardless of insertion order")
+    func stackingOrderIsIndependentOfCreationOrder() {
+        // Monitor enabled first, Music second — the order that used to leave
+        // whichever was enabled last on top.
+        #expect(OverlayController.stackingOrder([.monitor, .music]) == [.monitor, .music])
+        // Music enabled first, Monitor second — must still land Music on top.
+        #expect(OverlayController.stackingOrder([.music, .monitor]) == [.monitor, .music])
+    }
+
     @Test("user absence suspends every retained host and stops delivery")
     func userAbsencePolicy() {
         let result = MonitorOverlayVisibilityPolicy.resolve(

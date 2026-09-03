@@ -256,20 +256,24 @@ struct PlaybackControls: View {
         }
     }
 
+    /// Force SDR only owns the video composition slot; a scene's frame rate
+    /// control must stay usable even when the (video-only) color space is
+    /// still set to Force SDR from a previous wallpaper on this screen.
+    static func frameRateDisabled(wallpaperType: WallpaperType, videoColorSpace: VideoColorSpace) -> Bool {
+        wallpaperType == .video && videoColorSpace == .forceSDR
+    }
+
     static func speedLabel(_ speed: Double) -> String {
         abs(speed - speed.rounded()) < 0.001 ? "\(Int(speed))×" : String(format: "%.2g×", speed)
     }
 
-    /// Icon-only, with the needle angle carrying the cap; "60 FPS" spelled out
-    /// would be the one free-width text on the bar, 1.5–2× wider in Japanese.
-    /// The exact value is in the tooltip and the accessibility value.
-    /// A slider over the caps, not a menu, so it matches speed and audio — the
-    /// three of them are one row of controls and a menu among two popovers reads
-    /// as a different kind of thing. The steps are discrete (`FrameRateLimit` is
-    /// an enum, not a number), so the slider indexes into `allCases`, which is
-    /// declared low-to-high and ends at Unlimited — dragging right asks for more.
+    /// Icon-only: a spelled-out "60 FPS" would be the bar's one free-width text
+    /// (1.5–2× wider in Japanese); the value lives in the tooltip and a11y value.
+    /// A slider, not a menu, to match the speed and audio popovers beside it. The
+    /// steps are discrete (`FrameRateLimit` is an enum), so it indexes into
+    /// `allCases`, declared low-to-high and ending at Unlimited.
     private var frameRateControl: some View {
-        let forceSDRActive = videoColorSpace == .forceSDR
+        let forceSDRActive = Self.frameRateDisabled(wallpaperType: wallpaperType, videoColorSpace: videoColorSpace)
         return Button {
             showingFrameRate = true
         } label: {

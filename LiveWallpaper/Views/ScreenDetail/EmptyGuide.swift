@@ -139,7 +139,6 @@ private struct GuideCard: View {
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
     let accessibilityLabel: LocalizedStringKey
-    var badge: String?
     let action: () -> Void
 
     @State private var isHovering = false
@@ -166,9 +165,6 @@ private struct GuideCard: View {
                     HStack(spacing: 6) {
                         Text(title)
                             .font(DesignTokens.Typography.sectionTitle)
-                        if let badge {
-                            TypeBadge(badge, tint: iconTint)
-                        }
                     }
                     Text(subtitle)
                         .font(DesignTokens.Typography.body)

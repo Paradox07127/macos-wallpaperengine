@@ -3,28 +3,17 @@ import SwiftUI
 
 /// The bar floating on the preview's bottom edge, for all three wallpaper types.
 ///
-/// The rule it enforces: **this bar controls the canvas; the inspector controls
-/// the asset.** Anything whose effect the preview cannot show belongs in the
-/// inspector column instead — that is how span-all-displays left, and it is the
-/// test to apply to whatever is proposed next.
+/// The rule: **this bar controls the canvas; the inspector controls the asset.**
+/// Anything whose effect the preview cannot show belongs in the inspector — that
+/// is how span-all-displays left, and the test for whatever is proposed next.
 ///
-/// Three zones, always in this order, so a control keeps its place across types:
-///
-///   viewport ⎪ playback ⎪ actions
-///
-/// The name is NOT here: as the one flexible item among fixed-width clusters it
-/// was always what gave way, so it has its own row above the picture
-/// (`WallpaperPreviewStage`).
-///
-/// * **viewport** — how it fills the display (scale).
-/// * **playback** — how it runs (volume, speed, frame rate, input).
-/// * **actions** — everything else the type offers.
-///
-/// Every control is a glyph over a fixed-width caption (`PreviewControlLabel`),
-/// never a free-width label: the bar sits over arbitrary artwork at a width that
-/// shrinks with the window, and text that grows 1.5–2× in Japanese would push
-/// its neighbours off the bar. Values live in tooltips, popovers and the
-/// accessibility value.
+/// Zones stay in the order viewport ⎪ playback ⎪ actions so a control keeps its
+/// place across types. The wallpaper name is NOT here: as the one flexible item
+/// it always gave way, so it has its own row above the picture
+/// (`WallpaperPreviewStage`). Every control is a glyph over a fixed-width
+/// caption (`PreviewControlLabel`), never free-width text — the bar shrinks with
+/// the window and Japanese runs 1.5–2× wider. Values live in tooltips, popovers
+/// and the accessibility value.
 struct WallpaperPreviewHUD<Viewport: View, Playback: View, Actions: View>: View {
     @ViewBuilder var viewport: Viewport
     @ViewBuilder var playback: Playback

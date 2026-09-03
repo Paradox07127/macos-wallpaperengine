@@ -72,8 +72,10 @@ final class MusicHostView: NSView {
 
     // MARK: - Pointer
 
-    /// Only the transport controls ever want the pointer, and only while there
-    /// is a track drawn under it.
+    /// The whole layer rect takes the pointer while a track is drawn and the
+    /// controls or seek are enabled — the transport only appears on hover, so
+    /// the window has to receive events before a button exists
+    /// (`BoardPointerScopeTests` pins the tile centre as a hit).
     var wantsPointer: Bool {
         let options = NowPlayingOptions(configuration.options)
         guard options.showControls || options.seekOnProgressDrag else { return false }
@@ -120,6 +122,9 @@ final class MusicOverlayLayoutModel: ObservableObject {
 struct MusicOverlayRootContainer: View {
     @ObservedObject var layout: MusicOverlayLayoutModel
     @ObservedObject var data: DataModel
+    /// The Music layer has no config override, so the system setting is the
+    /// whole truth (the board additionally honours `reduceMotionOverride`).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // One clock for the layer, stopped while suspended — the same contract
@@ -136,7 +141,7 @@ struct MusicOverlayRootContainer: View {
                         size: layout.configuration.size,
                         options: layout.configuration.options,
                         isEditing: layout.isEditingPreview,
-                        reduceMotion: false,
+                        reduceMotion: reduceMotion,
                         now: timeline.date
                     ))
                     .frame(width: rect.width, height: rect.height)

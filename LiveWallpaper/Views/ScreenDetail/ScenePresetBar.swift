@@ -134,9 +134,6 @@ struct ScenePresetBar: View {
     /// intent and lives in the menu, where it can be gated and named after its
     /// target. Icon-only because the header row also carries a label and a menu,
     /// and a worded button here would be the first thing to truncate in Japanese.
-    ///
-    /// Naming happens in a popover rather than an inline row: this block sits
-    /// above 20-35 property rows, and growing it pushed every one of them down.
     private var saveButton: some View {
         GlassIconButton("plus", size: .small) { beginEditing(.saveAsNew) }
             .help(Text("Save the scene's current values as a new preset"))

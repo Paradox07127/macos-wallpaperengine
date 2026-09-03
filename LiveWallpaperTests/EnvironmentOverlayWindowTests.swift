@@ -35,4 +35,28 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
             "particles would be drawn under an interactive wallpaper"
         )
     }
+
+    /// A resolution change or arrangement drag moves the wallpaper window via
+    /// `updateAllWindowFrames()`, but the particle overlay's frame was only ever
+    /// written from `apply()` — so it stayed at the old size/position until the
+    /// next unrelated config change rebuilt the emitter.
+    @MainActor
+    func testParticleOverlayFrameFollowsResolutionChange() throws {
+        let controller = EnvironmentOverlayController()
+        let screenID = CGDirectDisplayID(1)
+        defer { controller.teardownAll() }
+
+        controller.apply(
+            effect: .rain, density: 1, screenID: screenID,
+            screenFrame: NSRect(x: 0, y: 0, width: 200, height: 200)
+        )
+        let initialFrame = try XCTUnwrap(controller.debugWindowFrame(screenID: screenID))
+        XCTAssertEqual(initialFrame.size, NSSize(width: 200, height: 200))
+
+        let newFrame = NSRect(x: 100, y: 50, width: 400, height: 300)
+        controller.updateFrame(screenID: screenID, frame: newFrame)
+
+        let updatedFrame = try XCTUnwrap(controller.debugWindowFrame(screenID: screenID))
+        XCTAssertEqual(updatedFrame, newFrame, "particle overlay frame did not follow the resolution/arrangement change")
+    }
 }

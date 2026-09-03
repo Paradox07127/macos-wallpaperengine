@@ -74,6 +74,13 @@ struct PreviewArea: View {
             dragHintOverlay
                 .animation(DesignTokens.motion(reduceMotion, .smooth(duration: 0.2)), value: isDraggingOver)
         }
+        // The view is not rebuilt per screen (no `.id(screen.id)` in the parent),
+        // so armed state from a previous screen would otherwise carry over and
+        // let the first drag on the new screen move its wallpaper unasked.
+        .onChange(of: screen.id) {
+            webTransformArmed = false
+            showingWebTransform = false
+        }
     }
 
     @ViewBuilder

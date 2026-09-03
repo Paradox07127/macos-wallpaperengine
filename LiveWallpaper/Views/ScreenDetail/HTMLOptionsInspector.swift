@@ -107,6 +107,14 @@ struct HTMLOptionsInspector: View {
         .onChange(of: config.customCSS) { _, newValue in
             scheduleCustomCSSDraftSync(newValue)
         }
+        // The view is not rebuilt per screen, so an uncommitted draft typed on
+        // a previous screen would otherwise still be sitting in
+        // `draftCustomCSS` when this one appears for a screen whose committed
+        // CSS is unchanged (the `config.customCSS`-keyed sync above would not
+        // fire in that case).
+        .onChange(of: screen.id) {
+            scheduleCustomCSSDraftSync(config.customCSS)
+        }
     }
 
     private var customCSSEditor: some View {

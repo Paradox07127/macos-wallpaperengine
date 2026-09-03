@@ -133,6 +133,30 @@ struct GlobalSettingsTests {
         #expect(decoded.recentWPEImports.isEmpty)
     }
 
+    @Test("An unknown trigger drops only that rule, not the whole per-app rule list")
+    func lossyDecodeSalvagesGoodPerformanceRules() throws {
+        var settings = GlobalSettings()
+        settings.applicationPerformanceRules = [
+            ApplicationPerformanceRule(bundleID: "com.apple.Safari", displayName: "Safari", trigger: .frontmost),
+            ApplicationPerformanceRule(bundleID: "com.valvesoftware.steam", displayName: "Steam", trigger: .running),
+        ]
+
+        let data = try JSONEncoder().encode(settings)
+        var object = try #require(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        var rules = try #require(object["applicationPerformanceRules"] as? [[String: Any]])
+        try #require(rules.count == 2)
+        rules[1]["trigger"] = "pauseWhenIdle" // unknown trigger, not in ApplicationPerformanceRule.Trigger
+        object["applicationPerformanceRules"] = rules
+        let corrupted = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(GlobalSettings.self, from: corrupted)
+
+        // The good rule survives; only the malformed one is dropped.
+        #expect(decoded.applicationPerformanceRules.map(\.bundleID) == ["com.apple.Safari"])
+    }
+
     // MARK: - Helpers
 
     private func makeHistoryEntry(_ workshopID: String) -> WPEHistoryEntry {

@@ -132,6 +132,7 @@ struct MonitorWidgetControlBar: View {
             model.perform(.delete(id: placement.id))
         }
         .help(MonitorBoardStrings.removeWidget)
+        .accessibilityLabel(Text(MonitorBoardStrings.removeWidget))
     }
 
     private func flashDeny() {
@@ -207,7 +208,7 @@ struct MonitorBoardEditToolbar: View {
 
 // MARK: - Add-widget catalog
 
-/// Available widget kinds (gated kinds hidden when the agent-session feature is off).
+/// Available widget kinds.
 struct MonitorCatalogView: View {
     @ObservedObject var model: InteractionModel
     let maxScrollHeight: CGFloat

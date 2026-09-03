@@ -20,10 +20,7 @@ struct VideoPreviewSection: View {
 
             VStack {
                 HStack {
-                    VideoInformationOverlay(
-                        videoURL: previewController.assetURL,
-                        player: previewController.player
-                    )
+                    VideoInformationOverlay(videoURL: previewController.assetURL)
                     Spacer()
                 }
                 Spacer()

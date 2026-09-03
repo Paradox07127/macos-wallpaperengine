@@ -63,6 +63,13 @@ struct HTMLSourceSection: View {
         .onChange(of: source) { _, _ in
             scheduleBindingSync()
         }
+        // The view is not rebuilt per screen, so an uncommitted draft typed on
+        // a previous screen would otherwise still be sitting in `urlInput`
+        // when this one appears — and a same-URL screen switch would not
+        // otherwise trigger the `source`-keyed sync above to overwrite it.
+        .onChange(of: screen.id) {
+            scheduleBindingSync()
+        }
     }
 
     // MARK: - Segment Picker

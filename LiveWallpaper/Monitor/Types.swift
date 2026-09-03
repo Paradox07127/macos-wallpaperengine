@@ -43,6 +43,13 @@ struct MonitorTokenTotals: Codable, Sendable, Equatable {
 
     static let zero = MonitorTokenTotals()
 
+    /// `input + output` via the same saturating add as `+` above — a bare `+`
+    /// traps when a crafted/corrupted usage field has driven both fields to
+    /// `Int.max`.
+    var total: Int {
+        Self.saturatingAdd(input, output)
+    }
+
     static func + (lhs: Self, rhs: Self) -> Self {
         MonitorTokenTotals(
             input: saturatingAdd(lhs.input, rhs.input),

@@ -83,6 +83,16 @@ struct BoardPointerScopeTests {
         let optedIn = PointerBoard.configuration(mouseInteractionEnabled: true)
         #expect(HostView.pointerScope(for: optedIn, isEditing: false) == .wholeBoard)
     }
+
+    @Test("a hidden widgetsOnly host needs no pointer tracking")
+    func hiddenHostNeedsNoTracking() {
+        #expect(OverlayController.needsPointerTracking([(scope: .widgetsOnly, isVisible: false)]) == false)
+    }
+
+    @Test("a visible widgetsOnly host still needs pointer tracking")
+    func visibleHostStillNeedsTracking() {
+        #expect(OverlayController.needsPointerTracking([(scope: .widgetsOnly, isVisible: true)]) == true)
+    }
 }
 
 // MARK: - Music layer

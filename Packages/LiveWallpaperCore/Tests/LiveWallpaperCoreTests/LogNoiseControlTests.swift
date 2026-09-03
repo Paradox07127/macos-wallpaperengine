@@ -89,6 +89,39 @@ struct LogNoiseControlTests {
         #expect(excerpt.contains("[NOTICE]"))
     }
 
+    /// Rotation truncates the current file the instant it crosses the 1 MiB
+    /// threshold, so the very record that triggers it lands in `runtime.1.log`,
+    /// not the (now empty) current file `recentDiagnosticLines` used to read alone.
+    @Test("A failure that triggers rotation still reaches the excerpt")
+    func recentDiagnosticLinesSurvivesRotation() throws {
+        let (sink, file, directory) = try Self.makeSink()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        func currentSize() -> UInt64 {
+            (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? UInt64) ?? 0
+        }
+
+        // Fill to just under the 1 MiB rotation threshold with short filler
+        // lines (~285 bytes each), leaving a gap smaller than the padded
+        // "boom" entry below so that entry is guaranteed to cross it.
+        let filler = String(repeating: "f", count: 220)
+        while currentSize() < 1_048_576 - 285 {
+            sink.record(category: .screenManager, level: .notice, message: filler, file: "/s/A.swift", line: 1)
+        }
+
+        // This record's own append pushes cachedSize past the threshold, so
+        // the same call that writes "boom" also rotates it into runtime.1.log.
+        let boomMessage = "boom" + String(repeating: "y", count: 350)
+        sink.record(category: .wpeRender, level: .error, message: boomMessage, file: "/s/A.swift", line: 2)
+
+        let excerpt = sink.recentDiagnosticLines().joined(separator: "\n")
+        #expect(excerpt.contains("boom"))
+
+        // Rotation left the current file empty.
+        let currentContents = try String(contentsOf: file, encoding: .utf8)
+        #expect(currentContents.isEmpty)
+    }
+
     // MARK: - Screen count repeat suppression
 
     /// Serialized: the gate is one process-wide static, so parallel cases would

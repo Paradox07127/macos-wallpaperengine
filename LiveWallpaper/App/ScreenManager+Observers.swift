@@ -268,6 +268,9 @@ extension ScreenManager {
         for screen in screens {
             if let nsScreen = displayRegistry.findNSScreen(for: screen.id) {
                 screen.updateRuntimeFrame(to: nsScreen.frame)
+                if effectsCoordinatorWasInitialized {
+                    effectsCoordinator.updateEnvironmentOverlayFrame(for: screen, frame: nsScreen.frame)
+                }
             } else {
                 Logger.warning("Could not find NSScreen for screen ID \(screen.id), using stored frame", category: .screenManager)
                 screen.updateRuntimeFrame(to: screen.frame)
@@ -354,11 +357,6 @@ extension ScreenManager {
         screen.runtimeSession?.applyPerformanceProfile(profile)
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.setEnvironmentOverlaySuspended(profile == .suspended, for: screen)
-        }
-        if profile == .suspended {
-            suspendedScreenIDs.insert(screen.id)
-        } else {
-            suspendedScreenIDs.remove(screen.id)
         }
         applyAdaptiveFrameRate(to: screen, settings: settings, throttleReasons: decision.throttleReasons)
         // Deep hibernate is reserved for absence-like suspensions (lock, sleep, full-screen
@@ -480,7 +478,7 @@ extension ScreenManager {
     func refreshAppNapAssertion() {
         let isRendering = screens.contains { screen in
             guard screen.runtimeSession != nil,
-                  !suspendedScreenIDs.contains(screen.id),
+                  (suspendReasonsByScreen[screen.id] ?? []).isEmpty,
                   screen.playbackController?.userIntendsToPlay ?? true else { return false }
             #if !LITE_BUILD
             if let scene = screen.runtimeSession as? SceneWallpaperSession {

@@ -73,4 +73,29 @@ struct AppLanguageRuntimeProbeTests {
         let value = String(localized: resource)
         #expect(value == Self.zhHans, "LocalizedStringResource returned \(value)")
     }
+
+    /// `HTMLSource.inline.displayName` (`Packages/LiveWallpaperCore/.../Schema/HTMLSource.swift`)
+    /// used to be a hardcoded English literal, unlike its `.file`/`.folder`
+    /// siblings on the same switch — the catalog translation for this exact
+    /// key was never reachable. Package unit tests (`swift test
+    /// --package-path Packages/LiveWallpaperCore`) can't catch this: that
+    /// process's `Bundle.main` doesn't carry the app target's compiled
+    /// `Localizable.xcstrings`, so the routing can only be observed here,
+    /// in the app's own XCTest bundle.
+    @Test("Inline HTML source display name follows the app language preference")
+    func inlineHTMLSourceDisplayNameFollowsAppLanguage() {
+        let previous = UserDefaults.standard.string(forKey: AppLanguagePreference.storageKey)
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: AppLanguagePreference.storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: AppLanguagePreference.storageKey)
+            }
+        }
+
+        AppLanguagePreference.save(.simplifiedChinese)
+        // A hardcoded literal would return "Inline web content" regardless of
+        // the preference; only a catalog lookup can return the translation.
+        #expect(HTMLSource.inline("<html></html>").displayName == "内嵌网页内容")
+    }
 }

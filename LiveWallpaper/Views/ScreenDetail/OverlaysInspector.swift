@@ -140,7 +140,7 @@ struct OverlaysInspectorPanel: View {
             info: "Drawn over the wallpaper, whatever type it is"
         ) {
             Picker("", selection: particleEffectBinding) {
-                ForEach(ParticleEffect.allCases) { effect in
+                ForEach(Self.pickerEffects) { effect in
                     Text(effect.titleKey).tag(effect)
                 }
             }
@@ -220,6 +220,13 @@ struct OverlaysInspectorPanel: View {
     }
 
     // MARK: - Bindings
+
+    /// `.none` is what "off" is — closing it must go through
+    /// `weatherEnabledBinding` so the last effect gets remembered, not through
+    /// this picker directly.
+    static var pickerEffects: [ParticleEffect] {
+        ParticleEffect.allCases.filter { $0 != .none }
+    }
 
     private var particleEffectBinding: Binding<ParticleEffect> {
         Binding(

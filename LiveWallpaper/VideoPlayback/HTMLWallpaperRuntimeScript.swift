@@ -1369,8 +1369,6 @@ enum HTMLWallpaperRuntimeScript {
 
     // MARK: - CSP Injection
 
-    /// Opt-in meta CSP (paired with scheme-handler header). Permissive for WPE
-    /// corpus; off means no CSP from either path.
     /// Removes the peer-connection constructors from an isolated page.
     ///
     /// Measured 2026-08-31: with the network-isolation CSP in force, a Workshop
@@ -1404,6 +1402,8 @@ enum HTMLWallpaperRuntimeScript {
         """
     }
 
+    /// Opt-in meta CSP (paired with scheme-handler header). Permissive for WPE
+    /// corpus; off means no CSP from either path.
     static func cspInjection() -> String {
         return """
         (function () {

@@ -516,6 +516,15 @@ enum SystemMetricsSamplers {
         var counters: [Int32: ProcessCPUCounters]
     }
 
+    /// `proc_listallpids` returns the number of PIDs written, not a byte count —
+    /// dividing by the element stride, as this file used to, silently examined
+    /// only a quarter of the process table. Same bug and fix as
+    /// `CodexSessionScanner.allPIDs()` (measured 2026-08-09: 1131 returned
+    /// against 1130 real PIDs).
+    static func pidSlice(written: Int32, capacity: Int) -> Int {
+        min(Int(written), capacity)
+    }
+
     static func sampleTopProcesses(
         previous: [Int32: ProcessCPUCounters],
         interval: TimeInterval,
@@ -526,10 +535,11 @@ enum SystemMetricsSamplers {
         let capacity = proc_listallpids(nil, 0)
         guard capacity > 0 else { return TopProcessesResult(samples: [], ioSamples: [], counters: [:]) }
 
-        var pids = [Int32](repeating: 0, count: Int(capacity))
-        let byteCount = proc_listallpids(&pids, capacity * Int32(MemoryLayout<Int32>.stride))
-        guard byteCount > 0 else { return TopProcessesResult(samples: [], ioSamples: [], counters: [:]) }
-        let pidCount = Int(byteCount) / MemoryLayout<Int32>.stride
+        // Head-room so a process spawned between the two calls cannot truncate us.
+        var pids = [Int32](repeating: 0, count: Int(capacity) + 64)
+        let written = proc_listallpids(&pids, Int32(pids.count) * Int32(MemoryLayout<Int32>.stride))
+        guard written > 0 else { return TopProcessesResult(samples: [], ioSamples: [], counters: [:]) }
+        let pidCount = Self.pidSlice(written: written, capacity: pids.count)
 
         var counters: [Int32: ProcessCPUCounters] = [:]
         counters.reserveCapacity(pidCount)
@@ -713,12 +723,13 @@ enum SystemMetricsSamplers {
             return ANESample(processes: [], hasFootprint: false, totalFootprintBytes: 0)
         }
 
-        var pids = [Int32](repeating: 0, count: Int(capacity))
-        let byteCount = proc_listallpids(&pids, capacity * Int32(MemoryLayout<Int32>.stride))
-        guard byteCount > 0 else {
+        // Head-room so a process spawned between the two calls cannot truncate us.
+        var pids = [Int32](repeating: 0, count: Int(capacity) + 64)
+        let written = proc_listallpids(&pids, Int32(pids.count) * Int32(MemoryLayout<Int32>.stride))
+        guard written > 0 else {
             return ANESample(processes: [], hasFootprint: false, totalFootprintBytes: 0)
         }
-        let pidCount = Int(byteCount) / MemoryLayout<Int32>.stride
+        let pidCount = Self.pidSlice(written: written, capacity: pids.count)
 
         var scored: [(pid: Int32, footprint: UInt64)] = []
         for index in 0..<min(pidCount, pids.count) {

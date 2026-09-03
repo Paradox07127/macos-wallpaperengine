@@ -28,26 +28,49 @@ struct MonitorSampleDemand: Sendable, Equatable {
         placement.options[key]?.boolValue ?? true
     }
 
+    /// Single source of truth for "does this placement's rendered size ever
+    /// draw the top-processes column", grepped against each view's own size
+    /// dispatch so this can't drift silently:
+    /// - CPUWidgetView.swift: `topCPUProcesses` (:191) is read only inside
+    ///   `largeBody` (MARK: - L, :141) — S/M never call it.
+    /// - MemoryWidgetView.swift: `showsTopProcesses` (:156) is read only
+    ///   inside `large(cellHeight:)` (MARK: - L, :120) — S/M never call it.
+    /// - DiskWidgetView.swift: `topIOProcesses` (:191-192) is read only
+    ///   inside `large(cellHeight:)` (MARK: - Large, :196) — S/M never call it.
+    private static func drawsAtLargeOnly(_ widget: MonitorWidgetPlacement) -> Bool {
+        widget.size == .large
+    }
+
+    /// PowerWidgetView.swift: `.small` dispatches to `smallBody` (:21), which
+    /// never references `socTempC`; `.medium` and `.large` both dispatch to
+    /// `mediumBody` (:22-23), whose `temperatureChip` (:114-115) does.
+    private static func drawsSensorsAtMediumOrLarge(_ widget: MonitorWidgetPlacement) -> Bool {
+        widget.size != .small
+    }
+
     static func of(_ widgets: [MonitorWidgetPlacement]) -> Self {
         var demand = Self()
         for widget in widgets {
             switch widget.kind {
             case .cpu:
                 // CPU's "Top by CPU" column has no toggle — it draws whenever
-                // the sampler hands it processes, so the walk is unconditional.
-                demand.topProcesses = true
+                // the sampler hands it processes, but only at `.large`.
+                demand.topProcesses = demand.topProcesses || drawsAtLargeOnly(widget)
                 demand.sensors = demand.sensors || shows(widget, "showSensors")
             case .gpu:
                 demand.sensors = demand.sensors || shows(widget, "showSensors")
             case .power:
-                // No options popover, so its sensor row is always live.
-                demand.sensors = true
+                // No options popover, so its sensor row is always live at the
+                // sizes that draw it.
+                demand.sensors = demand.sensors || drawsSensorsAtMediumOrLarge(widget)
             case .processes:
                 demand.topProcesses = true
             case .memory:
-                demand.topProcesses = demand.topProcesses || shows(widget, "showTopProcesses")
+                demand.topProcesses = demand.topProcesses
+                    || (drawsAtLargeOnly(widget) && shows(widget, "showTopProcesses"))
             case .disk:
-                demand.processIO = demand.processIO || shows(widget, "showTopProcesses")
+                demand.processIO = demand.processIO
+                    || (drawsAtLargeOnly(widget) && shows(widget, "showTopProcesses"))
             case .network, .fleet, .aiEngine:
                 break
             }

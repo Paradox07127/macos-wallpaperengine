@@ -85,16 +85,13 @@ final class ScreenManager {
 
     /// Session install/replace/release must not leak the previous session's intent into the
     /// machine: drop the entry (lazy rebuild intends to play, matching every fresh session), hand
-    /// the fresh machine to a session that adopts it as its intent source, and re-sync if a non-
-    /// adopting session disagrees.
+    /// the fresh machine to a session that adopts it as its intent source.
     func resetPlaybackStateMachine(for screen: Screen) {
         playbackStateMachines.removeValue(forKey: screen.id)
         guard let playback = screen.playbackController else { return }
         let machine = playbackStateMachine(for: screen.id)
         if let adopting = playback as? any WallpaperIntentMachineAdopting {
             adopting.adoptPlaybackStateMachine(machine)
-        } else if !playback.userIntendsToPlay {
-            machine.userPause()
         }
     }
     /// Coarse "not normal" memory-pressure flag for tests.
@@ -316,7 +313,8 @@ final class ScreenManager {
                 self?.getScreenRefreshRate(for: screenID) ?? 60
             },
             isScreenSuspended: { [weak self] screenID in
-                self?.suspendedScreenIDs.contains(screenID) ?? true
+                guard let self else { return true }
+                return !(self.suspendReasonsByScreen[screenID] ?? []).isEmpty
             }
         )
     }()
@@ -336,9 +334,6 @@ final class ScreenManager {
     @ObservationIgnored var fullScreenTrackingGeneration: UInt64 = 0
     /// Per-display latch for the *occlusion* arm of the adaptive frame-rate throttle so the policy can apply hysteresis (avoids flapping as window coverage hovers near the enter/exit thresholds).
     @ObservationIgnored var adaptiveFrameRateOcclusionThrottled: [CGDirectDisplayID: Bool] = [:]
-
-    /// Screens whose last-resolved profile was `.suspended`.
-    @ObservationIgnored var suspendedScreenIDs: Set<CGDirectDisplayID> = []
 
     #if !LITE_BUILD
     /// Only sessions Loomscreen actually stopped for an in-place Steam update

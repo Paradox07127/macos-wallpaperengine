@@ -29,3 +29,51 @@ struct WallpaperEngineProjectPropertyValueTests {
         #expect(WallpaperEngineProjectPropertyValue.number(2.5).stringValue == "2.5")
     }
 }
+
+/// `HTMLConfig` and `SceneDescriptor` used to decode their property-override
+/// maps with a whole-dictionary `try?`/`do-catch`, so one malformed value
+/// (an unrepresentable JSON `null`, object, or array) dropped every override
+/// in the map, not just the bad key.
+@Suite("HTMLConfig / SceneDescriptor lossy override-map decode")
+struct LossyOverrideMapDecodeTests {
+    @Test("A malformed HTMLConfig override drops only that key, not the whole map")
+    func htmlConfigLossyDictDropsOnlyMalformedKey() throws {
+        var config = HTMLConfig()
+        config.wallpaperEngineProjectProperties = ["scale": .number(1.5)]
+
+        let data = try JSONEncoder().encode(config)
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var overrides = try #require(object["wallpaperEngineProjectProperties"] as? [String: Any])
+        overrides["tint"] = NSNull() // unrepresentable: not bool/number/string
+        object["wallpaperEngineProjectProperties"] = overrides
+        let corrupted = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(HTMLConfig.self, from: corrupted)
+
+        #expect(decoded.wallpaperEngineProjectProperties["scale"] == .number(1.5))
+        #expect(decoded.wallpaperEngineProjectProperties["tint"] == nil)
+    }
+
+    @Test("A malformed SceneDescriptor propertyOverrides entry drops only that key, not the whole increment")
+    func sceneDescriptorLossyDictDropsOnlyMalformedKey() throws {
+        let descriptor = SceneDescriptor(
+            workshopID: "123",
+            cacheRelativePath: "wpe-cache/123",
+            entryFile: "scene.json",
+            capabilityTier: .imageOnly,
+            propertyOverrides: ["scale": .number(1.5)]
+        )
+
+        let data = try JSONEncoder().encode(descriptor)
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var overrides = try #require(object["propertyOverrides"] as? [String: Any])
+        overrides["tint"] = NSNull()
+        object["propertyOverrides"] = overrides
+        let corrupted = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(SceneDescriptor.self, from: corrupted)
+
+        #expect(decoded.propertyOverrides["scale"] == .number(1.5))
+        #expect(decoded.propertyOverrides["tint"] == nil)
+    }
+}

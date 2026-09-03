@@ -7,14 +7,13 @@ enum WallpaperPreviewMetrics {
 }
 
 /// The one preview stage for video, web and scene: an aspect-fitted card centred
-/// in the pane, with controls floating along its bottom edge.
-/// Before this the three were hand-rolled separately and had drifted — two padding values
-/// against none, two sizing routines for the same 16:9 fit, scene pinned to the top while the
-/// other two centred. `controls` is overlaid *before* the expanding frame on purpose: the frame
-/// is the pane, the aspect-fit box is the picture, and controls after the frame drift past its edges — keeping this order means no caller can get it wrong.
-/// `title` floats on the picture's top edge, mirroring the control bar on its
-/// bottom edge — not inside the bar, where as the only flexible item it was
-/// always what gave way. On its own edge it has the whole width.
+/// in the pane, with controls floating along its bottom edge (the three used to
+/// be hand-rolled and drifted in padding, sizing and alignment).
+/// `controls` is overlaid *before* the expanding frame on purpose: the frame is
+/// the pane, the aspect-fit box is the picture, and controls applied after the
+/// frame drift past the picture's edges. `title` floats on the picture's top
+/// edge rather than inside the bar, where as the only flexible item it always
+/// gave way.
 struct WallpaperPreviewStage<Title: View, Content: View, Controls: View>: View {
     @ViewBuilder let title: () -> Title
     @ViewBuilder let content: () -> Content
