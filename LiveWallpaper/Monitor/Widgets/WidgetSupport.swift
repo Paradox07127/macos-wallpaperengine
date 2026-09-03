@@ -74,6 +74,15 @@ extension MonitorHistorySnapshot {
         // A chart needs two points to draw a segment.
         return inWindow.count >= minimumPoints ? inWindow : Array(series.suffix(minimumPoints))
     }
+
+    static func historyWindowSeconds(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
+        guard let optionSeconds, optionSeconds.isFinite, optionSeconds > 0 else {
+            return fallbackSeconds
+        }
+        // isFinite alone does not bound the conversion: 1e300 is finite and
+        // Int(_:) traps on it. Clamp in Double space before converting.
+        return Int(min(max(optionSeconds.rounded(), 2), 86400))
+    }
 }
 
 @MainActor

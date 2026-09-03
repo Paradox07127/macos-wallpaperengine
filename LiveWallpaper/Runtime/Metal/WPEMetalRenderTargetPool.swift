@@ -769,7 +769,7 @@ final class WPEMetalRenderTargetPool {
         }
     }
 
-    private static func align(_ size: Int, to alignment: Int) -> Int {
+    static func align(_ size: Int, to alignment: Int) -> Int {
         guard alignment > 0 else { return size }
         let remainder = size % alignment
         return remainder == 0 ? size : size + alignment - remainder

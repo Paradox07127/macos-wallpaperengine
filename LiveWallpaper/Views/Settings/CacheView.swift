@@ -86,14 +86,8 @@ struct WPECacheManagementView: View {
     }
 
     // Shared formatters — list refreshes often; don't rebuild per row.
-    var byteFormatter: ByteCountFormatter { Self.sharedByteFormatter }
-
-    private static let sharedByteFormatter: ByteCountFormatter = {
-        let f = ByteCountFormatter()
-        f.allowedUnits = [.useKB, .useMB, .useGB]
-        f.countStyle = .file
-        f.includesUnit = true
-        return f
-    }()
+    var byteFormatter: ByteCountFormatter {
+        WorkshopByteFormatter.kilobytesAndUp
+    }
 }
 #endif

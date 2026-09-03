@@ -316,6 +316,55 @@ struct NowPlayingArtworkFetcherTests {
         #expect(counter.count("any") == 4)
     }
 
+    /// The counterpart of `negativeCacheTTL`: a fetch that ended because
+    /// `cancelInFlight` cancelled it is not a failed lookup, so the key must not
+    /// enter the negative cache — nor may the dying task evict the replacement
+    /// fetch registered under the same key after it.
+    @Test("a cancelled fetch neither negative-caches nor evicts its replacement")
+    func cancelledFetchLeavesNoTrace() async {
+        let counter = RequestCounter()
+        let gates = [Gate(), Gate()]
+        let image = Data(repeating: 7, count: 64)
+        let fetcher = NowPlayingArtworkFetcher(
+            transport: { request in
+                let url = request.url!.absoluteString
+                if url.contains("oembed") {
+                    counter.bump("oembed")
+                    // Requests arrive one at a time here, so the count is the ordinal.
+                    await gates[min(counter.count("oembed"), gates.count) - 1].wait()
+                    // URLSession surfaces cancellation as a thrown error.
+                    if Task.isCancelled {
+                        throw URLError(.cancelled)
+                    }
+                    return ok(request, oembedJSON(thumbnail: "https://i.scdn.co/image/thumb"))
+                }
+                counter.bump("image")
+                return okImage(request, image)
+            },
+            artworkURLProvider: noPlayerArtworkURL
+        )
+
+        async let first = fetcher.artwork(for: spotifyState())
+        #expect(await waitUntil { counter.count("oembed") >= 1 })
+        await fetcher.cancelInFlight(except: nil)
+
+        // The replacement is registered while the cancelled task is still parked.
+        async let second = fetcher.artwork(for: spotifyState())
+        #expect(await waitUntil { counter.count("oembed") >= 2 })
+
+        await gates[0].open()
+        #expect(await first == nil)
+
+        async let third = fetcher.artwork(for: spotifyState())
+        _ = await waitUntil(timeout: 0.1) { false } // let the merge register
+        await gates[1].open()
+        let results = await (second, third)
+        #expect(results.0 == image)
+        #expect(results.1 == image, "a cancelled fetch must not negative-cache its key")
+        #expect(counter.count("oembed") == 2, "the replacement fetch must stay merged")
+        #expect(counter.count("image") == 1)
+    }
+
     @Test("images over 2MB are abandoned without retry and negative-cached")
     func oversizeImageAbandoned() async {
         let counter = RequestCounter()

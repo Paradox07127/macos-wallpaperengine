@@ -85,7 +85,7 @@ struct WallpaperEngineProject: Sendable, Equatable {
         }
 
         let workshopID = Self.trimmed(decoded.workshopid) ?? folder.lastPathComponent
-        guard WPEPathSafety.isSafeWorkshopID(workshopID) else {
+        guard WPEPathSafety.isSafeProjectID(workshopID) else {
             throw WPEProjectError.manifestMalformed("Invalid workshop id")
         }
 
@@ -146,8 +146,9 @@ struct WallpaperEngineProject: Sendable, Equatable {
               isDir.boolValue else {
             return false
         }
+        // `enumerator(at:)` yields nothing when the root itself is a symlink.
         guard let enumerator = FileManager.default.enumerator(
-            at: bin,
+            at: bin.standardizedFileURL.resolvingSymlinksInPath(),
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else {

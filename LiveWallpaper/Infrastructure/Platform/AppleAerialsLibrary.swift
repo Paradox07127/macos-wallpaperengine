@@ -65,7 +65,7 @@ final class AppleAerialsLibrary {
         }
 
         do {
-            let bookmarkData = try Self.createReadOnlyBookmark(for: directoryURL)
+            let bookmarkData = try DirectoryBookmarks.createReadOnlyBookmark(for: directoryURL)
             SettingsManager.shared.saveAerialsDirectoryBookmark(bookmarkData)
             isAuthorized = true
             lastScanError = nil
@@ -181,15 +181,10 @@ final class AppleAerialsLibrary {
 // MARK: - Bookmark Resolution
 
 extension AppleAerialsLibrary {
-    struct DirectoryBookmarkResolution {
-        let url: URL
-        let isStale: Bool
-    }
-
     typealias DirectoryBookmarkResolver = (Data) throws -> DirectoryBookmarkResolution
 
     func resolveAuthorizedDirectory(
-        using resolver: DirectoryBookmarkResolver = AppleAerialsLibrary.resolveDirectoryBookmark
+        using resolver: DirectoryBookmarkResolver = DirectoryBookmarks.resolveDirectoryBookmark
     ) -> URL? {
         guard let bookmarkData = SettingsManager.shared.loadAerialsDirectoryBookmark() else {
             isAuthorized = false
@@ -206,7 +201,7 @@ extension AppleAerialsLibrary {
                 )
                 // Re-bookmarking needs the scope open (same as WPEEngineAssetsLibrary).
                 SecurityScopedBookmarkResolver.withScopedAccess(resolution.url) { _ in
-                    if let fresh = try? Self.createReadOnlyBookmark(for: resolution.url) {
+                    if let fresh = try? DirectoryBookmarks.createReadOnlyBookmark(for: resolution.url) {
                         SettingsManager.shared.saveAerialsDirectoryBookmark(fresh)
                     }
                 }
@@ -221,22 +216,6 @@ extension AppleAerialsLibrary {
             lastScanError = message
             return nil
         }
-    }
-
-    nonisolated static func resolveDirectoryBookmark(_ bookmarkData: Data) throws -> DirectoryBookmarkResolution {
-        let (url, isStale) = try SecurityScopedBookmarkResolver.shared.resolveData(bookmarkData)
-        return DirectoryBookmarkResolution(url: url, isStale: isStale)
-    }
-
-    nonisolated static func createReadOnlyBookmark(for url: URL) throws -> Data {
-        let options: URL.BookmarkCreationOptions = [.withSecurityScope, .securityScopeAllowOnlyReadAccess]
-        let noKeys: Set<URLResourceKey>? = nil
-        let noRelativeURL: URL? = nil
-        return try url.bookmarkData(
-            options: options,
-            includingResourceValuesForKeys: noKeys,
-            relativeTo: noRelativeURL
-        )
     }
 }
 
@@ -255,7 +234,7 @@ extension AppleAerialsLibrary {
         metadata: [String: AerialMetadata] = [:],
         recursively: Bool,
         fileManager: FileManager = .default,
-        bookmarkCreator: BookmarkCreator = AppleAerialsLibrary.createReadOnlyBookmark
+        bookmarkCreator: BookmarkCreator = DirectoryBookmarks.createReadOnlyBookmark
     ) throws -> [AerialAsset] {
         let videoURLs = try movFiles(
             in: directoryURL,
@@ -306,7 +285,7 @@ extension AppleAerialsLibrary {
         }
         if last == "aerials" {
             let videos = selectedDirectory.appendingPathComponent("videos", isDirectory: true)
-            if directoryExists(videos, fileManager: fileManager) {
+            if DirectoryBookmarks.directoryExists(videos, fileManager: fileManager) {
                 return ScanPlan(root: videos, recursive: false)
             }
             return nil
@@ -318,7 +297,7 @@ extension AppleAerialsLibrary {
             let videos = selectedDirectory
                 .appendingPathComponent("aerials", isDirectory: true)
                 .appendingPathComponent("videos", isDirectory: true)
-            if directoryExists(videos, fileManager: fileManager) {
+            if DirectoryBookmarks.directoryExists(videos, fileManager: fileManager) {
                 return ScanPlan(root: videos, recursive: false)
             }
             return nil
@@ -327,29 +306,29 @@ extension AppleAerialsLibrary {
         let tahoeVideos = selectedDirectory
             .appendingPathComponent("aerials", isDirectory: true)
             .appendingPathComponent("videos", isDirectory: true)
-        if directoryExists(tahoeVideos, fileManager: fileManager) {
+        if DirectoryBookmarks.directoryExists(tahoeVideos, fileManager: fileManager) {
             return ScanPlan(root: tahoeVideos, recursive: false)
         }
 
         let bundledWallpapers = selectedDirectory.appendingPathComponent(".wallpapers", isDirectory: true)
-        if directoryExists(bundledWallpapers, fileManager: fileManager) {
+        if DirectoryBookmarks.directoryExists(bundledWallpapers, fileManager: fileManager) {
             return ScanPlan(root: bundledWallpapers, recursive: true)
         }
 
         let customer = selectedDirectory.appendingPathComponent("Customer", isDirectory: true)
-        if directoryExists(customer, fileManager: fileManager) {
+        if DirectoryBookmarks.directoryExists(customer, fileManager: fileManager) {
             return ScanPlan(root: customer, recursive: true)
         }
 
         let codec4K = selectedDirectory.appendingPathComponent("4KSDR240FPS", isDirectory: true)
-        if directoryExists(codec4K, fileManager: fileManager) {
+        if DirectoryBookmarks.directoryExists(codec4K, fileManager: fileManager) {
             return ScanPlan(root: codec4K, recursive: false)
         }
 
         let idleassetsCustomer = selectedDirectory
             .appendingPathComponent("com.apple.idleassetsd", isDirectory: true)
             .appendingPathComponent("Customer", isDirectory: true)
-        if directoryExists(idleassetsCustomer, fileManager: fileManager) {
+        if DirectoryBookmarks.directoryExists(idleassetsCustomer, fileManager: fileManager) {
             return ScanPlan(root: idleassetsCustomer, recursive: true)
         }
 
@@ -364,8 +343,9 @@ extension AppleAerialsLibrary {
         let resourceKeys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
 
         if recursively {
+            // `enumerator(at:)` yields nothing when the root itself is a symlink.
             guard let enumerator = fileManager.enumerator(
-                at: directoryURL,
+                at: directoryURL.standardizedFileURL.resolvingSymlinksInPath(),
                 includingPropertiesForKeys: resourceKeys,
                 options: [.skipsHiddenFiles, .skipsPackageDescendants]
             ) else {
@@ -398,12 +378,6 @@ extension AppleAerialsLibrary {
             return nil
         }
         return Int64(size)
-    }
-
-    nonisolated private static func directoryExists(_ url: URL, fileManager: FileManager) -> Bool {
-        var isDirectory: ObjCBool = false
-        let exists = fileManager.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory)
-        return exists && isDirectory.boolValue
     }
 }
 
@@ -510,7 +484,7 @@ extension AppleAerialsLibrary {
             return parent.appendingPathComponent("entries.json", isDirectory: false)
         }
         let customerDirectory = selectedDirectory.appendingPathComponent("Customer", isDirectory: true)
-        if directoryExists(customerDirectory, fileManager: fileManager) {
+        if DirectoryBookmarks.directoryExists(customerDirectory, fileManager: fileManager) {
             return customerDirectory.appendingPathComponent("entries.json", isDirectory: false)
         }
         return selectedDirectory.appendingPathComponent("entries.json", isDirectory: false)
@@ -548,7 +522,7 @@ extension AppleAerialsLibrary {
     }
 
     nonisolated private static func directoryIsReadable(_ url: URL, fileManager: FileManager) -> Bool {
-        guard directoryExists(url, fileManager: fileManager) else { return false }
+        guard DirectoryBookmarks.directoryExists(url, fileManager: fileManager) else { return false }
         return (try? fileManager.contentsOfDirectory(
             at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
         )) != nil

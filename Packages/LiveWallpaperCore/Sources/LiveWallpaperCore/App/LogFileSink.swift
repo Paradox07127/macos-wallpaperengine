@@ -74,7 +74,7 @@ public final class LogFileSink: @unchecked Sendable {
         let timestamp = formatter.string(from: Date())
         let levelTag = Self.levelTag(level)
         let fileName = (file as NSString).lastPathComponent
-        let safeMessage = Self.sanitizedMessage(message)
+        let safeMessage = Logger.sanitizedBody(message)
         let entry = "\(timestamp) [\(category.rawValue)] [\(levelTag)] \(fileName):\(line) — \(safeMessage)\n"
 
         lock.lock()
@@ -137,7 +137,7 @@ public final class LogFileSink: @unchecked Sendable {
         cachedSize = 0
     }
 
-    private static func levelTag(_ level: Logger.Level) -> String {
+    public static func levelTag(_ level: Logger.Level) -> String {
         switch level {
         case .debug:    return "DEBUG"
         case .info:     return "INFO"
@@ -182,7 +182,7 @@ public final class LogFileSink: @unchecked Sendable {
             .map(String.init)
             // Re-scrub on read so diagnostics written by older app versions
             // cannot leak when included in a new bug report.
-            .map(Self.sanitizedMessage)
+            .map(Logger.sanitizedBody)
             .map { line in
                 line.count > maxLineLength
                     ? String(line.prefix(maxLineLength)) + "…"
@@ -195,10 +195,6 @@ public final class LogFileSink: @unchecked Sendable {
         // the failures attributable to a scene.
         let context = lines.filter { $0.contains("[NOTICE]") }
         return Array(context.suffix(maxContextLines)) + Array(failures.suffix(maxLines))
-    }
-
-    static func sanitizedMessage(_ message: String) -> String {
-        LogPrivacyRedactor.scrub(message)
     }
 
     private static func prepareLogFileURL() -> URL? {

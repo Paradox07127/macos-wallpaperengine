@@ -53,7 +53,7 @@ final class WPEEngineAssetsLibrary {
 
         do {
             // Bookmark the panel URL, not parent-normalized `engineRoot` (assets/ pick).
-            let bookmarkData = try Self.createReadOnlyBookmark(for: selectedURL)
+            let bookmarkData = try DirectoryBookmarks.createReadOnlyBookmark(for: selectedURL)
             // A manual link supersedes any prior downloaded install — drop the
             // managed marker so `resolveAuthorizedRoot` honors the new folder.
             SettingsManager.shared.wpeEngineAssetsManagedBuildID = nil
@@ -77,7 +77,7 @@ final class WPEEngineAssetsLibrary {
             lastError = nil
             return managed
         }
-        return resolveAuthorizedRoot(using: Self.resolveDirectoryBookmark)
+        return resolveAuthorizedRoot(using: DirectoryBookmarks.resolveDirectoryBookmark)
     }
 
     /// Re-derive the published `isAuthorized` / display-name state. Call after a
@@ -154,7 +154,7 @@ extension WPEEngineAssetsLibrary {
     @discardableResult
     static func adoptManagedInstall(at root: URL, buildID: String?) -> Bool {
         do {
-            let bookmark = try createReadOnlyBookmark(for: root)
+            let bookmark = try DirectoryBookmarks.createReadOnlyBookmark(for: root)
             SettingsManager.shared.saveWPEEngineAssetsBookmark(bookmark)
             SettingsManager.shared.wpeEngineAssetsManagedBuildID =
                 buildID ?? unknownManagedBuildMarker
@@ -186,11 +186,6 @@ extension WPEEngineAssetsLibrary {
 // MARK: - Bookmark Resolution
 
 extension WPEEngineAssetsLibrary {
-    struct DirectoryBookmarkResolution {
-        let url: URL
-        let isStale: Bool
-    }
-
     typealias DirectoryBookmarkResolver = (Data) throws -> DirectoryBookmarkResolution
 
     func resolveAuthorizedRoot(using resolver: DirectoryBookmarkResolver) -> URL? {
@@ -226,7 +221,7 @@ extension WPEEngineAssetsLibrary {
                 )
                 // Re-bookmark the granted/resolved URL, not parent-normalized rootURL.
                 SecurityScopedBookmarkResolver.withScopedAccess(resolution.url) { _ in
-                    if let fresh = try? Self.createReadOnlyBookmark(for: resolution.url) {
+                    if let fresh = try? DirectoryBookmarks.createReadOnlyBookmark(for: resolution.url) {
                         SettingsManager.shared.saveWPEEngineAssetsBookmark(fresh)
                     }
                 }
@@ -244,22 +239,6 @@ extension WPEEngineAssetsLibrary {
             lastError = message
             return nil
         }
-    }
-
-    nonisolated static func resolveDirectoryBookmark(_ bookmarkData: Data) throws -> DirectoryBookmarkResolution {
-        let (url, isStale) = try SecurityScopedBookmarkResolver.shared.resolveData(bookmarkData)
-        return DirectoryBookmarkResolution(url: url, isStale: isStale)
-    }
-
-    nonisolated static func createReadOnlyBookmark(for url: URL) throws -> Data {
-        let options: URL.BookmarkCreationOptions = [.withSecurityScope, .securityScopeAllowOnlyReadAccess]
-        let noKeys: Set<URLResourceKey>? = nil
-        let noRelativeURL: URL? = nil
-        return try url.bookmarkData(
-            options: options,
-            includingResourceValuesForKeys: noKeys,
-            relativeTo: noRelativeURL
-        )
     }
 }
 
@@ -284,7 +263,7 @@ extension WPEEngineAssetsLibrary {
         if let valid = candidates.compactMap({ validatedEngineRoot(from: $0, fileManager: fileManager) }).first {
             return valid
         }
-        if let existing = candidates.first(where: { directoryExists($0, fileManager: fileManager) }) {
+        if let existing = candidates.first(where: { DirectoryBookmarks.directoryExists($0, fileManager: fileManager) }) {
             return existing
         }
         return steamRoot.deletingLastPathComponent()
@@ -309,7 +288,7 @@ extension WPEEngineAssetsLibrary {
         // The user may have drilled into the `assets` folder itself; its parent
         // is the canonical root (the resolver appends `assets/` again).
         if root.lastPathComponent == "assets",
-           directoryExists(root, fileManager: fileManager),
+           DirectoryBookmarks.directoryExists(root, fileManager: fileManager),
            hasAssetsSubdirectory(root.deletingLastPathComponent(), fileManager: fileManager) {
             return root.deletingLastPathComponent()
         }
@@ -317,13 +296,7 @@ extension WPEEngineAssetsLibrary {
     }
 
     nonisolated static func hasAssetsSubdirectory(_ rootURL: URL, fileManager: FileManager = .default) -> Bool {
-        directoryExists(rootURL.appendingPathComponent("assets", isDirectory: true), fileManager: fileManager)
-    }
-
-    nonisolated private static func directoryExists(_ url: URL, fileManager: FileManager) -> Bool {
-        var isDirectory: ObjCBool = false
-        let exists = fileManager.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory)
-        return exists && isDirectory.boolValue
+        DirectoryBookmarks.directoryExists(rootURL.appendingPathComponent("assets", isDirectory: true), fileManager: fileManager)
     }
 }
 #endif

@@ -170,7 +170,7 @@ struct DiskWidgetView: View {
     // MARK: - Settings (placement.options; read-side only)
 
     private var chartWindowSeconds: Int {
-        Self.historyWindowSeconds(
+        MonitorHistorySnapshot.historyWindowSeconds(
             optionSeconds: context.placement.options["historyWindow"]?.numberValue,
             fallbackSeconds: 120)
     }
@@ -416,15 +416,6 @@ struct DiskWidgetView: View {
     }
 
     /// Last `count` samples of a series (never fewer than the series has) — the
-    nonisolated static func historyWindowSeconds(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
-        guard let optionSeconds, optionSeconds.isFinite, optionSeconds > 0 else {
-            return fallbackSeconds
-        }
-        // isFinite alone does not bound the conversion: 1e300 is finite and
-        // Int(_:) traps on it. Clamp in Double space before converting.
-        return Int(min(max(optionSeconds.rounded(), 2), 86_400))
-    }
-
     nonisolated static func breakdownIsCompact(_ raw: String?) -> Bool { raw == "compact" }
 
     nonisolated static func showsTopProcesses(_ raw: Bool?) -> Bool { raw ?? true }

@@ -302,7 +302,7 @@ struct MemoryWidgetView: View {
 
     private var trendWindowSeconds: Int {
         let fallback = context.placement.size == .large ? 120 : 60
-        return MemoryWidgetView.historyWindowSeconds(
+        return MonitorHistorySnapshot.historyWindowSeconds(
             optionSeconds: context.placement.options["historyWindow"]?.numberValue,
             fallbackSeconds: fallback)
     }
@@ -345,15 +345,6 @@ struct MemoryWidgetView: View {
     nonisolated static func showsSwap(swapBytes: UInt64?, pressure raw: String?) -> Bool {
         if let swapBytes, swapBytes > 0 { return true }
         return pressure(raw) != .normal
-    }
-
-    nonisolated static func historyWindowSeconds(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
-        guard let optionSeconds, optionSeconds.isFinite, optionSeconds > 0 else {
-            return fallbackSeconds
-        }
-        // isFinite alone does not bound the conversion: 1e300 is finite and
-        // Int(_:) traps on it. Clamp in Double space before converting.
-        return Int(min(max(optionSeconds.rounded(), 2), 86_400))
     }
 
     nonisolated static func showsTopProcesses(_ raw: Bool?) -> Bool { raw ?? true }

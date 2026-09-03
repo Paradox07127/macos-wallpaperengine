@@ -214,7 +214,7 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         sessionLock.unlock()
         guard let url else { return }
         let timestamp = Date()
-        let tag = levelTag(level)
+        let tag = LogFileSink.levelTag(level)
         writeQueue.async {
             let line = "[\(Self.logTimestampFormatter.string(from: timestamp))][\(tag)] \(message)\n"
             guard let data = line.data(using: .utf8) else { return }
@@ -675,17 +675,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
             return label
         }
         return "\(texture.width)x\(texture.height):\(texture.pixelFormat.rawValue)"
-    }
-
-    private func levelTag(_ level: Logger.Level) -> String {
-        switch level {
-        case .debug:    return "DEBUG"
-        case .info:     return "INFO"
-        case .notice:   return "NOTICE"
-        case .warning:  return "WARNING"
-        case .error:    return "ERROR"
-        case .fault:    return "FAULT"
-        }
     }
 }
 #endif

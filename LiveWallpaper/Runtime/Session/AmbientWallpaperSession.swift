@@ -10,7 +10,7 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     /// `userIntendsToPlay && profile == .quality`. Self-built so an
     /// independently constructed session stands alone; `ScreenManager` swaps in
     /// the screen's shared machine via `adoptPlaybackStateMachine` on install.
-    private var playbackMachine = WallpaperPlaybackStateMachine()
+    var playbackMachine = WallpaperPlaybackStateMachine()
     var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
     let wallpaperType: WallpaperType
     private(set) var runtimeError: WallpaperRuntimeError? {
@@ -98,17 +98,6 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     func pause() {
         playbackMachine.userPause()
         applyPerformanceProfile(currentProfile)
-    }
-
-    func adoptPlaybackStateMachine(_ machine: WallpaperPlaybackStateMachine) {
-        if machine.userIntendsToPlay != playbackMachine.userIntendsToPlay {
-            if playbackMachine.userIntendsToPlay {
-                machine.userPlay()
-            } else {
-                machine.userPause()
-            }
-        }
-        playbackMachine = machine
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {

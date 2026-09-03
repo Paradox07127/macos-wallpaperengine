@@ -99,7 +99,7 @@ extension PlaybackCoordinator {
                 // Superseded before validate returned — not an error.
                 return
             } catch {
-                let runtimeError = Self.runtimeError(from: error, url: url)
+                let runtimeError = WallpaperVideoPlayer.makeRuntimeError(from: error, url: url)
                 let message = error.localizedDescription
                 await MainActor.run { [weak self] in
                     guard let self,

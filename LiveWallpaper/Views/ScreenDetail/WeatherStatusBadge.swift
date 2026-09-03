@@ -63,7 +63,7 @@ struct WeatherStatusBadge: View {
             }
 
             if needsLocationSettingsLink {
-                Button(action: openLocationSettings) {
+                Button(action: Self.openLocationSettings) {
                     Text(
                         "Open Settings",
                         comment: "Weather badge button label that jumps to System Settings → Location Services."
@@ -99,7 +99,7 @@ struct WeatherStatusBadge: View {
         .dynamicTypeSize(...DynamicTypeSize.accessibility3)
     }
 
-    private func openLocationSettings() {
+    static func openLocationSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") {
             NSWorkspace.shared.open(url)
         }

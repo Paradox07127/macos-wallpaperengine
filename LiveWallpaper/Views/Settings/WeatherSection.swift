@@ -1,4 +1,3 @@
-import AppKit
 import CoreLocation
 import LiveWallpaperCore
 import SwiftUI
@@ -174,14 +173,8 @@ extension GeneralSettingsView {
             screenManager.weatherService.refresh()
             scheduleSystemStatusRefresh(.weatherLocation)
         default:
-            openLocationServicesSettings()
+            WeatherStatusBadge.openLocationSettings()
             scheduleSystemStatusRefresh(.weatherLocation)
-        }
-    }
-
-    private func openLocationServicesSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") {
-            NSWorkspace.shared.open(url)
         }
     }
 }

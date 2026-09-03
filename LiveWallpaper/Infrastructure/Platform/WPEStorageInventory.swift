@@ -126,7 +126,7 @@ actor WPEStorageInventoryScanner {
             let id = child.lastPathComponent
             // A symlinked id folder could point anywhere; refuse to walk it.
             let values = try? child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            guard WPEPathSafety.isSafeWorkshopID(id),
+            guard WPEPathSafety.isSafeProjectID(id),
                   values?.isDirectory == true,
                   values?.isSymbolicLink != true else { continue }
             let bytes = WPEStoragePaths.allocatedBytes(

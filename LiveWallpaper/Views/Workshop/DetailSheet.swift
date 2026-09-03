@@ -451,8 +451,8 @@ struct WorkshopInspectorContent: View {
 
         let estimatedDownloaded = UInt64((Double(Int64(clamping: totalBytes)) * fraction).rounded())
         let downloadedBytes = downloadProgressBytes?.downloaded ?? estimatedDownloaded
-        let downloadedText = Self.byteFormatter.string(fromByteCount: Int64(clamping: downloadedBytes))
-        let totalText = Self.byteFormatter.string(fromByteCount: Int64(clamping: totalBytes))
+        let downloadedText = WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(clamping: downloadedBytes))
+        let totalText = WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(clamping: totalBytes))
         return "\(percent)% · \(downloadedText) / \(totalText)"
     }
 
@@ -481,7 +481,7 @@ struct WorkshopInspectorContent: View {
                     }
                 }
                 if let size = item.fileSizeBytes {
-                    Text(verbatim: Self.byteFormatter.string(fromByteCount: Int64(clamping: size)))
+                    Text(verbatim: WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(clamping: size)))
                 }
             }
         }
@@ -511,26 +511,14 @@ struct WorkshopInspectorContent: View {
             counts.append(formatSubs(subs))
         }
         if let views = item.viewCount, views > 0 {
-            counts.append(String(localized: "\(compactCount(views)) views",
+            counts.append(String(localized: "\(WorkshopCountFormatter.compact(views)) views",
                                  bundle: .appLanguage, comment: "Workshop item view count. Placeholder is a compact number such as 6.1K."))
         }
         if let favorites = item.favoriteCount, favorites > 0 {
-            counts.append(String(localized: "\(compactCount(favorites)) favorites",
+            counts.append(String(localized: "\(WorkshopCountFormatter.compact(favorites)) favorites",
                                  bundle: .appLanguage, comment: "Workshop item favorite count. Placeholder is a compact number such as 6.1K."))
         }
         return counts
-    }
-
-    /// Views and favorites put the magnitude suffix inside the number, so one
-    /// catalog key covers all three magnitudes.
-    private func compactCount(_ count: Int) -> String {
-        if count >= 1_000_000 {
-            return String(format: "%.1fM", locale: .current, Double(count) / 1_000_000.0)
-        }
-        if count >= 1_000 {
-            return String(format: "%.1fK", locale: .current, Double(count) / 1_000.0)
-        }
-        return count.formatted()
     }
 
     @ViewBuilder
@@ -605,13 +593,6 @@ struct WorkshopInspectorContent: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
-        return formatter
-    }()
-
-    private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useMB, .useGB]
-        formatter.countStyle = .file
         return formatter
     }()
 }

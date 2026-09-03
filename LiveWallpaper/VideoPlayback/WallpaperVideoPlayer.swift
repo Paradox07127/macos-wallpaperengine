@@ -415,7 +415,7 @@ final class WallpaperVideoPlayer {
                 self.stopAccessingResource()
                 guard self.isLifecycleActive(generation) else { return }
                 Logger.error("Error loading video: \(error.localizedDescription)", category: .videoPlayer)
-                self.reportError(self.makeRuntimeError(from: error, url: url))
+                reportError(Self.makeRuntimeError(from: error, url: url))
             }
 
         }
@@ -790,7 +790,7 @@ final class WallpaperVideoPlayer {
                 }
                 Logger.warning("Playback item failed (code: \(nsError.code)): \(error.localizedDescription)", category: .videoPlayer)
                 if let url = self.videoURL {
-                    self.reportError(self.makeRuntimeError(from: error, url: url))
+                    reportError(Self.makeRuntimeError(from: error, url: url))
                 }
             }
             .store(in: &cleanupTasks)
@@ -1474,7 +1474,7 @@ final class WallpaperVideoPlayer {
         onError?(error)
     }
 
-    private func makeRuntimeError(from error: Error, url: URL) -> WallpaperRuntimeError {
+    nonisolated static func makeRuntimeError(from error: Error, url: URL) -> WallpaperRuntimeError {
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorNotConnectedToInternet {
             return .networkOffline

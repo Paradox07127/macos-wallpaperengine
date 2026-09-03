@@ -59,7 +59,7 @@ enum WPEMetalStaticLayerClassifier {
                   !usesAnimatedShader(pass),
                   !hasAnimatedConstant(pass) else { return nil }
 
-            for reference in textureReferences(for: pass) {
+            for reference in pass.textureReferences {
                 switch reference {
                 case .previous:
                     return nil
@@ -105,14 +105,6 @@ enum WPEMetalStaticLayerClassifier {
             if case .animated = value { return true }
             return false
         }
-    }
-
-    private static func textureReferences(for pass: WPEPreparedRenderPass) -> [WPETextureReference] {
-        var references: [WPETextureReference] = [pass.pass.source]
-        references.append(contentsOf: pass.pass.textures.values)
-        references.append(contentsOf: pass.pass.binds.values)
-        references.append(contentsOf: pass.textureBindings.values)
-        return references
     }
 }
 

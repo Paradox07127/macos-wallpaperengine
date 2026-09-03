@@ -14,7 +14,7 @@ struct WPEDependencyMountResolver {
         applicationSupportRootURL: URL? = nil,
         fileManager: FileManager = .default
     ) -> [WPEAssetMount] {
-        let declared = dependencyWorkshopIDs.filter(WPEPathSafety.isSafeWorkshopID)
+        let declared = dependencyWorkshopIDs.filter(WPEPathSafety.isSafeProjectID)
         guard !declared.isEmpty else { return [] }
 
         let appSupportRoot = (applicationSupportRootURL ?? WPEPathSafety.defaultApplicationSupportRoot(fileManager: fileManager))?

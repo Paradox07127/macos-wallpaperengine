@@ -30,7 +30,7 @@ struct AppleAerialsBookmarkResolutionTests {
         withSavedBookmarkState {
             let library = AppleAerialsLibrary()
             let resolved = library.resolveAuthorizedDirectory(using: { _ in
-                AppleAerialsLibrary.DirectoryBookmarkResolution(url: directory, isStale: false)
+                DirectoryBookmarkResolution(url: directory, isStale: false)
             })
 
             #expect(resolved == directory)
@@ -49,12 +49,12 @@ struct AppleAerialsBookmarkResolutionTests {
 
         // This host may be unable to mint a security-scoped bookmark for a plain
         // temp directory; skip rather than assert a false failure.
-        guard (try? AppleAerialsLibrary.createReadOnlyBookmark(for: directory)) != nil else { return }
+        guard (try? DirectoryBookmarks.createReadOnlyBookmark(for: directory)) != nil else { return }
 
         withSavedBookmarkState {
             let library = AppleAerialsLibrary()
             let resolved = library.resolveAuthorizedDirectory(using: { _ in
-                AppleAerialsLibrary.DirectoryBookmarkResolution(url: directory, isStale: true)
+                DirectoryBookmarkResolution(url: directory, isStale: true)
             })
 
             #expect(resolved == directory)

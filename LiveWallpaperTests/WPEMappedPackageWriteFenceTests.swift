@@ -189,11 +189,12 @@ struct WPEMappedPackageWriteFenceTests {
     /// mapped file for writing.
     private static let auditedWriteSites: [String: [String: Int]] = [
         // Audited 2026-08-24: writes a `<sha256>.<uuid>.tmp` under the app's own
-        // Caches dir and renames it into place. Never touches a mapped package —
-        // the bytes are Workshop preview images fetched over the network, and the
-        // directory is created by this type, not opened from scene content.
-        "LiveWallpaper/Infrastructure/Workshop/WorkshopPreviewDiskCache.swift": [".write(to": 1],
-        "LiveWallpaper/Infrastructure/Workshop/WorkshopQueryCache.swift": [".write(to": 1],
+        // Caches / Application Support dir and renames it into place. Never touches
+        // a mapped package — the bytes are Workshop preview images and query pages
+        // fetched over the network, and the directory is created by this type, not
+        // opened from scene content. (Shared by WorkshopPreviewDiskCache and
+        // WorkshopQueryCache since 2026-09-02.)
+        "LiveWallpaper/Infrastructure/Workshop/WorkshopDiskCacheStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Platform/DesktopPictureFrameExtractor.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Diagnostics/WPESceneDebugArtifacts.swift": [
             "createFile(": 1,

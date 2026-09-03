@@ -45,13 +45,7 @@ actor NowPlayingArtworkFetcher {
     private let transport: Transport
     private let artworkURLProvider: ArtworkURLProvider
     private let now: @Sendable () -> Date
-
-    private var cache: [String: Data] = [:]
-    /// Least-recently-used first.
-    private var cacheOrder: [String] = []
-    /// Track key → expiry instant.
-    private var negativeCache: [String: Date] = [:]
-    private var inFlight: [String: Task<Data?, Never>] = [:]
+    private var memo = NowPlayingMemoCache<Data>(capacity: positiveCacheLimit, negativeTTL: negativeTTL)
 
     init(
         transport: @escaping Transport = NowPlayingNetwork.boundedTransport(byteCap: maxImageBytes),
@@ -154,9 +148,7 @@ actor NowPlayingArtworkFetcher {
 
     /// Positive-cache-only lookup; never touches the network.
     func cachedArtwork(forKey key: String) -> Data? {
-        guard let data = cache[key] else { return nil }
-        touch(key)
-        return data
+        memo.cached(key)
     }
 
     /// Resolves artwork for the state, merging concurrent calls per track key.
@@ -166,51 +158,26 @@ actor NowPlayingArtworkFetcher {
         guard let key = Self.trackKey(for: state),
               let route = NowPlayingArtworkRoute.all.first(where: { $0.bundleID == state.playerBundleID })
         else { return nil }
-        if let data = cachedArtwork(forKey: key) { return data }
-        if let expiry = negativeCache[key] {
-            if now() < expiry { return nil }
-            negativeCache.removeValue(forKey: key)
+        if let data = memo.cached(key) {
+            return data
         }
-        if let running = inFlight[key] { return await running.value }
+        if memo.isNegative(key, now: now()) {
+            return nil
+        }
+        if let running = memo.inFlight[key] {
+            return await running.value
+        }
         let task = Task<Data?, Never> {
             let result = await self.runFetch(strategy: route.strategy, state: state)
-            self.finish(key: key, result: result)
+            self.memo.finish(key: key, result: result, cancelled: Task.isCancelled, now: self.now())
             return result
         }
-        inFlight[key] = task
+        memo.inFlight[key] = task
         return await task.value
     }
 
-    /// Drops every merged fetch except the one the caller still wants. Without
-    /// this, skipping through a playlist leaves one live download per skipped
-    /// track: the callers go away, but the merged task they shared does not.
     func cancelInFlight(except key: String?) {
-        for (running, task) in inFlight where running != key {
-            task.cancel()
-            inFlight.removeValue(forKey: running)
-        }
-    }
-
-    private func finish(key: String, result: Data?) {
-        inFlight.removeValue(forKey: key)
-        if let result {
-            store(key: key, data: result)
-        } else {
-            negativeCache[key] = now().addingTimeInterval(Self.negativeTTL)
-        }
-    }
-
-    private func store(key: String, data: Data) {
-        cache[key] = data
-        touch(key)
-        while cacheOrder.count > Self.positiveCacheLimit {
-            cache.removeValue(forKey: cacheOrder.removeFirst())
-        }
-    }
-
-    private func touch(_ key: String) {
-        if let index = cacheOrder.firstIndex(of: key) { cacheOrder.remove(at: index) }
-        cacheOrder.append(key)
+        memo.cancelInFlight(except: key)
     }
 
     // MARK: - Network

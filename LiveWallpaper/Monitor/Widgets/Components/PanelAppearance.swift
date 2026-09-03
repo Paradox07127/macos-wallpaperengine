@@ -34,13 +34,25 @@ enum MonitorPanelAppearance {
     /// `#RRGGBB` / `RRGGBB`; nil for anything else so a malformed stored value
     /// falls back to the default rather than painting black.
     static func color(fromHex hex: String) -> Color? {
+        guard let rgb = parseHexRGB(hex) else { return nil }
+        return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+
+    /// `#RRGGBB` or `RRGGBB`, any case, as 0…1 components. `isHexDigit` is not
+    /// redundant with the radix-16 init: `UInt32("+1F2A3", radix: 16)` accepts a sign.
+    static func parseHexRGB(_ hex: String) -> (red: Double, green: Double, blue: Double)? {
         var text = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.hasPrefix("#") { text.removeFirst() }
-        guard text.count == 6, let value = UInt32(text, radix: 16) else { return nil }
-        return Color(
-            red: Double((value >> 16) & 0xFF) / 255,
-            green: Double((value >> 8) & 0xFF) / 255,
-            blue: Double(value & 0xFF) / 255
+        if text.hasPrefix("#") {
+            text.removeFirst()
+        }
+        guard text.count == 6,
+              text.allSatisfy(\.isHexDigit),
+              let value = UInt32(text, radix: 16)
+        else { return nil }
+        return (
+            Double((value >> 16) & 0xFF) / 255,
+            Double((value >> 8) & 0xFF) / 255,
+            Double(value & 0xFF) / 255
         )
     }
 

@@ -16,8 +16,8 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
 
     /// `.mappedIfSafe` is advisory: Foundation refuses to map files on network and removable volumes and
     /// silently reads them onto the heap instead, turning "serve it from a mapping" into "hold the whole
-    /// file as dirty memory" — the case the cache budget exists to avoid (same predicate/reasoning as
-    /// `WPEPackageSceneAssetProvider.isPackageVolumeMappable`).
+    /// file as dirty memory" — the case the cache budget exists to avoid. Also gates whole-package
+    /// mapping in `WPEPackageSceneAssetProvider`.
     static func isVolumeMappable(_ url: URL) -> Bool {
         guard let values = try? url.resourceValues(
             forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]

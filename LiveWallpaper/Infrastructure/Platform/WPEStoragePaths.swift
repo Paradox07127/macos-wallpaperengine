@@ -21,8 +21,9 @@ enum WPEStoragePaths {
         budget: Int,
         visited: inout Int
     ) -> UInt64 {
+        // `enumerator(at:)` yields nothing when the root itself is a symlink.
         guard let enumerator = fm.enumerator(
-            at: url,
+            at: url.standardizedFileURL.resolvingSymlinksInPath(),
             includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey],
             options: [.skipsHiddenFiles]
         ) else { return 0 }

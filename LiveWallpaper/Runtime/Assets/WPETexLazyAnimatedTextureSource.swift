@@ -1,5 +1,4 @@
 #if !LITE_BUILD
-import Compression
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
@@ -100,9 +99,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
 
     /// Distinct upcoming source images to keep warm (wrap-aware, by image not frame).
     private static let decodedImagePrefetchLookahead = 2
-        /// Anti-OOM hard cap on `Data(count:)` for an untrusted `decompressedByteCount`; mirrors
-        /// the eager path's cap (WPETexDecoder.swift:922, 256 MB).
-        private static let maxDecompressedByteCount = 268_435_456
 
     init(
         payload: WPETexStreamingPayload,
@@ -219,30 +215,13 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     }
 
     func frameIndex(at time: TimeInterval) -> Int {
-        guard !frames.isEmpty else { return 0 }
-        let bounded: TimeInterval
-        if loop {
-            let positive = max(time, 0)
-            bounded = totalDuration > 0 ? positive.truncatingRemainder(dividingBy: totalDuration) : 0
-        } else {
-            bounded = min(max(time, 0), max(totalDuration - .ulpOfOne, 0))
-        }
-
-        var lo = 0
-        var hi = frameStartTimes.count - 1
-        while lo <= hi {
-            let mid = (lo + hi) / 2
-            let start = frameStartTimes[mid]
-            let next = mid + 1 < frameStartTimes.count ? frameStartTimes[mid + 1] : totalDuration
-            if bounded < start {
-                hi = mid - 1
-            } else if bounded >= next {
-                lo = mid + 1
-            } else {
-                return mid
-            }
-        }
-        return max(min(lo, frames.count - 1), 0)
+        WPETexFrameTimeline.frameIndex(
+            at: time,
+            frameCount: frames.count,
+            frameStartTimes: frameStartTimes,
+            totalDuration: totalDuration,
+            loop: loop
+        )
     }
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
@@ -413,38 +392,13 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
 
     private nonisolated static func decodedBytes(from mipmap: WPETexCompressedMipmap) throws -> Data {
         if mipmap.isCompressed {
-            return try inflate(mipmap)
+            guard let output = mipmap.lz4Inflated() else { throw Failure.decompressionFailed(mipmap.index) }
+            return output
         }
         guard mipmap.compressedBytes.count >= mipmap.decompressedByteCount else {
             throw Failure.truncatedImageBytes
         }
         return mipmap.compressedBytes.prefix(mipmap.decompressedByteCount).materializedData()
-    }
-
-    private nonisolated static func inflate(_ mipmap: WPETexCompressedMipmap) throws -> Data {
-            // decompressedByteCount is read straight off an untrusted .tex payload. Cap it before
-            // allocating, same as the eager path (WPETexDecoder.inflateIfNeeded, 256 MB). That path
-            // also clamps to a per-format expected size, but the format mapping isn't in scope for
-            // this static helper — the fixed ceiling alone already bounds worst-case allocation.
-        let outputCount = mipmap.decompressedByteCount
-            guard outputCount > 0, outputCount <= maxDecompressedByteCount else {
-                throw Failure.decompressionFailed(mipmap.index)
-            }
-        var output = Data(count: outputCount)
-        let written = output.withUnsafeMutableBytes { outRaw -> Int in
-            mipmap.compressedBytes.withUnsafeBytes { srcRaw -> Int in
-                guard let dst = outRaw.bindMemory(to: UInt8.self).baseAddress,
-                      let src = srcRaw.bindMemory(to: UInt8.self).baseAddress else { return -1 }
-                return compression_decode_buffer(
-                    dst, outputCount,
-                    src, srcRaw.count,
-                    nil,
-                    COMPRESSION_LZ4_RAW
-                )
-            }
-        }
-        guard written == outputCount else { throw Failure.decompressionFailed(mipmap.index) }
-        return output
     }
 
     private struct Cropped {

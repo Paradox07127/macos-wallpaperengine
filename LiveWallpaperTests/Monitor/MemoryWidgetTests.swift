@@ -76,24 +76,24 @@ final class MemoryWidgetTests: XCTestCase {
     }
 
     func testHistoryWindowSamplesFallsBackWhenOptionAbsent() {
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: nil, fallbackSeconds: 60), 60)
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: nil, fallbackSeconds: 120), 120)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: nil, fallbackSeconds: 60), 60)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: nil, fallbackSeconds: 120), 120)
     }
 
     func testHistoryWindowSamplesHonoursOverride() {
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: 30, fallbackSeconds: 60), 30)
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: 90.6, fallbackSeconds: 120), 91)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 30, fallbackSeconds: 60), 30)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 90.6, fallbackSeconds: 120), 91)
     }
 
     func testHistoryWindowSamplesRejectsInvalidOverrides() {
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: 0, fallbackSeconds: 60), 60)
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: -5, fallbackSeconds: 60), 60)
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: .nan, fallbackSeconds: 60), 60)
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: .infinity, fallbackSeconds: 60), 60)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 0, fallbackSeconds: 60), 60)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: -5, fallbackSeconds: 60), 60)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: .nan, fallbackSeconds: 60), 60)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: .infinity, fallbackSeconds: 60), 60)
     }
 
     func testHistoryWindowSamplesFloorsAtTwo() {
-        XCTAssertEqual(MemoryWidgetView.historyWindowSeconds(optionSeconds: 0.4, fallbackSeconds: 60), 2)
+        XCTAssertEqual(MonitorHistorySnapshot.historyWindowSeconds(optionSeconds: 0.4, fallbackSeconds: 60), 2)
     }
 
     func testShowsTopProcessesDefaultsToTrue() {

@@ -192,7 +192,7 @@ struct SystemWallpaperLibraryView: View {
     private var footnote: some View {
         VStack(alignment: .leading, spacing: 2) {
             if service.diskUsageBytes > 0 {
-                Text("Uses \(ByteCountFormatter.string(fromByteCount: service.diskUsageBytes, countStyle: .file)) on disk — the system needs its own copy of each video.")
+                Text("Uses \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes)) on disk — the system needs its own copy of each video.")
             }
             // Not "deleting the app removes them" — trashing an app does not
             // delete its container, so that claim was simply false.
@@ -202,8 +202,8 @@ struct SystemWallpaperLibraryView: View {
                     pendingDestructive = PendingDestructive(
                         .clearSystemWallpaperLibrary(
                             itemCount: service.items.count,
-                            formattedSize: ByteCountFormatter.string(
-                                fromByteCount: service.diskUsageBytes, countStyle: .file
+                            formattedSize: WorkshopByteFormatter.platformDefault.string(
+                                fromByteCount: service.diskUsageBytes
                             )
                         )
                     ) { try? service.clearLibrary() }

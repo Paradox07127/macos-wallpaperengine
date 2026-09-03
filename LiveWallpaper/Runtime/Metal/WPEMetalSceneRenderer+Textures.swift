@@ -1159,7 +1159,7 @@ extension WPEMetalSceneRenderer {
             return candidates
         }
 
-        if let dependency = dependencyReference(path) {
+        if let dependency = WPEMultiRootResourceResolver.dependencyReference(path) {
             let child = dependency.childPath
             if child.contains("/") {
                 return [
@@ -1225,13 +1225,6 @@ extension WPEMetalSceneRenderer {
             "materials/\(path).jpeg",
             path
         ]
-    }
-
-    private func dependencyReference(_ relativePath: String) -> (workshopID: String, childPath: String)? {
-        guard relativePath.hasPrefix("../") else { return nil }
-        let parts = relativePath.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count >= 3, parts[0] == ".." else { return nil }
-        return (String(parts[1]), parts.dropFirst(2).joined(separator: "/"))
     }
 
     // MARK: - Load diagnostics

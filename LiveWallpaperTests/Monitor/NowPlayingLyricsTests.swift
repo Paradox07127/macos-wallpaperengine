@@ -343,6 +343,45 @@ struct NowPlayingLyricsTests {
         #expect(log.count == 4)
     }
 
+    /// The counterpart of `noMatchIsNegativeCached`: a lookup that ended because
+    /// `cancelInFlight` cancelled it is not a miss, so the key must not enter the
+    /// negative cache — nor may the dying task evict the replacement fetch
+    /// registered under the same key after it.
+    @Test("A cancelled lookup neither negative-caches nor evicts its replacement")
+    func cancelledLookupLeavesNoTrace() async {
+        let log = RequestLog()
+        let gates = [Gate(), Gate()]
+        let fetcher = NowPlayingLyricsFetcher(transport: { request in
+            log.record(request)
+            // Requests arrive one at a time here, so the count is the ordinal.
+            await gates[min(log.count, gates.count) - 1].wait()
+            // URLSession surfaces cancellation as a thrown error.
+            if Task.isCancelled {
+                throw URLError(.cancelled)
+            }
+            return ok(request, recordJSON())
+        })
+
+        async let first = fetcher.lyrics(for: trackState())
+        #expect(await waitUntil { log.count >= 1 })
+        await fetcher.cancelInFlight(except: nil)
+
+        // The replacement is registered while the cancelled task is still parked.
+        async let second = fetcher.lyrics(for: trackState())
+        #expect(await waitUntil { log.count >= 2 })
+
+        await gates[0].open()
+        #expect(await first == nil)
+
+        async let third = fetcher.lyrics(for: trackState())
+        _ = await waitUntil(timeout: 0.1) { false } // let the merge register
+        await gates[1].open()
+        let results = await (second, third)
+        #expect(results.0?.count == 2)
+        #expect(results.1?.count == 2, "a cancelled lookup must not negative-cache its key")
+        #expect(log.count == 2, "the replacement fetch must stay merged")
+    }
+
     @Test("An instrumental track is a definitive no — no search, no repeat request")
     func instrumentalStopsTheLookup() async {
         let log = RequestLog()
