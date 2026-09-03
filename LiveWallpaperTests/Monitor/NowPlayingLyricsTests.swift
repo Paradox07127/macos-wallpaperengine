@@ -276,13 +276,13 @@ struct NowPlayingLyricsTests {
     // MARK: Network discipline
 
     @Test("Every request identifies the app in User-Agent")
-    func requestsCarryTheUserAgent() async {
+    func requestsCarryTheUserAgent() async throws {
         let log = RequestLog()
         let fetcher = NowPlayingLyricsFetcher(transport: { request in
             log.record(request)
             return ok(request, recordJSON())
         })
-        _ = await fetcher.lyrics(for: trackState())
+        _ = try await fetcher.lyrics(for: trackState())
 
         #expect(log.count == 1)
         let header = log.requests.first?.value(forHTTPHeaderField: "User-Agent")
@@ -292,19 +292,19 @@ struct NowPlayingLyricsTests {
     }
 
     @Test("An exact-endpoint hit is parsed and never falls through to search")
-    func exactHitIsUsed() async {
+    func exactHitIsUsed() async throws {
         let log = RequestLog()
         let fetcher = NowPlayingLyricsFetcher(transport: { request in
             log.record(request)
             return ok(request, recordJSON())
         })
-        let lines = await fetcher.lyrics(for: trackState())
+        let lines = try await fetcher.lyrics(for: trackState())
         #expect(lines?.map(\.text) == ["first line", "second line"])
         #expect(log.count(matching: "/api/search") == 0)
     }
 
     @Test("A 404 from the exact endpoint falls back to search")
-    func notFoundFallsBackToSearch() async {
+    func notFoundFallsBackToSearch() async throws {
         let log = RequestLog()
         let fetcher = NowPlayingLyricsFetcher(transport: { request in
             log.record(request)
@@ -312,14 +312,14 @@ struct NowPlayingLyricsTests {
             if url.contains("/api/get") { return status(request, 404) }
             return ok(request, searchJSON([recordJSON()]))
         })
-        let lines = await fetcher.lyrics(for: trackState())
+        let lines = try await fetcher.lyrics(for: trackState())
         #expect(lines?.count == 2)
         #expect(log.count(matching: "/api/get") == 1)
         #expect(log.count(matching: "/api/search") == 1)
     }
 
     @Test("No usable match is negative-cached until the TTL expires")
-    func noMatchIsNegativeCached() async {
+    func noMatchIsNegativeCached() async throws {
         let log = RequestLog()
         let clock = ClockBox()
         let fetcher = NowPlayingLyricsFetcher(
@@ -332,14 +332,14 @@ struct NowPlayingLyricsTests {
             now: { clock.now }
         )
 
-        #expect(await fetcher.lyrics(for: trackState()) == nil)
+        #expect(try await fetcher.lyrics(for: trackState()) == nil)
         #expect(log.count == 2)
 
-        #expect(await fetcher.lyrics(for: trackState()) == nil)
+        #expect(try await fetcher.lyrics(for: trackState()) == nil)
         #expect(log.count == 2)
 
         clock.advance(NowPlayingLyricsFetcher.negativeTTL + 1)
-        #expect(await fetcher.lyrics(for: trackState()) == nil)
+        #expect(try await fetcher.lyrics(for: trackState()) == nil)
         #expect(log.count == 4)
     }
 
@@ -348,7 +348,7 @@ struct NowPlayingLyricsTests {
     /// negative cache — nor may the dying task evict the replacement fetch
     /// registered under the same key after it.
     @Test("A cancelled lookup neither negative-caches nor evicts its replacement")
-    func cancelledLookupLeavesNoTrace() async {
+    func cancelledLookupLeavesNoTrace() async throws {
         let log = RequestLog()
         let gates = [Gate(), Gate()]
         let fetcher = NowPlayingLyricsFetcher(transport: { request in
@@ -371,35 +371,41 @@ struct NowPlayingLyricsTests {
         #expect(await waitUntil { log.count >= 2 })
 
         await gates[0].open()
-        #expect(await first == nil)
+        // `async let` values cannot be captured by `#expect(throws:)`'s closure.
+        do {
+            _ = try await first
+            Issue.record("a cancelled lookup must throw, not answer nil")
+        } catch {
+            #expect(error is CancellationError)
+        }
 
         async let third = fetcher.lyrics(for: trackState())
         _ = await waitUntil(timeout: 0.1) { false } // let the merge register
         await gates[1].open()
-        let results = await (second, third)
+        let results = try await (second, third)
         #expect(results.0?.count == 2)
         #expect(results.1?.count == 2, "a cancelled lookup must not negative-cache its key")
         #expect(log.count == 2, "the replacement fetch must stay merged")
     }
 
     @Test("An instrumental track is a definitive no — no search, no repeat request")
-    func instrumentalStopsTheLookup() async {
+    func instrumentalStopsTheLookup() async throws {
         let log = RequestLog()
         let fetcher = NowPlayingLyricsFetcher(transport: { request in
             log.record(request)
             return ok(request, recordJSON(synced: nil, instrumental: true))
         })
 
-        #expect(await fetcher.lyrics(for: trackState()) == nil)
+        #expect(try await fetcher.lyrics(for: trackState()) == nil)
         #expect(log.count(matching: "/api/get") == 1)
         #expect(log.count(matching: "/api/search") == 0)
 
-        #expect(await fetcher.lyrics(for: trackState()) == nil)
+        #expect(try await fetcher.lyrics(for: trackState()) == nil)
         #expect(log.count == 1)
     }
 
     @Test("Concurrent requests for one track key merge into one transport hit")
-    func concurrentSameKeyMerges() async {
+    func concurrentSameKeyMerges() async throws {
         let log = RequestLog()
         let gate = Gate()
         let fetcher = NowPlayingLyricsFetcher(transport: { request in
@@ -412,14 +418,14 @@ struct NowPlayingLyricsTests {
         async let second = fetcher.lyrics(for: trackState())
         #expect(await waitUntil { log.count >= 1 })
         await gate.open()
-        let results = await (first, second)
+        let results = try await (first, second)
         #expect(results.0?.count == 2)
         #expect(results.1?.count == 2)
         #expect(log.count == 1)
     }
 
     @Test("A body past the 512KB cap is abandoned without a retry")
-    func oversizeBodyIsAbandoned() async {
+    func oversizeBodyIsAbandoned() async throws {
         let log = RequestLog()
         let oversize = Data(count: NowPlayingLyricsFetcher.maxBodyBytes + 1)
         let fetcher = NowPlayingLyricsFetcher(transport: { request in
@@ -427,22 +433,22 @@ struct NowPlayingLyricsTests {
             return ok(request, oversize)
         })
 
-        #expect(await fetcher.lyrics(for: trackState()) == nil)
+        #expect(try await fetcher.lyrics(for: trackState()) == nil)
         // One exact call plus one search call — and no retry, because an
         // oversize body is a decision, not a transport failure.
         #expect(log.count == 2)
-        #expect(await fetcher.lyrics(for: trackState()) == nil)
+        #expect(try await fetcher.lyrics(for: trackState()) == nil)
         #expect(log.count == 2)
     }
 
     @Test("A transient failure earns exactly one retry")
-    func transientFailureRetriesOnce() async {
+    func transientFailureRetriesOnce() async throws {
         let log = RequestLog()
         let fetcher = NowPlayingLyricsFetcher(transport: { request in
             log.record(request)
             throw URLError(.notConnectedToInternet)
         })
-        #expect(await fetcher.lyrics(for: trackState()) == nil)
+        #expect(try await fetcher.lyrics(for: trackState()) == nil)
         #expect(log.count == 2)
     }
 
@@ -494,6 +500,27 @@ struct NowPlayingLyricsTests {
         clock.advance(2)
         #expect(await store.lyrics(for: trackState()).isEmpty)
         #expect(store.loadCount == 2, "a miss past the TTL must be retried")
+    }
+
+    /// The fetcher answers a cancelled lookup with `CancellationError`, not
+    /// nil, so this layer can tell it from "no lyrics" — a track skipped past
+    /// during a playlist run (or a lock-screen pass) is asked again next time,
+    /// instead of showing nothing for the length of the miss TTL.
+    @MainActor
+    @Test("A cancelled load is not cached as a miss")
+    func storeCancelledLoadIsRetried() async {
+        let calls = OSAllocatedUnfairLock(initialState: 0)
+        let store = NowPlayingLyricsStore(load: { _ in
+            let call = calls.withLock { $0 += 1; return $0 }
+            if call == 1 {
+                throw CancellationError()
+            }
+            return NowPlayingLyrics.parseLRC(syncedFixture)
+        })
+
+        #expect(await store.lyrics(for: trackState()).isEmpty)
+        #expect(await store.lyrics(for: trackState()).count == 2)
+        #expect(store.loadCount == 2, "a cancelled ask is neither a hit nor a miss")
     }
 
     /// The counterpart: a hit is kept for good, not re-fetched once the TTL that

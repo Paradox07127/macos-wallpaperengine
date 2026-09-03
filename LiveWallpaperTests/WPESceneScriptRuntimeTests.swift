@@ -1566,6 +1566,28 @@ export function init(value) {
         #expect(instance.tickString(runtimeSeconds: 1.0) == "1")
     }
 
+    @Test("A timer-only layer script keeps the visibility its timer wrote")
+    func timerOnlyLayerScriptKeepsTimerVisibility() throws {
+        let script = """
+        setTimeout(function () { thisLayer.visible = false; }, 0);
+        """
+        let instance = try WPELayerScriptInstance(script: script)
+        let own = try #require(instance.tick(runtimeSeconds: 0.1)).own
+        #expect(own.visibleAssigned)
+        #expect(own.visible == false)
+    }
+
+    @Test("Video commands issued from a timer callback reach the tick's output")
+    func timerCallbackVideoCommandsSurviveTick() throws {
+        let script = """
+        setTimeout(function () { thisLayer.getVideoTexture().play(); }, 0);
+        export function update() {}
+        """
+        let instance = try WPELayerScriptInstance(script: script)
+        let own = try #require(instance.tick(runtimeSeconds: 0.1)).own
+        #expect(own.videoCommands.contains(.play))
+    }
+
     @Test("Baseclasses do not clobber the existing engine sandbox")
     func baseclassesPreserveExistingSandbox() throws {
         let script = """
@@ -3318,7 +3340,7 @@ export function init(value) {
             isDown: true,
             isRightDown: false
         )
-        instance.liveDispatchCursorEvent(.down, pointerFrame: frame)
+        instance.liveDispatchCursorEvents([.down], pointerFrame: frame)
         var received: WPELayerScriptOutput?
         for _ in 0..<100 {
             if let output = WPEBatchTickDriver.tick(instance, pointerFrame: frame) {
@@ -3329,6 +3351,39 @@ export function init(value) {
         }
         let output = try #require(received)
         #expect(output.own.videoCommands.contains(.play))
+        #expect(output.own.alpha == 0.25)
+    }
+
+    @Test("cursorUp and cursorClick from the same release both reach the script")
+    func sameReleaseCursorUpAndClickBothDispatch() async throws {
+        let script = """
+        var clicks = 0;
+        export function cursorUp() {}
+        export function cursorClick() { clicks += 1; thisLayer.alpha = 0.25; }
+        export function update() { return clicks > 0; }
+        """
+        let instance = try WPELayerScriptInstance(
+            script: script,
+            governor: WPESceneScriptExecutionGovernor(limit: 1)
+        )
+        let frame = WPEPointerFrame(
+            position: SIMD2<Double>(0.5, 0.5),
+            clickPosition: SIMD2<Double>(0.5, 0.5),
+            isDown: false,
+            isRightDown: false
+        )
+        // Sent as two separate single-event dispatches (the API this replaced),
+        // the async slot admitted `.up` and dropped `.click` — alpha stayed 1.
+        instance.liveDispatchCursorEvents([.up, .click], pointerFrame: frame)
+        var received: WPELayerScriptOutput?
+        for _ in 0 ..< 100 {
+            if let output = WPEBatchTickDriver.tick(instance, pointerFrame: frame) {
+                received = output
+                break
+            }
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+        let output = try #require(received)
         #expect(output.own.alpha == 0.25)
     }
 

@@ -413,16 +413,19 @@ final class WPELayerScriptInstance {
         return (fresh, WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work))
     }
 
-    /// Async cursor event: fire-and-forget onto engine queue when capacity allows.
-    func liveDispatchCursorEvent(
-        _ event: WPELayerScriptCursorEvent,
+    /// One frame's cursor events for this instance in ONE async hop, fire-and-forget
+    /// onto the engine queue when capacity allows. Dispatched one at a time, the
+    /// single in-flight slot admitted only the first: `cursorUp` swallowed the
+    /// `cursorClick` synthesised from the same release, so `cursorClick` never ran.
+    func liveDispatchCursorEvents(
+        _ events: [WPELayerScriptCursorEvent],
         pointerFrame: WPEPointerFrame,
         hit: WPELayerScriptCursorHit = .init(),
         runtimeSeconds: Double? = nil
     ) {
-        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return }
-        _ = engine.dispatchCursorEventAsync(
-            event,
+        guard !isPoisoned, !isDestroyed, !events.isEmpty, engine.allows(.event) else { return }
+        _ = engine.dispatchCursorEventsAsync(
+            events,
             pointerFrame: pointerFrame,
             hit: hit,
             runtimeSeconds: runtimeSeconds,
@@ -922,16 +925,18 @@ final class WPELayerScriptInstance {
             }
         }
 
-        /// Async-mode cursor event: same handler as the synchronous path, but the
-        /// output is published to the slot instead of returned to a waiting caller.
-        func dispatchCursorEventAsync(
-            _ event: WPELayerScriptCursorEvent,
+        /// Async-mode cursor events: same handler as the synchronous path, but the
+        /// outputs are published to the slot instead of returned to a waiting caller.
+        /// One safety claim, one permit, one queue hop for the whole batch (see
+        /// `dispatchMediaEventsAsync`); each event still runs its own handler.
+        func dispatchCursorEventsAsync(
+            _ events: [WPELayerScriptCursorEvent],
             pointerFrame: WPEPointerFrame,
             hit: WPELayerScriptCursorHit,
             runtimeSeconds: Double?,
             publishTo slot: WPESceneScriptOutcomeSlot<WPELayerScriptOutput>
         ) -> Bool {
-            guard allows(.event) else { return false }
+            guard !events.isEmpty, allows(.event) else { return false }
             guard let safety = asyncExecutionSafety.begin(
                 sceneToken: instanceLimitToken,
                 operation: .event
@@ -945,14 +950,16 @@ final class WPELayerScriptInstance {
                     self.asyncExecutionSafety.complete(safety)
                     permit.release()
                 }
-                let outcome = self.dispatchCursorEventOnQueue(
-                    event,
-                    pointerFrame: pointerFrame,
-                    hit: hit,
-                    runtimeSeconds: runtimeSeconds
-                )
-                guard self.acceptsCompletion() else { return }
-                slot.publishEvent(outcome)
+                for event in events {
+                    let outcome = self.dispatchCursorEventOnQueue(
+                        event,
+                        pointerFrame: pointerFrame,
+                        hit: hit,
+                        runtimeSeconds: runtimeSeconds
+                    )
+                    guard self.acceptsCompletion() else { return }
+                    slot.publishEvent(outcome)
+                }
             }
             return true
         }
@@ -1082,9 +1089,8 @@ final class WPELayerScriptInstance {
             _ event: WPESceneMediaEvent,
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
-            pendingVideo.removeAll(keepingCapacity: true)
             evaluationResourceBudget.beginEvaluation()
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else {
@@ -1110,15 +1116,12 @@ final class WPELayerScriptInstance {
             pointerFrame: WPEPointerFrame?
         ) -> WPELayerScriptOutput {
             audioBridge?.refresh()
+            evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             updateInput(pointerFrame)
-            guard let context, let updateFunction else {
-                return WPELayerScriptOutput(own: .init(visible: true, alpha: 1, videoCommands: []), others: [:])
-            }
+            guard let context, let updateFunction else { return readOutput() }
             let now = WPEScriptFaultPolicy.monotonicNow()
             guard faultPolicy.shouldAttempt(entryPoint: "update", at: now) else { return readOutput() }
-            pendingVideo.removeAll(keepingCapacity: true)
-            evaluationResourceBudget.beginEvaluation()
             didThrow = false
             switch outputMode {
             case .layerState:
@@ -1178,10 +1181,9 @@ final class WPELayerScriptInstance {
             hit: WPELayerScriptCursorHit,
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
+            evaluationResourceBudget.beginEvaluation()
             guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             updateInput(pointerFrame)
-            pendingVideo.removeAll(keepingCapacity: true)
-            evaluationResourceBudget.beginEvaluation()
             guard let context,
                   let fn = context.objectForKeyedSubscript(event.handlerName),
                   !fn.isUndefined, fn.hasProperty("call") else {
@@ -1212,9 +1214,8 @@ final class WPELayerScriptInstance {
             _ properties: [String: WPESceneScriptPropertyValue],
             runtimeSeconds: Double?
         ) -> WPELayerScriptOutput {
-            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
-            pendingVideo.removeAll(keepingCapacity: true)
             evaluationResourceBudget.beginEvaluation()
+            guard advanceTimers(to: updateEngineRuntime(runtimeSeconds)) else { return readOutput() }
             guard let context,
                   let fn = context.objectForKeyedSubscript("applyUserProperties"),
                   !fn.isUndefined, fn.hasProperty("call"),

@@ -144,9 +144,10 @@ struct WPESceneScriptContainmentCharacterizationTests {
         // still refuse an attempt after reserving: batch ticks reserve inside the
         // worker closure, so a refusal there releases through the same owner in
         // the `slot.rejectTick` branch.
-        // 5 = the three single-event lanes plus the two batch variants added for
-        // the cold-start burst fix; every one releases the safety claim on the
-        // permit-refused path before returning.
+        // 5 = the two single-event lanes (layer media, transform media), the two
+        // batch variants added for the cold-start burst fix, and the layer cursor
+        // batch that replaced its single-event lane (same-release up+click);
+        // every one releases the safety claim on the permit-refused path.
         #expect(RR10ProductionSource.occurrences(
             of: "                asyncExecutionSafety.complete(safety)\n                return false",
             in: runtime

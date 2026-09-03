@@ -297,8 +297,10 @@ actor NowPlayingLyricsFetcher {
     // MARK: Cache and fetch
 
     /// Resolves lyrics for the state, merging concurrent calls per track key.
-    /// nil means "no lyrics for this track", cached either way.
-    func lyrics(for state: MonitorNowPlayingState) async -> [LyricLine]? {
+    /// nil means "no lyrics for this track", cached either way. A lookup that
+    /// `cancelInFlight` retired throws `CancellationError` instead — to every
+    /// caller merged onto it, so none of them can mistake it for a miss.
+    func lyrics(for state: MonitorNowPlayingState) async throws -> [LyricLine]? {
         guard let key = NowPlayingArtworkFetcher.trackKey(for: state) else { return nil }
         if let hit = memo.cached(key) {
             return hit
@@ -306,16 +308,24 @@ actor NowPlayingLyricsFetcher {
         if memo.isNegative(key, now: now()) {
             return nil
         }
+        let task: Task<[LyricLine]?, Never>
         if let running = memo.inFlight[key] {
-            return await running.value
+            task = running
+        } else {
+            task = Task {
+                let result = await self.runFetch(state: state)
+                self.memo.finish(key: key, result: result, cancelled: Task.isCancelled, now: self.now())
+                return result
+            }
+            memo.inFlight[key] = task
         }
-        let task = Task<[LyricLine]?, Never> {
-            let result = await self.runFetch(state: state)
-            self.memo.finish(key: key, result: result, cancelled: Task.isCancelled, now: self.now())
-            return result
+        let result = await task.value
+        // The merged task cannot throw (its type is shared with the artwork
+        // fetcher's memo), so cancellation is read off the handle instead.
+        if task.isCancelled {
+            throw CancellationError()
         }
-        memo.inFlight[key] = task
-        return await task.value
+        return result
     }
 
     func cancelInFlight(except key: String?) {
@@ -396,7 +406,7 @@ actor NowPlayingLyricsFetcher {
 final class NowPlayingLyricsStore {
     static let shared = NowPlayingLyricsStore()
 
-    private let load: @Sendable (MonitorNowPlayingState) async -> [LyricLine]?
+    private let load: @Sendable (MonitorNowPlayingState) async throws -> [LyricLine]?
     /// Retires the fetcher's merged work for every other track before starting
     /// a new one, so skipping through a playlist does not leave one live
     /// request per skipped track.
@@ -407,7 +417,7 @@ final class NowPlayingLyricsStore {
     /// (offline, LRCLIB down) could never get lyrics again for the process's life.
     private var cache: [String: [LyricLine]] = [:]
     private var order: [String] = []
-    private var inFlight: [String: Task<[LyricLine], Never>] = [:]
+    private var inFlight: [String: Task<[LyricLine], Error>] = [:]
     /// Misses expire on the same clock as the fetcher's negative cache, so the
     /// two layers agree on when a retry is due.
     private var missExpiry: [String: Date] = [:]
@@ -416,8 +426,8 @@ final class NowPlayingLyricsStore {
     private(set) var loadCount = 0
 
     init(
-        load: @escaping @Sendable (MonitorNowPlayingState) async -> [LyricLine]? = {
-            await NowPlayingLyricsFetcher.shared.lyrics(for: $0)
+        load: @escaping @Sendable (MonitorNowPlayingState) async throws -> [LyricLine]? = {
+            try await NowPlayingLyricsFetcher.shared.lyrics(for: $0)
         },
         cancelOthers: @escaping @Sendable (String?) async -> Void = {
             NowPlayingLyricsFetcher.shared.cancelInFlight(except: $0)
@@ -436,15 +446,26 @@ final class NowPlayingLyricsStore {
             if now() < expiry { return [] }
             missExpiry.removeValue(forKey: key)
         }
-        if let pending = inFlight[key] { return await pending.value }
+        if let pending = inFlight[key] {
+            let merged = try? await pending.value
+            return merged ?? []
+        }
         loadCount += 1
         let load = self.load
-        let task = Task<[LyricLine], Never> { await load(state) ?? [] }
+        let task = Task<[LyricLine], Error> { try await load(state) ?? [] }
         // Registered before the first suspension, or two concurrent asks for
         // one track both miss `inFlight` and start their own load.
         inFlight[key] = task
         await cancelOthers(key)
-        let value = await task.value
+        let value: [LyricLine]
+        do {
+            value = try await task.value
+        } catch {
+            // Only `CancellationError` reaches here: a retired lookup is neither
+            // a hit nor a miss, so it must not enter `missExpiry`.
+            inFlight[key] = nil
+            return []
+        }
         inFlight[key] = nil
         if value.isEmpty {
             missExpiry[key] = now().addingTimeInterval(NowPlayingLyricsFetcher.negativeTTL)
