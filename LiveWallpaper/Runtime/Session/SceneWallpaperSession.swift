@@ -32,8 +32,8 @@ final class WPERendererConfigAdapter: WallpaperPerformanceConfigurable, Wallpape
         renderActor.submitConfig(.performanceProfile(profile))
     }
 
-    func setFrameRateLimit(_ limit: FrameRateLimit) {
-        renderActor.submitConfig(.frameRateLimit(limit))
+    func setFrameRateCeiling(_ framesPerSecond: Int) {
+        renderActor.submitConfig(.frameRateCeiling(framesPerSecond))
     }
 
     func setAdaptiveFrameRateThrottle(_ active: Bool) {

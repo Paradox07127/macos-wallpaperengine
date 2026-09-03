@@ -192,7 +192,7 @@ struct WPEMetalSceneRendererTests {
             isRightDown: false
         )
         renderer.mailbox.publishPointerFrame(published)
-        renderer.setFrameRateLimit(.fps15)
+        renderer.setFrameRateCeiling(15)
 
         let inputs = renderer.makeFrameInputs()
         #expect(inputs.clickCaptureEnabled == true)
@@ -1426,14 +1426,15 @@ struct WPEMetalSceneRendererTests {
         )
         let mtkView = try #require(renderer.nsView as? MTKView)
 
-        renderer.setFrameRateLimit(.fps60)
+        renderer.setFrameRateCeiling(60)
         #expect(mtkView.preferredFramesPerSecond == 60)
 
-        renderer.setFrameRateLimit(.fps15)
+        renderer.setFrameRateCeiling(15)
         #expect(mtkView.preferredFramesPerSecond == 15)
 
-        renderer.setFrameRateLimit(.unlimited)
-        #expect(mtkView.preferredFramesPerSecond == WPEMetalSceneRenderer.unlimitedPreferredFPS)
+        // A nonsense ceiling still has to leave a drivable link.
+        renderer.setFrameRateCeiling(0)
+        #expect(mtkView.preferredFramesPerSecond == 1)
     }
 
     @Test("setAudioMuted before load is no-op on the renderer (no crash) and seeds runtime state")

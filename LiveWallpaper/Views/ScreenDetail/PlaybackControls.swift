@@ -46,11 +46,26 @@ struct PlaybackControls: View {
     /// without a word of text.
     private var frameRateSymbol: String {
         switch displayedFrameRate {
-        case .fps15, .fps24: "gauge.with.dots.needle.0percent"
-        case .fps30: "gauge.with.dots.needle.33percent"
-        case .fps60: "gauge.with.dots.needle.67percent"
-        case .unlimited: "gauge.with.dots.needle.100percent"
+        case .quarter: "gauge.with.dots.needle.0percent"
+        case .third: "gauge.with.dots.needle.33percent"
+        case .half: "gauge.with.dots.needle.67percent"
+        case .full: "gauge.with.dots.needle.100percent"
         }
+    }
+
+    /// The cap is a divisor, so every label has to be resolved against what it
+    /// divides: the panel for scene and web, and for video whichever is lower,
+    /// the panel or the file (a 30 fps file on a 144 Hz screen has nothing above
+    /// 30 to divide).
+    private func frameRateTitle(_ limit: FrameRateLimit) -> String {
+        let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
+        guard wallpaperType == .video else {
+            return limit.title(forRefreshRate: refreshRate)
+        }
+        return limit.videoTitle(
+            forRefreshRate: refreshRate,
+            sourceFrameRate: screen.videoPlayer?.videoFrameRate ?? 0
+        )
     }
 
     @State private var lockScreenExtracted = false
@@ -271,7 +286,7 @@ struct PlaybackControls: View {
     /// (1.5–2× wider in Japanese); the value lives in the tooltip and a11y value.
     /// A slider, not a menu, to match the speed and audio popovers beside it. The
     /// steps are discrete (`FrameRateLimit` is an enum), so it indexes into
-    /// `allCases`, declared low-to-high and ending at Unlimited.
+    /// `allCases`, declared low-to-high and ending at the panel's own rate.
     private var frameRateControl: some View {
         let forceSDRActive = Self.frameRateDisabled(wallpaperType: wallpaperType, videoColorSpace: videoColorSpace)
         return Button {
@@ -282,11 +297,11 @@ struct PlaybackControls: View {
         .disabled(forceSDRActive)
         .help(forceSDRActive
             ? Text("Disabled while Force SDR is active")
-            : Text(frameRateLimit.titleKey))
+            : Text(verbatim: frameRateTitle(frameRateLimit)))
         .accessibilityLabel(Text("Frame rate limit"))
         .accessibilityValue(forceSDRActive
             ? Text("Disabled — Force SDR is active", comment: "Accessibility value when the frame-rate picker is dimmed because Force SDR owns the video composition slot.")
-            : Text(frameRateLimit.titleKey))
+            : Text(verbatim: frameRateTitle(frameRateLimit)))
         .popover(isPresented: $showingFrameRate, arrowEdge: .bottom) {
             frameRatePopover
         }
@@ -308,8 +323,8 @@ struct PlaybackControls: View {
             )
             .controlSize(.small)
             .accessibilityLabel(Text("Frame rate limit"))
-            .accessibilityValue(Text(displayedFrameRate.titleKey))
-            Text(displayedFrameRate.titleKey)
+            .accessibilityValue(Text(verbatim: frameRateTitle(displayedFrameRate)))
+            Text(verbatim: frameRateTitle(displayedFrameRate))
                 .font(DesignTokens.Typography.metric)
                 .foregroundStyle(.secondary)
         }

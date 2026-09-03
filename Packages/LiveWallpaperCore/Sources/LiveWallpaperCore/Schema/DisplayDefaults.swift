@@ -56,7 +56,7 @@ public struct DisplayPlaybackDefaults: Codable, Equatable, Sendable {
         self.playbackSpeed = Self.clampedPlaybackSpeed(playbackSpeed)
         fitMode = try c.decodeIfPresent(VideoFitMode.self, forKey: .fitMode) ?? .aspectFill
         videoDisplayMode = try c.decodeIfPresent(VideoDisplayMode.self, forKey: .videoDisplayMode) ?? .perDisplay
-        frameRateLimit = try c.decodeIfPresent(FrameRateLimit.self, forKey: .frameRateLimit) ?? .fps60
+        frameRateLimit = try c.decodeIfPresent(FrameRateLimit.self, forKey: .frameRateLimit) ?? .full
         muted = try c.decodeIfPresent(Bool.self, forKey: .muted) ?? true
         let videoVolume = try c.decodeIfPresent(Double.self, forKey: .videoVolume) ?? 1.0
         self.videoVolume = Self.clampedVolume(videoVolume)

@@ -275,7 +275,11 @@ extension ScreenManager {
             // controller below: the coordinator only pushes the limit when the
             // user changes it, so a session rebuilt by a wallpaper switch or a
             // relaunch would otherwise run unthrottled until the next edit.
-            session.setFrameRateLimit(configuration.frameRateLimit)
+            session.setFrameRateCeiling(
+                configuration.frameRateLimit.frameRate(
+                    forRefreshRate: Double(getScreenRefreshRate(for: screen.id))
+                )
+            )
             candidate = session
             if case .url = effectiveSource {
                 timeout = .seconds(12)
@@ -339,7 +343,11 @@ extension ScreenManager {
             ) {
                 effectiveCommitConfiguration = updated
             }
-            sceneSession.frameRateController?.setFrameRateLimit(configuration.frameRateLimit)
+            sceneSession.frameRateController?.setFrameRateCeiling(
+                configuration.frameRateLimit.frameRate(
+                    forRefreshRate: Double(getScreenRefreshRate(for: screen.id))
+                )
+            )
             sceneSession.setMouseInteractionEnabled(configuration.sceneMouseInteractionEnabled)
             sceneSession.setClickCaptureEnabled(false)
             // Fit mode is a construction argument now (see `makeSceneSession`);

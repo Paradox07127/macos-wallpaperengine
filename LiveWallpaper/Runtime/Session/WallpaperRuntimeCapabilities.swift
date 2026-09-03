@@ -8,7 +8,9 @@ protocol WallpaperPerformanceConfigurable: AnyObject, Sendable {
 /// Renderers that own a display-link-equivalent and can retarget tempo at runtime.
 @MainActor
 protocol WallpaperFrameRateConfigurable: AnyObject {
-    func setFrameRateLimit(_ limit: FrameRateLimit)
+    /// Already resolved against the display this session runs on: `FrameRateLimit`
+    /// is a divisor, and only the caller knows which panel it divides.
+    func setFrameRateCeiling(_ framesPerSecond: Int)
     /// System background throttle layered on the user ceiling without overwriting it.
     func setAdaptiveFrameRateThrottle(_ active: Bool)
 }

@@ -120,9 +120,9 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         videoBookmarkData: Data,
         playbackSpeed: Double = 1.0,
         fitMode: VideoFitMode = .aspectFill,
-        // Explicit `.fps60` default keeps native pass-through even when callers
+        // Explicit `.full` default keeps native pass-through even when callers
         // pass nothing (matches `FrameRateLimit.naturalDefault(for: .video)`).
-        frameRateLimit: FrameRateLimit = .fps60,
+        frameRateLimit: FrameRateLimit = .full,
         particleEffect: ParticleEffect = .none,
         effectConfig: VideoEffectConfig = .default,
         scheduleSlots: [ScheduleSlot]? = nil,
@@ -202,7 +202,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         playbackSpeed = try c.decodeIfPresent(Double.self, forKey: .playbackSpeed) ?? 1.0
         fitMode = try c.decodeIfPresent(VideoFitMode.self, forKey: .fitMode) ?? .aspectFill
         videoDisplayMode = try c.decodeIfPresent(VideoDisplayMode.self, forKey: .videoDisplayMode) ?? .perDisplay
-        frameRateLimit = try c.decodeIfPresent(FrameRateLimit.self, forKey: .frameRateLimit) ?? .fps60
+        frameRateLimit = try c.decodeIfPresent(FrameRateLimit.self, forKey: .frameRateLimit) ?? .full
         particleEffect = try c.decodeIfPresent(ParticleEffect.self, forKey: .particleEffect) ?? .none
         effectConfig = try c.decodeIfPresent(VideoEffectConfig.self, forKey: .effectConfig) ?? .default
         scheduleSlots = try c.decodeIfPresent([ScheduleSlot].self, forKey: .scheduleSlots)

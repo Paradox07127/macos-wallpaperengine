@@ -8,9 +8,9 @@ struct DisplayDefaultsTests {
     func defaultBaselinesFollowWallpaperType() {
         let defaults = DisplayDefaults()
 
-        #expect(defaults.playbackDefaults(for: .video).frameRateLimit == .fps60)
-        #expect(defaults.playbackDefaults(for: .html).frameRateLimit == .fps60)
-        #expect(defaults.playbackDefaults(for: .scene).frameRateLimit == .fps30)
+        #expect(defaults.playbackDefaults(for: .video).frameRateLimit == .full)
+        #expect(defaults.playbackDefaults(for: .html).frameRateLimit == .full)
+        #expect(defaults.playbackDefaults(for: .scene).frameRateLimit == .half)
         #expect(defaults.playbackDefaults(for: .scene).sceneMouseInteractionEnabled == true)
         #expect(defaults.playbackDefaults(for: .scene).sceneClickCaptureEnabled == false)
     }
@@ -31,7 +31,7 @@ struct DisplayDefaultsTests {
         var defaults = DisplayDefaults()
         defaults.scene.muted = false
         defaults.scene.videoVolume = 0.35
-        defaults.scene.frameRateLimit = .fps15
+        defaults.scene.frameRateLimit = .quarter
         defaults.scene.fitMode = .aspectFit
         defaults.scene.sceneMouseInteractionEnabled = false
         defaults.scene.sceneClickCaptureEnabled = true
@@ -45,7 +45,7 @@ struct DisplayDefaultsTests {
         var configuration = ScreenConfiguration(
             screenID: 9,
             wallpaper: .scene(descriptor),
-            frameRateLimit: .fps60,
+            frameRateLimit: .full,
             particleEffect: .rain,
             scheduleSlots: [
                 ScheduleSlot(
@@ -69,7 +69,7 @@ struct DisplayDefaultsTests {
         configuration.resetPlayback(to: defaults)
 
         #expect(configuration.activeWallpaper == .scene(descriptor))
-        #expect(configuration.frameRateLimit == .fps15)
+        #expect(configuration.frameRateLimit == .quarter)
         #expect(configuration.fitMode == .aspectFit)
         #expect(configuration.muted == false)
         #expect(configuration.videoVolume == 0.35)

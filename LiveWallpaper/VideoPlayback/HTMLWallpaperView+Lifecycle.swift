@@ -50,27 +50,32 @@ struct HTMLMediaLifecycleState {
 /// adaptive background throttle, which only the scene renderer is dispatched.
 @MainActor
 protocol HTMLWallpaperFrameRateTargeting: AnyObject {
-    func setTargetFrameRate(_ limit: FrameRateLimit)
+    func setTargetFrameRate(_ framesPerSecond: Int)
 }
 
-/// The user frame-rate ceiling translated for the web runtime: it has to be an
-/// interval, not a divisor of the display refresh, because WebKit exposes no
+/// The user frame-rate ceiling translated for the web runtime. WebKit exposes no
 /// frame-rate knob at all (no `WKWebpagePreferences` property, and the
-/// media-suspension API only reaches `<video>`/`<audio>`) — so the ceiling lands
-/// on our own rAF gate, and 30 fps is not a whole divisor of a 136 Hz panel.
+/// media-suspension API only reaches `<video>`/`<audio>`), so the ceiling lands on
+/// our own rAF gate — an interval in milliseconds, which unlike the scene renderer's
+/// display link can hold any rate the caller resolved.
 enum HTMLFramePacingPolicy {
     /// Milliseconds between allowed rAF callbacks; 0 = run at the display rate.
-    static func minimumFrameIntervalMilliseconds(for limit: FrameRateLimit?) -> Double {
-        guard let limit, limit != .unlimited, limit.rawValue > 0 else { return 0 }
-        return 1000.0 / Double(limit.rawValue)
+    /// `nil` and a ceiling at or above the panel's own rate both mean "no gate".
+    static func minimumFrameIntervalMilliseconds(
+        forCeiling framesPerSecond: Int?,
+        displayRefreshRate: Int
+    ) -> Double {
+        guard let framesPerSecond, framesPerSecond > 0 else { return 0 }
+        guard displayRefreshRate <= 0 || framesPerSecond < displayRefreshRate else { return 0 }
+        return 1000.0 / Double(framesPerSecond)
     }
 
-    /// `wallpaperPropertyListener.applyGeneralProperties({fps})`. Unlimited (and
-    /// "no limit pushed yet") keep reporting 60: a WPE web wallpaper reads this
-    /// as its animation tempo and has no "as fast as the display" value.
-    static func wallpaperEngineFPS(for limit: FrameRateLimit?) -> Int {
-        guard let limit, limit != .unlimited else { return 60 }
-        return limit.rawValue
+    /// `wallpaperPropertyListener.applyGeneralProperties({fps})`. A WPE web
+    /// wallpaper reads this as its animation tempo, so an absent ceiling reports 60
+    /// rather than the panel rate — the value has no "as fast as the display" form.
+    static func wallpaperEngineFPS(forCeiling framesPerSecond: Int?) -> Int {
+        guard let framesPerSecond, framesPerSecond > 0 else { return 60 }
+        return framesPerSecond
     }
 }
 
@@ -264,17 +269,20 @@ extension HTMLWallpaperView {
     /// profile: `.suspended` stops the page, this only slows it down, and a
     /// suspended view must keep the target so the resume publishes it rather
     /// than snapping back to 60.
-    func setTargetFrameRate(_ limit: FrameRateLimit) {
-        guard !isCleaningUp, targetFrameRateLimit != limit else { return }
-        targetFrameRateLimit = limit
+    func setTargetFrameRate(_ framesPerSecond: Int) {
+        guard !isCleaningUp, targetFrameRateLimit != framesPerSecond else { return }
+        targetFrameRateLimit = framesPerSecond
         // Pushed even while suspended: the JS side stores the value behind its
         // own suspend guard and reconciles the wrapper on resume.
         applyRafTargetFrameInterval(
-            HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(for: limit)
+            HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(
+                forCeiling: framesPerSecond,
+                displayRefreshRate: window?.screen?.maximumFramesPerSecond ?? 0
+            )
         )
         guard !mediaPlaybackSuspended else { return }
         notifyWallpaperEngineGeneralProperties(
-            fps: HTMLFramePacingPolicy.wallpaperEngineFPS(for: limit)
+            fps: HTMLFramePacingPolicy.wallpaperEngineFPS(forCeiling: framesPerSecond)
         )
     }
 
@@ -494,7 +502,7 @@ extension HTMLWallpaperView {
 
         if completion.wasCurrent, !transition.suspended {
             notifyWallpaperEngineGeneralProperties(
-                fps: HTMLFramePacingPolicy.wallpaperEngineFPS(for: targetFrameRateLimit)
+                fps: HTMLFramePacingPolicy.wallpaperEngineFPS(forCeiling: targetFrameRateLimit)
             )
             applyRafThrottleRatio(rafThrottleRatio(for: ProcessInfo.processInfo.thermalState))
             if restartPackageBackingAfterResume {

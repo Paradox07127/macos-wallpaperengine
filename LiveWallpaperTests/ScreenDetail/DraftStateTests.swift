@@ -27,7 +27,7 @@ struct DraftStateTests {
             videoVolume: 1.0,
             videoColorSpace: .auto,
             particleDensity: 1.0,
-            selectedFrameRateLimit: .fps60,
+            selectedFrameRateLimit: .full,
             sceneMouseInteractionEnabled: true,
             sceneClickCaptureEnabled: false,
             hasPreviewSource: false
@@ -84,7 +84,7 @@ struct DraftStateTests {
             playbackSpeed: 1.5,
             fitMode: .aspectFit,
             videoDisplayMode: .spanAllDisplays,
-            frameRateLimit: .fps30,
+            frameRateLimit: .half,
             particleEffect: .rain,
             effectConfig: effectConfig,
             scheduleSlots: scheduleSlots,
@@ -121,7 +121,7 @@ struct DraftStateTests {
         #expect(draft.videoVolume == 0.4)
         #expect(draft.videoColorSpace == .displayP3)
         #expect(draft.particleDensity == 2.25)
-        #expect(draft.selectedFrameRateLimit == .fps30)
+        #expect(draft.selectedFrameRateLimit == .half)
         #expect(draft.hasPreviewSource == true)
     }
 
