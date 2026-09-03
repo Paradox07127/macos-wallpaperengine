@@ -60,7 +60,7 @@ struct OverlayPreviewCanvas<Content: View>: View {
             #if !LITE_BUILD
             // Lite never produces `.projectPreview` — Workshop origins are Pro-only.
             if showsWallpaper, case .projectPreview(let url, let bookmark) = backdrop {
-                WPEPreviewView(imageURL: url, securityScopedBookmarkData: bookmark)
+                WPEPreviewView(imageURL: url, securityScopedBookmarkData: bookmark, aspectRatio: nil)
             } else {
                 DesignTokens.Colors.surfaceSunken
             }

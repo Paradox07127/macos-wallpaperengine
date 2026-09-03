@@ -226,7 +226,7 @@ extension ScreenManager {
                     )
                 }
             )
-            let isLeader = htmlCoordinator.isAudioLeader(source: effectiveSource, excluding: screen.id)
+            let isLeader = htmlCoordinator.isAudioLeader(source: effectiveSource, for: screen.id)
             let effectiveConfig = htmlCoordinator.runtimeConfig(
                 source: effectiveSource,
                 config: htmlConfig,

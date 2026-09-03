@@ -142,7 +142,8 @@ public struct GlobalSettings: Codable, Sendable {
         // Lossy: one bad history row must not drop the whole list.
         recentWPEImports = Self.decodeLossyArray(WPEHistoryEntry.self, from: c, forKey: .recentWPEImports)
         deletedWorkshopIDs = (try? c.decodeIfPresent([String].self, forKey: .deletedWorkshopIDs)) ?? []
-        applicationPerformanceRules = (try? c.decodeIfPresent([ApplicationPerformanceRule].self, forKey: .applicationPerformanceRules)) ?? []
+        // Lossy: one bad rule (e.g. an unknown trigger) must not drop the whole rule list.
+        applicationPerformanceRules = Self.decodeLossyArray(ApplicationPerformanceRule.self, from: c, forKey: .applicationPerformanceRules)
         let storedCache = (try? c.decodeIfPresent(Int.self, forKey: .videoCacheMaxBytesPerScreen)) ?? GlobalSettings.defaultVideoCacheBytes
         videoCacheMaxBytesPerScreen = GlobalSettings.clampedVideoCacheBytes(storedCache)
         displayDefaults = (try? c.decodeIfPresent(DisplayDefaults.self, forKey: .displayDefaults)) ?? DisplayDefaults()
@@ -160,7 +161,7 @@ public struct GlobalSettings: Codable, Sendable {
     }
 
     /// Skip malformed elements; absent/non-array → empty.
-    private static func decodeLossyArray<Element: Decodable, Key: CodingKey>(
+    static func decodeLossyArray<Element: Decodable, Key: CodingKey>(
         _ type: Element.Type,
         from container: KeyedDecodingContainer<Key>,
         forKey key: Key

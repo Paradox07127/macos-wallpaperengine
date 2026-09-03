@@ -290,3 +290,50 @@ private final class DuplicateTolerantConfigPersistence: ScreenConfigurationPersi
         self.configurations = configurations
     }
 }
+
+/// `VideoFitMode` / `VideoDisplayMode` used to have synthesized `init(from:)`,
+/// so an unknown raw value (a build downgrade, or a hand-edited backup) threw
+/// and failed the whole `[ScreenConfiguration]` array decode — losing every
+/// display's config, not just the one with the bad field.
+@Suite("ScreenConfiguration tolerant enum decode")
+struct ScreenConfigurationTolerantEnumDecodeTests {
+    @Test("An unknown fitMode falls back to aspectFill without invalidating the rest of the array")
+    func unknownFitModeSurvivesArrayDecode() throws {
+        let untouched = ScreenConfiguration(screenID: 1, videoBookmarkData: Data([0x1]), fitMode: .center)
+        let affected = ScreenConfiguration(screenID: 2, videoBookmarkData: Data([0x2]), fitMode: .stretch)
+
+        let data = try JSONEncoder().encode([untouched, affected])
+        var array = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        try #require(array.count == 2)
+        array[1]["fitMode"] = "bogus"
+        let corrupted = try JSONSerialization.data(withJSONObject: array)
+
+        let decoded = try JSONDecoder().decode([ScreenConfiguration].self, from: corrupted)
+
+        #expect(decoded.count == 2)
+        #expect(decoded[0].fitMode == .center) // control: legitimate value survives untouched
+        #expect(decoded[1].fitMode == .aspectFill) // fallback default, rest of the array survives
+        #expect(decoded[1].screenID == 2)
+    }
+
+    @Test("An unknown videoDisplayMode falls back to perDisplay without invalidating the rest of the array")
+    func unknownVideoDisplayModeSurvivesArrayDecode() throws {
+        let untouched = ScreenConfiguration(
+            screenID: 1, wallpaper: .video(bookmarkData: Data([0x1])), videoDisplayMode: .spanAllDisplays
+        )
+        let affected = ScreenConfiguration(screenID: 2, videoBookmarkData: Data([0x2]))
+
+        let data = try JSONEncoder().encode([untouched, affected])
+        var array = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        try #require(array.count == 2)
+        array[1]["videoDisplayMode"] = "bogus"
+        let corrupted = try JSONSerialization.data(withJSONObject: array)
+
+        let decoded = try JSONDecoder().decode([ScreenConfiguration].self, from: corrupted)
+
+        #expect(decoded.count == 2)
+        #expect(decoded[0].videoDisplayMode == .spanAllDisplays) // control
+        #expect(decoded[1].videoDisplayMode == .perDisplay) // fallback default
+        #expect(decoded[1].screenID == 2)
+    }
+}

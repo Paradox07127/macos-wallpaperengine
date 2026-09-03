@@ -189,15 +189,11 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         preflightTier = try? c.decodeIfPresent(WPEScenePreflightTier.self, forKey: .preflightTier)
         let rawFlags = (try? c.decodeIfPresent([String].self, forKey: .preflightFeatureFlags)) ?? []
         preflightFeatureFlags = rawFlags.compactMap(WPESceneFeatureFlag.init(rawValue:))
-        propertyOverrides = (try? c.decodeIfPresent(
-            [String: WallpaperEngineProjectPropertyValue].self,
-            forKey: .propertyOverrides
-        )) ?? [:]
+        // Lossy: one malformed override must not drop the whole increment.
+        propertyOverrides = c.decodeLossyStringDictionary(forKey: .propertyOverrides) ?? [:]
         presetID = try? c.decodeIfPresent(String.self, forKey: .presetID)
-        presetSnapshot = (try? c.decodeIfPresent(
-            [String: WallpaperEngineProjectPropertyValue].self,
-            forKey: .presetSnapshot
-        )) ?? [:]
+        // Lossy: one malformed preset value must not drop the whole snapshot.
+        presetSnapshot = c.decodeLossyStringDictionary(forKey: .presetSnapshot) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {

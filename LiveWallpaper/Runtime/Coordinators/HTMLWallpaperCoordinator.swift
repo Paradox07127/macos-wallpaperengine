@@ -64,7 +64,7 @@ final class HTMLWallpaperCoordinator {
 
     /// Elects one audio leader per same-source group (first unmuted, ascending screenID).
     /// Prior "no peer plays this source" rule muted every screen in a same-source pair.
-    func isAudioLeader(source: HTMLSource, excluding screenID: CGDirectDisplayID) -> Bool {
+    func isAudioLeader(source: HTMLSource, for screenID: CGDirectDisplayID) -> Bool {
         isAudioLeader(source: source, userMuted: storedMuteAudio(for: screenID) ?? false, for: screenID)
     }
 

@@ -212,6 +212,10 @@ struct HistoryRow: View {
             resolutionLabel = cached
             return
         }
+        // A new probe key means a different underlying item (re-import/relink
+        // restamped it) — clear the stale label from whatever the row showed
+        // before, so an early-return below can't leave the old value on screen.
+        resolutionLabel = nil
         guard entry.origin.originalType == .video,
               let entryFile = entry.origin.entryFile else {
             WPEResolutionProbeCache.shared.store(nil, for: key)

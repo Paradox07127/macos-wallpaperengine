@@ -157,7 +157,7 @@ public enum HTMLSource: Codable, Equatable, Sendable {
         case .url(let url):
             return url.host ?? url.absoluteString
         case .inline:
-            return "Inline web content"
+            return String(localized: "Inline web content", bundle: .appLanguage, comment: "HTML source display name for inline (pasted) web content.")
         }
     }
 

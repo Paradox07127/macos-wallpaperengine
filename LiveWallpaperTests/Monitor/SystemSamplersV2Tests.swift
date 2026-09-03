@@ -314,4 +314,14 @@ struct SystemSamplersV2Tests {
         let footprints = sample.processes.map(\.footprintBytes)
         #expect(footprints == footprints.sorted(by: >))
     }
+
+    @Test("pidSlice treats proc_listallpids's return value as a PID count, not a byte count")
+    func pidSliceIsCountNotByteCount() {
+        // Measured on this machine: proc_listallpids(nil, 0) == 1193, a second
+        // call into a 1193+64-capacity buffer wrote 1174. Dividing 1174 by
+        // MemoryLayout<Int32>.stride (4) — the bug this seam replaces — would
+        // silently cap the walk at 293 PIDs.
+        #expect(SystemMetricsSamplers.pidSlice(written: 1174, capacity: 1257) == 1174)
+        #expect(SystemMetricsSamplers.pidSlice(written: 1174, capacity: 1257) != 1174 / MemoryLayout<Int32>.stride)
+    }
 }

@@ -50,6 +50,15 @@ struct MonitorOverlayConfigurationTests {
         #expect(decoded.music.size == .medium)
     }
 
+    @Test("A malformed board field falls back to the default board without dropping the display")
+    func malformedBoardFallsBackToDefault() throws {
+        let json = #"{ "enabled": true, "level": "front", "board": {"refreshHz": "bad"} }"#
+        let decoded = try JSONDecoder().decode(MonitorOverlayConfiguration.self, from: Data(json.utf8))
+        #expect(decoded.enabled == true)
+        #expect(decoded.level == .front)
+        #expect(decoded.board == MonitorBoardConfiguration.default)
+    }
+
     /// The layer's position is its own now; a board that still carries the old
     /// widget must not put it back on the grid.
     @Test("A board written while the layer was a widget drops it at decode")
@@ -134,7 +143,12 @@ struct MonitorOverlayConfigurationTests {
 
     @Test("A corrupt overlay slot decodes to nil, never a half-value")
     func corruptSlotIsNil() throws {
-        let decoded = try decodeOverlay(#"{ "board": "not-an-object" }"#)
+        // `board`'s own malformed-value case no longer triggers this — it falls
+        // back to the default board instead (see `malformedBoardFallsBackToDefault`),
+        // matching `level`/`music`. `enabled` is the field that hasn't been made
+        // tolerant, so it's what still demonstrates a genuinely corrupt slot
+        // decoding to nil rather than a half value.
+        let decoded = try decodeOverlay(#"{ "enabled": "not-a-bool" }"#)
         #expect(decoded == nil)
     }
 

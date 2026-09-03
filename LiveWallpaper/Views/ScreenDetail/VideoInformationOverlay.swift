@@ -5,9 +5,6 @@ import AVKit
 /// Metadata is loaded from `AVURLAsset(url:)` rather than the live player so the overlay can render across the active / poster / unloaded states — playing the preview isn't a prerequisite for showing the badges.
 struct VideoInformationOverlay: View {
     let videoURL: URL?
-    /// Used solely as a load-trigger identity so toggling preview off and on
-    /// doesn't refire a redundant metadata load for the same URL.
-    let player: AVPlayer?
 
     @State private var videoResolution: (width: Int, height: Int)?
     @State private var videoFrameRate: Double = 0

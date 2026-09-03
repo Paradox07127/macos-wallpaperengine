@@ -49,6 +49,14 @@ final class EnvironmentOverlayController {
         }
     }
 
+    /// Moves an already-live overlay to a new screen frame (resolution/arrangement
+    /// change) without touching the effect or rebuilding the emitter.
+    func updateFrame(screenID: CGDirectDisplayID, frame: NSRect) {
+        guard let host = hosts[screenID] else { return }
+        host.window.setFrame(frame, display: true)
+        host.view.frame = NSRect(origin: .zero, size: frame.size)
+    }
+
     func setSuspended(_ suspended: Bool, screenID: CGDirectDisplayID) {
         guard let host = hosts[screenID], host.suspended != suspended else { return }
         host.suspended = suspended
@@ -72,6 +80,12 @@ final class EnvironmentOverlayController {
     /// particles below application windows.
     func debugWindowLevel(screenID: CGDirectDisplayID) -> Int? {
         hosts[screenID]?.window.level.rawValue
+    }
+
+    /// Window frame actually in force, for the regression test that pins the
+    /// particle overlay to follow resolution/arrangement changes.
+    func debugWindowFrame(screenID: CGDirectDisplayID) -> NSRect? {
+        hosts[screenID]?.window.frame
     }
     #endif
 

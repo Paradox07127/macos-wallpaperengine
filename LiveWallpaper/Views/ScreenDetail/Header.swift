@@ -145,7 +145,8 @@ struct Header: View {
 
     @ViewBuilder
     private var applyToAllButton: some View {
-        if screenManager.screens.count > 1 && screenManager.getConfiguration(for: screen) != nil {
+        if screenManager.screens.count > 1,
+           appliesOverlayOnly || screenManager.getConfiguration(for: screen) != nil {
             GlassIconButton("square.on.square", action: onApplyToAll)
             // The button copies whatever tab you are on. On the overlay tab
             // that is the layer in front of you and nothing else — taking the

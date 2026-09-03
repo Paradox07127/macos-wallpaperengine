@@ -803,6 +803,14 @@ struct VideoSessionLifecycleTests {
         #expect(replacementPlayer.currentVideoComposition != nil)
     }
 
+    @Test("Force SDR only disables the frame-rate control for video, not scene, wallpapers")
+    func forceSDROnlyDisablesFrameRateForVideo() {
+        #expect(PlaybackControls.frameRateDisabled(wallpaperType: .video, videoColorSpace: .forceSDR))
+        #expect(!PlaybackControls.frameRateDisabled(wallpaperType: .scene, videoColorSpace: .forceSDR))
+        #expect(!PlaybackControls.frameRateDisabled(wallpaperType: .html, videoColorSpace: .forceSDR))
+        #expect(!PlaybackControls.frameRateDisabled(wallpaperType: .video, videoColorSpace: .auto))
+    }
+
     @Test("Force SDR round-trip rebuilds the persisted effect instead of trusting a stale fingerprint")
     func forceSDRRoundTripRestoresEffects() async throws {
         let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))

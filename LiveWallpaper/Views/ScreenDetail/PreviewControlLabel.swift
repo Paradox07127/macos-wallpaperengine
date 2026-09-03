@@ -3,15 +3,11 @@ import SwiftUI
 
 /// A glyph over its own caption, for the preview bar's controls.
 ///
-/// The controls were icon-only for a spell, because the bar also carried the
-/// wallpaper's name and a caption on every control was what pushed that name off
-/// the edge. The name has its own capsule on the top edge now, so the bar's whole
-/// width is controls and a word under each glyph is affordable again — and an
-/// unlabelled `cursorarrow.click` is not something anyone should have to hover to
-/// identify, least of all one that disables desktop clicks while it is on.
-///
-/// Fixed width so a Japanese caption widens the row predictably rather than
-/// letting one control grow past its neighbours.
+/// Captioned, not icon-only: the bar no longer carries the wallpaper name (it
+/// has its own capsule on the top edge), so the width is affordable — and an
+/// unlabelled `cursorarrow.click` that disables desktop clicks must not need a
+/// hover to identify. Fixed width so a Japanese caption widens the row
+/// predictably rather than letting one control grow past its neighbours.
 struct PreviewControlLabel: View {
     let systemImage: String
     let title: LocalizedStringKey

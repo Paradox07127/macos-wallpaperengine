@@ -41,9 +41,10 @@ struct RuntimeV2PlumbingTests {
 
     private func widget(
         _ kind: MonitorWidgetKind,
-        _ options: [String: MonitorWidgetOptionValue] = [:]
+        _ options: [String: MonitorWidgetOptionValue] = [:],
+        size: MonitorWidgetSize = .large
     ) -> MonitorWidgetPlacement {
-        MonitorWidgetPlacement(kind: kind, size: .large, options: options)
+        MonitorWidgetPlacement(kind: kind, size: size, options: options)
     }
 
     @Test("Turning a section off stops its sampler, not just its drawing")
@@ -109,9 +110,27 @@ struct RuntimeV2PlumbingTests {
         ).isEmpty)
     }
 
-    @Test("Power has no options popover, so its sensor row is never narrowed away")
+    @Test("Power has no options popover, so its sensor row is never narrowed away at the sizes that draw it")
     func powerAlwaysDemandsSensors() {
         #expect(MonitorSampleDemand.of([widget(.power)]).sensors == true)
+    }
+
+    @Test("Demand only asks for what the placement's rendered size actually draws")
+    func demandRespectsPlacementSize() {
+        // CPUWidgetView only reads topCPUProcesses inside largeBody.
+        #expect(MonitorSampleDemand.of([widget(.cpu, size: .small)]).topProcesses == false)
+        // MemoryWidgetView only reads showsTopProcesses inside large(cellHeight:).
+        #expect(MonitorSampleDemand.of([widget(.memory, size: .medium)]).topProcesses == false)
+        // DiskWidgetView only reads topIOProcesses inside large(cellHeight:).
+        #expect(MonitorSampleDemand.of([widget(.disk, size: .medium)]).processIO == false)
+        // PowerWidgetView's smallBody never references socTempC.
+        #expect(MonitorSampleDemand.of([widget(.power, size: .small)]).sensors == false)
+
+        // Control group: `.large` still demands everything, as before.
+        #expect(MonitorSampleDemand.of([widget(.cpu, size: .large)]).topProcesses == true)
+        #expect(MonitorSampleDemand.of([widget(.memory, size: .large)]).topProcesses == true)
+        #expect(MonitorSampleDemand.of([widget(.disk, size: .large)]).processIO == true)
+        #expect(MonitorSampleDemand.of([widget(.power, size: .medium)]).sensors == true)
     }
 
     @Test("A nil demand leaves the kind baseline untouched")

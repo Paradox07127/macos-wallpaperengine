@@ -86,8 +86,25 @@ struct ColorAdjustmentsView: View {
     }
 
     private func resetEffects() {
-        effectConfig = .default
+        effectConfig = Self.resettingColorAdjustments(effectConfig)
         screenManager.updateEffectConfig(effectConfig, for: screen)
+    }
+
+    /// Resets only the six fields the "Reset Color & Filters" button's `.help`
+    /// text promises (blur, brightness, saturation, warmth, vignette, auto-tint).
+    /// Weather/particle fields (`weatherReactive`, `weatherWind`,
+    /// `weatherIntensity`, `particleDensity`) live in the same config but belong
+    /// to the Overlays page, so they must survive this reset.
+    static func resettingColorAdjustments(_ config: VideoEffectConfig) -> VideoEffectConfig {
+        var result = config
+        let defaults = VideoEffectConfig.default
+        result.blurRadius = defaults.blurRadius
+        result.brightness = defaults.brightness
+        result.saturation = defaults.saturation
+        result.warmth = defaults.warmth
+        result.vignetteIntensity = defaults.vignetteIntensity
+        result.autoTimeTint = defaults.autoTimeTint
+        return result
     }
 
     private func effectBinding<Value: Equatable>(

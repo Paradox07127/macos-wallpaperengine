@@ -704,7 +704,7 @@ extension AgentSessionWidgetView {
     /// "128K tok" from the transcript's own usage counters, or nil before any
     /// usage-bearing event has been seen.
     nonisolated static func tokenText(for session: MonitorAgentSessionState) -> String? {
-        let total = session.tokens.input + session.tokens.output
+        let total = session.tokens.total
         guard total > 0 else { return nil }
         return Format.tokens(total) + " tok"
     }

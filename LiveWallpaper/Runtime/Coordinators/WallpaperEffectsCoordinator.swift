@@ -295,6 +295,12 @@ final class WallpaperEffectsCoordinator {
         }
     }
 
+    /// Moves an already-live environment overlay to `frame` (resolution/arrangement
+    /// change) without rebuilding the emitter — see `EnvironmentOverlayController.updateFrame`.
+    func updateEnvironmentOverlayFrame(for screen: Screen, frame: CGRect) {
+        environmentOverlay.updateFrame(screenID: screen.id, frame: frame)
+    }
+
     func setEnvironmentOverlaySuspended(_ suspended: Bool, for screen: Screen) {
         environmentOverlay.setSuspended(suspended, screenID: screen.id)
     }

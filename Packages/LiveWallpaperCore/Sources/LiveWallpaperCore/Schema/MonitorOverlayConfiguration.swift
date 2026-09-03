@@ -44,7 +44,8 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
         // Unknown future level → desktop rather than failing overlay decode.
         level = (try? c.decodeIfPresent(MonitorOverlayLevel.self, forKey: .level)) ?? .desktop
         music = ((try? c.decodeIfPresent(MusicOverlayConfiguration.self, forKey: .music)) ?? nil) ?? .default
-        board = try c.decodeIfPresent(MonitorBoardConfiguration.self, forKey: .board) ?? .default
+        // Unknown/malformed board field → default rather than dropping the whole display's overlay.
+        board = MonitorBoardConfiguration.decodeIfPresent(from: c, forKey: .board) ?? .default
     }
 
     public func encode(to encoder: Encoder) throws {

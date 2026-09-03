@@ -20,6 +20,28 @@ struct MonitorTokenTotalsTests {
         #expect(sum.cacheWrite == Int.max)
     }
 
+    @Test("tokenText saturates instead of trapping when input and output are both Int.max")
+    func tokenTextSaturatesAtIntMax() {
+        var session = MonitorAgentSessionState(
+            id: "s", provider: .claude, projectName: "proj",
+            status: .running, lastEventAt: 0, processAlive: true
+        )
+        session.tokens = MonitorTokenTotals(input: .max, output: .max)
+
+        #expect(AgentSessionWidgetView.tokenText(for: session) != nil)
+    }
+
+    @Test("tokenText still formats ordinary totals as before")
+    func tokenTextOrdinaryValues() {
+        var session = MonitorAgentSessionState(
+            id: "s", provider: .claude, projectName: "proj",
+            status: .running, lastEventAt: 0, processAlive: true
+        )
+        session.tokens = MonitorTokenTotals(input: 100_000, output: 28000)
+
+        #expect(AgentSessionWidgetView.tokenText(for: session) == "128K tok")
+    }
+
     @Test("Near-Int.min totals add without trapping and floor at Int.min")
     func addingNearIntMinSaturatesInsteadOfTrapping() {
         let lhs = MonitorTokenTotals(

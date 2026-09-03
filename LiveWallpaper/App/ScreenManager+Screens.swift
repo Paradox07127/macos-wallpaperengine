@@ -55,10 +55,12 @@ extension ScreenManager {
             releaseRuntimeSession(screen)
         }
 
+        var forcedReloadIDs: Set<CGDirectDisplayID> = []
         if !preserveRuntimeSessions {
             for screen in oldScreens where newScreenIDs.contains(screen.id) {
                 releaseRuntimeSession(screen)
             }
+            forcedReloadIDs = oldScreenIDs.intersection(newScreenIDs)
         }
 
         var updatedScreens = [Screen]()
@@ -75,7 +77,7 @@ extension ScreenManager {
 
         screens = updatedScreens
 
-        let reloadIDs = newScreenIDs.subtracting(oldScreenIDs).union(identityChangedIDs)
+        let reloadIDs = newScreenIDs.subtracting(oldScreenIDs).union(identityChangedIDs).union(forcedReloadIDs)
         for screen in newScreens where reloadIDs.contains(screen.id) {
             Logger.info("Configuring new screen \(screen.id)", category: .screenManager)
             if restoresSavedWallpapersOnScreenRefresh {
@@ -149,7 +151,6 @@ extension ScreenManager {
     /// Tears down the live runtime session without touching persistence.
     func releaseRuntimeSession(_ screen: Screen) {
         adaptiveFrameRateOcclusionThrottled[screen.id] = nil
-        suspendedScreenIDs.remove(screen.id)
         suspendReasonsByScreen[screen.id] = nil
         bumpTransition(for: screen.id)
         if effectsCoordinatorWasInitialized {
@@ -221,14 +222,6 @@ extension ScreenManager {
 
     func loadConfigurationForScreen(_ screen: Screen) {
         guard !isTerminating else { return }
-        if screen.videoPlayer != nil {
-            if let cachedConfig = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) {
-                primeBookmarkDisplayNames(from: cachedConfig)
-                applyConfiguration(cachedConfig, to: screen, preservingState: true)
-            }
-            return
-        }
-
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
         primeBookmarkDisplayNames(from: config)
         restoreWallpaperSession(for: screen, configuration: config, preservingState: false)

@@ -8,9 +8,10 @@ import SwiftUI
 /// pair starts three pieces of work at once — the tile's scale + shadow spring,
 /// the title band growing from one line to two (a *layout* change inside a
 /// `LazyVGrid`), and a marquee — none of which the user asked for and none of
-/// which finishes before the next cell arrives. `AnimatedGIFThumbnail` already
-/// solved its half of this with a 250 ms decode debounce; this closes the rest
-/// by settling the hover state itself, so every consumer benefits at once.
+/// which finishes before the next cell arrives. This is the only debounce in
+/// the hover path: the GIF thumbnail's own 250 ms decode delay stacked on top
+/// of it and made a sweep take 400 ms to start, so that one is now 0
+/// (`ThumbnailPlaybackGate.hoverPreviewDelayNanoseconds`).
 ///
 /// Asymmetric on purpose: delaying the "out" edge would leave chrome lit on a
 /// card the pointer has already left, which reads as a stuck frame.

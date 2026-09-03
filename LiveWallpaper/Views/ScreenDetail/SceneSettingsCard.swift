@@ -426,6 +426,8 @@ struct WPESceneCustomSettingsCard: View {
                     )
                     .frame(width: DesignTokens.Inspector.sliderWidth)
                     .controlSize(.small)
+                    .accessibilityLabel(Text(verbatim: property.displayText))
+                    .accessibilityValue(Text(verbatim: ValueLogic.formattedNumber(ValueLogic.value(for: property, in: values).numberValue ?? 0, for: property)))
 
                     Text(verbatim: ValueLogic.formattedNumber(ValueLogic.value(for: property, in: values).numberValue ?? 0, for: property))
                         .font(DesignTokens.Typography.metric)

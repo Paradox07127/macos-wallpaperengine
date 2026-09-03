@@ -330,6 +330,9 @@ final class OverlayController: NSObject {
         updateInteractive(host)
         reconcileVisibilityAndRuntime()
         fadeIn(host)
+        // `fadeIn` orders the new window front regardless, which would put a
+        // freshly enabled Monitor board back on top of the Music layer.
+        restackSameLevelHosts()
     }
 
     /// Drops every module host on this display.
@@ -489,8 +492,15 @@ final class OverlayController: NSObject {
     /// One monitor per host: only `.widgetsOnly` needs the pointer followed, and only while such a host
     /// exists. The local monitor covers the window just made interactive — once the pointer is ours, the
     /// global monitor stops seeing it, and without the local one it could never leave.
+    /// Pure predicate behind `refreshPointerTracking`: a hidden host has no
+    /// window on screen to receive events, so it must not keep the pointer
+    /// monitors (and their per-event hit-testing work) alive.
+    nonisolated static func needsPointerTracking(_ hosts: [(scope: PointerScope, isVisible: Bool)]) -> Bool {
+        hosts.contains { $0.scope == .widgetsOnly && $0.isVisible }
+    }
+
     private func refreshPointerTracking() {
-        let needsTracking = hosts.values.contains { $0.pointerScope == .widgetsOnly }
+        let needsTracking = Self.needsPointerTracking(hosts.values.map { (scope: $0.pointerScope, isVisible: $0.isVisible) })
         guard needsTracking else {
             stopPointerTracking()
             return
@@ -517,7 +527,7 @@ final class OverlayController: NSObject {
 
     private func pointerMoved() {
         let point = NSEvent.mouseLocation
-        for host in hosts.values where host.pointerScope == .widgetsOnly {
+        for host in hosts.values where host.pointerScope == .widgetsOnly && host.isVisible {
             applyWindowMouseEvents(to: host, screenPoint: point)
         }
     }
@@ -544,13 +554,44 @@ final class OverlayController: NSObject {
             if !host.isVisible {
                 host.isDeliveringSnapshots = false
                 host.setSuspended(true)
+                // A hidden host must not keep swallowing clicks meant for
+                // whatever is now on top of it.
+                host.window.setInteractive(false)
             }
         }
         if !decision.pumpShouldRun {
             stopPump()
         }
+        restackSameLevelHosts()
 
         scheduleRuntimeReconciliation()
+    }
+
+    /// Same-level, same-screen z-order used to be creation order — whichever
+    /// module was enabled second landed on top and stayed there, so opening
+    /// Monitor after Music let it steal Music's transport-control clicks with
+    /// no way to recover short of disabling and re-enabling both.
+    nonisolated static func stackingOrder(_ modules: [MonitorOverlayModule]) -> [MonitorOverlayModule] {
+        modules.sorted { lhs, rhs in (lhs == .music ? 1 : 0) < (rhs == .music ? 1 : 0) }
+    }
+
+    private func restackSameLevelHosts() {
+        for screenID in Set(hosts.keys.map(\.screenID)) {
+            let keysHere = hosts.keys.filter { $0.screenID == screenID }
+            for level in MonitorOverlayLevel.allCases {
+                let group = keysHere.filter { hosts[$0]?.level == level }
+                guard group.count > 1 else { continue }
+                var previous: OverlayWindow?
+                for module in Self.stackingOrder(group.map(\.module)) {
+                    guard let key = group.first(where: { $0.module == module }),
+                          let window = hosts[key]?.window else { continue }
+                    if let previous {
+                        window.order(.above, relativeTo: previous.windowNumber)
+                    }
+                    previous = window
+                }
+            }
+        }
     }
 
     /// A metric group no placed widget reads isn't sampled at all — the source still emits a literal 0 for

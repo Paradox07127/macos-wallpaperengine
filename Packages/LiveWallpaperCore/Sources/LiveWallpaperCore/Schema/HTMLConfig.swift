@@ -170,31 +170,14 @@ public struct HTMLConfig: Codable, Equatable, Sendable {
         maxRetries = min(max(0, decodedRetries), 10)
         cspEnforcementEnabled = try c.decodeIfPresent(Bool.self, forKey: .cspEnforcementEnabled) ?? false
         aggressiveSuspend = try c.decodeIfPresent(Bool.self, forKey: .aggressiveSuspend) ?? false
-        do {
-            wallpaperEngineProjectProperties = try c.decodeIfPresent(
-                [String: WallpaperEngineProjectPropertyValue].self,
-                forKey: .wallpaperEngineProjectProperties
-            ) ?? [:]
-        } catch {
-            // Malformed overrides must not fail the rest of the wallpaper decode.
-            Logger.warning(
-                "HTMLConfig: dropping unreadable wallpaperEngineProjectProperties (\(error.localizedDescription))",
-                category: .settings
-            )
-            wallpaperEngineProjectProperties = [:]
-        }
-        do {
-            wallpaperEngineProjectPropertiesByProject = try c.decodeIfPresent(
-                [String: [String: WallpaperEngineProjectPropertyValue]].self,
-                forKey: .wallpaperEngineProjectPropertiesByProject
-            ) ?? [:]
-        } catch {
-            Logger.warning(
-                "HTMLConfig: dropping unreadable wallpaperEngineProjectPropertiesByProject (\(error.localizedDescription))",
-                category: .settings
-            )
-            wallpaperEngineProjectPropertiesByProject = [:]
-        }
+        // Lossy: a malformed override must not fail the rest of the wallpaper decode.
+        wallpaperEngineProjectProperties = c.decodeLossyStringDictionary(
+            forKey: .wallpaperEngineProjectProperties
+        ) ?? [:]
+        // Lossy: one malformed project's overrides must not drop every other project's.
+        wallpaperEngineProjectPropertiesByProject = c.decodeLossyStringDictionary(
+            forKey: .wallpaperEngineProjectPropertiesByProject
+        ) ?? [:]
     }
 
     /// Project-keyed overrides, falling back to the legacy flat map for unmigrated configs.
