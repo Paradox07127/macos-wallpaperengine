@@ -17,7 +17,9 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(actual == Set(fixtureValues))
         // 43 = 42 + libraryTileSizeRaw (global library tile size, behavior domain,
         // approved 2026-09-01 when the five library grids stopped hard-coding it).
-        #expect(actual.count == 43, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
+        // 44 = 43 + pendingDestructive (diagnostics domain, approved 2026-09-03 when
+        // Advanced gained the Reset All Settings confirmation).
+        #expect(actual.count == 44, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
     }
 
     @Test("Each page mounts only its own system-capability probe")

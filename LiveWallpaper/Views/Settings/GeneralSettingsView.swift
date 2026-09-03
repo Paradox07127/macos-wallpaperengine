@@ -67,6 +67,7 @@ struct GeneralSettingsView: View {
     @State private var weatherStatusRefreshGeneration = 0
 
     @State var pendingBugReport: BugReport?
+    @State var pendingDestructive: PendingDestructive?
 
     @State private var loginItemAlert: LoginItemFailure?
 
@@ -252,6 +253,7 @@ struct GeneralSettingsView: View {
             settingsForm {
                 advancedSection
             }
+            .confirmDestructive($pendingDestructive)
         case .about:
             aboutTab
         }

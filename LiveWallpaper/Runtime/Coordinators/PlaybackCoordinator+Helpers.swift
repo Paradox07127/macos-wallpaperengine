@@ -67,6 +67,8 @@ extension PlaybackCoordinator {
 
         let groups = Dictionary(grouping: candidates) { $0.urlKey }
         var spannedScreenIDs = Set<CGDirectDisplayID>()
+        var spannedGroupDescriptions: [String] = []
+        var spanDeclinedReasons: [CGDirectDisplayID: String] = [:]
 
         for group in groups.values where group.count > 1 {
             let renderConfigurations = VideoSpanLayout.renderConfigurations(
@@ -74,7 +76,13 @@ extension PlaybackCoordinator {
                     VideoSpanLayout.Entry(screenID: item.screen.id, frame: item.screen.frame)
                 }
             )
-            guard !renderConfigurations.isEmpty else { continue }
+            guard !renderConfigurations.isEmpty else {
+                for item in group {
+                    spanDeclinedReasons[item.screen.id] =
+                        "span layout produced no canvas (fewer than two displays in the group have a non-empty frame)"
+                }
+                continue
+            }
 
             synchronizeSpanGroupPlaybackTimes(group)
 
@@ -82,10 +90,63 @@ extension PlaybackCoordinator {
                 item.player.setSpanRenderConfiguration(renderConfigurations[item.screen.id])
                 spannedScreenIDs.insert(item.screen.id)
             }
+            let canvas = renderConfigurations.values.first?.canvasFrame ?? .zero
+            let ids = group.map(\.screen.id).sorted().map(String.init).joined(separator: ", ")
+            spannedGroupDescriptions.append(
+                "[\(ids)] on a \(Int(canvas.width))×\(Int(canvas.height)) canvas"
+            )
         }
 
         for screen in screens where !spannedScreenIDs.contains(screen.id) {
             screen.videoPlayer?.setSpanRenderConfiguration(nil)
+        }
+
+        for item in candidates where !spannedScreenIDs.contains(item.screen.id) {
+            guard spanDeclinedReasons[item.screen.id] == nil else { continue }
+            let title = LogPrivacyRedactor.sanitizedTitle(
+                item.player.videoURL?.lastPathComponent ?? "unknown"
+            )
+            spanDeclinedReasons[item.screen.id] =
+                "no other display is playing the same file (\(title)), so the group has one member"
+        }
+
+        // A screen that asked to span but never became a candidate is only
+        // inspected when the log is going to be written anyway, and only through
+        // the pure-read `get(for:)`. The `fingerprint:` overload above can
+        // migrate/back-fill and bump the store revision, which is exactly the
+        // condition `isCandidateStillCurrent` kills in-flight candidates on —
+        // diagnostics must not be able to manufacture that.
+        if !spanDeclinedReasons.isEmpty || (candidates.isEmpty && screens.count > 1) {
+            for screen in screens where spanDeclinedReasons[screen.id] == nil {
+                guard let configuration = configurationStore.get(for: screen.id),
+                      configuration.wallpaperType == .video,
+                      configuration.videoDisplayMode == .spanAllDisplays else { continue }
+                guard let player = screen.videoPlayer else {
+                    spanDeclinedReasons[screen.id] = "no live video player on this screen"
+                    continue
+                }
+                if Self.videoAudioURLKey(
+                    for: player.videoURL,
+                    packageEntryName: player.packageEntryName
+                ) == nil {
+                    spanDeclinedReasons[screen.id] = "the player has no resolved video URL yet"
+                }
+            }
+        }
+
+        // Success is silent: this runs once per commit on every screen.
+        if !spanDeclinedReasons.isEmpty {
+            let declined = spanDeclinedReasons
+                .sorted { $0.key < $1.key }
+                .map { "screen \($0.key): \($0.value)" }
+                .joined(separator: "; ")
+            let spanned = spannedGroupDescriptions.isEmpty
+                ? "none"
+                : spannedGroupDescriptions.joined(separator: ", ")
+            Logger.notice(
+                "Span across displays requested but not applied — \(declined). Spanned groups: \(spanned).",
+                category: .screenManager
+            )
         }
     }
 

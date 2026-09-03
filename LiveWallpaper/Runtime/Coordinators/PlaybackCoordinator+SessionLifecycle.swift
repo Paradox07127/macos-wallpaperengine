@@ -355,18 +355,54 @@ extension PlaybackCoordinator {
                 session.cleanup()
                 return
             }
+            // Evaluated conjunct-by-conjunct only so a dropped candidate names the
+            // reason: success and every failure mode used to look identical here.
             let isCandidateStillCurrent: @MainActor () -> Bool = {
                 [weak self, weak liveScreen] in
-                guard let self, let liveScreen else { return false }
-                return self.isRuntimeInstallationAllowed()
-                    && self.isGloballyEnabled()
-                    && self.screensProvider().first(where: { $0.id == screenID }) === liveScreen
-                    && self.transition.isCurrentTransition(
-                        transitionGeneration,
-                        for: screenID
+                guard let self, let liveScreen else {
+                    Logger.notice(
+                        "Video candidate for screen \(screenID) dropped: PlaybackCoordinator or Screen was deallocated",
+                        category: .screenManager
                     )
-                    && self.configurationStore.revision(for: screenID)
-                        == expectedConfigurationRevision
+                    return false
+                }
+                if !isRuntimeInstallationAllowed() {
+                    Logger.notice(
+                        "Video candidate for screen \(screenID) dropped: runtime installation is closed (the app is terminating)",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                if !isGloballyEnabled() {
+                    Logger.notice(
+                        "Video candidate for screen \(screenID) dropped: wallpapers are globally disabled",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                if screensProvider().first(where: { $0.id == screenID }) !== liveScreen {
+                    Logger.notice(
+                        "Video candidate for screen \(screenID) dropped: Screen object was replaced (display refresh during prepare)",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                if !transition.isCurrentTransition(transitionGeneration, for: screenID) {
+                    Logger.notice(
+                        "Video candidate for screen \(screenID) dropped: a newer transition superseded generation \(transitionGeneration)",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                let revision = configurationStore.revision(for: screenID)
+                if revision != expectedConfigurationRevision {
+                    Logger.notice(
+                        "Video candidate for screen \(screenID) dropped: configuration revision advanced \(expectedConfigurationRevision) → \(revision)",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                return true
             }
             let result = await WallpaperSessionTransaction.prepareAndCommit(
                 session,

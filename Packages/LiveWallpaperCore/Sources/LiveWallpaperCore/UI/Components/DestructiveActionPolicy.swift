@@ -23,6 +23,9 @@ public enum DestructiveAction: Identifiable, Equatable {
     case applyOverlayToAllDisplays(overlayName: String, otherCount: Int)
     case clearCurrentWallpaper(displayName: String)
     case resetDisplaySettings(displayName: String)
+    /// Settings › Advanced. The whole preference store goes back to first-launch
+    /// state, so unlike `resetDisplaySettings` there is no narrower target to name.
+    case resetAllSettings
     case removeSystemWallpaper(title: String, isInUse: Bool)
     /// Trashing the app leaves its container behind, so the published copies
     /// outlive an uninstall unless the user clears them first.
@@ -51,6 +54,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .applyOverlayToAllDisplays(let n, let c): return "applyOverlayToAllDisplays-\(n)-\(c)"
         case .clearCurrentWallpaper(let n): return "clearCurrentWallpaper-\(n)"
         case .resetDisplaySettings(let n): return "resetDisplaySettings-\(n)"
+        case .resetAllSettings: return "resetAllSettings"
         case .disconnectAerialsLibrary: return "disconnectAerialsLibrary"
         #if DEBUG
         case .clearTestTempArtifacts(let i, let b): return "clearTestTempArtifacts-\(i)-\(b)"
@@ -75,6 +79,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .applyOverlayToAllDisplays: return "Apply this overlay to every other display?"
         case .clearCurrentWallpaper:     return "Clear current wallpaper?"
         case .resetDisplaySettings:      return "Reset this display's settings?"
+        case .resetAllSettings: return "Reset all settings?"
         case .removeSystemWallpaper:     return "Remove this video from System Wallpaper?"
         case .disconnectAerialsLibrary:  return "Disconnect Apple Aerials library?"
         #if DEBUG
@@ -170,6 +175,11 @@ public enum DestructiveAction: Identifiable, Equatable {
                 localized: "Restores playback, color, particle, audio, and layout settings on \(displayName) to defaults. The wallpaper itself, playlist bookmarks, and library items stay.",
                 bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name."
             )
+        case .resetAllSettings:
+            return String(
+                localized: "Global preferences, every display's setup, saved bookmarks, and saved schemes go back to their defaults, and connected folders are disconnected. Your wallpaper files and imported library are not deleted.",
+                bundle: .appLanguage, comment: "Destructive confirm message for resetting every app setting from Settings › Advanced."
+            )
         case .disconnectAerialsLibrary:
             return String(
                 localized: "LiveWallpaper will release its read access to the local Apple Aerials folder. Existing aerial wallpapers stay applied; you'll need to reconnect to browse the library again.",
@@ -202,6 +212,9 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .applyOverlayToAllDisplays: return "Apply to All Displays"
         case .clearCurrentWallpaper:     return "Clear Wallpaper"
         case .resetDisplaySettings:      return "Reset Settings"
+        // Not "Reset All": that key collides with the diagnostics-flag button's
+        // "Reset all" in xcstringstool symbol generation.
+        case .resetAllSettings: return "Reset All Settings"
         case .removeSystemWallpaper:     return "Remove"
         case .disconnectAerialsLibrary:  return "Disconnect"
         #if DEBUG

@@ -46,15 +46,54 @@ extension ScreenManager {
                 candidate.cleanup()
                 return
             }
+            // Evaluated conjunct-by-conjunct only so a dropped candidate names the
+            // reason: success and every failure mode used to look identical here.
             let isCandidateStillCurrent: @MainActor () -> Bool = {
                 [weak self, weak screen] in
-                guard let self, let screen else { return false }
-                return !self.isTerminating
-                    && self.wallpapersGloballyEnabled
-                    && self.screens.contains(where: { $0 === screen })
-                    && self.isCurrentTransition(generation, for: screenID)
-                    && self.configurationStore.revision(for: screenID)
-                        == expectedConfigurationRevision
+                guard let self, let screen else {
+                    Logger.notice(
+                        "Wallpaper candidate for screen \(screenID) dropped: ScreenManager or Screen was deallocated",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                if isTerminating {
+                    Logger.notice(
+                        "Wallpaper candidate for screen \(screenID) dropped: the app is terminating",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                if !wallpapersGloballyEnabled {
+                    Logger.notice(
+                        "Wallpaper candidate for screen \(screenID) dropped: wallpapers are globally disabled",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                if !screens.contains(where: { $0 === screen }) {
+                    Logger.notice(
+                        "Wallpaper candidate for screen \(screenID) dropped: Screen object was replaced (display refresh during prepare)",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                if !isCurrentTransition(generation, for: screenID) {
+                    Logger.notice(
+                        "Wallpaper candidate for screen \(screenID) dropped: a newer transition superseded generation \(generation)",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                let revision = configurationStore.revision(for: screenID)
+                if revision != expectedConfigurationRevision {
+                    Logger.notice(
+                        "Wallpaper candidate for screen \(screenID) dropped: configuration revision advanced \(expectedConfigurationRevision) → \(revision)",
+                        category: .screenManager
+                    )
+                    return false
+                }
+                return true
             }
             let result = await WallpaperSessionTransaction.prepareAndCommit(
                 candidate,
