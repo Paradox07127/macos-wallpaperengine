@@ -65,6 +65,8 @@ struct DetailView: View {
     /// deliberate though — arranging overlays across two screens shouldn't reset
     /// the tab on every hop.
     @State private var selectedTab: DisplayDetailTab = .wallpaper
+    /// Raised by the Scene tab's recent-projects grid; the header hosts its actions.
+    @State private var showsSceneQuickActions = false
     @State private var selectedOverlayKind: OverlayKind = .weather
 
     @State private var draft: DraftState = .default
@@ -392,6 +394,9 @@ struct DetailView: View {
                 wallpaperPreviewArea
             }
         }
+        .onPreferenceChange(SceneQuickActionsVisibleKey.self) { visible in
+            showsSceneQuickActions = visible
+        }
     }
 
     private var wallpaperPreviewArea: some View {
@@ -424,6 +429,7 @@ struct DetailView: View {
             wallpaperSessionSummary: wallpaperSessionSummary,
             reduceMotion: reduceMotion,
             showsHeaderWallpaperActions: showsHeaderWallpaperActions,
+            showsSceneQuickActions: showsSceneQuickActions,
             appliesOverlayOnly: selectedTab == .overlays,
             showBookmarks: $showBookmarks,
             onApplyToAll: requestApplyToAll,

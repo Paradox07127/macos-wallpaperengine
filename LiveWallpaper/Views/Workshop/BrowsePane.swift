@@ -620,31 +620,26 @@ struct BrowsePane: View {
     }
 }
 
-/// Thumbnail + title-band placeholder while browse results load.
+/// Placeholder for a `BrowseCard` while browse results load: one square thumbnail
+/// with the title laid over its bottom edge. Same footprint as the real card, so
+/// results arriving do not reflow the grid.
 private struct WorkshopSkeletonCard: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            WorkshopShimmer()
-                .aspectRatio(1, contentMode: .fit)
+        WorkshopShimmer()
+            .aspectRatio(1, contentMode: .fit)
+            .overlay(alignment: .bottom) { titleBand }
+            .galleryTileChrome(isHovering: false)
+            .accessibilityHidden(true)
+    }
 
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                WorkshopShimmer().frame(height: 13).frame(maxWidth: .infinity)
-                WorkshopShimmer().frame(width: 120, height: 13)
-                HStack(spacing: 6) {
-                    WorkshopShimmer().frame(width: 46, height: 14).clipShape(Capsule())
-                    Spacer(minLength: 0)
-                    WorkshopShimmer().frame(width: 72, height: 11)
-                }
-            }
-            .padding(DesignTokens.Spacing.md)
-        }
-        .background(DesignTokens.Colors.surfaceRaised)
-        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.lg, style: .continuous)
-                .strokeBorder(Color.primary.opacity(DesignTokens.Card.strokeOpacity), lineWidth: DesignTokens.Card.strokeWidth)
-        }
-        .accessibilityHidden(true)
+    /// Mirrors `ThumbnailTitleBand` at rest — one line of type, same insets.
+    private var titleBand: some View {
+        WorkshopShimmer()
+            .frame(height: 13)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, DesignTokens.Spacing.sm)
+            .padding(.bottom, DesignTokens.Spacing.sm)
+            .padding(.top, DesignTokens.Spacing.xs)
     }
 }
 
