@@ -102,7 +102,6 @@ struct DisplayDefaultsView: View {
             audioRows(for: .video)
             frameRateRow(for: .video)
             scalingRow(for: .video, modes: VideoFitMode.videoModes)
-            spanDisplaysRow
             colorSpaceRow
         } header: {
             SettingsSearchSectionHeader("Video", anchor: .displayDefaultsVideo)
@@ -202,26 +201,6 @@ struct DisplayDefaultsView: View {
             .labelsHidden()
             .fixedSize()
             .accessibilityLabel(Text("Default scaling"))
-        }
-    }
-
-    private var spanDisplaysRow: some View {
-        SettingRow(
-            icon: "rectangle.split.2x1",
-            iconColor: .indigo,
-            title: "Span Displays",
-            subtitle: "Default multi-display video mode"
-        ) {
-            Toggle("", isOn: Binding(
-                get: { displayDefaults.video.videoDisplayMode == .spanAllDisplays },
-                set: { enabled in
-                    displayDefaults.video.videoDisplayMode = enabled ? .spanAllDisplays : .perDisplay
-                    SettingsManager.shared.saveDisplayDefaults(displayDefaults)
-                }
-            ))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .accessibilityLabel(Text("Span videos across displays by default"))
         }
     }
 

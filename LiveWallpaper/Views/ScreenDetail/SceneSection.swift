@@ -108,20 +108,30 @@ struct SceneSection: View {
     private var historyList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                // Centre, not first-baseline: the trailing controls are now
+                // icon-only circles with no text to share a baseline with.
+                HStack(spacing: 12) {
                     Text("Recent Linked Projects")
                         .font(DesignTokens.Typography.sectionTitle)
                     Spacer()
-                    if featureCatalog.isEnabled(.wpeImport) {
-                        browseWorkshopButton("Browse all in Workshop")
+                    HStack(spacing: 8) {
+                        if featureCatalog.isEnabled(.wpeImport) {
+                            // The Workshop pane's own glyph (sidebar + its
+                            // online tab), so the icon names the destination.
+                            GlassIconButton("cube.transparent.fill", size: .regular) {
+                                NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
+                            }
+                            .help(Text("Browse all in Workshop"))
+                            .accessibilityLabel(Text("Browse all in Workshop"))
+                            .accessibilityHint(Text("Opens the Steam Workshop tab to browse and manage your full library"))
+                        }
+                        GlassIconButton("plus", size: .regular) {
+                            presentFolderPicker()
+                        }
+                        .help(Text("Apply Project"))
+                        .accessibilityLabel(Text("Apply Project"))
+                        .accessibilityHint(Text("Opens a folder chooser to link and apply a local project in place"))
                     }
-                    Button {
-                        presentFolderPicker()
-                    } label: {
-                        Label("Apply Project", systemImage: "plus")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
                 }
 
                 LazyVGrid(

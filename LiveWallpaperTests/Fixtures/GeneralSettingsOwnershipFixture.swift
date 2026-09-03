@@ -74,6 +74,7 @@ enum OwnershipFixture {
         ],
         .diagnostics: [
             "pendingBugReport",
+            "pendingDestructive",
             "diagnosticsExportErrorMessage",
             "isPresentingDiagnosticsExporter",
             "diagnosticsDocument",

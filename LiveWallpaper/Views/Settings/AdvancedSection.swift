@@ -50,9 +50,61 @@ extension GeneralSettingsView {
                     .accessibilityLabel(Text("Show logs in Finder"))
                     .accessibilityHint(Text("Opens the folder containing the app's log files"))
             }
+
+            SettingRow(
+                icon: "arrow.counterclockwise",
+                iconColor: .red,
+                title: "Reset All Settings",
+                subtitle: "Restore global preferences, per-display setup, bookmarks, and schemes to their defaults."
+            ) {
+                Button("Reset") { confirmResetAllSettings() }
+                    .fixedSize()
+                    .accessibilityLabel(Text("Reset all settings"))
+            }
         } header: {
             Text("Advanced", comment: "Section header for diagnostics and developer settings.")
         }
+    }
+
+    // MARK: - Reset
+
+    private func confirmResetAllSettings() {
+        pendingDestructive = PendingDestructive(.resetAllSettings) { performResetAllSettings() }
+    }
+
+    /// Wiping the store is only half a reset: `ScreenManager` keeps its own
+    /// `screenNames` / `monitorOverlays` caches and every screen keeps its live
+    /// runtime session, so without this tail the next overlay edit writes the
+    /// pre-reset dictionary back and the old wallpapers stay on screen. Same
+    /// sequence `applyPendingImport()` runs after a .lwconfig import replaces
+    /// the store wholesale.
+    private func performResetAllSettings() {
+        SettingsManager.shared.cleanAllSettings()
+
+        postSettingsNotificationAsync(.dockVisibilityDidChange)
+        postSettingsNotificationAsync(.globalShortcutsDidChange)
+        postSettingsNotificationAsync(.weatherLocationPreferenceDidChange)
+        screenManager.handleGlobalSettingsChanged()
+        screenManager.resetAllWallpaperSessions()
+        screenManager.refreshScreens(preserveRuntimeSessions: false)
+
+        let settings = SettingsManager.shared.loadGlobalSettings()
+        globalPauseOnBattery = settings.globalPauseOnBattery
+        startOnLogin = settings.startOnLogin
+        preservePlaybackOnLock = settings.preservePlaybackOnLock
+        pauseOnFullScreen = settings.pauseOnFullScreen
+        pauseOnWindowOcclusion = settings.pauseOnWindowOcclusion
+        pauseInLowPowerMode = settings.pauseInLowPowerMode
+        applicationRules = settings.applicationPerformanceRules
+        showInDock = settings.showInDock
+        wallpaperVisibleInScreenCapture = settings.wallpaperVisibleInScreenCapture
+        videoCacheBudgetMB = Double(settings.videoCacheMaxBytesPerScreen) / Double(1024 * 1024)
+        audioResponseEnabled = settings.audioResponseEnabled
+        adaptiveFrameRateEnabled = settings.adaptiveFrameRateEnabled
+        weatherLocation = settings.weatherLocation
+        #if !LITE_BUILD
+        applyAudioResponseEnabled(settings.audioResponseEnabled)
+        #endif
     }
 
     // MARK: - Diagnostics Actions

@@ -193,10 +193,20 @@ enum WallpaperSessionTransaction {
             }
         }
         guard result == .ready else {
+            Logger.notice(
+                "Wallpaper candidate for screen \(screen.id) discarded: \(candidate.wallpaperType) prepare returned \(result)",
+                category: .screenManager
+            )
             candidate.cleanup()
             return result
         }
         guard !Task.isCancelled, isStillCurrent() else {
+            Logger.notice(
+                Task.isCancelled
+                    ? "Wallpaper candidate for screen \(screen.id) discarded after a ready prepare: the preparation task was cancelled"
+                    : "Wallpaper candidate for screen \(screen.id) discarded after a ready prepare: it is no longer current (reason logged above)",
+                category: .screenManager
+            )
             candidate.cleanup()
             return .cancelled
         }
@@ -212,6 +222,12 @@ enum WallpaperSessionTransaction {
                 return commitAccepted
             }
         ) else {
+            Logger.notice(
+                didAttemptCommit
+                    ? "Wallpaper candidate for screen \(screen.id) not installed: beforeCommit() vetoed the commit"
+                    : "Wallpaper candidate for screen \(screen.id) not installed: CAS mismatch, the live session is no longer the one this candidate meant to replace",
+                category: .screenManager
+            )
             candidate.cleanup()
             return didAttemptCommit && !commitAccepted ? .failed : .cancelled
         }
