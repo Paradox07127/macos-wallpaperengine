@@ -12,6 +12,10 @@ struct WorkshopKeychainSlot: Sendable {
         case absent
         /// The ACL dialog was refused, or the keychain is locked.
         case denied
+        /// The item is there and macOS agreed to it, but the read failed —
+        /// `errSecDecode`, `errSecParam`. Reported as `absent` until now, which
+        /// sent the reader to Steam for a key they already had.
+        case failed(OSStatus)
     }
 
     /// Attribute-only existence probe — never shows the ACL dialog.
@@ -43,13 +47,17 @@ struct WorkshopKeychainSlot: Sendable {
             var item: CFTypeRef?
             switch SecItemCopyMatching(query as CFDictionary, &item) {
             case errSecSuccess:
+                // The item is there and macOS handed it over; bytes we cannot
+                // decode are a damaged item, not a missing one.
                 guard let data = item as? Data,
-                      let key = String(data: data, encoding: .utf8) else { return .absent }
+                      let key = String(data: data, encoding: .utf8) else { return .failed(errSecDecode) }
                 return .found(key)
             case errSecUserCanceled, errSecAuthFailed, errSecInteractionNotAllowed:
                 return .denied
-            default:
+            case errSecItemNotFound:
                 return .absent
+            case let status:
+                return .failed(status)
             }
         },
         write: { key in
@@ -146,6 +154,9 @@ actor WorkshopKeychainStore {
         case .denied:
             readWasDenied = true
             throw WorkshopKeychainError.accessDenied
+        case let .failed(status):
+            readWasDenied = false
+            throw WorkshopKeychainError.osStatus(status)
         }
     }
 

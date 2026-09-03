@@ -577,7 +577,7 @@ extension ScreenManager {
             guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
                   config.wallpaperType == .video,
                   config.setAsLockScreen else { continue }
-            extractLockScreenFrame(for: screen)
+            Task { await extractLockScreenFrame(for: screen) }
         }
     }
     

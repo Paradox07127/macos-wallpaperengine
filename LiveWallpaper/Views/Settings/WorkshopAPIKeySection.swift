@@ -57,6 +57,11 @@ struct WorkshopAPIKeySection: View {
         if services.apiKeyAccessDenied {
             return "macOS wouldn't unlock the stored key — allow access when it asks, or paste the key again"
         }
+        // Same reasoning as the denial line above, for the other way a stored
+        // key stops working: Valve refused it, so "stored" is true and useless.
+        if services.apiKeyRejected {
+            return "Steam rejected this key — paste a new one"
+        }
         return services.hasWebAPIKey
             ? "Stored on this Mac only — never synced"
             : "Optional — adds ratings, authors and faster search"

@@ -308,6 +308,9 @@ struct SteamEngineBuildLookup: Codable, Equatable, Sendable {
         case steamCMDUnavailable
         /// SteamCMD ran and said nothing we recognise.
         case unrecognized
+        /// SteamCMD ran and could not reach Steam's servers. Was folded into
+        /// `unrecognized`, whose copy asserts Steam answered.
+        case steamUnreachable
     }
 
     let outcome: Outcome
@@ -604,6 +607,14 @@ enum SteamCachedLoginOutcome: String, Codable, Sendable {
     case sessionValid
     case noCachedSession
     case sessionExpired
+    /// Steam's servers never answered: the login line ended in
+    /// `ERROR (No Connection)`. The remedy is the network, not the session.
+    case noConnection
+    /// Steam answered and refused; `failureReason` carries its own words.
+    case loginFailed
+    /// Steam is throttling sign-ins. Waiting is the remedy, so this must not
+    /// share `loginFailed`'s "sign in again" instruction.
+    case rateLimited
     case timedOut
     case steamCMDUnavailable
     case unrecognized
@@ -618,6 +629,10 @@ struct SteamCachedLoginResult: Codable, Equatable, Sendable {
     let diagnosticTail: String
     /// Execution receipt — see `SteamWorkshopDownloadResult.executedBinaryPath`.
     var executedBinaryPath: String? = nil
+    /// The parenthesised reason from Steam's `FAILED (…)` / `ERROR (…)` login
+    /// line, for `.noConnection` and `.loginFailed`. Optional so a payload
+    /// from a connector without the key still decodes.
+    var failureReason: String?
 }
 
 /// Maps SteamCMD's cached-login output to a verdict.
@@ -645,7 +660,29 @@ enum SteamCachedLoginParser {
                 stdout.contains("Cached credentials not found.") ? .noCachedSession : .sessionExpired
             return SteamCachedLoginResult(outcome: outcome, steamID64: nil, diagnosticTail: tail)
         }
+        if let reason = loginFailureReason(in: stdout) {
+            let lowered = reason.lowercased()
+            let outcome: SteamCachedLoginOutcome = if lowered.contains("no connection") {
+                .noConnection
+            } else if lowered.contains("rate limit") {
+                .rateLimited
+            } else {
+                .loginFailed
+            }
+            return SteamCachedLoginResult(
+                outcome: outcome, steamID64: nil, diagnosticTail: tail, failureReason: reason
+            )
+        }
         return SteamCachedLoginResult(outcome: .unrecognized, steamID64: steamID, diagnosticTail: tail)
+    }
+
+    /// Steam ends a refused login line with `FAILED (Reason)`, or with
+    /// `ERROR (No Connection)` after its own retries when the servers never
+    /// answered (captured 2026-09-03 with network access denied). The text in
+    /// the parentheses is the only reason it gives.
+    static func loginFailureReason(in stdout: String) -> String? {
+        guard let match = stdout.firstMatch(of: /(?:FAILED|ERROR) \(([^)\n]+)\)/) else { return nil }
+        return String(match.output.1)
     }
 
     /// `Logging in user 'x' [U:1:1267132100] to Steam Public...OK` carries a
@@ -698,17 +735,22 @@ struct SteamCMDLoginResult: Codable, Equatable, Sendable {
         case guardCodeTotpRequired
         case invalidGuardCode
         case rateLimited
-        /// The mobile-confirmation wait (or anything else) outlived the budget.
+        /// Steam's servers never answered (`ERROR (No Connection)`).
+        case noConnection
+        /// steamcmd was still waiting when the budget ran out.
         case timedOut
-        /// steamcmd refused for a reason we do not classify further.
+        /// steamcmd gave up for a reason we do not classify further.
         case failed
         case unavailable
     }
     let outcome: Outcome
     let steamID64: String?
+    /// Steam's parenthesised reason, for refusals this code does not classify
+    /// further. Optional so a payload from an older connector still decodes.
+    var failureReason: String?
 
-    static func failed(_ outcome: Outcome) -> SteamCMDLoginResult {
-        SteamCMDLoginResult(outcome: outcome, steamID64: nil)
+    static func failed(_ outcome: Outcome, reason: String? = nil) -> SteamCMDLoginResult {
+        SteamCMDLoginResult(outcome: outcome, steamID64: nil, failureReason: reason)
     }
 }
 
@@ -748,6 +790,11 @@ enum SteamCMDLoginOutputClassifier {
         case invalidPassword
         case invalidGuardCode
         case rateLimited
+        /// Steam's servers never answered. Terminal: steamcmd exits right after.
+        case noConnection
+        /// Steam refused and said why, in words this code does not classify
+        /// further (`Account Logon Denied`, `Account Disabled`, …). Terminal.
+        case refused(reason: String)
         case loggedIn
     }
 
@@ -759,11 +806,24 @@ enum SteamCMDLoginOutputClassifier {
         if text.contains("logged in ok") || text.contains("waiting for user info") {
             return .loggedIn
         }
-        if text.contains("rate limit") { return .rateLimited }
+        if text.contains("rate limit") {
+            return .rateLimited
+        }
+        if text.contains("no connection") {
+            return .noConnection
+        }
         if text.contains("invalid login auth code") || text.contains("two-factor code mismatch") {
             return .invalidGuardCode
         }
-        if text.contains("invalid password") { return .invalidPassword }
+        if text.contains("invalid password") {
+            return .invalidPassword
+        }
+        // After the named refusals so they keep their own copy — a generic
+        // match here would swallow `FAILED (Invalid Password)` — and before the
+        // prompts so a refused attempt stops re-answering them.
+        if let reason = SteamCachedLoginParser.loginFailureReason(in: transcript) {
+            return .refused(reason: reason)
+        }
         if text.contains("confirm the login in the steam mobile app")
             || text.contains("waiting for confirmation") {
             return .waitingForMobileConfirmation

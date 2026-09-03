@@ -610,12 +610,28 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
             // Optional scene.pkg backend; set after folderURL (which clears it).
             guard let nonce = folderHandler.currentSessionNonce else {
                 Logger.error("HTML folder load: missing session nonce for \(indexFileName)", category: .screenManager)
+                // Nothing loads after this, and without a report the display
+                // just stays blank with no banner and no reason.
+                reportError(.webNavigationFailed(
+                    folderURL, code: nil,
+                    description: String(
+                        localized: "The local web session could not be started.",
+                        bundle: .appLanguage, comment: "Web wallpaper load failure when the folder handler had no session nonce."
+                    )
+                ))
                 return
             }
             let escapedIndex = indexFileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? indexFileName
             let urlString = "\(FolderURLSchemeHandler.scheme)://\(FolderURLSchemeHandler.host)/\(escapedIndex)?n=\(nonce)"
             guard let url = URL(string: urlString) else {
                 Logger.error("HTML folder load: failed to build scheme URL for \(indexFileName)", category: .screenManager)
+                reportError(.webNavigationFailed(
+                    folderURL, code: nil,
+                    description: String(
+                        localized: "The page address for \(indexFileName) could not be built.",
+                        bundle: .appLanguage, comment: "Web wallpaper load failure when the internal scheme URL could not be formed. The placeholder is the index file name."
+                    )
+                ))
                 return
             }
             let request = URLRequest(url: url)

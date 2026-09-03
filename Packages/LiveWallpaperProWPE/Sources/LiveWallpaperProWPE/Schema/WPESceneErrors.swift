@@ -60,18 +60,21 @@ public enum SceneLoadDiagnostic: Equatable, Sendable {
 
     public var errorDescription: String {
         switch self {
-        case .texture(let layer, _):
-            return String(localized: "error.scene.load_diagnostic.texture", defaultValue: "The image for '\(layer)' couldn't be loaded.", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer texture cannot be loaded.")
+        case let .texture(layer, error):
+            // The decoder says which of a dozen faults it hit; the layer name
+            // alone told the reader nothing they could act on.
+            String(localized: "error.scene.load_diagnostic.texture", defaultValue: "The image for '\(layer)' couldn't be loaded: \(error.errorDescription ?? "").", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer texture cannot be loaded. First placeholder is the layer name, second is the decoder's reason.")
         case .legacyUnsupportedTexture(let layer):
-            return String(localized: "error.scene.load_diagnostic.legacy_unsupported_texture", defaultValue: "The image format used by '\(layer)' is no longer supported.", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer uses a legacy unsupported texture format.")
+            String(localized: "error.scene.load_diagnostic.legacy_unsupported_texture", defaultValue: "The image format used by '\(layer)' is no longer supported.", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer uses a legacy unsupported texture format.")
         case .fileMissing(let layer, let path):
-            return String(localized: "error.scene.load_diagnostic.file_missing.with_path", defaultValue: "A file required by the '\(layer)' layer is missing: \(path).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references a missing file. First placeholder is the layer name, second is the missing relative path.")
-        case .crossPackageReference(let layer, _):
-            return String(localized: "error.scene.load_diagnostic.cross_package_reference", defaultValue: "The layer '\(layer)' requires files from an external package, which is not supported.", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references files from another Wallpaper Engine package.")
-        case .materialUnresolved(let layer, _):
-            return String(localized: "error.scene.load_diagnostic.material_unresolved", defaultValue: "A rendering feature needed by '\(layer)' is not supported yet.", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer uses an unresolved material or rendering feature.")
+            String(localized: "error.scene.load_diagnostic.file_missing.with_path", defaultValue: "A file required by the '\(layer)' layer is missing: \(path).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references a missing file. First placeholder is the layer name, second is the missing relative path.")
+        case let .crossPackageReference(layer, path):
+            // `fileMissing` already names its path; this one had one too.
+            String(localized: "error.scene.load_diagnostic.cross_package_reference", defaultValue: "The layer '\(layer)' requires files from an external package, which is not supported: \(path).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references files from another Wallpaper Engine package. First placeholder is the layer name, second is the referenced path.")
+        case let .materialUnresolved(layer, reason):
+            String(localized: "error.scene.load_diagnostic.material_unresolved", defaultValue: "A rendering feature needed by '\(layer)' is not supported yet: \(reason).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer uses an unresolved material or rendering feature. First placeholder is the layer name, second is which feature.")
         case .other(let layer, let message):
-            return String(localized: "error.scene.load_diagnostic.other", defaultValue: "The layer '\(layer)' encountered an issue: \(message).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer fails for an uncategorized reason.")
+            String(localized: "error.scene.load_diagnostic.other", defaultValue: "The layer '\(layer)' encountered an issue: \(message).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer fails for an uncategorized reason.")
         }
     }
 }

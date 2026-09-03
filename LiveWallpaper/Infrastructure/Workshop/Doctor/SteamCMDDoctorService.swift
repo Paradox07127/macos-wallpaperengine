@@ -856,6 +856,21 @@ final class SteamCMDDoctorService {
         applyCachedLoginOutcome(result, username: username, binary: binary)
     }
 
+    /// One sentence for both the Doctor probe and the in-app sign-in sheet.
+    ///
+    /// Reports what Steam said, then offers the proxy note conditionally. The
+    /// note itself is established — SteamCMD's connection log shows it taking
+    /// UDP CM connections, which a system HTTP proxy does not carry — but that
+    /// this reader's failure is a proxy problem is not: Valve reuses
+    /// "No Connection" for other conditions, including, on the download path,
+    /// an account that does not own the app.
+    static var steamUnreachableMessage: String {
+        String(
+            localized: "Steam reported that it couldn't connect. If you use a VPN or proxy: SteamCMD reaches Steam directly rather than through the system proxy, so try TUN (enhanced) mode or a direct connection.",
+            bundle: .appLanguage, comment: "Steam sign-in failure when SteamCMD reported it could not open a connection to Steam."
+        )
+    }
+
     /// Internal, not private, so tests can drive the receipt path without XPC.
     func applyCachedLoginOutcome(
         _ result: SteamCachedLoginResult,
@@ -890,10 +905,38 @@ final class SteamCMDDoctorService {
                 ),
                 command: signIn
             ))
+        case .noConnection:
+            setProbe(.cachedLogin, status: .red(message: Self.steamUnreachableMessage, command: nil))
+        case .rateLimited:
+            // No sign-in command: running it again is what caused this, and
+            // the throttle lifts on its own.
+            setProbe(.cachedLogin, status: .yellow(
+                message: String(
+                    localized: "Steam is rate-limiting sign-ins from this Mac. Wait a few minutes, then check again.",
+                    bundle: .appLanguage, comment: "Steam sign-in diagnostic when Steam is throttling sign-in attempts."
+                ),
+                command: nil
+            ))
+        case .loginFailed:
+            // A payload with no reason rendered "…the sign-in ()."; an older
+            // connector, or a refusal line we could not parse, both land here.
+            let reason = result.failureReason.map(redacted) ?? ""
+            setProbe(.cachedLogin, status: .red(
+                message: reason.isEmpty
+                    ? String(
+                        localized: "Steam refused the sign-in. Sign in again in Terminal, then check again.",
+                        bundle: .appLanguage, comment: "Steam sign-in diagnostic when Steam refused without giving a reason."
+                    )
+                    : String(
+                        localized: "Steam refused the sign-in (\(reason)). Sign in again in Terminal, then check again.",
+                        bundle: .appLanguage, comment: "Steam sign-in diagnostic when Steam answered with a refusal; %@ is Steam's own reason text."
+                    ),
+                command: signIn
+            ))
         case .timedOut:
             setProbe(.cachedLogin, status: .red(
                 message: String(
-                    localized: "The Steam sign-in check timed out.",
+                    localized: "The Steam sign-in check timed out. Steam's servers may be unreachable from this network.",
                     bundle: .appLanguage, comment: "Steam sign-in diagnostic when SteamCMD did not finish in time."
                 ),
                 command: nil

@@ -185,6 +185,14 @@ struct DetailPresetsSection: View {
                 }
                 .font(DesignTokens.Typography.caption)
 
+                // The row named the operation but never the failure, so a
+                // rate limit and an unreachable Steam offered the same Retry
+                // with no way to tell which one would help.
+                Text(verbatim: error.causeDescription)
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Button("Retry") { Task { await load(force: true) } }
                     .buttonStyle(.bordered)
                     .controlSize(.small)

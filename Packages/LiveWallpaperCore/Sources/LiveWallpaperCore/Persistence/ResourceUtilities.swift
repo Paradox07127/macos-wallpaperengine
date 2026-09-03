@@ -69,14 +69,27 @@ public final class ResourceUtilities {
         return ["html", "htm"].contains(url.pathExtension.lowercased())
     }
 
-    public static func createVideoBookmark(
+    /// Why a video could not be made durably readable. Both endings used to
+    /// be `nil`, and the one screen that reports this could only say the file
+    /// could not be read — true of neither case.
+    public enum VideoBookmarkFailure: Error, Equatable, Sendable {
+        /// No scoped bookmark, and copying it into the app's own storage failed
+        /// too — out of space, or the source became unreadable.
+        case couldNotCopy
+        /// The copy landed but could not be bookmarked.
+        case couldNotBookmarkCopy
+    }
+
+    /// Most callers only need the bookmark; this is for the ones that show the
+    /// reader why it failed.
+    public static func videoBookmark(
         for url: URL,
         applicationSupportRootURL: URL? = nil,
         secureBookmarkCreator: (URL) -> Data? = { createBookmark(for: $0) },
         localBookmarkCreator: (URL) -> Data? = { createLocalBookmark(for: $0) }
-    ) -> Data? {
+    ) -> Result<Data, VideoBookmarkFailure> {
         if let secureBookmark = secureBookmarkCreator(url) {
-            return secureBookmark
+            return .success(secureBookmark)
         }
 
         // createBookmark closed its scope on return; the copy fallback reads the
@@ -92,7 +105,7 @@ public final class ResourceUtilities {
             from: url,
             applicationSupportRootURL: applicationSupportRootURL
         ) else {
-            return nil
+            return .failure(.couldNotCopy)
         }
 
         guard let localBookmark = localBookmarkCreator(copiedURL) else {
@@ -100,14 +113,29 @@ public final class ResourceUtilities {
                 "Failed to bookmark app-owned video copy '\(copiedURL.lastPathComponent)'",
                 category: .fileAccess
             )
-            return nil
+            return .failure(.couldNotBookmarkCopy)
         }
 
         Logger.info(
             "Using app-owned video copy after scoped bookmark creation failed: \(copiedURL.lastPathComponent)",
             category: .fileAccess
         )
-        return localBookmark
+        return .success(localBookmark)
+    }
+
+    /// The bookmark alone, for the callers with nowhere to show a reason.
+    public static func createVideoBookmark(
+        for url: URL,
+        applicationSupportRootURL: URL? = nil,
+        secureBookmarkCreator: (URL) -> Data? = { createBookmark(for: $0) },
+        localBookmarkCreator: (URL) -> Data? = { createLocalBookmark(for: $0) }
+    ) -> Data? {
+        try? videoBookmark(
+            for: url,
+            applicationSupportRootURL: applicationSupportRootURL,
+            secureBookmarkCreator: secureBookmarkCreator,
+            localBookmarkCreator: localBookmarkCreator
+        ).get()
     }
 
     private static func tryBookmark(

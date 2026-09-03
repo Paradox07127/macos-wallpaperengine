@@ -581,13 +581,26 @@ struct PlaybackControls: View {
                     lockScreenExtracted = false
                     return
                 }
-                guard screenManager.extractLockScreenFrame(for: screen) else { return }
                 lockScreenFeedbackGeneration += 1
                 let generation = lockScreenFeedbackGeneration
-                withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.25))) {
-                    lockScreenExtracted = true
-                }
                 Task { @MainActor in
+                    // Awaited: the confirmation used to appear the moment the
+                    // player had an item, before the frame was decoded, written
+                    // or installed, and a failure never took it back.
+                    let captured = await screenManager.extractLockScreenFrame(for: screen) == .captured
+                    guard generation == lockScreenFeedbackGeneration else { return }
+                    guard captured else {
+                        // Bumping the generation above already invalidated the
+                        // previous run's clear-timer, so this attempt owns the
+                        // tick and has to put it away itself.
+                        withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.25))) {
+                            lockScreenExtracted = false
+                        }
+                        return
+                    }
+                    withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.25))) {
+                        lockScreenExtracted = true
+                    }
                     try? await Task.sleep(for: .seconds(2))
                     guard generation == lockScreenFeedbackGeneration else { return }
                     withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.25))) {

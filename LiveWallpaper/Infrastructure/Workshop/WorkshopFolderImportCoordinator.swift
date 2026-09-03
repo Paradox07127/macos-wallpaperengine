@@ -39,9 +39,21 @@ final class WorkshopFolderImportCoordinator {
         defer { isImporting = false }
 
         let didStart = folder.startAccessingSecurityScopedResource()
-        defer { if didStart { folder.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didStart {
+                folder.stopAccessingSecurityScopedResource()
+            }
+        }
 
-        let projectFolders = discoverProjectFolders(in: folder)
+        guard let projectFolders = discoverProjectFolders(in: folder) else {
+            WorkshopToastCenter.shared.post(
+                headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
+                title: folder.lastPathComponent,
+                message: String(localized: "That folder couldn't be read.", bundle: .appLanguage, comment: "Folder import failure: the chosen folder could not be enumerated."),
+                isSuccess: false
+            )
+            return
+        }
         guard !projectFolders.isEmpty else {
             WorkshopToastCenter.shared.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
@@ -53,11 +65,17 @@ final class WorkshopFolderImportCoordinator {
         }
 
         var imported = 0
+        var rejected = 0
+        var unreadable = 0
         for projectFolder in projectFolders {
-            if await importOne(projectFolder, deliberate: true) { imported += 1 }
+            switch await importOne(projectFolder, deliberate: true) {
+            case .imported: imported += 1
+            case .rejected: rejected += 1
+            case .unreadable: unreadable += 1
+            }
         }
 
-        emitSummary(folder: folder, imported: imported, skipped: projectFolders.count - imported)
+        emitSummary(folder: folder, imported: imported, rejected: rejected, unreadable: unreadable)
     }
 
     /// Imports every not-yet-recorded project from the authorized official Steam
@@ -99,7 +117,7 @@ final class WorkshopFolderImportCoordinator {
             let id = folder.lastPathComponent
             guard !known.contains(id) else { return }
             let isRelink = staleIDs.contains(id)
-            if await self.importOne(folder, deliberate: false, preservesHistory: isRelink) {
+            if await importOne(folder, deliberate: false, preservesHistory: isRelink) == .imported {
                 if isRelink { repaired += 1 } else { added += 1 }
                 known.insert(id)
             }
@@ -137,12 +155,23 @@ final class WorkshopFolderImportCoordinator {
         }
     }
 
+    /// Why one project in the folder did not come in. A `Bool` made the
+    /// summary call every failure "unsupported", which is wrong for a project
+    /// whose `project.json` could not be read at all.
+    enum ProjectImportOutcome: Equatable, Sendable {
+        case imported
+        /// Read fine, but not something this app can show.
+        case rejected
+        /// Could not be read — a damaged project, a permission fault.
+        case unreadable
+    }
+
     /// Record history entry; deliberate=true lifts delete tombstones (auto-scan does not).
     private func importOne(
         _ projectFolder: URL,
         deliberate: Bool,
         preservesHistory: Bool = false
-    ) async -> Bool {
+    ) async -> ProjectImportOutcome {
         do {
             switch try await importService.importProject(folder: projectFolder) {
             case .ready(_, let origin), .unsupported(let origin):
@@ -151,39 +180,47 @@ final class WorkshopFolderImportCoordinator {
                     clearsDeleteTombstone: deliberate,
                     preservesHistory: preservesHistory
                 )
-                return true
-            case .workshopPreset(let preset):
+                return .imported
+            case let .workshopPreset(preset):
                 await SettingsManager.shared.registerScenePreset(
                     preset,
                     clearsDeleteTombstone: deliberate
                 )
-                return true
-            case .rejected(let reason):
+                return .imported
+            case let .rejected(reason):
                 Logger.info("Skipped a project during import: \(reason)", category: .workshop)
-                return false
+                return .rejected
             }
         } catch {
             Logger.info("Failed to read a project during import: \(error.localizedDescription)", category: .workshop)
-            return false
+            return .unreadable
         }
     }
 
-    private func emitSummary(folder: URL, imported: Int, skipped: Int) {
+    private func emitSummary(folder: URL, imported: Int, rejected: Int, unreadable: Int) {
         guard imported > 0 else {
+            // "Unsupported" was the only word offered here, so a folder of
+            // damaged projects read as a folder of the wrong kind of file.
+            let message = unreadable > 0 && rejected == 0
+                ? String(localized: "None of the projects in that folder could be read.", bundle: .appLanguage, comment: "Folder import failure: every discovered project failed to read.")
+                : String(localized: "None of the projects in that folder could be imported.", bundle: .appLanguage, comment: "Folder import failure: every discovered project was rejected.")
             WorkshopToastCenter.shared.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
                 title: folder.lastPathComponent,
-                message: String(localized: "None of the projects in that folder could be imported.", bundle: .appLanguage, comment: "Folder import failure: every discovered project was rejected."),
+                message: message,
                 isSuccess: false
             )
             return
         }
 
-        let message: String
-        if skipped > 0 {
-            message = String(localized: "Linked \(imported), skipped \(skipped) unsupported.", bundle: .appLanguage, comment: "Folder-link success summary with skipped count. Placeholders are linked and skipped counts.")
+        let message = if rejected > 0, unreadable > 0 {
+            String(localized: "Linked \(imported), skipped \(rejected), \(unreadable) unreadable.", bundle: .appLanguage, comment: "Folder-link success summary. Placeholders are the linked, skipped and unreadable counts.")
+        } else if unreadable > 0 {
+            String(localized: "Linked \(imported), \(unreadable) couldn't be read.", bundle: .appLanguage, comment: "Folder-link success summary with unreadable projects. Placeholders are the linked and unreadable counts.")
+        } else if rejected > 0 {
+            String(localized: "Linked \(imported), skipped \(rejected).", bundle: .appLanguage, comment: "Folder-link success summary with skipped count. Placeholders are linked and skipped counts.")
         } else {
-            message = String(localized: "Linked \(imported) project folders to your library.", bundle: .appLanguage, comment: "Folder-link success summary. Placeholder is the linked project count; source folders remain in place.")
+            String(localized: "Linked \(imported) project folders to your library.", bundle: .appLanguage, comment: "Folder-link success summary. Placeholder is the linked project count; source folders remain in place.")
         }
         WorkshopToastCenter.shared.post(
             headline: String(localized: "Linked", bundle: .appLanguage, comment: "Folder-link success toast headline."),
@@ -195,17 +232,23 @@ final class WorkshopFolderImportCoordinator {
 
     /// A folder with `project.json` imports as itself; otherwise it is treated as
     /// a library root and its immediate `project.json`-bearing subfolders import.
-    private func discoverProjectFolders(in root: URL) -> [URL] {
+    /// `nil` when the folder could not be read at all, which is a different
+    /// message from a folder that holds no projects.
+    private func discoverProjectFolders(in root: URL) -> [URL]? {
         if fileManager.fileExists(atPath: root.appendingPathComponent("project.json").path) {
             return [root]
         }
 
-        guard let children = try? fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else {
-            return []
+        let children: [URL]
+        do {
+            children = try fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            )
+        } catch {
+            Logger.info("Could not read the chosen import folder: \(error.localizedDescription)", category: .workshop)
+            return nil
         }
 
         return children.filter { child in

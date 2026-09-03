@@ -989,7 +989,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         let deadline = Date().addingTimeInterval(
             SteamCMDLoginProbe.clampedTimeout(request.timeout)
         )
-        var outcome: SteamCMDLoginResult.Outcome = .timedOut
+        // `.failed` until a verdict lands; `.timedOut` is set below only when
+        // steamcmd is still running at the deadline. Starting at `.timedOut`
+        // made a child that exited on its own with no recognised line — a
+        // blocked network, typically — read as "approve it on your phone".
+        var outcome: SteamCMDLoginResult.Outcome = .failed
+        var refusalReason: String?
 
         readLoop: while Date() < deadline {
             var pollDescriptor = pollfd(fd: master, events: Int16(POLLIN), revents: 0)
@@ -1036,12 +1041,22 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             case .rateLimited:
                 outcome = .rateLimited
                 break readLoop
+            case .noConnection:
+                outcome = .noConnection
+                break readLoop
+            case let .refused(reason):
+                outcome = .failed
+                refusalReason = reason
+                break readLoop
             case .loggedIn:
                 outcome = .success
                 break readLoop
             }
         }
         if process.isRunning {
+            if outcome == .failed {
+                outcome = .timedOut
+            }
             process.terminate()
             // Grace, then the same hard stop every other runner uses.
             let graceDeadline = Date().addingTimeInterval(3)
@@ -1059,7 +1074,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         if outcome == .success || (!accountKnownBefore && accountAfter != nil) {
             return SteamCMDLoginResult(outcome: .success, steamID64: accountAfter?.steamID64)
         }
-        return .failed(outcome)
+        return .failed(outcome, reason: refusalReason)
     }
 
     func removeManagedSteamCMD(with reply: @escaping @Sendable (Data) -> Void) {
@@ -1323,6 +1338,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             let out = run.output
             if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
                 return send(.failed(.loginRequired))
+            }
+            // Checked before the parse: with no connection there is no build
+            // line to find, and "we could not read the answer" is the wrong
+            // story for an answer that never came.
+            if out.contains("No Connection") {
+                return send(.failed(.steamUnreachable))
             }
             guard let build = SteamConnectorBuildInfo.parsePublicBuildID(from: out) else {
                 return send(.failed(.unrecognized))

@@ -143,12 +143,37 @@ struct SteamSignInSheet: View {
         case .rateLimited:
             phase = .form
             errorText = String(localized: "Steam is rate-limiting sign-ins from this Mac. Wait a few minutes and try again.", bundle: .appLanguage, comment: "In-app Steam sign-in failure.")
+        case .noConnection:
+            phase = .form
+            errorText = SteamCMDDoctorService.steamUnreachableMessage
         case .timedOut:
             phase = .form
             errorText = String(localized: "Steam didn't confirm the sign-in in time. If Steam Guard asked on your phone, approve it and try again.", bundle: .appLanguage, comment: "In-app Steam sign-in failure.")
-        case .failed, .unavailable, nil:
+        case nil:
+            // No reply at all: the connector is what failed, not the sign-in,
+            // and telling the reader to check their connection sent them to
+            // look at the wrong thing entirely.
             phase = .form
-            errorText = String(localized: "Sign-in didn't complete. Check the connection and try again.", bundle: .appLanguage, comment: "In-app Steam sign-in failure.")
+            errorText = String(
+                localized: "Loomscreen's Steam connector did not respond.",
+                bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
+            )
+        case .unavailable:
+            phase = .form
+            errorText = String(
+                localized: "SteamCMD could not be launched. Re-select it in the setup list.",
+                bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."
+            )
+        case .failed:
+            phase = .form
+            // Steam usually says why it refused; only when it does not does
+            // "check the connection" become the honest guess.
+            errorText = result?.failureReason.map {
+                String(
+                    localized: "Steam refused the sign-in: \($0)",
+                    bundle: .appLanguage, comment: "In-app Steam sign-in failure; the placeholder is Steam's own stated reason."
+                )
+            } ?? String(localized: "Sign-in didn't complete. Check the connection and try again.", bundle: .appLanguage, comment: "In-app Steam sign-in failure.")
         }
     }
 }

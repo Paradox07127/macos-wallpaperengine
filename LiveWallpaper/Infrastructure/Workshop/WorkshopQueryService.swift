@@ -225,10 +225,21 @@ enum WorkshopQueryError: Error, Equatable, Sendable {
     /// A key is stored, but macOS refused to hand it over (ACL prompt declined,
     /// or a locked keychain) — distinct from having no key at all.
     case keychainAccessDenied
+    /// A key is stored and macOS allowed the read, but what came back was
+    /// unusable. Also distinct from having no key: pasting a new one is the
+    /// remedy, going to Steam for a first key is not.
+    case keychainUnreadable
     case unauthorized
     case keyDisabled
     case rateLimited(retryAfter: TimeInterval?)
     case networkUnreachable
+    /// TLS refused: an intercepting proxy, a clock far out of date, an
+    /// untrusted root. Distinct because "check your connection" sends the
+    /// reader to look at a connection that is working.
+    case secureConnectionFailed
+    /// A transport failure with no established meaning. Carries the code
+    /// rather than asserting a cause we have not determined.
+    case networkFailure(code: Int)
     case timeout
     case http(status: Int)
     case responseParseFailure
@@ -429,6 +440,12 @@ actor WorkshopQueryService {
             throw error
         } catch WorkshopKeychainStore.WorkshopKeychainError.accessDenied {
             throw WorkshopQueryError.keychainAccessDenied
+        } catch WorkshopKeychainStore.WorkshopKeychainError.malformedData {
+            throw WorkshopQueryError.keychainUnreadable
+        } catch WorkshopKeychainStore.WorkshopKeychainError.ioFailure {
+            throw WorkshopQueryError.keychainUnreadable
+        } catch WorkshopKeychainStore.WorkshopKeychainError.osStatus {
+            throw WorkshopQueryError.keychainUnreadable
         } catch {
             throw WorkshopQueryError.missingAPIKey
         }
@@ -743,15 +760,25 @@ actor WorkshopQueryService {
     }
 
     private static func mapNetworkError(_ error: Error) -> WorkshopQueryError {
-        if error is CancellationError { return .cancelled }
-        if error is BoundedNetworkFetch.ResponseTooLarge { return .responseParseFailure }
-        guard let urlError = error as? URLError else { return .networkUnreachable }
+        if error is CancellationError {
+            return .cancelled
+        }
+        if error is BoundedNetworkFetch.ResponseTooLarge {
+            return .responseParseFailure
+        }
+        guard let urlError = error as? URLError else {
+            return .networkFailure(code: (error as NSError).code)
+        }
         switch urlError.code {
         case .cancelled: return .cancelled
         case .timedOut: return .timeout
         case .notConnectedToInternet, .networkConnectionLost, .dnsLookupFailed, .cannotFindHost, .cannotConnectToHost:
             return .networkUnreachable
-        default: return .networkUnreachable
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot,
+             .clientCertificateRejected, .appTransportSecurityRequiresSecureConnection:
+            return .secureConnectionFailed
+        default: return .networkFailure(code: urlError.errorCode)
         }
     }
 }

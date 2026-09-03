@@ -388,18 +388,22 @@ struct InstalledView: View {
     private func apply(_ entry: WPEHistoryEntry, to screen: Screen) {
         model.startApply(entry: entry) {
             await screenManager.activateWPEHistoryEntry(entry, for: screen)
-            return screenManager.wpeImportTracker.error(for: screen.id) != nil
+            return screenManager.wpeImportTracker.error(for: screen.id)
         }
     }
 
     private func applyToAll(_ entry: WPEHistoryEntry) {
         model.startApply(entry: entry) {
-            var failed = false
+            // First failure wins: the same entry failing on several displays
+            // fails the same way on each.
+            var failure: AppError?
             for screen in screenManager.screens {
                 await screenManager.activateWPEHistoryEntry(entry, for: screen)
-                failed = failed || screenManager.wpeImportTracker.error(for: screen.id) != nil
+                if failure == nil {
+                    failure = screenManager.wpeImportTracker.error(for: screen.id)
+                }
             }
-            return failed
+            return failure
         }
     }
 

@@ -17,8 +17,11 @@ struct WorkshopConnectionSetup: View {
     var body: some View {
         Section {
             libraryRow
+            attentionNote(service.attentionMessage(for: .workingDirectory))
             binaryRow
+            attentionNote(service.attentionMessage(for: .binaryIdentity))
             accountRow
+            attentionNote(service.attentionMessage(for: .cachedLogin))
 
             if let setupError = controller.setupError {
                 Label(setupError, systemImage: "exclamationmark.triangle.fill")
@@ -223,6 +226,19 @@ struct WorkshopConnectionSetup: View {
 
     // MARK: - Derived row state
 
+    /// The failing probe's own sentence under its row. The badge alone left a
+    /// user with a warning triangle beside their account name and nothing to
+    /// act on unless they found the Doctor further down the page.
+    @ViewBuilder
+    private func attentionNote(_ message: String?) -> some View {
+        if let message {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(DesignTokens.Colors.Status.warning)
+                .font(DesignTokens.Typography.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     /// Only failures get a title badge. The page-top status bar carries the
     /// "everything is fine" reading now, and a green seal on every row was the
     /// noise it replaced — but a step whose probe came back red has to say so
@@ -303,6 +319,24 @@ extension SteamCMDDoctorService {
         if steps.allSatisfy({ $0 == .ready }) { return .ready }
         if steps.contains(.working) { return .working }
         return .notStarted
+    }
+
+    /// The probe sentence behind a step's `.attention` badge, for the rows
+    /// that otherwise show only the badge; nil while the step is anything else,
+    /// so a "choose an account" hint never shows as a warning.
+    func attentionMessage(for kind: DoctorProbeKind) -> String? {
+        let state: WorkshopStepState
+        switch kind {
+        case .workingDirectory: state = libraryStepState
+        case .binaryIdentity: state = binaryStepState
+        case .cachedLogin: state = accountStepState
+        default: return nil
+        }
+        guard state == .attention else { return nil }
+        switch probes[kind]?.status {
+        case let .yellow(message, _)?, let .red(message, _)?: return message
+        default: return nil
+        }
     }
 
     /// The three steps as one reading, for the Workshop page's status bar.

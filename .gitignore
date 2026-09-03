@@ -150,6 +150,10 @@ scripts/*
 # Invoked by `make fast` and by an Xcode Run Script phase, so a clean clone that
 # lacks it fails the build rather than skipping a check.
 !scripts/i18n_guard.sh
+# Also invoked by `make fast`: compares each translation's placeholders against
+# the English it came from, so a drifted value fails rather than substituting
+# the wrong argument at runtime.
+!scripts/check_localization_drift.py
 !scripts/wpe-corpus-manifest.py
 !scripts/wpe-corpus-manifest.schema.json
 !scripts/release-baselines/

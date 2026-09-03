@@ -66,7 +66,7 @@ struct SteamCMDManagedInstallRecordTests {
         )
         #expect(coordinator.managedInstall != nil)
 
-        #expect(await coordinator.forget())
+        #expect(await coordinator.forget() == .removed)
 
         // Both, not just the defaults: the menu offers "Remove" off the
         // in-memory value, so a stale mirror keeps offering to delete something
@@ -84,7 +84,7 @@ struct SteamCMDManagedInstallRecordTests {
             defaults: scratchDefaults(),
             remove: { SteamCMDManagedRemovalResult(outcome: .notInstalled, failureReason: nil) }
         )
-        #expect(await coordinator.forget())
+        #expect(await coordinator.forget() == .removed)
     }
 
     @Test("A refused removal is reported as failure, and the record stays put")
@@ -96,7 +96,7 @@ struct SteamCMDManagedInstallRecordTests {
             remove: { SteamCMDManagedRemovalResult(outcome: .refused, failureReason: "nope") }
         )
 
-        #expect(await coordinator.forget() == false)
+        #expect(await coordinator.forget() == .refused)
         // The files are still there. Dropping the record here would take the
         // Remove command out of the menu — it is shown off `managedInstall` —
         // so a delete that did not happen would also become un-retryable.
@@ -111,7 +111,9 @@ struct SteamCMDManagedInstallRecordTests {
         let coordinator = SteamCMDManagedInstallCoordinator(
             defaults: defaults, remove: { nil }
         )
-        #expect(await coordinator.forget() == false)
+        // Named apart from a refusal: nothing was deleted and nothing was
+        // even asked, so the two need different sentences on screen.
+        #expect(await coordinator.forget() == .connectorUnavailable)
         #expect(coordinator.managedInstall == record)
     }
 }
@@ -743,7 +745,7 @@ struct SteamCMDManagedInstallInterleavingTests {
         #expect(installAttempts == 0)
 
         await gate.open()
-        #expect(await removal)
+        #expect(await removal == .removed)
         #expect(coordinator.managedInstall == nil)
         #expect(coordinator.status == .idle)
     }
@@ -784,13 +786,13 @@ struct SteamCMDManagedInstallInterleavingTests {
         // superseded, so its verdict must be discarded rather than clearing a
         // record the newer operation is still deciding about.
         await first.open()
-        #expect(await older == false)
+        #expect(await older == .superseded)
         #expect(coordinator.managedInstall == record)
 
         // The newer one is refused by the connector: the files are still there,
         // so the record has to stay and keep the Remove command reachable.
         await second.open()
-        #expect(await newer == false)
+        #expect(await newer == .refused)
         #expect(coordinator.managedInstall == record)
         #expect(coordinator.status == .idle)
     }
@@ -973,6 +975,16 @@ struct SteamCMDLoginTests {
     @Test("Control: an unclassified transcript yields no event")
     func silenceYieldsNothing() {
         #expect(Classifier.event(inTranscript: "Redirecting stderr to logs...") == nil)
+    }
+
+    /// Verbatim 2026-09-03 capture under `sandbox-exec (deny network*)`. The
+    /// password prompt stays in the transcript, so without a verdict of its
+    /// own this read as "still waiting for the password" until the deadline.
+    @Test("A blocked network is a verdict, not a prompt to keep answering")
+    func noConnectionIsTerminal() {
+        let transcript = "password: \nProceeding with login using username/password.\n"
+            + "Logging in user 'x' [U:1:0] to Steam Public...Retrying... \nRetrying... \nERROR (No Connection)"
+        #expect(Classifier.event(inTranscript: transcript) == .noConnection)
     }
 
     /// Source-level, connector target is not linked here: the login session may

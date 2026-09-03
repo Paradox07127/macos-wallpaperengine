@@ -205,7 +205,11 @@ enum SteamConnectorClient {
                 with: reply
             )
         }
-        return data.flatMap { try? JSONDecoder().decode(SteamEngineBuildLookup.self, from: $0) }
+        guard let data else { return nil }
+        // A reply we cannot decode is still a reply. Returning nil here made
+        // the caller report "the connector did not respond", which was false.
+        return (try? JSONDecoder().decode(SteamEngineBuildLookup.self, from: data))
+            ?? SteamEngineBuildLookup(outcome: .unrecognized, buildID: nil)
     }
 
     // MARK: - Transport

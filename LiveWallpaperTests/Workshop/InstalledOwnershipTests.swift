@@ -505,7 +505,7 @@ struct InstalledOwnershipCharacterizationTests {
 
         model.startApply(entry: old) {
             _ = await gate.suspend("reimport-apply")
-            return true
+            return .wpeImportFailed("probe")
         }
         await gate.waitUntilSuspended("reimport-apply")
         let reimported = entry(id: "same-id", title: "New", importedAt: 20)
@@ -518,7 +518,7 @@ struct InstalledOwnershipCharacterizationTests {
 
         model.startApply(entry: reimported) {
             _ = await gate.suspend("disappear-apply")
-            return true
+            return .wpeImportFailed("probe")
         }
         await gate.waitUntilSuspended("disappear-apply")
         let dropTicket = model.makeDropTicket()
