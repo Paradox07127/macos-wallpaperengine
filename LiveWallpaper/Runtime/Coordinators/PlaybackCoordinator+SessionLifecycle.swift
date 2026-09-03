@@ -136,7 +136,7 @@ extension PlaybackCoordinator {
             switch bookmarkResolver.resolve(bookmarkData, target: .transient) {
             case .success(let value):
                 resolved = value
-            case .failure(let failure):
+            case let .failure(failure):
                 Logger.error(
                     "Failed to apply configuration: \(failure.localizedDescription)",
                     category: .screenManager
@@ -148,6 +148,19 @@ extension PlaybackCoordinator {
                     )
                     removeConfiguration(for: screen.id)
                     releaseRuntimeSession(screen)
+                    // After the release, not before: `releaseRuntimeSession`
+                    // calls `setTransientRuntimeError(nil, …)`, so a report
+                    // made above it is wiped before anything can render it.
+                    // Both cases end in "re-pick the source", which is the
+                    // action, but they are different stories about why.
+                    switch failure {
+                    case .missing:
+                        reportRuntimeError(screen.id, .wallpaperPreparationFailed(
+                            type: configuration.wallpaperType, timedOut: false
+                        ))
+                    case .resolutionFailed:
+                        reportRuntimeError(screen.id, .sandboxRevoked)
+                    }
                     notifyWallpaperSessionChanged()
                 }
                 return
@@ -202,8 +215,14 @@ extension PlaybackCoordinator {
             )
         } catch let error as NSError {
             Logger.error("Failed to apply configuration: \(error.localizedDescription) [domain=\(error.domain) code=\(error.code)]", category: .screenManager)
+            reportRuntimeError(screen.id, .wallpaperPreparationFailed(
+                type: configuration.wallpaperType, timedOut: false
+            ))
         } catch {
             Logger.error("Failed to apply configuration: \(error.localizedDescription)", category: .screenManager)
+            reportRuntimeError(screen.id, .wallpaperPreparationFailed(
+                type: configuration.wallpaperType, timedOut: false
+            ))
         }
     }
 

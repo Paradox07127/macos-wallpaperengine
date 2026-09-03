@@ -120,6 +120,7 @@ struct OnboardingWorkshopSetupView: View {
             icon: "terminal",
             title: "SteamCMD",
             detail: controller.steamCMDDetail,
+            attention: doctor.attentionMessage(for: .binaryIdentity),
             state: controller.steamCMDState,
             info: "Valve's command-line downloader. Loomscreen can install its own copy, or locate an existing verified Homebrew or tarball install."
         ) {
@@ -151,6 +152,7 @@ struct OnboardingWorkshopSetupView: View {
             icon: "externaldrive",
             title: "Steam library",
             detail: controller.libraryDetail,
+            attention: doctor.attentionMessage(for: .workingDirectory),
             state: doctor.libraryStepState,
             info: "Loomscreen reads installed Workshop items directly from the official Steam library after one folder authorization. macOS only grants that through a panel you confirm, so even a folder Loomscreen already located needs one click."
         ) {
@@ -167,6 +169,7 @@ struct OnboardingWorkshopSetupView: View {
             icon: "person.badge.key",
             title: "Steam account",
             detail: controller.accountDetail,
+            attention: doctor.attentionMessage(for: .cachedLogin),
             state: doctor.accountStepState,
             info: "Downloads sign in as your own Steam account through SteamCMD. Loomscreen lists the accounts Steam has already signed in on this Mac; it never stores your password."
         ) {
@@ -333,9 +336,16 @@ struct OnboardingWorkshopSetupView: View {
     }
 
     private var apiKeyDetail: String {
-        services.hasWebAPIKey
-            ? String(localized: "Ready", bundle: .appLanguage, comment: "Workshop setup status when a Steam Web API key exists.")
-            : String(localized: "Optional — adds ratings, authors and faster search", bundle: .appLanguage, comment: "Workshop settings subtitle for Steam Web API key.")
+        guard services.hasWebAPIKey else {
+            return String(localized: "Optional — adds ratings, authors and faster search", bundle: .appLanguage, comment: "Workshop settings subtitle for Steam Web API key.")
+        }
+        // `apiKeyState` already turns the dot amber on rejection; saying
+        // "Ready" beside an amber dot left the reader with a contradiction and
+        // no way to tell which of the two was right.
+        if services.apiKeyRejected {
+            return String(localized: "Steam rejected this key — paste a new one", bundle: .appLanguage, comment: "Workshop setup status when Valve rejected the stored Steam Web API key.")
+        }
+        return String(localized: "Ready", bundle: .appLanguage, comment: "Workshop setup status when a Steam Web API key exists.")
     }
 }
 
@@ -375,6 +385,9 @@ private struct TreeRow<Control: View>: View {
     let icon: String
     let title: LocalizedStringKey
     let detail: String?
+    /// Why the row's badge is amber, in the probe's own words. Wraps, unlike
+    /// `detail`: a path is scannable truncated, an instruction is not.
+    var attention: String?
     /// Set on rows that carry their own signal. The group header answers "does
     /// this capability work"; a row badge answers "is this step done", which
     /// only differs where a group has several ordered steps.
@@ -411,6 +424,12 @@ private struct TreeRow<Control: View>: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                }
+                if let attention {
+                    Text(attention)
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(DesignTokens.Colors.Status.warning)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 

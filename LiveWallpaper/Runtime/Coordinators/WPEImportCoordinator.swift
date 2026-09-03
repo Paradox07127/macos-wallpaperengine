@@ -125,7 +125,10 @@ final class WPEImportCoordinator {
     @discardableResult
     func importProject(at folderURL: URL, for screen: Screen) async -> ApplyOutcome {
         guard isLifecycleActive(), !tracker.isTerminated else {
-            return .rejected(reason: "Application terminating")
+            return .rejected(reason: String(
+                localized: "Loomscreen is quitting.",
+                bundle: .appLanguage, comment: "Scene import refused because the app is shutting down."
+            ))
         }
         let generation = tracker.bumpGeneration(for: screen.id)
         return await importProject(
@@ -142,7 +145,10 @@ final class WPEImportCoordinator {
     ) async -> ApplyOutcome {
         let outcome = await prepareProject(at: folderURL)
         guard isLifecycleActive(), tracker.isCurrentGeneration(generation, for: screen.id) else {
-            return .rejected(reason: "Action superseded")
+            return .rejected(reason: String(
+                localized: "A newer request replaced this one.",
+                bundle: .appLanguage, comment: "Scene import refused because a later import for the same display took over."
+            ))
         }
 
         switch outcome {

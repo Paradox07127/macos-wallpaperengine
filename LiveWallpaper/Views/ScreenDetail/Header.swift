@@ -200,7 +200,15 @@ struct Header: View {
             return Text("Paused by system")
         case .restoring: return Text("Restoring")
         case .off:      return Text("Off")
-        case .error:    return Text("Error")
+        case .error:
+            // Same shape as `.policySuspended` above. The failing session already
+            // put `WallpaperRuntimeError.userMessage` in the subtitle, so "Error"
+            // on its own threw away the one sentence that says which failure it
+            // was and whether the reader can do anything about it.
+            if let text = wallpaperSessionSummary.subtitle, !text.isEmpty {
+                return Text(verbatim: text)
+            }
+            return Text("Error")
         case .inactive: return Text("Not configured")
         }
     }

@@ -21,10 +21,12 @@ struct WPEEngineAssetsInstallerTests {
             installedBuildID: nil,
             lookup: .found("11")
         ) == .unableToCompare)
+        // No lookup at all means the connector never answered, which is a
+        // different sentence from "Steam answered with something unusable".
         #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
             installedBuildID: "10",
             lookup: nil
-        ) == .checkFailed)
+        ) == .checkFailed(.notRun))
     }
 
     /// An expired Steam session used to arrive as a bare nil build id and was
@@ -37,13 +39,19 @@ struct WPEEngineAssetsInstallerTests {
             installedBuildID: "10",
             lookup: .failed(.loginRequired)
         ) == .loginRequired)
-        // Control: the other three failures stay a plain failed check, so the
-        // sign-in copy is not shown for problems signing in cannot fix.
-        for outcome in [SteamEngineBuildLookup.Outcome.timedOut, .steamCMDUnavailable, .unrecognized] {
+        // Control: the other three stay failed checks, so the sign-in copy is
+        // not shown for problems signing in cannot fix — but each keeps its own
+        // reason instead of the three sharing one sentence.
+        let expected: [(SteamEngineBuildLookup.Outcome, WPEEngineAssetsInstaller.UpdateCheckOutcome.CheckFailure)] = [
+            (.timedOut, .timedOut),
+            (.steamCMDUnavailable, .steamCMDUnavailable),
+            (.unrecognized, .unparsedOutput),
+        ]
+        for (outcome, failure) in expected {
             #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
                 installedBuildID: "10",
                 lookup: .failed(outcome)
-            ) == .checkFailed)
+            ) == .checkFailed(failure))
         }
     }
 

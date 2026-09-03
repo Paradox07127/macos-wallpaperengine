@@ -176,7 +176,11 @@ struct BrowsePane: View {
         if let error = viewModel.lastError, viewModel.items.isEmpty, !viewModel.isRateLimited {
             // A keyless failure is the public page's, not a missing key — but
             // the key is the sturdier route, so offer it there instead.
-            if services.hasWebAPIKey { errorState(error) } else { publicSearchFailedState }
+            if services.hasWebAPIKey {
+                errorState(error)
+            } else {
+                publicSearchFailedState(error)
+            }
         } else if viewModel.items.isEmpty, viewModel.isLoading {
             loadingSkeleton
         } else if viewModel.items.isEmpty {
@@ -335,13 +339,16 @@ struct BrowsePane: View {
 
     /// Keyless browse failed on Valve's public page. Retrying, adding a key and
     /// pasting a link are all ways through, so all three live here.
-    private var publicSearchFailedState: some View {
+    ///
+    /// The title is the classified cause, exactly as the keyed path reports it:
+    /// the public page produces timeouts, unreachable hosts and HTTP statuses
+    /// that a reader can act on differently, and collapsing them into one
+    /// sentence made every one of them read as "try again later".
+    private func publicSearchFailedState(_ error: WorkshopQueryError) -> some View {
         IllustratedEmptyState(
-            symbol: "wifi.exclamationmark",
-            verbatimTitle: String(
-                localized: "Couldn’t load results from the Steam Workshop page.",
-                bundle: .appLanguage, comment: "Workshop Browse error shown when the key-free public search page fails to load."
-            ),
+            symbol: "exclamationmark.triangle.fill",
+            verbatimTitle: message(for: error),
+            message: "Couldn’t load results from the Steam Workshop page.",
             symbolColor: DesignTokens.Colors.Status.warning,
             primary: EmptyStateButtonAction("Retry") { Task { await viewModel.reload() } },
             secondary: EmptyStateButtonAction("Set Web API key") { onRequestKeyEntry() }
@@ -570,52 +577,30 @@ struct BrowsePane: View {
     private func message(for error: WorkshopQueryError) -> String {
         switch error {
         case .missingAPIKey:
-            return String(
+            String(
                 localized: "Set your Steam Web API key in Settings to browse online.",
                 bundle: .appLanguage, comment: "Workshop browse error when no Steam Web API key is configured."
             )
         case .keychainAccessDenied:
-            return String(
+            String(
                 localized: "macOS wouldn't unlock your saved API key — allow access when it asks, or set the key again in Settings.",
                 bundle: .appLanguage, comment: "Workshop browse error when the keychain refused to hand over the stored API key."
             )
         case .unauthorized:
-            return String(
+            String(
                 localized: "Steam rejected the API key. Update it in Settings.",
                 bundle: .appLanguage, comment: "Workshop browse error when the Steam Web API key is rejected."
             )
         case .keyDisabled:
-            return String(
+            String(
                 localized: "Your Steam API key was disabled by Valve. Regenerate one.",
                 bundle: .appLanguage, comment: "Workshop browse error when Valve disabled the API key."
             )
-        case .rateLimited:
-            return String(
-                localized: "Steam is rate-limiting. Retry in a moment.",
-                bundle: .appLanguage, comment: "Workshop browse error when Steam rate-limits requests."
-            )
-        case .networkUnreachable:
-            return String(
-                localized: "Couldn't reach Steam. Check your connection.",
-                bundle: .appLanguage, comment: "Workshop browse error when Steam is unreachable."
-            )
-        case .timeout:
-            return String(
-                localized: "Steam took too long to respond. Retry?",
-                bundle: .appLanguage, comment: "Workshop browse error when Steam times out."
-            )
-        case .http(let status):
-            return String(
-                localized: "Steam returned HTTP \(status).",
-                bundle: .appLanguage, comment: "Workshop browse error with HTTP status. Placeholder is the status code."
-            )
-        case .responseParseFailure, .schemaMismatch:
-            return String(
-                localized: "Steam returned an unexpected response.",
-                bundle: .appLanguage, comment: "Workshop browse error when the Steam payload cannot be parsed."
-            )
-        case .cancelled:
-            return String(localized: "Cancelled", bundle: .appLanguage, comment: "Workshop browse request cancelled.")
+        case .keychainUnreadable, .rateLimited, .networkUnreachable, .secureConnectionFailed,
+             .networkFailure, .timeout, .http, .responseParseFailure, .schemaMismatch, .cancelled:
+            // Listed rather than defaulted: a new case has to be considered
+            // here for a remedy, not silently inherit the bare cause.
+            error.causeDescription
         }
     }
 }

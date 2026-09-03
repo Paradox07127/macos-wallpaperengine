@@ -232,10 +232,16 @@ final class WorkshopPublicSearchSource {
 
     private static func mapped(_ error: URLError) -> WorkshopQueryError {
         switch error.code {
-        case .timedOut: return .timeout
-        case .cancelled: return .cancelled
-        case .notConnectedToInternet, .networkConnectionLost, .dnsLookupFailed: return .networkUnreachable
-        default: return .networkUnreachable
+        case .timedOut: .timeout
+        case .cancelled: .cancelled
+        case .notConnectedToInternet, .networkConnectionLost, .dnsLookupFailed: .networkUnreachable
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot,
+             .clientCertificateRejected, .appTransportSecurityRequiresSecureConnection:
+            .secureConnectionFailed
+        // Not `networkUnreachable`: this branch has established nothing about
+        // whether Steam is reachable.
+        default: .networkFailure(code: error.errorCode)
         }
     }
 

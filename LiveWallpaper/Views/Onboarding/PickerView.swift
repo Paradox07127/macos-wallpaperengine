@@ -220,8 +220,16 @@ struct PickerView: View {
 
         switch WallpaperImportRouter.route(url, sceneCapable: sceneCapable) {
         case .video(let videoURL):
-            guard let bookmark = ResourceUtilities.createVideoBookmark(for: videoURL) else {
-                return fail("Couldn't read that file. Try a different one.")
+            let bookmark: Data
+            switch ResourceUtilities.videoBookmark(for: videoURL) {
+            case let .success(data):
+                bookmark = data
+            case .failure(.couldNotCopy):
+                // "Couldn't read that file" covered both, and was wrong for the
+                // one where the file read fine and the disk refused the copy.
+                return fail("Couldn't copy that video into Loomscreen's storage. Check that the file is readable and that there is free space.")
+            case .failure(.couldNotBookmarkCopy):
+                return fail("Copied that video, but macOS wouldn't grant lasting access to it.")
             }
             for screen in targets {
                 screenManager.setVideo(url: videoURL, bookmarkData: bookmark, for: screen)
@@ -270,20 +278,31 @@ struct PickerView: View {
             defer { if didStartScope { folderURL.stopAccessingSecurityScopedResource() } }
             var didConfigureAny = false
             var presetName: String?
+            // The import service states why it refused, in a sentence it has
+            // already localized. Dropping it left every refusal — a missing
+            // entry file, an unreadable package, a bookmark macOS would not
+            // grant — reading as "try another folder".
+            var rejection: String?
             for screen in targets {
                 switch await screenManager.importWallpaperEngineProject(at: folderURL, for: screen) {
                 case .applied, .unsupported:
                     didConfigureAny = true
                 case .registeredPreset(let name):
                     presetName = name
-                case .rejected:
-                    break
+                case let .rejected(reason):
+                    // First refusal wins: with several displays selected the
+                    // rest are the same project failing the same way.
+                    if rejection == nil, !reason.isEmpty {
+                        rejection = reason
+                    }
                 }
             }
             isImportingScene = false
             guard didConfigureAny else {
                 if let presetName {
                     fail("“\(presetName)” is a preset, not a wallpaper. It was added to your presets — choose a wallpaper to continue.")
+                } else if let rejection {
+                    fail("Couldn't set up that Wallpaper Engine project — \(rejection)")
                 } else {
                     fail("Couldn't set up that Wallpaper Engine project. Try another folder.")
                 }

@@ -510,6 +510,16 @@ final class WallpaperVideoPlayer {
 
                 if let item, let output, boundItem === item {
                     if item.status == .failed {
+                        if runtimeError == nil, let url = videoURL {
+                            // AVFoundation fills `item.error` when the status
+                            // turns failed. Reading only the status left the
+                            // reader with whatever generic preparation failure
+                            // arrived later instead of the codec or file fault.
+                            let failure = item.error
+                                .map { Self.makeRuntimeError(from: $0, url: url) }
+                                ?? .mediaNotPlayable(url, code: nil)
+                            reportError(failure)
+                        }
                         return .failed
                     }
                     guard self.lifecycleGeneration == expectedLifecycleGeneration,

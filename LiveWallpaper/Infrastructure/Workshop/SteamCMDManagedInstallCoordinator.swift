@@ -125,22 +125,36 @@ final class SteamCMDManagedInstallCoordinator {
 
     /// Removes through the connector (payload sits outside this container, so we can't see or delete it directly). Bumps generation first so an in-flight install can't commit over it; never touches the user's own "Choose SteamCMD" pick or a package-manager install.
     /// Record drops only once the connector confirms deletion — dropping it first orphaned the copy on disk, since Remove disappears with `managedInstall`, leaving the user unable to retry or rediscover it.
+    /// How a removal ended. It used to be a `Bool`, which reported a
+    /// superseded attempt — not a failure, and not this attempt's business —
+    /// with the same value as a connector that never answered.
+    enum ForgetOutcome: Equatable, Sendable {
+        case removed
+        /// A newer operation took over; it owns the state and the record now,
+        /// and this attempt has nothing to report.
+        case superseded
+        case connectorUnavailable
+        /// The connector answered and declined. Its `failureReason` is an
+        /// English diagnostic and deliberately stays out of the UI; surfacing
+        /// it would need a `failureCode` on the wire, as the install path has.
+        case refused
+    }
+
     @discardableResult
-    func forget() async -> Bool {
+    func forget() async -> ForgetOutcome {
         generation &+= 1
         let attempt = generation
         status = .removing
         let result = await remove()
-        // A newer operation took over while this was suspended; it owns the
-        // state and the record now.
-        guard attempt == generation else { return false }
+        guard attempt == generation else { return .superseded }
         status = .idle
-        guard result?.outcome == .removed || result?.outcome == .notInstalled else {
-            return false
+        guard let result else { return .connectorUnavailable }
+        guard result.outcome == .removed || result.outcome == .notInstalled else {
+            return .refused
         }
         defaults.removeObject(forKey: Self.managedInstallDefaultsKey)
         managedInstall = nil
-        return true
+        return .removed
     }
 
     /// `Status.failed` is rendered verbatim in Settings, so everything that

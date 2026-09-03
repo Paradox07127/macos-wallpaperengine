@@ -176,26 +176,28 @@ final class SteamWebAPIKeyEntryModel {
     static func message(for error: WorkshopQueryError) -> String {
         switch error {
         case .unauthorized:
-            return String(localized: "Steam rejected the key.", bundle: .appLanguage, comment: "Steam Web API key validation error.")
+            String(localized: "Steam rejected the key.", bundle: .appLanguage, comment: "Steam Web API key validation error.")
         case .keyDisabled:
-            return String(
+            String(
                 localized: "Your Steam API key was disabled by Valve.",
                 bundle: .appLanguage, comment: "Steam Web API key validation error."
             )
         case .rateLimited:
-            return String(
+            String(
                 localized: "Steam is rate-limiting right now. Retry in a moment.",
                 bundle: .appLanguage, comment: "Steam Web API key validation error."
             )
         case .networkUnreachable:
-            return String(
+            String(
                 localized: "Couldn't reach Steam. Check your connection.",
                 bundle: .appLanguage, comment: "Steam Web API key validation error."
             )
-        case .timeout:
-            return String(localized: "Steam took too long to respond.", bundle: .appLanguage, comment: "Steam Web API key validation error.")
-        default:
-            return String(localized: "Validation failed.", bundle: .appLanguage, comment: "Steam Web API key validation error.")
+        case .missingAPIKey, .keychainAccessDenied, .keychainUnreadable, .secureConnectionFailed,
+             .networkFailure, .timeout, .http, .responseParseFailure, .schemaMismatch, .cancelled:
+            // Was `default: "Validation failed."`, which covered six causes
+            // including "macOS would not unlock the keychain" and every HTTP
+            // status Steam can answer with.
+            error.causeDescription
         }
     }
 }

@@ -261,8 +261,20 @@ final class WorkshopSetupController {
         beginSetupAction()
         let installRoot = Self.managedInstallRoot
         Task {
-            let removed = await installer.forget()
-            guard removed else {
+            switch await installer.forget() {
+            case .removed:
+                break
+            case .superseded:
+                // Another operation owns the outcome. Reporting a failure here
+                // put an error on screen for a removal that was still running.
+                return
+            case .connectorUnavailable:
+                setupError = String(
+                    localized: "Loomscreen's Steam connector did not respond.",
+                    bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
+                )
+                return
+            case .refused:
                 // The files are still there and still work — unbinding would take a working
                 // SteamCMD away as the visible result of a delete that didn't happen. `forget()`
                 // keeps the install record on failure, so Remove stays in the menu and is retryable.

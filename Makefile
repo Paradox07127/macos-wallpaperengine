@@ -50,6 +50,9 @@ fast:
 	python3 scripts/check_swiftui_lifecycle_hosts.py
 	@echo "== Localization guard (whole app) =="
 	I18N_GUARD_SCOPE=all bash scripts/i18n_guard.sh
+	@echo "== Localization drift (translations vs their English) =="
+	python3 scripts/check_localization_drift.py --self-test
+	python3 scripts/check_localization_drift.py
 
 contracts:
 	@echo "== Release + quality tooling contract =="

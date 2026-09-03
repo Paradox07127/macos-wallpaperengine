@@ -338,17 +338,25 @@ extension ScreenManager {
         saveConfiguration(config)
     }
 
-    /// Returns `true` when a frame extraction request was actually issued (player exists with a `currentItem`).
+    /// What the capture actually did, awaited rather than guessed: the caller
+    /// shows a confirmation and needs it to be true.
     @discardableResult
-    func extractLockScreenFrame(for screen: Screen) -> Bool {
-        guard !isTerminating else { return false }
-        guard let player = screen.videoPlayer?.player else { return false }
+    func extractLockScreenFrame(for screen: Screen) async -> DesktopPictureFrameExtractor.Outcome {
+        guard !isTerminating else { return .noFrameAvailable }
+        guard let player = screen.videoPlayer?.player else { return .noFrameAvailable }
 
-        return DesktopPictureFrameExtractor.applyCurrentFrame(
+        let outcome = await DesktopPictureFrameExtractor.applyCurrentFrame(
             from: player,
             screenID: screen.id,
             nsScreen: displayRegistry.findNSScreen(for: screen.id)
         )
+        if outcome != .captured {
+            Logger.error(
+                "Lock-screen capture failed for screen \(screen.id): \(outcome)",
+                category: .screenManager
+            )
+        }
+        return outcome
     }
 
     // MARK: - Wallpaper Type Switching

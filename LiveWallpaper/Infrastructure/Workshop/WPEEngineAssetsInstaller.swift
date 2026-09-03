@@ -26,23 +26,70 @@ final class WPEEngineAssetsInstaller {
         case available(latestBuildID: String)
         case upToDate(buildID: String?)
         case unableToCompare
-        case checkFailed
+        case checkFailed(CheckFailure)
         /// Steam refused the cached session. Separate from `checkFailed`
         /// because it is the only one of these with an obvious next step, and
         /// because it is the one the user actually hits.
         case loginRequired
 
+        /// Why the check could not answer. These shared one sentence — "SteamCMD
+        /// did not return the latest build" — which describes only the last of
+        /// them and leaves the other three looking like the same dead end.
+        enum CheckFailure: Equatable, Sendable {
+            /// The connector never answered, so nothing ran.
+            case notRun
+            case timedOut
+            case steamCMDUnavailable
+            /// Steam answered with something the build parser could not use.
+            case unparsedOutput
+            case steamUnreachable
+
+            var reason: String {
+                switch self {
+                case .notRun:
+                    String(
+                        localized: "Loomscreen's Steam connector did not respond.",
+                        bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached."
+                    )
+                case .timedOut:
+                    String(
+                        localized: "The update check timed out.",
+                        bundle: .appLanguage, comment: "Engine-assets update check failure cause when SteamCMD ran out of time."
+                    )
+                case .steamCMDUnavailable:
+                    String(
+                        localized: "SteamCMD could not be launched. Re-select it in the setup list.",
+                        bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."
+                    )
+                case .unparsedOutput:
+                    String(
+                        localized: "SteamCMD did not return the latest Wallpaper Engine build.",
+                        bundle: .appLanguage, comment: "Engine-assets update check failure subtitle."
+                    )
+                case .steamUnreachable:
+                    String(
+                        localized: "Couldn't reach Steam to check for updates.",
+                        bundle: .appLanguage, comment: "Engine-assets update check failure cause when Steam could not be reached."
+                    )
+                }
+            }
+        }
+
         static func resolve(
             installedBuildID: String?,
             lookup: SteamEngineBuildLookup?
         ) -> UpdateCheckOutcome {
-            guard let lookup else { return .checkFailed }
+            guard let lookup else { return .checkFailed(.notRun) }
             switch lookup.outcome {
             case .loginRequired: return .loginRequired
-            case .timedOut, .steamCMDUnavailable, .unrecognized: return .checkFailed
+            case .timedOut: return .checkFailed(.timedOut)
+            case .steamCMDUnavailable: return .checkFailed(.steamCMDUnavailable)
+            case .unrecognized: return .checkFailed(.unparsedOutput)
+            case .steamUnreachable: return .checkFailed(.steamUnreachable)
             case .found: break
             }
-            guard let latestBuildID = lookup.buildID else { return .checkFailed }
+            // Steam answered, but with no build id to compare against.
+            guard let latestBuildID = lookup.buildID else { return .checkFailed(.unparsedOutput) }
             guard let installedBuildID else { return .unableToCompare }
             return latestBuildID == installedBuildID
                 ? .upToDate(buildID: installedBuildID)
@@ -205,7 +252,10 @@ final class WPEEngineAssetsInstaller {
             fail(String(localized: "The download timed out. Try again.", bundle: .appLanguage, comment: "Engine-assets download timed out."))
         case .steamCMDUnavailable:
             fail(String(localized: "SteamCMD could not be launched. Re-select it in the setup list.", bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."))
-        case .steamUnreachable, .unrecognized:
+        case .steamUnreachable:
+            // Was folded into the line below, which asserts Steam answered.
+            fail(String(localized: "Couldn't reach Steam while installing Wallpaper Engine.", bundle: .appLanguage, comment: "Engine-assets install failed because Steam could not be reached."))
+        case .unrecognized:
             fail(String(localized: "Steam returned an unrecognized response while installing Wallpaper Engine.", bundle: .appLanguage, comment: "Engine-assets install failed with unparsed SteamCMD output."))
         }
     }
@@ -371,7 +421,29 @@ final class WPEEngineAssetsInstaller {
             guard currentAttempt == attempt else { return }
             task = nil
             currentAttempt = nil
-            phase = .idle
+            // A superseded attempt is not a failure and has nothing to report.
+            if error is CancellationError {
+                phase = .idle
+                return
+            }
+            // Every other exit from this actor calls `fail`; this one used to
+            // return the phase to idle and say nothing, so a refused removal
+            // looked exactly like a removal that had never been asked for.
+            let message = if case SteamCMDDoctorOperationError.nestedConflict = error {
+                String(
+                    localized: "Another Steam operation is running. Try again when it finishes.",
+                    bundle: .appLanguage, comment: "Engine-assets removal refused because another SteamCMD operation holds the lease."
+                )
+            } else {
+                String(
+                    localized: "Couldn't remove the downloaded assets.",
+                    bundle: .appLanguage, comment: "Engine-assets removal failed for an unclassified reason."
+                )
+            }
+            fail(message, headline: String(
+                localized: "Removal failed",
+                bundle: .appLanguage, comment: "Engine-assets removal failure toast headline."
+            ))
         }
     }
 
@@ -398,13 +470,15 @@ final class WPEEngineAssetsInstaller {
         phase = .idle
     }
 
-    private func fail(_ message: String) {
+    /// `headline` defaults to the download wording because every caller but
+    /// the removal path is a download.
+    private func fail(_ message: String, headline: String? = nil) {
         currentAttempt = nil
         progress = nil
         progressBytes = nil
         phase = .failed(message)
         WorkshopToastCenter.shared.post(
-            headline: String(localized: "Download failed", bundle: .appLanguage, comment: "Engine-assets download failure toast headline."),
+            headline: headline ?? String(localized: "Download failed", bundle: .appLanguage, comment: "Engine-assets download failure toast headline."),
             title: "",
             message: message,
             isSuccess: false
@@ -451,11 +525,11 @@ final class WPEEngineAssetsInstaller {
                 message: String(localized: "Sign in to your Steam account again, then check for updates.", bundle: .appLanguage, comment: "Engine-assets update check failure subtitle when Steam refused the cached session."),
                 isSuccess: false
             )
-        case .checkFailed:
+        case let .checkFailed(reason):
             WorkshopToastCenter.shared.post(
                 headline: String(localized: "Couldn't check for updates", bundle: .appLanguage, comment: "Engine-assets update check failure headline."),
                 title: "",
-                message: String(localized: "SteamCMD did not return the latest Wallpaper Engine build.", bundle: .appLanguage, comment: "Engine-assets update check failure subtitle."),
+                message: reason.reason,
                 isSuccess: false
             )
         case .notChecked, .checking:

@@ -184,10 +184,34 @@ struct WallpaperEngineProject: Sendable, Equatable {
 
 }
 
-enum WPEProjectError: Error, Equatable, Sendable {
+/// `localizedDescription` is read by `WPEImportCoordinator`'s catch and shown
+/// to the reader. Without `errorDescription` these rendered as Foundation's
+/// generic "operation couldn't be completed" template, which named nothing.
+/// The wording is a clause because it is interpolated into a sentence.
+enum WPEProjectError: LocalizedError, Equatable, Sendable {
     case manifestNotFound
     case manifestUnreadable
     case manifestMalformed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .manifestNotFound:
+            String(
+                localized: "the folder has no project.json",
+                bundle: .appLanguage, comment: "Scene import refusal reason, interpolated into a sentence: the project manifest is absent."
+            )
+        case .manifestUnreadable:
+            String(
+                localized: "its project.json could not be read",
+                bundle: .appLanguage, comment: "Scene import refusal reason, interpolated into a sentence: the project manifest could not be read."
+            )
+        case let .manifestMalformed(detail):
+            String(
+                localized: "its project.json is malformed (\(detail))",
+                bundle: .appLanguage, comment: "Scene import refusal reason, interpolated into a sentence; the placeholder is the parser's detail."
+            )
+        }
+    }
 }
 
 private struct DecodedManifest: Decodable, Sendable {

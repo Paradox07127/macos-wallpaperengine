@@ -87,4 +87,50 @@ struct SteamCachedLoginParserTests {
         let noisy = String(repeating: "x", count: 5000)
         #expect(SteamCachedLoginParser.parse(stdout: noisy).diagnosticTail.count == 500)
     }
+
+    /// Captured verbatim 2026-09-03 from `steamcmd +login <acct> +quit` under
+    /// `sandbox-exec (deny network*)` with a scratch HOME: the CM connection is
+    /// retried four times over ~34s and then reported on the login line.
+    private static let noConnectionOutput = """
+    Loading Steam API...OK
+    Cached credentials not found.
+    password:
+    Proceeding with login using username/password.
+    Logging in user 'probe_user_zz' [U:1:0] to Steam Public...Retrying...
+    CreateBoundSocket: ::bind to port 0 returned error [no name available](1)
+    Retrying...
+    ERROR (No Connection)
+    Unloading Steam API...OK
+    """
+
+    /// A blocked network is the one failure whose remedy is not "sign in
+    /// again"; reporting it as unrecognized output sent users to Terminal.
+    @Test("An unreachable Steam is its own verdict, not unrecognized output")
+    func recognisesNoConnection() {
+        let result = SteamCachedLoginParser.parse(stdout: Self.noConnectionOutput)
+        #expect(result.outcome == .noConnection)
+        #expect(result.failureReason == "No Connection")
+        // Reconstructed cached-credentials variant: same login line, a real
+        // SteamID3, the same ERROR tail. Cached credentials plus no answer is
+        // not a valid session, and not an account either.
+        let cached = """
+        Logging in using cached credentials.
+        Logging in user 'alice_01' [U:1:1267132100] to Steam Public...Retrying... Retrying... ERROR (No Connection)
+        """
+        #expect(SteamCachedLoginParser.parse(stdout: cached).outcome == .noConnection)
+        #expect(SteamCachedLoginParser.parse(stdout: cached).steamID64 == nil)
+    }
+
+    /// Reason strings from Steam's `FAILED (…)` line, as reported on the
+    /// community forums (Rate Limit Exceeded, Account Logon Denied).
+    @Test("Any other Steam refusal keeps its reason instead of the raw tail")
+    func keepsRefusalReason() {
+        let refused = "Logging in user 'x' [U:1:0] to Steam Public...FAILED (Rate Limit Exceeded)"
+        let result = SteamCachedLoginParser.parse(stdout: refused)
+        #expect(result.outcome == .loginFailed)
+        #expect(result.failureReason == "Rate Limit Exceeded")
+        // Control: the no-prompt refusal is still the cached-session verdict,
+        // not a generic refusal, even though it is also a `FAILED (…)` line.
+        #expect(SteamCachedLoginParser.parse(stdout: Self.noCachedSessionOutput).outcome == .noCachedSession)
+    }
 }

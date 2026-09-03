@@ -639,6 +639,11 @@ struct ScreenRow: View {
     private func accessibilityValue(for summary: WallpaperSessionSummary) -> Text {
         switch summary.activity {
         case .error:
+            // VoiceOver hears the runtime error's own sentence, not the word
+            // "Error"; the reason is in the summary either way.
+            if let text = summary.subtitle, !text.isEmpty {
+                return Text(verbatim: text)
+            }
             return Text("Error")
         case .paused:
             return Text("Wallpaper paused")

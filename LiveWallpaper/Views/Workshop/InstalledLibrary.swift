@@ -266,21 +266,30 @@ final class InstalledLibraryModel {
         invalidateDeletesForReimports()
     }
 
+    /// `operation` returns the error that stopped the apply, or nil on
+    /// success. It used to return `Bool`: the import tracker already held an
+    /// `AppError` naming the file, the package fault or the import failure, and
+    /// the call site reduced it to `!= nil`.
     func startApply(
         entry: WPEHistoryEntry,
-        operation: @escaping @MainActor () async -> Bool
+        operation: @escaping @MainActor () async -> AppError?
     ) {
         errorMessage = nil
         let token = UUID()
         let generation = appearanceGeneration
         let identity = WorkshopInstalledEntryIdentity(entry)
         let task = Task { @MainActor [weak self] in
-            let failed = await operation()
+            let failure = await operation()
             guard let self else { return }
             defer { self.applyTasks.removeValue(forKey: token) }
             guard canPublish(generation: generation, identity: identity) else { return }
-            if failed {
-                errorMessage = String(
+            if let failure {
+                errorMessage = failure.errorDescription.map {
+                    String(
+                        localized: "Couldn't apply \(entry.origin.title) — \($0)",
+                        bundle: .appLanguage, comment: "Workshop installed apply failure. Placeholders are the wallpaper title and why it failed."
+                    )
+                } ?? String(
                     localized: "Couldn't apply \(entry.origin.title).",
                     bundle: .appLanguage, comment: "Workshop installed apply failure. Placeholder is the wallpaper title."
                 )

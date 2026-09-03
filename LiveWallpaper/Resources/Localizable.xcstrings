@@ -12838,6 +12838,96 @@
         }
       }
     },
+    "The secure connection to Steam failed. A proxy or security software may be intercepting it." : {
+      "comment" : "Workshop failure cause when TLS to Steam could not be established.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The secure connection to Steam failed. A proxy or security software may be intercepting it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam との安全な接続に失敗しました。プロキシまたはセキュリティソフトが介在している可能性があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与 Steam 的安全连接失败。可能有代理或安全软件正在拦截。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "與 Steam 的安全連線失敗。可能有代理或安全軟體正在攔截。"
+          }
+        }
+      }
+    },
+    "The request to Steam failed (error %lld)." : {
+      "comment" : "Workshop failure cause for a transport error with no established meaning; the placeholder is the system error code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The request to Steam failed (error %lld)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam へのリクエストが失敗しました(エラー %lld)。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向 Steam 的请求失败(错误 %lld)。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向 Steam 的請求失敗(錯誤 %lld)。"
+          }
+        }
+      }
+    },
+    "Steam reported that it couldn't connect. If you use a VPN or proxy: SteamCMD reaches Steam directly rather than through the system proxy, so try TUN (enhanced) mode or a direct connection." : {
+      "comment" : "Steam sign-in failure when SteamCMD reported it could not open a connection to Steam.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam reported that it couldn't connect. If you use a VPN or proxy: SteamCMD reaches Steam directly rather than through the system proxy, so try TUN (enhanced) mode or a direct connection."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam が接続できないと報告しました。VPN やプロキシを使用している場合:SteamCMD はシステムプロキシを経由せず Steam に直接接続するため、TUN(拡張)モードか直接接続をお試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 报告无法连接。如果你在用 VPN 或代理:SteamCMD 是直接连接 Steam 的,不经过系统代理,可以试试 TUN(增强)模式或直连。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 回報無法連線。如果你在用 VPN 或代理:SteamCMD 是直接連線 Steam 的,不經過系統代理,可以試試 TUN(增強)模式或直連。"
+          }
+        }
+      }
+    },
     "Couldn't read scene.json" : {
       "comment" : "Wallpaper Engine fallback warning title.",
       "localizations" : {
@@ -12896,30 +12986,92 @@
         }
       }
     },
-    "Couldn't read that file. Try a different one." : {
+    "The local web session could not be started." : {
+      "comment" : "Web wallpaper load failure when the folder handler had no session nonce.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't read that file. Try a different one."
+            "value" : "The local web session could not be started."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "そのファイルを読み込めませんでした。別のファイルをお試しください。"
+            "value" : "ローカル Web セッションを開始できませんでした。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法读取该文件，请换一个试试。"
+            "value" : "无法启动本地网页会话。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法讀取該檔案，請換一個試試。"
+            "value" : "無法啟動本機網頁工作階段。"
+          }
+        }
+      }
+    },
+    "The page address for %@ could not be built." : {
+      "comment" : "Web wallpaper load failure when the internal scheme URL could not be formed. The placeholder is the index file name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page address for %@ could not be built."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ のページアドレスを作成できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法构建 %@ 的页面地址。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法建構 %@ 的頁面位址。"
+          }
+        }
+      }
+    },
+    "Copied that video, but macOS wouldn't grant lasting access to it." : {
+      "comment" : "Onboarding video import failure when the copied file could not be bookmarked.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied that video, but macOS wouldn't grant lasting access to it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画はコピーしましたが、macOS が継続的なアクセスを許可しませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制该视频,但 macOS 未授予持久访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已複製該影片,但 macOS 未授予持久存取權限。"
           }
         }
       }
@@ -13149,6 +13301,186 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法設定該 Wallpaper Engine 專案。請換一個資料夾試試。"
+          }
+        }
+      }
+    },
+    "Couldn't set up that Wallpaper Engine project — %@" : {
+      "comment" : "Onboarding scene import failure; %@ is the import service's own reason for refusing.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't set up that Wallpaper Engine project — %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Wallpaper Engine プロジェクトを設定できませんでした — %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法设置该 Wallpaper Engine 项目 — %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法設定該 Wallpaper Engine 專案 — %@"
+          }
+        }
+      }
+    },
+    "Steam rejected this key — paste a new one" : {
+      "comment" : "Steam Web API key status when Valve refused the stored key.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam rejected this key — paste a new one"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam がこのキーを拒否しました。新しいキーを貼り付けてください"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒绝了这个密钥,请粘贴一个新的"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒絕了這個金鑰,請貼上一個新的"
+          }
+        }
+      }
+    },
+    "That folder is a scene library" : {
+      "comment" : "Drop failure title when the dropped folder is a Wallpaper Engine library root.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That folder is a scene library"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのフォルダはシーンライブラリです"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该文件夹是场景库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該資料夾是場景庫"
+          }
+        }
+      }
+    },
+    "It holds many wallpapers rather than one. Import it from the Workshop library instead." : {
+      "comment" : "Drop failure message when the dropped folder is a Wallpaper Engine library root.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It holds many wallpapers rather than one. Import it from the Workshop library instead."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 つではなく多数の壁紙が入っています。ワークショップライブラリから読み込んでください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它包含多个壁纸而不是一个。请改从创意工坊库导入。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它包含多個桌布而不是一個。請改從創意工坊庫匯入。"
+          }
+        }
+      }
+    },
+    "This version doesn't play scenes" : {
+      "comment" : "Drop failure title when a scene is dropped on a build with no scene renderer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version doesn't play scenes"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このバージョンはシーンを再生できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本不支持播放场景"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此版本不支援播放場景"
+          }
+        }
+      }
+    },
+    "This copy of Loomscreen plays video and web wallpapers. Drop one of those instead." : {
+      "comment" : "Drop failure message when a scene is dropped on a build with no scene renderer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This copy of Loomscreen plays video and web wallpapers. Drop one of those instead."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Loomscreen は動画壁紙と Web 壁紙を再生できます。いずれかをドロップしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个 Loomscreen 可播放视频壁纸和网页壁纸。请改拖入其中一种。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個 Loomscreen 可播放影片桌布和網頁桌布。請改拖入其中一種。"
           }
         }
       }
@@ -16000,29 +16332,6 @@
         }
       }
     },
-    "Downloaded assets linked. Couldn't check Steam for updates." : {
-      "comment" : "Engine-assets settings status when update check fails.",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード済みアセットをリンクしました。Steam のアップデートを確認できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已链接下载的资源。无法检查 Steam 更新。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已連結下載的資源。無法檢查 Steam 更新。"
-          }
-        }
-      }
-    },
     "Downloaded assets linked. Your Steam sign-in expired, so the version check couldn't run." : {
       "comment" : "Engine-assets settings status when Steam refused the cached session during an update check.",
       "extractionState" : "manual",
@@ -18469,31 +18778,31 @@
       }
     },
     "error.scene.load_diagnostic.cross_package_reference" : {
-      "comment" : "Diagnostic shown when a scene layer references files from another Wallpaper Engine package.",
+      "comment" : "Diagnostic shown when a scene layer references files from another Wallpaper Engine package. First placeholder is the layer name, second is the referenced path.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The layer '%@' requires files from an external package, which is not supported."
+            "value" : "The layer '%1$@' requires files from an external package, which is not supported: %2$@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "レイヤー「%@」には外部パッケージのファイルが必要ですが、これはサポートされていません。"
+            "value" : "レイヤー「%1$@」は外部パッケージのファイルを必要としますが、未対応です:%2$@。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "图层“%@”需要来自外部包的文件，暂不支持。"
+            "value" : "图层“%1$@”需要外部包中的文件,暂不支持:%2$@。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "圖層「%@」需要外部套件中的檔案，目前不支援。"
+            "value" : "圖層「%1$@」需要外部套件中的檔案,暫不支援:%2$@。"
           }
         }
       }
@@ -18589,31 +18898,31 @@
       }
     },
     "error.scene.load_diagnostic.material_unresolved" : {
-      "comment" : "Diagnostic shown when a scene layer uses an unresolved material or rendering feature.",
+      "comment" : "Diagnostic shown when a scene layer uses an unresolved material or rendering feature. First placeholder is the layer name, second is which feature.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A rendering feature needed by '%@' is unsupported."
+            "value" : "A rendering feature needed by '%1$@' is not supported yet: %2$@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」に必要なレンダリング機能はサポートされていません。"
+            "value" : "「%1$@」に必要な描画機能はまだ対応していません:%2$@。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不支持“%@”所需的渲染功能。"
+            "value" : "“%1$@”需要的渲染特性暂不支持:%2$@。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不支援「%@」所需的算繪功能。"
+            "value" : "「%1$@」需要的算繪特性暫不支援:%2$@。"
           }
         }
       }
@@ -18649,31 +18958,31 @@
       }
     },
     "error.scene.load_diagnostic.texture" : {
-      "comment" : "Diagnostic shown when a scene image layer texture cannot be loaded.",
+      "comment" : "Diagnostic shown when a scene image layer texture cannot be loaded. First placeholder is the layer name, second is the decoder's reason.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The image for '%@' couldn't be loaded."
+            "value" : "The image for '%1$@' couldn't be loaded: %2$@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」の画像を読み込めませんでした。"
+            "value" : "「%1$@」の画像を読み込めませんでした:%2$@。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法加载“%@”的图像。"
+            "value" : "无法加载“%1$@”的图像:%2$@。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法載入「%@」的影像。"
+            "value" : "無法載入「%1$@」的影像:%2$@。"
           }
         }
       }
@@ -24915,31 +25224,92 @@
         }
       }
     },
-    "Linked %lld, skipped %lld unsupported." : {
-      "comment" : "Folder-link success summary with skipped count. Placeholders are linked and skipped counts.",
+    "Couldn't apply %1$@ — %2$@" : {
+      "comment" : "Workshop installed apply failure. Placeholders are the wallpaper title and why it failed.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Linked %1$lld, skipped %2$lld unsupported."
+            "value" : "Couldn't apply %1$@ — %2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld 件をリンクし、非対応の %2$lld 件をスキップしました。"
+            "value" : "%1$@ を適用できませんでした — %2$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已链接 %1$lld 个，跳过 %2$lld 个不支持项目。"
+            "value" : "无法应用 %1$@ — %2$@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已連結 %1$lld 個，略過 %2$lld 個不支援項目。"
+            "value" : "無法套用 %1$@ — %2$@"
+          }
+        }
+      }
+    },
+    "None of the projects in that folder could be read." : {
+      "comment" : "Folder import failure: every discovered project failed to read.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None of the projects in that folder could be read."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのフォルダ内のプロジェクトはどれも読み取れませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该文件夹中的项目都无法读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該資料夾中的專案都無法讀取。"
+          }
+        }
+      }
+    },
+    "Linked %lld, %lld couldn't be read." : {
+      "comment" : "Folder-link success summary with unreadable projects. Placeholders are the linked and unreadable counts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linked %lld, %lld couldn't be read."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件をリンクし、%lld 件は読み取れませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已链接 %lld 个,%lld 个无法读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已連結 %lld 個,%lld 個無法讀取。"
           }
         }
       }
@@ -25927,6 +26297,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法取得位置。請在「設定 → 天氣」中允許定位服務或改為「手動」。"
+          }
+        }
+      }
+    },
+    "Couldn't get a location fix. Try again, or pick Manual in Settings → Weather." : {
+      "comment" : "Weather error when Core Location is authorized but reported a failure rather than a coordinate.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't get a location fix. Try again, or pick Manual in Settings → Weather."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在地を取得できませんでした。もう一度試すか、設定 → 天気で「手動」を選んでください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取定位。请重试,或在“设置 → 天气”中选择手动。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得定位。請重試,或在「設定 → 天氣」中選擇手動。"
           }
         }
       }
@@ -48326,31 +48726,62 @@
         }
       }
     },
-    "Steam took too long to respond. Retry?" : {
+    "No Steam Web API key is set." : {
+      "comment" : "Workshop failure cause when no Steam Web API key is stored.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam took too long to respond. Retry?"
+            "value" : "No Steam Web API key is set."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam の応答がタイムアウトしました。再試行しますか？"
+            "value" : "Steam Web API キーが設定されていません。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 响应超时。重试？"
+            "value" : "尚未设置 Steam Web API 密钥。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 回應逾時。重試？"
+            "value" : "尚未設定 Steam Web API 金鑰。"
+          }
+        }
+      }
+    },
+    "The stored API key couldn't be read. Paste it again." : {
+      "comment" : "Workshop failure cause when the stored key exists but cannot be read back.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The stored API key couldn't be read. Paste it again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存された API キーを読み取れませんでした。もう一度貼り付けてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取已保存的 API 密钥。请重新粘贴。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取已儲存的 API 金鑰。請重新貼上。"
           }
         }
       }
@@ -48699,6 +49130,186 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SteamCMD 未傳回最新的 Wallpaper Engine 版本。"
+          }
+        }
+      }
+    },
+    "The update check timed out." : {
+      "comment" : "Engine-assets update check failure cause when SteamCMD ran out of time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update check timed out."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新の確認がタイムアウトしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新检查超时。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新檢查逾時。"
+          }
+        }
+      }
+    },
+    "Downloaded assets linked. %@" : {
+      "comment" : "Engine-assets settings status when the update check fails; %@ is why it failed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloaded assets linked. %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードした素材をリンクしました。%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已链接下载的素材。%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已連結下載的素材。%@"
+          }
+        }
+      }
+    },
+    "Couldn't reach Steam while installing Wallpaper Engine." : {
+      "comment" : "Engine-assets install failed because Steam could not be reached.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't reach Steam while installing Wallpaper Engine."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wallpaper Engine のインストール中に Steam に接続できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装 Wallpaper Engine 时无法连接 Steam。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝 Wallpaper Engine 時無法連線 Steam。"
+          }
+        }
+      }
+    },
+    "Another Steam operation is running. Try again when it finishes." : {
+      "comment" : "Engine-assets removal refused because another SteamCMD operation holds the lease.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another Steam operation is running. Try again when it finishes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の Steam 操作が実行中です。完了してからもう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另一项 Steam 操作正在进行。请等它结束后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另一項 Steam 操作正在進行。請等它結束後重試。"
+          }
+        }
+      }
+    },
+    "Couldn't remove the downloaded assets." : {
+      "comment" : "Engine-assets removal failed for an unclassified reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't remove the downloaded assets."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードした素材を削除できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法移除下载的素材。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法移除下載的素材。"
+          }
+        }
+      }
+    },
+    "Removal failed" : {
+      "comment" : "Engine-assets removal failure toast headline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removal failed"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除に失敗しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除失敗"
           }
         }
       }
@@ -51759,32 +52370,512 @@
         }
       }
     },
-    "The Steam sign-in check timed out." : {
+    "Steam refused the sign-in (%@). Sign in again in Terminal, then check again." : {
+      "comment" : "Steam sign-in diagnostic when Steam answered with a refusal; %@ is Steam's own reason text.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam refused the sign-in (%@). Sign in again in Terminal, then check again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam がサインインを拒否しました(%@)。ターミナルでもう一度サインインしてから、再度確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒绝了登录(%@)。请在终端重新登录,然后再检查一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒絕了登入(%@)。請在終端機重新登入,然後再檢查一次。"
+          }
+        }
+      }
+    },
+    "Steam refused the sign-in. Sign in again in Terminal, then check again." : {
+      "comment" : "Steam sign-in diagnostic when Steam refused without giving a reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam refused the sign-in. Sign in again in Terminal, then check again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam がサインインを拒否しました。ターミナルでもう一度サインインしてから、再度確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒绝了登录。请在终端重新登录,然后再检查一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒絕了登入。請在終端機重新登入,然後再檢查一次。"
+          }
+        }
+      }
+    },
+    "Loomscreen is quitting." : {
+      "comment" : "Scene import refused because the app is shutting down.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen is quitting."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen を終了しています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 正在退出。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 正在結束。"
+          }
+        }
+      }
+    },
+    "A newer request replaced this one." : {
+      "comment" : "Scene import refused because a later import for the same display took over.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A newer request replaced this one."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "より新しい要求に置き換えられました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已被更新的请求取代。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已被更新的請求取代。"
+          }
+        }
+      }
+    },
+    "the folder has no project.json" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest is absent.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the folder has no project.json"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォルダに project.json がありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该文件夹中没有 project.json"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "該資料夾中沒有 project.json"
+          }
+        }
+      }
+    },
+    "its project.json could not be read" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence: the project manifest could not be read.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its project.json could not be read"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その project.json を読み取れませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取它的 project.json"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取它的 project.json"
+          }
+        }
+      }
+    },
+    "its project.json is malformed (%@)" : {
+      "comment" : "Scene import refusal reason, interpolated into a sentence; the placeholder is the parser's detail.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its project.json is malformed (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その project.json の形式が不正です(%@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的 project.json 格式有误(%@)"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的 project.json 格式有誤(%@)"
+          }
+        }
+      }
+    },
+    "The Steam sign-in check timed out. Steam's servers may be unreachable from this network." : {
       "comment" : "Steam sign-in diagnostic when SteamCMD did not finish in time.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The Steam sign-in check timed out."
+            "value" : "The Steam sign-in check timed out. Steam's servers may be unreachable from this network."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam のサインイン確認がタイムアウトしました。"
+            "value" : "Steam のサインイン確認がタイムアウトしました。このネットワークからは Steam のサーバーに到達できない可能性があります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 登录检查超时。"
+            "value" : "Steam 登录检查超时。当前网络可能无法连接 Steam 服务器。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 登入檢查逾時。"
+            "value" : "Steam 登入檢查逾時。目前網路可能無法連線至 Steam 伺服器。"
+          }
+        }
+      }
+    },
+    "Steam is rate-limiting sign-ins from this Mac. Wait a few minutes, then check again." : {
+      "comment" : "Steam sign-in diagnostic when Steam is throttling sign-in attempts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam is rate-limiting sign-ins from this Mac. Wait a few minutes, then check again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam がこの Mac からのサインインを制限しています。数分待ってから再度確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 正在限制这台 Mac 的登录频率。请等几分钟后再检查。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 正在限制這台 Mac 的登入頻率。請等幾分鐘後再檢查。"
+          }
+        }
+      }
+    },
+    "Couldn't reach Steam to check for updates." : {
+      "comment" : "Engine-assets update check failure cause when Steam could not be reached.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't reach Steam to check for updates."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新を確認するために Steam に接続できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接 Steam 以检查更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線 Steam 以檢查更新。"
+          }
+        }
+      }
+    },
+    "Steam refused the sign-in: %@" : {
+      "comment" : "In-app Steam sign-in failure; the placeholder is Steam's own stated reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam refused the sign-in: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam がサインインを拒否しました:%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒绝了登录:%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒絕了登入:%@"
+          }
+        }
+      }
+    },
+    "Couldn't copy that video" : {
+      "comment" : "Drop failure title when copying the video into app storage failed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't copy that video"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画をコピーできませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法复制该视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法複製該影片"
+          }
+        }
+      }
+    },
+    "Loomscreen couldn't copy it into its own storage. Check free space and try again." : {
+      "comment" : "Drop failure message when copying the video into app storage failed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen couldn't copy it into its own storage. Check free space and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen が自身のストレージにコピーできませんでした。空き容量を確認してもう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 无法将它复制到自己的存储空间。请检查可用空间后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen 無法將它複製到自己的儲存空間。請檢查可用空間後重試。"
+          }
+        }
+      }
+    },
+    "Couldn't copy that video into Loomscreen's storage. Check that the file is readable and that there is free space." : {
+      "comment" : "Onboarding video import failure when copying the file into app storage failed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't copy that video into Loomscreen's storage. Check that the file is readable and that there is free space."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その動画を Loomscreen のストレージにコピーできませんでした。ファイルが読み取り可能か、空き容量があるかを確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将该视频复制到 Loomscreen 的存储空间。请检查该文件是否可读以及是否有可用空间。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法將該影片複製到 Loomscreen 的儲存空間。請檢查該檔案是否可讀以及是否有可用空間。"
+          }
+        }
+      }
+    },
+    "That folder couldn't be read." : {
+      "comment" : "Folder import failure: the chosen folder could not be enumerated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That folder couldn't be read."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのフォルダを読み取れませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取该文件夹。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取該資料夾。"
+          }
+        }
+      }
+    },
+    "Linked %lld, skipped %lld, %lld unreadable." : {
+      "comment" : "Folder-link success summary. Placeholders are the linked, skipped and unreadable counts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linked %lld, skipped %lld, %lld unreadable."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件をリンクし、%lld 件をスキップ、%lld 件は読み取れませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已链接 %lld 个,跳过 %lld 个,%lld 个无法读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已連結 %lld 個,略過 %lld 個,%lld 個無法讀取。"
+          }
+        }
+      }
+    },
+    "Linked %lld, skipped %lld." : {
+      "comment" : "Folder-link success summary with skipped count. Placeholders are linked and skipped counts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linked %lld, skipped %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件をリンクし、%lld 件をスキップしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已链接 %lld 个,跳过 %lld 个。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已連結 %lld 個,略過 %lld 個。"
           }
         }
       }
@@ -56006,35 +57097,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "驗證失敗：%@"
-          }
-        }
-      }
-    },
-    "Validation failed." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Validation failed."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "検証に失敗しました。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "验证失败。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "驗證失敗。"
           }
         }
       }

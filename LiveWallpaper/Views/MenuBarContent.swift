@@ -350,6 +350,13 @@ struct MenuBarContent: View {
             return reason
         }
 
+        // A failed session gets the same precedence, and for the same reason:
+        // the two name lookups below would otherwise win and show the wallpaper
+        // that is not playing, hiding the message explaining why.
+        if summary.activity == .error, let message = summary.subtitle, !message.isEmpty {
+            return message
+        }
+
         if summary.wallpaperType == .video,
            let name = screenManager.currentVideoDisplayName(for: screen),
            !name.isEmpty {

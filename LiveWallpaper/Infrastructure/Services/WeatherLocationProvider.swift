@@ -15,6 +15,10 @@ protocol WeatherLocationProviding: AnyObject {
 @MainActor
 protocol WeatherCoreLocationRequesting: AnyObject {
     var authorizationStatus: CLAuthorizationStatus { get }
+    /// The last error Core Location reported, cleared by the next fix. Lets the
+    /// caller tell "not authorized" from "authorized but no fix", which the
+    /// authorization status alone cannot.
+    var lastLocationFailure: Error? { get }
     var resultHandler: ((CLLocation?) -> Void)? { get set }
     var authorizationHandler: ((CLAuthorizationStatus) -> Void)? { get set }
 
@@ -50,15 +54,23 @@ private final class WeatherCoreLocationClient: NSObject, WeatherCoreLocationRequ
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         let location = locations.last
         Task { @MainActor [weak self] in
+            self?.lastLocationFailure = nil
             self?.resultHandler?(location)
         }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // Kept rather than discarded: without it the only thing left to go on
+        // was the authorization status, so a manager that simply could not get
+        // a fix was reported as a permissions problem.
         Task { @MainActor [weak self] in
+            self?.lastLocationFailure = error
             self?.resultHandler?(nil)
         }
     }
+
+    /// The last error Core Location reported, cleared by the next fix.
+    private(set) var lastLocationFailure: Error?
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
@@ -195,15 +207,29 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
             } else {
                 failureKind = .unavailable
             }
+            // Core Location answering "I could not get a fix" is not a
+            // permissions problem, and telling the reader to allow Location
+            // Services sent them to a switch that was already on.
+            // `denied` here is the system-wide switch rather than this app's
+            // permission, which `authorizationStatus` cannot see.
+            let deniedBySystem = (coreLocationClient.lastLocationFailure as? CLError)?.code == .denied
+            let message = failureKind == .unavailable
+                && coreLocationClient.lastLocationFailure != nil
+                && !deniedBySystem
+                ? String(
+                    localized: "Couldn't get a location fix. Try again, or pick Manual in Settings → Weather.",
+                    bundle: .appLanguage, comment: "Weather error when Core Location is authorized but reported a failure rather than a coordinate."
+                )
+                : String(
+                    localized: "Location unavailable. Allow Location Services or pick Manual in Settings → Weather.",
+                    defaultValue: "Location unavailable. Allow Location Services or pick Manual in Settings → Weather.",
+                    bundle: .appLanguage, comment: "Weather error shown when System location is selected but Core Location did not yield a coordinate and no manual city is set."
+                )
             return WeatherLocationResolution(
                 coordinate: nil,
                 resolvedSource: .coreLocation,
                 displayName: nil,
-                error: String(
-                    localized: "Location unavailable. Allow Location Services or pick Manual in Settings → Weather.",
-                    defaultValue: "Location unavailable. Allow Location Services or pick Manual in Settings → Weather.",
-                    bundle: .appLanguage, comment: "Weather error shown when System location is selected but Core Location did not yield a coordinate and no manual city is set."
-                ),
+                error: message,
                 failureKind: failureKind
             )
 

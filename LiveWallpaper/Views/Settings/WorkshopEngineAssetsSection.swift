@@ -326,9 +326,12 @@ struct WorkshopEngineAssetsSection: View {
                 message: String(localized: "Downloaded assets linked. Your Steam sign-in expired, so the version check couldn't run.", bundle: .appLanguage, comment: "Engine-assets settings status when Steam refused the cached session during an update check."),
                 tint: DesignTokens.Colors.Status.warning
             )
-        case .checkFailed:
+        case let .checkFailed(reason):
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked. Couldn't check Steam for updates.", bundle: .appLanguage, comment: "Engine-assets settings status when update check fails."),
+                message: String(
+                    localized: "Downloaded assets linked. \(reason.reason)",
+                    bundle: .appLanguage, comment: "Engine-assets settings status when the update check fails; %@ is why it failed."
+                ),
                 tint: DesignTokens.Colors.Status.warning
             )
         case .checking:

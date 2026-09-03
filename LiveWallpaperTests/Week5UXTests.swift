@@ -532,6 +532,7 @@ struct WeatherLocationProviderFallbackTests {
 
 @MainActor
 private final class FakeWeatherCoreLocationClient: WeatherCoreLocationRequesting {
+    var lastLocationFailure: Error?
     var authorizationStatus: CLAuthorizationStatus
     var resultHandler: ((CLLocation?) -> Void)?
     var authorizationHandler: ((CLAuthorizationStatus) -> Void)?
