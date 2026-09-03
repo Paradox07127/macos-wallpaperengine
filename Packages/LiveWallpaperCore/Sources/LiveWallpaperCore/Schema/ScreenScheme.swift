@@ -44,6 +44,28 @@ public struct ScreenScheme: Identifiable, Codable, Equatable, Sendable {
         self.overlay = overlay
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, name, createdAt, updatedAt, sourceDisplayName, configuration, overlay
+    }
+
+    /// Hand-written for one field: `MonitorOverlayConfiguration` fails its decode
+    /// when the board it carries is unreadable, which is right for
+    /// `GlobalSettings.monitorOverlays` (a lossy dictionary drops that one display)
+    /// but wrong here — schemes are decoded as one array, so a synthesised decoder
+    /// would let a single corrupt overlay take the whole archive down, and the next
+    /// capture would rewrite the file with only the new entry. A scheme is mostly
+    /// its wallpaper configuration; the overlay falls back rather than sinking it.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        sourceDisplayName = try c.decodeIfPresent(String.self, forKey: .sourceDisplayName)
+        configuration = try c.decode(ScreenConfiguration.self, forKey: .configuration)
+        overlay = (try? c.decode(MonitorOverlayConfiguration.self, forKey: .overlay)) ?? .default
+    }
+
     /// Blanks the two display-identity fields with sentinels.
     ///
     /// Sentinels rather than a trimmed `ScreenSchemeConfiguration` type:

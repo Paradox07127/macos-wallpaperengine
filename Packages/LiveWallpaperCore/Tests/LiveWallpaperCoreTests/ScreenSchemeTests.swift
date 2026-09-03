@@ -289,3 +289,36 @@ struct SchemeStoreTests {
         #expect(store.schemes.isEmpty)
     }
 }
+
+@Suite("ScreenScheme decode resilience")
+struct ScreenSchemeDecodeResilienceTests {
+    /// Schemes are persisted as one array, so a scheme whose overlay cannot be
+    /// read must not take the archive with it: `AtomicFileStore.read()` would
+    /// return nil, `loadScreenSchemes()` would hand back `[]`, and the next
+    /// capture would rewrite the file with only the new entry.
+    @Test("A corrupt overlay costs that scheme its overlay, not the whole archive")
+    func corruptOverlayKeepsTheArchive() throws {
+        let good = ScreenScheme(
+            name: "Good",
+            configuration: ScreenConfiguration(screenID: 1, videoBookmarkData: Data([0x01])),
+            overlay: MonitorOverlayConfiguration(enabled: true, level: .front)
+        )
+        let encoded = try JSONEncoder().encode([good, good])
+        var json = try #require(
+            try JSONSerialization.jsonObject(with: encoded) as? [[String: Any]]
+        )
+        json[1]["name"] = "Broken"
+        json[1]["overlay"] = [
+            "enabled": true,
+            "board": ["widgets": "corrupt-not-an-array"],
+        ] as [String: Any]
+
+        let payload = try JSONSerialization.data(withJSONObject: json)
+        let decoded = try JSONDecoder().decode([ScreenScheme].self, from: payload)
+
+        #expect(decoded.count == 2)
+        #expect(decoded[0].overlay.level == .front)
+        #expect(decoded[1].name == "Broken")
+        #expect(decoded[1].overlay == MonitorOverlayConfiguration.default)
+    }
+}

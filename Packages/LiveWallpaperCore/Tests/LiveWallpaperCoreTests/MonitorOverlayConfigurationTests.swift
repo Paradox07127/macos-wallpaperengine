@@ -50,9 +50,21 @@ struct MonitorOverlayConfigurationTests {
         #expect(decoded.music.size == .medium)
     }
 
-    @Test("A malformed board field falls back to the default board without dropping the display")
-    func malformedBoardFallsBackToDefault() throws {
+    /// The display's record is what carries the board, so an unreadable board is
+    /// an unreadable record: the overlay decode fails and the caller's lossy
+    /// dictionary drops that display instead of keeping it with a board the user
+    /// never configured.
+    @Test("A malformed board field makes the whole display entry undecodable")
+    func malformedBoardFailsTheEntry() throws {
         let json = #"{ "enabled": true, "level": "front", "board": {"refreshHz": "bad"} }"#
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(MonitorOverlayConfiguration.self, from: Data(json.utf8))
+        }
+    }
+
+    @Test("A null board is absent, not corrupt, so the entry survives with the default board")
+    func nullBoardKeepsTheEntry() throws {
+        let json = #"{ "enabled": true, "level": "front", "board": null }"#
         let decoded = try JSONDecoder().decode(MonitorOverlayConfiguration.self, from: Data(json.utf8))
         #expect(decoded.enabled == true)
         #expect(decoded.level == .front)
@@ -143,11 +155,10 @@ struct MonitorOverlayConfigurationTests {
 
     @Test("A corrupt overlay slot decodes to nil, never a half-value")
     func corruptSlotIsNil() throws {
-        // `board`'s own malformed-value case no longer triggers this — it falls
-        // back to the default board instead (see `malformedBoardFallsBackToDefault`),
-        // matching `level`/`music`. `enabled` is the field that hasn't been made
-        // tolerant, so it's what still demonstrates a genuinely corrupt slot
-        // decoding to nil rather than a half value.
+        // A malformed `board` now fails the whole slot too (see
+        // `malformedBoardFailsTheEntry`), so `enabled` is no longer the only field
+        // that gets here — it stays as the case that never had a tolerant path at
+        // all, demonstrating a corrupt slot decoding to nil rather than a half value.
         let decoded = try decodeOverlay(#"{ "enabled": "not-a-bool" }"#)
         #expect(decoded == nil)
     }
