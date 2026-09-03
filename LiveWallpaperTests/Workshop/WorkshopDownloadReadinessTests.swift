@@ -8,9 +8,11 @@ import Testing
 @Suite("Workshop download readiness", .serialized)
 @MainActor
 struct WorkshopDownloadReadinessTests {
-    private func makeService() -> SteamCMDDoctorService {
-        let defaults = UserDefaults(suiteName: "LiveWallpaperTests.DownloadReadiness.\(UUID().uuidString)")!
-        return SteamCMDDoctorService(defaults: defaults)
+    private func makeService(function: String = #function) throws -> SteamCMDDoctorService {
+        let scratch = try TestScratch.defaultsSuite(
+            prefix: "LiveWallpaperTests.DownloadReadiness", function: function
+        )
+        return SteamCMDDoctorService(defaults: scratch.defaults)
     }
 
     /// A bookmark the shared resolver can actually resolve (plain bookmark to a
@@ -31,8 +33,8 @@ struct WorkshopDownloadReadinessTests {
     }
 
     @Test("A library grant that fails to resolve blocks downloads")
-    func failedResolutionBlocksDownloads() {
-        let service = makeService()
+    func failedResolutionBlocksDownloads() throws {
+        let service = try makeService()
         // Bytes exist but can never resolve to a folder.
         configureAllGreen(service, bookmark: Data([0x01]))
 
@@ -44,7 +46,7 @@ struct WorkshopDownloadReadinessTests {
 
     @Test("A red binary-identity probe blocks downloads")
     func redIdentityProbeBlocksDownloads() throws {
-        let service = makeService()
+        let service = try makeService()
         configureAllGreen(service, bookmark: try resolvableBookmark())
         service.setProbe(.binaryIdentity, status: .red(message: "signature mismatch", command: nil))
 
@@ -55,7 +57,7 @@ struct WorkshopDownloadReadinessTests {
     func notRunIdentityProbeDoesNotBlock() throws {
         // Control: probes are not persisted, so .notRun must never block —
         // otherwise every launch demands a manual probe run before downloading.
-        let service = makeService()
+        let service = try makeService()
         configureAllGreen(service, bookmark: try resolvableBookmark())
         service.setProbe(.binaryIdentity, status: .notRun)
 
@@ -65,7 +67,7 @@ struct WorkshopDownloadReadinessTests {
 
     @Test("An operation reporting login-required demotes the green probe")
     func loginRequiredDemotesCachedLogin() throws {
-        let service = makeService()
+        let service = try makeService()
         configureAllGreen(service, bookmark: try resolvableBookmark())
         #expect(service.isGreen(.cachedLogin))
         #expect(service.downloadBlocker == nil)
@@ -89,7 +91,7 @@ struct WorkshopDownloadReadinessTests {
     /// probe *can* block, so a pass here is not just "nothing blocks anything".
     @Test("Red Workshop-wide diagnostics never block downloads")
     func advisoryProbesNeverBlockDownloads() throws {
-        let service = makeService()
+        let service = try makeService()
         configureAllGreen(service, bookmark: try resolvableBookmark())
 
         for kind in [DoctorProbeKind.workshopContent, .sceneResources, .connector] {
@@ -105,7 +107,7 @@ struct WorkshopDownloadReadinessTests {
     @Test("Everything green with a resolvable grant is ready")
     func allGreenResolvableIsReady() throws {
         // Control: the added conditions must not block a genuinely ready setup.
-        let service = makeService()
+        let service = try makeService()
         configureAllGreen(service, bookmark: try resolvableBookmark())
 
         #expect(service.downloadBlocker == nil)

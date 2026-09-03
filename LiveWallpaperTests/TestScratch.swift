@@ -56,4 +56,12 @@ enum TestScratch {
         defaults.removePersistentDomain(forName: name)
         return DefaultsSuite(name: name, defaults: defaults)
     }
+
+    /// Names the suite after the calling test, so a file's plist count is bounded
+    /// by how many tests it has rather than growing by one per run. Parameterized
+    /// tests share one `#function` across their cases — those must pass an
+    /// explicit name that includes the arguments.
+    static func defaultsSuite(prefix: String, function: String = #function) throws -> DefaultsSuite {
+        try defaultsSuite("\(prefix).\(function.prefix { $0 != "(" })")
+    }
 }

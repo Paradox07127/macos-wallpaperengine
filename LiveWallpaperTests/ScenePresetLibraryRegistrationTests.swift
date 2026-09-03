@@ -9,13 +9,11 @@ import Testing
 @Suite("Scene preset registration")
 struct ScenePresetLibraryRegistrationTests {
 
-    private func manager() throws -> SettingsManager {
+    private func manager(function: String = #function) throws -> SettingsManager {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("preset-reg-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let suite = "preset-reg-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defaults.removePersistentDomain(forName: suite)
+        let defaults = try TestScratch.defaultsSuite(prefix: "preset-reg", function: function).defaults
         return SettingsManager(directory: ConfigurationDirectory(root: root), defaults: defaults)
     }
 

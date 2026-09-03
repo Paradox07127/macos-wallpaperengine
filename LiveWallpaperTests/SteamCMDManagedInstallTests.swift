@@ -4,13 +4,11 @@ import Testing
 @testable import LiveWallpaper
 
 /// Isolated defaults so a test never reads or writes the real install record.
-private func scratchDefaults() -> UserDefaults {
-    let suite = "steamcmd-managed-\(UUID().uuidString)"
-    guard let defaults = UserDefaults(suiteName: suite) else {
+private func scratchDefaults(function: String = #function) -> UserDefaults {
+    guard let scratch = try? TestScratch.defaultsSuite(prefix: "steamcmd-managed", function: function) else {
         fatalError("Could not create a scratch defaults suite")
     }
-    defaults.removePersistentDomain(forName: suite)
-    return defaults
+    return scratch.defaults
 }
 
 @MainActor

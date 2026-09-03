@@ -58,7 +58,8 @@ struct WallpaperSessionDefinitionTests {
         }
 
         #expect(displayNames[0] == "example.com")
-        #expect(displayNames[1] == "Inline web content")
+        // Not the English literal: the app language follows the user's preference.
+        #expect(displayNames[1] == HTMLSource.inline("<html></html>").displayName)
         #expect(displayNames[2] == "Demo.mov")
     }
 }
