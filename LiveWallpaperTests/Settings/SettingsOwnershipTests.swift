@@ -97,7 +97,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         let displayDefaults = DisplayDefaults(
             video: DisplayPlaybackDefaults(
                 playbackSpeed: 1.25,
-                frameRateLimit: .fps24,
+                frameRateLimit: .half,
                 muted: false,
                 videoVolume: 0.25
             )

@@ -19,24 +19,6 @@ extension WPEMetalSceneRenderer {
     /// wallpaper below this even when occluded/on battery (15 FPS measured at
     /// ~83 mW vs ~330 mW at 60, a ~75% GPU-power cut, while staying watchable).
     static let adaptiveThrottleFloorFPS = 15
-    /// `.unlimited` means "run at the display's configured ceiling" — it locks to the
-    /// screen setting's upper limit, never free-runs past vsync
-    /// (`setPreferredFramesPerSecond(0)` is read as "as fast as possible" on some macOS
-    /// versions). Derived from the fastest attached display; each display's pacing layer
-    /// clamps to its own setting, so over-asking a slower screen is harmless.
-    /// Note the energy consequence, measured 2026-09-01: a 136 Hz panel really does
-    /// render 136 fps here, ≈ +34pp process CPU versus a 60 ceiling. That is the
-    /// intended meaning of "unlimited"; users who want the power back pick an explicit
-    /// ceiling in Settings.
-    static var unlimitedPreferredFPS: Int {
-        unlimitedPreferredFPS(
-            fastestDisplayFPS: NSScreen.screens.map(\.maximumFramesPerSecond).max() ?? 0
-        )
-    }
-
-    static func unlimitedPreferredFPS(fastestDisplayFPS: Int) -> Int {
-        fastestDisplayFPS > 0 ? fastestDisplayFPS : 60
-    }
     /// Above this raw-bytes footprint, eager-upload of a multi-frame `.tex` would burn far
     /// more VRAM than the runtime needs at any moment — route through
     /// `WPETexLazyAnimatedTextureSource` instead. Chosen to keep small (≤2-3 frame) workshop

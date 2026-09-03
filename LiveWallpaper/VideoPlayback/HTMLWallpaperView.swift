@@ -89,7 +89,8 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     /// Nil until a host pushes one: an unset view installs no gate and reports
     /// the same 60 to Wallpaper Engine it always did, so nothing changes for a
     /// screen whose limit never reaches here.
-    var targetFrameRateLimit: FrameRateLimit?
+    /// Already resolved against this view's display by `PlaybackCoordinator`.
+    var targetFrameRateLimit: Int?
     var lastRafTargetFrameIntervalMilliseconds: Double = 0
 
     var onError: (@MainActor (WallpaperRuntimeError) -> Void)?
@@ -1045,7 +1046,7 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         notifyWallpaperEngineGeneralProperties(
             fps: mediaPlaybackSuspended
                 ? 1
-                : HTMLFramePacingPolicy.wallpaperEngineFPS(for: targetFrameRateLimit)
+                : HTMLFramePacingPolicy.wallpaperEngineFPS(forCeiling: targetFrameRateLimit)
         )
         // Suspended reload re-inits user scripts — re-apply lifecycle + snapshot.
         if mediaPlaybackSuspended {
@@ -1062,7 +1063,10 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         lastRafTargetFrameIntervalMilliseconds = 0
         applyRafThrottleRatio(rafThrottleRatio(for: ProcessInfo.processInfo.thermalState))
         applyRafTargetFrameInterval(
-            HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(for: targetFrameRateLimit)
+            HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(
+                forCeiling: targetFrameRateLimit,
+                displayRefreshRate: window?.screen?.maximumFramesPerSecond ?? 0
+            )
         )
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
@@ -166,16 +167,27 @@ struct DisplayDefaultsView: View {
         }
     }
 
+    /// The cap is a divisor of each display's refresh rate, and this page is not
+    /// about one display, so the menu is labelled with what the main display would
+    /// get and the subtitle says the rest scale with their own panel.
+    private var mainDisplayRefreshRate: Double {
+        Double(NSScreen.main?.maximumFramesPerSecond ?? 60)
+    }
+
     private func frameRateRow(for kind: DisplayDefaultsKind) -> some View {
         SettingRow(
             icon: "gauge.with.dots.needle.bottom.50percent",
             iconColor: .teal,
             title: "Frame Rate",
-            subtitle: "Default frame-rate cap"
+            // Video divides the slower of the panel and the file, so its row says
+            // so rather than promising the panel rate the menu is labelled with.
+            subtitle: kind == .video
+                ? "Scales with the display's refresh rate, or the video's own frame rate if that is lower"
+                : "Scales with each display's refresh rate"
         ) {
             Picker("", selection: playbackBinding(\.frameRateLimit, for: kind)) {
                 ForEach(FrameRateLimit.allCases) { limit in
-                    Text(limit.titleKey).tag(limit)
+                    Text(verbatim: limit.title(forRefreshRate: mainDisplayRefreshRate)).tag(limit)
                 }
             }
             .pickerStyle(.menu)

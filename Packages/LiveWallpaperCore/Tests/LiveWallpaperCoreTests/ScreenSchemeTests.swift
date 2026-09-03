@@ -17,7 +17,7 @@ private func richConfiguration(
         playbackSpeed: 1.75,
         fitMode: .aspectFit,
         videoDisplayMode: .spanAllDisplays,
-        frameRateLimit: .fps30,
+        frameRateLimit: .half,
         particleEffect: .snow,
         playlistBookmarks: [Data([0xAA]), Data([0xBB])],
         shufflePlaylist: true,

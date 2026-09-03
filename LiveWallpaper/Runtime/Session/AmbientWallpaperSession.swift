@@ -145,9 +145,9 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
 
     /// User frame-rate ceiling for the HTML runtime. Separate from the profile:
     /// `.suspended` stops the page, this only slows it down.
-    func setFrameRateLimit(_ limit: FrameRateLimit) {
+    func setFrameRateCeiling(_ framesPerSecond: Int) {
         (performanceTarget as? any HTMLWallpaperFrameRateTargeting)?
-            .setTargetFrameRate(limit)
+            .setTargetFrameRate(framesPerSecond)
     }
 
     /// Second hibernatable class: the view only ever sees the folded

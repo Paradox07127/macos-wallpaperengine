@@ -178,7 +178,7 @@ actor WPEDisplayRenderActor {
     private func applyConfigCommand(_ command: WPERendererConfigCommand) {
         switch command {
         case .performanceProfile(let profile): applyPerformanceProfile(profile)
-        case .frameRateLimit(let limit): setFrameRateLimit(limit)
+        case let .frameRateCeiling(fps): setFrameRateCeiling(fps)
         case .adaptiveFrameRateThrottle(let active): setAdaptiveFrameRateThrottle(active)
         case .audioMuted(let muted): setAudioMuted(muted)
         case .audioVolume(let volume): setAudioVolume(volume)
@@ -482,8 +482,8 @@ actor WPEDisplayRenderActor {
         renderer?.applyPerformanceProfile(profile)
     }
 
-    func setFrameRateLimit(_ limit: FrameRateLimit) {
-        renderer?.setFrameRateLimit(limit)
+    func setFrameRateCeiling(_ framesPerSecond: Int) {
+        renderer?.setFrameRateCeiling(framesPerSecond)
     }
 
     func setAdaptiveFrameRateThrottle(_ active: Bool) {
@@ -624,7 +624,7 @@ actor WPEDisplayRenderActor {
 /// FIFO delivery guarantees the renderer ends on it.
 enum WPERendererConfigCommand: Sendable {
     case performanceProfile(WallpaperPerformanceProfile)
-    case frameRateLimit(FrameRateLimit)
+    case frameRateCeiling(Int)
     case adaptiveFrameRateThrottle(Bool)
     case audioMuted(Bool)
     case audioVolume(Double)

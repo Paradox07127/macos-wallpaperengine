@@ -574,77 +574,79 @@ struct FrameRateLimitTests {
 
     @Test("Unlimited: video below screen refresh → no limit")
     func unlimitedBelowScreen() {
-        let result = FrameRateLimit.unlimited.getEffectiveLimit(videoFrameRate: 30, screenRefreshRate: 60)
+        let result = FrameRateLimit.full.getEffectiveLimit(videoFrameRate: 30, screenRefreshRate: 60)
         #expect(result == 0)
     }
 
     @Test("Unlimited: video above screen refresh → cap to screen")
     func unlimitedAboveScreen() {
-        let result = FrameRateLimit.unlimited.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 60)
+        let result = FrameRateLimit.full.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 60)
         #expect(result == 60)
     }
 
     @Test("Unlimited: zero screen refresh → no limit")
     func unlimitedZeroScreen() {
-        let result = FrameRateLimit.unlimited.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 0)
+        let result = FrameRateLimit.full.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 0)
         #expect(result == 0)
     }
 
     @Test("30 FPS limit: normal case")
     func fps30Normal() {
-        let result = FrameRateLimit.fps30.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 60)
+        let result = FrameRateLimit.half.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 60)
         #expect(result == 30)
     }
 
     @Test("60 FPS limit: video below limit → no limit needed")
     func fps60BelowVideo() {
-        let result = FrameRateLimit.fps60.getEffectiveLimit(videoFrameRate: 30, screenRefreshRate: 60)
+        let result = FrameRateLimit.full.getEffectiveLimit(videoFrameRate: 30, screenRefreshRate: 60)
         #expect(result == 0)
     }
 
     @Test("60 FPS limit: screen below limit → cap to screen")
     func fps60ScreenBelow() {
-        let result = FrameRateLimit.fps60.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 48)
+        let result = FrameRateLimit.full.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 48)
         #expect(result == 48)
     }
 
-    @Test("30 FPS limit: screen below 30 → cap to screen")
-    func fps30ScreenBelow() {
-        let result = FrameRateLimit.fps30.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 24)
-        #expect(result == 24)
+    /// The cap divides the panel, so a slow panel produces a slow cap without
+    /// any extra clamping: half of 24 Hz is 12.
+    @Test("Half: a 24 Hz panel yields a 12 FPS cap")
+    func halfOnASlowPanel() {
+        let result = FrameRateLimit.half.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 24)
+        #expect(result == 12)
     }
 
     @Test("Decoder: valid raw values")
     func decoderValid() throws {
         let data30 = try JSONEncoder().encode(30)
         let decoded30 = try JSONDecoder().decode(FrameRateLimit.self, from: data30)
-        #expect(decoded30 == .fps30)
+        #expect(decoded30 == .half)
 
         let data60 = try JSONEncoder().encode(60)
         let decoded60 = try JSONDecoder().decode(FrameRateLimit.self, from: data60)
-        #expect(decoded60 == .fps60)
+        #expect(decoded60 == .full)
 
         let data0 = try JSONEncoder().encode(0)
         let decoded0 = try JSONDecoder().decode(FrameRateLimit.self, from: data0)
-        #expect(decoded0 == .unlimited)
+        #expect(decoded0 == .full)
     }
 
-    @Test("Decoder: invalid raw value defaults to fps60")
+    @Test("Decoder: invalid raw value defaults to the full rate")
     func decoderInvalid() throws {
         let data = try JSONEncoder().encode(999)
         let decoded = try JSONDecoder().decode(FrameRateLimit.self, from: data)
-        #expect(decoded == .fps60)
+        #expect(decoded == .full)
     }
 
     @Test("naturalDefault returns fps30 for scene wallpapers (WPE parity)")
     func naturalDefaultForScene() {
-        #expect(FrameRateLimit.naturalDefault(for: .scene) == .fps30)
+        #expect(FrameRateLimit.naturalDefault(for: .scene) == .half)
     }
 
     @Test("naturalDefault returns fps60 for non-scene wallpapers")
     func naturalDefaultForOthers() {
-        #expect(FrameRateLimit.naturalDefault(for: .video) == .fps60)
-        #expect(FrameRateLimit.naturalDefault(for: .html) == .fps60)
+        #expect(FrameRateLimit.naturalDefault(for: .video) == .full)
+        #expect(FrameRateLimit.naturalDefault(for: .html) == .full)
     }
 }
 
@@ -653,7 +655,7 @@ struct PlainVideoFrameRateCompositionPolicyTests {
     @Test("Default 60 FPS keeps plain video on the native playback path")
     func fps60DoesNotUsePlainComposition() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps60,
+            frameRateLimit: .full,
             videoFrameRate: 120,
             screenRefreshRate: 60
         )
@@ -664,7 +666,7 @@ struct PlainVideoFrameRateCompositionPolicyTests {
     @Test("Unlimited keeps plain video on the native playback path")
     func unlimitedDoesNotUsePlainComposition() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .unlimited,
+            frameRateLimit: .full,
             videoFrameRate: 120,
             screenRefreshRate: 60
         )
@@ -675,7 +677,7 @@ struct PlainVideoFrameRateCompositionPolicyTests {
     @Test("Explicit 30 FPS uses composition when source FPS is higher")
     func fps30UsesCompositionForHighSourceFPS() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps30,
+            frameRateLimit: .half,
             videoFrameRate: 60,
             screenRefreshRate: 60
         )
@@ -683,21 +685,24 @@ struct PlainVideoFrameRateCompositionPolicyTests {
         #expect(limit == 30)
     }
 
-    @Test("Explicit 30 FPS skips composition when source FPS is already lower")
-    func fps30SkipsCompositionForLowSourceFPS() {
+    /// The divisor follows the file once the file is the slower of the two, so
+    /// "half" of a 24 fps source is 12 — not the 30 that dividing the panel gave,
+    /// which sat above the source and silently did nothing.
+    @Test("Half of a 24fps source on a 60 Hz panel is 12, not the panel's 30")
+    func halfFollowsTheSourceWhenItIsSlower() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps30,
+            frameRateLimit: .half,
             videoFrameRate: 24,
             screenRefreshRate: 60
         )
 
-        #expect(limit == nil)
+        #expect(limit == 12)
     }
 
     @Test("fps15 caps a 60fps source to 15")
     func fps15CapsHighSourceFPS() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps15,
+            frameRateLimit: .quarter,
             videoFrameRate: 60,
             screenRefreshRate: 60
         )
@@ -705,33 +710,39 @@ struct PlainVideoFrameRateCompositionPolicyTests {
         #expect(limit == 15)
     }
 
-    @Test("fps24 caps a 60fps source to 24")
-    func fps24CapsHighSourceFPS() {
+    @Test("Half caps a 60fps source to 30 on a 60 Hz panel")
+    func halfCapsHighSourceFPS() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps24,
+            frameRateLimit: .half,
             videoFrameRate: 60,
             screenRefreshRate: 60
         )
 
-        #expect(limit == 24)
+        #expect(limit == 30)
     }
 
-    @Test("fps24 skips composition when source is already 24fps cinema")
-    func fps24SkipsForCinematicSource() {
-        let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps24,
-            videoFrameRate: 24,
-            screenRefreshRate: 60
+    /// Full rate is the one case that never composites: there is nothing to
+    /// divide, so a slow source stays on the native path.
+    @Test("Full rate skips composition whatever the source runs at")
+    func fullRateSkipsCompositionForAnySource() {
+        #expect(
+            PlainVideoFrameRateCompositionPolicy.compositionLimit(
+                frameRateLimit: .full, videoFrameRate: 24, screenRefreshRate: 60
+            ) == nil
         )
-
-        #expect(limit == nil)
+        #expect(
+            PlainVideoFrameRateCompositionPolicy.compositionLimit(
+                frameRateLimit: .full, videoFrameRate: 10, screenRefreshRate: 60
+            ) == nil
+        )
     }
 
-    @Test("fps15 skips composition when source is 10fps timelapse")
-    func fps15SkipsForSlowSource() {
+    /// A cap that rounds down to the source itself has nothing to composite away.
+    @Test("A source already at the cap skips composition")
+    func sourceAtTheCapSkipsComposition() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
-            frameRateLimit: .fps15,
-            videoFrameRate: 10,
+            frameRateLimit: .quarter,
+            videoFrameRate: 1,
             screenRefreshRate: 60
         )
 
@@ -760,17 +771,16 @@ struct ParticleEffectCodableTests {
 
 @Suite("FrameRateLimit.enforcesCompositionCap")
 struct FrameRateLimitEnforcesCompositionCapTests {
-    @Test("Low-FPS caps force composition")
-    func lowFpsCapsForce() {
-        #expect(FrameRateLimit.fps15.enforcesCompositionCap)
-        #expect(FrameRateLimit.fps24.enforcesCompositionCap)
-        #expect(FrameRateLimit.fps30.enforcesCompositionCap)
+    @Test("Every divided cap forces composition")
+    func dividedCapsForce() {
+        #expect(FrameRateLimit.quarter.enforcesCompositionCap)
+        #expect(FrameRateLimit.third.enforcesCompositionCap)
+        #expect(FrameRateLimit.half.enforcesCompositionCap)
     }
 
-    @Test("fps60 and Unlimited stay on the native pass-through")
-    func passThroughCapsSkipComposition() {
-        #expect(!FrameRateLimit.fps60.enforcesCompositionCap)
-        #expect(!FrameRateLimit.unlimited.enforcesCompositionCap)
+    @Test("The panel's own rate stays on the native pass-through")
+    func fullRateSkipsComposition() {
+        #expect(!FrameRateLimit.full.enforcesCompositionCap)
     }
 }
 
@@ -1183,7 +1193,7 @@ struct ResolveCompositionFPSTests {
     @Test("Unlimited 120fps source on 60Hz screen → 60")
     func unlimited120Source60Screen() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .unlimited,
+            limit: .full,
             videoFrameRate: 120,
             screenRefreshRate: 60
         )
@@ -1193,7 +1203,7 @@ struct ResolveCompositionFPSTests {
     @Test("Unlimited 120fps source on 120Hz ProMotion → 120")
     func unlimited120SourceProMotion() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .unlimited,
+            limit: .full,
             videoFrameRate: 120,
             screenRefreshRate: 120
         )
@@ -1203,7 +1213,7 @@ struct ResolveCompositionFPSTests {
     @Test("Unlimited 30fps source on 60Hz → 30 (use native)")
     func unlimited30SourceNative() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .unlimited,
+            limit: .full,
             videoFrameRate: 30,
             screenRefreshRate: 60
         )
@@ -1213,7 +1223,7 @@ struct ResolveCompositionFPSTests {
     @Test("Unlimited with unknown video fps falls back to screen refresh")
     func unlimitedUnknownVideoFps() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .unlimited,
+            limit: .full,
             videoFrameRate: 0,
             screenRefreshRate: 144
         )
@@ -1223,7 +1233,7 @@ struct ResolveCompositionFPSTests {
     @Test("Unlimited with everything zero → 60 nominal fallback")
     func unlimitedAllZeroFallback() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .unlimited,
+            limit: .full,
             videoFrameRate: 0,
             screenRefreshRate: 0
         )
@@ -1233,7 +1243,7 @@ struct ResolveCompositionFPSTests {
     @Test("60 FPS limit on 120fps source on 60Hz → 60")
     func fps60Capped() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps60,
+            limit: .full,
             videoFrameRate: 120,
             screenRefreshRate: 60
         )
@@ -1243,52 +1253,64 @@ struct ResolveCompositionFPSTests {
     @Test("60 FPS limit on 30fps source → use native 30")
     func fps60BelowSourceUsesNative() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps60,
+            limit: .full,
             videoFrameRate: 30,
             screenRefreshRate: 60
         )
         #expect(fps == 30)
     }
 
-    @Test("30 FPS limit on 120fps source on 144Hz → 30")
-    func fps30AppliedToHighEverything() {
+    /// Video divides the lower of panel and source: 120 fps of footage on a 144 Hz
+    /// panel halves to 60, not to the panel's 72.
+    @Test("Half of a 120fps source on 144Hz → 60")
+    func halfAppliedToHighEverything() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps30,
+            limit: .half,
             videoFrameRate: 120,
             screenRefreshRate: 144
         )
-        #expect(fps == 30)
+        #expect(fps == 60)
     }
 
-    @Test("24 FPS limit on 60fps source → 24 (cinematic cap)")
-    func fps24AppliedToHighSource() {
+    /// The case the divisor-of-the-panel form got wrong: every step sat above the
+    /// source, so all four collapsed to "no cap" and the slider did nothing.
+    @Test("On a 144Hz panel a 30fps source still has four distinct steps")
+    func highRefreshPanelKeepsTheStepsDistinctForASlowSource() {
+        let steps = FrameRateLimit.allCases.map {
+            $0.videoFrameRate(forRefreshRate: 144, sourceFrameRate: 30)
+        }
+        #expect(steps == [8, 10, 15, 30])
+    }
+
+    @Test("Half on a 60fps source on a 60 Hz panel → 30")
+    func halfAppliedToHighSource() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps24,
+            limit: .half,
             videoFrameRate: 60,
             screenRefreshRate: 60
         )
-        #expect(fps == 24)
+        #expect(fps == 30)
     }
 
-    @Test("15 FPS limit on 30fps source → 15 (deep battery saver)")
-    func fps15AppliedToModerateSource() {
+    @Test("Quarter of a 30fps source → 8 (deep battery saver)")
+    func quarterAppliedToModerateSource() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .fps15,
+            limit: .quarter,
             videoFrameRate: 30,
             screenRefreshRate: 60
         )
-        #expect(fps == 15)
+        #expect(fps == 8)
     }
 
     @Test("Legacy raw values 15 and 24 decode to their cases")
     func legacyRawValuesDecodeToNewCases() throws {
         let data15 = try JSONEncoder().encode(15)
         let decoded15 = try JSONDecoder().decode(FrameRateLimit.self, from: data15)
-        #expect(decoded15 == .fps15)
+        #expect(decoded15 == .quarter)
 
         let data24 = try JSONEncoder().encode(24)
         let decoded24 = try JSONDecoder().decode(FrameRateLimit.self, from: data24)
-        #expect(decoded24 == .fps24)
+        #expect(decoded24 == .half)
     }
 }
 

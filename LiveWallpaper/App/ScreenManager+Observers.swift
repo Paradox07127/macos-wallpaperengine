@@ -247,10 +247,20 @@ extension ScreenManager {
             Logger.debug("Screen parameters unchanged — skipping refresh", category: .screenManager)
             return
         }
+        let rateChanged = current.filter { id, signature in
+            guard let previous = lastScreenSignatures[id] else { return false }
+            return previous.maximumFramesPerSecond != signature.maximumFramesPerSecond
+        }
         lastScreenSignatures = current
 
         refreshRateCache.removeAll()
         refreshScreens(preserveRuntimeSessions: true)
+        // Preserved sessions are still running the ceiling resolved against the
+        // old refresh rate, and the cap is a divisor of it.
+        for screen in screens where rateChanged[screen.id] != nil {
+            guard let configuration = getConfiguration(for: screen) else { continue }
+            applyFrameRateLimit(configuration.frameRateLimit, to: screen)
+        }
 
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(100))

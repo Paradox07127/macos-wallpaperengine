@@ -26,7 +26,9 @@ struct HTMLPerformanceTargetTests {
 
     @Test("A 30 FPS ceiling becomes a ~33 ms rAF interval in the injected script")
     func thirtyFPSBecomesAThirtyThreeMillisecondInterval() {
-        let interval = HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(for: .fps30)
+        let interval = HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(
+            forCeiling: 30, displayRefreshRate: 60
+        )
 
         #expect(abs(interval - 33.333) < 0.01)
 
@@ -34,15 +36,22 @@ struct HTMLPerformanceTargetTests {
         #expect(script.contains("window.__lwSetRafTargetInterval__(33.333)"))
     }
 
-    @Test("Unlimited and an unset ceiling install no gate")
-    func unlimitedInstallsNoGate() {
-        #expect(HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(for: .unlimited) == 0)
-        #expect(HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(for: nil) == 0)
+    @Test("A ceiling at the panel's own rate, and an unset one, install no gate")
+    func fullRateInstallsNoGate() {
+        #expect(
+            HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(
+                forCeiling: 60, displayRefreshRate: 60
+            ) == 0
+        )
+        #expect(
+            HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(
+                forCeiling: nil, displayRefreshRate: 60
+            ) == 0
+        )
         // WPE web wallpapers read `applyGeneralProperties({fps})` as their tempo
         // and have no "as fast as the display" value.
-        #expect(HTMLFramePacingPolicy.wallpaperEngineFPS(for: .unlimited) == 60)
-        #expect(HTMLFramePacingPolicy.wallpaperEngineFPS(for: nil) == 60)
-        #expect(HTMLFramePacingPolicy.wallpaperEngineFPS(for: .fps30) == 30)
+        #expect(HTMLFramePacingPolicy.wallpaperEngineFPS(forCeiling: nil) == 60)
+        #expect(HTMLFramePacingPolicy.wallpaperEngineFPS(forCeiling: 30) == 30)
     }
 
     // MARK: - What the gate actually does to a running rAF loop
@@ -306,9 +315,9 @@ struct HTMLPerformanceTargetTests {
         let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
         defer { view.cleanup() }
 
-        view.setTargetFrameRate(.fps30)
+        view.setTargetFrameRate(30)
 
-        #expect(view.targetFrameRateLimit == .fps30)
+        #expect(view.targetFrameRateLimit == 30)
         #expect(abs(view.lastRafTargetFrameIntervalMilliseconds - 33.333) < 0.01)
     }
 
@@ -320,7 +329,7 @@ struct HTMLPerformanceTargetTests {
         defer { view.cleanup() }
         view.applyPerformanceProfile(.suspended)
 
-        view.setTargetFrameRate(.fps30)
+        view.setTargetFrameRate(30)
 
         #expect(view.mediaPlaybackSuspended)
         #expect(abs(view.lastRafTargetFrameIntervalMilliseconds - 33.333) < 0.01)
@@ -334,21 +343,25 @@ struct HTMLPerformanceTargetTests {
         let harness = try HTMLPacingHarness()
         defer { harness.teardown() }
 
-        harness.coordinator.updateFrameRateLimit(.fps30, for: harness.screen)
+        // The harness display reports 60 Hz, so half of it is 30.
+        harness.coordinator.updateFrameRateLimit(.half, for: harness.screen)
 
-        #expect(harness.target.targets == [.fps30])
+        #expect(harness.target.targets == [30])
     }
 
     /// The branch must carry every choice, not only the throttling ones: routing
-    /// on `enforcesCompositionCap` (the video rule) would drop `unlimited`.
-    @Test("An unlimited choice still reaches the HTML runtime")
-    func coordinatorRoutesUnlimitedToo() throws {
+    /// on `enforcesCompositionCap` (the video rule) would drop the full-rate case.
+    @Test("A full-rate choice still reaches the HTML runtime")
+    func coordinatorRoutesFullRateToo() throws {
         let harness = try HTMLPacingHarness()
         defer { harness.teardown() }
 
-        harness.coordinator.updateFrameRateLimit(.unlimited, for: harness.screen)
+        // Seeded at `.full`, so go through a divided cap first: the assertion is
+        // that returning to full rate is still routed, not swallowed as "no cap".
+        harness.coordinator.updateFrameRateLimit(.half, for: harness.screen)
+        harness.coordinator.updateFrameRateLimit(.full, for: harness.screen)
 
-        #expect(harness.target.targets == [.unlimited])
+        #expect(harness.target.targets == [30, 60])
     }
 
     // MARK: - Critical memory pressure
@@ -720,7 +733,7 @@ private final class RecordingHTMLPerformanceTarget:
     private(set) var profiles: [WallpaperPerformanceProfile] = []
     private(set) var eligibility: [Bool] = []
     private(set) var immediate: [Bool] = []
-    private(set) var targets: [FrameRateLimit] = []
+    private(set) var targets: [Int] = []
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         profiles.append(profile)
@@ -731,8 +744,8 @@ private final class RecordingHTMLPerformanceTarget:
         immediate.append(immediately)
     }
 
-    func setTargetFrameRate(_ limit: FrameRateLimit) {
-        targets.append(limit)
+    func setTargetFrameRate(_ framesPerSecond: Int) {
+        targets.append(framesPerSecond)
     }
 }
 
@@ -782,7 +795,7 @@ private struct HTMLPacingHarness {
         var configuration = ScreenConfiguration(
             screenID: screen.id,
             wallpaper: .html(source: .url(URL(string: "about:blank")!), config: .default),
-            frameRateLimit: .fps60
+            frameRateLimit: .full
         )
         configuration.displayFingerprint = screen.displayFingerprint
         store.save(configuration)

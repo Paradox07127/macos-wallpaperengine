@@ -141,16 +141,21 @@ extension PlaybackCoordinator {
     }
 
     func applyFrameRateLimit(_ frameRateLimit: FrameRateLimit, to screen: Screen) {
+        let screenRefreshRate = refreshRateLookup(screen.id)
+        // The stored limit is a divisor; this is the only layer that knows which
+        // panel it divides, so every runtime below here receives whole frames.
+        let ceiling = frameRateLimit.frameRate(forRefreshRate: Double(screenRefreshRate))
+
         // Scene (and any future ambient renderer that owns its own
         // display link) responds via WallpaperFrameRateConfigurable.
         #if !LITE_BUILD
         if let session = screen.runtimeSession as? SceneWallpaperSession,
            let frameRateController = session.frameRateController {
             Logger.info(
-                "Applying scene frame rate limit \(frameRateLimit.rawValue) to screen \(screen.id)",
+                "Applying scene frame rate ceiling \(ceiling) FPS to screen \(screen.id)",
                 category: .videoPlayer
             )
-            frameRateController.setFrameRateLimit(frameRateLimit)
+            frameRateController.setFrameRateCeiling(ceiling)
             return
         }
         #endif
@@ -160,16 +165,15 @@ extension PlaybackCoordinator {
         // the limit was silently dropped for every HTML wallpaper.
         if let ambient = screen.runtimeSession as? AmbientWallpaperSession {
             Logger.info(
-                "Applying HTML frame rate limit \(frameRateLimit.rawValue) to screen \(screen.id)",
+                "Applying HTML frame rate ceiling \(ceiling) FPS to screen \(screen.id)",
                 category: .videoPlayer
             )
-            ambient.setFrameRateLimit(frameRateLimit)
+            ambient.setFrameRateCeiling(ceiling)
             return
         }
 
         guard let player = screen.videoPlayer, player.videoFrameRate > 0 else { return }
 
-        let screenRefreshRate = refreshRateLookup(screen.id)
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
             frameRateLimit: frameRateLimit,
             videoFrameRate: player.videoFrameRate,

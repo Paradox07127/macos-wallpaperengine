@@ -3,19 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-@Suite("Unlimited FPS cap")
-struct WPEUnlimitedFPSCapTests {
-    @Test("Unlimited locks to the display setting's ceiling, with a 60 fallback")
-    func capSemantics() {
-        #expect(WPEMetalSceneRenderer.unlimitedPreferredFPS(fastestDisplayFPS: 136) == 136)
-        #expect(WPEMetalSceneRenderer.unlimitedPreferredFPS(fastestDisplayFPS: 120) == 120)
-        #expect(WPEMetalSceneRenderer.unlimitedPreferredFPS(fastestDisplayFPS: 60) == 60)
-        #expect(WPEMetalSceneRenderer.unlimitedPreferredFPS(fastestDisplayFPS: 50) == 50)
-        // No display reports a rate (headless / between reconfigurations): vsync default.
-        #expect(WPEMetalSceneRenderer.unlimitedPreferredFPS(fastestDisplayFPS: 0) == 60)
-    }
-}
-
 @Suite("Shader error sink")
 struct WPEShaderErrorSinkTests {
     @Test("Reset drops the previous scene's failures")

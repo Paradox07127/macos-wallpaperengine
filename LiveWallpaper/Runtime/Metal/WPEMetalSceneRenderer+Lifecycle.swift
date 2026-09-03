@@ -514,18 +514,12 @@ extension WPEMetalSceneRenderer {
         onRuntimeActivityChange(activity)
     }
 
-    /// Applies the user-selected frame rate ceiling. `.unlimited` falls
-    /// back to vsync (`unlimitedPreferredFPS`) so MTKView doesn't free-run.
-    /// Suspended state is not overridden here — the ceiling takes effect on
-    /// the next non-suspended transition.
-    func setFrameRateLimit(_ limit: FrameRateLimit) {
-        let resolved: Int
-        switch limit {
-        case .unlimited:
-            resolved = Self.unlimitedPreferredFPS
-        default:
-            resolved = max(1, limit.rawValue)
-        }
+    /// Applies the user-selected frame rate ceiling, already resolved against this
+    /// display's refresh rate by the caller (a `FrameRateLimit` is a divisor, and the
+    /// renderer does not know which panel it is on). Suspended state is not overridden
+    /// here — the ceiling takes effect on the next non-suspended transition.
+    func setFrameRateCeiling(_ framesPerSecond: Int) {
+        let resolved = max(1, framesPerSecond)
         guard resolved != userPreferredFPS else { return }
         userPreferredFPS = resolved
         applyEffectiveFrameRate()
