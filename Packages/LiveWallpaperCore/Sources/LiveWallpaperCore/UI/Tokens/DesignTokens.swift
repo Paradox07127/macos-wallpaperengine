@@ -334,8 +334,6 @@ public enum DesignTokens {
         public static let outerPadding: CGFloat = 40
         public static let topSpacerHeight: CGFloat = Spacing.xl
         public static let iconSize: CGFloat = 48
-        /// Between a guided page's blocks — hero, copy, list, action.
-        public static let blockSpacing: CGFloat = 22
         public static let featureWidth: CGFloat = 380
         public static let messageWidth: CGFloat = 360
     }

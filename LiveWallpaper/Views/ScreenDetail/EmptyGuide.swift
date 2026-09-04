@@ -24,7 +24,7 @@ struct EmptyStateGuideView: View {
     }
 
     private var guideColumn: some View {
-        VStack(spacing: DesignTokens.GuidedLibrary.blockSpacing) {
+        VStack(spacing: 16) {
             header
 
             // One column per card, not `.adaptive` — the types are peers and
@@ -67,7 +67,7 @@ struct EmptyStateGuideView: View {
             GuideCardModel(
                 id: "video",
                 icon: "film",
-                iconTint: DesignTokens.Colors.ContentType.video,
+                iconTint: .blue,
                 title: "Video",
                 subtitle: videoSubtitle,
                 accessibilityLabel: "Video wallpaper type",
@@ -76,7 +76,7 @@ struct EmptyStateGuideView: View {
             GuideCardModel(
                 id: "web",
                 icon: "globe",
-                iconTint: DesignTokens.Colors.ContentType.html,
+                iconTint: .green,
                 title: "Web",
                 subtitle: "Web pages, local .html files, and folders.",
                 accessibilityLabel: "Web wallpaper type",
@@ -88,7 +88,7 @@ struct EmptyStateGuideView: View {
                 GuideCardModel(
                     id: "scene",
                     icon: "cube.transparent",
-                    iconTint: DesignTokens.Colors.ContentType.scene,
+                    iconTint: .purple,
                     title: "Scene",
                     subtitle: "Compatible imported scenes.",
                     accessibilityLabel: "Scene wallpaper type",
@@ -105,22 +105,17 @@ struct EmptyStateGuideView: View {
             : "MP4 / MOV from your Mac."
     }
 
-    /// Same hero and rhythm as `LibraryGuideCard`, so a display and a library
-    /// open the same way.
     private var header: some View {
-        VStack(spacing: DesignTokens.GuidedLibrary.blockSpacing) {
-            GuideHeroSymbol(icon: "sparkles", tint: .accentColor)
+        VStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(Color.accentColor)
+                .symbolRenderingMode(.hierarchical)
+                .accessibilityHidden(true)
 
-            VStack(spacing: 6) {
-                Text("Set up this display")
-                    .font(DesignTokens.Typography.pageTitle)
-                    .accessibilityAddTraits(.isHeader)
-
-                Text("Pick what it should show. You can change it at any time.")
-                    .font(DesignTokens.Typography.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            Text("Set up this display")
+                .font(DesignTokens.Typography.pageTitle)
+                .accessibilityAddTraits(.isHeader)
         }
     }
 
