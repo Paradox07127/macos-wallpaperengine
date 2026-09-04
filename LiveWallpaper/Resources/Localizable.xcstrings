@@ -44670,40 +44670,6 @@
         }
       }
     },
-    "Pick what it should show. You can change it at any time." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pick what it should show. You can change it at any time."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige qué debe mostrar. Puedes cambiarlo cuando quieras."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "何を表示するか選んでください。あとからいつでも変更できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择它要显示什么。之后随时可以更改。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇它要顯示什麼。之後隨時可以更改。"
-          }
-        }
-      }
-    },
     "Pick where to start. This closes setup and takes you there." : {
       "comment" : "Onboarding picker subtitle; the picker is the final step and each card closes onboarding into that destination.",
       "extractionState" : "manual",

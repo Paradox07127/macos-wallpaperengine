@@ -6,29 +6,6 @@ struct LibraryGuideFeature: Equatable {
     let text: LocalizedStringKey
 }
 
-/// Tinted disc under a hierarchical glyph. Shared with the display setup page:
-/// a hairline SF Symbol has nothing to sit against on a flat pane.
-struct GuideHeroSymbol: View {
-    let icon: String
-    let tint: Color
-    var glyphSize: CGFloat = DesignTokens.GuidedLibrary.iconSize
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(tint.opacity(0.12))
-                .frame(width: glyphSize * 2.125, height: glyphSize * 2.125)
-                .overlay(Circle().strokeBorder(tint.opacity(0.18), lineWidth: 1))
-
-            Image(systemName: icon)
-                .font(.system(size: glyphSize, weight: .light))
-                .foregroundStyle(tint)
-                .symbolRenderingMode(.hierarchical)
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 /// A library's first-run page — owns the whole page, feature list, per-library
 /// tint. `IllustratedEmptyState` stays the in-context "no matches" state.
 struct LibraryGuideCard: View {
@@ -77,10 +54,10 @@ struct LibraryGuideCard: View {
     }
 
     var body: some View {
-        VStack(spacing: DesignTokens.GuidedLibrary.blockSpacing) {
+        VStack(spacing: 22) {
             Spacer(minLength: DesignTokens.GuidedLibrary.topSpacerHeight)
 
-            GuideHeroSymbol(icon: icon, tint: tint)
+            hero
 
             VStack(spacing: 6) {
                 Text(title)
@@ -122,6 +99,23 @@ struct LibraryGuideCard: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(DesignTokens.GuidedLibrary.outerPadding)
+    }
+
+    /// A hairline SF Symbol has nothing to sit against on a flat pane.
+    private var hero: some View {
+        let disc = DesignTokens.GuidedLibrary.iconSize * 2.125
+        return ZStack {
+            Circle()
+                .fill(tint.opacity(0.12))
+                .frame(width: disc, height: disc)
+                .overlay(Circle().strokeBorder(tint.opacity(0.18), lineWidth: 1))
+
+            Image(systemName: icon)
+                .font(.system(size: DesignTokens.GuidedLibrary.iconSize, weight: .light))
+                .foregroundStyle(tint)
+                .symbolRenderingMode(.hierarchical)
+        }
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder

@@ -20,27 +20,26 @@ struct SystemWallpaperLibraryView: View {
                     systemImage: "macwindow.on.rectangle",
                     title: Text("System Wallpaper")
                 )
+                // One ToolbarItem each, never an HStack of both: macOS groups
+                // adjacent items into one capsule and spaces them itself, so a
+                // manual spacing lands on top of that and the HStack's own
+                // width leaves slack at the trailing edge.
                 if isFunctional {
                     ToolbarItem(placement: .primaryAction) {
-                        HStack(spacing: DesignTokens.Spacing.sm) {
-                            SystemWallpaperAddMenu()
-                            // No `adaptiveGlassButton` here: the toolbar section
-                            // is already the visible container, and stacking our
-                            // own glass on top reads as a button inside a button.
-                            //
-                            // Not `gearshape`: this window's toolbar already
-                            // carries one at `.navigation` for Loomscreen's own
-                            // preferences. `arrow.up.forward.app` is what the
-                            // app already means by "this leaves us for another
-                            // app" (the Workshop's Open in Steam buttons).
-                            Button {
-                                service.openWallpaperSettings()
-                            } label: {
-                                Image(systemName: "arrow.up.forward.app")
-                            }
-                            .help(Text("Open Wallpaper settings in System Settings"))
-                            .accessibilityLabel(Text("Open Wallpaper Settings"))
+                        SystemWallpaperAddMenu()
+                    }
+                    // Not `gearshape`: this window's toolbar already carries one
+                    // at `.navigation` for Loomscreen's own preferences.
+                    // `arrow.up.forward.app` is what the app already means by
+                    // "this leaves us for another app" (Open in Steam).
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            service.openWallpaperSettings()
+                        } label: {
+                            Image(systemName: "arrow.up.forward.app")
                         }
+                        .help(Text("Open Wallpaper settings in System Settings"))
+                        .accessibilityLabel(Text("Open Wallpaper Settings"))
                     }
                 }
             }
@@ -56,9 +55,7 @@ struct SystemWallpaperLibraryView: View {
         } else if service.items.isEmpty {
             // The notice belongs here too: a first import that fails leaves an
             // empty library, and without it the reason never reaches the user.
-            // Only the notice carries insets — the card's halo must reach the
-            // page margins. Gated on `hasNotice`: padding an EmptyView still
-            // reserves space.
+            // Gated on `hasNotice`: padding an EmptyView still reserves space.
             VStack(spacing: 0) {
                 if hasNotice {
                     notice
