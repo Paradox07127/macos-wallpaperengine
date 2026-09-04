@@ -181,15 +181,20 @@ struct ContentView: View {
         lastAppNavigation = navigation
     }
 
+    /// `NSScreen.screens` order, so the fallback is the primary display. This
+    /// used to bail out unless exactly one display was attached, which left
+    /// multi-display Macs on the "no display selected" pane whenever the window
+    /// opened without a screen in hand — every menu-bar Settings entry does.
     private func selectDefaultDisplayIfNeeded() {
         guard !isSettingsMode else { return }
-        guard screenManager.screens.count == 1, let screen = screenManager.screens.first else { return }
+        guard let fallback = screenManager.screens.first else { return }
 
         switch selectedNavigation {
         case nil:
-            selectedNavigation = .screen(screen.id)
-        case .screen(let selectedID) where selectedID != screen.id:
-            selectedNavigation = .screen(screen.id)
+            selectedNavigation = .screen(fallback.id)
+        case let .screen(selectedID) where !screenManager.screens.contains(where: { $0.id == selectedID }):
+            // Unplugged, or a stale id carried over from a previous session.
+            selectedNavigation = .screen(fallback.id)
         default:
             break
         }
@@ -714,9 +719,12 @@ struct DetailContent: View {
                 }
 
             case .none:
-                IllustratedEmptyState(
-                    symbol: "display",
-                    title: "Choose a display from the sidebar to configure your live wallpaper."
+                LibraryGuideCard(
+                    icon: "display",
+                    tint: .accentColor,
+                    title: "No display selected",
+                    message: "Choose one in the sidebar to set up its wallpaper.",
+                    features: []
                 )
             }
         }

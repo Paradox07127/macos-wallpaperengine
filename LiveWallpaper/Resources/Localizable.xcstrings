@@ -11445,40 +11445,6 @@
         }
       }
     },
-    "Choose a display from the sidebar to configure your live wallpaper." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose a display from the sidebar to configure your live wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige una pantalla en la barra lateral para configurar tu fondo animado."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サイドバーからディスプレイを選択してライブ壁紙を設定します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "从侧边栏选择一个显示器来配置动态壁纸。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "從側邊欄選擇顯示器來設定動態桌布。"
-          }
-        }
-      }
-    },
     "Choose a manual location" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11842,6 +11808,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇資料夾…"
+          }
+        }
+      }
+    },
+    "Choose one in the sidebar to set up its wallpaper." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose one in the sidebar to set up its wallpaper."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige una en la barra lateral para configurar su fondo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サイドバーで 1 台選ぶと、その壁紙を設定できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在侧栏中选择一台，即可设置它的壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在側邊欄中選擇一台，即可設定它的桌布。"
           }
         }
       }
@@ -38041,6 +38041,40 @@
         }
       }
     },
+    "No display selected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No display selected"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguna pantalla seleccionada"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイが選択されていません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未选择显示器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未選擇顯示器"
+          }
+        }
+      }
+    },
     "No displays detected" : {
       "localizations" : {
         "en" : {
@@ -44598,6 +44632,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇 URL 或本機以取代"
+          }
+        }
+      }
+    },
+    "Pick what it should show. You can change it at any time." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick what it should show. You can change it at any time."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige qué debe mostrar. Puedes cambiarlo cuando quieras."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "何を表示するか選んでください。あとからいつでも変更できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择它要显示什么。之后随时可以更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇它要顯示什麼。之後隨時可以更改。"
           }
         }
       }
