@@ -16,6 +16,7 @@ struct BrowseCard: View, Equatable {
             && lhs.isSelected == rhs.isSelected
             && lhs.cardPreferences == rhs.cardPreferences
             && lhs.reduceMotion == rhs.reduceMotion
+            && lhs.canDownload == rhs.canDownload
     }
 
     let item: WorkshopQueryItem
@@ -27,7 +28,14 @@ struct BrowseCard: View, Equatable {
     /// open would leave every tile animating until something else changed it.
     let cardPreferences: GalleryCardPreferences
     let reduceMotion: Bool
+    /// SteamCMD readiness, resolved once per pane pass. Deliberately a plain
+    /// `Bool` and not a read of `WorkshopDownloadCoordinator`: observing the
+    /// coordinator here would tie every visible card to the progress ticks of
+    /// whichever download is running, re-rendering the whole grid several times
+    /// a second while the user scrolls.
+    var canDownload: Bool = false
     var onSelect: () -> Void = {}
+    var onDownload: () -> Void = {}
 
     @State private var isHovered = false
     /// Ephemeral by design — recreated tiles (paging, filter change, relaunch) blur again.
@@ -37,6 +45,16 @@ struct BrowseCard: View, Equatable {
 
     private var shouldBlur: Bool {
         cardPreferences.blursMatureThumbnails && item.isMatureRated && !matureRevealed
+    }
+
+    /// Hoisted out of the badge overlay so it can decide whether to build the
+    /// container at all — see the comment on that overlay.
+    private var showsTypePill: Bool {
+        contentType != nil && cardPreferences.showsType
+    }
+
+    private var showsRatingPill: Bool {
+        ratingValue != nil && cardPreferences.showsRating
     }
 
     var body: some View {
@@ -55,6 +73,10 @@ struct BrowseCard: View, Equatable {
         .accessibilityHint(shouldBlur
             ? Text("Mature content hidden. Activate to reveal.")
             : Text("Show details"))
+        .accessibilityAction(named: Text("Download")) {
+            guard canDownload, !item.isBanned else { return }
+            onDownload()
+        }
         .accessibilityAction(named: Text("Open in Steam")) {
             guard !item.isBanned else { return }
             openURL(item.steamCommunityURL)
@@ -97,14 +119,20 @@ struct BrowseCard: View, Equatable {
             isBlurred: shouldBlur,
             isHovered: $isHovered
         )
+        // Gated on the pills, not just the blur: with both badge preferences off
+        // the `if`s used to sit *inside*, so every card still built the glass
+        // container, its `HStack` and the padding around an empty stack. That
+        // invisible shell metered at 10.4% of a card's construct+layout cost
+        // (`BrowseCardLayoutCostTests`, 2026-09-04) — paid on every scroll-in,
+        // for nothing on screen.
         .overlay(alignment: .topLeading) {
-            if !shouldBlur {
+            if !shouldBlur, showsTypePill || showsRatingPill {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
-                        if let contentType, cardPreferences.showsType {
+                        if let contentType, showsTypePill {
                             typePill(contentType)
                         }
-                        if let rating = ratingValue, cardPreferences.showsRating {
+                        if let rating = ratingValue, showsRatingPill {
                             ratingPill(rating)
                         }
                     }
@@ -175,27 +203,30 @@ struct BrowseCard: View, Equatable {
 
     // MARK: - Context menu
 
+    /// Only what the browse flow itself needs. Copy link / Copy ID moved to the
+    /// detail sheet: they are "leave the app" actions, and two of the three
+    /// items this menu used to carry already sat in that sheet, so right-clicking
+    /// a card offered nothing a user browsing the grid actually wanted. Download
+    /// is the opposite case — the highest-frequency action on this page, and
+    /// until now it was reachable only by opening the sheet first.
     @ViewBuilder
     private var contextMenuItems: some View {
+        Button(action: onDownload) {
+            // Same wording as the detail sheet's button, which does not
+            // distinguish a re-download either — the card already carries an
+            // "In Library" badge for that.
+            Label("Download", systemImage: "arrow.down.circle")
+        }
+        .disabled(!canDownload || item.isBanned)
+
+        Divider()
+
         Button {
             openURL(item.steamCommunityURL)
         } label: {
             Label("Open in Steam", systemImage: "arrow.up.forward.app")
         }
         .disabled(item.isBanned)
-
-        Divider()
-
-        Button {
-            copy(item.steamCommunityURL.absoluteString)
-        } label: {
-            Label("Copy link", systemImage: "link")
-        }
-        Button {
-            copy(String(item.id))
-        } label: {
-            Label("Copy ID", systemImage: "doc.on.doc")
-        }
     }
 
     // MARK: - Derived values

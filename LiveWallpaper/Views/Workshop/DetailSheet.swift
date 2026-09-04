@@ -254,6 +254,12 @@ struct WorkshopInspectorContent: View {
     private var actionsColumn: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             downloadControl
+            // Copy link joins its two neighbours here now that the grid card's
+            // menu carries only browse actions; it was previously reachable
+            // solely by right-clicking a card.
+            secondaryActionButton("Copy link", systemImage: "link") {
+                copy(item.steamCommunityURL.absoluteString)
+            }
             secondaryActionButton("Copy ID", systemImage: "doc.on.doc") { copy(String(item.id)) }
             secondaryActionButton("Open in Steam", systemImage: "safari") { openURL(item.steamCommunityURL) }
         }

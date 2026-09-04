@@ -651,6 +651,12 @@ final class WallpaperVideoPlayer {
         queuePlayer.actionAtItemEnd = .none
         queuePlayer.automaticallyWaitsToMinimizeStalling = false
         queuePlayer.preventsDisplaySleepDuringVideoPlayback = false
+        // A wallpaper is never something to send to a TV, and an AirPlay route
+        // is picked from the player, not from what it is currently outputting —
+        // `applyAudioPolicy` disabling the audio tracks does not cover it. Same
+        // reason `CustomVideoPlayer` sets it: the desktop layer path builds its
+        // own player and never went through that view.
+        queuePlayer.allowsExternalPlayback = false
         queuePlayer.volume = isMuted ? 0 : Float(audioVolume)
         queuePlayer.isMuted = isMuted
         queuePlayer.defaultRate = Float(playbackSpeed)

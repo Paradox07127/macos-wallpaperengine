@@ -124,7 +124,7 @@ struct HTMLPreviewSection: View {
         } else if loadState.isLoading {
             ZStack {
                 Rectangle().fill(DesignTokens.Colors.pageBackground)
-                LiquidGlassSpinner()
+                ArcSpinner()
             }
         } else if let wpePreviewURL {
             wpePreviewCard(url: wpePreviewURL)

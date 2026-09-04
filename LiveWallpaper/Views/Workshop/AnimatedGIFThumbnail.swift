@@ -124,7 +124,7 @@ struct AnimatedGIFThumbnail: View {
                 .clipped()
                 .accessibilityHidden(true)
         } else if phase == .loading, url != nil {
-            LiquidGlassSpinner(size: 20, lineWidth: 2, tint: .secondary)
+            ArcSpinner(size: 20, lineWidth: 2, tint: .secondary)
                 .opacity(0.7)
                 .accessibilityHidden(true)
         } else {
