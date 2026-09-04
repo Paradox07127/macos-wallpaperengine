@@ -28,13 +28,15 @@ struct SystemWallpaperLibraryView: View {
                             // is already the visible container, and stacking our
                             // own glass on top reads as a button inside a button.
                             //
-                            // `gearshape` is the app's own glyph for "this opens
-                            // System Settings" — the Aerials guide card's button
-                            // uses it for the same destination.
+                            // Not `gearshape`: this window's toolbar already
+                            // carries one at `.navigation` for Loomscreen's own
+                            // preferences. `arrow.up.forward.app` is what the
+                            // app already means by "this leaves us for another
+                            // app" (the Workshop's Open in Steam buttons).
                             Button {
                                 service.openWallpaperSettings()
                             } label: {
-                                Image(systemName: "gearshape")
+                                Image(systemName: "arrow.up.forward.app")
                             }
                             .help(Text("Open Wallpaper settings in System Settings"))
                             .accessibilityLabel(Text("Open Wallpaper Settings"))
