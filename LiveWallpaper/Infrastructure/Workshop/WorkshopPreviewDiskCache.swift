@@ -61,10 +61,6 @@ final class WorkshopPreviewDiskCache: Sendable {
         await disk.sizeBytes()
     }
 
-    func clear() async {
-        await disk.clear()
-    }
-
     /// Size is part of the key, not just of the decode: Steam serves one
     /// `preview_url` for the grid tile and the detail hero, and the two are
     /// decoded to different pixel caps.

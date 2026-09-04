@@ -195,7 +195,7 @@ final class WPEGPUErrorSink: @unchecked Sendable {
 /// Scoped to the CURRENT scene: `reset()` runs alongside the other pass-keyed
 /// reload state, so a shader that failed before a reload does not keep haunting
 /// the inspector for a scene that no longer contains it. Corpus-wide translation
-/// statistics come from `WPETranspileCoverageAggregator`, never from this sink —
+/// statistics come from the opt-in test report, never from this sink —
 /// name-deduping makes it the wrong shape for counting.
 final class WPEShaderErrorSink: @unchecked Sendable {
     private let lock = NSLock()

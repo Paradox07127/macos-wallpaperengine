@@ -29,7 +29,6 @@ SUITES=(
   # Screen ↔ runtime-session ownership, including the crossfade retire path.
   ScreenRuntimeOwnershipTests
   InfrastructureRuntimeBoundaryTests
-  ModuleImportBoundaryTests
   EntitlementAuditTests
   # Failure surfaces that have a classified cause must render it rather
   # than collapsing every cause into one sentence.

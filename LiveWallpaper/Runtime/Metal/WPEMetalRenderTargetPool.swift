@@ -52,14 +52,6 @@ struct WPEMetalRenderTargetKey: Hashable {
     let format: String
     let pixelFormat: MTLPixelFormat
 
-    init(name: String, sceneSize: CGSize, scale: Double, format: String, pixelFormat: MTLPixelFormat) {
-        self.name = name
-        self.width = wpeRenderTargetDimension(sceneSize.width, scale: scale)
-        self.height = wpeRenderTargetDimension(sceneSize.height, scale: scale)
-        self.format = format.lowercased()
-        self.pixelFormat = pixelFormat
-    }
-
     init(name: String, width: Int, height: Int, format: String, pixelFormat: MTLPixelFormat) {
         self.name = name
         self.width = max(width, 1)
