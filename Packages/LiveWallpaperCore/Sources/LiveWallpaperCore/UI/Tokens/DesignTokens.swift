@@ -55,6 +55,15 @@ public enum DesignTokens {
             public static let danger = Color(nsColor: .systemRed)
         }
 
+        /// One hue per guided library page. System colours, not fixed RGB —
+        /// they already carry light/dark and Increase Contrast variants.
+        public enum LibraryTint {
+            public static let aerials = Color(nsColor: .systemTeal)
+            public static let systemWallpaper = Color(nsColor: .systemIndigo)
+            public static let bookmarks = Color(nsColor: .systemOrange)
+            public static let schemes = Color(nsColor: .systemPurple)
+        }
+
         /// Ring-gauge palette (CPU/GPU/RAM/power dashboards). Clear, legible hues
         /// just slightly softer than `Status.*`; paired with a thin 3.5pt ring so
         /// the always-busy usage rings read calmly without going muddy/grey.
@@ -325,6 +334,8 @@ public enum DesignTokens {
         public static let outerPadding: CGFloat = 40
         public static let topSpacerHeight: CGFloat = Spacing.xl
         public static let iconSize: CGFloat = 48
+        /// Tinted disc behind the hero symbol, 2.1× the glyph.
+        public static let heroDiscSize: CGFloat = 102
         public static let featureWidth: CGFloat = 380
         public static let messageWidth: CGFloat = 360
     }

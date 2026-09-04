@@ -16,7 +16,6 @@ final class WallpaperExportService {
         let now: @Sendable () -> Date
         /// JPEG data (480×270 target) for the already-copied video, nil on failure.
         let makeThumbnailJPEG: @Sendable (URL) async -> Data?
-        let osSupported: Bool
         /// The appex this app ships. A heartbeat stamped with anything else came
         /// from a process an update or a second install left behind, and is not
         /// evidence about our extension. `nil` disables the check.
@@ -25,14 +24,11 @@ final class WallpaperExportService {
         var expectedProvider: SystemWallpaperProviderIdentity?
 
         static func live(hostBundleID: String? = Bundle.main.bundleIdentifier) -> Dependencies {
-            let supported: Bool
-            if #available(macOS 26.0, *) { supported = true } else { supported = false }
-            return Dependencies(
+            Dependencies(
                 sharedRoot: SystemWallpaperPaths.sharedRoot(hostBundleID: hostBundleID ?? "com.loomscreen"),
                 resolver: .live,
                 now: Date.init,
                 makeThumbnailJPEG: WallpaperExportService.generateThumbnailJPEG,
-                osSupported: supported,
                 expectedProvider: SystemWallpaperProviderIdentity.bundledProvider()
             )
         }
@@ -81,8 +77,10 @@ final class WallpaperExportService {
         }
     }
 
+    /// No `unsupported` case: the sidebar row and the detail route carry the
+    /// same `#available(macOS 26.0, *)`, so below 26 the feature is absent, not
+    /// disabled, and nothing can read that status.
     enum Status: Equatable {
-        case unsupported
         case systemIncompatible
         case failed(String)
         case empty
@@ -128,10 +126,13 @@ final class WallpaperExportService {
     // MARK: - Status
 
     var status: Status {
-        guard dependencies.osSupported else { return .unsupported }
-        // An "incompatible" verdict is only as good as the OS build *and* the
-        // check revision that reached it — see `barsPublishing`.
-        if heartbeat?.barsPublishing == true { return .systemIncompatible }
+        // The stamp matters as much as `barsPublishing`: without it a process
+        // left over by an in-place update condemns the installed extension.
+        if let heartbeat,
+           heartbeat.isFromProvider(matching: dependencies.expectedProvider),
+           heartbeat.barsPublishing {
+            return .systemIncompatible
+        }
         if let lastError { return .failed(lastError) }
         guard !items.isEmpty else { return .empty }
         // Any item on any display counts — after removing the display-1 choice,

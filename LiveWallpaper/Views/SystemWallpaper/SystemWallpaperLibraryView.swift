@@ -44,14 +44,17 @@ struct SystemWallpaperLibraryView: View {
             unavailableState
         } else if service.items.isEmpty {
             // The notice belongs here too: a first import that fails leaves an
-            // empty library, and without this the only thing on screen is the
-            // "nothing here yet" illustration — the reason it failed never
-            // reaches the user.
-            VStack(spacing: DesignTokens.Spacing.lg) {
-                notice
+            // empty library, and without it the reason never reaches the user.
+            // Only the notice carries insets — the card's halo must reach the
+            // page margins. Gated on `hasNotice`: padding an EmptyView still
+            // reserves space.
+            VStack(spacing: 0) {
+                if hasNotice {
+                    notice
+                        .padding(DesignTokens.Spacing.lg)
+                }
                 emptyState
             }
-            .padding(DesignTokens.Spacing.lg)
         } else {
             gallery
         }
@@ -120,8 +123,18 @@ struct SystemWallpaperLibraryView: View {
                     .controlSize(.small)
                     .fixedSize()
             }
-        case .inUse, .empty, .unsupported, .systemIncompatible:
+        case .inUse, .empty, .systemIncompatible:
             EmptyView()
+        }
+    }
+
+    /// Beside `notice` so a case added there fails to compile here too.
+    private var hasNotice: Bool {
+        switch service.status {
+        case .failed, .publishedNotSelected:
+            true
+        case .inUse, .empty, .systemIncompatible:
+            false
         }
     }
 
@@ -226,41 +239,42 @@ struct SystemWallpaperLibraryView: View {
     /// works on a fresh install anyway — the other sources stay one click away
     /// in the header menu.
     private var emptyState: some View {
-        IllustratedEmptyState(
-            symbol: "macwindow.on.rectangle",
+        LibraryGuideCard(
+            icon: "macwindow.on.rectangle",
+            tint: DesignTokens.Colors.LibraryTint.systemWallpaper,
             title: "Let macOS play your wallpaper",
-            message: "Videos you hand to the system keep playing with Loomscreen closed, and the lock screen changes too.",
-            primary: EmptyStateButtonAction("Choose Video…") {
+            message: "Hand a video to the system and macOS plays it itself, so it keeps running with Loomscreen closed.",
+            features: [
+                LibraryGuideFeature(icon: "infinity", text: "Keeps playing with Loomscreen quit"),
+                LibraryGuideFeature(icon: "lock", text: "The lock screen changes with it"),
+                LibraryGuideFeature(icon: "internaldrive", text: "macOS keeps its own copy of each video"),
+            ],
+            actionTitle: "Choose Video…",
+            actionSystemImage: "video.badge.plus",
+            action: {
                 SystemWallpaperVideoImport.present(publishingInto: service)
             }
         )
     }
 
-    @ViewBuilder
+    /// No action button: `barsPublishing` clears on a new OS build or a newer
+    /// layout check, neither of which anything on this page can bring about.
     private var unavailableState: some View {
-        switch service.status {
-        case .systemIncompatible:
-            IllustratedEmptyState(
-                symbol: "exclamationmark.triangle",
-                title: "Not available on this version of macOS",
-                message: "Your other Loomscreen wallpapers are unaffected."
-            )
-        default:
-            IllustratedEmptyState(
-                symbol: "macwindow.on.rectangle",
-                title: "Requires macOS 26 or later",
-                message: "On earlier versions Loomscreen plays wallpapers itself, which needs the app running."
-            )
-        }
+        LibraryGuideCard(
+            icon: "exclamationmark.triangle",
+            tint: DesignTokens.Colors.LibraryTint.systemWallpaper,
+            title: "System Wallpaper is paused on this macOS build",
+            message: "Our wallpaper extension checked this build of macOS and found a layout it can't drive, so it stopped handing videos to the system.",
+            features: [
+                LibraryGuideFeature(icon: "exclamationmark.triangle", text: "The build changed what the extension reads"),
+                LibraryGuideFeature(icon: "checkmark.shield", text: "Your other Loomscreen wallpapers are unaffected"),
+                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "Clears itself after a macOS or app update"),
+            ]
+        )
     }
 
-    /// False for the two states where nothing on this page can work, so the
-    /// page shows one explanation instead of dead controls.
     private var isFunctional: Bool {
-        switch service.status {
-        case .unsupported, .systemIncompatible: return false
-        default: return true
-        }
+        service.status != .systemIncompatible
     }
 }
 
