@@ -13,6 +13,54 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.6.5] — 2026-09-04
+
+### Added
+
+- Spanish. Loomscreen ships in five languages now, and the language menu lists
+  each one in its own script instead of translating the names — picking 简体中文
+  no longer rewrites "English" into 英语.
+- Steam Workshop tag names are shown in the interface language: genre, type,
+  maturity and feature tags, on cards, filter chips and both inspectors. Steam
+  does not translate them and matches on the English form, so the English tag
+  still goes on the wire and results are unchanged.
+- Download is on a browse card's context menu. Until now the only way to start
+  one was to open the detail panel first.
+- Each wallpaper library opens on a first-run page of its own — one tint per
+  library, and a short account of what that library holds.
+
+### Changed
+
+- A browse card's menu carries only browse actions. Copy link and Copy ID moved
+  to the detail panel beside Download, where two of the three already were.
+- Grid cards stop building the glass badge container when both badge preferences
+  are off. The `if`s used to sit inside it, so every card still built the
+  container, its stack and the padding around an empty stack — 10.4% of a card's
+  construct-and-layout cost, paid on every scroll-in for nothing on screen.
+- Turning a display's overlay off now also stops the hourly weather fetch. Only
+  the weather toggle used to, so a display drawing no weather kept polling.
+- The System Wallpaper toolbar lets macOS space its two buttons rather than
+  holding them in a stack of its own, and the System Settings link no longer
+  wears the gear this window already uses for Loomscreen's preferences.
+
+### Fixed
+
+- Global hot keys registered without reporting an error and then never fired.
+  They were installed on the application event target, which an accessory app
+  never sees; delivery goes through the dispatcher target and a file-level C
+  handler now.
+- Opening Settings from the menu bar on a multi-display Mac landed on "no
+  display selected" — the fallback only ran when exactly one display was
+  attached. It now falls back to the primary display, and recovers the same way
+  when the remembered display is unplugged.
+- A System Wallpaper extension left behind by an earlier install could report
+  the installed one as incompatible and pause the whole page. A heartbeat is
+  now believed only when it carries the stamp of the extension this build
+  ships.
+- Video textures and inspector previews no longer offer themselves as an
+  AirPlay route. Muting a player and disabling its tracks does not rule the
+  route out — it is a property of the player, not of what it outputs.
+
 ## [0.6.4] — 2026-09-03
 
 ### Added
