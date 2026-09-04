@@ -66,6 +66,9 @@ SUITES=(
   ScreenSchemePersistenceTests
   WPEStorageInventoryTests
   SettingsSearchLocalizationTests
+  # Carbon hotkeys: dispatcher target + C trampoline. An inline MainActor
+  # closure on GetApplicationEventTarget() registered but never fired.
+  GlobalShortcutCarbonWiringTests
 )
 
 action="test"

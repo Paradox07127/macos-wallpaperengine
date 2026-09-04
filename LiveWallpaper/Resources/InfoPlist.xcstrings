@@ -35,6 +35,12 @@
             "value" : "Loomscreen Configuration"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuración de Loomscreen"
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
@@ -61,6 +67,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen Pro Configuration"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuración de Loomscreen Pro"
           }
         },
         "ja" : {
@@ -93,6 +105,12 @@
             "value" : "Play, pause, skip and seek buttons on the Now Playing wallpaper layer use this to control the music player you are listening to."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los botones de reproducción, pausa, salto y búsqueda de la capa En reproducción usan este permiso para controlar el reproductor de música que estás escuchando."
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
@@ -120,6 +138,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Access to Desktop is needed to play wallpaper files stored there."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita acceso al Escritorio para reproducir los fondos de pantalla almacenados ahí."
           }
         },
         "ja" : {
@@ -151,6 +175,12 @@
             "value" : "Access to Documents is needed to play wallpaper files stored there."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita acceso a Documentos para reproducir los fondos de pantalla almacenados ahí."
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
@@ -180,6 +210,12 @@
             "value" : "Access to Downloads is needed to play wallpaper files stored there."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se necesita acceso a Descargas para reproducir los fondos de pantalla almacenados ahí."
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
@@ -207,6 +243,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Location is used to fetch local weather for weather-reactive effects."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La ubicación se usa para consultar el tiempo local y aplicar efectos que reaccionan a él."
           }
         },
         "ja" : {

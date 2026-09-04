@@ -85,6 +85,7 @@ struct SettingsProvider {
             "zh-Hans": "视频壁纸",
             "zh-Hant": "影片桌布",
             "ja": "ビデオ壁紙",
+            "es": "Fondos de vídeo",
         ]
         let preferred = Locale.preferredLanguages.first ?? "en"
         for (prefix, text) in suffix where preferred.hasPrefix(prefix) {

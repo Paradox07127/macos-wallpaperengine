@@ -80,7 +80,7 @@ extension GeneralSettingsView {
     }
 
     private var aboutTagline: some View {
-        Text("Live wallpapers for macOS: videos, web pages, and compatible imported scenes across every connected display.")
+        Text("Live wallpapers for macOS — video, web, and compatible scenes on every display.")
             .font(.callout)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)

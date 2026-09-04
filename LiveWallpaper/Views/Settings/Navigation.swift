@@ -129,14 +129,15 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
                 "display", "defaults", "display defaults", "screen defaults", "screen default",
                 "playback defaults", "reset display", "new display", "baseline",
                 "frame rate", "fps", "volume", "mute", "scaling", "color space", "interaction",
-                "帧率", "屏幕默认", "显示默认", "預設", "影格率", "フレームレート"
+                "帧率", "屏幕默认", "显示默认", "預設", "影格率", "フレームレート",
+                "fotogramas", "predeterminados de pantalla",
             ]
         ),
         SettingsNavigationItem(
             destination: .performancePower,
             title: "Performance",
             systemImage: "bolt.circle",
-            keywords: ["power", "battery", "fullscreen", "game", "covered", "frame rate", "fps", "帧率", "memory", "video preload"]
+            keywords: ["power", "battery", "fullscreen", "game", "covered", "frame rate", "fps", "帧率", "fotogramas", "memory", "video preload"]
         ),
         SettingsNavigationItem(
             destination: .audioResponse,
@@ -199,7 +200,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
 
     /// Indexed in the rendered language as well as the English key: matching only
     /// the key meant a zh-Hans user could not find a row by the words on screen.
-    /// `bundle` is injectable so the four-language contract is assertable without
+    /// `bundle` is injectable so the five-language contract is assertable without
     /// switching the process-wide app language.
     func searchableText(in bundle: Bundle = .appLanguage) -> String {
         ([title, title.localized(in: bundle)] + keywords).joined(separator: " ")

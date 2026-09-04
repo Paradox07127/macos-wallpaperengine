@@ -5,6 +5,11 @@ import LiveWallpaperCore
 
 /// Global hot keys via Carbon `RegisterEventHotKey` (no Accessibility permission,
 /// unlike `NSEvent.addGlobalMonitorForEvents`).
+///
+/// Delivery goes through `GetEventDispatcherTarget()` plus a file-level C
+/// trampoline. An inline `@MainActor` closure on `GetApplicationEventTarget()`
+/// can return `noErr` from `RegisterEventHotKey` and still never fire in an
+/// accessory / `LSUIElement` app, especially in Release.
 @MainActor
 final class GlobalShortcutManager {
     private weak var screenManager: ScreenManager?
@@ -43,6 +48,7 @@ final class GlobalShortcutManager {
         let settings = SettingsManager.shared.loadGlobalSettings()
         guard settings.globalShortcutsEnabled else {
             // Keep the event handler so re-enable can re-register without reinstall.
+            Logger.notice("Global shortcuts master switch is off", category: .startup)
             return
         }
 
@@ -57,6 +63,10 @@ final class GlobalShortcutManager {
             guard let binding else { continue }
             register(action: action, binding: binding)
         }
+        Logger.notice(
+            "Registered \(registrations.count) global shortcuts",
+            category: .startup
+        )
     }
 
     private func register(action: GlobalShortcutAction, binding: GlobalShortcutBinding) {
@@ -68,13 +78,16 @@ final class GlobalShortcutManager {
             binding.keyCode,
             modMask,
             hotKeyID,
-            GetApplicationEventTarget(),
+            GetEventDispatcherTarget(),
             0,
             &hotKeyRef
         )
 
         guard status == noErr, let hotKeyRef else {
-            Logger.warning("Failed to register hot key for \(action.rawValue): status=\(status)", category: .general)
+            Logger.warning(
+                "Failed to register hot key for \(action.rawValue): \(Self.describeStatus(status))",
+                category: .general
+            )
             return
         }
 
@@ -132,28 +145,8 @@ final class GlobalShortcutManager {
         let userData = Unmanaged.passUnretained(self).toOpaque()
 
         let status = InstallEventHandler(
-            GetApplicationEventTarget(),
-            { (_, eventRef, userData) -> OSStatus in
-                guard let eventRef, let userData else { return noErr }
-                var receivedID = EventHotKeyID()
-                let status = GetEventParameter(
-                    eventRef,
-                    EventParamName(kEventParamDirectObject),
-                    EventParamType(typeEventHotKeyID),
-                    nil,
-                    MemoryLayout<EventHotKeyID>.size,
-                    nil,
-                    &receivedID
-                )
-                guard status == noErr else { return status }
-
-                let manager = Unmanaged<GlobalShortcutManager>.fromOpaque(userData).takeUnretainedValue()
-                let signatureID = Int(receivedID.id)
-                Task { @MainActor in
-                    manager.dispatchHotKey(signatureID: signatureID)
-                }
-                return noErr
-            },
+            GetEventDispatcherTarget(),
+            carbonHotKeyEventHandler,
             1,
             &spec,
             userData,
@@ -161,18 +154,22 @@ final class GlobalShortcutManager {
         )
 
         guard status == noErr else {
-            Logger.warning("Failed to install global hot-key event handler: status=\(status)", category: .general)
+            Logger.warning(
+                "Failed to install global hot-key event handler: \(Self.describeStatus(status))",
+                category: .general
+            )
             eventHandler = nil
             return false
         }
         return true
     }
 
-    private func dispatchHotKey(signatureID: Int) {
+    fileprivate func dispatchHotKey(signatureID: Int) {
         guard let action = GlobalShortcutAction.action(forSignatureID: signatureID) else { return }
         // Drop presses that raced the master switch off before this MainActor hop.
         guard SettingsManager.shared.loadGlobalSettings().globalShortcutsEnabled else { return }
         guard let manager = screenManager else { return }
+        Logger.debug("Global shortcut \(action.rawValue)", category: .general)
         switch action {
         case .togglePlayback:
             manager.togglePlayback()
@@ -267,6 +264,19 @@ final class GlobalShortcutManager {
         return mask
     }
 
+    private static func describeStatus(_ status: OSStatus) -> String {
+        switch status {
+        case noErr:
+            "noErr"
+        case OSStatus(eventHotKeyExistsErr):
+            "eventHotKeyExistsErr(\(status))"
+        case OSStatus(eventInternalErr):
+            "eventInternalErr(\(status))"
+        default:
+            "status=\(status)"
+        }
+    }
+
     private static func fourCharCode(_ string: String) -> FourCharCode {
         let bytes = string.utf8
         var result: FourCharCode = 0
@@ -282,7 +292,35 @@ private struct HotKeyRegistration {
     let hotKeyID: EventHotKeyID
 }
 
-private extension GlobalShortcutAction {
+/// File-level C trampoline. Must not be an inline closure inside the
+/// `@MainActor` class — Carbon stores a raw `EventHandlerUPP`.
+private func carbonHotKeyEventHandler(
+    _: EventHandlerCallRef?,
+    _ event: EventRef?,
+    _ userData: UnsafeMutableRawPointer?
+) -> OSStatus {
+    guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+    var receivedID = EventHotKeyID()
+    let status = GetEventParameter(
+        event,
+        EventParamName(kEventParamDirectObject),
+        EventParamType(typeEventHotKeyID),
+        nil,
+        MemoryLayout<EventHotKeyID>.size,
+        nil,
+        &receivedID
+    )
+    guard status == noErr else { return status }
+
+    let signatureID = Int(receivedID.id)
+    let manager = Unmanaged<GlobalShortcutManager>.fromOpaque(userData).takeUnretainedValue()
+    Task { @MainActor in
+        manager.dispatchHotKey(signatureID: signatureID)
+    }
+    return noErr
+}
+
+extension GlobalShortcutAction {
     /// Carbon `EventHotKeyID.id` tag (allCases index + 1; not the string raw value).
     var signatureID: Int {
         Self.allCases.firstIndex(of: self).map { $0 + 1 } ?? 0

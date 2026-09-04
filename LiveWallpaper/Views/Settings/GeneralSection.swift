@@ -129,8 +129,8 @@ extension GeneralSettingsView {
 
     private var languagePicker: some View {
         Picker("", selection: appLanguageSelection) {
-            ForEach(AppLanguagePreference.allCases) { language in
-                Text(language.titleKey).tag(language)
+            ForEach(AppLanguagePreference.menuCases) { language in
+                language.pickerLabel.tag(language)
             }
         }
         .labelsHidden()
