@@ -148,6 +148,10 @@ final class InspectorPreviewController {
         previewPlayer.volume = 0
         previewPlayer.isMuted = true
         previewPlayer.automaticallyWaitsToMinimizeStalling = false
+        // An inspector thumbnail is the last thing that should be able to claim
+        // an AirPlay route; the route is a player property, so muting and
+        // disabling its tracks does not rule it out.
+        previewPlayer.allowsExternalPlayback = false
         disableAudioTracks(for: playerItem)
 
         player = previewPlayer
