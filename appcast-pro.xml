@@ -7,33 +7,36 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.6.4</title>
-      <pubDate>Thu, 03 Sep 2026 23:42:38 +0000</pubDate>
-      <sparkle:version>0.6.4</sparkle:version>
-      <sparkle:shortVersionString>0.6.4</sparkle:shortVersionString>
+      <title>Version 0.6.5</title>
+      <pubDate>Fri, 04 Sep 2026 13:56:12 +0000</pubDate>
+      <sparkle:version>0.6.5</sparkle:version>
+      <sparkle:shortVersionString>0.6.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Settings ▸ Advanced gains Reset All Settings — it also drops the display caches and rebuilds every running wallpaper, so the reset is a real one</li>
-<li>The scene inspector now says when a scene publishes nothing to adjust, instead of showing a blank column that looks like it is still loading</li>
+<li>Spanish. Loomscreen now ships in five languages, and the language menu lists each one in its own script rather than translating the names</li>
+<li>Steam Workshop tags read in your language — genre, type, maturity and feature tags, on cards, filter chips and the detail panel. Steam still matches on the English tag, so results are unchanged</li>
+<li>Download sits on a browse card's right-click menu. Until now it was reachable only by opening the detail panel first</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>The frame-rate cap is now a fraction of your display's refresh rate — full, half, third or quarter. A display only ever wakes on its own refresh, so the old fixed numbers could not all be honoured: on a 60 Hz panel "24 FPS" actually ran at 30. Existing settings migrate on load</li>
-<li>Failures say what went wrong: a blocked network no longer reports "unrecognized response", a wallpaper that stopped no longer shows the bare word "Error", and a rejected API key no longer claims it was stored</li>
-<li>Results in Browse no longer reflow the grid as they arrive — the placeholder is the same shape as a real card</li>
+<li>Each wallpaper library gets a first-run page of its own: one colour per library, and a short account of what that library is for</li>
+<li>A browse card's menu carries only browse actions now; Copy link and Copy ID moved to the detail panel, next to Download</li>
+<li>Grid cards stop building an invisible badge container when both badge preferences are off — it was 10.4% of a card's construct-and-layout cost, paid on every scroll</li>
+<li>Turning a display's overlay off now also stops the hourly weather fetch. Only the weather toggle used to, so a display drawing nothing kept polling</li>
+<li>The System Wallpaper toolbar lets macOS space its two buttons, and no longer collides with the preferences gear</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>A display whose overlay layout could not be read came back wearing a default layout you never chose; the unreadable entry is dropped instead</li>
-<li>A click on a scene could be swallowed by the release that followed it</li>
-<li>A layer script driven only by a timer reported a fixed value instead of its real output, and video commands sent from a timer were dropped</li>
-<li>A cancelled lyrics lookup was remembered as "no lyrics found"</li>
+<li>Global hot keys registered without reporting an error and then never fired</li>
+<li>Opening Settings from the menu bar on a multi-display Mac landed on "no display selected"</li>
+<li>A System Wallpaper extension left behind by an earlier install could report the installed one as incompatible and pause the whole page</li>
+<li>Video textures and inspector previews no longer claim an AirPlay route</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.4">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.4">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.5">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.5">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.4/Loomscreen-Pro-0.6.4.dmg" type="application/octet-stream" sparkle:edSignature="U2Xn4RAbm0Qrv+ZV6unYpFyF+j5ZdfZxfJvfZgSPqsDIrxD1fVi6nxGYfOc8O0hYeVyLY9wgsG8j2KFBnkSeAw==" length="9714997" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.5/Loomscreen-Pro-0.6.5.dmg" type="application/octet-stream" sparkle:edSignature="fxh5ZFUPsisG1gwEOCUiQcGMzybx//4S59hgC1yKfvE0ZVaWP1U99lOe78rOiDHJcprb9oYRaIibnVw91c/UAA==" length="9806022" />
     </item>
   </channel>
 </rss>
