@@ -24,7 +24,7 @@ struct EmptyStateGuideView: View {
     }
 
     private var guideColumn: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: DesignTokens.GuidedLibrary.blockSpacing) {
             header
 
             // One column per card, not `.adaptive` — the types are peers and
@@ -105,18 +105,22 @@ struct EmptyStateGuideView: View {
             : "MP4 / MOV from your Mac."
     }
 
+    /// Same hero and rhythm as `LibraryGuideCard`, so a display and a library
+    /// open the same way.
     private var header: some View {
-        VStack(spacing: 6) {
-            GuideHeroSymbol(icon: "sparkles", tint: .accentColor, glyphSize: 30)
+        VStack(spacing: DesignTokens.GuidedLibrary.blockSpacing) {
+            GuideHeroSymbol(icon: "sparkles", tint: .accentColor)
 
-            Text("Set up this display")
-                .font(DesignTokens.Typography.pageTitle)
-                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 6) {
+                Text("Set up this display")
+                    .font(DesignTokens.Typography.pageTitle)
+                    .accessibilityAddTraits(.isHeader)
 
-            Text("Pick what it should show. You can change it at any time.")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                Text("Pick what it should show. You can change it at any time.")
+                    .font(DesignTokens.Typography.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
     }
 

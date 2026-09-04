@@ -27,8 +27,17 @@ struct SystemWallpaperLibraryView: View {
                             // No `adaptiveGlassButton` here: the toolbar section
                             // is already the visible container, and stacking our
                             // own glass on top reads as a button inside a button.
-                            Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
-                                .fixedSize()
+                            //
+                            // `gearshape` is the app's own glyph for "this opens
+                            // System Settings" — the Aerials guide card's button
+                            // uses it for the same destination.
+                            Button {
+                                service.openWallpaperSettings()
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                            .help(Text("Open Wallpaper settings in System Settings"))
+                            .accessibilityLabel(Text("Open Wallpaper Settings"))
                         }
                     }
                 }

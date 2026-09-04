@@ -334,9 +334,8 @@ public enum DesignTokens {
         public static let outerPadding: CGFloat = 40
         public static let topSpacerHeight: CGFloat = Spacing.xl
         public static let iconSize: CGFloat = 48
-        /// Glow behind the hero symbol. 2.4× its disc: wide enough to read as a
-        /// halo, tight enough that it never reaches the toolbar seam.
-        public static let heroHaloDiameter: CGFloat = 245
+        /// Between a guided page's blocks — hero, copy, list, action.
+        public static let blockSpacing: CGFloat = 22
         public static let featureWidth: CGFloat = 380
         public static let messageWidth: CGFloat = 360
     }
