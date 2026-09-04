@@ -1,8 +1,15 @@
 import SwiftUI
 
-/// Two stacked rotating arcs kept gentle so the motion doesn't compete with
-/// the underlying GIF preview that fades through during the loading phase.
-public struct LiquidGlassSpinner: View {
+/// Two counter-rotating arcs over a static track ring, kept gentle so the
+/// motion doesn't compete with the preview fading through beneath it.
+///
+/// Named for what it draws. It was `LiquidGlassSpinner`, which was wrong twice
+/// over: the rings are plain `Circle().stroke()` — no material, no glass — and
+/// the name sent readers hunting for a glass cost the browse-grid ablation
+/// (2026-09-04) showed was not there. The one badge-glass here is the optional
+/// `progressText` label, an ordinary `thumbnailBadgeGlass()` badge that honours
+/// `thumbnailBadgeSurface` like every other.
+public struct ArcSpinner: View {
     public var size: CGFloat = 44
     public var lineWidth: CGFloat = 4
     public var tint: Color = DesignTokens.Colors.overlayForeground
