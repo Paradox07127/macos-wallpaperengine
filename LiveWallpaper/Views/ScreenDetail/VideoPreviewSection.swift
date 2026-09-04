@@ -154,6 +154,6 @@ struct VideoPreviewSection: View {
         if let errorMessage {
             return Text(verbatim: errorMessage)
         }
-        return previewController.isLoading ? Text("Loading preview...") : Text("Preview paused")
+        return previewController.isLoading ? Text("Loading preview…") : Text("Preview paused")
     }
 }

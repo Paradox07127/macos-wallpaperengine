@@ -31,7 +31,7 @@ final class WeatherReactiveService {
     enum LocationStatus: String {
         case notDetermined = "Not Determined"
         case denied = "Location Denied"
-        case fetching = "Fetching..."
+        case fetching = "Fetching…"
         case available = "Available"
         case error = "Error"
     }

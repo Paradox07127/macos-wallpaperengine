@@ -90,7 +90,7 @@ struct PasteRowCard: View {
         case .ready:
             StatusChip(verbatim: String(localized: "Ready", bundle: .appLanguage, comment: "Workshop paste row status badge."), tint: DesignTokens.Colors.Status.active, systemImage: "checkmark.seal.fill")
         case .fetchingMetadata:
-            StatusChip(verbatim: String(localized: "Fetching", bundle: .appLanguage, comment: "Workshop paste row status badge."), tint: .blue, systemImage: "hourglass")
+            StatusChip(verbatim: String(localized: "Fetching…", bundle: .appLanguage, comment: "Workshop paste row status badge."), tint: .blue, systemImage: "hourglass")
         case .invalidInput:
             StatusChip(verbatim: String(localized: "Invalid", bundle: .appLanguage, comment: "Workshop paste row status badge."), tint: DesignTokens.Colors.Status.caution, systemImage: "exclamationmark.triangle.fill")
         case .failed:

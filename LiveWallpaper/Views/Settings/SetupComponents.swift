@@ -27,10 +27,10 @@ enum WorkshopStepState: Equatable {
     /// already a `LocalizedStringKey`. Renaming was cheaper than an escape hatch, and `label` was overloaded against SwiftUI's own meaning anyway.
     var statusText: LocalizedStringKey {
         switch self {
-        case .notStarted: return "Not set"
-        case .working: return "Checking"
-        case .attention: return "Action needed"
-        case .ready: return "Ready"
+        case .notStarted: "Not set"
+        case .working: "Checking…"
+        case .attention: "Action needed"
+        case .ready: "Ready"
         }
     }
 }

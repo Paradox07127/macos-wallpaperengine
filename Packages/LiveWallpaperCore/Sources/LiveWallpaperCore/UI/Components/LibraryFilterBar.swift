@@ -13,7 +13,7 @@ public struct LibraryFilterBar<Filters: View>: View {
 
     public init(
         searchText: Binding<String>,
-        searchPrompt: LocalizedStringKey = "Search…",
+        searchPrompt: LocalizedStringKey = "Search",
         resultCount: Int? = nil,
         totalCount: Int? = nil,
         isDisabled: Bool = false,
@@ -64,7 +64,7 @@ public struct LibraryFilterBar<Filters: View>: View {
 extension LibraryFilterBar where Filters == EmptyView {
     public init(
         searchText: Binding<String>,
-        searchPrompt: LocalizedStringKey = "Search…",
+        searchPrompt: LocalizedStringKey = "Search",
         resultCount: Int? = nil,
         totalCount: Int? = nil,
         isDisabled: Bool = false
