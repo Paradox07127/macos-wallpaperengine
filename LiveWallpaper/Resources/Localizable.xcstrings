@@ -3639,6 +3639,7 @@
       }
     },
     "Abstract" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5948,6 +5949,7 @@
       }
     },
     "Animal" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -5982,6 +5984,7 @@
       }
     },
     "Anime" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7008,6 +7011,7 @@
       }
     },
     "Approved" : {
+      "comment" : "Workshop tag: the item passed Wallpaper Engine's content review.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7293,6 +7297,7 @@
       }
     },
     "Asset Pack" : {
+      "comment" : "Workshop tag: reusable assets rather than a finished wallpaper.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7529,6 +7534,7 @@
       }
     },
     "Audio responsive" : {
+      "comment" : "Workshop tag: the wallpaper reacts to system audio.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10708,6 +10714,7 @@
       }
     },
     "Cartoon" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -10812,6 +10819,7 @@
       }
     },
     "CGI" : {
+      "comment" : "Workshop genre tag: computer-generated imagery.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17386,6 +17394,7 @@
       }
     },
     "Customizable" : {
+      "comment" : "Workshop tag: the wallpaper exposes user properties.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17420,6 +17429,7 @@
       }
     },
     "Cyberpunk" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -25070,6 +25080,7 @@
       }
     },
     "Fantasy" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -26715,6 +26726,7 @@
       }
     },
     "Game" : {
+      "comment" : "Workshop genre tag: video-game artwork.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27048,6 +27060,7 @@
       }
     },
     "Girls" : {
+      "comment" : "Workshop genre tag: wallpapers featuring female characters.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -27388,6 +27401,7 @@
       }
     },
     "Guys" : {
+      "comment" : "Workshop genre tag: wallpapers featuring male characters.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -30515,6 +30529,7 @@
       }
     },
     "Landscape" : {
+      "comment" : "Workshop genre tag: scenery, not the aspect ratio.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -35100,6 +35115,7 @@
       }
     },
     "Media Integration" : {
+      "comment" : "Workshop tag: the wallpaper shows what is playing.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -35134,6 +35150,7 @@
       }
     },
     "Medieval" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -35204,6 +35221,7 @@
       }
     },
     "Memes" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -35870,6 +35888,7 @@
       }
     },
     "MMD" : {
+      "comment" : "Workshop genre tag: MikuMikuDance. Kept as the acronym in every language.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -37022,6 +37041,7 @@
       }
     },
     "Nature" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -44619,6 +44639,7 @@
       }
     },
     "Pixel art" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -48258,6 +48279,7 @@
       }
     },
     "Relaxing" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -51396,6 +51418,7 @@
       }
     },
     "Retro" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -54157,6 +54180,7 @@
       }
     },
     "Sci-Fi" : {
+      "comment" : "Workshop genre tag: science fiction.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -58722,6 +58746,7 @@
       }
     },
     "Sports" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -63177,6 +63202,7 @@
       }
     },
     "Technology" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -63211,6 +63237,7 @@
       }
     },
     "Television" : {
+      "comment" : "Workshop genre tag: film and TV.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -69383,6 +69410,7 @@
       }
     },
     "Unspecified" : {
+      "comment" : "Workshop genre tag: the author picked no genre.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -70498,6 +70526,7 @@
       }
     },
     "User Shortcut" : {
+      "comment" : "Workshop tag: the wallpaper binds its own hot key.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -70734,6 +70763,7 @@
       }
     },
     "Vehicle" : {
+      "comment" : "Workshop genre tag.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -71212,6 +71242,7 @@
       }
     },
     "Video Texture" : {
+      "comment" : "Workshop tag: the scene plays video inside a texture.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
