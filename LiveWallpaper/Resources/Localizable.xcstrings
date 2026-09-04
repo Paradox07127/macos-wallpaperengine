@@ -41829,6 +41829,40 @@
         }
       }
     },
+    "Open Wallpaper settings in System Settings" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Wallpaper settings in System Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir los ajustes de Fondo de pantalla en Ajustes del Sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「システム設定」の壁紙設定を開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「系统设置」中打开壁纸设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「系統設定」中打開桌布設定"
+          }
+        }
+      }
+    },
     "Open workshop %@ in browser" : {
       "comment" : "Tooltip with dynamic workshop id. %@ is the workshop ID.",
       "extractionState" : "manual",

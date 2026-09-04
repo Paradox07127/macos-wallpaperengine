@@ -32,8 +32,6 @@ struct GuideHeroSymbol: View {
 /// A library's first-run page — owns the whole page, feature list, per-library
 /// tint. `IllustratedEmptyState` stays the in-context "no matches" state.
 struct LibraryGuideCard: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let icon: String
     let tint: Color
     let title: LocalizedStringKey
@@ -79,11 +77,10 @@ struct LibraryGuideCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: DesignTokens.GuidedLibrary.blockSpacing) {
             Spacer(minLength: DesignTokens.GuidedLibrary.topSpacerHeight)
 
             GuideHeroSymbol(icon: icon, tint: tint)
-                .background(halo)
 
             VStack(spacing: 6) {
                 Text(title)
@@ -125,22 +122,6 @@ struct LibraryGuideCard: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(DesignTokens.GuidedLibrary.outerPadding)
-    }
-
-    /// Sized off the hero, never the pane: a page-wide wash met the toolbar at
-    /// a visible seam, because the toolbar keeps its own untinted background.
-    /// Dark mode takes ~2/3 the alpha — what reads as a hint over white reads as
-    /// a coloured page over #1E1E1E.
-    private var halo: some View {
-        let diameter = DesignTokens.GuidedLibrary.heroHaloDiameter
-        return RadialGradient(
-            colors: [tint.opacity(colorScheme == .dark ? 0.13 : 0.20), .clear],
-            center: .center,
-            startRadius: 0,
-            endRadius: diameter / 2
-        )
-        .frame(width: diameter, height: diameter)
-        .allowsHitTesting(false)
     }
 
     @ViewBuilder
