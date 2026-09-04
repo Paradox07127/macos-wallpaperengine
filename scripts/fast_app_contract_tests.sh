@@ -64,6 +64,9 @@ SUITES=(
   BookmarkContentOnlyTests
   ConfigurationPorterTests
   ScreenSchemePersistenceTests
+  # System Wallpaper publish/status machine, including the provider stamp: a
+  # leftover appex used to condemn the installed one and pause the whole page.
+  WallpaperExportServiceTests
   WPEStorageInventoryTests
   SettingsSearchLocalizationTests
   # Carbon hotkeys: dispatcher target + C trampoline. An inline MainActor
