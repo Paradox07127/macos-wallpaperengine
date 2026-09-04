@@ -134,7 +134,7 @@ struct WPEMetalShaderDispatcherTests {
             "LiveWallpaper/Runtime/Metal/WPEMetalRenderErrors+Uniforms.swift"
         )
         let metal = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WPEMetalBuiltins.metal"
+            "LiveWallpaper/Runtime/Metal/WPEMetalBuiltins.metal"
         )
         #expect(!uniforms.contains("struct WPEGenericParticleUniforms"))
         #expect(metal.contains("struct WPEGenericParticleUniforms"))

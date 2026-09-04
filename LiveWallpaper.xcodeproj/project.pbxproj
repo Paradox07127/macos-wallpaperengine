@@ -105,7 +105,7 @@
 		0CA00000000000000000B030 /* Exceptions for "LiveWallpaper" folder in "LiveWallpaperLite" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				VideoPlayback/WPEMetalBuiltins.metal,
+				Runtime/Metal/WPEMetalBuiltins.metal,
 			);
 			target = 0CA00000000000000000B001 /* LiveWallpaperLite */;
 		};
