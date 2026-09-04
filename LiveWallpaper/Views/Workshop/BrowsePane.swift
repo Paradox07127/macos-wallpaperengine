@@ -449,7 +449,7 @@ struct BrowsePane: View {
     private func tagFilterBanner(_ tag: String) -> some View {
         scopeBanner(
             icon: "tag",
-            label: Text(String(localized: "Tagged “\(tag)”", bundle: .appLanguage, comment: "Workshop tag-scoped browse header. Placeholder is the tag.")),
+            label: Text(String(localized: "Tagged “\(WorkshopTagLocalization.displayName(tag))”", bundle: .appLanguage, comment: "Workshop tag-scoped browse header. Placeholder is the tag.")),
             clear: { await viewModel.clearPinnedTag() }
         )
     }
@@ -545,7 +545,7 @@ struct BrowsePane: View {
             return String(localized: "This creator hasn't published any wallpapers here.", bundle: .appLanguage, comment: "Empty creator-scoped Workshop browse, name unknown.")
         }
         if let tag = viewModel.pinnedTag {
-            return String(localized: "No results tagged “\(tag)”.", bundle: .appLanguage, comment: "Empty tag-scoped Workshop browse. Placeholder is the tag.")
+            return String(localized: "No results tagged “\(WorkshopTagLocalization.displayName(tag))”.", bundle: .appLanguage, comment: "Empty tag-scoped Workshop browse. Placeholder is the tag.")
         }
         if !viewModel.searchInput.isEmpty {
             return String(localized: "No results for \"\(viewModel.searchInput)\".", bundle: .appLanguage, comment: "Empty Workshop search result. Placeholder is the query.")
