@@ -6,6 +6,29 @@ struct LibraryGuideFeature: Equatable {
     let text: LocalizedStringKey
 }
 
+/// Tinted disc under a hierarchical glyph. Shared with the display setup page:
+/// a hairline SF Symbol has nothing to sit against on a flat pane.
+struct GuideHeroSymbol: View {
+    let icon: String
+    let tint: Color
+    var glyphSize: CGFloat = DesignTokens.GuidedLibrary.iconSize
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(tint.opacity(0.12))
+                .frame(width: glyphSize * 2.125, height: glyphSize * 2.125)
+                .overlay(Circle().strokeBorder(tint.opacity(0.18), lineWidth: 1))
+
+            Image(systemName: icon)
+                .font(.system(size: glyphSize, weight: .light))
+                .foregroundStyle(tint)
+                .symbolRenderingMode(.hierarchical)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// A library's first-run page — owns the whole page, feature list, per-library
 /// tint. `IllustratedEmptyState` stays the in-context "no matches" state.
 struct LibraryGuideCard: View {
@@ -59,7 +82,7 @@ struct LibraryGuideCard: View {
         VStack(spacing: 22) {
             Spacer(minLength: DesignTokens.GuidedLibrary.topSpacerHeight)
 
-            hero
+            GuideHeroSymbol(icon: icon, tint: tint)
 
             VStack(spacing: 6) {
                 Text(title)
@@ -73,16 +96,18 @@ struct LibraryGuideCard: View {
                     .frame(maxWidth: DesignTokens.GuidedLibrary.messageWidth)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(features.enumerated()), id: \.offset) { _, feature in
-                    featureRow(feature)
+            if !features.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(features.enumerated()), id: \.offset) { _, feature in
+                        featureRow(feature)
+                    }
                 }
+                // No plate: this is a read-only feature list on a flat page, so
+                // a container would only draw a box around text nobody can act on.
+                .padding(.horizontal, 18)
+                .padding(.vertical, DesignTokens.Spacing.cardInset)
+                .frame(maxWidth: DesignTokens.GuidedLibrary.featureWidth)
             }
-            // No plate: this is a read-only feature list on a flat page, so a
-            // container would only draw a box around text nobody can act on.
-            .padding(.horizontal, 18)
-            .padding(.vertical, DesignTokens.Spacing.cardInset)
-            .frame(maxWidth: DesignTokens.GuidedLibrary.featureWidth)
 
             actionRow
 
@@ -100,24 +125,6 @@ struct LibraryGuideCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(DesignTokens.GuidedLibrary.outerPadding)
         .background(halo)
-    }
-
-    private var hero: some View {
-        ZStack {
-            Circle()
-                .fill(tint.opacity(0.12))
-                .frame(
-                    width: DesignTokens.GuidedLibrary.heroDiscSize,
-                    height: DesignTokens.GuidedLibrary.heroDiscSize
-                )
-                .overlay(Circle().strokeBorder(tint.opacity(0.18), lineWidth: 1))
-
-            Image(systemName: icon)
-                .font(.system(size: DesignTokens.GuidedLibrary.iconSize, weight: .light))
-                .foregroundStyle(tint)
-                .symbolRenderingMode(.hierarchical)
-        }
-        .accessibilityHidden(true)
     }
 
     /// Dark mode takes ~2/3 the alpha: what reads as a hint over white reads as

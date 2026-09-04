@@ -67,7 +67,7 @@ struct EmptyStateGuideView: View {
             GuideCardModel(
                 id: "video",
                 icon: "film",
-                iconTint: .blue,
+                iconTint: DesignTokens.Colors.ContentType.video,
                 title: "Video",
                 subtitle: videoSubtitle,
                 accessibilityLabel: "Video wallpaper type",
@@ -76,7 +76,7 @@ struct EmptyStateGuideView: View {
             GuideCardModel(
                 id: "web",
                 icon: "globe",
-                iconTint: .green,
+                iconTint: DesignTokens.Colors.ContentType.html,
                 title: "Web",
                 subtitle: "Web pages, local .html files, and folders.",
                 accessibilityLabel: "Web wallpaper type",
@@ -88,7 +88,7 @@ struct EmptyStateGuideView: View {
                 GuideCardModel(
                     id: "scene",
                     icon: "cube.transparent",
-                    iconTint: .purple,
+                    iconTint: DesignTokens.Colors.ContentType.scene,
                     title: "Scene",
                     subtitle: "Compatible imported scenes.",
                     accessibilityLabel: "Scene wallpaper type",
@@ -107,15 +107,16 @@ struct EmptyStateGuideView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(Color.accentColor)
-                .symbolRenderingMode(.hierarchical)
-                .accessibilityHidden(true)
+            GuideHeroSymbol(icon: "sparkles", tint: .accentColor, glyphSize: 30)
 
             Text("Set up this display")
                 .font(DesignTokens.Typography.pageTitle)
                 .accessibilityAddTraits(.isHeader)
+
+            Text("Pick what it should show. You can change it at any time.")
+                .font(DesignTokens.Typography.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
     }
 

@@ -334,8 +334,6 @@ public enum DesignTokens {
         public static let outerPadding: CGFloat = 40
         public static let topSpacerHeight: CGFloat = Spacing.xl
         public static let iconSize: CGFloat = 48
-        /// Tinted disc behind the hero symbol, 2.1× the glyph.
-        public static let heroDiscSize: CGFloat = 102
         public static let featureWidth: CGFloat = 380
         public static let messageWidth: CGFloat = 360
     }
