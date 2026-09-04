@@ -83,6 +83,7 @@ struct LibraryGuideCard: View {
             Spacer(minLength: DesignTokens.GuidedLibrary.topSpacerHeight)
 
             GuideHeroSymbol(icon: icon, tint: tint)
+                .background(halo)
 
             VStack(spacing: 6) {
                 Text(title)
@@ -124,30 +125,21 @@ struct LibraryGuideCard: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(DesignTokens.GuidedLibrary.outerPadding)
-        .background(halo)
     }
 
-    /// Dark mode takes ~2/3 the alpha: what reads as a hint over white reads as
+    /// Sized off the hero, never the pane: a page-wide wash met the toolbar at
+    /// a visible seam, because the toolbar keeps its own untinted background.
+    /// Dark mode takes ~2/3 the alpha — what reads as a hint over white reads as
     /// a coloured page over #1E1E1E.
     private var halo: some View {
-        let isDark = colorScheme == .dark
-        return GeometryReader { proxy in
-            let span = max(proxy.size.width, proxy.size.height)
-            ZStack {
-                RadialGradient(
-                    colors: [tint.opacity(isDark ? 0.10 : 0.16), .clear],
-                    center: UnitPoint(x: 0.5, y: 0.16),
-                    startRadius: 0,
-                    endRadius: span * 0.6
-                )
-                RadialGradient(
-                    colors: [tint.opacity(isDark ? 0.05 : 0.09), .clear],
-                    center: UnitPoint(x: 0.88, y: 0.92),
-                    startRadius: 0,
-                    endRadius: span * 0.45
-                )
-            }
-        }
+        let diameter = DesignTokens.GuidedLibrary.heroHaloDiameter
+        return RadialGradient(
+            colors: [tint.opacity(colorScheme == .dark ? 0.13 : 0.20), .clear],
+            center: .center,
+            startRadius: 0,
+            endRadius: diameter / 2
+        )
+        .frame(width: diameter, height: diameter)
         .allowsHitTesting(false)
     }
 
