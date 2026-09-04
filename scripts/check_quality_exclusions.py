@@ -336,8 +336,34 @@ def parse_added_risky_lines(diff_text: str, excluded_paths: set[str]) -> list[Ch
     return violations
 
 
+def parse_rename_origins(name_status: str, excluded_paths: set[str]) -> set[str]:
+    origins: set[str] = set()
+    for line in name_status.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 3 or not fields[0].startswith("R"):
+            continue
+        _, old_path, new_path = fields
+        if new_path in excluded_paths:
+            origins.add(old_path)
+    return origins
+
+
 def changed_line_violations(base: str | None, paths: set[str], errors: list[str]) -> list[ChangedLineViolation]:
     comparison = base or "HEAD"
+    rename_result = git_output(
+        [
+            "diff",
+            "--name-status",
+            "--no-color",
+            "--no-ext-diff",
+            "--find-renames",
+            comparison,
+        ]
+    )
+    if rename_result.returncode != 0:
+        errors.append(f"cannot inspect hotspot renames: {rename_result.stderr.strip()}")
+        return []
+    comparison_paths = paths | parse_rename_origins(rename_result.stdout, paths)
     result = git_output(
         [
             "diff",
@@ -347,7 +373,7 @@ def changed_line_violations(base: str | None, paths: set[str], errors: list[str]
             "--find-renames",
             comparison,
             "--",
-            *sorted(paths),
+            *sorted(comparison_paths),
         ]
     )
     if result.returncode != 0:
@@ -391,6 +417,16 @@ diff --git a/Regular.swift b/Regular.swift
     if caught != expected or len(violations) != len(expected) or simulated_gate_exit != 1:
         print(
             f"ERROR: negative self-test did not reject every injected rule; caught={sorted(caught)}",
+            file=sys.stderr,
+        )
+        return 1
+    rename_origins = parse_rename_origins(
+        "R100\tOldHotspot.swift\tHotspot.swift\nM\tRegular.swift",
+        {"Hotspot.swift"},
+    )
+    if rename_origins != {"OldHotspot.swift"}:
+        print(
+            f"ERROR: negative self-test did not retain hotspot rename origin; got={sorted(rename_origins)}",
             file=sys.stderr,
         )
         return 1
