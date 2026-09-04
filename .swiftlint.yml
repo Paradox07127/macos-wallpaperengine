@@ -31,7 +31,7 @@ excluded:
   # keep excluded. SceneRenderer's split landed (B4), so it moved to the parts
   # list below. GeneralSettingsView was split (G8) and was never on this list.
   - LiveWallpaper/Runtime/Metal/WPEMetalShaderDispatcher.swift
-  - LiveWallpaper/VideoPlayback/HTMLWallpaperView.swift
+  - LiveWallpaper/Playback/Web/HTMLWallpaperView.swift
   # WPEShaderTranspiler, ScreenManager, WPEMetalRenderExecutor (B3a/B3b/B3c) and
   # WPEMetalSceneRenderer (B4) were split. Every split was a pure move, so the
   # parts inherit the violations the monoliths were never held to — splitting a

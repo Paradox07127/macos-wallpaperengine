@@ -52,7 +52,7 @@ struct WallpaperVideoPlayerOutputNegotiationTests {
     @Test("The composition readiness probe no longer hardcodes a BGRA output")
     func readinessProbeUsesNegotiatedFormats() throws {
         let source = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift"
+            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
         )
         let probe = try Self.slice(
             source,
@@ -297,7 +297,7 @@ struct WallpaperVideoPlayerHibernationTests {
     @Test("Cleanup and hibernation share one teardown path")
     func teardownIsFactoredOnce() throws {
         let source = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift"
+            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
         )
         let cleanup = try Self.slice(source, from: "\n    func cleanup() {", to: "\n    deinit {")
 

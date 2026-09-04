@@ -268,7 +268,7 @@ struct VideoSessionLifecycleTests {
     @Test("Display geometry has one ScreenManager owner and no per-player timer")
     func displayGeometryOwnershipIsCentralized() throws {
         let player = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift"
+            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
         )
         let manager = try RepositoryRoot.source(
             "LiveWallpaper/App/ScreenManager+Observers.swift"
@@ -528,10 +528,10 @@ struct VideoSessionLifecycleTests {
     @Test("Video replacement source preserves the old session through candidate preparation")
     func videoReplacementUsesPreparedTransaction() throws {
         let player = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift"
+            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
         )
         let container = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/VideoContainerView.swift"
+            "LiveWallpaper/Runtime/Video/VideoContainerView.swift"
         )
         let coordinator = try RepositoryRoot.source(
             "LiveWallpaper/Runtime/Coordinators/PlaybackCoordinator+SessionLifecycle.swift"
@@ -1419,7 +1419,7 @@ struct VideoSessionLifecycleTests {
     @Test("The permanent current-item observer replays guarded deferred FPS work")
     func permanentCurrentItemObserverOwnsDeferredFPSReplay() throws {
         let source = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift"
+            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
         )
         let observerStart = try #require(
             source.range(of: "private func installQueueItemMaintenanceObserver()")

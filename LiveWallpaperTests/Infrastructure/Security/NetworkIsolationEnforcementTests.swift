@@ -198,7 +198,7 @@ struct NetworkIsolationEnforcementTests {
     /// on the script itself cannot see `makeBaselineScript` dropping the call.
     @Test("The baseline script injects the blocker, gated on isolation")
     func baselineScriptWiresTheBlockerToIsolation() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/VideoPlayback/HTMLWallpaperView.swift")
+        let source = try RepositoryRoot.source("LiveWallpaper/Playback/Web/HTMLWallpaperView.swift")
         let gate = source
             .split(separator: "\n")
             .first { $0.contains("HTMLWallpaperRuntimeScript.peerConnectionBlocker()") }
