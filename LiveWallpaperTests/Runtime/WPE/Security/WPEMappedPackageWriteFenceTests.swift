@@ -132,6 +132,32 @@ struct WPEMappedPackageWriteFenceTests {
     // planted `FileHandle(forUpdating:)` + bare `data.write(to:)` in
     // WPECachedContentResolver turned both red.
 
+    /// Sweeps `roots`, and names any that resolved to nothing.
+    ///
+    /// `swiftFiles(under:)` returns an empty array for a path that does not
+    /// exist and reports no error, so a root left stale by a directory rename
+    /// stops being scanned without failing anything. That is exactly how
+    /// `LiveWallpaper/VideoPlayback` kept reporting green for a whole refactor
+    /// after the directory was split into `Playback/` and `Runtime/*`. An
+    /// aggregate file count cannot catch it — one root going empty costs nine
+    /// files out of several hundred.
+    private static func sweep(_ roots: [String]) -> (files: [URL], emptyRoots: [String]) {
+        var files: [URL] = []
+        var emptyRoots: [String] = []
+        for root in roots {
+            let found = RepositoryRoot.swiftFiles(under: root).filter { !$0.path.contains("/Tests/") }
+            if found.isEmpty {
+                emptyRoots.append(root)
+            }
+            files.append(contentsOf: found)
+        }
+        return (files, emptyRoots)
+    }
+
+    private static func staleRootComment(_ emptyRoots: [String]) -> Comment {
+        Comment(rawValue: "Scan root matches no sources — renamed or deleted directory, leaving that tree unguarded: \(emptyRoots.joined(separator: ", "))")
+    }
+
     private static let productionRoots = [
         "LiveWallpaper",
         "SteamConnector",
@@ -144,13 +170,14 @@ struct WPEMappedPackageWriteFenceTests {
     /// reader. There is no legitimate use anywhere in production.
     @Test("The in-place update API is absent from all production sources")
     func inPlaceUpdateAPIIsAbsent() throws {
+        let (files, emptyRoots) = Self.sweep(Self.productionRoots)
+        #expect(emptyRoots.isEmpty, Self.staleRootComment(emptyRoots))
+
         var hits: [String] = []
-        for root in Self.productionRoots {
-            for file in RepositoryRoot.swiftFiles(under: root) where !file.path.contains("/Tests/") {
-                let source = try String(contentsOf: file, encoding: .utf8)
-                if source.contains("forUpdating") {
-                    hits.append(file.path)
-                }
+        for file in files {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            if source.contains("forUpdating") {
+                hits.append(file.path)
             }
         }
         #expect(
@@ -166,7 +193,7 @@ struct WPEMappedPackageWriteFenceTests {
     /// place) and then recorded below with its occurrence count.
     private static let fencedRoots = [
         "LiveWallpaper/Infrastructure",
-        "LiveWallpaper/VideoPlayback",
+        "LiveWallpaper/Playback",
         "LiveWallpaper/Runtime",
         "SteamConnector",
         "Packages/LiveWallpaperProWPE/Sources",
@@ -231,22 +258,21 @@ struct WPEMappedPackageWriteFenceTests {
 
     @Test("Write-capable file opens in the content surface stay on the audited allowlist")
     func writeCapableOpensStayAudited() throws {
-        var sweptFiles = 0
+        let (files, emptyRoots) = Self.sweep(Self.fencedRoots)
+        #expect(emptyRoots.isEmpty, Self.staleRootComment(emptyRoots))
+
         var observed: [String: [String: Int]] = [:]
-        for root in Self.fencedRoots {
-            for file in RepositoryRoot.swiftFiles(under: root) where !file.path.contains("/Tests/") {
-                sweptFiles += 1
-                let source = try String(contentsOf: file, encoding: .utf8)
-                let relativePath = RepositoryRoot.relativePath(of: file)
-                for pattern in Self.writePatterns {
-                    let count = source.components(separatedBy: pattern).count - 1
-                    if count > 0 {
-                        observed[relativePath, default: [:]][pattern] = count
-                    }
+        for file in files {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            let relativePath = RepositoryRoot.relativePath(of: file)
+            for pattern in Self.writePatterns {
+                let count = source.components(separatedBy: pattern).count - 1
+                if count > 0 {
+                    observed[relativePath, default: [:]][pattern] = count
                 }
             }
         }
-        #expect(sweptFiles > 100, "Content-surface sweep collapsed to \(sweptFiles) files")
+        #expect(files.count > 100, "Content-surface sweep collapsed to \(files.count) files")
 
         var violations: [String] = []
         for (file, patterns) in observed {
