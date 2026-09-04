@@ -84,10 +84,16 @@ struct SchemeLibraryView: View {
     }
 
     private var emptyState: some View {
-        IllustratedEmptyState(
-            symbol: "square.stack.3d.up",
+        LibraryGuideCard(
+            icon: "square.stack.3d.up",
+            tint: DesignTokens.Colors.LibraryTint.schemes,
             title: "No schemes yet",
-            message: "Open a display, set it up the way you like, then use Save as Scheme in its header. Saved setups land here and can be applied to any display."
+            message: "A scheme is a whole display's setup, not just its wallpaper — saved once, put back on any display.",
+            features: [
+                LibraryGuideFeature(icon: "square.and.arrow.down", text: "Saved from a display's Save as Scheme"),
+                LibraryGuideFeature(icon: "slider.horizontal.3", text: "Carries wallpaper, playback and overlay"),
+                LibraryGuideFeature(icon: "display.2", text: "Applying one replaces that display's whole setup"),
+            ]
         )
     }
 

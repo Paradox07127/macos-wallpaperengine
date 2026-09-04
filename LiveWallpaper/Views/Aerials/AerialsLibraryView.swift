@@ -66,12 +66,13 @@ struct AerialsLibraryView: View {
     private func scanErrorView(message: String) -> some View {
         LibraryGuideCard(
             icon: "exclamationmark.triangle",
+            tint: DesignTokens.Colors.LibraryTint.aerials,
             title: "Couldn't scan Aerials",
             message: "We hit a problem while scanning the Apple Aerials library.",
             features: [
-                LibraryGuideFeature(icon: "folder.badge.gearshape", text: "Reconnect the Apple Aerials library location"),
-                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "Retry after macOS finishes updating the folder"),
-                LibraryGuideFeature(icon: "checkmark.shield", text: "Read-only access; no files are modified")
+                LibraryGuideFeature(icon: "folder.badge.gearshape", text: "macOS may have moved the folder"),
+                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "A download in progress can lock it briefly"),
+                LibraryGuideFeature(icon: "checkmark.shield", text: "Nothing on disk was modified"),
             ],
             actionTitle: "Reconnect",
             actionSystemImage: "folder.badge.gearshape",
@@ -128,12 +129,13 @@ struct AerialsLibraryView: View {
     private var unauthorizedState: some View {
         LibraryGuideCard(
             icon: "sparkles.tv",
+            tint: DesignTokens.Colors.LibraryTint.aerials,
             title: "Connect Apple Aerials",
             message: "Connect the local Apple Aerials library that contains downloaded aerial videos.",
             features: [
-                LibraryGuideFeature(icon: "folder.badge.gearshape", text: "Open the local Aerials folder automatically"),
-                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "Refresh after macOS downloads or removes aerial videos"),
-                LibraryGuideFeature(icon: "checkmark.shield", text: "Read-only access; applied videos stay managed by LiveWallpaper")
+                LibraryGuideFeature(icon: "display.2", text: "Put any downloaded aerial on any display"),
+                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "New aerials show up as macOS downloads them"),
+                LibraryGuideFeature(icon: "checkmark.shield", text: "Read-only — the files stay where they are"),
             ],
             actionTitle: library.isScanning ? "Connecting..." : "Connect Library",
             actionSystemImage: "folder.badge.plus",
@@ -149,12 +151,13 @@ struct AerialsLibraryView: View {
     private var emptyState: some View {
         LibraryGuideCard(
             icon: "sparkles.tv",
+            tint: DesignTokens.Colors.LibraryTint.aerials,
             title: "No aerials downloaded yet",
             message: "Apple downloads aerial wallpapers on demand. Pick one from System Settings → Wallpaper, then refresh.",
             features: [
-                LibraryGuideFeature(icon: "gearshape", text: "Open Wallpaper settings and select an Apple aerial"),
-                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "Refresh after macOS finishes downloading the video"),
-                LibraryGuideFeature(icon: "checkmark.shield", text: "Only downloaded .mov aerials are listed here")
+                LibraryGuideFeature(icon: "gearshape", text: "Choosing one in System Settings downloads it"),
+                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "It appears here once the download finishes"),
+                LibraryGuideFeature(icon: "checkmark.shield", text: "Only fully downloaded aerials are listed"),
             ],
             actionTitle: "Open System Settings",
             actionSystemImage: "gearshape",

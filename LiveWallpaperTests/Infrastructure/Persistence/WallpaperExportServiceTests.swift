@@ -94,7 +94,6 @@ struct WallpaperExportServiceTests {
     }
 
     private func makeRig(
-        osSupported: Bool = true,
         thumbnailJPEG: Data? = Data([0xFF, 0xD8, 0xFF, 0xE0]),
         now: Date = referenceNow,
         duringThumbnail: PublishHook? = nil,
@@ -123,7 +122,6 @@ struct WallpaperExportServiceTests {
                 if let duringThumbnail { await MainActor.run { duringThumbnail.fire() } }
                 return thumbnailJPEG
             },
-            osSupported: osSupported,
             expectedProvider: expectedProvider
         ))
         return Rig(service: service, root: root, sourceDirectory: sources)
@@ -627,8 +625,7 @@ struct WallpaperExportServiceTests {
                 refreshData: { _ in Data() }
             ),
             now: { Date(timeIntervalSince1970: 1_760_000_000) },
-            makeThumbnailJPEG: { _ in nil },
-            osSupported: true
+            makeThumbnailJPEG: { _ in nil }
         ))
         await #expect(throws: WallpaperExportService.ServiceError.thumbnailFailed) {
             try await failing.publish(bookmark: bookmark)
@@ -699,12 +696,6 @@ struct WallpaperExportServiceTests {
 
 
     // MARK: - Status machine
-
-    @Test("Unsupported OS wins over everything else")
-    func statusUnsupported() throws {
-        let rig = try makeRig(osSupported: false)
-        #expect(rig.service.status == .unsupported)
-    }
 
     @Test("An unhealthy heartbeat reads as system-incompatible")
     func statusSystemIncompatible() async throws {
@@ -895,6 +886,59 @@ struct WallpaperExportServiceTests {
         ))
         rig.service.refresh()
         #expect(rig.service.status == .inUse(itemTitle: "Aurora"))
+    }
+
+    /// Regression: the stamp guard used to live only in `isFresh`, so a
+    /// build/w5d-dd extension left running after an in-place update put the
+    /// installed one — never asked — into "paused".
+    @Test("An unhealthy verdict from a stale appex does not bar publishing")
+    func statusIgnoresForeignUnhealthyVerdict() async throws {
+        let installed = SystemWallpaperProviderIdentity(
+            build: "42",
+            bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
+            pid: 0
+        )
+        let rig = try makeRig(expectedProvider: installed)
+        let bookmark = try rig.makeVideoBookmark(label: "Aurora")
+        try await rig.service.publish(bookmark: bookmark)
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(
+            timestamp: Self.referenceNow.addingTimeInterval(-60),
+            activeChoiceID: nil,
+            runtimeHealthy: false,
+            provider: SystemWallpaperProviderIdentity(
+                build: "41",
+                bundlePath: installed.bundlePath,
+                pid: 999
+            )
+        ))
+        rig.service.refresh()
+        #expect(rig.service.status != .systemIncompatible)
+    }
+
+    /// Control: same beat, only the stamp differs. Verified 2026-09-04 —
+    /// deleting the `barsPublishing` branch turns this red and the other green.
+    @Test("An unhealthy verdict from the installed appex still bars publishing")
+    func statusHonoursOwnUnhealthyVerdict() async throws {
+        let installed = SystemWallpaperProviderIdentity(
+            build: "42",
+            bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
+            pid: 0
+        )
+        let rig = try makeRig(expectedProvider: installed)
+        let bookmark = try rig.makeVideoBookmark(label: "Aurora")
+        try await rig.service.publish(bookmark: bookmark)
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(
+            timestamp: Self.referenceNow.addingTimeInterval(-60),
+            activeChoiceID: nil,
+            runtimeHealthy: false,
+            provider: SystemWallpaperProviderIdentity(
+                build: installed.build,
+                bundlePath: installed.bundlePath,
+                pid: 999
+            )
+        ))
+        rig.service.refresh()
+        #expect(rig.service.status == .systemIncompatible)
     }
 
     @Test("A failed operation surfaces as failed until dismissed")

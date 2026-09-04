@@ -3082,6 +3082,40 @@
         }
       }
     },
+    "A bookmark keeps one wallpaper — its source and the settings you gave it — ready to put back later." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A bookmark keeps one wallpaper — its source and the settings you gave it — ready to put back later."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un marcador guarda un fondo —su origen y los ajustes que le diste— listo para volver a aplicarlo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマークは壁紙ひとつ分 — その参照元と設定 — をまとめて保存し、いつでも戻せます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "书签保存一份壁纸——它的来源，以及你为它设定的参数——随时可以放回去。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書籤保存一份桌布——它的來源，以及你為它設定的參數——隨時可以放回去。"
+          }
+        }
+      }
+    },
     "A component of the install path is a symbolic link: %@" : {
       "comment" : "Managed SteamCMD install error. Placeholder is the offending path.",
       "extractionState" : "manual",
@@ -3150,6 +3184,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法轉譯自訂著色器。請嘗試重新下載此專案。"
+          }
+        }
+      }
+    },
+    "A download in progress can lock it briefly" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A download in progress can lock it briefly"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una descarga en curso puede bloquearla un momento"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード中は一時的にロックされることがあります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载进行中时它会被短暂锁定"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載進行中時它會被短暫鎖定"
           }
         }
       }
@@ -3293,6 +3361,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已經有同名的預設了"
+          }
+        }
+      }
+    },
+    "A scheme is a whole display's setup, not just its wallpaper — saved once, put back on any display." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A scheme is a whole display's setup, not just its wallpaper — saved once, put back on any display."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un esquema guarda la configuración completa de una pantalla, no solo el fondo: se guarda una vez y se aplica a cualquier pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成は壁紙だけでなくディスプレイ 1 台分の設定一式です。一度保存すれば、どのディスプレイにも戻せます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方案保存的是整块屏幕的设置，不只是壁纸——存一次，可以放回任意显示器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "方案儲存的是整塊螢幕的設定，不只是桌布——存一次，可以放回任意顯示器。"
           }
         }
       }
@@ -6252,6 +6354,40 @@
         }
       }
     },
+    "Apply a saved wallpaper to any display, any time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply a saved wallpaper to any display, any time"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aplica un fondo guardado a cualquier pantalla cuando quieras"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存した壁紙をいつでも任意のディスプレイに適用できます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随时把已保存的壁纸应用到任意显示器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隨時把已儲存的桌布套用到任意顯示器"
+          }
+        }
+      }
+    },
     "Apply Failed" : {
       "localizations" : {
         "en" : {
@@ -6696,6 +6832,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "套用到所有顯示器"
+          }
+        }
+      }
+    },
+    "Applying one replaces that display's whole setup" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applying one replaces that display's whole setup"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al aplicarlo se reemplaza toda la configuración de esa pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "適用するとそのディスプレイの設定一式が置き換わります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用方案会替换该显示器的整套设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用方案會取代該顯示器的整套設定"
           }
         }
       }
@@ -10299,6 +10469,40 @@
         }
       }
     },
+    "Carries wallpaper, playback and overlay" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carries wallpaper, playback and overlay"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluye fondo, reproducción y superposición"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙・再生設定・オーバーレイを保持"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含壁纸、播放设置与叠加层"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含桌布、播放設定與疊加層"
+          }
+        }
+      }
+    },
     "Center" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11873,6 +12077,40 @@
         }
       }
     },
+    "Choosing one in System Settings downloads it" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choosing one in System Settings downloads it"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al elegir una en Ajustes del Sistema se descarga"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「システム設定」で選ぶとダウンロードされます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“系统设置”中选中一个即可下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「系統設定」中選取一個即可下載"
+          }
+        }
+      }
+    },
     "Circle" : {
       "comment" : "Now Playing artwork shape: clipped to a circle.",
       "extractionState" : "manual",
@@ -12539,6 +12777,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除網頁 — 移除此顯示器已儲存的網頁"
+          }
+        }
+      }
+    },
+    "Clears itself after a macOS or app update" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clears itself after a macOS or app update"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se resuelve tras actualizar macOS o la app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS か本アプリの更新後に自動で解除されます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 或本 app 更新后会自动恢复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 或本 app 更新後會自動恢復"
           }
         }
       }
@@ -26673,6 +26945,40 @@
         }
       }
     },
+    "Hand a video to the system and macOS plays it itself, so it keeps running with Loomscreen closed." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hand a video to the system and macOS plays it itself, so it keeps running with Loomscreen closed."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entrega un vídeo al sistema y macOS lo reproduce por su cuenta, así sigue con Loomscreen cerrado."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオをシステムに渡すと macOS 自身が再生するため、Loomscreen を終了しても再生が続きます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把视频交给系统后由 macOS 自己播放，所以关闭 Loomscreen 也会继续。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把影片交給系統後由 macOS 自己播放，所以結束 Loomscreen 也會繼續。"
+          }
+        }
+      }
+    },
     "Hand videos to macOS so they play without Loomscreen running" : {
       "comment" : "Sidebar accessibility hint for the System Wallpaper item.",
       "localizations" : {
@@ -29209,6 +29515,40 @@
         }
       }
     },
+    "It appears here once the download finishes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It appears here once the download finishes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aparece aquí en cuanto termina la descarga"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードが完了するとここに表示されます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载完成后它就会出现在这里"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載完成後它就會出現在這裡"
+          }
+        }
+      }
+    },
     "It holds many wallpapers rather than one. Import it from the Workshop library instead." : {
       "comment" : "Drop failure message when the dropped folder is a Wallpaper Engine library root.",
       "extractionState" : "manual",
@@ -29554,6 +29894,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保留現有金鑰"
+          }
+        }
+      }
+    },
+    "Keeps playing with Loomscreen quit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps playing with Loomscreen quit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sigue reproduciéndose con Loomscreen cerrado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreen を終了しても再生を続けます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出 Loomscreen 后仍继续播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束 Loomscreen 後仍繼續播放"
           }
         }
       }
@@ -33183,6 +33557,74 @@
         }
       }
     },
+    "macOS keeps its own copy of each video" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS keeps its own copy of each video"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS guarda su propia copia de cada vídeo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS は各ビデオのコピーを独自に保持します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 会为每个视频保留一份自己的副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 會為每個影片保留一份自己的副本"
+          }
+        }
+      }
+    },
+    "macOS may have moved the folder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS may have moved the folder"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puede que macOS haya movido la carpeta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS がフォルダを移動した可能性があります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 可能移动了这个文件夹"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 可能移動了這個檔案夾"
+          }
+        }
+      }
+    },
     "macOS plays these copies itself, so it needs its own file for each one. Remove a video in Library › System Wallpaper to free its space." : {
       "comment" : "Storage tile info note explaining why System Wallpaper duplicates video files.",
       "localizations" : {
@@ -36241,6 +36683,40 @@
         }
       }
     },
+    "New aerials show up as macOS downloads them" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New aerials show up as macOS downloads them"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las nuevas aéreas aparecen a medida que macOS las descarga"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS が新しい空撮をダウンロードすると自動で表示されます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 下载新的航拍后会自动出现在这里"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 下載新的空拍後會自動出現在這裡"
+          }
+        }
+      }
+    },
     "New version available" : {
       "comment" : "A title for an alert that announces a new version is available.",
       "isCommentAutoGenerated" : true,
@@ -38378,41 +38854,6 @@
         }
       }
     },
-    "Not available on this version of macOS" : {
-      "comment" : "Disabled-state label when the System Wallpaper feature is missing on this macOS.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not available on this version of macOS"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No disponible en esta versión de macOS"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このバージョンの macOS では利用できません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此 macOS 版本不可用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此 macOS 版本無法使用"
-          }
-        }
-      }
-    },
     "Not checked yet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38954,6 +39395,40 @@
         }
       }
     },
+    "Nothing on disk was modified" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing on disk was modified"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se modificó ningún archivo del disco"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスク上のファイルは変更されていません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "磁盘上的文件没有被修改"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "磁碟上的檔案沒有被修改"
+          }
+        }
+      }
+    },
     "Now playing" : {
       "comment" : "VoiceOver tag for the currently playing playlist entry.",
       "localizations" : {
@@ -39370,41 +39845,6 @@
         }
       }
     },
-    "On earlier versions Loomscreen plays wallpapers itself, which needs the app running." : {
-      "comment" : "Explains the fallback on macOS versions without the wallpaper extension point.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "On earlier versions Loomscreen plays wallpapers itself, which needs the app running."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En versiones anteriores Loomscreen reproduce los fondos de pantalla por sí mismo, lo que requiere que la app esté en ejecución."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以前のバージョンでは Loomscreen 自身が再生するため、App の起動が必要です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更低版本上由 Loomscreen 自己播放，需要保持 app 运行。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "較舊版本由 Loomscreen 自行播放，需要保持 app 執行。"
-          }
-        }
-      }
-    },
     "On Lock" : {
       "comment" : "Caption under the capture-on-lock toggle on the video preview bar.",
       "isCommentAutoGenerated" : true,
@@ -39643,36 +40083,36 @@
         }
       }
     },
-    "Only downloaded .mov aerials are listed here" : {
+    "Only fully downloaded aerials are listed" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Only downloaded .mov aerials are listed here"
+            "value" : "Only fully downloaded aerials are listed"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aquí solo aparecen los Aerials .mov descargados"
+            "value" : "Solo se listan las aéreas descargadas por completo"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ここにはダウンロード済みの .mov Aerials のみが表示されます"
+            "value" : "完全にダウンロードされた空撮のみを表示します"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此处仅列出已下载的 .mov Aerials"
+            "value" : "只列出已完整下载的航拍"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這裡只會列出已下載的 .mov Aerials"
+            "value" : "只列出已完整下載的空拍"
           }
         }
       }
@@ -39890,41 +40330,6 @@
         }
       }
     },
-    "Open a display, set it up the way you like, then use Save as Scheme in its header. Saved setups land here and can be applied to any display." : {
-      "comment" : "Message of the empty state on the Schemes library page.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open a display, set it up the way you like, then use Save as Scheme in its header. Saved setups land here and can be applied to any display."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre una pantalla, configúrala a tu gusto y usa Guardar como esquema en el encabezado. Las configuraciones guardadas aparecen aquí y se pueden aplicar a cualquier pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスプレイを開いて好みに設定したら、ヘッダーの「構成として保存」を使います。保存した構成はここに並び、どのディスプレイにも適用できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开一块屏幕，按你的喜好设置好，然后用页头的“保存为方案”。保存的方案会出现在这里，可以套用到任何一块屏幕。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打開一台顯示器，按你的喜好設定好，然後用頁首的「儲存為方案」。已儲存的方案會出現在這裡，可以套用到任何一台顯示器。"
-          }
-        }
-      }
-    },
     "Open all in Steam" : {
       "comment" : "Tooltip for opening all queued workshop URLs/IDs in Steam.",
       "extractionState" : "manual",
@@ -39957,40 +40362,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Steam 中開啟全部"
-          }
-        }
-      }
-    },
-    "Open any display, configure a video / website / scene, then click the bookmark icon in the inspector header to save it here." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open any display, configure a video / website / scene, then click the bookmark icon in the inspector header to save it here."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre cualquier pantalla, configura un vídeo / sitio web / escena y pulsa el icono de marcador en el encabezado del inspector para guardarlo aquí."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "任意のディスプレイを開き、動画 / Web サイト / シーンを設定してから、インスペクターヘッダーのブックマークアイコンをクリックすると、ここに保存できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开任意显示器，配置视频/网站/场景，然后点击检查器标题中的书签图标即可保存到此处。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟任一顯示器，設定影片 / 網站 / 場景，然後按一下檢查器標題中的書籤圖示即可儲存在這裡。"
           }
         }
       }
@@ -40619,40 +40990,6 @@
         }
       }
     },
-    "Open the local Aerials folder automatically" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open the local Aerials folder automatically"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir automáticamente la carpeta local de Aerials"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ローカルの Aerials フォルダを自動で開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动打开本地 Aerials 文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動開啟本機 Aerials 資料夾"
-          }
-        }
-      }
-    },
     "Open this item's Steam Workshop page" : {
       "comment" : "Tooltip for workshop link button in detail view.",
       "extractionState" : "manual",
@@ -40754,40 +41091,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打開桌布設定"
-          }
-        }
-      }
-    },
-    "Open Wallpaper settings and select an Apple aerial" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Wallpaper settings and select an Apple aerial"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir los ajustes de fondo de pantalla y seleccionar un Apple Aerial"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙設定を開いて Apple Aerial を選択"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开壁纸设置并选择一个 Apple Aerial"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟桌布設定並選取 Apple Aerial"
           }
         }
       }
@@ -41154,6 +41457,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "其他選項"
+          }
+        }
+      }
+    },
+    "Our wallpaper extension checked this build of macOS and found a layout it can't drive, so it stopped handing videos to the system." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Our wallpaper extension checked this build of macOS and found a layout it can't drive, so it stopped handing videos to the system."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuestra extensión de fondos revisó esta versión de macOS y encontró una disposición que no puede manejar, así que dejó de entregar vídeos al sistema."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙機能拡張がこの macOS ビルドを確認し、対応できないレイアウトを検出したため、システムへのビデオ提供を停止しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我们的壁纸扩展检查了这个 macOS 版本，发现它无法驱动的布局，因此停止向系统交付视频。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我們的桌布延伸功能檢查了這個 macOS 版本，發現它無法驅動的版面配置，因此停止向系統交付影片。"
           }
         }
       }
@@ -45493,6 +45830,40 @@
         }
       }
     },
+    "Put any downloaded aerial on any display" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put any downloaded aerial on any display"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pon cualquier aérea descargada en cualquier pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロード済みの空撮をどのディスプレイにも設定できます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把任意已下载的航拍放到任意显示器上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把任意已下載的空拍放到任意顯示器上"
+          }
+        }
+      }
+    },
     "Quality (0.75×)" : {
       "localizations" : {
         "en" : {
@@ -46249,6 +46620,40 @@
         }
       }
     },
+    "Read-only — the files stay where they are" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read-only — the files stay where they are"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo lectura: los archivos no se mueven"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取り専用 — ファイルはそのままの場所に残ります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只读访问——文件保持原位不动"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "唯讀存取——檔案保持原位不動"
+          }
+        }
+      }
+    },
     "Read-only access to ~/.claude" : {
       "comment" : "Subtitle for the setting that allows read-only access to the user's Claude folder.",
       "isCommentAutoGenerated" : true,
@@ -46305,74 +46710,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "對 ~/.codex 的唯讀存取"
-          }
-        }
-      }
-    },
-    "Read-only access; applied videos stay managed by LiveWallpaper" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read-only access; applied videos stay managed by Loomscreen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acceso de solo lectura; los vídeos aplicados siguen gestionados por Loomscreen"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "読み取り専用アクセス。適用したビデオは Loomscreen が管理します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只读访问；应用的视频仍由 Loomscreen 管理"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "唯讀存取；已套用的影片仍由 Loomscreen 管理"
-          }
-        }
-      }
-    },
-    "Read-only access; no files are modified" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read-only access; no files are modified"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acceso de solo lectura; no se modifica ningún archivo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "読み取り専用アクセス。ファイルは変更されません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只读访问；不会修改任何文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "唯讀存取；不會修改任何檔案"
           }
         }
       }
@@ -46681,40 +47018,6 @@
         }
       }
     },
-    "Reconnect the Apple Aerials library location" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reconnect the Apple Aerials library location"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reconectar la ubicación de la biblioteca de Apple Aerials"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apple Aerials ライブラリの場所を再接続"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新连接 Apple Aerials 库位置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新連接 Apple Aerials 資料庫位置"
-          }
-        }
-      }
-    },
     "Reduce frame rate when covered" : {
       "localizations" : {
         "en" : {
@@ -46988,74 +47291,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新整理 Aerials 資料庫"
-          }
-        }
-      }
-    },
-    "Refresh after macOS downloads or removes aerial videos" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refresh after macOS downloads or removes aerial videos"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualizar cuando macOS descargue o elimine vídeos de Aerials"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS が空撮ビデオをダウンロードまたは削除した後に更新"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 macOS 下载或移除航拍视频后刷新"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 macOS 下載或移除空拍影片後重新整理"
-          }
-        }
-      }
-    },
-    "Refresh after macOS finishes downloading the video" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Refresh after macOS finishes downloading the video"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actualizar cuando macOS termine de descargar el vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS がビデオのダウンロードを完了した後に更新"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 macOS 完成下载视频后刷新"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 macOS 完成下載影片後重新整理"
           }
         }
       }
@@ -49156,41 +49391,6 @@
         }
       }
     },
-    "Requires macOS 26 or later" : {
-      "comment" : "Requirement label for the System Wallpaper feature.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Requires macOS 26 or later"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Requiere macOS 26 o posterior"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 26 以降が必要です"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要 macOS 26 或更新版本"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要 macOS 26 或更新版本"
-          }
-        }
-      }
-    },
     "Rescan" : {
       "comment" : "Button that re-reads the Steam accounts from config.vdf.",
       "extractionState" : "manual",
@@ -50477,40 +50677,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重試"
-          }
-        }
-      }
-    },
-    "Retry after macOS finishes updating the folder" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retry after macOS finishes updating the folder"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reintentar cuando macOS termine de actualizar la carpeta"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS がフォルダの更新を完了した後に再試行"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 macOS 完成更新文件夹后重试"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 macOS 完成更新資料夾後重試"
           }
         }
       }
@@ -52000,6 +52166,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你儲存的"
+          }
+        }
+      }
+    },
+    "Saved from a display's bookmark icon" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved from a display's bookmark icon"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se guarda desde el icono de marcador de una pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイのブックマークアイコンから保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从显示器页眉的书签图标保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從顯示器頁首的書籤圖示儲存"
+          }
+        }
+      }
+    },
+    "Saved from a display's Save as Scheme" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved from a display's Save as Scheme"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se guarda con Guardar como esquema de una pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイの「構成として保存」から保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从显示器的“保存为方案”保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從顯示器的「儲存為方案」儲存"
           }
         }
       }
@@ -53588,6 +53822,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜尋書籤"
+          }
+        }
+      }
+    },
+    "Search by name, filter by wallpaper type" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search by name, filter by wallpaper type"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Busca por nombre y filtra por tipo de fondo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前で検索し、壁紙の種類で絞り込めます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按名称搜索，按壁纸类型筛选"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按名稱搜尋，按桌布類型篩選"
           }
         }
       }
@@ -61752,6 +62020,40 @@
         }
       }
     },
+    "System Wallpaper is paused on this macOS build" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Wallpaper is paused on this macOS build"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondo del sistema está en pausa en esta versión de macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この macOS ビルドではシステム壁紙を停止しています"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸在这个 macOS 版本上已暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布在這個 macOS 版本上已暫停"
+          }
+        }
+      }
+    },
     "System Wallpaper requires macOS 26 or later." : {
       "comment" : "Shown when the System Wallpaper page is reached on an unsupported macOS version.",
       "localizations" : {
@@ -63023,6 +63325,40 @@
         }
       }
     },
+    "The build changed what the extension reads" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The build changed what the extension reads"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta versión cambió lo que lee la extensión"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このビルドで機能拡張が読む内容が変わりました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个版本改动了扩展所读取的内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個版本改動了延伸功能所讀取的內容"
+          }
+        }
+      }
+    },
     "The bundle includes global preferences, display defaults, wallpaper library bookmarks, and per-display playback / effect setup. Wallpaper files themselves are not copied — only references to them." : {
       "localizations" : {
         "en" : {
@@ -63623,6 +63959,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法啟動本機網頁工作階段。"
+          }
+        }
+      }
+    },
+    "The lock screen changes with it" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The lock screen changes with it"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La pantalla de bloqueo cambia con él"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロック画面も一緒に変わります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "锁定屏幕也会随之改变"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鎖定畫面也會隨之改變"
           }
         }
       }
@@ -69959,41 +70329,6 @@
         }
       }
     },
-    "Videos you hand to the system keep playing with Loomscreen closed, and the lock screen changes too." : {
-      "comment" : "Empty state message on the System Wallpaper page; states what the feature is for.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Videos you hand to the system keep playing with Loomscreen closed, and the lock screen changes too."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los vídeos que entregas al sistema siguen reproduciéndose con Loomscreen cerrado, y la pantalla bloqueada también cambia."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システムに渡した動画は Loomscreen を終了しても再生され、ロック画面も変わります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "交给系统的视频在 Loomscreen 关闭后照常播放，锁屏也会一起变。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "交給系統的影片在 Loomscreen 關閉後照常播放，鎖定畫面也會一起改變。"
-          }
-        }
-      }
-    },
     "View in Workshop" : {
       "localizations" : {
         "en" : {
@@ -73877,37 +74212,36 @@
         }
       }
     },
-    "Your other Loomscreen wallpapers are unaffected." : {
-      "comment" : "Reassurance shown when the wallpaper extension cannot run on this macOS version.",
+    "Your other Loomscreen wallpapers are unaffected" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your other Loomscreen wallpapers are unaffected."
+            "value" : "Your other Loomscreen wallpapers are unaffected"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tus demás fondos de pantalla de Loomscreen no se ven afectados."
+            "value" : "Tus otros fondos de Loomscreen no se ven afectados"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen の他の壁紙には影響しません。"
+            "value" : "他の Loomscreen 壁紙には影響しません"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的其它壁纸不受影响。"
+            "value" : "你其它的 Loomscreen 壁纸不受影响"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的其他桌布不受影響。"
+            "value" : "你其它的 Loomscreen 桌布不受影響"
           }
         }
       }
