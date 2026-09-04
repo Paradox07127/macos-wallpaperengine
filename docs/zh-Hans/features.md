@@ -82,7 +82,7 @@ Retina 物理像素布局、临时存储（创意工坊导入强制开启）、C
 
 - **播放列表**（`LiveWallpaper/Views/Playlist/PlaylistSection.swift`、`LiveWallpaper/Policies/PlaylistPolicy.swift`）—— 拖拽排序、随机、1–1440 分钟轮换、应用到一台或所有显示器。
 - **计划**（`LiveWallpaper/Views/ScheduleSection/`、`LiveWallpaper/Policies/SchedulePolicy.swift`）—— 带预设时段、冲突检测、回落到主壁纸。
-- **协调器**（`LiveWallpaper/Policies/WallpaperAutomationCoordinator.swift`）—— 单个 60 秒 tick，只在确实有显示器启用了自动化时才运行；锁屏/休眠期间完全停止，唤醒后只对齐一次。
+- **协调器**（`LiveWallpaper/Runtime/Coordinators/WallpaperAutomationCoordinator.swift`）—— 单个 60 秒 tick，只在确实有显示器启用了自动化时才运行；锁屏/休眠期间完全停止，唤醒后只对齐一次。
 - **书签**（`Schema/WallpaperBookmark.swift`、`LiveWallpaper/App/ScreenManager+Bookmarks.swift`）—— 只收藏一张壁纸,别的什么都不带。套用书签只替换内容,目标显示器上的所有设置原样不动。
 - **方案**（`Schema/ScreenScheme.swift`、`LiveWallpaper/App/ScreenManager+Schemes.swift`）—— 一台显示器的完整设置:壁纸、叠加层(监控面板与 Now Playing 层)、以及全部播放/滤镜/播放列表/排程参数。套用会整套替换目标显示器的设置,并有确认框。组件与叠加层位置按归一化存储,所以在一块屏上捕获的方案落到不同尺寸的屏上仍然正确。仅限本机存档 —— 方案通过每台机器独有的安全作用域书签引用媒体文件,不能跨机器搬运。
 - **导入路由**（`LiveWallpaper/Infrastructure/Assets/WallpaperImportRouter.swift`）—— 工具栏选择器、拖放和引导流程背后共用一个分类器：视频 / 场景工程 / 场景库 / html / 不支持。

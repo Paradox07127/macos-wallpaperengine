@@ -10,7 +10,7 @@ struct VideoResolutionContractCharacterizationTests {
     @Test("Current local-only player contains no HLS-only resolution preference path")
     func currentLocalPlayerHasNoHLSResolutionPreferencePath() throws {
         let source = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift"
+            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
         )
 
         #expect(!source.contains("preferredMaximumResolution"))
@@ -21,7 +21,7 @@ struct VideoResolutionContractCharacterizationTests {
     @Test("Current local measurement baseline uses AVPlayerLayer and source-sized compositions")
     func localPresentationAndCompositionSizingBaseline() throws {
         let playerSource = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift"
+            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
         )
         let frameRatePolicy = try Self.slice(
             playerSource,
@@ -44,7 +44,7 @@ struct VideoResolutionContractCharacterizationTests {
         #expect(!frameRatePolicy.contains("preferredMaximumResolution"))
 
         let containerSource = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/VideoContainerView.swift"
+            "LiveWallpaper/Runtime/Video/VideoContainerView.swift"
         )
         let playerHost = try Self.slice(
             containerSource,

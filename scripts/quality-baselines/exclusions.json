@@ -16,7 +16,7 @@
       "reason": "Existing WebKit runtime debt is isolated until a dedicated cleanup can retain navigation, trust, and lifecycle behavior.",
       "expires_on": "2026-10-31",
       "paths": [
-        "LiveWallpaper/VideoPlayback/HTMLWallpaperView.swift"
+        "LiveWallpaper/Playback/Web/HTMLWallpaperView.swift"
       ]
     },
     {

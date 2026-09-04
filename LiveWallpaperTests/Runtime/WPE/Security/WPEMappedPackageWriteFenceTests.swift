@@ -219,7 +219,7 @@ struct WPEMappedPackageWriteFenceTests {
             "FileHandle(forWritingTo": 1,
             ".write(to": 2,
         ],
-        "LiveWallpaper/VideoPlayback/OggAudioTranscoder.swift": ["forWriting:": 1],
+        "LiveWallpaper/Runtime/Audio/OggAudioTranscoder.swift": ["forWriting:": 1],
         // Audited 2026-08-22: the MSL translation cache writes JSON under the
         // app's own Caches/wpe-msl/v<schema> dir — never a scene content path,
         // and `.atomic`, so a concurrent reader never sees a partial file.

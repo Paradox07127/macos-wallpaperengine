@@ -1223,14 +1223,14 @@ struct WallpaperVideoPlayerStartupPolicyTests {
 
     @Test("Pause does not depend on AVPlayer already being in the playing state")
     func pauseIsNotGatedOnPlayingTimeControlStatus() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift")
+        let source = try Self.readSourceFile("LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift")
 
         #expect(!source.contains("timeControlStatus == .playing else { return }"))
     }
 
     @Test("Wallpaper playback does not keep the display awake")
     func wallpaperPlaybackDisablesDisplaySleepPrevention() throws {
-        let source = try Self.readSourceFile("LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift")
+        let source = try Self.readSourceFile("LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift")
 
         #expect(source.contains("preventsDisplaySleepDuringVideoPlayback = false"))
     }

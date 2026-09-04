@@ -363,7 +363,7 @@ struct CriticalMemoryPressureFanoutTests {
     @Test("The reused teardown keeps its post-await generation and eligibility guards")
     func reusedTeardownKeepsItsGenerationGuard() throws {
         let source = try RepositoryRoot.source(
-            "LiveWallpaper/VideoPlayback/WallpaperVideoPlayer.swift"
+            "LiveWallpaper/Runtime/Video/WallpaperVideoPlayer.swift"
         )
         let start = try #require(source.range(of: "private func hibernateNow() async -> Bool {"))
         let rest = source[start.upperBound...]

@@ -150,7 +150,7 @@ struct SettingsWindowLayoutTests {
     func htmlPreviewPrefersLiveWebSnapshots() throws {
         let previewSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLPreviewSection.swift")
         let ambientSession = try Self.readSourceFile("LiveWallpaper/Runtime/Session/AmbientWallpaperSession.swift")
-        let htmlView = try Self.readSourceFile("LiveWallpaper/VideoPlayback/HTMLWallpaperView.swift")
+        let htmlView = try Self.readSourceFile("LiveWallpaper/Playback/Web/HTMLWallpaperView.swift")
 
         #expect(previewSection.contains("captureLiveHTMLSnapshot"))
         #expect(previewSection.contains("let liveImage = await captureLiveHTMLSnapshot()"))
