@@ -137,7 +137,7 @@ struct AerialsLibraryView: View {
                 LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "New aerials show up as macOS downloads them"),
                 LibraryGuideFeature(icon: "checkmark.shield", text: "Read-only — the files stay where they are"),
             ],
-            actionTitle: library.isScanning ? "Connecting..." : "Connect Library",
+            actionTitle: library.isScanning ? "Connecting…" : "Connect Library",
             actionSystemImage: "folder.badge.plus",
             isActionInProgress: library.isScanning,
             errorMessage: library.lastScanError,

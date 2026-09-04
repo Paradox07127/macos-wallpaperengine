@@ -362,7 +362,7 @@ struct DetailLoadingView: View {
         // accessibility label.
         ProgressView()
             .scaleEffect(1.5)
-            .accessibilityLabel(Text("Loading video..."))
+            .accessibilityLabel(Text("Loading video…"))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
             .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.preview))

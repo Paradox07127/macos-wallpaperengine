@@ -7261,41 +7261,6 @@
         }
       }
     },
-    "Asking GitHub for the latest release tag…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Asking GitHub for the latest release tag…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Consultando en GitHub la etiqueta de la última versión…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub に最新のリリースタグを問い合わせています…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在向 GitHub 查询最新发行版标签…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在向 GitHub 查詢最新發行版標籤…"
-          }
-        }
-      }
-    },
     "Asset Pack" : {
       "comment" : "Workshop tag: reusable assets rather than a finished wallpaper.",
       "localizations" : {
@@ -11153,77 +11118,6 @@
         }
       }
     },
-    "Checking" : {
-      "comment" : "Setup step status while a check is running.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Checking"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comprobando"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "確認中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查中"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "檢查中"
-          }
-        }
-      }
-    },
-    "Checking for updates…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Checking for updates…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscando actualizaciones…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アップデートを確認しています…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在检查更新…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在檢查更新…"
-          }
-        }
-      }
-    },
     "Checking Steam for the latest Wallpaper Engine build." : {
       "comment" : "Engine-assets settings status while checking for updates.",
       "localizations" : {
@@ -11346,8 +11240,15 @@
       }
     },
     "Checking…" : {
-      "comment" : "Inline status while waiting for audio permission state.\nInline status while waiting for macOS Login Items state.\nWeather permission status while refreshing.\nWorkshop Doctor probe is running.",
+      "comment" : "Inline status while a check runs: setup steps, audio and weather permission, Login Items, engine assets, and Workshop Doctor probes.",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking…"
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11363,13 +11264,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在检查…"
+            "value" : "检查中…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在檢查…"
+            "value" : "檢查中…"
           }
         }
       }
@@ -14297,18 +14198,18 @@
         }
       }
     },
-    "Connecting..." : {
+    "Connecting…" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connecting..."
+            "value" : "Connecting…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conectando..."
+            "value" : "Conectando…"
           }
         },
         "ja" : {
@@ -25114,73 +25015,38 @@
         }
       }
     },
-    "Fetching" : {
-      "comment" : "Workshop paste row status badge.",
+    "Fetching…" : {
+      "comment" : "Status while a fetch is in flight: the Workshop paste row, and weather location resolution.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fetching"
+            "value" : "Fetching…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Obteniendo"
+            "value" : "Obteniendo…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取得中"
+            "value" : "取得中…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "获取中"
+            "value" : "获取中…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "擷取中"
-          }
-        }
-      }
-    },
-    "Fetching..." : {
-      "comment" : "Weather location status.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fetching..."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Obteniendo..."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取得中..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在获取…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在擷取..."
+            "value" : "擷取中…"
           }
         }
       }
@@ -32291,24 +32157,24 @@
         }
       }
     },
-    "Loading preview..." : {
+    "Loading preview…" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading preview..."
+            "value" : "Loading preview…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cargando vista previa..."
+            "value" : "Cargando vista previa…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プレビューを読み込み中..."
+            "value" : "プレビューを読み込み中…"
           }
         },
         "zh-Hans" : {
@@ -32320,7 +32186,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在載入預覽..."
+            "value" : "正在載入預覽…"
           }
         }
       }
@@ -32430,24 +32296,24 @@
         }
       }
     },
-    "Loading video..." : {
+    "Loading video…" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loading video..."
+            "value" : "Loading video…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cargando vídeo..."
+            "value" : "Cargando vídeo…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "動画を読み込み中..."
+            "value" : "動画を読み込み中…"
           }
         },
         "zh-Hans" : {
@@ -32459,7 +32325,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在載入影片..."
+            "value" : "正在載入影片…"
           }
         }
       }
@@ -52344,41 +52210,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行中"
-          }
-        }
-      }
-    },
-    "Running…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Running…"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ejecutando…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "実行中…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "运行中…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "執行中…"
           }
         }
       }

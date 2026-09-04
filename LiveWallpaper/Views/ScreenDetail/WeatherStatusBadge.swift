@@ -136,26 +136,26 @@ struct WeatherStatusBadge: View {
 private extension WeatherReactiveService.LocationStatus {
     var titleKey: LocalizedStringKey {
         switch self {
-        case .notDetermined: return "Not Determined"
-        case .denied: return "Location Denied"
-        case .fetching: return "Fetching..."
-        case .available: return "Available"
-        case .error: return "Error"
+        case .notDetermined: "Not Determined"
+        case .denied: "Location Denied"
+        case .fetching: "Fetching…"
+        case .available: "Available"
+        case .error: "Error"
         }
     }
 
     var localizedTitle: String {
         switch self {
         case .notDetermined:
-            return String(localized: "Not Determined", defaultValue: "Not Determined", bundle: .appLanguage, comment: "Weather location status.")
+            String(localized: "Not Determined", defaultValue: "Not Determined", bundle: .appLanguage, comment: "Weather location status.")
         case .denied:
-            return String(localized: "Location Denied", defaultValue: "Location Denied", bundle: .appLanguage, comment: "Weather location status.")
+            String(localized: "Location Denied", defaultValue: "Location Denied", bundle: .appLanguage, comment: "Weather location status.")
         case .fetching:
-            return String(localized: "Fetching...", defaultValue: "Fetching...", bundle: .appLanguage, comment: "Weather location status.")
+            String(localized: "Fetching…", defaultValue: "Fetching…", bundle: .appLanguage, comment: "Weather location status.")
         case .available:
-            return String(localized: "Available", defaultValue: "Available", bundle: .appLanguage, comment: "Weather location status.")
+            String(localized: "Available", defaultValue: "Available", bundle: .appLanguage, comment: "Weather location status.")
         case .error:
-            return String(localized: "Error", defaultValue: "Error", bundle: .appLanguage, comment: "Weather location status.")
+            String(localized: "Error", defaultValue: "Error", bundle: .appLanguage, comment: "Weather location status.")
         }
     }
 }
