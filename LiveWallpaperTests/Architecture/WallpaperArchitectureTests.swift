@@ -469,18 +469,65 @@ struct WeatherReactivePolicyTests {
         let activeID: CGDirectDisplayID = 10
         let inactiveID: CGDirectDisplayID = 20
 
+        // Each fixture draws particles, so this test keeps measuring the one
+        // thing it is about — whether the display is live — now that the
+        // overlay's own switch is also weighed (see `monitorNeedsBothSwitches`).
         var activeConfig = ScreenConfiguration(screenID: activeID, videoBookmarkData: Data([0x01]))
+        activeConfig.particleEffect = .rain
         activeConfig.effectConfig.weatherReactive = true
 
         var inactiveConfig = ScreenConfiguration(screenID: inactiveID, videoBookmarkData: Data([0x02]))
+        inactiveConfig.particleEffect = .rain
         inactiveConfig.effectConfig.weatherReactive = true
 
         var disabledConfig = ScreenConfiguration(screenID: activeID, videoBookmarkData: Data([0x03]))
+        disabledConfig.particleEffect = .rain
         disabledConfig.effectConfig.weatherReactive = false
 
         #expect(WeatherReactivePolicy.shouldMonitor(configurations: [activeConfig], activeScreenIDs: [activeID]))
         #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [inactiveConfig], activeScreenIDs: [activeID]))
         #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [disabledConfig], activeScreenIDs: [activeID]))
+    }
+
+    /// Polling costs a network round trip an hour, forever, so it has to be
+    /// earned by a display that is actually drawing weather.
+    ///
+    /// "Match local weather" alone is not enough: the display's own particle
+    /// switch is the master, and with it off `resolvedParticleEffect` returns
+    /// `.none` whatever the sky is doing. Fetching for a display that draws
+    /// nothing is pure waste.
+    @Test("weather is fetched only for a display that both draws particles and follows the sky")
+    func monitorNeedsBothSwitches() {
+        let id: CGDirectDisplayID = 10
+
+        func config(effect: ParticleEffect, reactive: Bool) -> ScreenConfiguration {
+            var c = ScreenConfiguration(screenID: id, videoBookmarkData: Data([0x01]))
+            c.particleEffect = effect
+            c.effectConfig.weatherReactive = reactive
+            return c
+        }
+
+        #expect(WeatherReactivePolicy.shouldMonitor(
+            configurations: [config(effect: .rain, reactive: true)], activeScreenIDs: [id]
+        ))
+        #expect(!WeatherReactivePolicy.shouldMonitor(
+            configurations: [config(effect: .none, reactive: true)], activeScreenIDs: [id]
+        ), "fetching for a display whose weather overlay is switched off")
+        #expect(!WeatherReactivePolicy.shouldMonitor(
+            configurations: [config(effect: .rain, reactive: false)], activeScreenIDs: [id]
+        ))
+        #expect(!WeatherReactivePolicy.shouldMonitor(
+            configurations: [config(effect: .none, reactive: false)], activeScreenIDs: [id]
+        ))
+
+        // One qualifying display anywhere is enough.
+        var other = ScreenConfiguration(screenID: 20, videoBookmarkData: Data([0x02]))
+        other.particleEffect = .snow
+        other.effectConfig.weatherReactive = true
+        #expect(WeatherReactivePolicy.shouldMonitor(
+            configurations: [config(effect: .none, reactive: true), other],
+            activeScreenIDs: [id, 20]
+        ))
     }
 
     /// Wind direction is reported as the direction it blows *from*, which is

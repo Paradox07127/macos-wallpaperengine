@@ -3,12 +3,20 @@ import Foundation
 import LiveWallpaperCore
 
 enum WeatherReactivePolicy {
+    /// Whether any live display needs the hourly forecast fetched at all.
+    ///
+    /// Both switches, not just "match local weather": the display's own
+    /// particle switch is the master (see `resolvedParticleEffect`), so with it
+    /// off the display draws nothing regardless of the sky, and the fetch was a
+    /// network round trip an hour for a screen with no weather on it.
     static func shouldMonitor(
         configurations: [ScreenConfiguration],
         activeScreenIDs: Set<CGDirectDisplayID>
     ) -> Bool {
         configurations.contains { configuration in
-            activeScreenIDs.contains(configuration.screenID) && configuration.effectConfig.weatherReactive
+            activeScreenIDs.contains(configuration.screenID)
+                && configuration.particleEffect != .none
+                && configuration.effectConfig.weatherReactive
         }
     }
 

@@ -855,13 +855,7 @@ struct SteamCMDDiagnosisTrustGateTests {
     func spawnIsGatedInSource() throws {
         // Source-level guard: the connector target is not linked into this test
         // bundle, so this is the only way to hold that ordering.
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("SteamConnector/SteamConnector.swift"),
-            encoding: .utf8
-        )
+        let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
         let body = try #require(source.range(of: "func diagnoseSteamCMD"))
         let tail = String(source[body.lowerBound...].prefix(6000))
         let gate = try #require(tail.range(of: "guard signature.isValid"))

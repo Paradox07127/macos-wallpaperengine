@@ -26,9 +26,9 @@ VIOLATION = re.compile(r"^(?P<path>[^:]+):(?P<line>\d+):(?:\d+:)?\s*(?P<rest>.*)
 def changed_lines(base):
     """Map each changed Swift file to the set of line numbers it added."""
     if base:
-        diff_cmd = ["git", "diff", "-U0", base, "--", "*.swift"]
+        diff_cmd = ["git", "diff", "--find-renames", "-U0", base, "--", "*.swift"]
     else:
-        diff_cmd = ["git", "diff", "-U0", "HEAD", "--", "*.swift"]
+        diff_cmd = ["git", "diff", "--find-renames", "-U0", "HEAD", "--", "*.swift"]
     diff = subprocess.run(diff_cmd, cwd=ROOT, capture_output=True, text=True).stdout
 
     result = defaultdict(set)
@@ -61,7 +61,9 @@ def changed_lines(base):
 # clean bill of health: its output would not match VIOLATION either, so without
 # this check a broken linter reports zero violations and the gate passes.
 TOOL_ARGV = {
-    "swiftlint": (["lint", "--quiet"], {0, 2, 3}),
+    # Avoid writing SwiftLint's global cache: the gate is deterministic without
+    # it and also runs in read-only homes on CI and in sandboxed worktrees.
+    "swiftlint": (["lint", "--quiet", "--no-cache"], {0, 2, 3}),
     "swiftformat": (["--lint"], {0, 1}),
 }
 
