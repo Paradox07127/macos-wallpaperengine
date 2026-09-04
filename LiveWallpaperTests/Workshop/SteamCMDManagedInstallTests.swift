@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import LiveWallpaper
@@ -116,10 +115,6 @@ struct SteamCMDManagedInstallRecordTests {
         #expect(await coordinator.forget() == .connectorUnavailable)
         #expect(coordinator.managedInstall == record)
     }
-}
-
-private func sha256Hex(_ data: Data) -> String {
-    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }
 
 @Suite("SteamCMD managed install containment")

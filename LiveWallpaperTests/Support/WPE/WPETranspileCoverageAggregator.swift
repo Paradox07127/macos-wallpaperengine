@@ -1,7 +1,8 @@
 #if !LITE_BUILD
 import Foundation
+@testable import LiveWallpaper
 
-/// One corpus scene's pass-execution and custom-shader-compile tallies, as
+/// Test-only record of one corpus scene's pass-execution and custom-shader-compile tallies, as
 /// collected by the opt-in coverage runner. Counting units are "pass-equivalent"
 /// entries: prepared render passes (classified via their shader program, or
 /// `unclassifiedPassCount` when the pass intentionally carries no program — text

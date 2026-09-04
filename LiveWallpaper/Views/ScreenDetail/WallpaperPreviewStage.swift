@@ -36,12 +36,6 @@ struct WallpaperPreviewStage<Title: View, Content: View, Controls: View>: View {
     }
 }
 
-extension WallpaperPreviewStage where Title == EmptyView {
-    init(@ViewBuilder content: @escaping () -> Content, @ViewBuilder controls: @escaping () -> Controls) {
-        self.init(title: { EmptyView() }, content: content, controls: controls)
-    }
-}
-
 /// The name, as a capsule floating on the preview's top edge — the same chrome
 /// the control bar uses on the bottom edge, so the two read as one pair.
 struct WallpaperPreviewTitle: View {
