@@ -7,8 +7,8 @@ struct StepWelcome: View {
 
     private var tagline: LocalizedStringKey {
         featureCatalog.isEnabled(.scene)
-            ? "Video, web, and Wallpaper Engine scenes — alive on every display."
-            : "Local video, interactive web, and Apple Aerials — alive on every display."
+            ? "Video, web, and Wallpaper Engine scenes on every display."
+            : "Local video, interactive web, and Apple Aerials on every display."
     }
 
     var body: some View {

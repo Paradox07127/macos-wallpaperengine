@@ -8,8 +8,15 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
     case simplifiedChinese = "zh-Hans"
     case traditionalChinese = "zh-Hant"
     case japanese = "ja"
+    case spanish = "es"
 
     public static let storageKey = "AppLanguage.Preference"
+
+    /// Follow System first, then languages by locale identifier (en, es, ja,
+    /// zh-Hans, zh-Hant): Latin scripts together, the two Chinese variants adjacent.
+    public static let menuCases: [AppLanguagePreference] = [
+        .system, .english, .spanish, .japanese, .simplifiedChinese, .traditionalChinese,
+    ]
 
     public var id: String { rawValue }
 
@@ -17,7 +24,7 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
         switch self {
         case .system:
             return nil
-        case .english, .simplifiedChinese, .traditionalChinese, .japanese:
+        case .english, .simplifiedChinese, .traditionalChinese, .japanese, .spanish:
             return rawValue
         }
     }
@@ -27,7 +34,7 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
     }
 
     /// Wallpaper Engine's SceneScript locale identifier for the language the
-    /// Loomscreen UI is actually using. The app ships exactly these four
+    /// Loomscreen UI is actually using. The app ships exactly these five
     /// localizations (English is the development fallback); keeping the mapping
     /// here makes the renderer consume the same preference as SwiftUI rather
     /// than guessing from an unrelated process locale.
@@ -36,9 +43,18 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
     ) -> String {
         let identifier = localeIdentifier ?? preferredLocalization ?? "en"
         let normalized = identifier.replacingOccurrences(of: "_", with: "-").lowercased()
-        if normalized == "ja" || normalized.hasPrefix("ja-") { return "ja-jp" }
-        if normalized == "zh-hant" || normalized.hasPrefix("zh-hant-") { return "zh-cht" }
-        if normalized == "zh-hans" || normalized.hasPrefix("zh-hans-") { return "zh-chs" }
+        if normalized == "ja" || normalized.hasPrefix("ja-") {
+            return "ja-jp"
+        }
+        if normalized == "zh-hant" || normalized.hasPrefix("zh-hant-") {
+            return "zh-cht"
+        }
+        if normalized == "zh-hans" || normalized.hasPrefix("zh-hans-") {
+            return "zh-chs"
+        }
+        if normalized == "es" || normalized.hasPrefix("es-") {
+            return "es-es"
+        }
         // English is both an explicit choice and the bundle's development-region
         // fallback for any system language Loomscreen does not localize.
         return "en-us"
@@ -53,18 +69,32 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
         return localizedBundle
     }
 
-    public var titleKey: LocalizedStringKey {
+    /// Spelling of this language in that language. `nil` for Follow System,
+    /// which is localized copy rather than a language name.
+    public var endonym: String? {
         switch self {
         case .system:
-            return "Follow System"
+            nil
         case .english:
-            return "English"
+            "English"
         case .simplifiedChinese:
-            return "Simplified Chinese"
+            "简体中文"
         case .traditionalChinese:
-            return "Traditional Chinese"
+            "繁體中文"
         case .japanese:
-            return "Japanese"
+            "日本語"
+        case .spanish:
+            "Español"
+        }
+    }
+
+    /// Language rows stay in their own script so picking 简体中文 does not
+    /// rewrite "English" into 英语. Follow System still follows the catalog.
+    public var pickerLabel: Text {
+        if let endonym {
+            Text(verbatim: endonym)
+        } else {
+            Text("Follow System")
         }
     }
 

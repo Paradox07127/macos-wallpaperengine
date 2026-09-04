@@ -26,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / 'LiveWallpaper/Resources/Localizable.xcstrings'
-REQUIRED = ('ja', 'zh-Hans', 'zh-Hant')
+REQUIRED = ('ja', 'zh-Hans', 'zh-Hant', 'es')
 
 # %@  %1$@  %lld  %2$lld  %.2f  %03d
 PLACEHOLDER = re.compile(r'%(?:\d+\$)?[-+ #0]*[\d.*]*(?:@|lld|ld|d|u|f|s)')
@@ -79,23 +79,27 @@ def self_test():
             'ja': unit('%lld 件をリンク'),          # one placeholder lost
             'zh-Hans': unit('已链接 %lld / %lld'),
             'zh-Hant': unit('已連結 %lld / %lld'),
+            'es': unit('Vinculados %lld de %lld'),
         }},
         'Reordered %1$@ then %2$@': {'localizations': {
             'en': unit('Reordered %1$@ then %2$@'),
             'ja': unit('%2$@ のあとに %1$@'),        # reorder: legal
             'zh-Hans': unit('先 %2$@ 再 %1$@'),
             'zh-Hant': unit('先 %2$@ 再 %1$@'),
+            'es': unit('%2$@ y luego %1$@'),
         }},
         'Absent language': {'localizations': {
             'en': unit('Absent language'),
             'ja': unit('言語なし'),
             'zh-Hans': unit('缺语言'),
+            'es': unit('Idioma ausente'),
         }},
         'Still a stub': {'localizations': {
             'en': unit('Still a stub'),
             'ja': unit('', 'new'),
             'zh-Hans': unit('存根'),
             'zh-Hant': unit('存根'),
+            'es': unit('Borrador'),
         }},
     }}
     mismatch, missing, untranslated = audit(drifted)
@@ -106,6 +110,7 @@ def self_test():
     clean = {'strings': {'All good %@': {'localizations': {
         'en': unit('All good %@'), 'ja': unit('問題なし %@'),
         'zh-Hans': unit('没问题 %@'), 'zh-Hant': unit('沒問題 %@'),
+        'es': unit('Todo bien %@'),
     }}}}
     assert audit(clean) == ([], [], []), audit(clean)
     print('Localization drift self-test passed.')

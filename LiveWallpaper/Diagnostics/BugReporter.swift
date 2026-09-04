@@ -38,9 +38,9 @@ enum BugReporter {
     }
 
     /// Which form the in-app report opens. Simplified Chinese is the only language with a form of its own,
-    /// so it is the only one that gets it; Traditional Chinese and Japanese readers land on the English
-    /// form because that is the only other one that exists. Following the app's own language rather than
-    /// the system's matters when someone has overridden it — the form should match the UI they are
+    /// so it is the only one that gets it; Traditional Chinese, Japanese and Spanish readers land on the
+    /// English form because that is the only other one that exists. Following the app's own language rather
+    /// than the system's matters when someone has overridden it — the form should match the UI they are
     /// describing.
     static func issueForm(
         preference: AppLanguagePreference = .current,

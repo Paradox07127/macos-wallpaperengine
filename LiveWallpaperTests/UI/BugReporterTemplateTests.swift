@@ -14,12 +14,13 @@ struct BugReporterTemplateTests {
         )
     }
 
-    @Test("Traditional Chinese, Japanese and English all get the English form")
+    @Test("Traditional Chinese, Japanese, Spanish and English all get the English form")
     func everyOtherLanguageGetsTheEnglishTemplate() {
         for preference in [
             AppLanguagePreference.english,
             .traditionalChinese,
-            .japanese
+            .japanese,
+            .spanish,
         ] {
             #expect(
                 BugReporter.issueForm(preference: preference, systemLocalizations: ["zh-Hans"]).templateName

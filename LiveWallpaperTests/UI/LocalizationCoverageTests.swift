@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Localization coverage")
 struct LocalizationCoverageTests {
-    private static let requiredLocales = ["zh-Hans", "zh-Hant", "ja"]
+    private static let requiredLocales = ["zh-Hans", "zh-Hant", "ja", "es"]
 
     /// Every non-test Swift file under the given repository-relative roots.
     static func projectSwiftFiles(_ roots: [String]) throws -> [String] {

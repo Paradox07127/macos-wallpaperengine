@@ -3,12 +3,12 @@ import Foundation
 import Testing
 
 /// The sidebar renders localized titles but the index used to hold only the
-/// English keys, so a zh-Hans/zh-Hant/ja user could not find a row by the words
+/// English keys, so a zh-Hans/zh-Hant/ja/es user could not find a row by the words
 /// on screen. Bundles are resolved explicitly here rather than by flipping the
 /// process-wide app language, which is global state shared with other suites.
 @Suite("Settings search indexes every supported language")
 struct SettingsSearchLocalizationTests {
-    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja"]
+    private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es"]
 
     private func bundle(for language: String) throws -> Bundle {
         let path = try #require(
@@ -50,7 +50,7 @@ struct SettingsSearchLocalizationTests {
     /// Guards the actual regression: at least one title must differ from its
     /// English key in each non-English language, otherwise this suite would pass
     /// against an index that never localized anything.
-    @Test("Non-English catalogs really do translate the titles", arguments: ["zh-Hans", "zh-Hant", "ja"])
+    @Test("Non-English catalogs really do translate the titles", arguments: ["zh-Hans", "zh-Hant", "ja", "es"])
     func nonEnglishTitlesDifferFromKeys(language: String) throws {
         let bundle = try bundle(for: language)
         let translated = SettingsNavigation.allItems.filter { item in

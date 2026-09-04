@@ -140,6 +140,32 @@ struct GlobalShortcutBindingTests {
     }
 }
 
+@Suite("GlobalShortcutManager: Carbon wiring")
+struct GlobalShortcutCarbonWiringTests {
+    @Test("Carbon signature IDs round-trip every action")
+    func carbonSignatureIDsRoundTrip() {
+        for action in GlobalShortcutAction.allCases {
+            let id = action.signatureID
+            #expect(id > 0)
+            #expect(GlobalShortcutAction.action(forSignatureID: id) == action)
+        }
+        #expect(GlobalShortcutAction.action(forSignatureID: 0) == nil)
+        #expect(GlobalShortcutAction.action(forSignatureID: GlobalShortcutAction.allCases.count + 1) == nil)
+    }
+
+    @Test("Hot keys install on the dispatcher target through a C trampoline")
+    func hotKeysInstallOnDispatcherTargetThroughCTrampoline() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Infrastructure/Platform/GlobalShortcutManager.swift"
+        )
+        #expect(source.contains("RegisterEventHotKey("))
+        #expect(source.contains("GetEventDispatcherTarget()"))
+        #expect(source.contains("InstallEventHandler("))
+        #expect(source.contains("private func carbonHotKeyEventHandler("))
+        #expect(source.contains("carbonHotKeyEventHandler,"))
+    }
+}
+
 @Suite("WeatherLocationProvider: fallback chain", .serialized) @MainActor
 struct WeatherLocationProviderFallbackTests {
 
