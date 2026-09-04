@@ -92,13 +92,10 @@ struct WPESliderDetentBudgetTests {
     /// to the authored one.
     @Test("Both settings cards hand the capped step to the Slider view")
     func settingsCardsUseTheCappedStep() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
         for name in ["SceneSettingsCard", "ProjectSettingsCard"] {
-            let url = root
-                .appendingPathComponent("LiveWallpaper/Views/ScreenDetail/\(name).swift")
-            let source = try String(contentsOf: url, encoding: .utf8)
+            let source = try RepositoryRoot.source(
+                "LiveWallpaper/Views/ScreenDetail/\(name).swift"
+            )
             #expect(
                 source.contains("step: ValueLogic.displaySliderStep(for: property)"),
                 "\(name) must hand the Slider view the detent-capped step"

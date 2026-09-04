@@ -988,13 +988,7 @@ private final class RR10LockedValue<Value: Sendable>: @unchecked Sendable {
 
 private enum RR10ProductionSource {
     static func read(_ repositoryRelativePath: String) throws -> String {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot.appendingPathComponent(repositoryRelativePath),
-            encoding: .utf8
-        )
+        try RepositoryRoot.source(repositoryRelativePath)
     }
 
     static func combined(_ repositoryRelativePaths: [String]) throws -> String {

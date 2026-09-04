@@ -1786,11 +1786,9 @@ export function init(value) {
 
     @Test("Current synchronous containment is deadline plus poison, not termination")
     func synchronousTimeoutSourceContract() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift"
+        )
         #expect(source.contains("done.wait(timeout: deadline)"))
         #expect(source.contains("safety.quarantine(self, operation: operation)"))
         #expect(!source.contains("static var quarantine"))

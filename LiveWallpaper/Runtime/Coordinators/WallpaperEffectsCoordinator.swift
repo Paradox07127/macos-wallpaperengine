@@ -58,6 +58,11 @@ final class WallpaperEffectsCoordinator {
               config.particleEffect != effect else { return }
         config.particleEffect = effect
         saveConfiguration(config)
+        // This switch is half of what `shouldMonitor` weighs, so switching the
+        // overlay off has to be able to stop the fetch — only the weather
+        // toggle used to refresh it, and turning the overlay off left the
+        // hourly poll running for a display drawing nothing.
+        refreshWeatherMonitoringState()
         let effect = resolvedParticleEffect(for: config)
         applyParticleEffect(
             effect,

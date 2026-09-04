@@ -28,10 +28,6 @@ struct DefaultsIsolationTests {
 
     @Test("High-risk preference writers use the isolation seam")
     func highRiskWriterSourceGuard() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-
         let serviceFiles = [
             "LiveWallpaper/Monitor/SourceAuthorization.swift",
             "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift",
@@ -39,7 +35,7 @@ struct DefaultsIsolationTests {
             "LiveWallpaper/Views/Workshop/BrowseFilterRibbon.swift"
         ]
         for relativePath in serviceFiles {
-            let source = try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+            let source = try RepositoryRoot.source(relativePath)
             #expect(!source.contains("UserDefaults.standard"), "\(relativePath) bypasses appScoped/injection")
         }
 
@@ -54,7 +50,7 @@ struct DefaultsIsolationTests {
             "LiveWallpaper/Views/Settings/WorkshopEngineAssetsSection.swift"
         ]
         for relativePath in appStorageFiles {
-            let source = try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+            let source = try RepositoryRoot.source(relativePath)
             for line in source.split(separator: "\n") {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 guard trimmed.hasPrefix("@AppStorage") else { continue }

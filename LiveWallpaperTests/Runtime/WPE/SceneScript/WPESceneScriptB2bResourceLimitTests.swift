@@ -337,13 +337,8 @@
         }
 
         private static func read(_ repositoryRelativePath: String) throws -> String {
-            let repositoryRoot = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-            return try String(
-                contentsOf: repositoryRoot.appendingPathComponent(repositoryRelativePath),
-                encoding: .utf8
-            )
+        // swiftformat:disable:next indent
+            try RepositoryRoot.source(repositoryRelativePath)
         }
 
         private static func occurrences(of needle: String, in haystack: String) -> Int {
