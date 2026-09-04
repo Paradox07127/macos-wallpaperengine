@@ -543,14 +543,16 @@ struct WorkshopInspectorContent: View {
 
     @ViewBuilder
     private func tagChip(_ tag: String) -> some View {
+        // Raw tag on the wire — Steam matches the English form.
+        let label = WorkshopTagLocalization.displayName(tag)
         if let onSelectTag {
             Button { onSelectTag(tag) } label: {
-                StatusChip(verbatim: tag, tint: .accentColor)
+                StatusChip(verbatim: label, tint: .accentColor)
             }
             .buttonStyle(.plain)
-            .help(Text("Browse items tagged \(tag)"))
+            .help(Text("Browse items tagged \(label)"))
         } else {
-            StatusChip(verbatim: tag, tint: .secondary)
+            StatusChip(verbatim: label, tint: .secondary)
         }
     }
 

@@ -11,11 +11,7 @@ enum WorkshopContentTypeFilter: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var displayName: String {
-        switch self {
-        case .scene: return String(localized: "Scene", bundle: .appLanguage, comment: "Workshop content-type filter: scene wallpapers.")
-        case .video: return String(localized: "Video", bundle: .appLanguage, comment: "Workshop content-type filter: video wallpapers.")
-        case .web: return String(localized: "Web", bundle: .appLanguage, comment: "Workshop content-type filter: web wallpapers.")
-        }
+        WorkshopTagLocalization.displayName(tag ?? rawValue)
     }
 
     var requiredTags: [String] {
@@ -41,14 +37,7 @@ enum WorkshopAgeRatingFilter: String, CaseIterable, Identifiable {
 
     /// Localized filter chip label (Steam API tag stays English via `tag`).
     var displayName: String {
-        switch self {
-        case .everyone:
-            return String(localized: "Everyone", bundle: .appLanguage, comment: "Workshop maturity filter: everyone.")
-        case .questionable:
-            return String(localized: "Questionable", bundle: .appLanguage, comment: "Workshop maturity filter: questionable.")
-        case .mature:
-            return String(localized: "Mature", bundle: .appLanguage, comment: "Workshop maturity filter: mature.")
-        }
+        WorkshopTagLocalization.displayName(tag)
     }
 
     /// Exact Steam Workshop maturity tag string (not localized).

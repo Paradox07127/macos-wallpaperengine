@@ -160,7 +160,7 @@ struct BrowseFilterRibbon: View {
                         chipFlow {
                             ForEach(WorkshopGenre.allTags, id: \.self) { tag in
                                 WorkshopFilterChip(
-                                    title: Text(verbatim: tag),
+                                    title: Text(verbatim: WorkshopTagLocalization.displayName(tag)),
                                     isSelected: viewModel.selectedGenres.contains(tag),
                                     onIsolate: { viewModel.isolateGenre(tag) }
                                 ) {
