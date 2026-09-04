@@ -153,8 +153,20 @@ struct GlobalShortcutCarbonWiringTests {
         #expect(GlobalShortcutAction.action(forSignatureID: GlobalShortcutAction.allCases.count + 1) == nil)
     }
 
-    @Test("Hot keys install on the dispatcher target through a C trampoline")
-    func hotKeysInstallOnDispatcherTargetThroughCTrampoline() throws {
+    /// Source fence, not a delivery test: nothing in-process can press a global
+    /// key, so this only pins the shape that was arrived at the hard way — the
+    /// dispatcher target plus a file-level C trampoline. The failure it guards
+    /// is silent, which is why the shape is worth pinning: an inline `@MainActor`
+    /// closure on `GetApplicationEventTarget()` still returns `noErr` from
+    /// `RegisterEventHotKey`, so registration "succeeds" and the key never fires.
+    ///
+    /// Delivery itself was verified by hand on 2026-09-04 against a HEAD build,
+    /// with Finder frontmost so the press could not be a menu shortcut: ⌃⇧, and
+    /// ⌃⇧M each produced a `dispatchHotKey(signatureID:)` line under subsystem
+    /// `com.livewallpaper`, and the first opened the settings window. Redo that
+    /// by hand if this file's assertions ever need to change.
+    @Test("Registration keeps the dispatcher target and the C trampoline")
+    func registrationKeepsDispatcherTargetAndCTrampoline() throws {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Infrastructure/Platform/GlobalShortcutManager.swift"
         )
