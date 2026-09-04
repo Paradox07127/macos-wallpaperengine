@@ -330,6 +330,10 @@ final class WPEVideoTextureSource {
             // Prefetch next looped item before wrap to avoid sparse-decode slow-mo.
             queuePlayer.automaticallyWaitsToMinimizeStalling = true
             queuePlayer.preventsDisplaySleepDuringVideoPlayback = false
+            // Frames are consumed as a Metal texture and never presented by a
+            // player layer, so an AirPlay route would be meaningless — and it is
+            // picked from the player regardless of what it outputs.
+            queuePlayer.allowsExternalPlayback = false
             queuePlayer.isMuted = true
             queuePlayer.volume = 0
             self.player = queuePlayer

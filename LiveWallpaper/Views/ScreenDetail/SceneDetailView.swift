@@ -164,12 +164,12 @@ struct SceneDetailView: View {
         switch state {
         case .idle:
             fallbackBackground
-            LiquidGlassSpinner()
+            ArcSpinner()
         case .notRendering:
             fallbackBackground
         case .loading(let progress):
             fallbackBackground
-            LiquidGlassSpinner(progressText: progress)
+            ArcSpinner(progressText: progress)
         case .ready:
             fallbackBackground
         case .error(let fallbackReason):

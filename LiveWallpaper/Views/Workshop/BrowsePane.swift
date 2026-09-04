@@ -241,15 +241,24 @@ struct BrowsePane: View {
             isInLibrary: installedWorkshopIDs.contains(String(item.id)),
             isSelected: selectedItem?.id == item.id,
             cardPreferences: cardPreferences,
-            reduceMotion: reduceMotion
-        ) {
-            if selectedItem?.id == item.id {
-                selectedItem = nil
-            } else {
-                selectedItem = item
-                inspectorHidden = false
+            reduceMotion: reduceMotion,
+            canDownload: doctor.isDownloadReady,
+            onSelect: {
+                if selectedItem?.id == item.id {
+                    selectedItem = nil
+                } else {
+                    selectedItem = item
+                    inspectorHidden = false
+                }
+            },
+            onDownload: {
+                WorkshopDownloadCoordinator.shared.download(
+                    itemID: item.id,
+                    title: item.title,
+                    using: doctor
+                )
             }
-        }
+        )
     }
 
     /// Cursor-based prev/next pager.
