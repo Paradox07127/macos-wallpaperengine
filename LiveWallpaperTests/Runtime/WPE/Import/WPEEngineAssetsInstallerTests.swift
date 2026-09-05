@@ -29,23 +29,13 @@ struct WPEEngineAssetsInstallerTests {
         ) == .checkFailed(.notRun))
     }
 
-    /// An expired Steam session used to arrive as a bare nil build id and was
-    /// rendered as "SteamCMD did not return the latest Wallpaper Engine build"
-    /// — a sentence with no next step, next to an account row still showing
-    /// green.
-    @Test("A refused Steam session is reported as a sign-in problem, not a failed check")
-    func expiredSessionIsDistinguishedFromAFailedCheck() {
-        #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
-            installedBuildID: "10",
-            lookup: .failed(.loginRequired)
-        ) == .loginRequired)
-        // Control: the other three stay failed checks, so the sign-in copy is
-        // not shown for problems signing in cannot fix — but each keeps its own
-        // reason instead of the three sharing one sentence.
+    @Test("Each failed lookup keeps its own reason instead of sharing one sentence")
+    func failedLookupsKeepDistinctReasons() {
         let expected: [(SteamEngineBuildLookup.Outcome, WPEEngineAssetsInstaller.UpdateCheckOutcome.CheckFailure)] = [
             (.timedOut, .timedOut),
             (.steamCMDUnavailable, .steamCMDUnavailable),
             (.unrecognized, .unparsedOutput),
+            (.steamUnreachable, .steamUnreachable),
         ]
         for (outcome, failure) in expected {
             #expect(WPEEngineAssetsInstaller.UpdateCheckOutcome.resolve(
@@ -55,58 +45,109 @@ struct WPEEngineAssetsInstallerTests {
         }
     }
 
-    @Test("A refused session demotes the cached-login verdict")
+    @Test("An unknown installed build offers Update instead of a dead end")
     @MainActor
-    func expiredSessionNotifiesTheCaller() async {
+    func unknownInstalledBuildOffersUpdate() async {
         let installer = WPEEngineAssetsInstaller(
-            managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
+            managedStateForTesting: (hasManagedInstall: true, installedBuildID: nil)
         )
-        var demoted = false
-        installer.checkForUpdate(
-            account: "steamuser",
-            binaryResolvable: true,
-            fetchLatestBuildID: { _, _ in .failed(.loginRequired) },
-            onLoginRequired: { demoted = true }
-        )
+        installer.checkForUpdate(binaryResolvable: true, fetchLatestBuildID: { _ in .found("11") })
         while installer.isBusy { await Task.yield() }
 
-        #expect(installer.updateCheckOutcome == .loginRequired)
-        #expect(demoted, "the account row keeps a stale green unless the probe is knocked back")
-        #expect(installer.updateAvailable == false)
+        #expect(installer.updateCheckOutcome == .unableToCompare)
+        #expect(installer.latestBuildID == "11")
+        #expect(installer.updateAvailable)
     }
 
-    @Test("Control: a successful check does not demote the cached-login verdict")
+    // MARK: - Update must run SteamCMD, not re-link the folder already on disk
+
+    private actor Flag {
+        var raised = false
+
+        func raise() {
+            raised = true
+        }
+    }
+
+    /// A Steam library that already holds a populated
+    /// `steamapps/common/wallpaper_engine/assets/` — the state every Update starts from.
     @MainActor
-    func successfulCheckDoesNotDemote() async {
+    private func makeDoctorWithInstallOnDisk(function: String = #function) throws -> SteamCMDDoctorService {
+        let scratch = try TestScratch.defaultsSuite(
+            prefix: "LiveWallpaperTests.WPEEngineAssetsInstaller", function: function
+        )
+        let doctor = SteamCMDDoctorService(defaults: scratch.defaults)
+        let steamRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPEEngineAssetsInstaller-\(UUID().uuidString)", isDirectory: true)
+        let assets = WPEEngineAssetsLibrary.sharedLibraryInstallRoot(steamRoot: steamRoot)
+            .appendingPathComponent("assets", isDirectory: true)
+        try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+        try Data().write(to: assets.appendingPathComponent("shaders.txt"))
+        doctor.workdirBookmarkData = try steamRoot.bookmarkData()
+        doctor.binaryPath = "/tmp/steamcmd"
+        doctor.username = "someone"
+        return doctor
+    }
+
+    @Test("Update with a managed install on disk runs SteamCMD instead of re-linking the folder")
+    @MainActor
+    func updateWithManagedInstallReachesConnector() async throws {
+        let doctor = try makeDoctorWithInstallOnDisk()
+        let installer = WPEEngineAssetsInstaller(
+            managedStateForTesting: (hasManagedInstall: true, installedBuildID: nil)
+        )
+        let installCalled = Flag()
+        installer.download(using: doctor) { _, _, _, _ in
+            await installCalled.raise()
+            return nil
+        }
+        while installer.isBusy {
+            await Task.yield()
+        }
+
+        #expect(await installCalled.raised)
+    }
+
+    @Test("Control: a first download links the folder already on disk without running SteamCMD")
+    @MainActor
+    func firstDownloadAdoptsInstallOnDisk() async throws {
+        let doctor = try makeDoctorWithInstallOnDisk()
+        let installer = WPEEngineAssetsInstaller(
+            managedStateForTesting: (hasManagedInstall: false, installedBuildID: nil)
+        )
+        defer {
+            SettingsManager.shared.clearWPEEngineAssetsBookmark()
+            SettingsManager.shared.wpeEngineAssetsManagedBuildID = nil
+        }
+        let installCalled = Flag()
+        installer.download(using: doctor) { _, _, _, _ in
+            await installCalled.raise()
+            return nil
+        }
+        while installer.isBusy {
+            await Task.yield()
+        }
+
+        #expect(await !installCalled.raised)
+        #expect(installer.hasManagedInstall)
+    }
+
+    @Test("A newer public build is reported as available")
+    @MainActor
+    func newerBuildIsReportedAvailable() async {
         let installer = WPEEngineAssetsInstaller(
             managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
         )
-        var demoted = false
-        installer.checkForUpdate(
-            account: "steamuser",
-            binaryResolvable: true,
-            fetchLatestBuildID: { _, _ in .found("11") },
-            onLoginRequired: { demoted = true }
-        )
-        while installer.isBusy { await Task.yield() }
+        installer.checkForUpdate(binaryResolvable: true, fetchLatestBuildID: { _ in .found("11") })
+        while installer.isBusy {
+            await Task.yield()
+        }
 
         #expect(installer.updateCheckOutcome == .available(latestBuildID: "11"))
-        #expect(!demoted)
+        #expect(installer.updateAvailable)
     }
 
     // MARK: - Stuck-busy regression: a failed precondition must never leave `.checking`
-
-    @Test("Update check without a Steam account leaves the installer idle, not stuck busy")
-    @MainActor
-    func updateCheckWithoutAccountDoesNotStayBusy() {
-        let installer = WPEEngineAssetsInstaller(
-            managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
-        )
-        installer.checkForUpdate(account: nil, binaryResolvable: true) { _, _ in nil }
-        #expect(installer.isBusy == false)
-        #expect(installer.phase == .idle)
-        #expect(installer.updateCheckOutcome == .notChecked)
-    }
 
     @Test("Update check without a resolvable binary leaves the installer idle, not stuck busy")
     @MainActor
@@ -114,7 +155,7 @@ struct WPEEngineAssetsInstallerTests {
         let installer = WPEEngineAssetsInstaller(
             managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
         )
-        installer.checkForUpdate(account: "steamuser", binaryResolvable: false) { _, _ in nil }
+        installer.checkForUpdate(binaryResolvable: false) { _ in nil }
         #expect(installer.isBusy == false)
         #expect(installer.phase == .idle)
         #expect(installer.updateCheckOutcome == .notChecked)
@@ -126,7 +167,7 @@ struct WPEEngineAssetsInstallerTests {
         let installer = WPEEngineAssetsInstaller(
             managedStateForTesting: (hasManagedInstall: true, installedBuildID: "10")
         )
-        installer.checkForUpdate(account: "steamuser", binaryResolvable: true) { _, _ in
+        installer.checkForUpdate(binaryResolvable: true) { _ in
             // Never resolves within the test; cancel() must be what recovers.
             try? await Task.sleep(nanoseconds: 60_000_000_000)
             return nil

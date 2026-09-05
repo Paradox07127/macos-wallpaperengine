@@ -426,7 +426,16 @@ struct InstalledView: View {
                         matchingImportedAt: $0.importedAt
                     )
                 },
-                deleteSharedRepositoryItem: { await SteamConnectorClient.deleteWorkshopItem(workshopID: $0) }
+                deleteSharedRepositoryItem: { [doctor] workshopID in
+                    // The connector deletes inside this library and cannot see
+                    // the bookmark that authorized it; unresolvable means we
+                    // have nothing safe to name, so nothing is deleted.
+                    guard let steamRoot = try? doctor.resolveWorkdirURL() else { return nil }
+                    return await SteamConnectorClient.deleteWorkshopItem(
+                        workshopID: workshopID,
+                        libraryPath: steamRoot.path(percentEncoded: false)
+                    )
+                }
             )
         )
     }

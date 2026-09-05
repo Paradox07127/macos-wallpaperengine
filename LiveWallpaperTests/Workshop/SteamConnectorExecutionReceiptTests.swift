@@ -56,6 +56,7 @@ struct SteamConnectorExecutionReceiptTests {
             prefix: "LiveWallpaperTests.ExecutionReceipt"
         ).defaults
         let doctor = SteamCMDDoctorService(defaults: defaults)
+        doctor.username = "user"
         #expect(doctor.lastExecutedBinaryPath == nil)
 
         doctor.applyCachedLoginOutcome(
@@ -66,7 +67,8 @@ struct SteamConnectorExecutionReceiptTests {
                 executedBinaryPath: "/managed/steamcmd"
             ),
             username: "user",
-            binary: URL(fileURLWithPath: "/displayed/steamcmd")
+            binary: URL(fileURLWithPath: "/displayed/steamcmd"),
+            generation: doctor.accountGeneration
         )
         #expect(doctor.lastExecutedBinaryPath == "/managed/steamcmd")
 
@@ -74,7 +76,8 @@ struct SteamConnectorExecutionReceiptTests {
         doctor.applyCachedLoginOutcome(
             SteamCachedLoginResult(outcome: .timedOut, steamID64: nil, diagnosticTail: ""),
             username: "user",
-            binary: URL(fileURLWithPath: "/displayed/steamcmd")
+            binary: URL(fileURLWithPath: "/displayed/steamcmd"),
+            generation: doctor.accountGeneration
         )
         #expect(doctor.lastExecutedBinaryPath == "/managed/steamcmd")
     }

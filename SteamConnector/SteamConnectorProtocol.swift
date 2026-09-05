@@ -4,11 +4,9 @@ import os
 
 /// Wire contract between Loomscreen and its Steam connector.
 ///
-/// Exists so SteamCMD runs with the user's REAL `$HOME` (STEAMROOT = shared
-/// `~/Library/Application Support/Steam`): a process the app forks itself
-/// inherits the sandbox and container as `$HOME`, and can't resolve a
-/// security-scoped bookmark. launchd starts the XPC service fresh instead —
-/// with no `com.apple.security.app-sandbox` entitlement, no sandbox at all.
+/// The unsandboxed connector owns persistent, isolated SteamCMD profiles and
+/// publishes downloaded content to the user's authorized Steam library.
+/// Steam client credentials are never copied into those profiles.
 /// `SteamConnectorEnvironmentTests` is the standing proof.
 @objc(LWSteamConnectorProtocol)
 protocol SteamConnectorProtocol {
@@ -33,9 +31,12 @@ protocol SteamConnectorProtocol {
     )
 
     /// Installs or updates Wallpaper Engine into the shared Steam library and
-    /// prunes it to `assets/`. Replies with a JSON `SteamEngineAssetsResult`.
+    /// prunes it to `assets/`. `libraryPath` is the library the user authorized
+    /// in the app; the connector validates it before writing there. Replies
+    /// with a JSON `SteamEngineAssetsResult`.
     func installWallpaperEngineAssets(
         accountName: String,
+        libraryPath: String,
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     )
@@ -43,27 +44,41 @@ protocol SteamConnectorProtocol {
     /// Latest public-branch buildid for app 431960, for update checks.
     /// Replies with a JSON `SteamEngineBuildLookup`.
     func latestWallpaperEngineBuildID(
-        accountName: String,
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     )
 
     /// Deletes one Workshop item's folder from the shared repository. This is a
     /// real delete of the user's Steam content — the app deliberately has no way
-    /// to do it itself. Replies with a JSON `SteamDeleteResult`.
+    /// to do it itself. `libraryPath` is the library the user authorized in the
+    /// app; the connector validates it before deleting anything under it.
+    /// Replies with a JSON `SteamDeleteResult`.
     func deleteWorkshopItem(
         workshopID: String,
+        libraryPath: String,
         with reply: @escaping @Sendable (Data) -> Void
     )
 
     /// Downloads one Workshop item into the shared repository. Replies with a
     /// JSON `SteamWorkshopDownloadResult` carrying the folder the app should
-    /// import from. `operationID` is the app-minted identity a later
-    /// `cancelActiveSteamCMD` must name to reach this run's child.
+    /// import from. `libraryPath` is the library the user authorized in the app;
+    /// the connector validates it before writing there. `operationID` is the
+    /// app-minted identity a later `cancelActiveSteamCMD` must name to reach
+    /// this run's child.
     func downloadWorkshopItem(
         workshopID: String,
         accountName: String,
+        libraryPath: String,
         operationID: String,
+        with reply: @escaping @Sendable (Data) -> Void
+    )
+
+    /// Reads the account's Workshop subscription list, which SteamCMD records
+    /// locally on login. Downloads nothing and writes nothing into the shared
+    /// Steam library — the run happens in a throwaway directory that is deleted
+    /// before this replies. Replies with a JSON `SteamSubscribedItemsResult`.
+    func listSubscribedWorkshopItems(
+        accountName: String,
         with reply: @escaping @Sendable (Data) -> Void
     )
 
@@ -121,6 +136,12 @@ protocol SteamConnectorProtocol {
     /// container precisely so the app cannot reach it — including to delete it.
     /// Replies with a JSON `SteamCMDManagedRemovalResult`.
     func removeManagedSteamCMD(with reply: @escaping @Sendable (Data) -> Void)
+
+    /// Deletes only Loomscreen's own private SteamCMD profile for this account,
+    /// so the next download signs in again. The user's Steam client profile is
+    /// never read, written or removed. Replies with a JSON
+    /// `SteamAccountSessionRemovalResult`.
+    func removeAccountSession(accountName: String, with reply: @escaping @Sendable (Data) -> Void)
 
     /// Interactive `steamcmd +login` on a PTY, so the user never opens
     /// Terminal (JSON `SteamCMDLoginRequest` in, `SteamCMDLoginResult` out).
@@ -185,6 +206,18 @@ struct SteamCMDManagedRemovalResult: Codable, Equatable, Sendable {
         case notInstalled
         case refused
     }
+    let outcome: Outcome
+    let failureReason: String?
+}
+
+struct SteamAccountSessionRemovalResult: Codable, Equatable, Sendable {
+    enum Outcome: String, Codable, Sendable {
+        case removed
+        /// Nothing was stored — a verdict, not a failure.
+        case notFound
+        case refused
+    }
+
     let outcome: Outcome
     let failureReason: String?
 }
@@ -291,18 +324,12 @@ enum SteamCMDManifest {
 /// `Error` so install steps can short-circuit through `Result`; the value is
 /// still the wire payload, not a thrown-away diagnostic. The outcome of
 /// asking Steam for Wallpaper Engine's current build id — was a bare
-/// `String?`, and five unrelated situations produced that nil (invalid
-/// account name, a request expired in the queue, no runnable SteamCMD, a
-/// login Steam refused, output with no `"public"` block), all rendered as
-/// "SteamCMD did not return the latest build". An expired Steam session is
-/// by far the most common of the five and the one with an obvious next step,
-/// so it has to arrive distinguishable.
+/// `String?`, and several unrelated situations produced that nil (a request
+/// expired in the queue, no runnable SteamCMD, output with no `"public"`
+/// block), all rendered as "SteamCMD did not return the latest build".
 struct SteamEngineBuildLookup: Codable, Equatable, Sendable {
     enum Outcome: String, Codable, Sendable {
         case found
-        /// Steam refused the cached session. The caller must demote its
-        /// cached-login verdict, not just report a failed check.
-        case loginRequired
         case timedOut
         /// No SteamCMD to run, or the request expired waiting for the queue.
         case steamCMDUnavailable
@@ -480,9 +507,10 @@ struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
     enum Outcome: String, Codable, Sendable {
         case downloaded
         case loginRequired
-        /// Steam's "(No Connection)" is its confusing wording for an account
-        /// that does not own Wallpaper Engine.
-        case notEntitled
+        /// `ERROR! Download item … failed (No Connection).` — SteamCMD prints
+        /// it both when the servers never answered and when the account does
+        /// not own Wallpaper Engine, so the app cannot tell the two apart.
+        case steamUnreachable
         case removedFromSteam
         case timedOut
         case steamCMDUnavailable
@@ -497,6 +525,24 @@ struct SteamWorkshopDownloadResult: Codable, Equatable, Sendable {
     /// the app learns which one ran. Optional-with-default so a payload from an
     /// older connector (no key) still decodes; nil means nothing was spawned.
     var executedBinaryPath: String? = nil
+}
+
+struct SteamSubscribedItemsResult: Codable, Equatable, Sendable {
+    enum Outcome: String, Codable, Sendable {
+        case listed
+        case loginRequired
+        case steamUnreachable
+        case steamCMDUnavailable
+        case timedOut
+        case unrecognized
+    }
+
+    let outcome: Outcome
+    /// Workshop ids the account is subscribed to, in ledger order.
+    let workshopIDs: [String]
+    let diagnosticTail: String
+    /// Execution receipt: the canonical binary this operation actually spawned.
+    var executedBinaryPath: String?
 }
 
 /// Reverse channel: the app exports this so long operations can stream progress
@@ -633,6 +679,7 @@ struct SteamCachedLoginResult: Codable, Equatable, Sendable {
     /// line, for `.noConnection` and `.loginFailed`. Optional so a payload
     /// from a connector without the key still decodes.
     var failureReason: String?
+    var exitCode: Int32?
 }
 
 /// Maps SteamCMD's cached-login output to a verdict.
@@ -835,11 +882,8 @@ enum SteamCMDLoginOutputClassifier {
     }
 }
 
-/// Reads the `Accounts` block out of Steam's `config.vdf` — the only account
-/// source that works here: `loginusers.vdf` (which carries `MostRecent`) is
-/// written by the Steam GUI client, which can't be installed on the macOS
-/// machines this app targets. A steamcmd-only profile records accounts
-/// solely under `InstallConfigStore … Accounts`.
+/// Reads public account identities from `config.vdf`. An identity is a picker
+/// suggestion, never evidence that SteamCMD has a reusable login session.
 enum SteamAccountsFile {
     /// steamcmd's own account-name grammar. Anything else is rejected rather
     /// than surfaced: the name is interpolated into a generated SteamCMD script,
@@ -891,7 +935,7 @@ enum SteamAccountsFile {
     }
 
     /// Next `"…"` token, advancing `cursor` past it. Handles `\"` escapes.
-    private static func nextQuoted(in text: Substring, from cursor: inout Substring.Index) -> String? {
+    static func nextQuoted(in text: Substring, from cursor: inout Substring.Index) -> String? {
         guard let open = text[cursor...].firstIndex(of: "\"") else { return nil }
         var index = text.index(after: open)
         var value = ""
@@ -916,7 +960,7 @@ enum SteamAccountsFile {
 
     /// Contents of the next balanced `{ … }`, advancing `cursor` past its close.
     /// Quoted spans are skipped so a brace inside a value can't unbalance it.
-    private static func nextBraceBlock(in text: Substring, from cursor: inout Substring.Index) -> Substring? {
+    static func nextBraceBlock(in text: Substring, from cursor: inout Substring.Index) -> Substring? {
         guard let open = text[cursor...].firstIndex(of: "{") else { return nil }
         var depth = 0
         var index = open
@@ -941,6 +985,47 @@ enum SteamAccountsFile {
                 }
             }
             index = text.index(after: index)
+        }
+        return nil
+    }
+}
+
+/// The `appworkshop_<appid>.acf` ledger SteamCMD keeps beside the Workshop
+/// content it manages.
+///
+/// `WorkshopItemsInstalled` is filled from the account's subscription list at
+/// login — measured 2026-09-05, on a profile that had downloaded nothing — so
+/// this is where the subscriptions can be read without a publisher Web API key
+/// (`ISteamRemoteStorage/EnumerateUserSubscribedFiles` needs one, and Valve
+/// documents it as never usable directly by clients).
+enum SteamWorkshopManifest {
+    /// Subscribed ids in file order, deduplicated, each one safe as a path
+    /// component. Only the ids directly under `WorkshopItemsInstalled`:
+    /// `WorkshopItemDetails` repeats the same ids further down, so a scan of
+    /// the whole file returns every subscription twice.
+    static func subscribedIDs(fromACF text: String) -> [String] {
+        guard let block = installedBlock(in: text) else { return [] }
+        var ids: [String] = []
+        var seen: Set<String> = []
+        var cursor = block.startIndex
+        while let id = SteamAccountsFile.nextQuoted(in: block, from: &cursor) {
+            // Every entry is `"<id>" { … }`; a token with no block following is
+            // a truncated file, not an id.
+            guard SteamAccountsFile.nextBraceBlock(in: block, from: &cursor) != nil else { break }
+            guard SteamLibraryPaths.isSafeWorkshopID(id), seen.insert(id).inserted else { continue }
+            ids.append(id)
+        }
+        return ids
+    }
+
+    private static func installedBlock(in text: String) -> Substring? {
+        var cursor = text.startIndex
+        while let range = text.range(of: "\"WorkshopItemsInstalled\"", range: cursor ..< text.endIndex) {
+            cursor = range.upperBound
+            var probe = cursor
+            if let block = SteamAccountsFile.nextBraceBlock(in: text[...], from: &probe) {
+                return block
+            }
         }
         return nil
     }
@@ -1735,11 +1820,121 @@ enum SteamCMDCodeSignatureParser {
     }
 }
 
-/// The scrubbed environment handed to the SteamCMD child process — mirrors
-/// the main app's `SteamCMDProcessRunner.sanitizedChildEnvironment()`. A
-/// bare `Process()` inherits the connector's whole environment, and an
-/// unsandboxed helper is the worse place to hand a child `DYLD_*`, not the
-/// safer one. Lives here, not the service body, so the rules are testable.
+/// Persistent login state, independent of the executable's installation source
+/// and of the content library. Paths are chosen by the connector, never by XPC.
+enum SteamCMDProfile {
+    enum ProfileError: Error { case invalidAccount, unsafeDirectory, busy }
+
+    /// A sibling of the managed executable, so reinstalling SteamCMD cannot
+    /// delete authentication. Homebrew and managed binaries use the SAME home.
+    static func root(realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) -> URL {
+        URL(fileURLWithPath: realHome, isDirectory: true)
+            .appendingPathComponent("Library/Application Support/Loomscreen/SteamCMDProfiles/v1", isDirectory: true)
+    }
+
+    static func home(accountName: String?, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+        guard let accountName, accountName.lowercased() != "anonymous" else {
+            return root(realHome: realHome).appendingPathComponent("Maintenance", isDirectory: true)
+        }
+        guard SteamAccountsFile.isValidAccountName(accountName) else { throw ProfileError.invalidAccount }
+        return root(realHome: realHome).appendingPathComponent("Accounts/\(accountName.lowercased())", isDirectory: true)
+    }
+
+    /// The one directory a session removal may delete. `anonymous` and the nil
+    /// account share the Maintenance profile, which belongs to no user and must
+    /// stay unreachable from this path.
+    static func sessionDirectory(accountName: String, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+        guard SteamAccountsFile.isValidAccountName(accountName),
+              accountName.lowercased() != "anonymous" else { throw ProfileError.invalidAccount }
+        let directory = try home(accountName: accountName, realHome: realHome).standardizedFileURL
+        let accounts = root(realHome: realHome)
+            .appendingPathComponent("Accounts", isDirectory: true).standardizedFileURL
+        guard directory.pathComponents.count == accounts.pathComponents.count + 1,
+              Array(directory.pathComponents.dropLast()) == accounts.pathComponents else {
+            throw ProfileError.unsafeDirectory
+        }
+        return directory
+    }
+
+    static func steamRoot(accountName: String?, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+        try home(accountName: accountName, realHome: realHome)
+            .appendingPathComponent("Library/Application Support/Steam", isDirectory: true)
+    }
+
+    /// The Workshop tree inside an account's profile. Nothing writes here any
+    /// more — items download straight into the shared library — so this names
+    /// what the old staging design left behind, for removal.
+    static func stagedWorkshopTree(accountName: String, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+        try sessionDirectory(accountName: accountName, realHome: realHome)
+            .appendingPathComponent("Library/Application Support/Steam/steamapps/workshop", isDirectory: true)
+    }
+
+    /// A throwaway `force_install_dir` target for the subscription probe, so
+    /// SteamCMD writes its Workshop ledger somewhere the app can read it
+    /// without touching the shared library. The UUID leaf is what keeps two
+    /// concurrent probes from reading each other's ledger; it goes through
+    /// `sessionDirectory` for the containment and the `anonymous` refusal.
+    static func subscriptionProbeDirectory(accountName: String, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> URL {
+        try sessionDirectory(accountName: accountName, realHome: realHome)
+            .appendingPathComponent("SubscriptionProbe/\(UUID().uuidString)", isDirectory: true)
+    }
+
+    static func account(in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: "+login"), arguments.indices.contains(index + 1) else { return nil }
+        return arguments[index + 1]
+    }
+
+    /// Creates private directories without following symlinks; a per-profile
+    /// advisory lock also covers separate XPC service instances. Caller closes fd.
+    static func acquire(accountName: String?, realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) throws -> (home: URL, fd: Int32) {
+        let profile = try home(accountName: accountName, realHome: realHome)
+        let anchor = URL(fileURLWithPath: realHome).resolvingSymlinksInPath()
+        let relative = profile.pathComponents.dropFirst(URL(fileURLWithPath: realHome).pathComponents.count)
+        var fd = open(anchor.path(percentEncoded: false), O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard fd >= 0 else { throw ProfileError.unsafeDirectory }
+        defer { close(fd) }
+        for component in Array(relative) + ["Library", "Application Support", "Steam", "config"] {
+            if mkdirat(fd, component, 0o700) != 0, errno != EEXIST {
+                throw ProfileError.unsafeDirectory
+            }
+            let next = openat(fd, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            guard next >= 0 else { throw ProfileError.unsafeDirectory }
+            close(fd)
+            fd = next
+        }
+        let lock = openat(fd, ".loomscreen.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0o600)
+        guard lock >= 0 else { throw ProfileError.unsafeDirectory }
+        var info = stat()
+        guard fstat(lock, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_uid == getuid(), info.st_nlink == 1 else {
+            close(lock)
+            throw ProfileError.unsafeDirectory
+        }
+        guard flock(lock, LOCK_EX | LOCK_NB) == 0 else {
+            close(lock)
+            throw ProfileError.busy
+        }
+        return (profile, lock)
+    }
+
+    /// Merge public identity hints only. Never copy Steam client credentials.
+    static func accounts(realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()) -> [SteamAccountSummary] {
+        let accountsRoot = root(realHome: realHome).appendingPathComponent("Accounts")
+        let children = (try? FileManager.default.contentsOfDirectory(at: accountsRoot, includingPropertiesForKeys: nil)) ?? []
+        let configs = children.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { child -> URL? in
+            guard SteamAccountsFile.isValidAccountName(child.lastPathComponent),
+                  SteamCMDManagedInstaller.firstSymlinkComponent(of: child) == nil else { return nil }
+            let config = child.appendingPathComponent("Library/Application Support/Steam/config/config.vdf")
+            return SteamCMDManagedInstaller.firstSymlinkComponent(of: config) == nil ? config : nil
+        } + [SteamConnectorEnvironmentProbe.steamConfigURL(realHome: realHome)]
+        var seen: Set<String> = []
+        return configs.flatMap { config in
+            SteamAccountsFile.parseAccounts(fromConfigVDF: (try? String(contentsOf: config, encoding: .utf8)) ?? "")
+        }.filter { seen.insert($0.accountName.lowercased()).inserted }
+    }
+}
+
+/// Scrubbed environment; SteamCMD runners explicitly supply an isolated home.
 enum SteamCMDChildEnvironment {
     /// Everything the child is allowed to see. Anything absent is dropped.
     static func make(
@@ -1747,9 +1942,8 @@ enum SteamCMDChildEnvironment {
         temporaryDirectory: String = NSTemporaryDirectory()
     ) -> [String: String] {
         [
-            // Deliberately the real home: it is what puts STEAMROOT on the shared
-            // Steam profile instead of the app container, which is the entire
-            // reason the connector exists.
+            // Only non-Steam utilities use the default. Both SteamCMD runners
+            // pass the same account profile regardless of binary provenance.
             "HOME": home,
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "TMPDIR": temporaryDirectory,
@@ -1795,6 +1989,44 @@ enum SteamLibraryPaths {
 
     static func wallpaperEngineInstallRoot(steamRoot root: URL = steamRoot()) -> URL {
         root.appendingPathComponent("steamapps/common/wallpaper_engine", isDirectory: true)
+    }
+
+    /// The Steam library the app authorized, re-checked here because the
+    /// connector runs unsandboxed: the app's security-scoped grant confers
+    /// nothing on this side, so the path arrives as an ordinary string and is
+    /// only as trustworthy as these rules make it. Same symlink walk the
+    /// managed-install removals use — a link anywhere along the way would let
+    /// the writable-subtree anchor point at an arbitrary tree.
+    static func validatedLibraryRoot(_ path: String) -> URL? {
+        // The raw components, before standardizing: `standardizedFileURL`
+        // resolves `..` away, so checking afterwards would pass vacuously.
+        guard path.hasPrefix("/"),
+              !path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." })
+        else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        // The connector does not trust the caller's word that this is a Steam
+        // library: `isWritable` only bounds the subtree *relative to* whatever
+        // root it is handed, so without this an XPC caller could name any
+        // directory and have an unsandboxed process build `steamapps/...` in
+        // it. Same judgement the app applies when the user picks a folder — the
+        // canonical location counts even without `config.vdf`, because a
+        // SteamCMD-only install has no client config.
+        guard path == steamRoot().standardizedFileURL.path(percentEncoded: false)
+            || FileManager.default.isReadableFile(
+                atPath: (path as NSString).appendingPathComponent("config/config.vdf")
+            )
+        else { return nil }
+        // Deliberately NOT symlink-checked: `isWritable` already settled that a
+        // legitimately symlinked Steam root is supported (a user may point the
+        // library at another volume), and rejecting one here would break that
+        // setup outright. What bounds each path differs: the writer walks with
+        // `O_NOFOLLOW` from the root down and re-checks `isWritable`, while a
+        // direct download is bounded only by this check plus SteamCMD's own
+        // fixed `steamapps/workshop` layout — it resolves the path itself, so
+        // a link the user planted inside their library is followed.
+        return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     }
 
     /// A Workshop id must be exactly ASCII `0-9`: it becomes a path component
@@ -1846,14 +2078,23 @@ enum SteamLibraryPaths {
 
 /// Reads Wallpaper Engine build ids out of SteamCMD's `app_info_print` dump.
 enum SteamConnectorBuildInfo {
-    /// `"buildid"  "23967692"` inside the public branch block. Reads the
-    /// buildid from inside the `public` block only — scanning the whole
-    /// remainder after `"public"` meant a block with no readable buildid
-    /// silently fell to the next branch, reporting a beta build as public
-    /// and driving a wrong update verdict.
+    /// `"buildid"  "23967692"` inside `branches { "public" { … } }`. The
+    /// `branches` block is located first: the dump's first `"public"` is the
+    /// depot manifest (gid/size/download, no buildid), so keying on it
+    /// returned nil for every real update check. Reads the buildid from
+    /// inside the `public` block only — a block with no readable buildid must
+    /// not fall to the next branch and report a beta build as public.
     static func parsePublicBuildID(from output: String) -> String? {
-        guard let publicRange = output.range(of: "\"public\"") else { return nil }
-        let afterKey = output[publicRange.upperBound...]
+        guard let branches = block(named: "branches", in: output[...]),
+              let publicBranch = block(named: "public", in: branches),
+              let match = publicBranch.firstMatch(of: /"buildid"\s+"(\d+)"/) else { return nil }
+        return String(match.output.1)
+    }
+
+    /// Contents of the brace-matched block following the first `"name"` key.
+    private static func block(named name: String, in text: Substring) -> Substring? {
+        guard let keyRange = text.range(of: "\"\(name)\"") else { return nil }
+        let afterKey = text[keyRange.upperBound...]
         guard let open = afterKey.firstIndex(of: "{") else { return nil }
 
         var depth = 0
@@ -1868,10 +2109,7 @@ enum SteamConnectorBuildInfo {
             index = afterKey.index(after: index)
         }
         guard depth == 0, index < afterKey.endIndex else { return nil }
-
-        let block = afterKey[afterKey.index(after: open)..<index]
-        guard let match = block.firstMatch(of: /"buildid"\s+"(\d+)"/) else { return nil }
-        return String(match.output.1)
+        return afterKey[afterKey.index(after: open) ..< index]
     }
     
 }

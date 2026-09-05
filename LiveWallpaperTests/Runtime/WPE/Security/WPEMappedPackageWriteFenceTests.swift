@@ -253,7 +253,15 @@ struct WPEMappedPackageWriteFenceTests {
         "LiveWallpaper/Runtime/Metal/WPEShaderCompiler.swift": [".write(to": 1],
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Debug.swift": [".write(to": 2],
         "LiveWallpaper/Runtime/Metal/WPEMetalPassGPUProfiler.swift": [".write(to": 1],
-        "SteamConnector/SteamConnectorProtocol.swift": [".write(to": 1],
+        // Audited 2026-09-05: `.loomscreen.lock` is the per-account flock
+        // carrier inside Loomscreen's own private SteamCMD profile — never a
+        // content path, and nothing is ever written into it.
+        "SteamConnector/SteamConnectorProtocol.swift": [".write(to": 1, "O_RDWR": 1],
+        // Audited 2026-09-05: `publishContent` copies into a freshly created
+        // `.loomscreen-<uuid>` sibling (`O_CREAT|O_EXCL`, so it can only ever
+        // land on a new file) and then swaps that whole tree in. A mapped
+        // package is replaced by rename, never opened for in-place writing.
+        "SteamConnector/SteamLibraryWriter.swift": ["O_WRONLY": 1],
     ]
 
     @Test("Write-capable file opens in the content surface stay on the audited allowlist")

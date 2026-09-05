@@ -11,6 +11,7 @@ struct WorkshopProbeRow: View {
     let report: DoctorProbeReport
     let service: SteamCMDDoctorService
     let onCopied: () -> Void
+    var onConnectAccount: (() -> Void)?
 
     @State private var isExpanded = false
     /// Distinguishes "the user has not touched this row" from "the user closed
@@ -95,7 +96,17 @@ struct WorkshopProbeRow: View {
             }
 
             if let command = commandFromStatus {
-                TerminalCommandPanel(command: command, redactedPreview: false, onCopied: onCopied)
+                if needsAccountConnection {
+                    DisclosureGroup {
+                        TerminalCommandPanel(command: command, redactedPreview: false, onCopied: onCopied)
+                    } label: {
+                        Text("Use Terminal instead")
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    TerminalCommandPanel(command: command, redactedPreview: false, onCopied: onCopied)
+                }
             }
 
             HStack(spacing: DesignTokens.Spacing.xs) {
@@ -117,7 +128,13 @@ struct WorkshopProbeRow: View {
     /// Only the probes with a real remedy get a button; the rest would be a
     /// row of greyed verbs teaching the user nothing.
     @ViewBuilder private var fixButton: some View {
-        if report.id == .binaryIdentity, case .red = report.status {
+        if needsAccountConnection {
+            // The probe's own sentence tells the user to connect the account in
+            // Loomscreen; the primary button has to be that, not a shell command.
+            Button("Connect account") { onConnectAccount?() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+        } else if report.id == .binaryIdentity, case .red = report.status {
             // Re-detect rather than re-select: the fix for a bad identity is a
             // binary from a source we trust, not another path typed at us.
             Button("Locate automatically") {
@@ -129,6 +146,16 @@ struct WorkshopProbeRow: View {
     }
 
     // MARK: - Derived
+
+    /// A credential verdict, not a network one: only these are fixed by signing
+    /// in again.
+    private var needsAccountConnection: Bool {
+        guard report.id == .cachedLogin else { return false }
+        switch service.cachedLoginVerdict {
+        case .noCachedSession, .sessionExpired, .loginFailed: return true
+        default: return false
+        }
+    }
 
     private var stepState: WorkshopStepState {
         switch report.status {
