@@ -329,12 +329,11 @@ struct CPUWidgetView: View {
     /// Compact user/sys legend under the M arc (the arc's own two-tone wedges are the primary encoding; this just labels the split with percentages).
     @ViewBuilder
     private func compositionLegend(userPct: Int, sysPct: Int, scale: Design.TypeScale) -> some View {
-        HStack(spacing: scale.label * 0.8) {
+        VStack(alignment: .leading, spacing: scale.label * 0.3) {
             legendValue("USER", value: userPct, color: Design.signalAmber, scale: scale)
             legendValue("SYS", value: sysPct, color: Design.signalSteel, scale: scale)
         }
         .lineLimit(1)
-        .minimumScaleFactor(0.7)
         .monitorChip(scale)
     }
 

@@ -376,7 +376,7 @@ private struct GPUWidgetBody: View {
     }
 
     private var legendRow: some View {
-        HStack(spacing: scale.label * 1.1) {
+        HStack(spacing: scale.label * 0.8) {
             legendItem(name: "Device", value: gpuUsage,
                        color: Design.inkPrimary, dashed: false)
             if system?.gpuRendererUtil != nil {
@@ -388,10 +388,8 @@ private struct GPUWidgetBody: View {
                            color: Design.tilerViolet, dashed: true)
             }
             Spacer(minLength: 4)
-            computeChip
         }
         .lineLimit(1)
-        .minimumScaleFactor(0.7)
     }
 
     private func legendItem(name: String, value: Double?, color: Color, dashed: Bool) -> some View {
