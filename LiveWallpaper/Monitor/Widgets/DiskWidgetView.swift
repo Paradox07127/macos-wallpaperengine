@@ -18,11 +18,14 @@ struct DiskWidgetView: View {
         GeometryReader { geo in
             let rowSpan: CGFloat = context.placement.size == .large ? 2 : 1
             let cellHeight = geo.size.height / (2 * rowSpan)
-            switch context.placement.size {
-            case .small: small(cellHeight: cellHeight)
-            case .medium: medium(cellHeight: cellHeight)
-            case .large: large(cellHeight: cellHeight)
+            Group {
+                switch context.placement.size {
+                case .small: small(cellHeight: cellHeight)
+                case .medium: medium(cellHeight: cellHeight)
+                case .large: large(cellHeight: cellHeight)
+                }
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
     }
 

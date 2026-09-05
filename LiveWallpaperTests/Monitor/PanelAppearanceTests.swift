@@ -63,7 +63,7 @@ struct PanelAppearanceTests {
             }
             .padding(20)
             .background(Color.white)
-            .environment(\.locale, Locale(identifier: "en"))
+            .environment(\.locale, AppLanguagePreference.current.locale)
             let renderer = ImageRenderer(content: row)
             renderer.scale = 1
             let rendered = try #require(renderer.cgImage)
@@ -71,6 +71,21 @@ struct PanelAppearanceTests {
             let bitmap = NSBitmapImageRep(cgImage: rendered)
             let png = try #require(bitmap.representation(using: .png, properties: [:]))
             try png.write(to: directory.appendingPathComponent("\(kind.rawValue).png"))
+            if kind == .disk {
+                let bounds = NSRect(x: 0, y: 0, width: rendered.width, height: rendered.height)
+                let host = NSHostingView(rootView: row)
+                let window = NSWindow(contentRect: bounds, styleMask: .borderless, backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                defer { window.close() }
+                window.contentView = host
+                host.frame = bounds
+                host.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                let native = try #require(host.bitmapImageRepForCachingDisplay(in: bounds))
+                host.cacheDisplay(in: bounds, to: native)
+                let nativePNG = try #require(native.representation(using: .png, properties: [:]))
+                try nativePNG.write(to: directory.appendingPathComponent("disk-native.png"))
+            }
         }
         print("Widget visual review: \(directory.path)")
     }
