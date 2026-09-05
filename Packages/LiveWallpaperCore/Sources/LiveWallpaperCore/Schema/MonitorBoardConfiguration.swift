@@ -25,6 +25,8 @@ public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifi
     case processes
     case fleet
     case aiEngine
+    /// Ambient scene of the local sky — an atmosphere, not a readout.
+    case weather
 
     public var id: String { rawValue }
 

@@ -61,8 +61,8 @@ struct WidgetSettingsPopover: View {
 
     private var hasKindOptions: Bool {
         switch placement.kind {
-        case .processes, .cpu, .gpu, .memory, .disk, .fleet: return true
-        default: return false
+        case .processes, .cpu, .gpu, .memory, .disk, .fleet, .weather: true
+        default: false
         }
     }
 
@@ -110,9 +110,20 @@ struct WidgetSettingsPopover: View {
             diskOptions
         case .fleet:
             agentSessionOptions
+        case .weather:
+            weatherOptions
         default:
             EmptyView()
         }
+    }
+
+    // MARK: Weather
+
+    private var weatherOptions: some View {
+        toggleRow(
+            "Show caption",
+            isOn: boolBinding(key: WeatherWidgetOptions.showCaptionKey, default: WeatherWidgetOptions.showCaptionDefault)
+        )
     }
 
     // MARK: Processes

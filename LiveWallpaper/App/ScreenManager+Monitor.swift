@@ -20,6 +20,7 @@ extension ScreenManager {
         }
         // Suspend before host create so occluded overlays never get a prime snapshot.
         refreshMonitorOverlayVisibility()
+        OverlayController.shared.weatherService = weatherService
         OverlayController.shared.onOverlayEdited = { [weak self] screenID, board in
             self?.persistMonitorOverlayBoard(board, screenID: screenID)
         }
@@ -65,6 +66,15 @@ extension ScreenManager {
     /// This display's overlay config; absent = never configured, i.e. off.
     func monitorOverlay(for screen: Screen) -> MonitorOverlayConfiguration {
         monitorOverlays[screen.displayFingerprint] ?? .default
+    }
+
+    /// A live display's enabled board shows a Weather tile, so the sky has to
+    /// be fetched even when no display leans its particles on the weather.
+    var hasEnabledWeatherWidget: Bool {
+        wallpapersGloballyEnabled && screens.contains { screen in
+            let overlay = monitorOverlay(for: screen)
+            return overlay.enabled && overlay.board.widgets.contains { $0.kind == .weather }
+        }
     }
 
     func setMonitorOverlayEnabled(_ enabled: Bool, for screen: Screen) {
@@ -170,6 +180,9 @@ extension ScreenManager {
         guard next != monitorOverlays else { return }
         monitorOverlays = next
         SettingsManager.shared.saveMonitorOverlays(next)
+        if effectsCoordinatorWasInitialized {
+            effectsCoordinator.monitorBoardsDidChange()
+        }
         if reconcile { scheduleMonitorOverlayReconcile() }
     }
 

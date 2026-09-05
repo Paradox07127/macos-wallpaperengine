@@ -235,6 +235,11 @@ final class OverlayController: NSObject {
         super.init()
     }
 
+    /// Handed to every board host so a Weather tile can read the live sky.
+    /// Set by `ScreenManager` before it applies overlays; a host built earlier
+    /// keeps nil until it is rebuilt.
+    var weatherService: WeatherReactiveService?
+
     // MARK: - Per-screen reconcile
 
     func apply(
@@ -294,7 +299,8 @@ final class OverlayController: NSObject {
                 frame: frame,
                 configuration: overlay.board,
                 topInsetFraction: topInsetFraction,
-                historyStore: sharedBoardHistory
+                historyStore: sharedBoardHistory,
+                weatherService: weatherService
             )
             board.autoresizingMask = [.width, .height]
             // No reset here: a display joining mid-session adopts the machine's
