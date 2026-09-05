@@ -50,7 +50,7 @@ struct DraftState: Sendable, Equatable {
         videoVolume: 1.0,
         videoColorSpace: .auto,
         particleDensity: 1.0,
-        selectedFrameRateLimit: .full,
+        selectedFrameRateLimit: .matchDisplay,
         sceneMouseInteractionEnabled: true,
         sceneClickCaptureEnabled: false,
         hasPreviewSource: false,

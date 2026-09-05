@@ -16,7 +16,7 @@ struct ScreenConfigurationCompatTests {
             wallpaper: .video(bookmarkData: Data([0xAA, 0xBB])),
             playbackSpeed: 1.5,
             fitMode: .aspectFit,
-            frameRateLimit: .half,
+            frameRateLimit: .fps30,
             savedVideoBookmarkData: Data([0xAA, 0xBB])
         )
         let baseline = try JSONEncoder().encode(baselineConfig)
@@ -195,13 +195,13 @@ struct ScreenConfigurationCompatTests {
             capabilityTier: .degraded
         )
         let config = ScreenConfiguration(screenID: 1, wallpaper: .scene(descriptor))
-        #expect(config.frameRateLimit == .half)
+        #expect(config.frameRateLimit == .fps30)
     }
 
     @Test("New video ScreenConfiguration keeps fps60 (native pass-through)")
     func newVideoConfigurationDefaultsToSixty() {
         let config = ScreenConfiguration(screenID: 1, wallpaper: .video(bookmarkData: Data([0x01])))
-        #expect(config.frameRateLimit == .full)
+        #expect(config.frameRateLimit == .matchDisplay)
     }
 
     @Test("Explicit frameRateLimit overrides the type-aware default")
@@ -215,9 +215,9 @@ struct ScreenConfigurationCompatTests {
         let config = ScreenConfiguration(
             screenID: 1,
             wallpaper: .scene(descriptor),
-            frameRateLimit: .full
+            frameRateLimit: .matchDisplay
         )
-        #expect(config.frameRateLimit == .full)
+        #expect(config.frameRateLimit == .matchDisplay)
     }
 
     /// Runs inside the sandboxed test host: proves the App Sandbox does not block
