@@ -24,7 +24,7 @@ struct GPUWidgetView: View {
         return Design.signalIdle.opacity(0.6)
     }
 
-    /// Compute ≈ Device − Renderer, clamped ≥ 0, as a whole percent. nil when
+    /// Device − Renderer difference (not measured compute), clamped ≥ 0. nil when
     /// either input is missing (the gap is undefined without both).
     nonisolated static func computePercent(device: Double?, renderer: Double?) -> Int? {
         guard let device, let renderer else { return nil }
@@ -353,11 +353,12 @@ private struct GPUWidgetBody: View {
         if let compute = GPUWidgetView.computePercent(device: gpuUsage,
                                                              renderer: system?.gpuRendererUtil) {
             HStack(spacing: 5) {
-                Text("compute")
+                Text("Difference")
                     .font(Design.labelFont(size: scale.label * 0.9))
                     .tracking(scale.label * 0.1)
                     .foregroundStyle(Design.inkFaint)
                 Text(verbatim: "≈\(compute)%")
+                    .help(Text("Estimated device minus renderer utilization; not measured compute utilization"))
                     .font(Design.labelFont(size: scale.label))
                     .monospacedDigit()
                     .foregroundStyle(Design.computeViolet)
@@ -429,7 +430,7 @@ private struct GPUWidgetBody: View {
     }
 
     private var computeGapNote: some View {
-        Text("Device − Renderer gap ≈ compute (Metal / GPU ML) load")
+        Text("Device − Renderer; not compute usage")
             .font(Design.captionFont(size: scale.caption))
             .foregroundStyle(Design.inkFaint)
             .lineLimit(1)
@@ -537,7 +538,7 @@ private struct GPUWidgetBody: View {
                 .font(Design.subFont(size: scale.caption))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkPrimary)
-            Text(LocalizedStringKey(GPUWidgetView.tempLabel(t)))
+            Text("Sensor")
                 .font(Design.labelFont(size: scale.label * 0.94))
                 .tracking(scale.label * 0.12)
                 .foregroundStyle(Design.inkFaint)
@@ -553,11 +554,17 @@ private struct GPUWidgetBody: View {
     private var memUsedBytes: UInt64? { system?.gpuMemUsedBytes }
 
     private var peakFraction: Double? {
-        let p = context.history.gpuPeak
+        let p = gpuHistory(windowSeconds: displayedHistorySeconds).max() ?? 0
         return p > 0 ? p : nil
     }
 
-    private var peakPercent: Int { Int((max(context.history.gpuPeak, gpuUsage ?? 0) * 100).rounded()) }
+    private var peakPercent: Int {
+        Int((max(peakFraction ?? 0, gpuUsage ?? 0) * 100).rounded())
+    }
+
+    private var displayedHistorySeconds: Double {
+        context.placement.size == .small ? 30 : historyWindowSeconds
+    }
 
     private var history30: [Double] { gpuHistory(windowSeconds: 30) }
     private var historyWindowed: [Double] { gpuHistory(windowSeconds: historyWindowSeconds) }

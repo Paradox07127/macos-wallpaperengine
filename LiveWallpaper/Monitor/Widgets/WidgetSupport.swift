@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import LiveWallpaperCore
+import SwiftUI
 
 // MARK: - Widget-facing contract (orchestrator-owned)
 
@@ -11,6 +12,29 @@ struct MonitorWidgetContext {
     var isEditing: Bool
     var reduceMotion: Bool
     var now: Date
+
+    var readingsNotice: LocalizedStringKey? {
+        guard placement.kind != .fleet else { return nil }
+        guard let system = snapshot.system else { return "Waiting for readings" }
+        if let samples = system.metricSamples {
+            guard let sample = samples[placement.kind.rawValue], sample.available else { return "Readings unavailable" }
+            return sample.isStale(at: now) ? "Readings are out of date" : nil
+        }
+        // Older snapshots and previews have no provenance. Only concrete fields
+        // demonstrate availability; default-initialized zeroes cannot do so.
+        let available: Bool = switch placement.kind {
+        case .cpu: system.perCore != nil || system.cpuTotal > 0
+        case .memory: system.memTotalBytes > 0 && system.memBreakdown != nil
+        case .gpu: system.gpuUsage != nil
+        case .network: system.netInterfaces != nil
+        case .disk: system.diskReadBytesPerSec > 0 || system.diskWriteBytesPerSec > 0
+        case .power: system.batteryLevel != nil || system.powerSource != nil
+        case .processes: system.topProcesses != nil
+        case .aiEngine: system.aneFootprintPresent != nil
+        case .fleet: true
+        }
+        return available ? nil : "Readings unavailable"
+    }
 }
 
 #if DEBUG
@@ -70,9 +94,7 @@ extension MonitorHistorySnapshot {
             return Array(series.suffix(max(seconds, minimumPoints)))
         }
         let cutoff = last - Double(seconds)
-        let inWindow = zip(sampleTimes, series).filter { $0.0 >= cutoff }.map(\.1)
-        // A chart needs two points to draw a segment.
-        return inWindow.count >= minimumPoints ? inWindow : Array(series.suffix(minimumPoints))
+        return zip(sampleTimes, series).filter { $0.0 >= cutoff }.map(\.1)
     }
 
     static func historyWindowSeconds(optionSeconds: Double?, fallbackSeconds: Int) -> Int {
@@ -107,9 +129,9 @@ final class MonitorHistoryStore: ObservableObject {
     }
 
     func ingest(_ snapshot: MonitorSnapshot) {
-        let t = snapshot.timestamp > 0 ? snapshot.timestamp : Date().timeIntervalSince1970
         var next = current
         guard let sys = snapshot.system else { return }
+        let t = sys.sampledAt ?? (snapshot.timestamp > 0 ? snapshot.timestamp : Date().timeIntervalSince1970)
         if let last = lastSampleAt, t <= last { return }
         let dt = lastSampleAt.map { min(max(t - $0, 0), 10) } ?? 0
         lastSampleAt = t

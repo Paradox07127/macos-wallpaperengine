@@ -41,13 +41,14 @@ struct WidgetContainer<Content: View, Status: View>: View {
 
     private var header: some View {
         let titleSize = scale.label + 1
-        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+        return HStack(alignment: .center, spacing: 6) {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(Design.labelFont(size: titleSize))
                     .foregroundStyle(Design.inkFaint)
             }
-            Text(verbatim: label.uppercased())
+            Text(LocalizedStringKey(label))
+                .textCase(.uppercase)
                 .font(Design.labelFont(size: titleSize))
                 .tracking(Design.labelTracking(size: titleSize))
                 .foregroundStyle(Design.inkFaint)

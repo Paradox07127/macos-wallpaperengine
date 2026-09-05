@@ -43,7 +43,7 @@ struct PanelChrome: ViewModifier {
     }
 
     private func paintedCard(_ content: Content) -> some View {
-        let fill = MonitorPanelAppearance.fill(tintHex: tintHex, opacity: panelOpacity)
+        let fill = MonitorPanelAppearance.fill(tintHex: tintHex, opacity: panelOpacity, reduceTransparency: reduceTransparency)
         return content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -66,7 +66,7 @@ struct PanelChrome: ViewModifier {
                                 lineWidth: 1
                             )
                     )
-                    .shadow(color: .black.opacity(0.42), radius: 22, x: 0, y: 14)
+                    .shadow(color: .black.opacity(0.24), radius: 12, x: 0, y: 6)
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(

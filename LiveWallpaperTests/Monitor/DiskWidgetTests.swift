@@ -32,8 +32,8 @@ struct DiskWidgetTests {
         var h = MonitorHistorySnapshot()
         h.sampleTimes = (0..<10).map { 1_000 + Double($0) }
         h.diskRead = (0..<10).map(Double.init)
-        // Window shorter than one sample gap still yields two points to draw.
-        #expect(h.windowed(h.diskRead, seconds: 0).count == 2)
+        // Never pull an out-of-window sample into a short window just to draw a line.
+        #expect(h.windowed(h.diskRead, seconds: 0) == [9])
         // Whole series when the window covers all of it.
         #expect(h.windowed(h.diskRead, seconds: 600) == h.diskRead)
         // Times out of step with the series: fall back to a count, never crash.

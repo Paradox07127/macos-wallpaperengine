@@ -27,8 +27,13 @@ struct CPUWidgetView: View {
 
     // MARK: - Derived values
 
-    private var cpuFraction: Double { system?.cpuTotal ?? 0 }
-    private var peakFraction: Double { history.cpuPeak }
+    private var cpuFraction: Double {
+        system?.cpuTotal ?? 0
+    }
+
+    private var peakFraction: Double {
+        trend(historyWindow).max() ?? cpuFraction
+    }
 
     private func trend(_ seconds: Int) -> [Double] {
         history.windowed(history.cpuTotal, seconds: seconds)
@@ -178,8 +183,8 @@ struct CPUWidgetView: View {
                 .frame(maxWidth: .infinity)
 
                 CPUStackChart(
-                    user: Array(history.cpuUser.suffix(historyWindow)),
-                    system: Array(history.cpuSystem.suffix(historyWindow))
+                    user: history.windowed(history.cpuUser, seconds: historyWindow),
+                    system: history.windowed(history.cpuSystem, seconds: historyWindow)
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(minHeight: max(cellHeight * 0.32, 32))
@@ -258,7 +263,7 @@ struct CPUWidgetView: View {
                     .font(Design.captionFont(size: scale.caption * 0.68))
                     .foregroundStyle(Design.inkFaint)
             }
-            Text(LocalizedStringKey(Self.temperatureWord(celsius)))
+            Text("Sensor")
                 .font(Design.labelFont(size: scale.label * 0.94))
                 .tracking(scale.label * 0.12)
                 .foregroundStyle(Design.inkFaint)

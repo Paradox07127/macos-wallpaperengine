@@ -23,6 +23,17 @@ struct SystemSamplersV2Tests {
         #expect(cyclic == 700 || cyclic == 800)
     }
 
+    @Test("Multithreaded CPU and equal work split across processes have the same total")
+    func processCPUUsesPerCorePercentages() {
+        let whole = SystemMetricsSamplers.processCPUPercent(cpuNanoseconds: 3_000_000_000, elapsedSeconds: 1)
+        let child = SystemMetricsSamplers.processCPUPercent(cpuNanoseconds: 1_000_000_000, elapsedSeconds: 1)
+        #expect(whole == 300)
+        #expect(whole == child * 3)
+        #expect(SystemMetricsSamplers.processCPUPercent(cpuNanoseconds: 3_000_000_000, elapsedSeconds: 3) == 100)
+        #expect(SystemMetricsSamplers.processCPUPercent(cpuNanoseconds: 0, elapsedSeconds: 1) == 0)
+        #expect(SystemMetricsSamplers.processCPUPercent(cpuNanoseconds: 1, elapsedSeconds: .nan) == 0)
+    }
+
     private func makeVMStats(
         internalPages: UInt32,
         purgeable: UInt32,
@@ -310,7 +321,11 @@ struct SystemSamplersV2Tests {
         let sample = SystemMetricsSamplers.sampleANE(limit: 5)
         #expect(sample.processes.count <= 5)
         #expect(sample.processes.allSatisfy { $0.footprintBytes > 0 })
-        #expect(sample.hasFootprint == !sample.processes.isEmpty)
+        if let present = sample.hasFootprint {
+            #expect(present == !sample.processes.isEmpty)
+        } else {
+            #expect(sample.processes.isEmpty)
+        }
         let footprints = sample.processes.map(\.footprintBytes)
         #expect(footprints == footprints.sorted(by: >))
     }
