@@ -1404,7 +1404,7 @@ struct VideoSessionLifecycleTests {
         defer { coordinator.shutdown() }
 
         var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data())
-        configuration.frameRateLimit = .quarter
+        configuration.frameRateLimit = .fps15
         configuration.effectConfig.blurRadius = 2
 
         #expect(await coordinator.prepareVideoEffects(

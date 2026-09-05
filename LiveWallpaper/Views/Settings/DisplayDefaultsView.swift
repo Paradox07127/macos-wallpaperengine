@@ -167,9 +167,11 @@ struct DisplayDefaultsView: View {
         }
     }
 
-    /// The cap is a divisor of each display's refresh rate, and this page is not
-    /// about one display, so the menu is labelled with what the main display would
-    /// get and the subtitle says the rest scale with their own panel.
+    /// The cap is a target frame rate, and a display can only deliver a divisor of
+    /// its own refresh rate, so the same target reads 60 on a 240 Hz panel and 48 on
+    /// a 144 Hz one. This page is not about one display, so the menu is labelled
+    /// with what the main display would get and the subtitle says the rest land on
+    /// the closest rate they can.
     private var mainDisplayRefreshRate: Double {
         Double(NSScreen.main?.maximumFramesPerSecond ?? 60)
     }
@@ -182,11 +184,11 @@ struct DisplayDefaultsView: View {
             // Video divides the slower of the panel and the file, so its row says
             // so rather than promising the panel rate the menu is labelled with.
             subtitle: kind == .video
-                ? "Scales with the display's refresh rate, or the video's own frame rate if that is lower"
-                : "Scales with each display's refresh rate"
+                ? "Never faster than the video's own frame rate"
+                : "Each display uses the closest rate it can deliver"
         ) {
             Picker("", selection: playbackBinding(\.frameRateLimit, for: kind)) {
-                ForEach(FrameRateLimit.allCases) { limit in
+                ForEach(FrameRateLimit.availableCases(forRefreshRate: mainDisplayRefreshRate)) { limit in
                     Text(verbatim: limit.title(forRefreshRate: mainDisplayRefreshRate)).tag(limit)
                 }
             }
