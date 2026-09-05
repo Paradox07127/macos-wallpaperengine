@@ -629,3 +629,22 @@ private func eventually(
     }
     return condition()
 }
+
+@Suite("Weather reading accuracy")
+struct WeatherReadingAccuracyTests {
+    @Test("Moderate showers and snow grains do not select heavy precipitation")
+    func precipitationCodes() {
+        #expect(WeatherReactiveService.description(forWMOCode: 77) == .snow)
+        #expect(WeatherReactiveService.description(forWMOCode: 81) == .rain)
+        #expect(WeatherReactiveService.description(forWMOCode: 82) == .heavyRain)
+        #expect(WeatherReactiveService.description(forWMOCode: 86) == .heavySnow)
+    }
+
+    @Test("Weather expires after two missed hourly refreshes")
+    func freshnessBoundary() {
+        let fetched = Date(timeIntervalSince1970: 1000)
+        #expect(!WeatherReactiveService.isStale(lastSuccess: fetched, now: fetched.addingTimeInterval(7199)))
+        #expect(WeatherReactiveService.isStale(lastSuccess: fetched, now: fetched.addingTimeInterval(7200)))
+        #expect(WeatherReactiveService.isStale(lastSuccess: nil, now: fetched))
+    }
+}
