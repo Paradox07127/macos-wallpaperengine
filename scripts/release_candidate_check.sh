@@ -82,31 +82,19 @@ assert_arm64_binary() {
   fi
 }
 
-# Lite ships universal so it can run on the Intel Macs that reach macOS 14.6.
-# arm64 is still mandatory — a Lite that lost it would be a Rosetta-only app on
-# every machine we actually test. x86_64 is optional here so the gate keeps
-# passing whether or not the Lite target carries the universal ARCHS override.
-assert_contains_arm64() {
+# Both shipping Lite slices are required; Pro deliberately remains arm64-only.
+assert_universal_binary() {
   local binary="$1"
   local label="$2"
   local archs
   archs="$(lipo -archs "$binary")"
-  case " $archs " in
-    *" arm64 "*) ;;
+  case "$archs" in
+    "arm64 x86_64"|"x86_64 arm64") ;;
     *)
-      echo "ERROR: $label does not contain arm64 (got: $archs)." >&2
+      echo "ERROR: $label must contain exactly arm64 and x86_64 (got: $archs)." >&2
       exit 1
       ;;
   esac
-  for arch in $archs; do
-    case "$arch" in
-      arm64|x86_64) ;;
-      *)
-        echo "ERROR: $label carries an unexpected architecture '$arch' (got: $archs)." >&2
-        exit 1
-        ;;
-    esac
-  done
   echo "  ✓ $label architectures: $archs"
 }
 
@@ -146,36 +134,9 @@ if ! security find-identity -p codesigning -v | grep -q '"Developer ID Applicati
   echo "WARNING: No Developer ID Application signing identity found on this Mac; notarized export must run on a signing machine." >&2
 fi
 
-# App schemes omit SwiftPM test products, so package tests run explicitly first.
-# Serial execution and isolated scratch paths avoid compiler-cache contention.
-PACKAGE_TEST_PATHS=(
-  "Packages/LiveWallpaperCore"
-  "Packages/LiveWallpaperProWPE"
-)
-
+# App schemes omit SwiftPM test products. Reuse Make's per-package exit/count gate.
 echo "== Swift package tests (sequential) =="
-for package_path in "${PACKAGE_TEST_PATHS[@]}"; do
-  package_name="${package_path##*/}"
-  package_scratch="$DERIVED_DATA/SwiftPM/$package_name"
-  package_log="/tmp/LiveWallpaperReleaseCandidate-${package_name}-$$.log"
-  echo "-- $package_name --"
-  if ! swift test \
-    --package-path "$package_path" \
-    --scratch-path "$package_scratch" \
-    > "$package_log" 2>&1; then
-    echo "ERROR: $package_name tests failed; app scheme checks were not started." >&2
-    tail -80 "$package_log" >&2
-    exit 1
-  fi
-  package_summary="$(grep -E 'Test run with [1-9][0-9]* tests?' "$package_log" | tail -1 || true)"
-  if [[ -z "$package_summary" ]]; then
-    echo "ERROR: $package_name reported success without a non-zero test summary." >&2
-    tail -80 "$package_log" >&2
-    exit 1
-  fi
-  echo "$package_summary"
-  echo "Raw log: $package_log"
-done
+bash scripts/app_tests.sh packages "$DERIVED_DATA/SwiftPM" LiveWallpaperCore LiveWallpaperProWPE
 
 echo "== Unit tests (Pro scheme) =="
 DERIVED_DATA="$DERIVED_DATA" \
@@ -271,7 +232,7 @@ xcodebuild archive \
 LITE_ARCHIVED_APP="$LITE_ARCHIVE_PATH/Products/Applications/Loomscreen.app"
 LITE_RELEASE_BIN="$LITE_ARCHIVED_APP/Contents/MacOS/Loomscreen"
 [[ -x "$LITE_RELEASE_BIN" ]] || fail_with_log "Lite Release archive did not produce Loomscreen.app."
-assert_contains_arm64 "$LITE_RELEASE_BIN" "Lite Release archive"
+assert_universal_binary "$LITE_RELEASE_BIN" "Lite Release archive"
 codesign --verify --deep --strict --verbose=2 "$LITE_ARCHIVED_APP"
 assert_no_removed_dynamic_links "$LITE_RELEASE_BIN" "Lite Release archive"
 

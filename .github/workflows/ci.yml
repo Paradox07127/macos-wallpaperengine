@@ -190,13 +190,16 @@ jobs:
 
       - name: Run LiveWallpaperTests
         run: |
-          set -o pipefail
-          xcodebuild test \
-            -project LiveWallpaper.xcodeproj \
-            -scheme LiveWallpaper \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData-tests" \
-            -only-testing:LiveWallpaperTests \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGN_STYLE=Manual \
-            SWIFT_EMIT_LOC_STRINGS=NO
+          DERIVED_DATA="$RUNNER_TEMP/DerivedData-tests" \
+          RESULT_BUNDLE="$RUNNER_TEMP/FullAppTests.xcresult" \
+            bash scripts/app_tests.sh full --hosted
+
+      - name: Preserve full app test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-app-test-results
+          path: |
+            ${{ runner.temp }}/FullAppTests.xcresult
+            ${{ runner.temp }}/FullAppTests.log
+          if-no-files-found: warn
