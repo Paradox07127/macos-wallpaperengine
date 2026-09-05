@@ -2,6 +2,9 @@
 # Hardware-free app architecture/security shard for required PR validation.
 set -euo pipefail
 
+# The required shard always uses synthetic fixtures, even in an opted-in shell.
+unset LIVEWALLPAPER_EXTERNAL_FIXTURES TEST_RUNNER_LIVEWALLPAPER_EXTERNAL_FIXTURES
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -114,7 +117,6 @@ python3 scripts/xcode_test_runner.py \
   --result-bundle "$RESULT_BUNDLE" \
   --minimum-test-count 1 \
   --slowest 10 \
-  --allow-skipped-suite WPECorpusManifestTests \
   "${required_suites[@]}" \
   -- \
   -project LiveWallpaper.xcodeproj \
