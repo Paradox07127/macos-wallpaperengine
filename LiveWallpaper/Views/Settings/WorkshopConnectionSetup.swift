@@ -13,6 +13,8 @@ struct WorkshopConnectionSetup: View {
 
     @State private var showingSetupSheet = false
     @State private var showingSignIn = false
+    @State private var showingRemoveSessionConfirm = false
+    @State private var showingSubscriptionSync = false
 
     var body: some View {
         Section {
@@ -22,6 +24,7 @@ struct WorkshopConnectionSetup: View {
             attentionNote(service.attentionMessage(for: .binaryIdentity))
             accountRow
             attentionNote(service.attentionMessage(for: .cachedLogin))
+            subscriptionsRow
 
             if let setupError = controller.setupError {
                 Label(setupError, systemImage: "exclamationmark.triangle.fill")
@@ -44,7 +47,7 @@ struct WorkshopConnectionSetup: View {
             title: "Steam library",
             valueSubtitle: controller.libraryDetail,
             titleBadge: attentionBadge(for: service.libraryStepState),
-            info: "Pick Steam's own folder — the one containing config/config.vdf — once. Loomscreen keeps a security-scoped bookmark to it and never creates a second Workshop repository. macOS only grants that bookmark through a panel you confirm, so even the located folder needs one click."
+            info: "Choose the Steam library folder for wallpaper files. Download sign-in is stored separately."
         ) {
             WorkshopSetupRoutes(
                 primary: libraryPrimaryRoute,
@@ -66,6 +69,25 @@ struct WorkshopConnectionSetup: View {
                     controller.adoptSignedInAccount(accountName)
                 }
             }
+        }
+        .sheet(isPresented: $showingSubscriptionSync) {
+            AppLanguageScope(defaults: .appScoped()) {
+                SubscriptionSyncSheet()
+            }
+        }
+        .confirmationDialog(
+            Text("Remove the saved Steam session?"),
+            isPresented: $showingRemoveSessionConfirm,
+            titleVisibility: .visible
+        ) {
+            // No destructive role on the confirm button: the user already
+            // pressed a control labelled Remove (rules/ui-design.md).
+            Button("Remove") {
+                Task { await service.removeSignedInSession() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Loomscreen deletes only its own download session for this account. Your Steam app sign-in is not affected. You'll connect this account again the next time you download.")
         }
         .task { await controller.prepare() }
     }
@@ -204,7 +226,8 @@ struct WorkshopConnectionSetup: View {
                         current: service.username,
                         onSelect: controller.selectAccount,
                         onSignIn: { showingSignIn = true },
-                        onRescan: { Task { await controller.loadAccounts() } }
+                        onRescan: { Task { await controller.loadAccounts() } },
+                        onRemoveSession: { showingRemoveSessionConfirm = true }
                     )
                 } label: {
                     Text(service.username == nil ? "Choose account" : "Switch account")
@@ -221,6 +244,23 @@ struct WorkshopConnectionSetup: View {
                 Button("Sign in to a new account") { showingSignIn = true }
                     .fixedSize()
             }
+        }
+    }
+
+    // MARK: - Subscribed wallpapers
+
+    /// Sits under the account row because it is the one thing the account
+    /// unlocks that the three setup steps do not already do for you.
+    private var subscriptionsRow: some View {
+        SettingRow(
+            icon: "arrow.down.circle",
+            iconColor: .green,
+            title: "Subscribed wallpapers",
+            subtitle: "Download the items you're subscribed to on Steam but don't have here.",
+            info: "Loomscreen only adds wallpapers. It never deletes anything or changes your Steam subscriptions."
+        ) {
+            Button("Check subscriptions") { showingSubscriptionSync = true }
+                .fixedSize()
         }
     }
 

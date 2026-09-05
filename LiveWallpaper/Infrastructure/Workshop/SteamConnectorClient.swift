@@ -106,6 +106,16 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDManagedRemovalResult.self, from: $0) }
     }
 
+    /// Deletes only Loomscreen's own download session for this account; the
+    /// user's Steam client profile is untouched. nil means the connector was
+    /// unreachable.
+    static func removeAccountSession(accountName: String) async -> SteamAccountSessionRemovalResult? {
+        let data = await call { connector, reply in
+            connector.removeAccountSession(accountName: accountName, with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(SteamAccountSessionRemovalResult.self, from: $0) }
+    }
+
     /// Whether SteamCMD works on this Mac, decided by the one process that can
     /// spawn it — resolution, signature, quarantine, and a real `steamcmd +quit`
     /// run. Slow by nature; the app renders the result rather than re-deriving
@@ -139,12 +149,14 @@ enum SteamConnectorClient {
     /// Long-running app_update with progress.
     static func installWallpaperEngineAssets(
         accountName: String,
+        libraryPath: String,
         operationID: String,
         onProgress: @escaping @Sendable (SteamOperationProgress) -> Void
     ) async -> SteamEngineAssetsResult? {
         let data = await call(onProgress: onProgress) { connector, reply in
             connector.installWallpaperEngineAssets(
                 accountName: accountName,
+                libraryPath: libraryPath,
                 operationID: operationID,
                 with: reply
             )
@@ -159,6 +171,7 @@ enum SteamConnectorClient {
     static func downloadWorkshopItem(
         workshopID: String,
         accountName: String,
+        libraryPath: String,
         onProgress: @escaping @Sendable (SteamOperationProgress) -> Void
     ) async -> SteamWorkshopDownloadResult? {
         let operationID = SteamCMDOperationScope.currentID ?? UUID().uuidString
@@ -166,6 +179,7 @@ enum SteamConnectorClient {
             connector.downloadWorkshopItem(
                 workshopID: workshopID,
                 accountName: accountName,
+                libraryPath: libraryPath,
                 operationID: operationID,
                 with: reply
             )
@@ -173,11 +187,21 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamWorkshopDownloadResult.self, from: $0) }
     }
 
+    /// The account's Workshop subscriptions, read out of the ledger SteamCMD
+    /// keeps locally. Downloads nothing. nil means the connector was
+    /// unreachable.
+    static func listSubscribedWorkshopItems(accountName: String) async -> SteamSubscribedItemsResult? {
+        let data = await call { connector, reply in
+            connector.listSubscribedWorkshopItems(accountName: accountName, with: reply)
+        }
+        return data.flatMap { try? JSONDecoder().decode(SteamSubscribedItemsResult.self, from: $0) }
+    }
+
     /// Real delete of the user's Steam content. The app has no code path that
     /// can do this itself — by design.
-    static func deleteWorkshopItem(workshopID: String) async -> SteamDeleteResult? {
+    static func deleteWorkshopItem(workshopID: String, libraryPath: String) async -> SteamDeleteResult? {
         let data = await call { connector, reply in
-            connector.deleteWorkshopItem(workshopID: workshopID, with: reply)
+            connector.deleteWorkshopItem(workshopID: workshopID, libraryPath: libraryPath, with: reply)
         }
         return data.flatMap { try? JSONDecoder().decode(SteamDeleteResult.self, from: $0) }
     }
@@ -194,16 +218,9 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(Bool.self, from: $0) }
     }
 
-    static func latestWallpaperEngineBuildID(
-        accountName: String,
-        operationID: String
-    ) async -> SteamEngineBuildLookup? {
+    static func latestWallpaperEngineBuildID(operationID: String) async -> SteamEngineBuildLookup? {
         let data = await call { connector, reply in
-            connector.latestWallpaperEngineBuildID(
-                accountName: accountName,
-                operationID: operationID,
-                with: reply
-            )
+            connector.latestWallpaperEngineBuildID(operationID: operationID, with: reply)
         }
         guard let data else { return nil }
         // A reply we cannot decode is still a reply. Returning nil here made
