@@ -1,9 +1,102 @@
+@testable import LiveWallpaper
+import LiveWallpaperCore
 import SwiftUI
 import Testing
-@testable import LiveWallpaper
 
 @Suite("Monitor widget card appearance")
 struct PanelAppearanceTests {
+    @MainActor @Test("Every supported tile renders at its actual footprint")
+    func renderAllTileFootprints() throws {
+        let now = Date()
+        var system = MonitorSystemSnapshot(cpuTotal: 0.42, cpuUser: 0.3, cpuSystem: 0.12,
+                                           perCore: [0.2, 0.3, 0.4, 0.5, 0.7, 0.2, 0.8, 0.4],
+                                           memUsedBytes: 21_000_000_000, memTotalBytes: 32_000_000_000,
+                                           gpuUsage: 0.54, netRxBytesPerSec: 8_400_000, netTxBytesPerSec: 1_200_000,
+                                           diskReadBytesPerSec: 12_000_000, diskWriteBytesPerSec: 3_000_000,
+                                           batteryLevel: 0.72, batteryCharging: false)
+        var processes: [MonitorProcessSample] = []
+        for index in 0 ..< 20 {
+            let name = index == 0 ? "Very long application name" : "Application \(index)"
+            let cpu = index == 0 ? 327.0 : Double(40 - index)
+            processes.append(MonitorProcessSample(name: name, cpuPercent: cpu, memBytes: 1_400_000_000))
+        }
+        system.topProcesses = processes
+        system.memBreakdown = MonitorMemoryBreakdown(appBytes: 14_000_000_000, wiredBytes: 4_000_000_000,
+                                                     compressedBytes: 3_000_000_000, cachedFilesBytes: 2_000_000_000)
+        system.cpuInfo = MonitorCPUInfo(deviceName: "Apple M4 Pro", coreCount: 8,
+                                        coreGroups: [MonitorCPUCoreGroup(name: "Performance", physicalCount: 4),
+                                                     MonitorCPUCoreGroup(name: "Efficiency", physicalCount: 4)])
+        system.gpuDeviceName = "Apple M4 Pro"
+        system.gpuRendererUtil = 0.37
+        system.gpuTilerUtil = 0.18
+        system.gpuSampledAt = now.timeIntervalSince1970
+        system.netInterfaces = [MonitorNetworkInterface(name: "en0", addresses: ["192.168.1.101"], isActive: true)]
+        system.netPath = MonitorNetworkPath(status: "satisfied", interfaceType: "wifi")
+        system.powerSource = "battery"
+        system.aneFootprintPresent = true
+        system.aneFootprintBytes = 240_000_000
+        system.aneProcesses = [MonitorANEProcess(name: "Long application name", footprintBytes: 240_000_000)]
+        system.sensors = MonitorSensorReadings(cpuTempC: 53, gpuTempC: 49, fanRPM: [1200])
+        system.sampledAt = now.timeIntervalSince1970
+        system.metricSamples = Dictionary(uniqueKeysWithValues: MonitorWidgetKind.allCases.map {
+            ($0.rawValue, MonitorMetricSample(available: true, sampledAt: now.timeIntervalSince1970, interval: 1))
+        })
+        let snapshot = MonitorSnapshot(timestamp: now.timeIntervalSince1970, system: system, agents: [])
+        let store = MonitorHistoryStore()
+        for index in 0 ..< 60 {
+            var frame = snapshot
+            frame.system?.sampledAt = now.timeIntervalSince1970 - Double(59 - index)
+            frame.system?.gpuSampledAt = now.timeIntervalSince1970 - Double(59 - index)
+            frame.system?.cpuTotal = 0.2 + Double(index % 10) * 0.05
+            store.ingest(frame)
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LoomscreenWidgetVisualReview", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for kind in MonitorWidgetKind.allCases {
+            let row = HStack(alignment: .top, spacing: 20) {
+                ForEach(kind.allowedSizes, id: \.self) { size in
+                    let cells = kind.cellSize(for: size)
+                    WidgetFactory.tile(context: MonitorWidgetContext(snapshot: snapshot, history: store.current,
+                                                                     placement: MonitorWidgetPlacement(kind: kind, size: size), isEditing: false, reduceMotion: true, now: now))
+                        .frame(width: CGFloat(cells.columns) * 186 - 16, height: CGFloat(cells.rows) * 186 - 16)
+                }
+            }
+            .padding(20)
+            .background(Color.white)
+            .environment(\.locale, Locale(identifier: "en"))
+            let renderer = ImageRenderer(content: row)
+            renderer.scale = 1
+            let rendered = try #require(renderer.cgImage)
+            #expect(rendered.width > 350)
+            let bitmap = NSBitmapImageRep(cgImage: rendered)
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: directory.appendingPathComponent("\(kind.rawValue).png"))
+        }
+        print("Widget visual review: \(directory.path)")
+    }
+
+    @Test("Reduced transparency is opaque and faint labels stay readable over white")
+    func contrastSurvivesBrightBackgrounds() throws {
+        func rgb(_ color: Color) throws -> NSColor {
+            try #require(NSColor(color).usingColorSpace(.sRGB))
+        }
+        func luminance(_ components: [Double]) -> Double {
+            let linear = components.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+            return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
+        }
+        let ink = try rgb(Design.inkFaint)
+        let foreground = luminance([ink.redComponent, ink.greenComponent, ink.blueComponent])
+        for hex in ["", "#FFFFFF", "#FFFF00", "#00FFFF", "#FF00FF"] {
+            let opaque = MonitorPanelAppearance.fill(tintHex: hex, opacity: 0.25, reduceTransparency: true)
+            #expect(try rgb(opaque.top).alphaComponent == 1)
+            #expect(try rgb(opaque.bottom).alphaComponent == 1)
+            let fill = try rgb(MonitorPanelAppearance.fill(tintHex: hex, opacity: 0.25).top)
+            let background = luminance([fill.redComponent, fill.greenComponent, fill.blueComponent].map {
+                $0 * fill.alphaComponent + 1 - fill.alphaComponent
+            })
+            #expect((foreground + 0.05) / (background + 0.05) >= 4.5)
+        }
+    }
 
     /// Liquid Glass is the one card style that can be vetoed by something other
     /// than the user: Reduce Transparency turns off the transparency the whole

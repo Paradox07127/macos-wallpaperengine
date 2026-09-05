@@ -72,9 +72,9 @@ private struct AIEngineContent: View {
 
     private var headerRightLabel: String? {
         switch context.placement.size {
-        case .small:  return nil
-        case .medium: return "ACTIVITY -"
-        case .large:  return "ACTIVITY -"
+        case .small: nil
+        case .medium: String(localized: "Memory footprint", bundle: .appLanguage)
+        case .large: String(localized: "Memory footprint", bundle: .appLanguage)
         }
     }
 
@@ -95,7 +95,7 @@ private struct AIEngineContent: View {
             Spacer(minLength: 0)
             footprintIndicator(heroFactor: 0.72)
             topApp
-            Text("ri_neural_footprint · no util")
+            Text("Memory footprint")
                 .font(Design.captionFont(size: scale.caption * 0.92))
                 .tracking(scale.caption * 0.05)
                 .foregroundStyle(Design.inkFaint)
@@ -206,7 +206,7 @@ private struct AIEngineContent: View {
     private var idlePlaceholder: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            Text("ri_neural_footprint · no util")
+            Text("Memory footprint")
                 .font(Design.captionFont(size: scale.caption * 0.92))
                 .tracking(scale.caption * 0.05)
                 .foregroundStyle(Design.inkFaint)
@@ -225,7 +225,7 @@ private struct AIEngineContent: View {
                     .fill(Design.neuralDim)
                     .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
                     .opacity(0.8)
-                Text("ri_neural_footprint · no util")
+                Text("Memory footprint")
                     .font(Design.captionFont(size: scale.caption * 0.9))
                     .foregroundStyle(Design.inkFaint)
                     .lineLimit(1)

@@ -45,7 +45,7 @@ struct DiskWidgetView: View {
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * 2.4)
                 Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                             value: Format.rate(history.diskReadPeak),
+                             value: Format.rate(history.windowed(history.diskRead, seconds: chartWindowSeconds).max() ?? 0),
                              scale: scale)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -97,7 +97,7 @@ struct DiskWidgetView: View {
                 .frame(minHeight: scale.caption * 3)
                 .overlay(alignment: .topTrailing) {
                     Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                                 value: Format.rate(history.diskReadPeak),
+                                 value: Format.rate(history.windowed(history.diskRead, seconds: chartWindowSeconds).max() ?? 0),
                                  scale: scale)
                         .padding(scale.label * 0.3)
                 }
@@ -153,7 +153,7 @@ struct DiskWidgetView: View {
 
     private var sessionSummary: String {
         let total = history.diskReadSessionBytes + history.diskWriteSessionBytes
-        var s = "Σ " + Format.bytes(total)
+        var s = String(localized: "Estimated total", bundle: .appLanguage) + " " + Format.bytes(total)
         if let age = freshnessSeconds {
             s += " · " + Format.ago(age) + " "
                 + String(localized: "ago", bundle: .appLanguage, comment: "Relative-age suffix, e.g. '2m ago'.")
@@ -215,12 +215,12 @@ struct DiskWidgetView: View {
                 .frame(minHeight: scale.caption * (topIO.isEmpty ? 5 : 3))
                 .overlay(alignment: .topTrailing) {
                     Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                                 value: Format.rate(history.diskReadPeak), scale: scale)
+                                 value: Format.rate(history.windowed(history.diskRead, seconds: chartWindowSeconds).max() ?? 0), scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     Self.peakTag(label: String(localized: "W peak", bundle: .appLanguage, comment: "Disk widget: recent write-rate peak label."),
-                                 value: Format.rate(history.diskWritePeak), scale: scale)
+                                 value: Format.rate(history.windowed(history.diskWrite, seconds: chartWindowSeconds).max() ?? 0), scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 sessionSectionLabel(scale: scale)

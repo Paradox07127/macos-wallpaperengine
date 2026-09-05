@@ -23,6 +23,7 @@ enum SystemMetricsSamplers {
         var user: Double
         var system: Double
         var perCore: [Double]
+        var available = true
     }
 
     struct CPURawCounters: Sendable {
@@ -48,7 +49,7 @@ enum SystemMetricsSamplers {
         )
 
         guard result == KERN_SUCCESS, let infoArray else {
-            let zero = CPUSample(total: 0, user: 0, system: 0, perCore: [])
+            let zero = CPUSample(total: 0, user: 0, system: 0, perCore: [], available: false)
             return (zero, CPURawCounters(aggregate: nil, perCore: []))
         }
         defer {
@@ -78,7 +79,7 @@ enum SystemMetricsSamplers {
         let counters = CPURawCounters(aggregate: aggregate, perCore: perCoreTicks)
 
         guard let previous, let prevAgg = previous.aggregate else {
-            return (CPUSample(total: 0, user: 0, system: 0, perCore: []), counters)
+            return (CPUSample(total: 0, user: 0, system: 0, perCore: [], available: false), counters)
         }
 
         let (total, user, system) = fraction(current: aggregate, previous: prevAgg)
@@ -399,16 +400,17 @@ enum SystemMetricsSamplers {
 
     // MARK: - Disk (IOBlockStorageDriver Statistics)
 
-    static func sampleDiskCounters() -> (read: UInt64, written: UInt64) {
+    static func sampleDiskCounters() -> (read: UInt64, written: UInt64, available: Bool) {
         var iterator: io_iterator_t = 0
         let match = IOServiceMatching("IOBlockStorageDriver")
         guard IOServiceGetMatchingServices(kIOMainPortDefault, match, &iterator) == KERN_SUCCESS else {
-            return (0, 0)
+            return (0, 0, false)
         }
         defer { IOObjectRelease(iterator) }
 
         var read: UInt64 = 0
         var written: UInt64 = 0
+        var available = false
         var entry = IOIteratorNext(iterator)
         while entry != 0 {
             let current = entry
@@ -418,12 +420,13 @@ enum SystemMetricsSamplers {
             if IORegistryEntryCreateCFProperties(current, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS,
                let dict = properties?.takeRetainedValue() as? [String: Any],
                let stats = dict["Statistics"] as? [String: Any] {
+                available = stats["Bytes (Read)"] is NSNumber && stats["Bytes (Write)"] is NSNumber || available
                 if let bytes = stats["Bytes (Read)"] as? NSNumber { read &+= bytes.uint64Value }
                 if let bytes = stats["Bytes (Write)"] as? NSNumber { written &+= bytes.uint64Value }
             }
             entry = IOIteratorNext(iterator)
         }
-        return (read, written)
+        return (read, written, available)
     }
 
     // MARK: - Battery (IOKit.ps)
@@ -544,7 +547,6 @@ enum SystemMetricsSamplers {
         var counters: [Int32: ProcessCPUCounters] = [:]
         counters.reserveCapacity(pidCount)
         let seconds = max(interval, 0.001)
-        let intervalNanos = seconds * 1_000_000_000
 
         var ppidOf: [Int32: Int32] = [:]
         var cpuOf: [Int32: Double] = [:]
@@ -573,7 +575,7 @@ enum SystemMetricsSamplers {
             // A counter decrease indicates PID reuse; re-baseline instead of underflowing.
             if let prev = previous[pid], totalTime >= prev.totalTimeNanos {
                 let delta = totalTime - prev.totalTimeNanos
-                cpuOf[pid] = clamp01(Double(delta) / intervalNanos) * 100.0
+                cpuOf[pid] = processCPUPercent(cpuNanoseconds: delta, elapsedSeconds: seconds)
             }
 
             if includeIO {
@@ -646,6 +648,13 @@ enum SystemMetricsSamplers {
     }
 
     /// Finds the application PID used to aggregate helper-process metrics.
+    /// Per-core percentage: a process using three cores for one second is 300%.
+    static func processCPUPercent(cpuNanoseconds: UInt64, elapsedSeconds: Double) -> Double {
+        guard elapsedSeconds.isFinite, elapsedSeconds > 0 else { return 0 }
+        let percent = Double(cpuNanoseconds) / 1_000_000_000 / elapsedSeconds * 100
+        return percent.isFinite ? percent : 0
+    }
+
     static func topLevelPID(_ pid: Int32, parents: [Int32: Int32]) -> Int32 {
         var current = pid
         var hops = 0
@@ -710,7 +719,7 @@ enum SystemMetricsSamplers {
 
     struct ANESample: Sendable {
         var processes: [MonitorANEProcess]
-        var hasFootprint: Bool
+        var hasFootprint: Bool?
         var totalFootprintBytes: UInt64
     }
 
@@ -720,18 +729,19 @@ enum SystemMetricsSamplers {
     static func sampleANE(limit: Int = 5) -> ANESample {
         let capacity = proc_listallpids(nil, 0)
         guard capacity > 0 else {
-            return ANESample(processes: [], hasFootprint: false, totalFootprintBytes: 0)
+            return ANESample(processes: [], hasFootprint: nil, totalFootprintBytes: 0)
         }
 
         // Head-room so a process spawned between the two calls cannot truncate us.
         var pids = [Int32](repeating: 0, count: Int(capacity) + 64)
         let written = proc_listallpids(&pids, Int32(pids.count) * Int32(MemoryLayout<Int32>.stride))
         guard written > 0 else {
-            return ANESample(processes: [], hasFootprint: false, totalFootprintBytes: 0)
+            return ANESample(processes: [], hasFootprint: nil, totalFootprintBytes: 0)
         }
         let pidCount = Self.pidSlice(written: written, capacity: pids.count)
 
         var scored: [(pid: Int32, footprint: UInt64)] = []
+        var readableCount = 0
         for index in 0..<min(pidCount, pids.count) {
             let pid = pids[index]
             guard pid > 0 else { continue }
@@ -741,7 +751,9 @@ enum SystemMetricsSamplers {
                     proc_pid_rusage(pid, RUSAGE_INFO_V6, rebound)
                 }
             }
-            guard rc == 0, info.ri_neural_footprint > 0 else { continue }
+            guard rc == 0 else { continue }
+            readableCount += 1
+            guard info.ri_neural_footprint > 0 else { continue }
             scored.append((pid, info.ri_neural_footprint))
         }
 
@@ -755,7 +767,7 @@ enum SystemMetricsSamplers {
         }
         return ANESample(
             processes: processes,
-            hasFootprint: !scored.isEmpty,
+            hasFootprint: readableCount > 0 ? !scored.isEmpty : nil,
             totalFootprintBytes: total
         )
     }

@@ -38,8 +38,8 @@ enum Design {
     static let hairlineHi = oklch(0.46, 0.02, 74)     // --line-hi
 
     static let inkPrimary = oklch(0.93, 0.012, 84)    // --ink
-    static let inkMuted = oklch(0.68, 0.015, 78)      // --ink-dim
-    static let inkFaint = oklch(0.505, 0.014, 76)     // --ink-faint
+    static let inkMuted = oklch(0.78, 0.015, 78) // --ink-dim
+    static let inkFaint = oklch(0.70, 0.014, 76) // --ink-faint
 
     static let track = oklch(0.30, 0.01, 74)          // --track
     static let track2 = oklch(0.285, 0.01, 74)        // --track-2
@@ -86,23 +86,23 @@ enum Design {
     // MARK: - Typography
 
     static func heroFont(size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .rounded)
+        .system(size: max(size, 10), weight: .semibold, design: .default)
     }
 
     static func subFont(size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .rounded)
+        .system(size: max(size, 10), weight: .semibold, design: .default)
     }
 
     static func labelFont(size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .rounded)
+        .system(size: max(size, 10), weight: .semibold, design: .default)
     }
 
     static func captionFont(size: CGFloat) -> Font {
-        .system(size: size, weight: .regular, design: .rounded)
+        .system(size: max(size, 11), weight: .regular, design: .default)
     }
 
     static func microFont(size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .rounded)
+        .system(size: max(size, 10), weight: .semibold, design: .default)
     }
 
     static func labelTracking(size: CGFloat) -> CGFloat { size * 0.12 }
@@ -118,8 +118,8 @@ enum Design {
         init(cellHeight: CGFloat) {
             hero = min(46, max(24, cellHeight * 0.36))
             sub = hero * 0.52
-            label = min(12, max(9, cellHeight * 0.10))
-            caption = min(13, max(10, cellHeight * 0.11))
+            label = min(12, max(10, cellHeight * 0.10))
+            caption = min(13, max(11, cellHeight * 0.11))
         }
     }
 

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import LiveWallpaperCore
 @testable import LiveWallpaper
 
 /// A metric group no placed widget reads is not sampled at all — the source
@@ -12,6 +13,49 @@ import Testing
 @Suite("Monitor history placeholder handling")
 @MainActor
 struct MonitorHistoryPlaceholderTests {
+    @Test("A time window excludes an earlier spike at every supported cadence")
+    func timeWindowAndPeakShareTheSameRange() {
+        for cadence in [0.5, 1.0, 5.0] {
+            var history = MonitorHistorySnapshot()
+            history.sampleTimes = (0 ..< 240).map { Double($0) * cadence }
+            history.cpuTotal = [0.99] + Array(repeating: 0.2, count: 239)
+            let values = history.windowed(history.cpuTotal, seconds: 30)
+            #expect(values.max() == 0.2)
+            #expect(values.count == Int(30 / cadence) + 1)
+        }
+        var sparse = MonitorHistorySnapshot()
+        sparse.sampleTimes = [1, 100]
+        #expect(sparse.windowed([0.9, 0.2], seconds: 30) == [0.2])
+    }
+
+    @Test("Agent updates cannot resample or integrate an old system reading")
+    func brokerUpdatesDoNotDuplicateMeasurements() {
+        let store = MonitorHistoryStore()
+        var frame = Self.snapshot(cpuTotal: 0.2)
+        frame.system?.sampledAt = 100
+        frame.timestamp = 100
+        store.ingest(frame)
+        frame.timestamp = 105
+        store.ingest(frame)
+        #expect(store.current.sampleTimes == [100])
+    }
+
+    @Test("Fresh zero, unavailable, and stale measurements have distinct presentation")
+    func sampleAvailabilityControlsPresentation() {
+        let now = Date(timeIntervalSince1970: 100)
+        var context = MonitorWidgetContext(snapshot: MonitorSnapshot(), history: MonitorHistorySnapshot(), placement: MonitorWidgetPlacement(kind: .cpu), isEditing: false, reduceMotion: true, now: now)
+        #expect(context.readingsNotice != nil)
+        var system = MonitorSystemSnapshot(cpuTotal: 0)
+        system.metricSamples = ["cpu": MonitorMetricSample(available: true, sampledAt: 100, interval: 1)]
+        context.snapshot.system = system
+        #expect(context.readingsNotice == nil)
+        context.now = Date(timeIntervalSince1970: 116)
+        #expect(context.readingsNotice != nil)
+        context.now = now
+        context.snapshot.system?.metricSamples?["cpu"]?.available = false
+        #expect(context.readingsNotice != nil)
+    }
+
     private static func snapshot(cpuTotal: Double) -> MonitorSnapshot {
         var snapshot = MonitorSnapshot()
         snapshot.timestamp = Date().timeIntervalSince1970

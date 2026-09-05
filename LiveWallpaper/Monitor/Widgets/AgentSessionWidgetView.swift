@@ -128,11 +128,11 @@ struct AgentSessionWidgetView: View {
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
             Circle()
-                .fill(counts.needsInput > 0 ? Design.signalCoral : Design.signalAmber)
+                .fill(counts.needsInput > 0 ? Design.signalCoral : (counts.running > 0 ? Design.signalAmber : Design.signalIdle))
                 .frame(width: scale.label * 0.46, height: scale.label * 0.46)
                 .shadow(color: (counts.needsInput > 0 ? Design.signalCoral
-                                                      : Design.signalAmber).opacity(0.6),
-                        radius: 3)
+                            : (counts.running > 0 ? Design.signalAmber : Design.signalIdle)).opacity(0.6),
+                radius: 3)
         }
     }
 
