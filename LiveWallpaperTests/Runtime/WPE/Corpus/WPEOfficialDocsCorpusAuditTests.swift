@@ -383,13 +383,7 @@ struct WPEOfficialDocsCorpusAuditTests {
     ]
 
     private static var configURL: URL? {
-        if let path = ProcessInfo.processInfo.environment["WPE_DOC_CORPUS_AUDIT_CONFIG"],
-           !path.isEmpty {
-            let url = URL(fileURLWithPath: path)
-            if FileManager.default.fileExists(atPath: url.path) { return url }
-        }
-        let temporaryURL = URL(fileURLWithPath: "/private/tmp/livewallpaper-wpe-doc-corpus-audit.json")
-        return FileManager.default.fileExists(atPath: temporaryURL.path) ? temporaryURL : nil
+        TestScratch.externalFixtureURL(pathKey: "WPE_DOC_CORPUS_AUDIT_CONFIG")
     }
 
     @Test(
