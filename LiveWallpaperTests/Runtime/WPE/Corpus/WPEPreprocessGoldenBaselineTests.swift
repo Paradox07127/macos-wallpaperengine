@@ -30,71 +30,21 @@ struct WPEPreprocessGoldenBaselineTests {
     }
 
     private static var mode: Mode? {
-        ProcessInfo.processInfo.environment["WPE_PREPROCESS_GOLDEN"].flatMap(Mode.init(rawValue:))
+        guard ProcessInfo.processInfo.environment["LIVEWALLPAPER_EXTERNAL_FIXTURES"] == "1" else { return nil }
+        return ProcessInfo.processInfo.environment["WPE_PREPROCESS_GOLDEN"].flatMap(Mode.init(rawValue:))
     }
 
     private static var baselinePath: String? {
-        let path = ProcessInfo.processInfo.environment["WPE_PREPROCESS_GOLDEN_PATH"] ?? ""
-        return path.isEmpty ? nil : path
-    }
-
-    /// The test host is sandboxed, so `homeDirectoryForCurrentUser` is the app
-    /// CONTAINER home; the user's real home comes from the passwd entry.
-    private static var homeCandidates: [URL] {
-        var homes: [URL] = []
-        if let passwd = getpwuid(getuid()), let dir = passwd.pointee.pw_dir {
-            homes.append(URL(fileURLWithPath: String(cString: dir), isDirectory: true))
-        }
-        homes.append(FileManager.default.homeDirectoryForCurrentUser)
-        return homes
+        TestScratch.externalFixtureURL(pathKey: "WPE_PREPROCESS_GOLDEN_PATH")?.path
     }
 
     private static var corpusRoot: URL? {
-        let contentSuffix = "Steam/steamapps/workshop/content/431960"
-        var candidates: [URL] = []
-        if let explicit = ProcessInfo.processInfo.environment["WPE_COVERAGE_CORPUS_ROOT"],
-           !explicit.isEmpty {
-            candidates.append(URL(fileURLWithPath: explicit, isDirectory: true))
-        }
-        for home in homeCandidates {
-            candidates.append(home.appendingPathComponent(
-                "Library/Application Support/\(contentSuffix)", isDirectory: true
-            ))
-            for bundleID in ["com.loomscreen.pro", "com.loomscreen"] {
-                candidates.append(home.appendingPathComponent(
-                    "Library/Containers/\(bundleID)/Data/Library/Application Support/\(contentSuffix)",
-                    isDirectory: true
-                ))
-            }
-        }
-        return candidates.first {
-            var isDirectory: ObjCBool = false
-            return FileManager.default.fileExists(atPath: $0.path, isDirectory: &isDirectory)
-                && isDirectory.boolValue
-        }
+        TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_CORPUS_ROOT")
     }
 
     @MainActor
-    private static func engineAssetsRoot(corpusRoot: URL) -> URL? {
-        if let explicit = ProcessInfo.processInfo.environment["WPE_COVERAGE_ENGINE_ASSETS_ROOT"],
-           !explicit.isEmpty {
-            return URL(fileURLWithPath: explicit, isDirectory: true)
-        }
-        let derived = corpusRoot
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("common/wallpaper_engine", isDirectory: true)
-        // Same macl-gate caveat as the coverage report: only accept a root the
-        // sandboxed host can actually open.
-        let probe = derived.appendingPathComponent(
-            "assets/models/util/projectlayer.json", isDirectory: false
-        )
-        if let handle = try? FileHandle(forReadingFrom: probe) {
-            try? handle.close()
-            return derived
-        }
-        return WPEEngineAssetsLibrary.shared.resolveAuthorizedRoot()
+    private static func engineAssetsRoot(corpusRoot _: URL) -> URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_ENGINE_ASSETS_ROOT")
     }
 
     private static func sha256(_ text: String) -> String {
@@ -107,7 +57,7 @@ struct WPEPreprocessGoldenBaselineTests {
         .enabled(if: mode != nil, "opt-in: set WPE_PREPROCESS_GOLDEN=capture|compare"),
         .enabled(if: mode == nil || baselinePath != nil, "set WPE_PREPROCESS_GOLDEN_PATH"),
         .enabled(if: mode == nil || corpusRoot != nil,
-                 "no workshop corpus found (steamcmd content root missing)"),
+                 "set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_COVERAGE_CORPUS_ROOT"),
         .enabled(if: mode == nil || MTLCreateSystemDefaultDevice() != nil, "no Metal device")
     )
     func goldenBaseline() async throws {
