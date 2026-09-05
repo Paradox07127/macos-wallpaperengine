@@ -5,12 +5,7 @@ import LiveWallpaperCore
 /// Monitor grid's cell pitch as a unit of measure only — the layer keeps the exact footprint it had
 /// while it was a widget, without belonging to a board.
 enum MusicOverlayLayout {
-    /// Reference-board fractions of one cell, from the same 1512×982 board the
-    /// nine-up anchors are computed against.
-    private static let normalizedCell = CGSize(
-        width: MonitorBoardGeometry.appleCellPitch.width / 1512.0,
-        height: MonitorBoardGeometry.appleCellPitch.height / 982.0
-    )
+    static let referenceBoardSize = CGSize(width: 1512, height: 982)
 
     /// A borderless art layer, not a panel: S 2×1 / M 3×1 / L 4×2.
     static func cells(for size: MusicOverlaySize) -> (columns: Int, rows: Int) {
@@ -21,11 +16,11 @@ enum MusicOverlayLayout {
         }
     }
 
-    static func normalizedFootprint(for size: MusicOverlaySize) -> CGSize {
+    static func normalizedFootprint(for size: MusicOverlaySize, boardSize: CGSize = referenceBoardSize) -> CGSize {
         let cells = cells(for: size)
         return CGSize(
-            width: Double(cells.columns) * normalizedCell.width,
-            height: Double(cells.rows) * normalizedCell.height
+            width: Double(cells.columns) * MonitorBoardGeometry.appleCellPitch.width / max(1, boardSize.width),
+            height: Double(cells.rows) * MonitorBoardGeometry.appleCellPitch.height / max(1, boardSize.height)
         )
     }
 
@@ -68,8 +63,8 @@ enum MusicOverlayLayout {
     static let anchorTolerance = 0.02
 
     /// A layer wider than the board would otherwise produce a negative origin.
-    static func anchorOrigin(_ anchor: Anchor, size: MusicOverlaySize) -> CGPoint {
-        let footprint = normalizedFootprint(for: size)
+    static func anchorOrigin(_ anchor: Anchor, size: MusicOverlaySize, boardSize: CGSize = referenceBoardSize) -> CGPoint {
+        let footprint = normalizedFootprint(for: size, boardSize: boardSize)
         let freeX = max(0, 1 - footprint.width)
         let freeY = max(0, 1 - footprint.height)
         let x: Double = switch anchor {
@@ -86,9 +81,9 @@ enum MusicOverlayLayout {
     }
 
     /// Which anchor this layer sits on, or nil for a dragged position.
-    static func anchor(of configuration: MusicOverlayConfiguration) -> Anchor? {
+    static func anchor(of configuration: MusicOverlayConfiguration, boardSize: CGSize = referenceBoardSize) -> Anchor? {
         Anchor.allCases.first { candidate in
-            let origin = anchorOrigin(candidate, size: configuration.size)
+            let origin = anchorOrigin(candidate, size: configuration.size, boardSize: boardSize)
             return abs(origin.x - configuration.x) <= anchorTolerance
                 && abs(origin.y - configuration.y) <= anchorTolerance
         }
@@ -96,9 +91,9 @@ enum MusicOverlayLayout {
 
     // MARK: - Edits
 
-    static func setting(anchor: Anchor, on configuration: MusicOverlayConfiguration) -> MusicOverlayConfiguration {
+    static func setting(anchor: Anchor, on configuration: MusicOverlayConfiguration, boardSize: CGSize = referenceBoardSize) -> MusicOverlayConfiguration {
         var next = configuration
-        let origin = anchorOrigin(anchor, size: configuration.size)
+        let origin = anchorOrigin(anchor, size: configuration.size, boardSize: boardSize)
         next.x = origin.x
         next.y = origin.y
         return next
@@ -115,10 +110,10 @@ enum MusicOverlayLayout {
     /// Growing the layer can push it off the board, so the origin is re-clamped
     /// to the new footprint. Nothing else shares its space any more, so there is
     /// no collision to resolve.
-    static func setting(size: MusicOverlaySize, on configuration: MusicOverlayConfiguration) -> MusicOverlayConfiguration {
+    static func setting(size: MusicOverlaySize, on configuration: MusicOverlayConfiguration, boardSize: CGSize = referenceBoardSize) -> MusicOverlayConfiguration {
         var next = configuration
         next.size = size
-        let footprint = normalizedFootprint(for: size)
+        let footprint = normalizedFootprint(for: size, boardSize: boardSize)
         next.x = min(max(next.x, 0), max(0, 1 - footprint.width))
         next.y = min(max(next.y, 0), max(0, 1 - footprint.height))
         return next
