@@ -160,6 +160,11 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         nil
     }
 
+    func applyCapturePolicy(_ sharingType: NSWindow.SharingType) {
+        // The player still owns its window while its AVPlayer is hibernated.
+        player?.applyCapturePolicy(sharingType)
+    }
+
     var isPlaying: Bool {
         player?.isPlaying ?? false
     }
