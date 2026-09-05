@@ -1,8 +1,11 @@
 import SwiftUI
 
 struct MirroredAreaChart: View {
-    var up: [Double]
-    var down: [Double]
+    var up: [MonitorHistoryPoint]
+    var down: [MonitorHistoryPoint]
+    /// X is `(t - window.start) / window.length`, and a step wider than the
+    /// window's tolerance breaks the path instead of being bridged.
+    var window: MonitorChartWindow
     var upColor: Color = Design.signalSteel
     var downColor: Color = Design.signalSage
     var lineWidth: CGFloat = 1.5
@@ -11,21 +14,13 @@ struct MirroredAreaChart: View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height, mid = h / 2
             let scale = sharedMax()
+            let upRuns = runs(up, width: w, mid: mid, up: true, scale: scale)
+            let downRuns = runs(down, width: w, mid: mid, up: false, scale: scale)
 
-            if up.count >= 2 || down.count >= 2 {
+            if !upRuns.isEmpty || !downRuns.isEmpty {
                 ZStack {
-                    if up.count >= 2 {
-                        let pu = poly(up, width: w, mid: mid, up: true, scale: scale)
-                        area(pu, mid: mid).fill(gradient(upColor, up: true))
-                        line(pu).stroke(upColor, style: stroke)
-                        dot(pu.last, color: upColor)
-                    }
-                    if down.count >= 2 {
-                        let pd = poly(down, width: w, mid: mid, up: false, scale: scale)
-                        area(pd, mid: mid).fill(gradient(downColor, up: false))
-                        line(pd).stroke(downColor, style: stroke)
-                        dot(pd.last, color: downColor)
-                    }
+                    band(upRuns, mid: mid, color: upColor, up: true)
+                    band(downRuns, mid: mid, color: downColor, up: false)
                     Path { p in
                         p.move(to: CGPoint(x: 0, y: mid))
                         p.addLine(to: CGPoint(x: w, y: mid))
@@ -37,21 +32,45 @@ struct MirroredAreaChart: View {
         }
     }
 
+    @ViewBuilder
+    private func band(_ runs: [[CGPoint]], mid: CGFloat, color: Color, up: Bool) -> some View {
+        ForEach(Array(runs.enumerated()), id: \.offset) { item in
+            if item.element.count >= 2 {
+                area(item.element, mid: mid).fill(gradient(color, up: up))
+                line(item.element).stroke(color, style: stroke)
+            } else if let only = item.element.first {
+                // Lone sample: a dot, never a line reaching across the gap.
+                Circle().fill(color).frame(width: lineWidth * 2, height: lineWidth * 2)
+                    .position(only)
+            }
+        }
+        dot(runs.last?.last, color: color)
+    }
+
     private var stroke: StrokeStyle { StrokeStyle(lineWidth: lineWidth, lineJoin: .round) }
 
     private func sharedMax() -> Double {
-        let m = max(up.max() ?? 0, down.max() ?? 0, .ulpOfOne)
+        let m = max(peak(up), peak(down), .ulpOfOne)
         return m * 1.15   // headroom, matching the mock
     }
 
-    private func poly(_ arr: [Double], width: CGFloat, mid: CGFloat, up: Bool, scale: Double) -> [CGPoint] {
-        let n = arr.count
+    private func peak(_ points: [MonitorHistoryPoint]) -> Double {
+        points.compactMap(\.value).max() ?? 0
+    }
+
+    private func runs(
+        _ points: [MonitorHistoryPoint], width: CGFloat, mid: CGFloat, up: Bool, scale: Double
+    ) -> [[CGPoint]] {
+        guard width > 0 else { return [] }
         let extent = mid - 2
-        return arr.enumerated().map { i, v in
-            let x = CGFloat(i) / CGFloat(max(n - 1, 1)) * width
-            let f = CGFloat(min(1, max(0, v / scale)))
-            let y = up ? mid - f * extent : mid + f * extent
-            return CGPoint(x: x, y: y)
+        return ChartTimeAxis.runs(points, tolerance: window.tolerance).map { range in
+            points[range].map { point in
+                let f = CGFloat(min(1, max(0, (point.value ?? 0) / scale)))
+                return CGPoint(
+                    x: ChartTimeAxis.x(point.time, in: window, width: width),
+                    y: up ? mid - f * extent : mid + f * extent
+                )
+            }
         }
     }
 
@@ -87,9 +106,11 @@ struct MirroredAreaChart: View {
 }
 
 #Preview("Mirrored area") {
+    let now = Date().timeIntervalSince1970
     MirroredAreaChart(
-        up: [3.1, 4.2, 5.5, 6.8, 5.2, 4.1, 6.3, 8.1, 7.2, 5.4],
-        down: [0.4, 0.6, 0.9, 0.7, 0.5, 0.8, 1.1, 0.9, 0.6, 0.5]
+        up: .evenlySpaced([3.1, 4.2, 5.5, 6.8, nil, 4.1, 6.3, 8.1, 7.2, 5.4], endingAt: now),
+        down: .evenlySpaced([0.4, 0.6, 0.9, 0.7, nil, 0.8, 1.1, 0.9, 0.6, 0.5], endingAt: now),
+        window: MonitorChartWindow(reference: now, seconds: 12, interval: 1)
     )
     .frame(width: 260, height: 64)
     .padding(24)

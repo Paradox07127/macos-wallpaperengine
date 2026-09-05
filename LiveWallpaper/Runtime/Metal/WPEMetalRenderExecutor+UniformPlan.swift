@@ -88,6 +88,24 @@ extension WPEMetalRenderExecutor {
             steps.append(step)
         }
 
+        // A `material`-annotated uniform is authorable per material, and the
+        // pipeline builder already translated the authored constant onto the
+        // uniform's own name. Where such a uniform ALSO collides with a frame
+        // global, the authored value has to win: `g_Brightness` is both our
+        // runtime pause dimmer and generic2's "Brigtness" / generic4's
+        // "brightness", and the frame global (a constant 1 in every performance
+        // profile) shadowed every authored model brightness down to 1 —
+        // 3470948192's star dome authors 1.5 and rendered at 1.
+        if let materialName = uniform.materialName, !materialName.isEmpty,
+           WPEFrameUniformContext.canonicalNames.contains(uniform.name) {
+            for name in candidates.names where pass.uniformValues[name] != nil {
+                append(.passValue(name))
+            }
+            for name in candidates.names where pass.pass.constants[name] != nil {
+                append(.passConstant(name))
+            }
+        }
+
         for name in candidates.names {
             if WPEFrameUniformContext.canonicalNames.contains(name) {
                 append(.frameGlobal(name))

@@ -137,11 +137,12 @@ struct NetworkWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    @ViewBuilder
     private func mirroredScope(scale: Design.TypeScale, windowSeconds: Int) -> some View {
-        MirroredAreaChart(
-            up: history.windowed(history.netRx, seconds: windowSeconds),
-            down: history.windowed(history.netTx, seconds: windowSeconds),
+        let window = chartWindow(seconds: windowSeconds)
+        return MirroredAreaChart(
+            up: history.points(history.netRx, in: window),
+            down: history.points(history.netTx, in: window),
+            window: window,
             upColor: Self.rxColor,
             downColor: Self.txColor
         )
@@ -168,7 +169,7 @@ struct NetworkWidgetView: View {
             Text(verbatim: "↓ PEAK")
                 .tracking(Design.labelTracking(size: scale.label))
                 .foregroundStyle(Design.inkFaint)
-            Text(verbatim: Format.rate(history.windowed(history.netRx, seconds: chartWindowSeconds).max() ?? 0))
+            Text(verbatim: Format.rate(history.values(history.netRx, in: chartWindow(seconds: chartWindowSeconds)).max() ?? 0))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
         }
@@ -321,6 +322,12 @@ struct NetworkWidgetView: View {
         }
     }
 
+    /// Anchored on the context's clock, so the chart and the peak tag beside it
+    /// summarize the same stretch of time.
+    private func chartWindow(seconds: Int) -> MonitorChartWindow {
+        history.chartWindow(reference: context.now, seconds: Double(seconds))
+    }
+
     private var rxRate: Double { system?.netRxBytesPerSec ?? 0 }
     private var txRate: Double { system?.netTxBytesPerSec ?? 0 }
 
@@ -432,6 +439,8 @@ private func networkPreviewContext(size: MonitorWidgetSize) -> MonitorWidgetCont
     let tx: [Double] = (0..<120).map { (i: Int) -> Double in
         1_048_576.0 * (0.2 + 0.7 * abs(cos(Double(i) / 9.0)))
     }
+    let now = Date()
+    history.sampleTimes = rx.indices.map { now.timeIntervalSince1970 - Double(rx.count - 1 - $0) }
     history.netRx = rx
     history.netTx = tx
     history.netRxPeak = 88 * 1_048_576
@@ -445,7 +454,7 @@ private func networkPreviewContext(size: MonitorWidgetSize) -> MonitorWidgetCont
         placement: MonitorWidgetPlacement(kind: .network, size: size),
         isEditing: false,
         reduceMotion: false,
-        now: Date()
+        now: now
     )
 }
 

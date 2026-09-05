@@ -1062,6 +1062,32 @@ fragment half4 wpe_scene_model_generic4_fragment(
     return half4(float4(combined * alpha, alpha));
 }
 
+// Port of assets/shaders/generic2.frag (2.8.26, pulled from the Windows install).
+// Differences from generic4 above, all read off the two sources side by side:
+// no emissive map, no LIGHTING combo (the vertex hemispheric ambient is applied
+// unconditionally), and the `#if HDR` brightness multiply is NOT preceded by a
+// saturate. The specular terms drop out because we feed no scene lights, so
+// g_LightsColorRadius stays 0 and every ComputeLightSpecular call returns 0.
+// The mesh vertex carries no normals, so mix(skylight, ambient, N·up*0.5+0.5)
+// is evaluated at its midpoint — same approximation the generic4 port makes.
+fragment half4 wpe_scene_model_generic2_fragment(
+    WPEVertexOut in [[stage_in]],
+    texture2d<half, access::sample> texture0 [[texture(0)]],
+    constant WPESceneModelGenericUniforms& u [[buffer(0)]]
+) {
+    constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+    float4 albedo = float4(texture0.sample(linearSampler, in.uv));
+    albedo.rgb *= u.tintColorAlpha.rgb;
+    float alpha = albedo.a * u.tintColorAlpha.a;
+
+    float3 combined = albedo.rgb * u.ambientLighting.rgb;
+    if (u.brightnessFlags.z > 0.5) {
+        combined *= u.brightnessFlags.x;
+    }
+    // Premultiplied-alpha render target — see wpe_genericimage2_fragment.
+    return half4(float4(combined * alpha, alpha));
+}
+
 // Port of WPE clippingmaskimage4.frag: renders the clip SHAPE part into the clip-mask
 // render target. `.r` carries the mask coverage (consumed by CLIPPINGTARGET below),
 // `.a` carries the shape alpha. alphaMaskUV.w maps WPE's g_RenderVar0.x (invert toggle).

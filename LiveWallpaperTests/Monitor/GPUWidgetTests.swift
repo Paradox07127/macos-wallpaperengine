@@ -71,44 +71,4 @@ struct GPUWidgetTests {
         #expect(GPUWidgetView.tempLabel(58) == "hot")
         #expect(GPUWidgetView.tempLabel(72) == "hot")
     }
-
-    @Test("all-real series passes through unchanged, in sample order")
-    func compactedSeriesAllReal() {
-        let times: [Double] = [0, 6, 12, 18]
-        let series: [Double?] = [0.1, 0.2, 0.3, 0.4]
-        #expect(GPUWidgetView.compactedSeries(series, times: times, windowSeconds: 60) == [0.1, 0.2, 0.3, 0.4])
-    }
-
-    @Test("a nil gap is dropped, not held or interpolated")
-    func compactedSeriesDropsNilGap() {
-        let times: [Double] = [0, 6, 12, 18, 24]
-        let series: [Double?] = [0.1, 0.2, nil, 0.35, 0.4]
-        #expect(GPUWidgetView.compactedSeries(series, times: times, windowSeconds: 60) == [0.1, 0.2, 0.35, 0.4])
-    }
-
-    @Test("fewer than 2 real points in the window is absent (nil), not a lone dot")
-    func compactedSeriesAbsentBelowTwoPoints() {
-        let times: [Double] = [0, 6, 12]
-        #expect(GPUWidgetView.compactedSeries([nil, nil, nil], times: times, windowSeconds: 60) == nil)
-        #expect(GPUWidgetView.compactedSeries([nil, nil, 0.3], times: times, windowSeconds: 60) == nil)
-    }
-
-    @Test("exactly 2 real points in the window is present")
-    func compactedSeriesPresentAtTwoPoints() {
-        let times: [Double] = [0, 6, 12]
-        #expect(GPUWidgetView.compactedSeries([nil, 0.2, 0.3], times: times, windowSeconds: 60) == [0.2, 0.3])
-    }
-
-    @Test("samples older than the window cutoff are excluded before compaction")
-    func compactedSeriesWindowCutoff() {
-        let times: [Double] = [0, 40, 72, 90, 100]
-        let series: [Double?] = [0.9, 0.9, 0.1, 0.2, 0.3]
-        #expect(GPUWidgetView.compactedSeries(series, times: times, windowSeconds: 30) == [0.1, 0.2, 0.3])
-    }
-
-    @Test("mismatched series/times lengths or an empty timeline yields nil")
-    func compactedSeriesGuardsMismatch() {
-        #expect(GPUWidgetView.compactedSeries([0.1, 0.2], times: [0], windowSeconds: 60) == nil)
-        #expect(GPUWidgetView.compactedSeries([], times: [], windowSeconds: 60) == nil)
-    }
 }

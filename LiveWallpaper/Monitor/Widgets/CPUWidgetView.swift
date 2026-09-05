@@ -32,11 +32,17 @@ struct CPUWidgetView: View {
     }
 
     private var peakFraction: Double {
-        trend(historyWindow).max() ?? cpuFraction
+        history.values(history.cpuTotal, in: trendWindow).max() ?? cpuFraction
     }
 
-    private func trend(_ seconds: Int) -> [Double] {
-        history.windowed(history.cpuTotal, seconds: seconds)
+    /// The trend chart's window, anchored on the context's clock so a pause
+    /// leaves a gap instead of compressing the curve.
+    private var trendWindow: MonitorChartWindow {
+        history.chartWindow(reference: context.now, seconds: Double(historyWindow))
+    }
+
+    private var trendPoints: [MonitorHistoryPoint] {
+        history.points(history.cpuTotal, in: trendWindow)
     }
 
     private var cpuTempC: Double? { system?.sensors?.cpuTempC ?? system?.sensors?.socTempC }
@@ -81,7 +87,7 @@ struct CPUWidgetView: View {
                 Spacer(minLength: 0)
 
                 if showTrend {
-                    Sparkline(values: trend(historyWindow), domain: 0...1, bandColored: true, guides: [0.4, 0.8])
+                    Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true, guides: [0.4, 0.8])
                         .frame(maxWidth: .infinity)
                         .frame(height: max(cellHeight * 0.24, 20))
                 }
@@ -128,8 +134,10 @@ struct CPUWidgetView: View {
                     .frame(maxWidth: 104, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: scale.label * 0.5) {
-                        if showHeatmap { coreHeatStrip(scale: scale) }
-                        Sparkline(values: trend(historyWindow), domain: 0...1, bandColored: true, guides: [0.4, 0.8])
+                        if showHeatmap {
+                            coreHeatStrip(scale: scale)
+                        }
+                        Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true, guides: [0.4, 0.8])
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .frame(minHeight: max(cellHeight * 0.18, 20))
                             .overlay(alignment: .topTrailing) { peakInlineTag(scale: scale) }
@@ -923,7 +931,11 @@ private extension MonitorWidgetContext {
             0.59, 0.50, 0.41, 0.35, 0.33, 0.29, 0.32, 0.38, 0.45, 0.52,
             0.48, 0.40, 0.36, 0.34, 0.31, 0.35, 0.39, 0.44, 0.38, 0.37
         ]
+        let now = Date()
         var history = MonitorHistorySnapshot()
+        history.sampleTimes = curve.indices.map {
+            now.timeIntervalSince1970 - Double(curve.count - 1 - $0)
+        }
         history.cpuTotal = curve
         history.cpuUser = curve.map { $0 * 0.7 }
         history.cpuSystem = curve.map { $0 * 0.3 }
@@ -941,7 +953,7 @@ private extension MonitorWidgetContext {
             placement: placement,
             isEditing: false,
             reduceMotion: false,
-            now: Date()
+            now: now
         )
     }
 }

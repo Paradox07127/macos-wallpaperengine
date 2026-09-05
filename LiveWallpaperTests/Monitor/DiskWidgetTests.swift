@@ -35,7 +35,7 @@ struct DiskWidgetTests {
         // Never pull an out-of-window sample into a short window just to draw a line.
         #expect(h.windowed(h.diskRead, seconds: 0) == [9])
         // Whole series when the window covers all of it.
-        #expect(h.windowed(h.diskRead, seconds: 600) == h.diskRead)
+        #expect(h.windowed(h.diskRead, seconds: 600) == (0 ..< 10).map(Double.init))
         // Times out of step with the series: fall back to a count, never crash.
         var broken = MonitorHistorySnapshot()
         broken.sampleTimes = [1, 2, 3]

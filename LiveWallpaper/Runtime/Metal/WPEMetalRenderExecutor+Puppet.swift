@@ -610,8 +610,7 @@ extension WPEMetalRenderExecutor {
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
         guard !meshes.isEmpty else { return false }
 
-        let shaderKind = WPEBuiltinShaderKind(normalizing: pass.pass.shader)
-        guard shaderKind == .genericImage2 || shaderKind == .genericImage4 else {
+        guard let materialShader = Self.sceneModelMaterialShader(for: pass.pass.shader) else {
             return false
         }
 
@@ -622,7 +621,22 @@ extension WPEMetalRenderExecutor {
             frameState: frameState,
             currentTargetID: destination.id
         )
-        if shaderKind == .genericImage4 {
+        if materialShader == .generic2 {
+            encoder.setRenderPipelineState(try renderPipeline(
+                vertexName: "wpe_scene_model_mesh_vertex",
+                fragmentName: "wpe_scene_model_generic2_fragment",
+                blendMode: pass.pass.blending,
+                colorPixelFormat: destination.texture.pixelFormat,
+                depthPixelFormat: depthPixelFormat
+            ))
+            encoder.setFragmentTexture(primary, index: 0)
+            var uniforms = sceneModelGenericUniforms(
+                for: pass,
+                layer: layer,
+                hasComponentMap: false
+            )
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
+        } else if materialShader == .genericImage4 {
             // generic4 MODEL material semantics differ from the image-layer path: slot 1 is the
             // normal map (unused), slot 2 the PBR component map whose ALPHA is the emissive
             // mask; tint/emissive come from the material constants ("color"/"emissivecolor"…).
@@ -1086,6 +1100,30 @@ extension WPEMetalRenderExecutor {
     private static func rendersAsSceneModel(_ layer: WPERenderLayer) -> Bool {
         guard layer.puppetPath != nil else { return false }
         return (layer.imagePath as NSString).pathExtension.lowercased() == "mdl"
+    }
+
+    enum SceneModelMaterialShader {
+        case generic2
+        case genericImage2
+        case genericImage4
+    }
+
+    /// Which material shaders this mesh encoder can draw. `generic4` reaches here
+    /// as `genericimage4` (the shader-name normalizer aliases it); `generic2` has
+    /// NO such alias and must not get one — it is a different shader from
+    /// `genericimage2` (model tint/ambient/brightness constants, not the image
+    /// layer's g_Color/g_Alpha), so it is matched by its own canonical name and
+    /// routed to its own fragment. Anything unmatched falls through to the
+    /// transpiled dispatcher, which draws an object quad — for a `.mdl` layer that
+    /// silently replaces the mesh with a flat billboard (3470948192: the star dome
+    /// and the doppler cylinder both collapsed into a full-screen flat fill).
+    static func sceneModelMaterialShader(for shader: String) -> SceneModelMaterialShader? {
+        if WPEBuiltinShaderName.normalized(shader) == "generic2" { return .generic2 }
+        switch WPEBuiltinShaderKind(normalizing: shader) {
+        case .genericImage4: return .genericImage4
+        case .genericImage2: return .genericImage2
+        default: return nil
+        }
     }
 
     private func sceneModelMeshUniforms(

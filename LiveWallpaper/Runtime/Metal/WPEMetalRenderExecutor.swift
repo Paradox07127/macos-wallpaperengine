@@ -2935,12 +2935,18 @@ final class WPEMetalRenderExecutor {
             return SIMD3<Float>(Float(v[0]), Float(v[1]), Float(v[2]))
         }
 
-        let tint = constantVector3(["color", "g_TintColor"], default: SIMD3<Float>(1, 1, 1))
+        // generic2 and generic4 annotate the SAME uniforms under different material
+        // names: generic4 uses "color"/"alpha"/"brightness", generic2 uses
+        // "Color"/"Alpha"/"Brigtness". `Brigtness` is WPE's own typo in
+        // assets/shaders/generic2.frag — matching it verbatim is the contract; do
+        // not "fix" the spelling. Constant keys are stored as authored (verbatim
+        // from `constantshadervalues`), so both spellings have to be probed.
+        let tint = constantVector3(["color", "Color", "g_TintColor"], default: SIMD3<Float>(1, 1, 1))
         let tintAlpha = constantScalar(["alpha", "Alpha", "g_TintAlpha"], default: 1)
             * Float(layer.geometry.alpha)
         let emissiveColor = constantVector3(["emissivecolor", "g_EmissiveColor"], default: SIMD3<Float>(1, 1, 1))
         let emissiveBrightness = constantScalar(["emissivebrightness", "g_EmissiveBrightness"], default: 1)
-        let brightness = constantScalar(["brightness", "g_Brightness"], default: 1)
+        let brightness = constantScalar(["brightness", "Brigtness", "g_Brightness"], default: 1)
             * Float(layer.geometry.brightness)
         let ambient = mergedVector3("g_LightAmbientColor", default: SIMD3<Float>(1, 1, 1))
         let skylight = mergedVector3("g_LightSkylightColor", default: SIMD3<Float>(1, 1, 1))

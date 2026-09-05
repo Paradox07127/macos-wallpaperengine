@@ -40,15 +40,16 @@ struct DiskWidgetView: View {
             VStack(alignment: .leading, spacing: scale.label * 0.55) {
                 dualRate(scale: scale, heroScale: 0.58)
                 MirroredAreaChart(
-                    up: history.windowed(history.diskRead, seconds: chartWindowSeconds),
-                    down: history.windowed(history.diskWrite, seconds: chartWindowSeconds),
+                    up: history.points(history.diskRead, in: chartWindow),
+                    down: history.points(history.diskWrite, in: chartWindow),
+                    window: chartWindow,
                     upColor: Self.readColor,
                     downColor: Self.writeColor
                 )
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * 2.4)
                 Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                             value: Format.rate(history.windowed(history.diskRead, seconds: chartWindowSeconds).max() ?? 0),
+                             value: Format.rate(history.values(history.diskRead, in: chartWindow).max() ?? 0),
                              scale: scale)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -91,8 +92,9 @@ struct DiskWidgetView: View {
             VStack(alignment: .leading, spacing: scale.label * 0.6) {
                 currentPairRow(scale: scale)
                 MirroredAreaChart(
-                    up: history.windowed(history.diskRead, seconds: chartWindowSeconds),
-                    down: history.windowed(history.diskWrite, seconds: chartWindowSeconds),
+                    up: history.points(history.diskRead, in: chartWindow),
+                    down: history.points(history.diskWrite, in: chartWindow),
+                    window: chartWindow,
                     upColor: Self.readColor,
                     downColor: Self.writeColor
                 )
@@ -100,7 +102,7 @@ struct DiskWidgetView: View {
                 .frame(minHeight: scale.caption * 3)
                 .overlay(alignment: .topTrailing) {
                     Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                                 value: Format.rate(history.windowed(history.diskRead, seconds: chartWindowSeconds).max() ?? 0),
+                                 value: Format.rate(history.values(history.diskRead, in: chartWindow).max() ?? 0),
                                  scale: scale)
                         .padding(scale.label * 0.3)
                 }
@@ -178,6 +180,12 @@ struct DiskWidgetView: View {
             fallbackSeconds: 120)
     }
 
+    /// One window for the chart and for the peak tags beside it, anchored on the
+    /// context's clock so both mean the same stretch of time.
+    private var chartWindow: MonitorChartWindow {
+        history.chartWindow(reference: context.now, seconds: Double(chartWindowSeconds))
+    }
+
     /// `breakdown` ("compact" hides the L split-bar's R/W byte legend, keeping just
     /// the proportion bar) — same key/semantics as Memory's AM-bar toggle.
     private var splitLegendCompact: Bool {
@@ -209,8 +217,9 @@ struct DiskWidgetView: View {
                 heroPairRow(scale: scale)
                 historySectionLabel(scale: scale)
                 MirroredAreaChart(
-                    up: history.windowed(history.diskRead, seconds: chartWindowSeconds),
-                    down: history.windowed(history.diskWrite, seconds: chartWindowSeconds),
+                    up: history.points(history.diskRead, in: chartWindow),
+                    down: history.points(history.diskWrite, in: chartWindow),
+                    window: chartWindow,
                     upColor: Self.readColor,
                     downColor: Self.writeColor
                 )
@@ -218,12 +227,12 @@ struct DiskWidgetView: View {
                 .frame(minHeight: scale.caption * (topIO.isEmpty ? 5 : 3))
                 .overlay(alignment: .topTrailing) {
                     Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                                 value: Format.rate(history.windowed(history.diskRead, seconds: chartWindowSeconds).max() ?? 0), scale: scale)
+                                 value: Format.rate(history.values(history.diskRead, in: chartWindow).max() ?? 0), scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     Self.peakTag(label: String(localized: "W peak", bundle: .appLanguage, comment: "Disk widget: recent write-rate peak label."),
-                                 value: Format.rate(history.windowed(history.diskWrite, seconds: chartWindowSeconds).max() ?? 0), scale: scale)
+                                 value: Format.rate(history.values(history.diskWrite, in: chartWindow).max() ?? 0), scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 sessionSectionLabel(scale: scale)
@@ -473,7 +482,7 @@ private struct DiskSplitBar: View {
 
 private extension MonitorHistorySnapshot {
     func currentRead(_ sys: MonitorSystemSnapshot) -> Double {
-        diskRead.last ?? sys.diskReadBytesPerSec
+        (diskRead.last ?? nil) ?? sys.diskReadBytesPerSec
     }
 }
 

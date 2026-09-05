@@ -61,6 +61,7 @@ struct WidgetContainer<Content: View, Status: View>: View {
 }
 
 #Preview("Widget container") {
+    let previewNow = Date().timeIntervalSince1970
     HStack(spacing: 24) {
         WidgetContainer(label: "CPU", systemImage: "cpu", cellHeight: 150) {
             HStack(spacing: 5) {
@@ -80,8 +81,9 @@ struct WidgetContainer<Content: View, Status: View>: View {
             Text(verbatim: "6.2 MB/s").foregroundStyle(Design.inkMuted)
         } content: {
             MirroredAreaChart(
-                up: [3, 4, 5.5, 6.8, 5.2, 4.1, 6.3, 8.1, 7.2, 5.4],
-                down: [0.4, 0.6, 0.9, 0.7, 0.5, 0.8, 1.1, 0.9, 0.6, 0.5]
+                up: .evenlySpaced([3, 4, 5.5, 6.8, 5.2, 4.1, 6.3, 8.1, 7.2, 5.4], endingAt: previewNow),
+                down: .evenlySpaced([0.4, 0.6, 0.9, 0.7, 0.5, 0.8, 1.1, 0.9, 0.6, 0.5], endingAt: previewNow),
+                window: MonitorChartWindow(reference: previewNow, seconds: 12, interval: 1)
             )
         }
         .frame(width: 320, height: 150)
