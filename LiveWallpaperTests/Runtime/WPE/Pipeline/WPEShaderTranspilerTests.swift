@@ -5,6 +5,109 @@ import Testing
 @testable import LiveWallpaper
 
 struct WPEShaderTranspilerTests {
+    @Test("Uniform declarations reject invalid dimensions before layout or MSL expansion")
+    func rejectsInvalidUniformDimensions() {
+        let dimensions = ["0", "-1", "1025", String(Int.max),
+                          "999999999999999999999999999999", "", " ", "RESOLUTION", "2][2"]
+        for dimension in dimensions {
+            let declaration = "uniform float values[\(dimension)];"
+            let parsed = WPEUniformDecl.parseAll(line: declaration)
+            #expect(parsed.count == 1)
+            #expect(parsed.first?.arrayDimension != nil)
+            #expect(throws: WPEShaderCompilerError.self) {
+                _ = try WPEShaderTranspiler.translateFragment(
+                    shaderName: "uniform_dimension_boundary",
+                    preprocessedSource: declaration + "\nvoid main() { gl_FragColor = vec4(1.0); }"
+                )
+            }
+        }
+    }
+
+    @Test("Uniform cumulative budgets reject before integer addition")
+    func rejectsCumulativeUniformBudget() {
+        for declaration in ["uniform float first[512], second[513];",
+                            "uniform float first[\(Int.max)], second[\(Int.max)];",
+                            "uniform float first, second[];"] {
+            #expect(throws: WPEShaderCompilerError.self) {
+                _ = try WPEShaderTranspiler.translateFragment(
+                    shaderName: "uniform_total_boundary",
+                    preprocessedSource: declaration + "\nvoid main() { gl_FragColor = vec4(1.0); }"
+                )
+            }
+        }
+    }
+
+    @Test("Validated uniform layout preserves audio and exact 1024-slot capacity")
+    func uniformBudgetPreservesNormalLayouts() throws {
+        let audio = try WPEShaderTranspiler.translateFragment(
+            shaderName: "audio_boundary",
+            preprocessedSource: """
+            uniform float g_AudioSpectrum128Left[128];
+            uniform float g_AudioSpectrum128Right[128];
+            uniform float gain; // {"material":"Gain", "default":1}
+            uniform vec2 offset;
+            void main() { gl_FragColor = vec4(gain); }
+            """
+        )
+        #expect(audio.totalSlots == 258)
+        #expect(audio.uniformLayout.map(\.slot) == [0, 128, 256, 257])
+        #expect(audio.uniformLayout[2].materialName == "Gain")
+        #expect(audio.mslSource.contains("vals[258]"))
+
+        let exact = try WPEShaderTranspiler.translateFragment(
+            shaderName: "uniform_exact_boundary",
+            preprocessedSource: "uniform float values[1024];\nvoid main() { gl_FragColor = vec4(values[0]); }"
+        )
+        #expect(exact.totalSlots == 1024)
+        #expect(exact.uniformLayout.first?.slotCount == 1024)
+        #expect(exact.mslSource.contains("vals[1024]"))
+
+        let matrices = try WPEShaderTranspiler.translateFragment(
+            shaderName: "matrix_layout_boundary",
+            preprocessedSource: """
+            uniform float scalar;
+            uniform vec4 vector;
+            uniform mat2 matrix2;
+            uniform mat3 matrix3;
+            uniform mat4 matrix4;
+            void main() { gl_FragColor = vec4(scalar); }
+            """
+        )
+        #expect(matrices.uniformLayout.map(\.slot) == [0, 1, 2, 4, 7])
+        #expect(matrices.totalSlots == 11)
+    }
+
+    @Test("Varying dimensions reject invalid and cumulative literal expansion")
+    func rejectsInvalidVaryingDimensions() {
+        let declarations = ["in vec4 values[0];", "in vec4 values[-1];", "in vec4 values[1025];",
+                            "in vec4 values[\(Int.max)];", "in vec4 values[999999999999999999999999999999];",
+                            "in vec4 values[];", "in vec4 values[ ];", "in vec4 values [ 1025 ];",
+                            "in vec4 first[512];\nin vec4 second[513];"]
+        for declaration in declarations {
+            #expect(throws: WPEShaderCompilerError.self) {
+                _ = try WPEShaderTranspiler.translateFragment(
+                    shaderName: "varying_dimension_boundary",
+                    preprocessedSource: declaration + "\nvoid main() { gl_FragColor = vec4(1.0); }"
+                )
+            }
+        }
+    }
+
+    @Test("Varying budget preserves literal capacity and symbolic dimensions")
+    func varyingBudgetPreservesSupportedDimensions() throws {
+        let literal = try WPEShaderTranspiler.translateFragment(
+            shaderName: "varying_exact_boundary",
+            preprocessedSource: "in vec4 values [ 1024 ];\nvoid main() { gl_FragColor = values[0]; }"
+        )
+        #expect(literal.mslSource.contains("values[1024]"))
+        for dimension in ["RESOLUTION", "RESOLUTION + 1"] {
+            let symbolic = try WPEShaderTranspiler.translateFragment(
+                shaderName: "varying_symbol_boundary",
+                preprocessedSource: "#define RESOLUTION 64\nin vec4 values[\(dimension)];\nvoid main() { gl_FragColor = values[0]; }"
+            )
+            #expect(symbolic.mslSource.contains("values[\(dimension)] = {};"))
+        }
+    }
 
     @Test("Fallback DecompressNormal follows official compressed, RG88 and RGBA channel contracts")
     func fallbackDecompressNormalUsesTextureFormatABI() throws {
