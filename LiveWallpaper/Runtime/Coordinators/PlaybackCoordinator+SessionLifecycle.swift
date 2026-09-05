@@ -34,7 +34,7 @@ extension PlaybackCoordinator {
             event: .userReplacedActiveWallpaper(previous: previousContent)
         )
 
-        if isSameURL, screen.videoPlayer != nil {
+        if isSameURL, screen.videoPlayer != nil, isGloballyEnabled() {
             applyConfiguration(
                 configuration,
                 to: screen,
@@ -74,25 +74,35 @@ extension PlaybackCoordinator {
                               == expectedConfigurationRevision,
                           let liveScreen = self.screensProvider().first(where: { $0.id == screenID }) else { return }
                     self.reportRuntimeError(screenID, nil)
+                    let commitConfiguration: @MainActor () -> Bool = {
+                        self.save(configuration)
+                        guard self.validateSavedVideoConfiguration(screenID) else {
+                            Logger.error("Failed to save video configuration for screen \(screenID)", category: .screenManager)
+                            if let existing {
+                                self.save(existing)
+                            } else {
+                                self.removeConfiguration(for: screenID)
+                            }
+                            return false
+                        }
+                        return true
+                    }
+                    // Validation completed against this generation/revision. A
+                    // disabled renderer still accepts the user's saved selection,
+                    // but must not allocate a player or first-frame candidate.
+                    guard isGloballyEnabled() else {
+                        guard commitConfiguration() else { return }
+                        releaseRuntimeSession(liveScreen)
+                        notifyWallpaperSessionChanged()
+                        return
+                    }
                     self.beginPreparedVideoSession(
                         url: url,
                         screen: liveScreen,
                         configuration: configuration,
                         transitionGeneration: generation,
                         expectedConfigurationRevision: expectedConfigurationRevision,
-                        beforeCommit: {
-                            self.save(configuration)
-                            guard SettingsManager.shared.validateConfiguration(for: screenID) else {
-                                Logger.error("Failed to save video configuration for screen \(screenID)", category: .screenManager)
-                                if let existing {
-                                    self.save(existing)
-                                } else {
-                                    self.removeConfiguration(for: screenID)
-                                }
-                                return false
-                            }
-                            return true
-                        }
+                        beforeCommit: commitConfiguration
                     )
                 }
             } catch is CancellationError {
@@ -331,12 +341,9 @@ extension PlaybackCoordinator {
             return
         }
 
-        let player = WallpaperVideoPlayer(
-            url: url,
-            frame: liveScreen.frame,
-            fitMode: configuration?.fitMode ?? .aspectFill,
-            packageEntryName: configuration?.activeWallpaper.packageVideoEntryName,
-            startsHidden: true
+        let player = makeVideoPlayer(
+            url, liveScreen.frame, configuration?.fitMode ?? .aspectFill,
+            configuration?.activeWallpaper.packageVideoEntryName
         )
 
         if let configuration {
