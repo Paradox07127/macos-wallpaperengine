@@ -273,6 +273,19 @@ struct NowPlayingLyricsTests {
         )
     }
 
+    @Test("Search rejects a different title even when artist and album agree")
+    func rejectsDifferentRecording() {
+        typealias Candidate = NowPlayingLyricsFetcher.Candidate
+        let wrong = Candidate(trackName: "Other Song", artistName: "Radiohead", albumName: "Pablo Honey", syncedLyrics: syncedFixture)
+        let live = Candidate(trackName: "Creep (Live)", artistName: "Radiohead", syncedLyrics: syncedFixture)
+        let extended = Candidate(trackName: "Creep", artistName: "Radiohead", syncedLyrics: syncedFixture, duration: 350)
+        for candidate in [wrong, live, extended] {
+            #expect(NowPlayingLyricsFetcher.bestMatch(in: [candidate], artist: "Radiohead", title: "Creep", album: "Pablo Honey", duration: 239) == nil)
+        }
+        let normalized = Candidate(trackName: "  CREEP  ", artistName: "radiohead", syncedLyrics: syncedFixture, duration: 240)
+        #expect(NowPlayingLyricsFetcher.bestMatch(in: [normalized], artist: "Radiohead", title: "Creep", album: nil, duration: 239) != nil)
+    }
+
     // MARK: Network discipline
 
     @Test("Every request identifies the app in User-Agent")

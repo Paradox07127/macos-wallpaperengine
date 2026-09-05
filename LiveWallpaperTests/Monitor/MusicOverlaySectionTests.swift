@@ -52,6 +52,21 @@ final class MusicOverlaySectionTests: XCTestCase {
 
     // MARK: Anchors
 
+    func testAnchorsUseActualDisplayDimensions() throws {
+        for board in [CGSize(width: 1280, height: 800), CGSize(width: 2560, height: 1440)] {
+            for size in MusicOverlaySize.allCases {
+                let centered = Layout.setting(anchor: .center, on: layer(size: size), boardSize: board)
+                let rect = try XCTUnwrap(Layout.renderRect(configuration: centered, boardSize: board, topInsetFraction: 0))
+                XCTAssertEqual(rect.midX, board.width / 2, accuracy: 0.01)
+                XCTAssertEqual(rect.midY, board.height / 2, accuracy: 0.01)
+                XCTAssertEqual(Layout.anchor(of: centered, boardSize: board), .center)
+                let trailing = Layout.setting(anchor: .bottomTrailing, on: layer(size: size), boardSize: board)
+                let edge = try XCTUnwrap(Layout.renderRect(configuration: trailing, boardSize: board, topInsetFraction: 0))
+                XCTAssertEqual(board.width - edge.maxX, rect.minX - centered.x * board.width, accuracy: 0.01)
+            }
+        }
+    }
+
     func testEveryAnchorRoundTrips() {
         for size in MusicOverlaySize.allCases {
             var configuration = layer(size: size)
