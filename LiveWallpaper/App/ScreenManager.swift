@@ -315,6 +315,9 @@ final class ScreenManager {
             isScreenSuspended: { [weak self] screenID in
                 guard let self else { return true }
                 return !(self.suspendReasonsByScreen[screenID] ?? []).isEmpty
+            },
+            weatherWidgetPlaced: { [weak self] in
+                self?.hasEnabledWeatherWidget ?? false
             }
         )
     }()

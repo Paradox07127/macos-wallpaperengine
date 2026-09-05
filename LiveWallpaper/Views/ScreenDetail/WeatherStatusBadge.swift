@@ -133,7 +133,7 @@ struct WeatherStatusBadge: View {
     }
 }
 
-private extension WeatherReactiveService.LocationStatus {
+extension WeatherReactiveService.LocationStatus {
     var titleKey: LocalizedStringKey {
         switch self {
         case .notDetermined: "Not Determined"
@@ -160,7 +160,7 @@ private extension WeatherReactiveService.LocationStatus {
     }
 }
 
-private extension WeatherReactiveService.WeatherDescription {
+extension WeatherReactiveService.WeatherDescription {
     var titleKey: LocalizedStringKey {
         switch self {
         case .clear: return "Clear"

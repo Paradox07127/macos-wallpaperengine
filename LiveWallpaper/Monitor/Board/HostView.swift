@@ -31,6 +31,8 @@ final class HostView: NSView {
     /// toolbar drops "Done", because leaving edit mode is what the preview is
     /// for — there is nothing else it could show.
     private let isInspectorPreview: Bool
+    /// Live sky for the Weather tile. Nil on the inspector preview and in tests.
+    private let weatherService: WeatherReactiveService?
 
     private var pendingPersistTask: Task<Void, Never>?
     /// Retained with the debounced task so teardown can flush synchronously instead of losing the final edit on cancel.
@@ -51,11 +53,13 @@ final class HostView: NSView {
         isInspectorPreview: Bool = false,
         topInsetFraction: CGFloat = 0,
         referenceWidth: CGFloat = 0,
-        historyStore: MonitorHistoryStore? = nil
+        historyStore: MonitorHistoryStore? = nil,
+        weatherService: WeatherReactiveService? = nil
     ) {
         let reduceMotion = Self.effectiveReduceMotion(configuration)
         self.pointerScope = Self.pointerScope(for: configuration, isEditing: false)
         self.isInspectorPreview = isInspectorPreview
+        self.weatherService = weatherService
         self.reduceMotion = reduceMotion
         self.dataModel = DataModel(historyStore: historyStore)
         self.interactionModel = InteractionModel(configuration: configuration)
@@ -64,7 +68,8 @@ final class HostView: NSView {
             data: dataModel,
             reduceMotion: reduceMotion,
             suspended: false,
-            isInspectorPreview: isInspectorPreview
+            isInspectorPreview: isInspectorPreview,
+            weatherService: weatherService
         )
         self.hostingView = NSHostingView(rootView: container)
 
@@ -133,7 +138,8 @@ final class HostView: NSView {
             data: dataModel,
             reduceMotion: reduceMotion,
             suspended: isSuspended,
-            isInspectorPreview: isInspectorPreview
+            isInspectorPreview: isInspectorPreview,
+            weatherService: weatherService
         )
     }
 
@@ -240,11 +246,13 @@ struct MonitorBoardRootContainer: View {
     let reduceMotion: Bool
     var suspended: Bool = false
     var isInspectorPreview: Bool = false
+    var weatherService: WeatherReactiveService?
 
     var body: some View {
         RootView(model: model, data: data, isInspectorPreview: isInspectorPreview)
             .environment(\.monitorReduceMotion, reduceMotion)
             .environment(\.monitorSuspended, suspended)
+            .environment(\.monitorWeather, weatherService)
     }
 }
 
@@ -278,6 +286,14 @@ extension EnvironmentValues {
         get { self[MonitorReduceMotionKey.self] }
         set { self[MonitorReduceMotionKey.self] = newValue }
     }
+}
+
+// MARK: - Weather environment
+
+extension EnvironmentValues {
+    /// The app's one weather service, for the Weather tile. Nil where no sky is
+    /// available (inspector preview, tests), and the tile says so instead of drawing one.
+    @Entry var monitorWeather: WeatherReactiveService?
 }
 
 // MARK: - Suspend environment

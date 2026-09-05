@@ -9,11 +9,15 @@ enum WeatherReactivePolicy {
     /// particle switch is the master (see `resolvedParticleEffect`), so with it
     /// off the display draws nothing regardless of the sky, and the fetch was a
     /// network round trip an hour for a screen with no weather on it.
+    ///
+    /// A Weather tile on a live Monitor board is the other consumer: it draws the
+    /// sky itself, so it earns the fetch on its own.
     static func shouldMonitor(
         configurations: [ScreenConfiguration],
-        activeScreenIDs: Set<CGDirectDisplayID>
+        activeScreenIDs: Set<CGDirectDisplayID>,
+        weatherWidgetPlaced: Bool = false
     ) -> Bool {
-        configurations.contains { configuration in
+        weatherWidgetPlaced || configurations.contains { configuration in
             activeScreenIDs.contains(configuration.screenID)
                 && configuration.particleEffect != .none
                 && configuration.effectConfig.weatherReactive

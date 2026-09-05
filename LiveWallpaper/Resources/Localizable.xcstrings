@@ -56139,6 +56139,36 @@
         }
       }
     },
+    "Show caption" : {
+      "comment" : "Weather widget settings: toggle for the condition/location caption drawn over the sky.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar leyenda"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャプションを表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示说明文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示說明文字"
+          }
+        }
+      }
+    },
     "Show composition" : {
       "comment" : "CPU widget settings: load-composition toggle.",
       "extractionState" : "manual",

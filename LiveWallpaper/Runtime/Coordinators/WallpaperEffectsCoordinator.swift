@@ -16,6 +16,8 @@ final class WallpaperEffectsCoordinator {
     private let applyFrameRateLimit: @MainActor (FrameRateLimit, Screen) -> Void
     private let screenRefreshRate: @MainActor (CGDirectDisplayID) -> Int
     private let isScreenSuspended: @MainActor (CGDirectDisplayID) -> Bool
+    /// Whether a live Monitor board shows a Weather tile — the fetch's other consumer.
+    private let weatherWidgetPlaced: @MainActor () -> Bool
 
     /// Bumped per weather observe registration; stale generation short-circuits stacked callbacks.
     private var weatherTrackingGeneration: UInt64 = 0
@@ -29,7 +31,8 @@ final class WallpaperEffectsCoordinator {
         saveConfiguration: @MainActor @escaping (ScreenConfiguration) -> Void,
         applyFrameRateLimit: @MainActor @escaping (FrameRateLimit, Screen) -> Void,
         screenRefreshRate: @MainActor @escaping (CGDirectDisplayID) -> Int,
-        isScreenSuspended: @MainActor @escaping (CGDirectDisplayID) -> Bool = { _ in false }
+        isScreenSuspended: @MainActor @escaping (CGDirectDisplayID) -> Bool = { _ in false },
+        weatherWidgetPlaced: @MainActor @escaping () -> Bool = { false }
     ) {
         self.weatherService = weatherService
         self.videoEffectsApplier = videoEffectsApplier
@@ -39,6 +42,7 @@ final class WallpaperEffectsCoordinator {
         self.applyFrameRateLimit = applyFrameRateLimit
         self.screenRefreshRate = screenRefreshRate
         self.isScreenSuspended = isScreenSuspended
+        self.weatherWidgetPlaced = weatherWidgetPlaced
     }
 
     // MARK: - Public API (called from ScreenManager facade)
@@ -192,6 +196,12 @@ final class WallpaperEffectsCoordinator {
         observeWeatherChanges()
         refreshWeatherMonitoringState()
         reconcileEnvironmentOverlays()
+    }
+
+    /// A Monitor board gained or lost a Weather tile (or its switch flipped).
+    func monitorBoardsDidChange() {
+        guard !isShutdown else { return }
+        refreshWeatherMonitoringState()
     }
 
     func shutdown() {
@@ -395,7 +405,10 @@ final class WallpaperEffectsCoordinator {
         let activeScreens = screensProvider()
         let activeScreenIDs = Set(activeScreens.map(\.id))
         let configurations = activeScreenIDs.compactMap { configurationStore.get(for: $0) }
-        if WeatherReactivePolicy.shouldMonitor(configurations: configurations, activeScreenIDs: activeScreenIDs) {
+        if WeatherReactivePolicy.shouldMonitor(
+            configurations: configurations, activeScreenIDs: activeScreenIDs,
+            weatherWidgetPlaced: weatherWidgetPlaced()
+        ) {
             weatherService.startMonitoring()
         } else {
             weatherService.stopMonitoring()

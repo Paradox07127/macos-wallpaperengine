@@ -7,29 +7,31 @@ enum WidgetFactory {
 
     static func displayName(_ kind: MonitorWidgetKind) -> String {
         switch kind {
-        case .cpu: return String(localized: "CPU", bundle: .appLanguage, comment: "Monitor widget name: CPU instrument.")
-        case .memory: return String(localized: "Memory", bundle: .appLanguage, comment: "Monitor widget name: Memory instrument.")
-        case .gpu: return String(localized: "GPU", bundle: .appLanguage, comment: "Monitor widget name: GPU instrument.")
-        case .network: return String(localized: "Network", bundle: .appLanguage, comment: "Monitor widget name: Network instrument.")
-        case .disk: return String(localized: "Disk", bundle: .appLanguage, comment: "Monitor widget name: Disk I/O instrument.")
-        case .power: return String(localized: "Power", bundle: .appLanguage, comment: "Monitor widget name: Power/battery instrument.")
-        case .processes: return String(localized: "Processes", bundle: .appLanguage, comment: "Monitor widget name: top-processes instrument.")
-        case .fleet: return String(localized: "Agent Session", bundle: .appLanguage, comment: "Monitor widget name: AI agent session instrument.")
-        case .aiEngine: return String(localized: "ANE Memory", bundle: .appLanguage, comment: "Monitor widget name for process-attributed Neural Engine memory footprint; not activity or utilization.")
+        case .cpu: String(localized: "CPU", bundle: .appLanguage, comment: "Monitor widget name: CPU instrument.")
+        case .memory: String(localized: "Memory", bundle: .appLanguage, comment: "Monitor widget name: Memory instrument.")
+        case .gpu: String(localized: "GPU", bundle: .appLanguage, comment: "Monitor widget name: GPU instrument.")
+        case .network: String(localized: "Network", bundle: .appLanguage, comment: "Monitor widget name: Network instrument.")
+        case .disk: String(localized: "Disk", bundle: .appLanguage, comment: "Monitor widget name: Disk I/O instrument.")
+        case .power: String(localized: "Power", bundle: .appLanguage, comment: "Monitor widget name: Power/battery instrument.")
+        case .processes: String(localized: "Processes", bundle: .appLanguage, comment: "Monitor widget name: top-processes instrument.")
+        case .fleet: String(localized: "Agent Session", bundle: .appLanguage, comment: "Monitor widget name: AI agent session instrument.")
+        case .aiEngine: String(localized: "ANE Memory", bundle: .appLanguage, comment: "Monitor widget name for process-attributed Neural Engine memory footprint; not activity or utilization.")
+        case .weather: String(localized: "Weather", bundle: .appLanguage, comment: "Monitor widget name: ambient scene of the local weather.")
         }
     }
 
     static func icon(_ kind: MonitorWidgetKind) -> String {
         switch kind {
-        case .cpu: return "cpu"
-        case .memory: return "memorychip"
-        case .gpu: return "cpu.fill"
-        case .network: return "network"
-        case .disk: return "internaldrive"
-        case .power: return "bolt.fill"
-        case .processes: return "list.bullet"
-        case .fleet: return "point.3.filled.connected.trianglepath.dotted"
-        case .aiEngine: return "brain"
+        case .cpu: "cpu"
+        case .memory: "memorychip"
+        case .gpu: "cpu.fill"
+        case .network: "network"
+        case .disk: "internaldrive"
+        case .power: "bolt.fill"
+        case .processes: "list.bullet"
+        case .fleet: "point.3.filled.connected.trianglepath.dotted"
+        case .aiEngine: "brain"
+        case .weather: "cloud.sun.rain"
         }
     }
 
@@ -54,6 +56,8 @@ enum WidgetFactory {
             AgentSessionWidgetView(context: context)
         case .aiEngine:
             AIEngineWidgetView(context: context)
+        case .weather:
+            WeatherWidgetView(context: context)
         }
     }
 }
