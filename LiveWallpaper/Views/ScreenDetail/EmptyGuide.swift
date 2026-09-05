@@ -10,14 +10,19 @@ struct EmptyStateGuideView: View {
     @Environment(\.featureCatalog) private var featureCatalog
 
     var body: some View {
-        // Centred in the pane, but still scrollable: `minHeight` = the viewport
-        // makes the content sit dead centre while it fits, and lets it grow and
-        // scroll normally once it doesn't. Plain centring would clip the top on
-        // a short window; a plain ScrollView pins it to the top.
-        GeometryReader { geo in
+        // Centred while it fits, scrollable only when it genuinely doesn't.
+        // The previous shape — one `ScrollView` whose content carried
+        // `minHeight: viewport` — centred the cards but stayed a scroll view on
+        // every window size, so the page dragged and bounced with nothing to
+        // reveal. `ViewThatFits` takes the scroll view out of the hierarchy
+        // entirely on a normal window, and still keeps the short-window case
+        // from clipping the header.
+        ViewThatFits(in: .vertical) {
+            guideColumn
+
             ScrollView {
                 guideColumn
-                    .frame(maxWidth: .infinity, minHeight: geo.size.height)
+                    .frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
