@@ -385,7 +385,7 @@ final class AmbientWallpaperSessionBuilder {
 
     /// Resolve in-place asset provider + `project.json` root (legacy `.cache` → nil provider).
     /// Returned provider owns the source security scope for its lifetime.
-    private func sceneAssets(
+    func sceneAssets(
         descriptor: SceneDescriptor,
         origin: WPEOrigin?,
         cacheURL: URL,
@@ -423,11 +423,13 @@ final class AmbientWallpaperSessionBuilder {
                 origin: origin,
                 onOriginBookmarkRefresh: onOriginBookmarkRefresh
             ) else { return nil }
-            let packageURL = source.url.appendingPathComponent(fileName, isDirectory: false)
-            guard fileManager.fileExists(atPath: packageURL.path),
-                  let pkg = try? WPEPackageSceneAssetProvider(packageURL: packageURL) else {
-                if source.didStart { source.url.stopAccessingSecurityScopedResource() }
-                Logger.warning("Scene package missing/unreadable: \(packageURL.lastPathComponent)", category: .screenManager)
+            guard let packageURL = ResourceUtilities.containedRegularFileURL(
+                relativePath: fileName, inside: source.url
+            ), let pkg = try? WPEPackageSceneAssetProvider(packageURL: packageURL) else {
+                if source.didStart {
+                    source.url.stopAccessingSecurityScopedResource()
+                }
+                Logger.warning("Scene package missing/unreadable or outside its source folder", category: .screenManager)
                 return nil
             }
             let provider = WPESecurityScopedSceneAssetProvider(
@@ -499,9 +501,9 @@ final class AmbientWallpaperSessionBuilder {
             origin: origin,
             onOriginBookmarkRefresh: onOriginBookmarkRefresh
         ) else { return nil }
-        let packageURL = source.url.appendingPathComponent("scene.pkg", isDirectory: false)
-        if fileManager.fileExists(atPath: packageURL.path),
-           let pkg = try? WPEPackageSceneAssetProvider(packageURL: packageURL) {
+        if let packageURL = ResourceUtilities.containedRegularFileURL(
+            relativePath: "scene.pkg", inside: source.url
+        ), let pkg = try? WPEPackageSceneAssetProvider(packageURL: packageURL) {
             let provider = WPESecurityScopedSceneAssetProvider(
                 wrapped: pkg, scopedURL: source.url, didStartAccessing: source.didStart
             )

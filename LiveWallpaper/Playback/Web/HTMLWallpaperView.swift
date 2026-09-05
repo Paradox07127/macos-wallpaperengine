@@ -635,8 +635,9 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
                 return
             }
             let request = URLRequest(url: url)
-            let pkgURL = folderURL.appendingPathComponent("scene.pkg")
-            guard FileManager.default.fileExists(atPath: pkgURL.path) else {
+            guard let pkgURL = ResourceUtilities.containedRegularFileURL(
+                relativePath: "scene.pkg", inside: folderURL
+            ) else {
                 navigationGenerationState.registerHostNavigation(
                     webView.load(request),
                     generation: navigationGeneration
@@ -653,7 +654,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
             packageBackingTask = Task { [weak self] in
                 let backing: FolderURLSchemeHandler.PackageBacking?
                 do {
-                    backing = try await Self.packageBacking(forPackageURL: pkgURL)
+                    backing = try await Self.packageBacking(forPackageURL: pkgURL, inside: folderURL)
                 } catch is CancellationError {
                     return
                 } catch {
@@ -705,13 +706,16 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     }
 
     /// Utility-queue PKGV parse; typed rejection → loose-file fallback by caller.
-    private static func packageBacking(
-        forPackageURL pkgURL: URL
+    static func packageBacking(
+        forPackageURL pkgURL: URL, inside folderURL: URL
     ) async throws -> FolderURLSchemeHandler.PackageBacking {
-        let prepared = try await WPEPackageIndexLoader.load(from: pkgURL)
+        guard let packageURL = ResourceUtilities.containedRegularFileURL(pkgURL, inside: folderURL) else {
+            throw CocoaError(.fileReadNoPermission)
+        }
+        let prepared = try await WPEPackageIndexLoader.load(from: packageURL)
         defer { try? prepared.handle.close() }
         try Task.checkCancellation()
-        return FolderURLSchemeHandler.PackageBacking(url: pkgURL, package: prepared.package)
+        return FolderURLSchemeHandler.PackageBacking(url: packageURL, package: prepared.package)
     }
 
     private func updateWallpaperEnginePropertyBridge(for folderURL: URL?, config: HTMLConfig? = nil) {
@@ -1147,12 +1151,22 @@ extension HTMLWallpaperView: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
-        if let response = navigationResponse.response as? HTTPURLResponse, response.statusCode >= 400 {
-            Logger.warning("HTML wallpaper response: HTTP \(response.statusCode) for host \(response.url?.host ?? "?")", category: .screenManager)
-            let failingURL = response.url ?? webView.url ?? Self.aboutBlank
-            reportError(.webNavigationFailed(failingURL, code: response.statusCode, description: "HTTP \(response.statusCode)"))
-        }
+        handleNavigationResponse(
+            navigationResponse.response,
+            isForMainFrame: navigationResponse.isForMainFrame,
+            currentURL: webView.url
+        )
         decisionHandler(.allow)
+    }
+
+    /// Subframe failures remain diagnostics; they do not fail the wallpaper's
+    /// preparation generation or replace its whole-page runtime error.
+    func handleNavigationResponse(_ response: URLResponse, isForMainFrame: Bool, currentURL: URL?) {
+        guard let response = response as? HTTPURLResponse, response.statusCode >= 400 else { return }
+        Logger.warning("HTML wallpaper response: HTTP \(response.statusCode) for host \(response.url?.host ?? "?")", category: .screenManager)
+        guard isForMainFrame else { return }
+        let failingURL = response.url ?? currentURL ?? Self.aboutBlank
+        reportError(.webNavigationFailed(failingURL, code: response.statusCode, description: "HTTP \(response.statusCode)"))
     }
 }
 
