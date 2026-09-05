@@ -6,6 +6,17 @@ import Testing
 @testable import LiveWallpaper
 
 struct WPEParticleSystemTests {
+    @Test("Trail subdivision clamps before integer conversion and preserves rounding")
+    func trailSubdivisionNumericBoundary() {
+        for (subdivision, points) in [(1.0, 2), (3, 4), (3.49, 4), (3.5, 5), (7, 8),
+                                      (0, 2), (-1, 2), (Double.greatestFiniteMagnitude, 8),
+                                      (-Double.greatestFiniteMagnitude, 2)] {
+            #expect(wpeTrailPointCount(subdivision: subdivision) == points)
+        }
+        for subdivision in [Double.nan, .infinity, -.infinity] {
+            #expect(wpeTrailPointCount(subdivision: subdivision) == 4)
+        }
+    }
 
     @Test("Parses canonical snowflat-style particle JSON")
     func parsesCanonicalParticleJSON() throws {
@@ -3040,6 +3051,13 @@ struct WPEParticleSystemTests {
         authored.tick(now: 0)
         #expect(authored.liveInstanceCount == 2)
         #expect(authored.ropeVertexCount == 2 * 3 * 2 + 2)
+
+        for (subdivision, points) in [("1e300", 8), ("-1e300", 2)] {
+            let bounded = try system("{\"name\":\"ropetrail\",\"length\":3,\"subdivision\":\(subdivision)}")
+            bounded.tick(now: 0)
+            #expect(bounded.liveInstanceCount == 2)
+            #expect(bounded.ropeVertexCount == 2 * points * 2 + 2)
+        }
     }
 
     @Test("ropetrail strip tracks the live population as particles expire")

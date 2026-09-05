@@ -9,6 +9,7 @@ extension WPEShaderTranspiler {
     static func renderMSL(
         shaderName: String,
         uniforms: [WPEUniformDecl],
+        totalUniformSlots: Int,
         samplers: [WPESamplerDecl],
         varyings: [WPEVaryingDecl],
         helpers: String,
@@ -37,9 +38,8 @@ extension WPEShaderTranspiler {
         if !uniforms.isEmpty {
             // Size to this shader's own slot count, not `uniformSlotMaximum`: the host binds exactly
             // `totalSlots × 16` bytes, and Metal validation rejects a buffer shorter than the struct.
-            let totalSlots = uniforms.reduce(0) { $0 + ($1.arrayLength ?? slotCount(for: $1.type)) }
             out.append("struct WPEUniforms {")
-            out.append("    float4 vals[\(max(totalSlots, 1))];")
+            out.append("    float4 vals[\(max(totalUniformSlots, 1))];")
             out.append("};")
             out.append("")
         }

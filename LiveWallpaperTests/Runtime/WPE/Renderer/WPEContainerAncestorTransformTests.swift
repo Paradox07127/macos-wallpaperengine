@@ -252,18 +252,10 @@
         }
         """.utf8)
 
-        /// Real corpus gate: the sandboxed test host's `NSHomeDirectory()` is the
-        /// container, so the Steam path has to come from the passwd entry.
-        private static var installedSceneURL: URL? {
-            let passwd = getpwuid(getuid())
-            let realHome = passwd.map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
-            let folder = URL(fileURLWithPath: realHome, isDirectory: true)
-                .appendingPathComponent(
-                    "Library/Application Support/Steam/steamapps/workshop/content/431960/3326873240",
-                    isDirectory: true
-                )
-            return FileManager.default.fileExists(atPath: folder.path) ? folder : nil
-        }
+    /// Explicit folder for the authored container regression scene.
+    private static var installedSceneURL: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_CONTAINER_ANCESTOR_SCENE_ROOT")
+    }
 
         private static func sceneJSON(in folder: URL) throws -> Data? {
             let loose = folder.appendingPathComponent("scene.json")

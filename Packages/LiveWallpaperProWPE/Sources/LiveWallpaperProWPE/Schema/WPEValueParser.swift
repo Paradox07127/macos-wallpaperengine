@@ -120,7 +120,8 @@ public enum WPEValueParser {
     ) -> [[WPESceneAnimationKeyframe]] {
         let trackKeys = animationDict.keys.compactMap { key -> (name: String, index: Int)? in
             guard key.first == "c",
-                  let index = Int(key.dropFirst()) else {
+                  let index = Int(key.dropFirst()),
+                  (0 ..< 64).contains(index) else {
                 return nil
             }
             return (key, index)
@@ -132,9 +133,7 @@ public enum WPEValueParser {
         // than be dropped: compacting shifted c1 into slot 0 and drove x with
         // the y animation. Index gaps are filled for the same reason. 64 caps a
         // hostile "c999999999" from allocating a giant array.
-        guard let maxIndex = trackKeys.last?.index, maxIndex < 64 else {
-            return trackKeys.isEmpty ? [] : animationDict.keys.contains("c0") ? [[]] : []
-        }
+        guard let maxIndex = trackKeys.last?.index else { return [] }
         var tracks = [[WPESceneAnimationKeyframe]](repeating: [], count: maxIndex + 1)
         for key in trackKeys {
             guard let rawFrames = animationDict[key.name] as? [Any] else { continue }

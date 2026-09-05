@@ -10,7 +10,11 @@ private func wpeRenderTargetDimension(_ base: CGFloat, scale: Double) -> Int {
     // TRUNCATE, don't round: RenderDoc shows WPE at 278x250 for a 557x500 source
     // and 1185x1080 for 2371x2160, where rounding gives 279 and 1186. Only exact
     // .5 cases differ, which is why even-sized sources matched all along.
-    return max(Int(Double(base) / divisor), 1)
+    let pixels = Double(base) / divisor
+    guard !pixels.isNaN, pixels > 1 else { return 1 }
+    // An unrepresentable edge remains oversized, so the shared descriptor
+    // validation rejects it before either allocation or alias-heap queries.
+    return Int(min(pixels, Double(wpeMaxRenderTargetEdge)))
 }
 
 /// Ceiling for a computed render-target edge. Not a Metal limit — just small

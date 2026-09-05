@@ -85,6 +85,24 @@ struct WPESceneNumericAnimationMirrorTests {
 /// its position and sample its fallback.
 @Suite("Track positional alignment")
 struct WPESceneAnimationTrackAlignmentTests {
+    @Test("Track bounds preserve c63 and ignore invalid siblings")
+    func trackBoundsPreserveSparseSlots() throws {
+        let track: [[String: Any]] = [["frame": 0, "value": 42]]
+        let invalidKeys = ["c-1", "c64", "c\(Int.max)", "c999999999999999999999999999999"]
+        var tracks = Dictionary(uniqueKeysWithValues: invalidKeys.map { ($0, track) })
+        tracks["c0"] = [["frame": 0, "value": 7]]
+        tracks["c63"] = track
+        let animated = try #require(WPEValueParser.animatedValue(["animation": tracks]))
+        #expect(animated.animation.tracks.count == 64)
+        let values = animated.animation.values(at: 0, fallbacks: Array(repeating: -1, count: 64))
+        #expect(values[0] == 7)
+        #expect(values[62] == -1)
+        #expect(values[63] == 42)
+        for key in invalidKeys {
+            #expect(WPEValueParser.animatedValue(["animation": [key: track]]) == nil)
+        }
+    }
+
     private func parse(_ text: String) -> WPESceneAnimatedValue? {
         let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
         return object.flatMap { WPEValueParser.animatedValue($0) }

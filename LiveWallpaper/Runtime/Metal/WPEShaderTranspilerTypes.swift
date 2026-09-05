@@ -63,6 +63,8 @@ struct WPEUniformDecl: Equatable {
     let metalType: String    // Translated for use in the Metal struct
     /// When the declaration is `float foo[16];` this is `16`; otherwise nil.
     let arrayLength: Int?
+    /// Keeps malformed or unrepresentable bracket dimensions from becoming scalars.
+    let arrayDimension: String?
     /// WPE shaders commonly expose editor values as JSON comments after
     /// uniforms, e.g. `uniform float u_alpha; // {"material":"Opacity"}`.
     /// Scene effect overrides use that material name, not the GLSL variable.
@@ -97,11 +99,15 @@ struct WPEUniformDecl: Equatable {
         return declaratorSource.split(separator: ",").compactMap { declarator in
             var name = declarator.trimmingCharacters(in: .whitespaces)
             var arrayLength: Int?
+            var arrayDimension: String?
             if let bracket = name.firstIndex(of: "[") {
                 let core = name[..<bracket].trimmingCharacters(in: .whitespaces)
                 let after = name[name.index(after: bracket)...]
-                if let close = after.firstIndex(of: "]") {
+                arrayDimension = ""
+                if let close = after.firstIndex(of: "]"),
+                   after[after.index(after: close)...].trimmingCharacters(in: .whitespaces).isEmpty {
                     let lengthString = String(after[..<close]).trimmingCharacters(in: .whitespaces)
+                    arrayDimension = lengthString
                     arrayLength = Int(lengthString)
                 }
                 name = core
@@ -112,6 +118,7 @@ struct WPEUniformDecl: Equatable {
                 name: name,
                 metalType: metal,
                 arrayLength: arrayLength,
+                arrayDimension: arrayDimension,
                 materialName: metadata.materialName,
                 defaultValue: metadata.defaultValue
             )
@@ -187,17 +194,17 @@ struct WPEVaryingDecl: Equatable {
         let decl = body[..<semicolon]
         let tokens = decl.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard tokens.count >= 2 else { return nil }
-        let rawName = tokens[1]
+        let rawName = tokens[1...].joined(separator: " ")
         // The dimension may be a numeric literal (`[64]`) or a `#define`d symbol
         // (`[RESOLUTION]`), so match any non-`]` token, not just digits — a symbolic dim
         // leaking into `name` was the `audioValue[RESOLUTION]` → invalid-MSL bug (oscilloscope
         // shaders). A trailing swizzle in the DECLARATION (`varying vec4 v_Size.xy;`) is illegal
         // GLSL that fxc lets through (frame_builder.frag ships it); every use site still reads `v_Size.xy`, so drop the suffix and declare the base name at the written type.
-        let pattern = #"^([A-Za-z_][A-Za-z0-9_]*)(?:\.[xyzwrgba]{1,4})?(?:\[([^\]]+)\])?$"#
+        let pattern = #"^([A-Za-z_][A-Za-z0-9_]*)(?:\.[xyzwrgba]{1,4})?\s*(?:\[([^\]]*)\])?$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: rawName, range: NSRange(rawName.startIndex..., in: rawName)),
               let nameRange = Range(match.range(at: 1), in: rawName) else {
-            return Self(type: tokens[0], name: rawName, metalType: WPEUniformDecl.mapType(tokens[0]), arrayLength: nil, arrayDimension: nil)
+            return Self(type: tokens[0], name: rawName, metalType: WPEUniformDecl.mapType(tokens[0]), arrayLength: nil, arrayDimension: rawName.contains("[") ? "" : nil)
         }
 
         let arrayDimension: String?

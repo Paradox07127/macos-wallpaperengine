@@ -287,18 +287,12 @@ struct WPEMdlParserTests {
     /// The live Workshop content directory. Only the property-based skeleton
     /// sweep uses it now; the three tests that pinned a model/package COUNT were
     /// deleted — they asserted on how many items this Mac happened to have.
-    private static var workshopCorpusRoot: URL {
-        let passwd = getpwuid(getuid())
-        let realHome = passwd.map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
-        return URL(fileURLWithPath: realHome, isDirectory: true)
-            .appendingPathComponent(
-                "Library/Application Support/Steam/steamapps/workshop/content/431960",
-                isDirectory: true
-            )
+    private static var workshopCorpusRoot: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_CORPUS_ROOT")
     }
 
     private static var workshopCorpusAvailable: Bool {
-        FileManager.default.fileExists(atPath: workshopCorpusRoot.path)
+        workshopCorpusRoot != nil
     }
 
     @Test("Parses MDLV23 textured mesh vertices indices and parts")
@@ -621,8 +615,9 @@ struct WPEMdlParserTests {
     )
     func workshopSkeletonCorpusParses() throws {
         let fileManager = FileManager.default
+        let corpusRoot = try #require(Self.workshopCorpusRoot)
         let folders = try fileManager.contentsOfDirectory(
-            at: Self.workshopCorpusRoot,
+            at: corpusRoot,
             includingPropertiesForKeys: [.isDirectoryKey]
         )
         var mdlsModels = 0
@@ -657,8 +652,9 @@ struct WPEMdlParserTests {
         .enabled(if: workshopCorpusAvailable)
     )
     func workshopClipGroupsUsePartTableIndices() throws {
+        let corpusRoot = try #require(Self.workshopCorpusRoot)
         let folders = try FileManager.default.contentsOfDirectory(
-            at: Self.workshopCorpusRoot,
+            at: corpusRoot,
             includingPropertiesForKeys: [.isDirectoryKey]
         )
         var clipModels = 0

@@ -9,6 +9,8 @@ struct WPEShaderTranspiler {
     /// ≤256 slots (4 KB) ride `setFragmentBytes`; above that `setFragmentBuffer`.
     /// Stereo `audio_responsive_oscilloscope` needs 258. Cap is 1024 (16 KB).
     static let uniformSlotMaximum = 1024
+    /// Bounds literal varying initializer expansion in the Swift code generator.
+    static let varyingElementMaximum = 1024
 
     static let customTextureSlotCount = 8
 
@@ -68,6 +70,11 @@ struct WPEShaderTranspiler {
             }
             bodyLines.append(raw)
         }
+
+        // Validate before substitutions or MSL generation can expand an authored
+        // array. The same checked layout sizes both the host buffer and MSL.
+        let layout = try validatedUniformLayout(uniforms, shaderName: shaderName)
+        try validateVaryingExpansion(varyings, shaderName: shaderName)
 
         let sortedSamplers = samplers.sorted { lhs, rhs in
             (Self.textureSlot(for: lhs.name) ?? .max) < (Self.textureSlot(for: rhs.name) ?? .max)
@@ -136,6 +143,7 @@ struct WPEShaderTranspiler {
         let msl = renderMSL(
             shaderName: shaderName,
             uniforms: uniforms,
+            totalUniformSlots: layout.totalSlots,
             samplers: sortedSamplers,
             varyings: varyings,
             helpers: helperResources.helpers,
@@ -146,38 +154,72 @@ struct WPEShaderTranspiler {
             premultipliedOutput: premultipliedOutput
         )
 
-        var layout: [WPEUniformSlot] = []
+        return WPEShaderTranslationResult(
+            mslSource: msl,
+            samplers: sortedSamplers.map(\.name),
+            uniformLayout: layout.slots,
+            totalSlots: layout.totalSlots
+        )
+    }
+
+    private static func validatedUniformLayout(
+        _ uniforms: [WPEUniformDecl],
+        shaderName: String
+    ) throws -> (slots: [WPEUniformSlot], totalSlots: Int) {
+        var slots: [WPEUniformSlot] = []
         var nextSlot = 0
         for u in uniforms {
-            let slotCount: Int
-            if let len = u.arrayLength {
-                slotCount = len
-            } else {
-                slotCount = Self.slotCount(for: u.type)
+            if u.arrayDimension != nil, u.arrayLength == nil {
+                throw WPEShaderCompilerError.translationFailed(
+                    "shader '\(shaderName)' uniform '\(u.name)' has an unsupported array dimension"
+                )
             }
-            layout.append(WPEUniformSlot(
+            let count = u.arrayLength ?? Self.slotCount(for: u.type)
+            guard count > 0, count <= Self.uniformSlotMaximum - nextSlot else {
+                throw WPEShaderCompilerError.translationFailed(
+                    "shader '\(shaderName)' uniform '\(u.name)' requires a positive size within the \(Self.uniformSlotMaximum)-slot budget"
+                )
+            }
+            slots.append(WPEUniformSlot(
                 name: u.name,
                 glslType: u.type,
                 slot: nextSlot,
-                slotCount: slotCount,
+                slotCount: count,
                 arrayLength: u.arrayLength,
                 materialName: u.materialName,
                 defaultValue: u.defaultValue
             ))
-            nextSlot += slotCount
+            nextSlot += count
         }
-        guard nextSlot <= Self.uniformSlotMaximum else {
-            throw WPEShaderCompilerError.translationFailed(
-                "shader '\(shaderName)' needs \(nextSlot) uniform slots; transpiler caps at \(Self.uniformSlotMaximum)"
-            )
-        }
+        return (slots, nextSlot)
+    }
 
-        return WPEShaderTranslationResult(
-            mslSource: msl,
-            samplers: sortedSamplers.map(\.name),
-            uniformLayout: layout,
-            totalSlots: nextSlot
-        )
+    private static func validateVaryingExpansion(
+        _ varyings: [WPEVaryingDecl],
+        shaderName: String
+    ) throws {
+        var remaining = Self.varyingElementMaximum
+        for varying in varyings {
+            if let dimension = varying.arrayDimension, varying.arrayLength == nil {
+                let digits = dimension.first == "+" || dimension.first == "-"
+                    ? dimension.dropFirst() : dimension[...]
+                let isIntegerLiteral = !digits.isEmpty && digits.utf8.allSatisfy { (48...57).contains($0) }
+                guard !dimension.isEmpty, !isIntegerLiteral else {
+                    throw WPEShaderCompilerError.translationFailed(
+                        "shader '\(shaderName)' varying '\(varying.name)' has an invalid array dimension"
+                    )
+                }
+                // Symbolic dimensions stay compact MSL declarations; their
+                // existing reconstruction does not expand a Swift array.
+            }
+            let count = varying.arrayLength ?? 1
+            guard count > 0, count <= remaining else {
+                throw WPEShaderCompilerError.translationFailed(
+                    "shader '\(shaderName)' varying '\(varying.name)' requires a positive size within the \(Self.varyingElementMaximum)-element expansion budget"
+                )
+            }
+            remaining -= count
+        }
     }
 
     static func slotCount(for glslType: String) -> Int {

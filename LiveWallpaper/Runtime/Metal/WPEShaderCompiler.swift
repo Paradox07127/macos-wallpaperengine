@@ -107,7 +107,7 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Memory hits serve a second display / new executor; disk hits serve cold start.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {
@@ -228,7 +228,11 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
     }
 
     nonisolated static var defaultRootURL: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        // The hosted test process must not read or prune the user's schema cache.
+        if NSClassFromString("XCTestCase") != nil {
+            return ConfigurationDirectory().root.appendingPathComponent("wpe-msl", isDirectory: true)
+        }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("wpe-msl", isDirectory: true)
     }
 
