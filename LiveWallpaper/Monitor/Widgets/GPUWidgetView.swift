@@ -58,17 +58,6 @@ struct GPUWidgetView: View {
         if celsius >= 48 { return "warm" }
         return "cool"
     }
-
-    /// Windows a sparse, aligned `[Double?]` series (one entry per `times`, nil where that poll lacked the key) to the last `windowSeconds` and drops the nils.
-    nonisolated static func compactedSeries(_ series: [Double?], times: [Double],
-                                             windowSeconds: Double) -> [Double]? {
-        guard series.count == times.count, let last = times.last else { return nil }
-        let cutoff = last - windowSeconds
-        let real = zip(times, series)
-            .filter { $0.0 >= cutoff }
-            .compactMap { $0.1 }
-        return real.count >= 2 ? real : nil
-    }
 }
 
 // MARK: - Body (cell-height threaded)
@@ -172,7 +161,7 @@ private struct GPUWidgetBody: View {
                 }
 
                 if showTrend {
-                    Sparkline(values: history30, domain: 0...1, bandColored: true)
+                    Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true)
                         .frame(height: max(cellHeight * 0.24, 20))
                         .overlay(alignment: .topTrailing) {
                             peakTag(size: scale.label * 0.9).padding(2)
@@ -336,9 +325,10 @@ private struct GPUWidgetBody: View {
 
     private func loadChart(minHeight: CGFloat, peakScale: CGFloat) -> some View {
         GPUBreakdownChart(
-            device: historyWindowed,
-            renderer: effectiveRendererHistory,
-            tiler: effectiveTilerHistory,
+            device: devicePoints,
+            renderer: effectiveRendererPoints,
+            tiler: effectiveTilerPoints,
+            window: loadWindow,
             reduceMotion: context.reduceMotion
         )
         .frame(maxWidth: .infinity)
@@ -552,7 +542,9 @@ private struct GPUWidgetBody: View {
     private var memUsedBytes: UInt64? { system?.gpuMemUsedBytes }
 
     private var peakFraction: Double? {
-        let p = gpuHistory(windowSeconds: displayedHistorySeconds).max() ?? 0
+        let p = context.history.gpuValues(
+            context.history.gpuDevice, in: gpuWindow(seconds: displayedHistorySeconds)
+        ).max() ?? 0
         return p > 0 ? p : nil
     }
 
@@ -564,35 +556,46 @@ private struct GPUWidgetBody: View {
         context.placement.size == .small ? 30 : historyWindowSeconds
     }
 
-    private var history30: [Double] { gpuHistory(windowSeconds: 30) }
-    private var historyWindowed: [Double] { gpuHistory(windowSeconds: historyWindowSeconds) }
-
-    private func gpuHistory(windowSeconds: Double) -> [Double] {
-        let device = context.history.gpuDevice
-        let times = context.history.gpuSampleTimes
-        guard !device.isEmpty else { return [] }
-        guard times.count == device.count, let last = times.last else { return device }
-        let cutoff = last - windowSeconds
-        let sliced = zip(times, device).filter { $0.0 >= cutoff }.map { $0.1 }
-        return sliced.isEmpty ? [device[device.count - 1]] : sliced
+    /// GPU keeps its own axis: it is polled roughly every six seconds while the
+    /// rest of the board samples up to twice a second.
+    private func gpuWindow(seconds: Double) -> MonitorChartWindow {
+        context.history.gpuChartWindow(reference: context.now, seconds: seconds)
     }
 
-    /// Real Renderer/Tiler samples over the Load window, aligned with `gpuSampleTimes` (nil where that poll lacked the key).
-    private var rendererHistory: [Double]? {
-        GPUWidgetView.compactedSeries(context.history.gpuRenderer,
-                                             times: context.history.gpuSampleTimes,
-                                             windowSeconds: historyWindowSeconds)
+    private var trendWindow: MonitorChartWindow {
+        gpuWindow(seconds: 30)
     }
 
-    private var tilerHistory: [Double]? {
-        GPUWidgetView.compactedSeries(context.history.gpuTiler,
-                                             times: context.history.gpuSampleTimes,
-                                             windowSeconds: historyWindowSeconds)
+    private var loadWindow: MonitorChartWindow {
+        gpuWindow(seconds: historyWindowSeconds)
     }
 
-    /// `nil` (dropping the compute-gap band + line) once `showLoadBreakdown` is off, even when real Renderer/Tiler samples exist — the setting hides the breakdown, not just the legend text.
-    private var effectiveRendererHistory: [Double]? { showLoadBreakdown ? rendererHistory : nil }
-    private var effectiveTilerHistory: [Double]? { showLoadBreakdown ? tilerHistory : nil }
+    private var trendPoints: [MonitorHistoryPoint] {
+        context.history.gpuPoints(context.history.gpuDevice, in: trendWindow)
+    }
+
+    private var devicePoints: [MonitorHistoryPoint] {
+        context.history.gpuPoints(context.history.gpuDevice, in: loadWindow)
+    }
+
+    /// Renderer/Tiler keep their empty slots: a poll that lacked the key is a
+    /// break in the line, not a shorter line.
+    private var rendererPoints: [MonitorHistoryPoint] {
+        context.history.gpuPoints(context.history.gpuRenderer, in: loadWindow)
+    }
+
+    private var tilerPoints: [MonitorHistoryPoint] {
+        context.history.gpuPoints(context.history.gpuTiler, in: loadWindow)
+    }
+
+    /// Empty (dropping the compute-gap band + line) once `showLoadBreakdown` is off, even when real Renderer/Tiler samples exist — the setting hides the breakdown, not just the legend text.
+    private var effectiveRendererPoints: [MonitorHistoryPoint] {
+        showLoadBreakdown ? rendererPoints : []
+    }
+
+    private var effectiveTilerPoints: [MonitorHistoryPoint] {
+        showLoadBreakdown ? tilerPoints : []
+    }
 
     // MARK: - Settings
 
@@ -619,15 +622,17 @@ private struct GPUWidgetBody: View {
 
 // MARK: - Breakdown chart
 private struct GPUBreakdownChart: View {
-    var device: [Double]
-    var renderer: [Double]?
-    var tiler: [Double]?
+    var device: [MonitorHistoryPoint]
+    var renderer: [MonitorHistoryPoint]
+    var tiler: [MonitorHistoryPoint]
+    var window: MonitorChartWindow
     var reduceMotion: Bool
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
-            if device.count >= 2 {
+            let deviceRuns = runs(device, w: w, h: h)
+            if !deviceRuns.isEmpty {
                 ZStack {
                     ForEach([0.25, 0.5, 0.75], id: \.self) { g in
                         let y = yFor(g, h: h)
@@ -638,39 +643,39 @@ private struct GPUBreakdownChart: View {
                         .stroke(Design.hairlineHi.opacity(0.26), lineWidth: 1)
                     }
 
-                    areaPath(device, w: w, h: h)
+                    paths(deviceRuns, closingTo: h)
                         .fill(LinearGradient(
                             colors: [Design.inkPrimary.opacity(0.16),
                                      Design.inkPrimary.opacity(0.01)],
                             startPoint: .top, endPoint: .bottom))
 
-                    if let renderer, renderer.count == device.count {
-                        gapBand(device: device, renderer: renderer, w: w, h: h)
-                            .fill(LinearGradient(
-                                colors: [Design.computeViolet.opacity(0.24),
-                                         Design.computeViolet.opacity(0.05)],
-                                startPoint: .top, endPoint: .bottom))
-                    }
+                    gapBand(w: w, h: h)
+                        .fill(LinearGradient(
+                            colors: [
+                                Design.computeViolet.opacity(0.24),
+                                Design.computeViolet.opacity(0.05),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ))
 
-                    if let tiler, tiler.count == device.count {
-                        linePath(tiler, w: w, h: h)
-                            .stroke(Design.tilerViolet.opacity(0.85),
-                                    style: StrokeStyle(lineWidth: 1.3, lineJoin: .round, dash: [4, 3]))
-                    }
-                    if let renderer, renderer.count == device.count {
-                        linePath(renderer, w: w, h: h)
-                            .stroke(Design.signalSteel,
-                                    style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-                    }
-                    linePath(device, w: w, h: h)
+                    paths(runs(tiler, w: w, h: h))
+                        .stroke(
+                            Design.tilerViolet.opacity(0.85),
+                            style: StrokeStyle(lineWidth: 1.3, lineJoin: .round, dash: [4, 3])
+                        )
+                    paths(runs(renderer, w: w, h: h))
+                        .stroke(Design.signalSteel,
+                                style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+                    paths(deviceRuns)
                         .stroke(Design.inkPrimary,
                                 style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
 
-                    if let last = device.last {
+                    if let last = deviceRuns.last?.last {
                         Circle()
                             .fill(Design.inkPrimary)
                             .frame(width: 5, height: 5)
-                            .position(x: w, y: yFor(last, h: h))
+                            .position(last)
                     }
                 }
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: device)
@@ -683,33 +688,52 @@ private struct GPUBreakdownChart: View {
         return h - CGFloat(clamped) * (h - 4) - 2
     }
 
-    private func xFor(_ i: Int, count: Int, w: CGFloat) -> CGFloat {
-        count <= 1 ? w : CGFloat(i) / CGFloat(count - 1) * w
+    private func point(_ sample: MonitorHistoryPoint, w: CGFloat, h: CGFloat) -> CGPoint {
+        CGPoint(x: ChartTimeAxis.x(sample.time, in: window, width: w),
+                y: yFor(sample.value ?? 0, h: h))
     }
 
-    private func linePath(_ arr: [Double], w: CGFloat, h: CGFloat) -> Path {
+    private func runs(_ points: [MonitorHistoryPoint], w: CGFloat, h: CGFloat) -> [[CGPoint]] {
+        guard w > 0 else { return [] }
+        return ChartTimeAxis.runs(points, tolerance: window.tolerance).map { range in
+            points[range].map { point($0, w: w, h: h) }
+        }
+    }
+
+    /// One `Path` per unbroken run: separate subpaths never join across a gap,
+    /// and a lone sample keeps its dot instead of vanishing.
+    private func paths(_ runs: [[CGPoint]], closingTo height: CGFloat? = nil) -> Path {
         var p = Path()
-        for (i, v) in arr.enumerated() {
-            let pt = CGPoint(x: xFor(i, count: arr.count, w: w), y: yFor(v, h: h))
-            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        for pts in runs {
+            guard let first = pts.first, let last = pts.last else { continue }
+            if pts.count == 1 {
+                p.addEllipse(in: CGRect(x: first.x - 1.5, y: first.y - 1.5, width: 3, height: 3))
+                continue
+            }
+            p.addLines(pts)
+            if let height {
+                p.addLine(to: CGPoint(x: last.x, y: height))
+                p.addLine(to: CGPoint(x: first.x, y: height))
+                p.closeSubpath()
+            }
         }
         return p
     }
 
-    private func areaPath(_ arr: [Double], w: CGFloat, h: CGFloat) -> Path {
-        var p = linePath(arr, w: w, h: h)
-        p.addLine(to: CGPoint(x: w, y: h))
-        p.addLine(to: CGPoint(x: 0, y: h))
-        p.closeSubpath()
-        return p
-    }
-
-    private func gapBand(device: [Double], renderer: [Double], w: CGFloat, h: CGFloat) -> Path {
-        var p = linePath(device, w: w, h: h)
-        for i in stride(from: renderer.count - 1, through: 0, by: -1) {
-            p.addLine(to: CGPoint(x: xFor(i, count: renderer.count, w: w), y: yFor(renderer[i], h: h)))
+    /// The Device − Renderer band, broken wherever either side has no reading:
+    /// the gap is undefined without both.
+    private func gapBand(w: CGFloat, h: CGFloat) -> Path {
+        guard w > 0, device.count == renderer.count else { return Path() }
+        let present = zip(device, renderer).map { $0.value != nil && $1.value != nil }
+        var p = Path()
+        for range in ChartTimeAxis.runs(device, present: present, tolerance: window.tolerance) {
+            guard range.count >= 2 else { continue }
+            p.addLines(device[range].map { point($0, w: w, h: h) })
+            for index in stride(from: range.upperBound - 1, through: range.lowerBound, by: -1) {
+                p.addLine(to: point(renderer[index], w: w, h: h))
+            }
+            p.closeSubpath()
         }
-        p.closeSubpath()
         return p
     }
 }
