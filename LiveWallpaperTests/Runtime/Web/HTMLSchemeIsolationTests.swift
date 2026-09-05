@@ -42,13 +42,13 @@ struct FolderURLSchemeHandlerIsolationTests {
         let request = URLRequest(url: URL(string: "livewallpaper://wallpaper/index.html?n=\(nonce)")!)
 
         let live = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: live)
-        handler.webView(WKWebView(), stop: live)
+        handler.webView(makeWebView(), start: live)
+        handler.webView(makeWebView(), stop: live)
         #expect(live.failedError == nil)
 
         handler.folderURL = nil
         let stale = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: stale)
+        handler.webView(makeWebView(), start: stale)
         #expect(stale.failedError != nil)
     }
 
@@ -61,7 +61,7 @@ struct FolderURLSchemeHandlerIsolationTests {
         handler.folderURL = folder
         let request = URLRequest(url: URL(string: "livewallpaper://wallpaper/index.html?n=NOT-THE-NONCE")!)
         let task = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: task)
+        handler.webView(makeWebView(), start: task)
 
         #expect(task.failedError != nil)
     }
@@ -75,7 +75,7 @@ struct FolderURLSchemeHandlerIsolationTests {
         handler.folderURL = folder
         let request = URLRequest(url: URL(string: "livewallpaper://wallpaper/index.html")!)
         let task = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: task)
+        handler.webView(makeWebView(), start: task)
 
         #expect(task.failedError != nil)
     }
@@ -90,7 +90,7 @@ struct FolderURLSchemeHandlerIsolationTests {
         let nonce = handler.currentSessionNonce ?? ""
         let request = URLRequest(url: URL(string: "livewallpaper://other-host/index.html?n=\(nonce)")!)
         let task = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: task)
+        handler.webView(makeWebView(), start: task)
 
         #expect(task.failedError != nil)
     }
@@ -111,10 +111,10 @@ struct FolderURLSchemeHandlerIsolationTests {
         request.mainDocumentURL = mainDocURL
 
         let task = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: task)
+        handler.webView(makeWebView(), start: task)
 
         try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
-        handler.webView(WKWebView(), stop: task)
+        handler.webView(makeWebView(), stop: task)
 
         #expect(task.failedError == nil)
         #expect(task.didFinishCalled)
@@ -140,7 +140,7 @@ struct FolderURLSchemeHandlerIsolationTests {
         var request = URLRequest(url: URL(string: "livewallpaper://wallpaper/app.js")!)
         request.mainDocumentURL = URL(string: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")")
         let task = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: task)
+        handler.webView(makeWebView(), start: task)
         try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
 
         #expect(task.failedError == nil)
@@ -171,7 +171,7 @@ struct FolderURLSchemeHandlerIsolationTests {
         request.mainDocumentURL = URL(string: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")")
         request.setValue("bytes=10-19", forHTTPHeaderField: "Range")
         let task = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: task)
+        handler.webView(makeWebView(), start: task)
         try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
 
         #expect(task.failedError == nil)
@@ -199,7 +199,7 @@ struct FolderURLSchemeHandlerIsolationTests {
 
         let url = URL(string: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")")!
         let task = FakeURLSchemeTask(request: URLRequest(url: url))
-        handler.webView(WKWebView(), start: task)
+        handler.webView(makeWebView(), start: task)
         try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
 
         #expect(task.failedError == nil)
@@ -225,11 +225,100 @@ struct FolderURLSchemeHandlerIsolationTests {
         var request = URLRequest(url: URL(string: "livewallpaper://wallpaper/project.json")!)
         request.mainDocumentURL = URL(string: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")")
         let task = FakeURLSchemeTask(request: request)
-        handler.webView(WKWebView(), start: task)
+        handler.webView(makeWebView(), start: task)
         try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
 
         #expect(task.failedError == nil)
         #expect(task.receivedData.reduce(Data(), +) == looseBytes)
+    }
+
+    @Test("Ogg fallback validates the final sibling before serving bytes", arguments: [false, true])
+    func oggFallbackRejectsEscapingSibling(hasSafeAlternative: Bool) async throws {
+        let root = makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("source", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let outside = root.appendingPathComponent("outside.txt")
+        let outsideBytes = Data("outside-source-sentinel".utf8)
+        try outsideBytes.write(to: outside)
+        try FileManager.default.createSymbolicLink(
+            at: folder.appendingPathComponent("audio.mp3"), withDestinationURL: outside
+        )
+        let safeBytes = Data("safe-audio-sibling".utf8)
+        if hasSafeAlternative {
+            try safeBytes.write(to: folder.appendingPathComponent("audio.m4a"))
+        }
+        let handler = FolderURLSchemeHandler()
+        handler.folderURL = folder
+        let webView = makeWebView()
+        let requestURL = try #require(URL(string: "livewallpaper://wallpaper/audio.ogg"))
+        var request = URLRequest(url: requestURL)
+        request.mainDocumentURL = URL(string: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")")
+        let task = FakeURLSchemeTask(request: request)
+        defer { handler.webView(webView, stop: task) }
+        handler.webView(webView, start: task)
+        try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
+        #expect(task.didFinishCalled || task.failedError != nil, "The request must finish within its deadline")
+        let received = task.receivedData.reduce(Data(), +)
+        #expect(received != outsideBytes)
+        if hasSafeAlternative {
+            #expect(task.failedError == nil)
+            #expect(received == safeBytes, "An invalid first sibling must not hide a later safe sibling")
+        } else {
+            #expect(received.isEmpty)
+        }
+    }
+
+    @Test("Ogg fallback accepts a regular sibling symlink within the source root")
+    func oggFallbackAcceptsContainedSibling() async throws {
+        let folder = makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let bytes = Data("contained-audio".utf8)
+        let audio = folder.appendingPathComponent("audio-bytes")
+        try bytes.write(to: audio)
+        try FileManager.default.createSymbolicLink(
+            at: folder.appendingPathComponent("audio.mp3"), withDestinationURL: audio
+        )
+        let handler = FolderURLSchemeHandler()
+        handler.folderURL = folder
+        let webView = makeWebView()
+        let requestURL = try #require(URL(string: "livewallpaper://wallpaper/audio.ogg"))
+        var request = URLRequest(url: requestURL)
+        request.mainDocumentURL = URL(string: "livewallpaper://wallpaper/index.html?n=\(handler.currentSessionNonce ?? "")")
+        let task = FakeURLSchemeTask(request: request)
+        defer { handler.webView(webView, stop: task) }
+        handler.webView(webView, start: task)
+        try await waitUntil(timeout: .seconds(2)) { task.didFinishCalled || task.failedError != nil }
+        #expect(task.didFinishCalled)
+        #expect(task.failedError == nil)
+        #expect(task.receivedData.reduce(Data(), +) == bytes)
+        let response = task.receivedResponse as? HTTPURLResponse
+        #expect(response?.value(forHTTPHeaderField: "Content-Type") == "audio/mpeg")
+    }
+
+    @Test("HTML package opening verifies its source folder", arguments: [false, true])
+    func htmlPackageOpeningChecksContainment(inside: Bool) async throws {
+        let root = makeTemporaryFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("source", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let actual = (inside ? folder : root).appendingPathComponent("actual.pkg")
+        try Self.makePackageData(entries: [("index.html", Data("offline fixture".utf8))]).write(to: actual)
+        let link = folder.appendingPathComponent("scene.pkg")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: actual)
+        do {
+            let backing = try await HTMLWallpaperView.packageBacking(forPackageURL: link, inside: folder)
+            #expect(inside, "An outside package must be refused before indexing")
+            #expect(backing.url == actual.standardizedFileURL.resolvingSymlinksInPath())
+        } catch {
+            #expect(!inside, "A contained regular package symlink must remain usable")
+        }
+    }
+
+    private func makeWebView() -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        return WKWebView(frame: .zero, configuration: configuration)
     }
 
     private static func packageBacking(at pkgURL: URL) throws -> FolderURLSchemeHandler.PackageBacking {
@@ -320,6 +409,26 @@ struct HTMLWallpaperViewSourceIsolationTests {
 
 @Suite("HTMLWallpaperView navigation policy")
 struct HTMLWallpaperNavigationPolicyTests {
+
+    @MainActor
+    @Test("Only main-frame HTTP failures fail wallpaper preparation", arguments: [404, 500])
+    func httpFailureBelongsToMainFrame(status: Int) throws {
+        let view = HTMLWallpaperView(frame: .zero, initialEphemeral: true)
+        defer { view.cleanup() }
+        view.preparationGeneration = 42
+        var errors: [WallpaperRuntimeError] = []
+        view.onError = { errors.append($0) }
+        let url = try #require(URL(string: "https://offline.invalid/frame"))
+        let success = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+        let failure = try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil))
+        view.handleNavigationResponse(success, isForMainFrame: true, currentURL: url)
+        view.handleNavigationResponse(failure, isForMainFrame: false, currentURL: url)
+        #expect(errors.isEmpty)
+        #expect(view.failedPreparationGeneration == nil)
+        view.handleNavigationResponse(failure, isForMainFrame: true, currentURL: url)
+        #expect(errors.count == 1)
+        #expect(view.failedPreparationGeneration == 42)
+    }
 
     private func makeReadRoot() -> URL {
         let root = FileManager.default.temporaryDirectory
