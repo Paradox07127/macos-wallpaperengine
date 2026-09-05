@@ -150,23 +150,31 @@ final class ParticleOverlayView: NSView {
         let renderMode: CAEmitterLayerRenderMode
         let position: (CGRect) -> CGPoint
         let size: (CGRect) -> CGSize
+
+        /// Emitter height for the band presets. Not `.line`: on macOS 27 (26A5425a) a
+        /// `.line` emitter launches every particle 90° off its `emissionLongitude` —
+        /// measured 2026-09-05 by tracking dots, `-π/2` came out moving left, not down —
+        /// while `.point` and `.rectangle` honour the angle. Rain fell sideways with
+        /// its streaks still drawn vertical, which is the "streaks cross their own
+        /// path" report. A 1 pt rectangle is the same line to the eye.
+        static let bandThickness: CGFloat = 1
     }
 
     private func preset(for effect: ParticleEffect, tilt: CGFloat) -> EmitterPreset {
         switch effect {
-        case .none:          return Self.emptyPreset
-        case .snow:          return Self.snowPreset(tilt: tilt)
-        case .rain:          return Self.rainPreset(tilt: tilt)
-        case .bokeh:         return Self.bokehPreset
-        case .fireflies:     return Self.firefliesPreset
-        case .dust:          return Self.dustPreset
-        case .stars:         return Self.starsPreset
-        case .fallingLeaves: return Self.leavesPreset
-        case .sakura:        return Self.sakuraPreset
-        case .mist:          return Self.mistPreset
-        case .embers:        return Self.embersPreset
-        case .bubbles:       return Self.bubblesPreset
-        case .meteors:       return Self.meteorsPreset
+        case .none: Self.emptyPreset
+        case .snow: Self.snowPreset(tilt: tilt)
+        case .rain: Self.rainPreset(tilt: tilt)
+        case .bokeh: Self.bokehPreset
+        case .fireflies: Self.firefliesPreset
+        case .dust: Self.dustPreset
+        case .stars: Self.starsPreset
+        case .fallingLeaves: Self.leavesPreset(tilt: tilt)
+        case .sakura: Self.sakuraPreset(tilt: tilt)
+        case .mist: Self.mistPreset
+        case .embers: Self.embersPreset
+        case .bubbles: Self.bubblesPreset
+        case .meteors: Self.meteorsPreset
         }
     }
 
@@ -178,17 +186,74 @@ final class ParticleOverlayView: NSView {
         size: { _ in .zero }
     )
 
+    // MARK: - Depth
+
+    /// One slice of a particle field at relative distance `z` (1 = nearest). Perspective,
+    /// applied to every visible quantity at once: size, speed and sideways drift shrink by
+    /// 1/z, brightness a little faster (a far mote is sub-pixel and behind more air), and
+    /// the count per screen area grows — the small far ones are the many. Fields list their
+    /// bands near → far; tests read that order.
+    private struct DepthBand {
+        let z: CGFloat
+        /// Births per second at density 1.
+        let birthRate: Float
+
+        func scaled(_ near: CGFloat) -> CGFloat {
+            near / z
+        }
+
+        func alpha(_ near: CGFloat, falloff: CGFloat = 0.5) -> CGFloat {
+            near / pow(z, falloff)
+        }
+
+        /// Long enough to cross `travel` points, but capped: a far flake at 17 pt/s would
+        /// otherwise live a minute and a half, and the alive count is birthRate × lifetime.
+        func lifetime(speed: CGFloat, travel: CGFloat = 1500, cap: Float = 40) -> Float {
+            min(Float(travel / max(speed, 1)), cap)
+        }
+
+        /// Fade for a band whose capped life ends mid-screen, so it dissolves instead of
+        /// popping; zero when it reaches the bottom anyway.
+        func fade(alpha: CGFloat, speed: CGFloat, lifetime: Float, travel: CGFloat = 1500) -> Float {
+            speed * CGFloat(lifetime) >= travel ? 0 : -Float(alpha) / lifetime
+        }
+    }
+
+    /// Sideways flutter of a falling field, `near` pt/s² at the nearest band, pushed the way
+    /// the wind blows: over a long fall a constant push to the right overpowers any leftward
+    /// heading the wind gave at birth, so an easterly still ended with everything going east.
+    private static func flutterDrift(tilt: CGFloat, near: CGFloat, band: DepthBand) -> CGFloat {
+        (tilt < 0 ? -1 : 1) * band.scaled(near)
+    }
+
+    /// How a petal or leaf spins, rad/s. Calm air turns it either way at up to `calm`; wind
+    /// adds a roll proportional to the lean — a few turns a second at the 30° cap — biased
+    /// in the wind's direction, with enough spread that some still tumble the other way.
+    private static func applyTumble(to cell: CAEmitterCell, tilt: CGFloat, calm: CGFloat) {
+        let wind = abs(tilt) * 8
+        cell.spin = (tilt < 0 ? -1 : 1) * wind
+        cell.spinRange = calm * 2 + wind
+    }
+
     // MARK: - Snow
 
     private static func snowPreset(tilt: CGFloat) -> EmitterPreset {
-        let createLayer = { (scale: CGFloat, velocity: CGFloat, birthRate: Float, alpha: Float, radius: CGFloat) -> CAEmitterCell in
+        let field = [
+            DepthBand(z: 1.0, birthRate: 6), DepthBand(z: 1.45, birthRate: 10),
+            DepthBand(z: 2.1, birthRate: 14), DepthBand(z: 3.0, birthRate: 18),
+        ]
+        let cells = field.map { band -> CAEmitterCell in
             let cell = CAEmitterCell()
-            cell.contents = ParticleTextures.softCircle(radius: radius, color: NSColor.white.cgColor)
-            cell.birthRate = birthRate
-            cell.lifetime = 15
-            cell.lifetimeRange = 5
-            cell.velocity = velocity
-            cell.velocityRange = velocity * 0.3
+            let speed = band.scaled(60)
+            let alpha = band.alpha(0.85)
+            cell.contents = ParticleTextures.softCircle(
+                radius: max(band.scaled(7), 1.5), color: NSColor.white.cgColor
+            )
+            cell.birthRate = band.birthRate
+            cell.lifetime = band.lifetime(speed: speed)
+            cell.lifetimeRange = cell.lifetime * 0.25
+            cell.velocity = speed
+            cell.velocityRange = speed * 0.3
             // A flake is round, so only its heading moves with the wind —
             // there is no shape to point the other way.
             cell.emissionLongitude = -.pi / 2 + tilt
@@ -196,74 +261,63 @@ final class ParticleOverlayView: NSView {
             // — the behaviour that separates snow from rain at a glance — and
             // a narrow cone made them fall like slow rain.
             cell.emissionRange = .pi / 4
-            cell.scale = scale
-            cell.scaleRange = scale * 0.3
-            cell.alphaRange = alpha * 0.3
-            cell.xAcceleration = 10 * scale
-            cell.yAcceleration = -15 * scale
-            cell.color = NSColor(white: 1, alpha: CGFloat(alpha)).cgColor
+            cell.scale = 1
+            cell.scaleRange = 0.25
+            cell.alphaRange = Float(alpha * 0.3)
+            cell.alphaSpeed = band.fade(alpha: alpha, speed: speed, lifetime: cell.lifetime)
+            cell.xAcceleration = flutterDrift(tilt: tilt, near: 10, band: band)
+            cell.yAcceleration = -band.scaled(15)
+            cell.color = NSColor(white: 1, alpha: alpha).cgColor
             return cell
         }
 
-        let near = createLayer(1.2, 50, 10, 0.6, 6.0)
-        let mid = createLayer(0.6, 30, 30, 0.8, 3.0)
-        let far = createLayer(0.3, 15, 60, 0.4, 2.0)
-
         return EmitterPreset(
-            cells: [near, mid, far],
-            shape: .line,
+            cells: cells,
+            shape: .rectangle,
             renderMode: .unordered,
             position: { CGPoint(x: $0.midX, y: $0.maxY) },
             // Snow leans much further than rain for the same wind, so its line
             // has to reach further past the upwind edge.
-            size: { CGSize(width: $0.width * 2.4, height: 0) }
+            size: { CGSize(width: $0.width * 2.4, height: EmitterPreset.bandThickness) }
         )
     }
 
     // MARK: - Rain
 
-    /// Three depth layers, not one flat sheet. Speeds follow measured terminal
-    /// velocities (drizzle ~3 m/s, biggest stable drops ~9 m/s), so the near layer
-    /// runs ~2x the far layer's speed, not an arbitrary spread. Far particles are
-    /// smaller/slower/fainter/shorter (what depth looks like) and cheapest, so the
-    /// layer with the most particles costs least — counts mirror that (small drops
-    /// vastly outnumber large, the Marshall–Palmer shape), which is why the far layer
-    /// is densest.
+    /// One rain field seen in depth, not a few unrelated sheets.
+    ///
+    /// Every band shares ONE lean. Drops of every size in one patch of sky fall in the same
+    /// direction (Garg & Nayar, CVPR 2004 §3.1: "within a local region, drops fall more or less
+    /// in the same direction"), and perspective keeps a straight path's on-screen angle the same
+    /// at every distance. The old preset gave each layer `atan(wind / itsOwnSpeed)` — the
+    /// world-space drift of a *smaller* drop, applied to a *farther* one — so the small far drops
+    /// slanted ~17° steeper than the big near ones, and the field drifted one way while the
+    /// streaks the eye picks out pointed another.
+    ///
+    /// Streak length is speed × one exposure — the motion blur of a drop already at terminal
+    /// velocity — so it follows the band's speed rather than being picked per band.
     private static func rainPreset(tilt: CGFloat) -> EmitterPreset {
-        // Lean per drop is `atan(wind / itsOwnFallSpeed)`: a slow small drop leans much
-        // further than a fast large one in the same wind. `tilt` is worked out for the
-        // middle layer; each layer re-derives its own from its own speed, else the whole
-        // field slants in lockstep — the sprite-sheet tell.
-        let reference: CGFloat = 460
-        let leanFor: (CGFloat) -> CGFloat = { speed in
-            guard tilt != 0, speed > 0 else { return 0 }
-            return atan(tan(tilt) * reference / speed)
-        }
-        // Streak length is the motion blur of one exposure, so it is
-        // proportional to speed rather than picked per layer.
-        let exposure: CGFloat = 0.0433
-
-        let makeLayer = {
-            (scale: CGFloat, velocity: CGFloat, birthRate: Float,
-             alpha: CGFloat, width: CGFloat) -> CAEmitterCell in
-            let lean = leanFor(velocity)
+        let cells = Rain.field.map { band -> CAEmitterCell in
             let cell = CAEmitterCell()
+            let speed = band.scaled(Rain.nearSpeed)
+            let alpha = band.alpha(Rain.nearAlpha, falloff: 0.7)
             cell.contents = ParticleTextures.streak(
-                length: velocity * exposure, width: width,
+                length: speed * Rain.exposure, width: max(band.scaled(Rain.nearWidth), 1),
                 color: NSColor.white.withAlphaComponent(alpha).cgColor,
-                tilt: lean
+                tilt: tilt
             )
-            cell.birthRate = birthRate
-            cell.lifetime = 4
-            cell.lifetimeRange = 1
-            cell.velocity = velocity
-            cell.velocityRange = velocity * 0.18
-            // Travel direction matches the lean baked into the texture, so a
-            // drop always points the way it is going.
-            cell.emissionLongitude = -.pi / 2 + lean
-            cell.emissionRange = .pi / 90      // rain falls in lines, not cones
-            cell.scale = scale
-            cell.scaleRange = scale * 0.25
+            cell.birthRate = band.birthRate
+            // `lifetimeRange` is a fifth of this, so even the shortest life covers `travel`.
+            cell.lifetime = Float(Rain.travel / speed / 0.8)
+            cell.lifetimeRange = cell.lifetime * 0.2
+            cell.velocity = speed
+            cell.velocityRange = speed * 0.15
+            cell.emissionLongitude = -.pi / 2 + tilt
+            // Zero spread: the streak's angle is baked into its bitmap, so any heading a drop
+            // takes that the bitmap did not is a drop drawn pointing off its own path.
+            cell.emissionRange = 0
+            cell.scale = 1
+            cell.scaleRange = 0.15
             cell.alphaRange = 0.2
             // No gravity: a drop is already at terminal velocity, so its path is a straight
             // line. Accelerating it swung the heading from 0.5 rad at birth to 0.10 rad at
@@ -274,23 +328,36 @@ final class ParticleOverlayView: NSView {
             return cell
         }
 
-        // near, mid, far — the far layer is the densest and the dimmest.
-        // Speeds are what the old cells averaged once gravity had had its say,
-        // so removing the acceleration did not turn the rain into drizzle.
-        let near = makeLayer(1.15, 600, 55, 0.75, 2.4)
-        let mid = makeLayer(0.8, reference, 95, 0.5, 2.0)
-        let far = makeLayer(0.5, 330, 130, 0.3, 1.6)
-
         return EmitterPreset(
-            cells: [near, mid, far],
-            shape: .line,
+            cells: cells,
+            shape: .rectangle,
             renderMode: .unordered,
             position: { CGPoint(x: $0.midX, y: $0.maxY) },
             // Much wider than the screen: leaning rain enters from off the
-            // upwind edge, and a screen-width line leaves that side dry. The
-            // slowest layer leans furthest, so this is sized for that one.
-            size: { CGSize(width: $0.width * 2.4, height: 0) }
+            // upwind edge, and a screen-width line leaves that side dry.
+            size: { CGSize(width: $0.width * 2.4, height: EmitterPreset.bandThickness) }
         )
+    }
+
+    private enum Rain {
+        /// On-screen fall speed of the nearest band, pt/s. A big drop's terminal velocity is
+        /// 6–9 m/s (Atlas et al. 1973: v = 9.65 − 10.3·e^(−0.6·D), D in mm), and this is that
+        /// speed at the distance where a 2 mm drop is about three points wide.
+        static let nearSpeed: CGFloat = 640
+        static let nearWidth: CGFloat = 2.8
+        static let nearAlpha: CGFloat = 0.8
+        /// Streak = speed × one exposure. 1/25 s, on the long side of a video shutter: the eye
+        /// integrates longer than a camera does, and short streaks read as confetti.
+        static let exposure: CGFloat = 0.04
+        /// Fall a drop must survive before it may die — the tallest display in points (6K at
+        /// 2x is 1692) — so no drop pops out of existence mid-screen.
+        static let travel: CGFloat = 1800
+
+        static let field = [
+            DepthBand(z: 1.0, birthRate: 22), DepthBand(z: 1.4, birthRate: 32),
+            DepthBand(z: 1.9, birthRate: 42), DepthBand(z: 2.6, birthRate: 50),
+            DepthBand(z: 3.5, birthRate: 56),
+        ]
     }
 
     // MARK: - Mist
@@ -351,87 +418,91 @@ final class ParticleOverlayView: NSView {
     /// confetti. Buoyancy, not gravity: hot gas is still rising when the spark
     /// reaches the top, so the acceleration points the same way as the velocity.
     private static let embersPreset: EmitterPreset = {
-        let makeLayer = {
-            (scale: CGFloat, velocity: CGFloat, birthRate: Float,
-             radius: CGFloat, life: Float, drift: CGFloat) -> CAEmitterCell in
+        let field = [
+            DepthBand(z: 1.0, birthRate: 5), DepthBand(z: 1.4, birthRate: 8),
+            DepthBand(z: 1.9, birthRate: 12), DepthBand(z: 2.6, birthRate: 15),
+        ]
+        let cells = field.enumerated().map { index, band -> CAEmitterCell in
             let cell = CAEmitterCell()
+            let speed = band.scaled(75)
+            let alpha = band.alpha(0.9)
+            // Every band climbs the same ~500 pt before it burns out.
+            let life = Float(500 / speed)
             cell.contents = ParticleTextures.softCircle(
-                radius: radius, color: NSColor.white.cgColor
+                radius: max(band.scaled(3.8), 1.2), color: NSColor.white.cgColor
             )
-            cell.birthRate = birthRate
+            cell.birthRate = band.birthRate
             cell.lifetime = life
             cell.lifetimeRange = life * 0.4
-            cell.velocity = velocity
-            cell.velocityRange = velocity * 0.5
-            cell.emissionLongitude = .pi / 2          // straight up
+            cell.velocity = speed
+            cell.velocityRange = speed * 0.5
+            cell.emissionLongitude = .pi / 2 // straight up
             cell.emissionRange = .pi / 7
-            cell.scale = scale
-            cell.scaleRange = scale * 0.6
-            cell.scaleSpeed = -scale / CGFloat(life) * 0.5
+            cell.scale = 1
+            cell.scaleRange = 0.6
+            cell.scaleSpeed = -0.5 / CGFloat(life)
             cell.alphaRange = 0.35
-            cell.alphaSpeed = -1.0 / life
-            cell.yAcceleration = 14
-            cell.xAcceleration = drift
-            cell.color = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.42, alpha: 0.9).cgColor
+            cell.alphaSpeed = -Float(alpha) / life
+            cell.yAcceleration = band.scaled(14)
+            // Alternate bands drift opposite ways so the column as a whole wavers.
+            cell.xAcceleration = (index.isMultiple(of: 2) ? 1 : -1) * band.scaled(5)
+            cell.color = NSColor(calibratedRed: 1.0, green: 0.82, blue: 0.42, alpha: alpha).cgColor
             // Cools to a deep red over the spark's life.
             cell.greenSpeed = -0.5 / life
             cell.blueSpeed = -0.4 / life
             return cell
         }
 
-        let near = makeLayer(1.3, 70, 6, 3.5, 7, 6)
-        let mid = makeLayer(0.8, 52, 14, 2.5, 9, -4)
-        let far = makeLayer(0.45, 36, 26, 1.8, 11, 3)
-
         return EmitterPreset(
-            cells: [near, mid, far],
-            shape: .line,
+            cells: cells,
+            shape: .rectangle,
             renderMode: .additive,
             position: { CGPoint(x: $0.midX, y: $0.minY) },
-            size: { CGSize(width: $0.width * 1.1, height: 0) }
+            size: { CGSize(width: $0.width * 1.1, height: EmitterPreset.bandThickness) }
         )
     }()
 
     // MARK: - Bubbles
 
-    /// Rising bubbles, as seen from inside the water. Bigger bubbles rise faster —
-    /// the real relation, and what sells the depth: large near ones climb past small
-    /// far ones. `CAEmitterCell` can't make a particle wander, so the sideways wobble
-    /// is faked across banks instead of within one — the two halves drift in opposite
+    /// Rising bubbles, as seen from inside the water. Bigger bubbles rise faster — the
+    /// real relation, and what sells the depth: large near ones climb past small far
+    /// ones. `CAEmitterCell` can't make a particle wander, so the sideways wobble is
+    /// faked across bands instead of within one — alternate bands drift in opposite
     /// directions, so the field as a whole meanders though no single bubble does.
     private static let bubblesPreset: EmitterPreset = {
-        let makeLayer = {
-            (scale: CGFloat, velocity: CGFloat, birthRate: Float,
-             radius: CGFloat, alpha: CGFloat, drift: CGFloat) -> CAEmitterCell in
+        let field = [
+            DepthBand(z: 1.0, birthRate: 2), DepthBand(z: 1.4, birthRate: 3),
+            DepthBand(z: 1.9, birthRate: 5), DepthBand(z: 2.6, birthRate: 6),
+        ]
+        let cells = field.enumerated().map { index, band -> CAEmitterCell in
             let cell = CAEmitterCell()
-            cell.contents = ParticleTextures.bubble(radius: radius, color: NSColor.white.cgColor)
-            cell.birthRate = birthRate
-            cell.lifetime = 22
-            cell.lifetimeRange = 6
-            cell.velocity = velocity
-            cell.velocityRange = velocity * 0.35
+            let speed = band.scaled(48)
+            let alpha = band.alpha(0.5)
+            cell.contents = ParticleTextures.bubble(radius: band.scaled(16), color: NSColor.white.cgColor)
+            cell.birthRate = band.birthRate
+            cell.lifetime = band.lifetime(speed: speed)
+            cell.lifetimeRange = cell.lifetime * 0.25
+            cell.velocity = speed
+            cell.velocityRange = speed * 0.35
             cell.emissionLongitude = .pi / 2
             cell.emissionRange = .pi / 12
-            cell.scale = scale
-            cell.scaleRange = scale * 0.45
+            cell.scale = 1
+            cell.scaleRange = 0.35
             cell.alphaRange = Float(alpha * 0.4)
+            cell.alphaSpeed = band.fade(alpha: alpha, speed: speed, lifetime: cell.lifetime)
             cell.spin = 0.2
             cell.spinRange = 0.6
-            cell.xAcceleration = drift
+            cell.xAcceleration = (index.isMultiple(of: 2) ? 1.6 : -1.2) * band.scaled(1)
             cell.color = NSColor(white: 1, alpha: alpha).cgColor
             return cell
         }
 
-        let near = makeLayer(1.25, 46, 3, 15, 0.5, 1.6)
-        let mid = makeLayer(0.75, 32, 7, 11, 0.38, -1.2)
-        let far = makeLayer(0.4, 21, 14, 8, 0.26, 0.9)
-
         return EmitterPreset(
-            cells: [near, mid, far],
-            shape: .line,
+            cells: cells,
+            shape: .rectangle,
             renderMode: .unordered,
             position: { CGPoint(x: $0.midX, y: $0.minY) },
-            size: { CGSize(width: $0.width, height: 0) }
+            size: { CGSize(width: $0.width, height: EmitterPreset.bandThickness) }
         )
     }()
 
@@ -474,12 +545,12 @@ final class ParticleOverlayView: NSView {
 
         return EmitterPreset(
             cells: [bright, faint],
-            shape: .line,
+            shape: .rectangle,
             renderMode: .additive,
             // Along the top, reaching well past the upwind edge so the slant
             // does not leave one corner empty.
             position: { CGPoint(x: $0.midX, y: $0.maxY) },
-            size: { CGSize(width: $0.width * 3.0, height: 0) }
+            size: { CGSize(width: $0.width * 3.0, height: EmitterPreset.bandThickness) }
         )
     }()
 
@@ -548,90 +619,95 @@ final class ParticleOverlayView: NSView {
 
     // MARK: - Falling Leaves
 
-    private static let leavesPreset: EmitterPreset = {
-        let palette: [CGColor] = [
-            NSColor(calibratedRed: 0.85, green: 0.4, blue: 0.1, alpha: 1).cgColor,
-            NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.1, alpha: 1).cgColor,
-            NSColor(calibratedRed: 0.6, green: 0.3, blue: 0.1, alpha: 1).cgColor
+    /// Autumn leaves in depth. One cell per band with the colour *ranges* spanning
+    /// orange, gold and brown — one cell per colour made colour the depth cue.
+    private static func leavesPreset(tilt: CGFloat) -> EmitterPreset {
+        let field = [
+            DepthBand(z: 1.0, birthRate: 3), DepthBand(z: 1.4, birthRate: 5),
+            DepthBand(z: 1.9, birthRate: 7), DepthBand(z: 2.6, birthRate: 9),
         ]
-        
-        var cells: [CAEmitterCell] = []
-        for (i, color) in palette.enumerated() {
-            let scaleMultiplier = CGFloat(1.0 - Float(i) * 0.25)
-            
+        let cells = field.map { band -> CAEmitterCell in
             let cell = CAEmitterCell()
-            cell.contents = ParticleTextures.leaf(width: 14, height: 9, color: NSColor.white.cgColor)
-            cell.birthRate = 8 * Float(i + 1)
-            cell.lifetime = 16
-            cell.lifetimeRange = 8
-            cell.velocity = 35 * scaleMultiplier
-            cell.velocityRange = 20 * scaleMultiplier
-            cell.emissionLongitude = -.pi / 2
+            let speed = band.scaled(60)
+            let alpha = band.alpha(0.95)
+            cell.contents = ParticleTextures.leaf(
+                width: band.scaled(22), height: band.scaled(14), color: NSColor.white.cgColor
+            )
+            cell.birthRate = band.birthRate
+            cell.lifetime = band.lifetime(speed: speed)
+            cell.lifetimeRange = cell.lifetime * 0.3
+            cell.velocity = speed
+            cell.velocityRange = speed * 0.5
+            cell.emissionLongitude = -.pi / 2 + tilt
             cell.emissionRange = .pi / 4
-            cell.scale = 1.2 * scaleMultiplier
-            cell.scaleRange = 0.4 * scaleMultiplier
+            cell.scale = 1
+            cell.scaleRange = 0.3
             cell.alphaRange = 0.3
-            cell.spin = 1.5
-            cell.spinRange = 2.0
-            cell.xAcceleration = 20 * scaleMultiplier
-            cell.yAcceleration = -10 * scaleMultiplier
-            cell.color = color
-            
-            cells.append(cell)
+            cell.alphaSpeed = band.fade(alpha: alpha, speed: speed, lifetime: cell.lifetime)
+            applyTumble(to: cell, tilt: tilt, calm: 1.5)
+            cell.xAcceleration = flutterDrift(tilt: tilt, near: 20, band: band)
+            cell.yAcceleration = -band.scaled(10)
+            cell.color = NSColor(calibratedRed: 0.8, green: 0.5, blue: 0.12, alpha: alpha).cgColor
+            cell.redRange = 0.15
+            cell.greenRange = 0.22
+            cell.blueRange = 0.06
+            return cell
         }
 
         return EmitterPreset(
             cells: cells,
-            shape: .line,
+            shape: .rectangle,
             renderMode: .unordered,
-            position: { CGPoint(x: $0.midX - $0.width * 0.2, y: $0.maxY) },
-            size: { CGSize(width: $0.width * 1.5, height: 0) }
+            position: { CGPoint(x: $0.midX, y: $0.maxY) },
+            size: { CGSize(width: $0.width * 2.4, height: EmitterPreset.bandThickness) }
         )
-    }()
+    }
 
     // MARK: - Sakura
 
-    private static let sakuraPreset: EmitterPreset = {
-        let baseColor = NSColor(calibratedRed: 1.0, green: 0.72, blue: 0.82, alpha: 1.0).cgColor
-        
-        let createLayer = { (scale: CGFloat, velocity: CGFloat, birthRate: Float, alpha: Float, sizeOffset: CGFloat) -> CAEmitterCell in
+    /// Cherry petals in depth: the near ones are big, quick and bright, the far ones a pale
+    /// drift of many. They lean with the wind like the snow and tumble harder in it.
+    private static func sakuraPreset(tilt: CGFloat) -> EmitterPreset {
+        let field = [
+            DepthBand(z: 1.0, birthRate: 3), DepthBand(z: 1.4, birthRate: 5),
+            DepthBand(z: 1.9, birthRate: 7), DepthBand(z: 2.6, birthRate: 8),
+        ]
+        let cells = field.map { band -> CAEmitterCell in
             let cell = CAEmitterCell()
-            cell.contents = ParticleTextures.sakuraPetal(width: 16 + sizeOffset, height: 14 + sizeOffset, color: NSColor.white.cgColor)
-            cell.birthRate = birthRate
-            cell.lifetime = 15
-            cell.lifetimeRange = 5
-            cell.velocity = velocity
-            cell.velocityRange = velocity * 0.4
-            cell.emissionLongitude = -.pi / 2
+            let speed = band.scaled(70)
+            let alpha = band.alpha(0.9)
+            cell.contents = ParticleTextures.sakuraPetal(
+                width: band.scaled(24), height: band.scaled(20), color: NSColor.white.cgColor
+            )
+            cell.birthRate = band.birthRate
+            cell.lifetime = band.lifetime(speed: speed)
+            cell.lifetimeRange = cell.lifetime * 0.3
+            cell.velocity = speed
+            cell.velocityRange = speed * 0.4
+            cell.emissionLongitude = -.pi / 2 + tilt
             cell.emissionRange = .pi / 4
-            cell.scale = scale
-            cell.scaleRange = scale * 0.3
-            cell.alphaRange = alpha * 0.3
-            cell.spin = 1.0
-            cell.spinRange = 2.0
-            cell.xAcceleration = 25 * scale
-            cell.yAcceleration = -12 * scale
-            cell.color = baseColor.copy(alpha: CGFloat(alpha)) ?? baseColor
-            
+            cell.scale = 1
+            cell.scaleRange = 0.25
+            cell.alphaRange = Float(alpha * 0.3)
+            cell.alphaSpeed = band.fade(alpha: alpha, speed: speed, lifetime: cell.lifetime)
+            applyTumble(to: cell, tilt: tilt, calm: 1.0)
+            cell.xAcceleration = flutterDrift(tilt: tilt, near: 25, band: band)
+            cell.yAcceleration = -band.scaled(12)
+            cell.color = NSColor(calibratedRed: 1.0, green: 0.72, blue: 0.82, alpha: alpha).cgColor
             cell.redRange = 0.1
             cell.greenRange = 0.1
             cell.blueRange = 0.1
-            
             return cell
         }
 
-        let near = createLayer(1.4, 55, 6, 0.7, 4.0)
-        let mid = createLayer(0.9, 40, 15, 0.9, 0.0)
-        let far = createLayer(0.5, 25, 30, 0.5, -4.0)
-
         return EmitterPreset(
-            cells: [near, mid, far],
-            shape: .line,
+            cells: cells,
+            shape: .rectangle,
             renderMode: .unordered,
-            position: { CGPoint(x: $0.midX - $0.width * 0.3, y: $0.maxY) },
-            size: { CGSize(width: $0.width * 1.6, height: 0) }
+            position: { CGPoint(x: $0.midX, y: $0.maxY) },
+            size: { CGSize(width: $0.width * 2.4, height: EmitterPreset.bandThickness) }
         )
-    }()
+    }
 
     // MARK: - Dust
     // Sun-shaft motes: tiny warm specks drifting in all directions with a very slow
@@ -782,14 +858,20 @@ private enum ParticleTextures {
         ctx.addPath(taper)
         ctx.clip()
 
-        // Taper across the width so the edges do not alias into hard bars.
+        // Taper across the width so the edges do not alias into hard bars. Normalised to
+        // the brightest column: a one- or two-column streak has no centre column, and
+        // unnormalised it came out at a quarter of its colour — the far rain bands were
+        // all but invisible (measured: peak 21/255 against a lit threshold of 24).
         let steps = max(Int(ceil(width)), 2)
-        for column in 0..<steps {
+        let edges = stride(from: 0, to: steps, by: 1).map { column -> CGFloat in
             let t = (CGFloat(column) + 0.5) / CGFloat(steps)
-            let edge = 1 - abs(t * 2 - 1)
+            return 1 - abs(t * 2 - 1)
+        }
+        let peak = edges.max() ?? 1
+        for (column, edge) in edges.enumerated() {
             ctx.saveGState()
             ctx.clip(to: CGRect(x: CGFloat(column), y: 0, width: 1, height: length))
-            ctx.setAlpha(edge * edge)
+            ctx.setAlpha((edge / peak) * (edge / peak))
             ctx.drawLinearGradient(
                 along,
                 start: CGPoint(x: 0, y: length),
@@ -835,16 +917,26 @@ private enum ParticleTextures {
         let widthF = CGFloat(w)
         let heightF = CGFloat(h)
 
+        // Base at the bottom, sides bulging, and the notch a cherry petal has at
+        // its tip — the earlier symmetric lozenge read as a pink blob.
         let path = CGMutablePath()
-        let tipX = widthF / 2
-        path.move(to: CGPoint(x: tipX, y: 0))
+        let midX = widthF / 2
+        path.move(to: CGPoint(x: midX, y: 0))
         path.addQuadCurve(
-            to: CGPoint(x: tipX, y: heightF),
-            control: CGPoint(x: widthF * 1.15, y: heightF * 0.5)
+            to: CGPoint(x: widthF * 0.82, y: heightF * 0.96),
+            control: CGPoint(x: widthF * 1.18, y: heightF * 0.42)
         )
         path.addQuadCurve(
-            to: CGPoint(x: tipX, y: 0),
-            control: CGPoint(x: -widthF * 0.15, y: heightF * 0.5)
+            to: CGPoint(x: midX, y: heightF * 0.78),
+            control: CGPoint(x: widthF * 0.66, y: heightF * 0.98)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: widthF * 0.18, y: heightF * 0.96),
+            control: CGPoint(x: widthF * 0.34, y: heightF * 0.98)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: midX, y: 0),
+            control: CGPoint(x: -widthF * 0.18, y: heightF * 0.42)
         )
         path.closeSubpath()
 
