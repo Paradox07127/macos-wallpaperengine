@@ -41,6 +41,104 @@ struct WPEInPlaceAssetReadingTests {
         return dir
     }
 
+    @MainActor
+    @Test("Restored scene packages stay within their source folder", arguments: [
+        "plain", "internal-link", "windows", "external-link", "traversal", "absolute", "directory",
+    ])
+    func restoredPackageSourceIsContained(kind: String) throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("source", isDirectory: true)
+        let nested = folder.appendingPathComponent("nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        let bytes = Data("safe-scene-json".utf8)
+        let outside = root.appendingPathComponent("outside.pkg")
+        try makePackageData([("scene.json", Data("outside-sentinel".utf8))]).write(to: outside)
+        let actual = nested.appendingPathComponent("actual.pkg")
+        try makePackageData([("scene.json", bytes)]).write(to: actual)
+        let fileName: String
+        switch kind {
+        case "windows": fileName = "nested\\actual.pkg"
+        case "traversal": fileName = "../outside.pkg"
+        case "absolute": fileName = outside.path
+        case "directory": fileName = "nested"
+        case "internal-link", "external-link":
+            fileName = "scene.pkg"
+            try FileManager.default.createSymbolicLink(
+                at: folder.appendingPathComponent(fileName),
+                withDestinationURL: kind == "internal-link" ? actual : outside
+            )
+        default: fileName = "nested/actual.pkg"
+        }
+        let descriptor = SceneDescriptor(
+            workshopID: "fixture", cacheRelativePath: "wpe-cache/fixture",
+            entryFile: "scene.json", capabilityTier: .degraded,
+            assetStorage: .packageSource(fileName: fileName)
+        )
+        let bookmark = Data("fixture-bookmark".utf8)
+        let origin = WPEOrigin(
+            workshopID: "fixture", title: "Fixture", originalType: .scene,
+            sourceFolderBookmark: bookmark, cacheRelativePath: nil, previewFileName: nil
+        )
+        let builder = AmbientWallpaperSessionBuilder(
+            bookmarkResolver: SecurityScopedBookmarkResolver(
+                resolveData: { _ in (folder, false) }, refreshData: { _ in bookmark }
+            ),
+            relocateWorkshopSource: { _ in nil }
+        )
+        let assets = builder.sceneAssets(
+            descriptor: descriptor, origin: origin,
+            cacheURL: root.appendingPathComponent("missing-cache"),
+            fileManager: .default, onOriginBookmarkRefresh: { _, _ in }
+        )
+        if ["plain", "internal-link", "windows"].contains(kind) {
+            let provider = try #require(assets?.provider)
+            let data = try provider.data(atRelativePath: "scene.json")
+            #expect(data == bytes)
+        } else {
+            #expect(assets == nil)
+        }
+    }
+
+    @MainActor
+    @Test("An escaping legacy package leaves the loose source fallback available")
+    func legacyPackageEscapeFallsBackToLooseSource() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("source", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let bytes = Data("loose-scene".utf8)
+        try bytes.write(to: folder.appendingPathComponent("scene.json"))
+        let outside = root.appendingPathComponent("outside.pkg")
+        try makePackageData([("scene.json", Data("outside-sentinel".utf8))]).write(to: outside)
+        try FileManager.default.createSymbolicLink(
+            at: folder.appendingPathComponent("scene.pkg"), withDestinationURL: outside
+        )
+        let bookmark = Data("fixture-bookmark".utf8)
+        let origin = WPEOrigin(
+            workshopID: "fixture", title: "Fixture", originalType: .scene,
+            sourceFolderBookmark: bookmark, cacheRelativePath: nil, previewFileName: nil
+        )
+        let builder = AmbientWallpaperSessionBuilder(
+            bookmarkResolver: SecurityScopedBookmarkResolver(
+                resolveData: { _ in (folder, false) }, refreshData: { _ in bookmark }
+            ),
+            relocateWorkshopSource: { _ in nil }
+        )
+        let descriptor = SceneDescriptor(
+            workshopID: "fixture", cacheRelativePath: "wpe-cache/fixture",
+            entryFile: "scene.json", capabilityTier: .degraded, assetStorage: .cache
+        )
+        let assets = builder.sceneAssets(
+            descriptor: descriptor, origin: origin,
+            cacheURL: root.appendingPathComponent("missing-cache"),
+            fileManager: .default, onOriginBookmarkRefresh: { _, _ in }
+        )
+        let provider = try #require(assets?.provider)
+        let data = try provider.data(atRelativePath: "scene.json")
+        #expect(data == bytes)
+    }
+
     // MARK: - canonicalLookupName
 
     @Test("canonicalLookupName normalizes and rejects traversal")
