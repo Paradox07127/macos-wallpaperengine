@@ -300,4 +300,50 @@ grep -q '^app=Loomscreen Pro.app$' <<<"$pro_plan"
 grep -q '^bundle_id=com.loomscreen.pro$' <<<"$pro_plan"
 grep -q '^dmg=Loomscreen-Pro-0.0.0.dmg$' <<<"$pro_plan"
 
+# macOS refuses to load an appex whose CFBundleVersion differs from its containing
+# app's. Both shipped 0.6.5 with the extension still stamped 0.6.1/2, because the
+# appex plists hardcoded the numbers while the apps interpolated MARKETING_VERSION.
+# Keeping the keys as the variable is what makes a version bump reach the extension.
+for appex_plist in SystemWallpaperProviderConfig/Info-Pro.plist SystemWallpaperProviderConfig/Info-Lite.plist; do
+  for key in CFBundleVersion CFBundleShortVersionString; do
+    value="$(plutil -extract "$key" raw -- "$appex_plist" 2>/dev/null || true)"
+    if [[ "$value" != '$(MARKETING_VERSION)' ]]; then
+      echo "ERROR: $appex_plist $key is '$value'; it must stay \$(MARKETING_VERSION) so the extension tracks its parent app." >&2
+      exit 1
+    fi
+  done
+done
+
+# The extension targets must also carry the same MARKETING_VERSION as the apps that
+# embed them — the variable above only makes each target follow its own setting.
+# Derived, never hardcoded: pinning a number here would go red on every release.
+python3 - "$project_file" <<'PYGATE' || exit 1
+import re, sys
+source = open(sys.argv[1]).read()
+wanted = {
+    "com.loomscreen.pro": "Pro app",
+    "com.loomscreen": "Lite app",
+    "com.loomscreen.pro.wallpaper": "Pro extension",
+    "com.loomscreen.wallpaper": "Lite extension",
+}
+found = {}
+for block in re.finditer(r"isa = XCBuildConfiguration;(.*?)\n\t\t\};", source, re.S):
+    body = block.group(1)
+    ident = re.search(r"PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);", body)
+    version = re.search(r"MARKETING_VERSION = ([^;]+);", body)
+    if ident and version and ident.group(1) in wanted:
+        found.setdefault(ident.group(1), set()).add(version.group(1))
+missing = [name for ident, name in wanted.items() if ident not in found]
+if missing:
+    sys.exit("ERROR: no MARKETING_VERSION found for: " + ", ".join(missing))
+versions = {ident: sorted(values) for ident, values in found.items()}
+distinct = {v for values in versions.values() for v in values}
+if len(distinct) != 1:
+    detail = "; ".join(f"{wanted[i]}={'/'.join(v)}" for i, v in sorted(versions.items()))
+    sys.exit(
+        "ERROR: an app and the extension it embeds must share one MARKETING_VERSION, "
+        "or macOS refuses to load the appex — " + detail
+    )
+PYGATE
+
 echo "Release tooling contract passed for Lite and Pro."
