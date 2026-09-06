@@ -45,6 +45,11 @@ struct WidgetDragModifier: ViewModifier {
 /// Board-relative coordinate space for drag gestures.
 enum MonitorBoardCoordinateSpace {
     static let name = "MonitorBoard"
+    /// The edit toolbar's own space. The Add Widget frame is published in it
+    /// rather than in the board's, because the toolbar is drawn through a scale
+    /// the board is not — a frame relative to the toolbar is the same number at
+    /// every preview scale.
+    static let toolbar = "MonitorBoardEditToolbar"
 }
 
 // MARK: - Floating control bar (size toggle + settings + remove)
@@ -176,7 +181,7 @@ struct MonitorBoardEditToolbar: View {
                 GeometryReader { proxy in
                     Color.clear.preference(
                         key: MonitorAddButtonFrameKey.self,
-                        value: proxy.frame(in: .named(MonitorBoardCoordinateSpace.name))
+                        value: proxy.frame(in: .named(MonitorBoardCoordinateSpace.toolbar))
                     )
                 }
             )
@@ -203,6 +208,7 @@ struct MonitorBoardEditToolbar: View {
         .overlay(
             Capsule(style: .continuous).strokeBorder(DesignTokens.Colors.BoardChrome.hairline, lineWidth: 1)
         )
+        .coordinateSpace(name: MonitorBoardCoordinateSpace.toolbar)
     }
 }
 
@@ -383,12 +389,26 @@ struct MonitorPlacementAccessibilityActions: ViewModifier {
 
 // MARK: - Board-chrome layout preference keys
 
-/// Add Widget button frame (board coords) so the catalog can anchor beneath it.
+/// Add Widget button frame, in the toolbar's own coords, so the catalog can
+/// anchor beneath it. `MonitorBoardChromeMetrics.catalogAnchor` puts the two
+/// keys together into a board rect.
 struct MonitorAddButtonFrameKey: PreferenceKey {
     static let defaultValue: CGRect = .zero
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
         let next = nextValue()
         if next != .zero { value = next }
+    }
+}
+
+/// The edit toolbar's drawn box in board coords. Read outside the chrome scale,
+/// so it is pure layout geometry whatever the preview does to the drawing.
+struct MonitorBoardToolbarFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero {
+            value = next
+        }
     }
 }
 
