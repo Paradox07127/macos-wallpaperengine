@@ -120,12 +120,6 @@ final class CPUWidgetTests: XCTestCase {
         XCTAssertEqual(CPUWidgetView.rpmValue(-10), "0")
     }
 
-    func testTemperatureWordThresholds() {
-        XCTAssertEqual(CPUWidgetView.temperatureWord(42), "cool")
-        XCTAssertEqual(CPUWidgetView.temperatureWord(48), "warm")
-        XCTAssertEqual(CPUWidgetView.temperatureWord(58), "hot")
-    }
-
     func testCpuTextRoundsAndClamps() {
         XCTAssertEqual(CPUWidgetView.cpuText(52.4), "52")
         XCTAssertEqual(CPUWidgetView.cpuText(0.44), "0.4")
@@ -212,5 +206,134 @@ final class CPUWidgetTests: XCTestCase {
 
     private func place(_ size: MonitorWidgetSize) -> MonitorWidgetPlacement {
         MonitorWidgetPlacement(kind: .cpu, size: size)
+    }
+
+    // MARK: - Core heat strip geometry (many-core machines)
+
+    /// Width one cell gets in a row of `cellsPerRow` equal-flexible cells laid
+    /// out by `HStack(spacing: gap)` — SwiftUI's own rule, restated here so the
+    /// numbers below are arithmetic rather than a screenshot.
+    private func cellWidth(cellsPerRow: Int, columnWidth: CGFloat, gap: CGFloat) -> CGFloat {
+        (columnWidth - gap * CGFloat(cellsPerRow - 1)) / CGFloat(cellsPerRow)
+    }
+
+    /// M tile: 356 pt wide − 32 pt content inset = 324; − 104 pt gauge column
+    /// − 7 pt row spacing = 213 for the right column; − 9 pt cluster spacing,
+    /// halved between two clusters.
+    private let compactClusterColumn: CGFloat = 102
+
+    /// L tile: 324 pt of content − 9 pt spacing, halved with the process column.
+    private let tallClusterColumn: CGFloat = 157.5
+
+    /// `HeatCell` draws a 1 pt `strokeBorder`, which insets from both edges, so a
+    /// cell narrower than this has more border than fill.
+    private let legibleCellWidth: CGFloat = 6
+
+    func testCoreStripRowsReproducesTheShippedMediumRuleUpToSixteenCores() {
+        for count in 1 ... 16 {
+            let shipped = count > 8 ? 2 : 1
+            XCTAssertEqual(
+                CPUWidgetView.coreStripRows(coreCount: count, cap: CPUWidgetView.compactCoreCellsPerRow),
+                shipped,
+                "M strip re-lays out a \(count)-core cluster that used to render correctly"
+            )
+        }
+    }
+
+    func testCoreStripRowsKeepsTwelveCoreClustersOnOneRowInLarge() {
+        for count in 1 ... 12 {
+            XCTAssertEqual(
+                CPUWidgetView.coreStripRows(coreCount: count, cap: CPUWidgetView.tallCoreCellsPerRow),
+                1,
+                "L strip wraps a \(count)-core cluster that used to fit on one row"
+            )
+        }
+    }
+
+    func testCoreStripCellsPerRowBalancesTheRowsItSplitsInto() {
+        XCTAssertEqual(CPUWidgetView.coreStripCellsPerRow(coreCount: 18, rows: 3), 6)
+        XCTAssertEqual(CPUWidgetView.coreStripCellsPerRow(coreCount: 24, rows: 2), 12)
+        XCTAssertEqual(CPUWidgetView.coreStripCellsPerRow(coreCount: 20, rows: 3), 7)
+        XCTAssertEqual(CPUWidgetView.coreStripCellsPerRow(coreCount: 12, rows: 1), 12)
+    }
+
+    /// A 36-core Mac Studio, split the way Apple silicon splits: the big cluster
+    /// is what used to be squeezed. Control group first — the single row the L
+    /// strip drew before is measurably below the legibility floor, so the floor
+    /// is discriminating rather than trivially satisfied.
+    func testThirtySixCoreClusterStaysLegibleInTheLargeTile() {
+        let biggestCluster = 24
+        let beforeWrapping = cellWidth(cellsPerRow: biggestCluster, columnWidth: tallClusterColumn,
+                                       gap: CPUWidgetView.tallCoreCellGap)
+        XCTAssertLessThan(beforeWrapping, legibleCellWidth, "Control group: the un-wrapped row was not actually too narrow")
+
+        let cap = CPUWidgetView.tallCoreCellsPerRow
+        for clusterSize in [12, 24, 36] {
+            let rows = CPUWidgetView.coreStripRows(coreCount: clusterSize, cap: cap)
+            let perRow = CPUWidgetView.coreStripCellsPerRow(coreCount: clusterSize, rows: rows)
+            let width = cellWidth(cellsPerRow: perRow, columnWidth: tallClusterColumn,
+                                  gap: CPUWidgetView.tallCoreCellGap)
+            XCTAssertGreaterThanOrEqual(width, legibleCellWidth,
+                                        "L strip draws \(clusterSize) cores at \(width) pt per cell")
+        }
+    }
+
+    /// The M strip already wrapped, so 36 cores were never squeezed there; this
+    /// records that, and that the wrap now applied makes them wider still.
+    func testThirtySixCoreClusterWasAlreadyLegibleInTheMediumTile() {
+        let biggestCluster = 24
+        let beforeCap = cellWidth(cellsPerRow: 12, columnWidth: compactClusterColumn,
+                                  gap: CPUWidgetView.compactCoreCellGap) // old rule: 2 rows of 12
+        XCTAssertGreaterThanOrEqual(beforeCap, legibleCellWidth)
+
+        let rows = CPUWidgetView.coreStripRows(coreCount: biggestCluster, cap: CPUWidgetView.compactCoreCellsPerRow)
+        let perRow = CPUWidgetView.coreStripCellsPerRow(coreCount: biggestCluster, rows: rows)
+        let afterCap = cellWidth(cellsPerRow: perRow, columnWidth: compactClusterColumn,
+                                 gap: CPUWidgetView.compactCoreCellGap)
+        XCTAssertGreaterThan(afterCap, beforeCap)
+    }
+
+    func testCoreStripBandHeightHoldsThroughTwoRowsThenGrowsPerRow() {
+        let base: CGFloat = 13.75 // max(scale.caption * 1.25, 13) at M's caption of 11
+        let gap = CPUWidgetView.compactCoreCellGap
+        XCTAssertEqual(CPUWidgetView.coreStripBandHeight(base: base, rows: 1, gap: gap), base, accuracy: 0.0001)
+        XCTAssertEqual(CPUWidgetView.coreStripBandHeight(base: base, rows: 2, gap: gap), base, accuracy: 0.0001)
+        XCTAssertEqual(CPUWidgetView.coreStripBandHeight(base: base, rows: 3, gap: gap), 21.625, accuracy: 0.0001)
+        XCTAssertEqual(CPUWidgetView.coreStripBandHeight(base: base, rows: 4, gap: gap), 29.5, accuracy: 0.0001)
+
+        // Every row is the height a two-row band already gave its cells, so a
+        // third row lengthens the strip instead of halving the cells again.
+        let threeRow = CPUWidgetView.coreStripBandHeight(base: base, rows: 3, gap: gap)
+        XCTAssertEqual((threeRow - gap * 2) / 3, (base - gap) / 2, accuracy: 0.0001)
+    }
+
+    func testCoreStripGeometryAbsorbsDegenerateInput() {
+        XCTAssertEqual(CPUWidgetView.coreStripRows(coreCount: 0, cap: 8), 1)
+        XCTAssertEqual(CPUWidgetView.coreStripRows(coreCount: -4, cap: 8), 1)
+        XCTAssertEqual(CPUWidgetView.coreStripRows(coreCount: 8, cap: 0), 1)
+        XCTAssertEqual(CPUWidgetView.coreStripCellsPerRow(coreCount: 0, rows: 0), 1)
+        XCTAssertEqual(CPUWidgetView.coreStripBandHeight(base: 13.75, rows: 0, gap: 2), 13.75, accuracy: 0.0001)
+    }
+
+    /// The 36-core case end to end: the strip's own grouping still slices the
+    /// per-core array by cluster, and each cluster wraps to a legible row.
+    func testThirtySixCoreTopologySlicesAndWrapsPerCluster() {
+        let perCore = (0 ..< 36).map { Double($0) / 36 }
+        let info = MonitorCPUInfo(
+            deviceName: "Apple M5 Ultra",
+            coreCount: 36,
+            coreGroups: [
+                MonitorCPUCoreGroup(name: "Efficiency", physicalCount: 12),
+                MonitorCPUCoreGroup(name: "Performance", physicalCount: 24),
+            ]
+        )
+        let groups = CPUWidgetView.coreGroupLoads(perCore: perCore, cpuInfo: info)
+        XCTAssertEqual(groups?.map(\.loads.count), [12, 24])
+        XCTAssertEqual(CPUWidgetView.coreCountText(groups ?? []), "36")
+
+        let rows = (groups ?? []).map {
+            CPUWidgetView.coreStripRows(coreCount: $0.loads.count, cap: CPUWidgetView.tallCoreCellsPerRow)
+        }
+        XCTAssertEqual(rows, [1, 2])
     }
 }

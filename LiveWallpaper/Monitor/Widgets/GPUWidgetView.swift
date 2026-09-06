@@ -52,12 +52,6 @@ struct GPUWidgetView: View {
         guard let age = freshnessSeconds(sampledAt: sampledAt, now: now) else { return true }
         return age > staleThresholdSeconds(samplePeriod: samplePeriod)
     }
-
-    nonisolated static func tempLabel(_ celsius: Double) -> String {
-        if celsius >= 58 { return "hot" }
-        if celsius >= 48 { return "warm" }
-        return "cool"
-    }
 }
 
 // MARK: - Body (cell-height threaded)
@@ -73,6 +67,7 @@ private struct GPUWidgetBody: View {
     var body: some View {
         WidgetContainer(
             label: "GPU",
+            systemImage: WidgetFactory.icon(.gpu),
             cellHeight: cellHeight,
             status: { statusAccessory }
         ) {

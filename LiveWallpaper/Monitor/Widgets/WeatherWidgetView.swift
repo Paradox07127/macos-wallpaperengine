@@ -98,7 +98,7 @@ struct WeatherWidgetView: View {
     /// is never mistaken for a clear sky.
     private func noSky(scale: Design.TypeScale) -> some View {
         VStack(spacing: 6) {
-            Image(systemName: "cloud.sun.rain")
+            Image(systemName: WidgetFactory.icon(.weather))
                 .font(.system(size: scale.hero * 0.6, weight: .regular))
                 .foregroundStyle(Design.inkFaint)
             Text(verbatim: weather?.locationStatus.localizedTitle ?? WidgetFactory.displayName(.weather))

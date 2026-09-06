@@ -160,14 +160,10 @@ struct PreviewArea: View {
                 }
             }
         } else {
-            // Nothing picked yet: the picker is the page, not an overlay.
-            HTMLSourceSection(
-                screen: screen,
-                source: $draft.htmlSource,
-                config: $draft.htmlConfig
-            )
-            .padding(DesignTokens.Spacing.lg)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Nothing picked yet: same skeleton the video empty state uses, so
+            // switching wallpaper type does not switch layout language.
+            HTMLEmptyState(screen: screen, config: draft.htmlConfig)
+                .padding(DesignTokens.Spacing.xl)
         }
     }
 
@@ -189,8 +185,7 @@ struct PreviewArea: View {
             HTMLSourceSection(
                 screen: screen,
                 source: $draft.htmlSource,
-                config: $draft.htmlConfig,
-                floating: true
+                config: $draft.htmlConfig
             )
 
             HTMLInformationOverlay(source: draft.htmlSource, config: draft.htmlConfig)

@@ -72,8 +72,15 @@ struct SettingsWindowLayoutTests {
 
         #expect(!htmlContent.contains("ScrollView"))
         #expect(htmlContent.contains("HTMLPreviewSection("))
-        #expect(htmlContent.contains("HTMLSourceSection("))
-        #expect(htmlContent.contains(".frame(maxWidth: .infinity, maxHeight: .infinity)"))
+        // Empty: the same IllustratedEmptyState skeleton video uses, so switching
+        // wallpaper type does not switch layout language — NOT the source bar
+        // stretched across an otherwise blank page (the old lone grey strip).
+        // The picked branch's floating bar is pinned by
+        // `htmlSourceControlsFloatInsidePreview`, which reads the whole file:
+        // it is declared in `webTitleRow`, past the end of this slice.
+        #expect(htmlContent.contains("HTMLEmptyState("))
+        // The empty branch must not stretch a bar across a blank page again.
+        #expect(!htmlContent.contains("maxHeight: .infinity"))
     }
 
     @Test("The web preview's top band is one row, not stacked layers")
@@ -120,12 +127,14 @@ struct SettingsWindowLayoutTests {
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
         let sourceSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLSourceSection.swift")
 
-        #expect(previewArea.contains("floating: true"))
         #expect(sourceSection.contains("HStack(alignment: .center, spacing: 10)"))
         #expect(sourceSection.contains(".frame(width: 108)"))
-        // Glass only while floating: in page flow the picker has nothing to refract.
-        #expect(sourceSection.contains("struct HTMLSourceChrome"))
-        #expect(sourceSection.contains("content.adaptiveGlassSurface("))
+        // The bar now renders ONLY over the live preview (the empty page went to
+        // `HTMLEmptyState`), which is what earns it glass unconditionally — the
+        // old flat in-flow chrome had nothing behind it to refract.
+        #expect(sourceSection.contains(".adaptiveGlassSurface(.capsule)"))
+        #expect(!sourceSection.contains("struct HTMLSourceChrome"))
+        #expect(!previewArea.contains("floating:"))
     }
 
     @Test("Preview outer padding has one source")

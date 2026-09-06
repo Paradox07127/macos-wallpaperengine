@@ -35,6 +35,7 @@ private struct AIEngineContent: View {
     var body: some View {
         WidgetContainer(
             label: "ANE MEMORY",
+            systemImage: WidgetFactory.icon(.aiEngine),
             cellHeight: cellHeight,
             status: { statusAccessory }
         ) {

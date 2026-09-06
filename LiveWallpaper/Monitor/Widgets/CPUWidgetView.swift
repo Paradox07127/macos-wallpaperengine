@@ -67,16 +67,15 @@ struct CPUWidgetView: View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         WidgetContainer(
             label: "CPU",
-            systemImage: "cpu",
+            systemImage: WidgetFactory.icon(.cpu),
             cellHeight: cellHeight,
             status: { CPUStateDot(fraction: cpuFraction) }
         ) {
             VStack(spacing: scale.label * 0.55) {
                 Spacer(minLength: 0)
                 let hasTemp = tempCapsuleTemp != nil
-                let heroSize = scale.hero * (hasTemp ? 0.9 : 1)
                 ArcGauge(value: cpuFraction, peak: peakFraction) {
-                    heroReadout(fraction: cpuFraction, heroSize: heroSize, unitSize: heroSize * 0.4)
+                    heroReadout(fraction: cpuFraction, baseSize: scale.hero * (hasTemp ? 0.9 : 1))
                 }
                 .frame(maxWidth: hasTemp ? 126 : 138)
 
@@ -106,7 +105,7 @@ struct CPUWidgetView: View {
         let (userPct, sysPct, _) = Self.compositionPercents(user: user, system: sys)
         WidgetContainer(
             label: "CPU",
-            systemImage: "cpu",
+            systemImage: WidgetFactory.icon(.cpu),
             cellHeight: cellHeight,
             status: { CPUStateDot(fraction: cpuFraction) }
         ) {
@@ -123,15 +122,21 @@ struct CPUWidgetView: View {
                                 ? [ArcBand(user, Design.signalAmber), ArcBand(sys, Design.signalSteel)]
                                 : nil
                         ) {
-                            heroReadout(fraction: cpuFraction,
-                                        heroSize: scale.hero * 1.05, unitSize: scale.hero * 1.05 * 0.4)
+                            heroReadout(fraction: cpuFraction, baseSize: scale.hero * 1.05)
                         }
-                        .frame(maxWidth: 96)
+                        // Capped by HEIGHT, not width: the ring is
+                        // `aspectRatio(1, .fit)`, so a `maxWidth: 96` frame
+                        // still reports 96 pt while the ring itself measured
+                        // 67.7 pt on a 356×170 tile — 28.3 pt of dead column
+                        // the trend curve could not reach. A height cap holds
+                        // the ring to the same size (measured identical at
+                        // board scales 0.7…2.0) and lets the frame report the
+                        // ring's own width.
+                        .frame(maxHeight: 96)
                         if showComposition {
                             compositionLegend(userPct: userPct, sysPct: sysPct, scale: scale)
                         }
                     }
-                    .frame(maxWidth: 104, alignment: .leading)
 
                     VStack(alignment: .leading, spacing: scale.label * 0.5) {
                         if showHeatmap {
@@ -158,7 +163,7 @@ struct CPUWidgetView: View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         WidgetContainer(
             label: "CPU",
-            systemImage: "cpu",
+            systemImage: WidgetFactory.icon(.cpu),
             cellHeight: cellHeight,
             status: { CPUStateDot(fraction: cpuFraction) }
         ) {
@@ -170,10 +175,12 @@ struct CPUWidgetView: View {
                 // Keep the header aligned to the standard content inset.
                 HStack(alignment: .center, spacing: scale.label * 0.7) {
                     ArcGauge(value: cpuFraction, peak: peakFraction) {
-                        heroReadout(fraction: cpuFraction,
-                                    heroSize: scale.hero * 0.92, unitSize: scale.hero * 0.92 * 0.4)
+                        heroReadout(fraction: cpuFraction, baseSize: scale.hero * 0.92)
                     }
-                    .frame(width: 96)
+                    // Height cap for the reason spelled out in `mediumBody`;
+                    // the fixed 96 pt width reserved 10.85 pt the 85.15 pt ring
+                    // never used.
+                    .frame(maxHeight: 96)
 
                     VStack(alignment: .leading, spacing: scale.label * 0.45) {
                         if showComposition {
@@ -229,15 +236,16 @@ struct CPUWidgetView: View {
 
     // MARK: - Shared subviews
 
-    @ViewBuilder
-    private func heroReadout(fraction: Double, heroSize: CGFloat, unitSize: CGFloat) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(verbatim: Self.wholeNumber(fraction))
+    private func heroReadout(fraction: Double, baseSize: CGFloat) -> some View {
+        let text = Self.wholeNumber(fraction)
+        let heroSize = Self.heroSize(base: baseSize, digits: text.count)
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(verbatim: text)
                 .font(Design.heroFont(size: heroSize))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkPrimary)
             Text(verbatim: "%")
-                .font(Design.heroFont(size: unitSize))
+                .font(Design.heroFont(size: heroSize * Self.heroUnitRatio))
                 .foregroundStyle(Design.inkFaint)
         }
         .lineLimit(1)
@@ -254,7 +262,7 @@ struct CPUWidgetView: View {
             .lineLimit(1)
     }
 
-    /// B-tier temperature capsule (S) — own cool→warm ramp + a "cool/warm/hot" word.
+    /// B-tier temperature capsule (S) — cool→warm dot plus the reading in the user's unit.
     @ViewBuilder
     private func temperatureCapsule(_ celsius: Double, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.5) {
@@ -380,13 +388,25 @@ struct CPUWidgetView: View {
     @ViewBuilder
     private func coreHeatStrip(scale: Design.TypeScale) -> some View {
         if let groups = Self.coreGroupLoads(perCore: system?.perCore, cpuInfo: system?.cpuInfo), !groups.isEmpty {
-            let bandHeight = max(scale.caption * 1.25, 13)
+            let rowCounts = groups.map {
+                Self.coreStripRows(coreCount: $0.loads.count, cap: Self.compactCoreCellsPerRow)
+            }
+            let bandHeight = Self.coreStripBandHeight(
+                base: max(scale.caption * 1.25, 13),
+                rows: rowCounts.max() ?? 1,
+                gap: Self.compactCoreCellGap
+            )
             HStack(alignment: .top, spacing: scale.label * 0.9) {
-                ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                    let rows = group.loads.count > 8 ? 2 : 1
+                ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+                    let rows = rowCounts[index]
                     VStack(alignment: .leading, spacing: scale.label * 0.3) {
                         clusterLabel(group, scale: scale)
-                        heatCellGrid(group.loads, rows: rows, bandHeight: bandHeight)
+                        heatCellGrid(
+                            group.loads,
+                            rows: rows,
+                            rowHeight: (bandHeight - Self.compactCoreCellGap * CGFloat(rows - 1)) / CGFloat(rows),
+                            gap: Self.compactCoreCellGap
+                        )
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -394,23 +414,21 @@ struct CPUWidgetView: View {
         }
     }
 
-    /// Lay a cluster's cells into `rows` equal rows that together fill `bandHeight` (so a 1-row and a 2-row cluster stand the same height).
+    /// Lay a cluster's cells into `rows` rows of `rowHeight`, padding the short last row so cells stay column-aligned with the rows above.
     @ViewBuilder
-    private func heatCellGrid(_ loads: [Double], rows: Int, bandHeight: CGFloat) -> some View {
-        let gap: CGFloat = 2
+    private func heatCellGrid(_ loads: [Double], rows: Int, rowHeight: CGFloat, gap: CGFloat) -> some View {
         let rowCount = max(rows, 1)
-        let perRow = Int(ceil(Double(loads.count) / Double(rowCount)))
-        let cellHeight = rowCount > 1 ? (bandHeight - gap * CGFloat(rowCount - 1)) / CGFloat(rowCount) : bandHeight
+        let perRow = Self.coreStripCellsPerRow(coreCount: loads.count, rows: rowCount)
         VStack(spacing: gap) {
             ForEach(0..<rowCount, id: \.self) { row in
                 let slice = Array(loads.dropFirst(row * perRow).prefix(perRow))
                 HStack(spacing: gap) {
                     ForEach(Array(slice.enumerated()), id: \.offset) { _, load in
-                        HeatCell(load: load, height: cellHeight)
+                        HeatCell(load: load, height: rowHeight)
                     }
                     if slice.count < perRow {
                         ForEach(0..<(perRow - slice.count), id: \.self) { _ in
-                            Color.clear.frame(maxWidth: .infinity, maxHeight: cellHeight)
+                            Color.clear.frame(maxWidth: .infinity, maxHeight: rowHeight)
                         }
                     }
                 }
@@ -418,18 +436,20 @@ struct CPUWidgetView: View {
         }
     }
 
-    /// Per-core heat strip (L, tall): clusters stacked, each a full-width bar row.
+    /// Per-core heat strip (L, tall): clusters stacked, each wrapping into as
+    /// many full-width rows as its core count needs.
     @ViewBuilder
     private func coreHeatStripTall(groups: [CoreGroupLoads], scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading, spacing: scale.label * 0.5) {
             ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
                 VStack(alignment: .leading, spacing: scale.label * 0.3) {
                     clusterLabel(group, scale: scale)
-                    HStack(spacing: 3) {
-                        ForEach(Array(group.loads.enumerated()), id: \.offset) { _, load in
-                            HeatCell(load: load, height: max(scale.caption * 1.35, 14))
-                        }
-                    }
+                    heatCellGrid(
+                        group.loads,
+                        rows: Self.coreStripRows(coreCount: group.loads.count, cap: Self.tallCoreCellsPerRow),
+                        rowHeight: max(scale.caption * 1.35, 14),
+                        gap: Self.tallCoreCellGap
+                    )
                 }
             }
         }
@@ -787,6 +807,26 @@ extension CPUWidgetView {
         return "\(Int((f * 100).rounded()))"
     }
 
+    /// The "%" is drawn at this fraction of the digits' size at every call site.
+    nonisolated static let heroUnitRatio: CGFloat = 0.4
+
+    /// Size the hero digits shrink to once the reading needs three of them.
+    ///
+    /// "100%" is 1.382× as wide as "20%" at the same size (CTLine, semibold
+    /// monospaced-digit system font, measured across the whole 21.6…48.3 pt
+    /// hero range this widget produces). The M ring's centre box is
+    /// `side * 0.62` = 41.97 pt on a 356×170 tile, so "100%" at the unshrunk
+    /// 32.13 pt needed a 0.561 scale — under `minimumScaleFactor(0.6)`, and
+    /// SwiftUI truncates rather than overshooting the floor: the reading came
+    /// out as "1…". At 0.68 the tightest tile over board scales 0.85…2.0 needs
+    /// 0.62, and the desktop board's own M tile needs 0.82.
+    nonisolated static let threeDigitHeroShrink: CGFloat = 0.68
+
+    /// Hero size for a `digits`-digit readout. Only full load reaches three.
+    nonisolated static func heroSize(base: CGFloat, digits: Int) -> CGFloat {
+        digits >= 3 ? base * threeDigitHeroShrink : base
+    }
+
     nonisolated static func rpmValue(_ rpm: Double) -> String {
         let value = rpm.isFinite ? max(rpm, 0) : 0
         return "\(Int(value.rounded()))"
@@ -818,12 +858,6 @@ extension CPUWidgetView {
         min(max(cpuPercent / max(maxCPU, .ulpOfOne), 0), 1)
     }
 
-    nonisolated static func temperatureWord(_ celsius: Double) -> String {
-        if celsius >= 58 { return "hot" }
-        if celsius >= 48 { return "warm" }
-        return "cool"
-    }
-
     nonisolated static func compositionPercents(user: Double, system: Double) -> (user: Int, system: Int, idle: Int) {
         let u = Int((min(max(user, 0), 1) * 100).rounded())
         let s = Int((min(max(system, 0), 1) * 100).rounded())
@@ -839,6 +873,51 @@ extension CPUWidgetView {
                 : lhs.offset < rhs.offset
         }.map(\.element)
         return Array(sorted.prefix(max(0, limit)))
+    }
+
+    // MARK: Core heat strip geometry
+
+    /// Cell spacing in the M strip and in the L strip. Both feed
+    /// `coreStripBandHeight` and the width each cell ends up with, so the two
+    /// numbers live next to the caps they were chosen against.
+    nonisolated static let compactCoreCellGap: CGFloat = 2
+    nonisolated static let tallCoreCellGap: CGFloat = 3
+
+    /// Widest row the M strip allows. A 2-cluster M tile gives each cluster
+    /// ~102 pt (356 pt tile − 32 pt inset − 104 pt gauge column − 7 pt − 9 pt,
+    /// halved), so 8 cells with 2 pt gaps are 11.5 pt wide. Equal to the cap the
+    /// strip already enforced as `count > 8 ? 2 : 1` rows, so every cluster of
+    /// 16 or fewer cores lays out exactly as it did.
+    nonisolated static let compactCoreCellsPerRow = 8
+
+    /// Widest row the L strip allows. Its cluster column is ~157 pt (356 − 32 −
+    /// 9, halved with the process column), so 12 cells at 3 pt gaps are 10.4 pt
+    /// wide — the width the 12-core cluster on an 18-core Mac already draws at.
+    /// Before this cap the L strip put a whole cluster in one row: a 24-core
+    /// cluster came out 3.7 pt wide, and `HeatCell`'s 1 pt inset border eats
+    /// 2 pt of that.
+    nonisolated static let tallCoreCellsPerRow = 12
+
+    /// Rows a cluster of `coreCount` cells wraps into so no row exceeds `cap`.
+    nonisolated static func coreStripRows(coreCount: Int, cap: Int) -> Int {
+        guard coreCount > 0, cap > 0 else { return 1 }
+        return (coreCount + cap - 1) / cap
+    }
+
+    /// Cells in each row once a cluster is split evenly over `rows`: 18 cores in
+    /// 3 rows are 6 + 6 + 6, not 8 + 8 + 2.
+    nonisolated static func coreStripCellsPerRow(coreCount: Int, rows: Int) -> Int {
+        let rowCount = max(rows, 1)
+        return max(1, (max(coreCount, 0) + rowCount - 1) / rowCount)
+    }
+
+    /// Height the M strip's shared band needs for `rows`. One and two rows keep
+    /// the band the tile was drawn for; past that each extra row adds its own
+    /// height instead of subdividing the band into slivers.
+    nonisolated static func coreStripBandHeight(base: CGFloat, rows: Int, gap: CGFloat) -> CGFloat {
+        let rowCount = CGFloat(max(rows, 1))
+        let rowHeight = (base - gap) / 2
+        return max(base, rowHeight * rowCount + gap * (rowCount - 1))
     }
 
     nonisolated static func coreCountText(_ groups: [CoreGroupLoads]) -> String {
@@ -894,24 +973,34 @@ extension CPUWidgetView {
 
 #if DEBUG
 private extension MonitorWidgetContext {
-    static func cpuSample(size: MonitorWidgetSize, withSensors: Bool, showTrend: Bool = true) -> MonitorWidgetContext {
-        let superLoads: [Double] = [0.71, 0.58, 0.66, 0.34, 0.52, 0.19]
-        let perfLoads: [Double] = [0.44, 0.29, 0.51, 0.12, 0.38, 0.22, 0.47, 0.09, 0.33, 0.18, 0.41, 0.15]
+    static let ultraTopology: (device: String, groups: [(name: String, count: Int)]) =
+        ("Apple M5 Ultra", [("Efficiency", 12), ("Performance", 24)])
+
+    static func cpuSample(
+        size: MonitorWidgetSize,
+        withSensors: Bool,
+        showTrend: Bool = true,
+        topology: (device: String, groups: [(name: String, count: Int)]) =
+            ("Apple M5 Pro", [("Super", 6), ("Performance", 12)])
+    ) -> MonitorWidgetContext {
+        // Deterministic per-core loads so a synthetic 36-core machine reads the
+        // same way on every run; the 18-core case keeps its hand-picked curve.
+        let ramp: [Double] = [0.71, 0.58, 0.66, 0.34, 0.52, 0.19,
+                              0.44, 0.29, 0.51, 0.12, 0.38, 0.22,
+                              0.47, 0.09, 0.33, 0.18, 0.41, 0.15]
         var sys = MonitorSystemSnapshot()
         sys.cpuTotal = 0.37
         sys.cpuUser = 0.26
         sys.cpuSystem = 0.11
-        sys.perCore = superLoads + perfLoads
+        let totalCores = topology.groups.reduce(0) { $0 + $1.count }
+        sys.perCore = (0 ..< totalCores).map { ramp[$0 % ramp.count] }
         sys.loadAverage1 = 3.42
         sys.cpuLoadAvg = [3.42, 2.88, 2.41]
         sys.thermalState = "fair"
         sys.cpuInfo = MonitorCPUInfo(
-            deviceName: "Apple M5 Pro",
-            coreCount: 18,
-            coreGroups: [
-                MonitorCPUCoreGroup(name: "Super", physicalCount: 6),
-                MonitorCPUCoreGroup(name: "Performance", physicalCount: 12)
-            ]
+            deviceName: topology.device,
+            coreCount: totalCores,
+            coreGroups: topology.groups.map { MonitorCPUCoreGroup(name: $0.name, physicalCount: $0.count) }
         )
         sys.topProcesses = [
             MonitorProcessSample(name: "Xcode", cpuPercent: 52, memBytes: UInt64(3.4 * 1_073_741_824)),
@@ -988,6 +1077,20 @@ private extension MonitorWidgetContext {
             .frame(width: 364, height: 376)
         CPUWidgetView(context: .cpuSample(size: .large, withSensors: true))
             .frame(width: 364, height: 376)
+    }
+    .padding(32)
+    .background(Design.boardWash)
+}
+
+// A machine nobody here owns: 36 cores is where the core strip used to squeeze
+// a cluster below its own cell border.
+#Preview("CPU · 36 cores") {
+    let topology = MonitorWidgetContext.ultraTopology
+    HStack(spacing: 20) {
+        CPUWidgetView(context: .cpuSample(size: .medium, withSensors: true, topology: topology))
+            .frame(width: 356, height: 170)
+        CPUWidgetView(context: .cpuSample(size: .large, withSensors: true, topology: topology))
+            .frame(width: 356, height: 356)
     }
     .padding(32)
     .background(Design.boardWash)

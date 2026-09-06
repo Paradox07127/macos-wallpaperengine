@@ -41,7 +41,7 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     /// Bump together with `schemaVersion`.
-    static let expectedSchemaVersion = 2
+    static let expectedSchemaVersion = 4
     /// 2026-08-30: comment-only compression across eight of the files above moved the
     /// fingerprint without touching a line of code, so the MSL is byte-identical and
     /// `schemaVersion` deliberately stayed at 1 — bumping it would have thrown away every
@@ -52,7 +52,12 @@ struct WPEShaderTranslationCacheSchemaTests {
     /// above — its memo wrapper is a pure cache. Both are proven byte-for-byte by
     /// `WPEPreprocessGoldenBaselineTests` against a 2342-entry corpus baseline: 0 diffs.
     /// 2026-09-05: schema 2 rejects invalid declarations before layout/MSL expansion.
-    static let expectedFingerprint = "0f9d7239b17790ee1521584147be399197f2afe6658a889f0e5be7770e6580b3"
+    /// 2026-09-06: schema 3 rebuilds lens_distortion's `v_Distorsion` / `v_Transforms` /
+    /// `v_TexCoord.zw` from its `.vert` instead of the screen-UV fallback, so every warm-cache
+    /// entry for that shader holds the old, wrong MSL and must be discarded.
+    /// 2026-09-06: schema 4 adds the same treatment for the 2798319181 depth-of-field chain,
+    /// 3124095265 fade, 3082978660 audio bars and 3647393229 frame_builder.
+    static let expectedFingerprint = "bb7c3e15eed8bda1010696c173b2b37aca8d84cb548bbfb7931ac6d5ea1e2465"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {
