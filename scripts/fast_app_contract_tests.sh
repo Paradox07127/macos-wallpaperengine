@@ -45,6 +45,12 @@ SUITES=(
   # seven points tall. Both the conversion arithmetic and the laid-out box.
   BoardChromeScaleTests
   BoardChromeScaleLayoutTests
+  # A scene wallpaper's only now-playing path; the dispatcher tests exercise the
+  # far side, so fan-out / replay / demand had nothing of their own.
+  WPEEnrichedNowPlayingFeedTests
+  # The cache pane's latest-wins arbitration lives in private SwiftUI state, so
+  # this pins the ordering in source; deleting the guard left everything green.
+  CacheInventoryArbitrationTests
   OverlayVisibilityLifecycleCharacterizationTests
   RuntimeLeaseChurnCharacterizationTests
   MonitorSamplerOwnershipCharacterizationTests
