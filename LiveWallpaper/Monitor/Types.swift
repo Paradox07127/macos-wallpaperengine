@@ -170,6 +170,18 @@ struct MonitorSensorReadings: Codable, Sendable, Equatable {
     var fanRPM: [Double]?
 }
 
+/// Sampling provenance stays with the measurement, independent of broker/agent updates.
+struct MonitorMetricSample: Codable, Sendable, Equatable {
+    var available: Bool
+    var sampledAt: Double
+    var interval: Double
+
+    func isStale(at now: Date) -> Bool {
+        !sampledAt.isFinite || sampledAt <= 0
+            || now.timeIntervalSince1970 - sampledAt > max(15, interval * 3)
+    }
+}
+
 struct MonitorSystemSnapshot: Codable, Sendable, Equatable {
     var cpuTotal: Double = 0          // 0…1 system-wide
     var cpuUser: Double = 0
@@ -216,6 +228,8 @@ struct MonitorSystemSnapshot: Codable, Sendable, Equatable {
     /// Per-app disk I/O rank (demand-gated by Disk widget).
     var topIOProcesses: [MonitorProcessSample]?
     var gpuMemUsedBytes: UInt64?
+    var sampledAt: Double?
+    var metricSamples: [String: MonitorMetricSample]?
 }
 
 // MARK: Now Playing (distributed-notification push source)

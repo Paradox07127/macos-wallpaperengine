@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct Sparkline: View {
-    var values: [Double]
+    /// Timestamped samples; `nil` values are gaps, not zeroes.
+    var points: [MonitorHistoryPoint]
+    /// X is `(t - window.start) / window.length`, so the same instant lands at
+    /// the same place whatever the sampling rate.
+    var window: MonitorChartWindow
     var domain: ClosedRange<Double>?
     /// When true (and the domain is 0…1-like), colour the stroke by load band at
     /// each sample; otherwise use `lineColor`.
@@ -13,8 +17,8 @@ struct Sparkline: View {
 
     /// Paths in one immediate-mode pass instead of a `ZStack` of `Path`s, a guide `ForEach`, and a gradient — every monitor
     /// widget rebuilt that tree on its sample tick (`CPUStackChart` here already draws this way). The endpoint dot stays a
-    /// real view at `x == width`, its glow deliberately spilling past the sparkline's bounds — `Canvas` clips to its frame,
-    /// so drawing the dot there would shave off half of it and its shadow. Reads size from a `GeometryReader`, not
+    /// real view at the newest sample's X, its glow deliberately spilling past the sparkline's bounds — `Canvas` clips to its
+    /// frame, so drawing the dot there would shave off half of it and its shadow. Reads size from a `GeometryReader`, not
     /// `onGeometryChange` into `@State`: the state round-trip costs a pass, so the dot was missing from the sparkline's first
     /// frame.
     var body: some View {
@@ -23,28 +27,37 @@ struct Sparkline: View {
             let span = max(hi - lo, .ulpOfOne)
             // Nothing at all for an empty series — not even the baseline, which
             // is what the previous `if let pts = points(...)` gate produced.
-            guard let pts = points(in: size, lo: lo, span: span), !pts.isEmpty else { return }
+            let runs = drawableRuns(in: size, lo: lo, span: span)
+            guard !runs.isEmpty else { return }
 
             draw(baselinePath(w: size.width, h: size.height), in: &context)
             drawGuides(in: &context, w: size.width, h: size.height, lo: lo, span: span)
 
-            if showArea, pts.count >= 2 {
-                context.fill(
-                    areaPath(pts, height: size.height),
-                    with: .linearGradient(
-                        Gradient(colors: [areaColor().opacity(0.26), areaColor().opacity(0)]),
-                        startPoint: CGPoint(x: 0, y: 0),
-                        endPoint: CGPoint(x: 0, y: size.height)
+            if showArea {
+                for pts in runs where pts.count >= 2 {
+                    context.fill(
+                        areaPath(pts, height: size.height),
+                        with: .linearGradient(
+                            Gradient(colors: [areaColor().opacity(0.26), areaColor().opacity(0)]),
+                            startPoint: CGPoint(x: 0, y: 0),
+                            endPoint: CGPoint(x: 0, y: size.height)
+                        )
                     )
-                )
+                }
             }
 
-            if pts.count >= 2 {
+            for pts in runs where pts.count >= 2 {
                 context.stroke(
                     linePath(pts),
                     with: lineShading(width: size.width),
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
                 )
+            }
+
+            // A sample with no drawable neighbour is a point. Reaching to the
+            // next one would invent the line across the gap that isolated it.
+            for pts in runs where pts.count == 1 {
+                context.fill(dotPath(at: pts[0]), with: .color(areaColor()))
             }
         }
         .overlay {
@@ -57,11 +70,15 @@ struct Sparkline: View {
         let (lo, hi) = resolvedDomain()
         let span = max(hi - lo, .ulpOfOne)
         if size.width > 0,
-           let last = points(in: size, lo: lo, span: span)?.last {
+           let newest = points.last(where: { $0.value != nil }),
+           let value = newest.value {
             Circle()
                 .fill(nowColor())
                 .frame(width: 6, height: 6)
-                .position(last)
+                .position(
+                    x: ChartTimeAxis.x(newest.time, in: window, width: size.width),
+                    y: y(value, height: size.height, lo: lo, span: span)
+                )
                 .shadow(color: nowColor().opacity(0.6), radius: 3)
         }
     }
@@ -98,26 +115,36 @@ struct Sparkline: View {
 
     // MARK: - Geometry
 
+    private var presentValues: [Double] {
+        points.compactMap(\.value)
+    }
+
     private func resolvedDomain() -> (Double, Double) {
-        if let domain { return (domain.lowerBound, domain.upperBound) }
-        guard let lo = values.min(), let hi = values.max() else { return (0, 1) }
-        if hi == lo { return (lo - 0.5, hi + 0.5) }
+        if let domain {
+            return (domain.lowerBound, domain.upperBound)
+        }
+        guard let lo = presentValues.min(), let hi = presentValues.max() else { return (0, 1) }
+        if hi == lo {
+            return (lo - 0.5, hi + 0.5)
+        }
         let pad = (hi - lo) * 0.12
         return (lo, hi + pad)
     }
 
-    private func points(in size: CGSize, lo: Double, span: Double) -> [CGPoint]? {
-        guard !values.isEmpty else { return nil }
-        let n = values.count
-        let h = size.height
-        if n == 1 {
-            let y = h - CGFloat((values[0] - lo) / span) * h
-            return [CGPoint(x: size.width, y: y)]
-        }
-        return values.enumerated().map { i, v in
-            let x = CGFloat(i) / CGFloat(n - 1) * size.width
-            let y = h - CGFloat((v - lo) / span) * h
-            return CGPoint(x: x, y: min(h, max(0, y)))
+    private func y(_ value: Double, height: CGFloat, lo: Double, span: Double) -> CGFloat {
+        let raw = height - CGFloat((value - lo) / span) * height
+        return min(height, max(0, raw))
+    }
+
+    private func drawableRuns(in size: CGSize, lo: Double, span: Double) -> [[CGPoint]] {
+        guard size.width > 0 else { return [] }
+        return ChartTimeAxis.runs(points, tolerance: window.tolerance).map { range in
+            points[range].map { point in
+                CGPoint(
+                    x: ChartTimeAxis.x(point.time, in: window, width: size.width),
+                    y: y(point.value ?? 0, height: size.height, lo: lo, span: span)
+                )
+            }
         }
     }
 
@@ -125,6 +152,11 @@ struct Sparkline: View {
         var p = Path()
         p.addLines(pts)
         return p
+    }
+
+    private func dotPath(at point: CGPoint) -> Path {
+        Path(ellipseIn: CGRect(x: point.x - lineWidth, y: point.y - lineWidth,
+                               width: lineWidth * 2, height: lineWidth * 2))
     }
 
     private func areaPath(_ pts: [CGPoint], height: CGFloat) -> Path {
@@ -139,7 +171,9 @@ struct Sparkline: View {
 
     // MARK: - Colour
 
-    private var lastFraction: Double { values.last ?? 0 }
+    private var lastFraction: Double {
+        presentValues.last ?? 0
+    }
 
     private func areaColor() -> Color {
         bandColored ? Design.loadBandColor(lastFraction) : lineColor
@@ -149,14 +183,15 @@ struct Sparkline: View {
         bandColored ? Design.loadBandColor(lastFraction) : lineColor
     }
 
-    /// Band-coloured mode uses a horizontal gradient keyed to each sample's band;
-    /// otherwise a solid stroke.
+    /// Band-coloured mode uses a horizontal gradient keyed to each sample's band
+    /// at its own time position; otherwise a solid stroke.
     private func lineShading(width: CGFloat) -> GraphicsContext.Shading {
-        guard bandColored, values.count >= 2 else { return .color(lineColor) }
-        let stops = values.enumerated().map { index, value -> Gradient.Stop in
+        let real = points.compactMap { point in point.value.map { (point.time, $0) } }
+        guard bandColored, real.count >= 2 else { return .color(lineColor) }
+        let stops = real.map { time, value in
             Gradient.Stop(
                 color: Design.loadBandColor(value),
-                location: CGFloat(index) / CGFloat(values.count - 1)
+                location: CGFloat(min(1, max(0, window.fraction(of: time))))
             )
         }
         return .linearGradient(
@@ -167,17 +202,32 @@ struct Sparkline: View {
     }
 }
 
+extension [MonitorHistoryPoint] {
+    /// Fixture helper: evenly spaced samples ending at `reference`.
+    static func evenlySpaced(
+        _ values: [Double?], endingAt reference: Double, every step: Double = 1
+    ) -> [MonitorHistoryPoint] {
+        values.enumerated().map { index, value in
+            MonitorHistoryPoint(
+                time: reference - Double(values.count - 1 - index) * step, value: value
+            )
+        }
+    }
+}
+
 #Preview("Sparkline") {
+    let now = Date().timeIntervalSince1970
+    let window = MonitorChartWindow(reference: now, seconds: 10, interval: 1)
     VStack(spacing: 20) {
-        Sparkline(values: [0.2, 0.35, 0.28, 0.55, 0.72, 0.68, 0.9, 0.84],
-                  domain: 0...1, bandColored: true, guides: [0.4, 0.8])
+        Sparkline(points: .evenlySpaced([0.2, 0.35, 0.28, 0.55, 0.72, 0.68, 0.9, 0.84], endingAt: now),
+                  window: window, domain: 0 ... 1, bandColored: true, guides: [0.4, 0.8])
             .frame(width: 260, height: 60)
 
-        Sparkline(values: [12, 18, 14, 22, 31, 26, 20, 24].map(Double.init),
-                  lineColor: Design.signalSteel)
+        Sparkline(points: .evenlySpaced([12, 18, nil, 22, 31, 26, 20, 24], endingAt: now),
+                  window: window, lineColor: Design.signalSteel)
             .frame(width: 260, height: 60)
 
-        Sparkline(values: [], domain: 0...1)
+        Sparkline(points: [], window: window, domain: 0 ... 1)
             .frame(width: 260, height: 40)
             // `verbatim:` or SwiftUI reads the literal as a LocalizedStringKey and the
             // extractor lands a bogus `empty` key in the catalog, failing coverage.

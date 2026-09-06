@@ -206,7 +206,7 @@ struct MusicOverlaySection: View {
     private var sizeBinding: Binding<MusicOverlaySize> {
         Binding(
             get: { music.size },
-            set: { size in update { MusicOverlayLayout.setting(size: size, on: $0) } }
+            set: { size in update { MusicOverlayLayout.setting(size: size, on: $0, boardSize: screen.frame.size) } }
         )
     }
 
@@ -241,7 +241,7 @@ struct MusicOverlaySection: View {
     /// No button is lit once the layer has been dragged off the nine spots —
     /// lighting the nearest one would misreport where the layer actually is.
     private var anchorGrid: some View {
-        let current = MusicOverlayLayout.anchor(of: music)
+        let current = MusicOverlayLayout.anchor(of: music, boardSize: screen.frame.size)
         return VStack(spacing: 3) {
             ForEach(Self.anchorRows, id: \.self) { row in
                 HStack(spacing: 3) {
@@ -258,7 +258,7 @@ struct MusicOverlaySection: View {
         _ anchor: MusicOverlayLayout.Anchor, isCurrent: Bool
     ) -> some View {
         Button {
-            update { MusicOverlayLayout.setting(anchor: anchor, on: $0) }
+            update { MusicOverlayLayout.setting(anchor: anchor, on: $0, boardSize: screen.frame.size) }
         } label: {
             RoundedRectangle(cornerRadius: 2)
                 .fill(isCurrent ? Color.accentColor : Color.secondary.opacity(0.25))

@@ -274,6 +274,52 @@ struct PublicBranchIsolationTests {
         """
         #expect(SteamConnectorBuildInfo.parsePublicBuildID(from: dump) == "23967692")
     }
+
+    /// Real `app_info_print` output: the first `"public"` block is a depot
+    /// manifest (gid/size/download, no buildid); the branch block comes later.
+    @Test("The depot manifest's public block is skipped in favour of the branches block")
+    func depotManifestPublicBlockIsNotMistakenForTheBranch() {
+        let dump = """
+        "431960"
+        {
+            "depots"
+            {
+                "431961"
+                {
+                    "manifests"
+                    {
+                        "public"
+                        {
+                            "gid"  "3687007859740550172"
+                            "size"  "826275581"
+                            "download"  "377252704"
+                        }
+                        "beta"
+                        {
+                            "gid"  "7042750516601784480"
+                            "size"  "1135796960"
+                            "download"  "662600352"
+                        }
+                    }
+                }
+                "branches"
+                {
+                    "beta"
+                    {
+                        "buildid"  "24783785"
+                        "description"  "public beta testing, preview for next update"
+                    }
+                    "public"
+                    {
+                        "buildid"  "23967692"
+                        "timeupdated"  "1782747434"
+                    }
+                }
+            }
+        }
+        """
+        #expect(SteamConnectorBuildInfo.parsePublicBuildID(from: dump) == "23967692")
+    }
 }
 
 /// Serializing every SteamCMD run means a request can wait behind a long
@@ -386,7 +432,7 @@ struct SteamCMDChildEnvironmentTests {
         // the shared pipe runner and the interactive login's PTY session.
         let spawns = source.components(separatedBy: "Process()").count - 1
         let whitelisted = source.components(
-            separatedBy: "process.environment = SteamCMDChildEnvironment.make()"
+            separatedBy: "process.environment = SteamCMDChildEnvironment.make(home:"
         ).count - 1
         #expect(spawns >= 1)
         #expect(
@@ -404,6 +450,84 @@ struct SteamCMDChildEnvironmentTests {
 /// exactly this reason — so the user's real library is never touched.
 @Suite("Steam library writer, behaviour")
 struct SteamLibraryWriterBehaviourTests {
+
+    @Test("Publishing replaces a complete item, keeps the user's own files, and leaves Steam client configuration unchanged")
+    func publishKeepsTargetOnlyFiles() throws {
+        let source = try Self.makeTree()
+        let target = try Self.makeTree()
+        defer { source.cleanup(); target.cleanup() }
+        try Data("old".utf8).write(to: target.item.appendingPathComponent("obsolete.txt"))
+        let config = target.root.appendingPathComponent("config/config.vdf")
+        try FileManager.default.createDirectory(at: config.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("client session sentinel".utf8).write(to: config)
+        let published = try SteamLibraryWriter.publishContent(
+            components: SteamLibraryPaths.workshopContentComponents + [Self.itemID], from: source.root, to: target.root
+        )
+        #expect(published == target.item)
+        #expect(try String(contentsOf: published.appendingPathComponent("a/b/c/scene.pkg"), encoding: .utf8) == "nested")
+        #expect(try String(contentsOf: published.appendingPathComponent("obsolete.txt"), encoding: .utf8) == "old")
+        #expect(!Self.exists(source.item))
+        #expect(try String(contentsOf: config, encoding: .utf8) == "client session sentinel")
+    }
+
+    /// Files the user (or another program) put next to a downloaded item are
+    /// theirs: a re-download must carry them into the new tree, at every depth,
+    /// while the download's own files win and links are never carried.
+    @Test("Publishing merges target-only entries into the new tree without following links")
+    func publishMergesTargetOnlyEntries() throws {
+        let source = try Self.makeTree()
+        let target = try Self.makeTree()
+        defer { source.cleanup(); target.cleanup() }
+        let fm = FileManager.default
+        try fm.createDirectory(at: target.item.appendingPathComponent("extra"), withIntermediateDirectories: true)
+        try Data("user".utf8).write(to: target.item.appendingPathComponent("extra/user.txt"))
+        try Data("local".utf8).write(to: target.item.appendingPathComponent("a/local.txt"))
+        try Data("stale".utf8).write(to: target.item.appendingPathComponent("project.json"))
+        try fm.createSymbolicLink(atPath: target.item.appendingPathComponent("link").path, withDestinationPath: "/etc/passwd")
+        let published = try SteamLibraryWriter.publishContent(
+            components: SteamLibraryPaths.workshopContentComponents + [Self.itemID], from: source.root, to: target.root
+        )
+        #expect(try String(contentsOf: published.appendingPathComponent("extra/user.txt"), encoding: .utf8) == "user")
+        #expect(try String(contentsOf: published.appendingPathComponent("a/local.txt"), encoding: .utf8) == "local")
+        #expect(try String(contentsOf: published.appendingPathComponent("a/preview.jpg"), encoding: .utf8) == "mid")
+        #expect(try String(contentsOf: published.appendingPathComponent("project.json"), encoding: .utf8) == "scene")
+        #expect(!Self.exists(published.appendingPathComponent("link")))
+        let siblings = try fm.contentsOfDirectory(atPath: published.deletingLastPathComponent().path)
+        #expect(siblings == [Self.itemID])
+        #expect(!Self.exists(source.item))
+    }
+
+    @Test("Publishing rejects source links without losing the old item or source")
+    func failedPublishKeepsBothTrees() throws {
+        let source = try Self.makeTree()
+        let target = try Self.makeTree()
+        defer { source.cleanup(); target.cleanup() }
+        try FileManager.default.createSymbolicLink(atPath: source.item.appendingPathComponent("link").path, withDestinationPath: "/etc/passwd")
+        #expect(throws: SteamLibraryWriter.WriteError.self) {
+            try SteamLibraryWriter.publishContent(
+                components: SteamLibraryPaths.workshopContentComponents + [Self.itemID], from: source.root, to: target.root
+            )
+        }
+        #expect(Self.exists(source.item.appendingPathComponent("project.json")))
+        #expect(Self.exists(target.item.appendingPathComponent("project.json")))
+        let siblings = try FileManager.default.contentsOfDirectory(atPath: target.item.deletingLastPathComponent().path)
+        #expect(siblings == [Self.itemID])
+    }
+
+    @Test("Publishing creates missing content directories but refuses authentication paths")
+    func publishCreatesContentDirectories() throws {
+        let source = try Self.makeTree()
+        let target = source.root.appendingPathComponent("destination")
+        defer { source.cleanup() }
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        #expect(throws: SteamLibraryWriter.WriteError.self) {
+            try SteamLibraryWriter.publishContent(components: ["config"], from: source.root, to: target)
+        }
+        let published = try SteamLibraryWriter.publishContent(
+            components: SteamLibraryPaths.workshopContentComponents + [Self.itemID], from: source.root, to: target
+        )
+        #expect(Self.exists(published.appendingPathComponent("project.json")))
+    }
 
     private static let itemID = "3725117707"
 
@@ -630,5 +754,228 @@ struct WallpaperEnginePruneBehaviourTests {
             try SteamLibraryWriter.pruneWallpaperEngineInstall(steamRoot: tree.root)
         }
         #expect(Self.exists(bystander))
+    }
+}
+
+@Suite("SteamCMD isolated profiles")
+struct SteamCMDProfileTests {
+    @Test("Account homes survive switching between Homebrew and managed installations")
+    func stableAccountHomes() throws {
+        let home = "/Users/example"
+        let first = try SteamCMDProfile.home(accountName: "Alice", realHome: home)
+        #expect(try first == SteamCMDProfile.home(accountName: "alice", realHome: home))
+        #expect(try first != SteamCMDProfile.home(accountName: "bob", realHome: home))
+        #expect(!first.path.hasPrefix(SteamCMDManagedInstaller.canonicalInstallRoot(home: URL(fileURLWithPath: home)).path + "/"))
+        #expect(!first.path.hasPrefix(home + "/Library/Application Support/Steam/"))
+        for binary in ["/opt/homebrew/bin/steamcmd", "/managed/osx32/steamcmd"] {
+            let account = SteamCMDProfile.account(in: [binary, "+login", "Alice", "+quit"])
+            let profile = try SteamCMDProfile.home(accountName: account, realHome: home)
+            #expect(SteamCMDChildEnvironment.make(home: profile.path)["HOME"] == first.path)
+        }
+        #expect(throws: SteamCMDProfile.ProfileError.self) {
+            try SteamCMDProfile.home(accountName: "../alice", realHome: home)
+        }
+    }
+
+    @Test("Profile locking prevents concurrent writers and preserves an existing session")
+    func exclusivePersistentProfile() throws {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let first = try SteamCMDProfile.acquire(accountName: "alice", realHome: scratch.path)
+        let config = try SteamCMDProfile.steamRoot(accountName: "alice", realHome: scratch.path).appendingPathComponent("config/config.vdf")
+        try Data("persistent session fixture".utf8).write(to: config)
+        #expect(throws: SteamCMDProfile.ProfileError.self) {
+            let second = try SteamCMDProfile.acquire(accountName: "alice", realHome: scratch.path)
+            close(second.fd)
+        }
+        let other = try SteamCMDProfile.acquire(accountName: "bob", realHome: scratch.path)
+        close(other.fd)
+        close(first.fd)
+        let reopened = try SteamCMDProfile.acquire(accountName: "alice", realHome: scratch.path)
+        defer { close(reopened.fd) }
+        #expect(try String(contentsOf: config, encoding: .utf8) == "persistent session fixture")
+        #expect(!FileManager.default.fileExists(atPath: scratch.appendingPathComponent("Library/Application Support/Steam/config/config.vdf").path))
+    }
+
+    @Test("The staged Workshop tree resolves inside the account profile only")
+    func stagedWorkshopTreeStaysInTheProfile() throws {
+        let home = "/Users/example"
+        let tree = try SteamCMDProfile.stagedWorkshopTree(accountName: "Alice", realHome: home)
+        let account = try SteamCMDProfile.home(accountName: "alice", realHome: home)
+        #expect(tree.path.hasPrefix(account.path + "/"))
+        #expect(tree.lastPathComponent == "workshop")
+        // Never the shared library: that tree is the one the app actually reads.
+        #expect(!tree.path.hasPrefix(home + "/Library/Application Support/Steam/"))
+        // Maintenance and invalid names are refused the same way a session is.
+        for name in ["anonymous", "ANONYMOUS", "../alice"] {
+            #expect(throws: SteamCMDProfile.ProfileError.self) {
+                try SteamCMDProfile.stagedWorkshopTree(accountName: name, realHome: home)
+            }
+        }
+    }
+
+    @Test("A profile redirected into the Steam client is refused")
+    func rejectsRedirectedProfile() throws {
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let home = try SteamCMDProfile.home(accountName: "alice", realHome: scratch.path)
+        try FileManager.default.createDirectory(at: home.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: home, withDestinationURL: scratch)
+        #expect(throws: SteamCMDProfile.ProfileError.self) {
+            let lease = try SteamCMDProfile.acquire(accountName: "alice", realHome: scratch.path)
+            close(lease.fd)
+        }
+    }
+
+    @Test("Session removal resolves the account's own directory and nothing else")
+    func sessionDirectoryIsTheAccountHome() throws {
+        let home = "/Users/example"
+        // Control: a valid account resolves to exactly the profile it logs into.
+        #expect(try SteamCMDProfile.sessionDirectory(accountName: "Alice", realHome: home)
+            == SteamCMDProfile.home(accountName: "Alice", realHome: home))
+    }
+
+    @Test("The subscription probe directory is a fresh tree inside the account profile only")
+    func subscriptionProbeDirectoryStaysInTheProfile() throws {
+        let home = "/Users/example"
+        let probe = try SteamCMDProfile.subscriptionProbeDirectory(accountName: "Alice", realHome: home)
+        let account = try SteamCMDProfile.home(accountName: "alice", realHome: home)
+        #expect(probe.path.hasPrefix(account.path + "/"))
+        // Never the shared library: the probe writes a ledger of its own and
+        // must not touch the one the app reads.
+        #expect(!probe.path.hasPrefix(home + "/Library/Application Support/Steam/"))
+        // A fresh leaf per call, so two probes cannot read each other's ledger.
+        #expect(try probe != SteamCMDProfile.subscriptionProbeDirectory(accountName: "Alice", realHome: home))
+        for name in ["anonymous", "ANONYMOUS", "../alice"] {
+            #expect(throws: SteamCMDProfile.ProfileError.self) {
+                try SteamCMDProfile.subscriptionProbeDirectory(accountName: name, realHome: home)
+            }
+        }
+    }
+
+    /// The ledger carries the same ids twice — `WorkshopItemsInstalled` and
+    /// `WorkshopItemDetails` — so a parser that scans the whole file returns
+    /// every subscription doubled.
+    @Test("Only the ids under WorkshopItemsInstalled are read, once each")
+    func subscribedIDsComeFromTheInstalledSectionOnly() {
+        let acf = """
+        "AppWorkshop"
+        {
+        \t"appid"\t\t"431960"
+        \t"WorkshopItemsInstalled"
+        \t{
+        \t\t"2638328545"
+        \t\t{
+        \t\t\t"size"\t\t"44636140"
+        \t\t\t"manifest"\t\t"4827768822074803252"
+        \t\t}
+        \t\t"3647999330"
+        \t\t{
+        \t\t\t"size"\t\t"1502995"
+        \t\t}
+        \t}
+        \t"WorkshopItemDetails"
+        \t{
+        \t\t"2638328545"
+        \t\t{
+        \t\t\t"manifest"\t\t"4827768822074803252"
+        \t\t}
+        \t\t"9999999999"
+        \t\t{
+        \t\t\t"manifest"\t\t"1"
+        \t\t}
+        \t}
+        }
+        """
+        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: acf) == ["2638328545", "3647999330"])
+    }
+
+    @Test("Ids that could not be a Steam id are dropped, and a missing section yields nothing")
+    func subscribedIDsRejectUnsafeIDsAndMissingSections() {
+        let unsafe = """
+        "AppWorkshop"
+        {
+        \t"WorkshopItemsInstalled"
+        \t{
+        \t\t"../../etc"
+        \t\t{
+        \t\t\t"size"\t\t"1"
+        \t\t}
+        \t\t"2638328545"
+        \t\t{
+        \t\t\t"size"\t\t"1"
+        \t\t}
+        \t}
+        }
+        """
+        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: unsafe) == ["2638328545"])
+
+        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: "") == [])
+        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: "\"AppWorkshop\"\n{\n\t\"appid\"\t\t\"431960\"\n}") == [])
+        #expect(SteamWorkshopManifest.subscribedIDs(fromACF: "\"WorkshopItemsInstalled\"\n{\n\t\"2638328545\"") == [])
+    }
+
+    @Test("Session removal refuses the Maintenance profile and any name that leaves Accounts")
+    func sessionDirectoryRefusesUnremovableNames() throws {
+        let home = "/Users/example"
+        for refused in ["anonymous", "Anonymous", "ANONYMOUS", "", "not a name", "../alice", "alice/../../bob"] {
+            #expect(throws: SteamCMDProfile.ProfileError.self) {
+                try SteamCMDProfile.sessionDirectory(accountName: refused, realHome: home)
+            }
+        }
+    }
+
+    /// The connector runs unsandboxed, so the app's security-scoped grant means
+    /// nothing on this side: the library path arrives as a plain string and is
+    /// only as trustworthy as this check makes it.
+    @Test("A library path is accepted only when it is an absolute, literal directory that is a Steam library")
+    func libraryRootValidation() throws {
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("steam-library-root-\(UUID().uuidString)", isDirectory: true)
+            .resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        // A library is identified by the Steam client's own config, exactly as
+        // the app identifies one when the user picks a folder. Without that the
+        // connector would build `steamapps/...` wherever it was pointed.
+        let library = scratch.appendingPathComponent("Steam", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: library.appendingPathComponent("config", isDirectory: true), withIntermediateDirectories: true
+        )
+        try Data("\"InstallConfigStore\"".utf8).write(to: library.appendingPathComponent("config/config.vdf"))
+        let libraryPath = library.path(percentEncoded: false)
+        #expect(SteamLibraryPaths.validatedLibraryRoot(libraryPath)?.path(percentEncoded: false) == libraryPath)
+
+        let file = scratch.appendingPathComponent("regular.txt")
+        try Data("x".utf8).write(to: file)
+
+        // The guard the connector needs most: an ordinary directory the caller
+        // merely names is not a library, however real the path is.
+        let notALibrary = scratch.appendingPathComponent("Documents", isDirectory: true)
+        try FileManager.default.createDirectory(at: notALibrary, withIntermediateDirectories: true)
+
+        // A symlinked root is ACCEPTED on purpose: `isWritable` supports a
+        // library pointed at another volume, and refusing one here would break
+        // that setup. Containment below the root is enforced separately.
+        let linked = scratch.appendingPathComponent("LinkedSteam", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: library)
+        #expect(SteamLibraryPaths.validatedLibraryRoot(linked.path(percentEncoded: false)) != nil)
+
+        for rejected in [
+            "",
+            "Library/Application Support/Steam",
+            libraryPath + "/../Steam",
+            scratch.appendingPathComponent("Nope", isDirectory: true).path(percentEncoded: false),
+            file.path(percentEncoded: false),
+            notALibrary.path(percentEncoded: false),
+        ] {
+            #expect(
+                SteamLibraryPaths.validatedLibraryRoot(rejected) == nil,
+                Comment(rawValue: "accepted \(rejected)")
+            )
+        }
     }
 }

@@ -32,7 +32,9 @@ struct SystemMetricsSourceTests {
 
         let deadline = Date().addingTimeInterval(3.0)
         while Date() < deadline {
-            if await sink.count() >= 2 { break }
+            if await sink.count() >= 2 {
+                break
+            }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         await source.stop()
@@ -51,6 +53,48 @@ struct SystemMetricsSourceTests {
         let health = await sink.health()
         #expect(health?.sourceID == "system")
         #expect(health?.state == "ok")
+    }
+
+    /// The wire still carries a placeholder `0` for a group nobody asked for;
+    /// only `metricSamples` distinguishes it from an idle disk. The history has
+    /// to read that provenance, or the chart draws a confident zero line.
+    @Test("An undemanded group is published unavailable and lands in the history as absent",
+          .timeLimit(.minutes(1)))
+    @MainActor
+    func undemandedGroupReachesHistoryAsAbsent() async {
+        let sink = MockSink()
+        var options = SystemMetricsSource.Options.default
+        options.disk = false
+        let source = SystemMetricsSource(options: options, interval: 0.5)
+
+        await source.start(sink: sink)
+        // Two polls: a CPU rate needs a previous tick, so the very first frame
+        // legitimately has no CPU reading either.
+        let deadline = Date().addingTimeInterval(3.0)
+        while Date() < deadline {
+            if await sink.count() >= 2 {
+                break
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        await source.stop()
+
+        guard let system = await sink.system() else {
+            Issue.record("no system snapshot arrived within the timeout")
+            return
+        }
+        #expect(system.diskReadBytesPerSec == 0)
+        #expect(system.metricSamples?["disk"]?.available == false)
+        #expect(system.metricSamples?["cpu"]?.available == true)
+
+        var snapshot = MonitorSnapshot()
+        snapshot.timestamp = system.sampledAt ?? 1
+        snapshot.system = system
+        let store = MonitorHistoryStore()
+        store.ingest(snapshot)
+
+        #expect(store.current.diskRead == [nil])
+        #expect(store.current.cpuTotal == [system.cpuTotal])
     }
 
     @Test("Each published poll samples load averages exactly once", .timeLimit(.minutes(1)))

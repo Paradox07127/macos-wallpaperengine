@@ -292,7 +292,7 @@ struct ScreenManagerCoordinationTests {
         var startupConfiguration = ScreenConfiguration(
             screenID: screen.id,
             videoBookmarkData: bookmark,
-            frameRateLimit: .quarter,
+            frameRateLimit: .fps15,
             particleEffect: .snow
         )
         startupConfiguration.displayFingerprint = screen.displayFingerprint
@@ -331,7 +331,7 @@ struct ScreenManagerCoordinationTests {
         )
 
         var latestConfiguration = startupConfiguration
-        latestConfiguration.frameRateLimit = .half
+        latestConfiguration.frameRateLimit = .fps30
         latestConfiguration.particleEffect = .rain
         latestConfiguration.effectConfig.blurRadius = 4
         latestConfiguration.effectConfig.particleDensity = 2
@@ -342,7 +342,7 @@ struct ScreenManagerCoordinationTests {
         }
 
         let applied = try #require(appliedConfigurations.first)
-        #expect(applied.frameRateLimit == .half)
+        #expect(applied.frameRateLimit == .fps30)
         #expect(applied.particleEffect == .rain)
         #expect(applied.effectConfig.blurRadius == 4)
         #expect(applied.effectConfig.particleDensity == 2)
@@ -600,8 +600,8 @@ struct ScreenManagerCoordinationTests {
     @Test("updateFrameRateLimit mutates configuration and posts a change notification")
     func updateFrameRateLimitForwardsThroughCoordinator() async throws {
         try await Self.runWithSeededConfiguration { manager, screen in
-            let current = manager.getConfiguration(for: screen)?.frameRateLimit ?? .full
-            let target: FrameRateLimit = current == .full ? .half : .full
+            let current = manager.getConfiguration(for: screen)?.frameRateLimit ?? .matchDisplay
+            let target: FrameRateLimit = current == .matchDisplay ? .fps30 : .matchDisplay
             try await Self.expectChange(notificationFor: screen) {
                 manager.updateFrameRateLimit(target, for: screen)
             }

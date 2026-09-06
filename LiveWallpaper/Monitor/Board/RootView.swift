@@ -30,13 +30,18 @@ struct RootView: View {
     @FocusState private var boardFocused: Bool
 
     @State private var addButtonFrame: CGRect = .zero
-    private let isInspectorPreview: Bool
+    /// Non-nil only for the settings inspector's copy of the board.
+    private let preview: MonitorBoardPreview?
 
-    init(model: InteractionModel, data: DataModel, isInspectorPreview: Bool = false) {
+    private var isInspectorPreview: Bool {
+        preview != nil
+    }
+
+    init(model: InteractionModel, data: DataModel, preview: MonitorBoardPreview? = nil) {
         self.model = model
         self.data = data
         self.history = data.historyStore
-        self.isInspectorPreview = isInspectorPreview
+        self.preview = preview
     }
 
     var body: some View {
@@ -68,8 +73,7 @@ struct RootView: View {
             let boardSize = proxy.size
             let geometry = MonitorBoardGeometry(
                 boardSize: boardSize,
-                referenceWidth: model.referenceWidth,
-                topInsetFraction: model.topInsetFraction
+                safeArea: model.safeArea
             )
 
             ZStack(alignment: .topLeading) {
@@ -189,8 +193,30 @@ struct RootView: View {
         renderHeight: CGFloat,
         now: Date
     ) -> some View {
-        if isInspectorPreview {
-            MonitorWidgetNameTile(kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius)
+        if let preview {
+            switch preview.tile {
+            case .names:
+                MonitorWidgetNameTile(kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius)
+            case .empty:
+                MonitorPreviewEmptyTile(
+                    kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius
+                )
+            case .widget:
+                // Same factory the desktop uses, on frozen data and a frozen
+                // clock — the clock is what every chart's window is measured
+                // from, so a preview left open does not slide its own samples
+                // off the axis.
+                WidgetFactory.tile(
+                    context: MonitorWidgetContext(
+                        snapshot: preview.snapshot ?? MonitorSnapshot(),
+                        history: preview.history,
+                        placement: placement,
+                        isEditing: model.isEditing,
+                        reduceMotion: reduceMotion,
+                        now: preview.chartReference(fallback: now)
+                    )
+                )
+            }
         } else {
             WidgetFactory.tile(
                 context: MonitorWidgetContext(

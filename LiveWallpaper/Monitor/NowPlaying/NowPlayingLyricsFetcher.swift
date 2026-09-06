@@ -257,6 +257,7 @@ actor NowPlayingLyricsFetcher {
         var albumName: String?
         var instrumental: Bool?
         var syncedLyrics: String?
+        var duration: Double?
     }
 
     /// Per field: case-insensitive equality 2, containment either way 1.
@@ -275,23 +276,30 @@ actor NowPlayingLyricsFetcher {
         return 0
     }
 
-    /// Highest-scoring row with score > 0. Rows without synced lyrics lose every
-    /// tie: plain text carries no timing, which is the whole point here. When
-    /// the player names an artist, a row that matches only on title is rejected
-    /// — showing another band's words is worse than showing none.
+    /// A search result must identify the same recording; album/artist agreement
+    /// cannot rescue a different title, and a known duration rejects other cuts.
     static func bestMatch(
-        in candidates: [Candidate], artist: String?, title: String, album: String?
+        in candidates: [Candidate], artist: String?, title: String, album: String?, duration: Double? = nil
     ) -> Candidate? {
         candidates
-            .map { ($0, matchScore(candidate: $0, artist: artist, title: title, album: album)) }
-            .filter { $0.1 > 0 }
-            .filter { artist == nil || fieldScore($0.0.artistName, artist) > 0 }
-            .max { lhs, rhs in
-                let lhsSynced = lhs.0.syncedLyrics?.isEmpty == false
-                let rhsSynced = rhs.0.syncedLyrics?.isEmpty == false
-                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
-                return !lhsSynced && rhsSynced
-            }?.0
+            .filter { normalized($0.trackName) == normalized(title) && !normalized(title).isEmpty }
+            .filter { normalized(artist).isEmpty || normalized($0.artistName) == normalized(artist) }
+            .filter { candidate in
+                guard let duration, duration.isFinite, duration > 0,
+                      let candidateDuration = candidate.duration else { return true }
+                return candidateDuration.isFinite && candidateDuration > 0
+                    && abs(candidateDuration - duration) <= 2
+            }
+            .filter { $0.instrumental != true && $0.syncedLyrics?.isEmpty == false }
+            .max {
+                matchScore(candidate: $0, artist: artist, title: title, album: album)
+                    < matchScore(candidate: $1, artist: artist, title: title, album: album)
+            }
+    }
+
+    private static func normalized(_ value: String?) -> String {
+        (value ?? "").folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     // MARK: Cache and fetch
@@ -362,7 +370,7 @@ actor NowPlayingLyricsFetcher {
               let data = try await load(url),
               let rows = try? JSONDecoder().decode([Candidate].self, from: data),
               let best = Self.bestMatch(
-                  in: rows, artist: state.artist, title: state.title, album: state.album
+                  in: rows, artist: state.artist, title: state.title, album: state.album, duration: state.duration
               ),
               best.instrumental != true
         else { return nil }

@@ -148,12 +148,11 @@ struct WPECameraEvidenceCaptureTests {
     }
 
     private static var configURL: URL? {
-        if let path = ProcessInfo.processInfo.environment["WPE_ORACLE_CAPTURE_CONFIG"], !path.isEmpty {
-            let url = URL(fileURLWithPath: path)
-            if FileManager.default.fileExists(atPath: url.path) { return url }
-        }
-        let temporary = URL(fileURLWithPath: "/private/tmp/livewallpaper-oracle-evidence.json")
-        return FileManager.default.fileExists(atPath: temporary.path) ? temporary : nil
+        TestScratch.externalFixtureURL(pathKey: "WPE_ORACLE_CAPTURE_CONFIG")
+    }
+
+    private static var captureOutputRoot: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_ORACLE_CAPTURE_OUTPUT")
     }
 
     @Test("Raw authored camera evidence keeps object perspective separate from scene projection")
@@ -205,7 +204,7 @@ struct WPECameraEvidenceCaptureTests {
 
     @Test(
         "Emit a paired camera-input manifest for Windows capture candidates",
-        .enabled(if: configURL != nil)
+        .enabled(if: configURL != nil && captureOutputRoot != nil)
     )
     func emitCameraEvidenceManifest() throws {
         let configURL = try #require(Self.configURL)
@@ -243,12 +242,7 @@ struct WPECameraEvidenceCaptureTests {
             scenes: scenes,
             requiredWindowsGates: WPECameraEvidenceManifest.gates
         )
-        let outputRoot = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        ).appendingPathComponent("LiveWallpaper/oracle-out/\(config.label)", isDirectory: true)
+        let outputRoot = try #require(Self.captureOutputRoot)
         try FileManager.default.createDirectory(at: outputRoot, withIntermediateDirectories: true)
         let output = outputRoot.appendingPathComponent("camera-evidence-manifest.json")
         let encoder = JSONEncoder()

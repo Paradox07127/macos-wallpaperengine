@@ -23,6 +23,7 @@ final class WeatherReactiveService {
     private(set) var currentIsDaylight: Bool?
     private(set) var locationStatus: LocationStatus = .notDetermined
     private(set) var lastError: String?
+    private(set) var lastSuccessfulUpdate: Date?
     /// `nil` until at least one resolve completes. Drives the status badge.
     private(set) var activeLocationLabel: String?
 
@@ -206,12 +207,19 @@ final class WeatherReactiveService {
 
     private func fetchWeatherIfPossible(force: Bool) async {
         guard !isShutdown else { return }
+        if Self.isStale(lastSuccess: lastSuccessfulUpdate, now: Date()) {
+            currentCondition = nil
+            currentParticleEffect = .none
+            currentEffectAdjustments = .neutral
+            currentWind = nil
+        }
         // Off means the entire weather-reactive pipeline is dormant: no
         // location query, no Open-Meteo request, no observable updates.
         // We still clear the cached state so a previously-rendered
         // particle effect stops driving the wallpaper.
         let preference = SettingsManager.shared.loadGlobalSettings().weatherLocation
         if preference.source == .off {
+            lastSuccessfulUpdate = nil
             currentCondition = nil
             currentParticleEffect = .none
             currentEffectAdjustments = .neutral
@@ -274,7 +282,7 @@ final class WeatherReactiveService {
             guard !isShutdown else { return }
 
             let weatherCode = response.current.weather_code
-            let description = mapWMOCode(weatherCode)
+            let description = Self.description(forWMOCode: weatherCode)
 
             currentCondition = description
             currentIntensity = WeatherCodePolicy.intensity(forWMOCode: weatherCode)
@@ -295,7 +303,8 @@ final class WeatherReactiveService {
             currentEffectAdjustments = mapDescriptionToEffects(description, freezing: currentIsFreezing)
             locationStatus = .available
             lastError = nil
-            lastFetchCompletedAt = Date()
+            lastSuccessfulUpdate = Date()
+            lastFetchCompletedAt = lastSuccessfulUpdate
 
             Logger.info("Weather updated: \(description.rawValue), code=\(weatherCode), intensity=\(currentIntensity.rawValue), particle=\(currentParticleEffect.rawValue), wind=\(currentWind.map { "\(Int($0.speedKPH))km/h@\(Int($0.fromDegrees))°" } ?? "n/a"), source=\(resolution.resolvedSource?.rawValue ?? "none")", category: .screenManager)
         } catch is CancellationError {
@@ -311,22 +320,27 @@ final class WeatherReactiveService {
 
     // MARK: - WMO Weather Code → Description
 
-    private func mapWMOCode(_ code: Int) -> WeatherDescription {
+    nonisolated static func isStale(lastSuccess: Date?, now: Date) -> Bool {
+        guard let lastSuccess else { return true }
+        return now.timeIntervalSince(lastSuccess) >= 7200
+    }
+
+    nonisolated static func description(forWMOCode code: Int) -> WeatherDescription {
         switch code {
-        case 0:           return .clear
-        case 1, 2:        return .partlyCloudy
-        case 3:           return .cloudy
-        case 45, 48:      return .foggy
-        case 51, 53, 55:  return .drizzle
-        case 56, 57:      return .drizzle
-        case 61, 63, 80:  return .rain
-        case 65, 81, 82:  return .heavyRain
-        case 66, 67:      return .rain
-        case 71, 73, 85:  return .snow
-        case 75, 77, 86:  return .heavySnow
-        case 95:          return .thunderstorm
-        case 96, 99:      return .thunderstorm
-        default:          return .unknown
+        case 0: .clear
+        case 1, 2: .partlyCloudy
+        case 3: .cloudy
+        case 45, 48: .foggy
+        case 51, 53, 55: .drizzle
+        case 56, 57: .drizzle
+        case 61, 63, 80, 81: .rain
+        case 65, 82: .heavyRain
+        case 66, 67: .rain
+        case 71, 73, 77, 85: .snow
+        case 75, 86: .heavySnow
+        case 95: .thunderstorm
+        case 96, 99: .thunderstorm
+        default: .unknown
         }
     }
 

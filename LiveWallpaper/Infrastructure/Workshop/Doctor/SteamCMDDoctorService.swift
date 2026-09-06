@@ -115,7 +115,7 @@ enum WorkshopItemDownloadResult<Imported: Sendable>: Sendable {
     case notConfigured(reason: String)
     case loginRequired
     case untrustedBinary
-    case notEntitled
+    case steamUnreachable
     case removedFromSteam
     case timedOut
     case failed(reason: String)
@@ -195,6 +195,15 @@ final class SteamCMDDoctorService {
     /// resolution failed (folder moved/deleted, grant revoked). A stored fact,
     /// not a live check: `downloadBlocker` must stay IO-free (rule R2).
     var workdirResolutionFailed = false
+    private(set) var cachedLoginDiagnosticTail = ""
+    private(set) var cachedLoginExitCode: Int32?
+    /// Bumped whenever `username` changes. Steam operations finish over XPC long
+    /// after they started; a result carries the generation it started under so a
+    /// download begun as account A cannot colour account B's probe.
+    private(set) var accountGeneration = 0
+    /// What Steam last said about the selected account's session. Only the
+    /// credential verdicts gate downloads; network trouble does not.
+    private(set) var cachedLoginVerdict: SteamCachedLoginOutcome?
 
     /// The binary the connector most recently reported actually executing — its
     /// execution receipt, not the app-side binding. The connector re-resolves its
@@ -392,16 +401,10 @@ final class SteamCMDDoctorService {
         await autoConfigureWorkdirIfNeeded()
     }
 
-    /// Re-run cached-login probe on Workshop appear (read-only; never prompts password).
+    /// Opening Workshop checks local setup only. Login is a real Steam session,
+    /// so it belongs to explicit diagnostics or a requested download.
     func autoConfirmDownloadReadinessIfNeeded() async {
         await autoConfigureIfNeeded()
-        guard hasBoundBinary,
-              workdirBookmarkData != nil,
-              username.map(SteamCMDScriptWriter.validateUsername) ?? false,
-              !isGreen(.cachedLogin)
-        else { return }
-        if case .running? = probes[.cachedLogin]?.status { return }
-        await runProbe(.cachedLogin)
     }
 
     /// Drop retired container/custom-workdir Steam library grants (files untouched).
@@ -422,10 +425,7 @@ final class SteamCMDDoctorService {
             forgetWorkdirBinding(reason: "binding pointed inside the app container, not the shared Steam profile")
             return
         }
-        let config = resolved.url
-            .appendingPathComponent("config", isDirectory: true)
-            .appendingPathComponent("config.vdf", isDirectory: false)
-        guard fileManager.fileExists(atPath: config.path(percentEncoded: false)) else {
+        guard Self.isLibraryRoot(resolved.url) else {
             forgetWorkdirBinding(reason: "retired non-Steam Workshop repository binding")
             return
         }
@@ -451,7 +451,7 @@ final class SteamCMDDoctorService {
             .appendingPathComponent("config.vdf", isDirectory: false)
         guard exists,
               isDirectory.boolValue,
-              fileManager.fileExists(atPath: configURL.path(percentEncoded: false))
+              Self.isLibraryRoot(canonicalURL)
         else {
             throw SteamCMDDoctorError.steamLibraryMissingConfig(configURL)
         }
@@ -464,9 +464,7 @@ final class SteamCMDDoctorService {
         workdirBookmarkData = bookmark
         workdirDisplayPath = canonicalURL.path(percentEncoded: false)
         workdirResolutionFailed = false
-        // The Steam profile holds cached login and Workshop content, so changing
-        // it invalidates the account-dependent probe.
-        setProbe(.cachedLogin, status: .notRun)
+        // The library stores content; account sessions have an independent home.
         Logger.info("Bound official Steam library", category: .workshop)
         await runProbe(.workingDirectory)
     }
@@ -480,8 +478,48 @@ final class SteamCMDDoctorService {
         // A different account name means cached-login green is no longer about
         // this user.
         if changed {
+            accountGeneration += 1
+            cachedLoginVerdict = nil
+            cachedLoginDiagnosticTail = ""
+            cachedLoginExitCode = nil
             setProbe(.cachedLogin, status: .notRun)
         }
+    }
+
+    /// Revokes this account's stored SteamCMD session. The account stays bound —
+    /// it simply has no session until the next sign-in.
+    @discardableResult
+    func removeSignedInSession() async -> Bool {
+        guard let username else { return false }
+        let generation = accountGeneration
+        let result = await SteamConnectorClient.removeAccountSession(accountName: username)
+        // The account can change while the connector works; a removal that
+        // finished for the previous one must not clear this one's verdict.
+        guard generation == accountGeneration else { return false }
+        switch result?.outcome {
+        case .removed, .notFound:
+            forgetSignedInSession()
+            return true
+        case .refused, nil:
+            // Leaving the probe untouched is accurate: the session is still there.
+            Logger.warning(
+                "Removing the saved Steam session was refused: \(result?.failureReason ?? "connector did not respond")",
+                category: .workshop
+            )
+            return false
+        }
+    }
+
+    /// Internal, not private, so tests can drive the reset without XPC.
+    func forgetSignedInSession() {
+        // Bumping the generation is the point: an operation still in flight
+        // must not be able to colour the probe green against a session that no
+        // longer exists.
+        accountGeneration += 1
+        cachedLoginVerdict = nil
+        cachedLoginDiagnosticTail = ""
+        cachedLoginExitCode = nil
+        setProbe(.cachedLogin, status: .notRun)
     }
 
     // MARK: - Probes
@@ -527,7 +565,7 @@ final class SteamCMDDoctorService {
     }
 
     /// A relaunch on the same SteamCMD costs one inspection here, against the four inspections (eight `codesign` spawns) and two SteamCMD launches that `autoConfigureIfNeeded()` + `runAll()` cost between them: the three binary probes are restored from the fingerprint the last passing run recorded, and re-run only when the bytes, signature or quarantine state no longer match it.
-    /// `cachedLogin` is deliberately absent: a Steam session expires server-side while the app is closed, so a launch-time verdict is already stale by the time the user reaches for a download — `autoConfirmDownloadReadinessIfNeeded()` runs it when the Workshop pane appears.
+    /// Login is deliberately absent: a download validates its cache when requested.
     func prepareAtLaunch() async {
         beginProbeRun()
         state = .probing
@@ -790,10 +828,7 @@ final class SteamCMDDoctorService {
                 return
             }
             // Read-only library probe (old write probe left litter on green).
-            let config = workdir
-                .appendingPathComponent("config", isDirectory: true)
-                .appendingPathComponent("config.vdf", isDirectory: false)
-            guard fileManager.isReadableFile(atPath: config.path(percentEncoded: false)) else {
+            guard Self.isLibraryRoot(workdir), fileManager.isReadableFile(atPath: workdir.path(percentEncoded: false)) else {
                 setProbe(.workingDirectory, status: .red(
                     message: redacted(String(localized: "Steam Library is not readable.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")),
                     command: nil
@@ -842,7 +877,9 @@ final class SteamCMDDoctorService {
             return
         }
 
+        let generation = accountGeneration
         let result = await SteamConnectorClient.probeCachedLogin(accountName: username)
+        guard generation == accountGeneration else { return }
         guard let result else {
             setProbe(.cachedLogin, status: .red(
                 message: String(
@@ -853,7 +890,7 @@ final class SteamCMDDoctorService {
             ))
             return
         }
-        applyCachedLoginOutcome(result, username: username, binary: binary)
+        applyCachedLoginOutcome(result, username: username, binary: binary, generation: generation)
     }
 
     /// One sentence for both the Doctor probe and the in-app sign-in sheet.
@@ -875,11 +912,17 @@ final class SteamCMDDoctorService {
     func applyCachedLoginOutcome(
         _ result: SteamCachedLoginResult,
         username: String,
-        binary: URL
+        binary: URL,
+        generation: Int
     ) {
+        guard generation == accountGeneration, username == self.username else { return }
         noteExecutionReceipt(result.executedBinaryPath)
-        // Shared STEAMROOT: plain +login (do not re-pin home like container era).
-        let signIn = command(binary: binary, args: ["+login", username])
+        cachedLoginVerdict = result.outcome
+        cachedLoginDiagnosticTail = redacted(String(result.diagnosticTail.suffix(500)))
+        cachedLoginExitCode = result.exitCode
+        // Terminal recovery must authenticate the same private profile as XPC.
+        // +quit ends the interactive run; that is what persists the session.
+        let signIn = command(binary: binary, args: ["+login", username, "+quit"])
 
         switch result.outcome {
         case .sessionValid:
@@ -892,16 +935,16 @@ final class SteamCMDDoctorService {
         case .noCachedSession:
             setProbe(.cachedLogin, status: .yellow(
                 message: String(
-                    localized: "Sign in once in Terminal so Steam caches the session, then check again.",
-                    bundle: .appLanguage, comment: "Steam sign-in diagnostic when the shared profile has never signed in."
+                    localized: "Connect this account to Loomscreen once. Its download session is saved separately from the Steam app.",
+                    bundle: .appLanguage, comment: "SteamCMD private profile needs authentication; Steam client login is separate."
                 ),
                 command: signIn
             ))
         case .sessionExpired:
             setProbe(.cachedLogin, status: .yellow(
                 message: String(
-                    localized: "Your Steam session expired. Sign in again in Terminal, then check again.",
-                    bundle: .appLanguage, comment: "Steam sign-in diagnostic when the cached session is no longer valid."
+                    localized: "Loomscreen's download session is unavailable. Reconnect this account; your Steam app sign-in is separate.",
+                    bundle: .appLanguage, comment: "SteamCMD download needs renewed private-profile authentication."
                 ),
                 command: signIn
             ))
@@ -979,10 +1022,17 @@ final class SteamCMDDoctorService {
         guard hasBoundBinary,
               workdirBookmarkData != nil,
               !workdirResolutionFailed,
-              username.map(SteamCMDScriptWriter.validateUsername) ?? false,
-              isGreen(.cachedLogin)
+              username.map(SteamCMDScriptWriter.validateUsername) ?? false
         else { return .setupIncomplete }
-        return nil
+        // Unknown after launch is not logged out, and a network failure is not
+        // a missing account: the download validates the session itself. Only a
+        // verdict about the credentials blocks.
+        switch cachedLoginVerdict {
+        case .noCachedSession?, .sessionExpired?, .loginFailed?:
+            return .setupIncomplete
+        default:
+            return nil
+        }
     }
 
     var downloadBlockerMessage: String? {
@@ -1021,7 +1071,8 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Download via connector (real $HOME → shared Steam repo, not container).
+    /// Authenticate in the private profile; SteamCMD writes the item straight
+    /// into the authorized library.
     private func performDownloadWorkshopItem<Imported: Sendable>(
         _ itemID: UInt64,
         onProgress: SteamCMDProgressHandler?,
@@ -1036,15 +1087,16 @@ final class SteamCMDDoctorService {
         guard let steamRoot = try? resolveWorkdirURL() else {
             return .notConfigured(reason: SteamCMDDoctorError.missingWorkdirBinding.errorDescription ?? "No Steam Library is authorized.")
         }
-        guard isGreen(.cachedLogin) else { return .loginRequired }
         // No digest on file means the binding never completed its identity
         // probe. The connector picks the binary now, so this is a readiness
         // check, not an authorization one.
         guard lastBinarySHA256 != nil else { return .untrustedBinary }
 
+        let generation = accountGeneration
         let result = await SteamConnectorClient.downloadWorkshopItem(
             workshopID: String(itemID),
             accountName: username,
+            libraryPath: steamRoot.path(percentEncoded: false),
             onProgress: { update in
                 guard let fraction = update.fraction else { return }
                 onProgress?(fraction * 100, update.downloadedBytes, update.totalBytes)
@@ -1059,6 +1111,7 @@ final class SteamCMDDoctorService {
         noteExecutionReceipt(result.executedBinaryPath)
         switch result.outcome {
         case .downloaded:
+            noteSuccessfulSteamOperation(generation: generation)
             guard let path = result.itemPath else { return .failed(reason: String(localized: "Download reported no folder.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")) }
             // The import reads the folder and mints its own per-project bookmark,
             // so the Steam-library scope has to stay open across the handoff.
@@ -1066,10 +1119,10 @@ final class SteamCMDDoctorService {
             defer { if scope { steamRoot.stopAccessingSecurityScopedResource() } }
             return .imported(await onContentReady(URL(fileURLWithPath: path, isDirectory: true)))
         case .loginRequired:
-            noteOperationReportedLoginRequired()
+            noteOperationReportedLoginRequired(generation: generation)
             return .loginRequired
-        case .notEntitled:
-            return .notEntitled
+        case .steamUnreachable:
+            return .steamUnreachable
         case .removedFromSteam:
             return .removedFromSteam
         case .timedOut:
@@ -1417,20 +1470,31 @@ final class SteamCMDDoctorService {
     /// though the cached-login probe was green: the session died after the probe
     /// ran. Demote the probe now so `isDownloadReady` stops saying yes and the
     /// user is not invited to retry a download that must fail.
-    func noteOperationReportedLoginRequired() {
+    func noteOperationReportedLoginRequired(generation: Int) {
+        guard generation == accountGeneration else { return }
+        cachedLoginVerdict = .sessionExpired
         // Prefer the receipt: the Terminal command should name the binary that
         // actually failed, not the one the UI happens to have bound.
         let binary = lastExecutedBinaryPath.map { URL(fileURLWithPath: $0) } ?? (try? resolveBinaryURL())
         let signIn = binary.flatMap { binary in
-            username.map { command(binary: binary, args: ["+login", $0]) }
+            username.map { command(binary: binary, args: ["+login", $0, "+quit"]) }
         }
         setProbe(.cachedLogin, status: .yellow(
             message: String(
-                localized: "Your Steam session expired. Sign in again in Terminal, then check again.",
-                bundle: .appLanguage, comment: "Steam sign-in diagnostic when the cached session is no longer valid."
+                localized: "Loomscreen's download session is unavailable. Reconnect this account; your Steam app sign-in is separate.",
+                bundle: .appLanguage, comment: "SteamCMD download needs renewed private-profile authentication."
             ),
             command: signIn
         ))
+    }
+
+    func noteSuccessfulSteamOperation(generation: Int) {
+        guard generation == accountGeneration, let username else { return }
+        cachedLoginVerdict = .sessionValid
+        setProbe(.cachedLogin, status: .green(detail: redacted(String(
+            localized: "Signed in to Steam as \(username).",
+            bundle: .appLanguage, comment: "Steam sign-in diagnostic detail; %@ is the Steam account name."
+        ))))
     }
 
     func isGreen(_ kind: DoctorProbeKind) -> Bool {
@@ -1451,7 +1515,18 @@ final class SteamCMDDoctorService {
     }
 
     private func command(binary: URL, args: [String]) -> String {
-        ([binary.path(percentEncoded: false)] + args).map(Self.shellEscaped).joined(separator: " ")
+        var words = [binary.path(percentEncoded: false)] + args
+        if let account = SteamCMDProfile.account(in: args), let home = try? SteamCMDProfile.home(accountName: account) {
+            words = ["/usr/bin/env", "HOME=\(home.path(percentEncoded: false))"] + words
+        }
+        return words.map(Self.shellEscaped).joined(separator: " ")
+    }
+
+    /// A SteamCMD-only installation has no client config in the content library.
+    /// Its canonical library folder is still valid; SteamCMD credentials live elsewhere.
+    static func isLibraryRoot(_ url: URL) -> Bool {
+        url.resolvingSymlinksInPath().standardizedFileURL == SteamLibraryPaths.steamRoot().resolvingSymlinksInPath().standardizedFileURL
+            || FileManager.default.isReadableFile(atPath: url.appendingPathComponent("config/config.vdf").path(percentEncoded: false))
     }
 
     private func xattrCommand(for binary: URL) -> String {

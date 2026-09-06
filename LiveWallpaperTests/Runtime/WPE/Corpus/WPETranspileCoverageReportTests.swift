@@ -109,72 +109,17 @@ struct WPETranspileCoverageAggregatorTests {
 @Suite("WPE transpile coverage corpus report", .serialized)
 struct WPETranspileCoverageCorpusReportTests {
     private static var reportRequested: Bool {
-        ProcessInfo.processInfo.environment["WPE_COVERAGE_REPORT"] == "1"
+        ProcessInfo.processInfo.environment["LIVEWALLPAPER_EXTERNAL_FIXTURES"] == "1"
+            && ProcessInfo.processInfo.environment["WPE_COVERAGE_REPORT"] == "1"
     }
 
-    /// The test host is sandboxed, so `homeDirectoryForCurrentUser` is the app
-    /// CONTAINER home; the user's real home comes from the passwd entry.
-    private static var homeCandidates: [URL] {
-        var homes: [URL] = []
-        if let passwd = getpwuid(getuid()), let dir = passwd.pointee.pw_dir {
-            homes.append(URL(fileURLWithPath: String(cString: dir), isDirectory: true))
-        }
-        homes.append(FileManager.default.homeDirectoryForCurrentUser)
-        return homes
-    }
-
-    /// Explicit env override first, then this Mac's steamcmd content roots
-    /// (host-level Steam, then the app containers' Steam).
     private static var corpusRoot: URL? {
-        let contentSuffix = "Steam/steamapps/workshop/content/431960"
-        var candidates: [URL] = []
-        if let explicit = ProcessInfo.processInfo.environment["WPE_COVERAGE_CORPUS_ROOT"],
-           !explicit.isEmpty {
-            candidates.append(URL(fileURLWithPath: explicit, isDirectory: true))
-        }
-        for home in homeCandidates {
-            candidates.append(home.appendingPathComponent(
-                "Library/Application Support/\(contentSuffix)", isDirectory: true
-            ))
-            for bundleID in ["com.loomscreen.pro", "com.loomscreen"] {
-                candidates.append(home.appendingPathComponent(
-                    "Library/Containers/\(bundleID)/Data/Library/Application Support/\(contentSuffix)",
-                    isDirectory: true
-                ))
-            }
-        }
-        return candidates.first {
-            var isDirectory: ObjCBool = false
-            return FileManager.default.fileExists(atPath: $0.path, isDirectory: &isDirectory)
-                && isDirectory.boolValue
-        }
+        TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_CORPUS_ROOT")
     }
 
-    /// The engine-assets root next to the corpus (`steamapps/common/wallpaper_engine`),
-    /// or an explicit override; without it every builtin-model scene fails to load.
     @MainActor
-    private static func engineAssetsRoot(corpusRoot: URL) -> URL? {
-        if let explicit = ProcessInfo.processInfo.environment["WPE_COVERAGE_ENGINE_ASSETS_ROOT"],
-           !explicit.isEmpty {
-            return URL(fileURLWithPath: explicit, isDirectory: true)
-        }
-        let derived = corpusRoot // .../steamapps/workshop/content/431960
-            .deletingLastPathComponent() // content
-            .deletingLastPathComponent() // workshop
-            .deletingLastPathComponent() // steamapps
-            .appendingPathComponent("common/wallpaper_engine", isDirectory: true)
-        // `fileExists` is not enough: the host Steam `wallpaper_engine` dir can
-        // carry a com.apple.macl gate that lets the sandboxed test host stat it
-        // but not read it (measured: 28/52 scenes died on fileMissing for files
-        // that exist). Only accept a root we can actually open.
-        let probe = derived.appendingPathComponent(
-            "assets/models/util/projectlayer.json", isDirectory: false
-        )
-        if let handle = try? FileHandle(forReadingFrom: probe) {
-            try? handle.close()
-            return derived
-        }
-        return WPEEngineAssetsLibrary.shared.resolveAuthorizedRoot()
+    private static func engineAssetsRoot(corpusRoot _: URL) -> URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_ENGINE_ASSETS_ROOT")
     }
 
     @MainActor
@@ -182,7 +127,7 @@ struct WPETranspileCoverageCorpusReportTests {
         "Aggregate transpile coverage over the local workshop corpus",
         .enabled(if: reportRequested, "opt-in: set WPE_COVERAGE_REPORT=1"),
         .enabled(if: !reportRequested || corpusRoot != nil,
-                 "no workshop corpus found (steamcmd content root missing)"),
+                 "set LIVEWALLPAPER_EXTERNAL_FIXTURES=1 and WPE_COVERAGE_CORPUS_ROOT"),
         .enabled(if: !reportRequested || MTLCreateSystemDefaultDevice() != nil,
                  "no Metal device")
     )

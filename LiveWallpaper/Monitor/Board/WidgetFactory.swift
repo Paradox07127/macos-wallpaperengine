@@ -37,6 +37,25 @@ enum WidgetFactory {
 
     @MainActor @ViewBuilder
     static func tile(context: MonitorWidgetContext) -> some View {
+        if let notice = context.readingsNotice {
+            WidgetContainer(label: displayName(context.placement.kind), systemImage: icon(context.placement.kind)) {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                    Text(verbatim: "—")
+                        .font(DesignTokens.Typography.hero)
+                    Text(notice)
+                        .font(DesignTokens.Typography.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(Design.inkMuted)
+                .accessibilityElement(children: .combine)
+            }
+        } else {
+            availableTile(context: context)
+        }
+    }
+
+    @MainActor @ViewBuilder
+    private static func availableTile(context: MonitorWidgetContext) -> some View {
         switch context.placement.kind {
         case .cpu:
             CPUWidgetView(context: context)

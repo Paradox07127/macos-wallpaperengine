@@ -189,6 +189,15 @@ final class OverlayController: NSObject {
     /// display stops being pushed while the visible one keeps accumulating.
     private let sharedBoardHistory = MonitorHistoryStore()
 
+    /// Everything the settings inspector's frozen preview may draw: the last
+    /// snapshot the desktop was actually handed, plus the series built from it.
+    /// Reading it starts nothing — the preview takes no runtime lease, so this
+    /// is only ever whatever the desktop already collected.
+    var lastDeliveredData: (snapshot: MonitorSnapshot, history: MonitorHistorySnapshot)? {
+        guard let update = runtime.broker.latest(after: 0) else { return nil }
+        return (update.snapshot, sharedBoardHistory.current)
+    }
+
     /// Pushes a changed capture policy onto overlays that already exist; new
     /// ones read it in `OverlayWindow.init`.
     func applyCapturePolicyToLiveOverlays() {
@@ -269,7 +278,7 @@ final class OverlayController: NSObject {
         }
 
         let level = module.level(in: overlay)
-        let topInsetFraction = HostView.menuBarTopInsetFraction(forFrame: screenFrame)
+        let safeArea = MonitorSafeAreaInsets.forScreen(matching: screenFrame)
 
         if let host = hosts[key] {
             host.level = level
@@ -278,10 +287,10 @@ final class OverlayController: NSObject {
             switch host.content {
             case .monitor(let view, _):
                 host.content = .monitor(view, overlay.board)
-                view.apply(configuration: overlay.board, topInsetFraction: topInsetFraction)
+                view.apply(configuration: overlay.board, safeArea: safeArea)
             case .music(let view, _):
                 host.content = .music(view, overlay.music)
-                view.apply(configuration: overlay.music, topInsetFraction: topInsetFraction)
+                view.apply(configuration: overlay.music, safeArea: safeArea)
             }
             updateInteractive(host)
             reconcileVisibilityAndRuntime()
@@ -298,7 +307,7 @@ final class OverlayController: NSObject {
             let board = HostView(
                 frame: frame,
                 configuration: overlay.board,
-                topInsetFraction: topInsetFraction,
+                safeArea: safeArea,
                 historyStore: sharedBoardHistory,
                 weatherService: weatherService
             )
@@ -324,7 +333,7 @@ final class OverlayController: NSObject {
             let music = MusicHostView(
                 frame: frame,
                 configuration: overlay.music,
-                topInsetFraction: topInsetFraction
+                safeArea: safeArea
             )
             music.autoresizingMask = [.width, .height]
             music.setSuspended(true)

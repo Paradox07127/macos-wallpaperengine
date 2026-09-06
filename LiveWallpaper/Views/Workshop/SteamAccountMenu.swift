@@ -11,7 +11,10 @@ func steamAccountMenuItems(
     current: String?,
     onSelect: @escaping (SteamAccountSummary) -> Void,
     onSignIn: @escaping () -> Void,
-    onRescan: @escaping () -> Void
+    onRescan: @escaping () -> Void,
+    // Omitted where revoking makes no sense — onboarding is where a session
+    // gets made, not thrown away.
+    onRemoveSession: (() -> Void)? = nil
 ) -> some View {
     ForEach(accounts) { account in
         Button {
@@ -27,14 +30,16 @@ func steamAccountMenuItems(
     Divider()
     Button("Sign in to another account", action: onSignIn)
     Button("Rescan", action: onRescan)
+    if current != nil, let onRemoveSession {
+        Divider()
+        Button("Remove saved session", role: .destructive, action: onRemoveSession)
+    }
 }
 
 extension SteamCMDDoctorService {
-    /// Binds the account and immediately re-checks the cached login, so whichever
-    /// menu made the choice shows the result without a manual diagnostics run.
+    /// Binds the account only; the next download validates its session.
     func adoptAccount(_ account: SteamAccountSummary) throws {
         try setUsername(account.accountName)
-        Task { await runProbe(.cachedLogin) }
     }
 }
 #endif

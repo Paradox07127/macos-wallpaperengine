@@ -260,16 +260,24 @@ struct OverlayPreviewArea: View {
     /// copy of the particle system just to fill a preview would cost real GPU
     /// time for a surface the user looks at for a few seconds — and a fake
     /// animation that didn't match the real one would be worse than none.
+    private var resolvedWeatherEffect: ParticleEffect {
+        WeatherReactivePolicy.resolvedParticleEffect(
+            chosen: draft.selectedParticleEffect,
+            weatherReactive: draft.effectConfig.weatherReactive,
+            weatherEffect: screenManager.weatherService.currentParticleEffect
+        )
+    }
+
     private var weatherBadge: some View {
         HStack(spacing: 7) {
-            Image(systemName: draft.selectedParticleEffect.previewSymbol)
+            Image(systemName: resolvedWeatherEffect.previewSymbol)
                 .font(.callout)
                 .foregroundStyle(.white)
             VStack(alignment: .leading, spacing: 1) {
-                Text(draft.selectedParticleEffect.titleKey)
+                Text(resolvedWeatherEffect.titleKey)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
-                Text("Drawn over the wallpaper")
+                Text(resolvedWeatherEffect == .none ? "No particles for current weather" : "Drawn over the wallpaper")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.75))
             }
@@ -279,7 +287,7 @@ struct OverlayPreviewArea: View {
         .thumbnailBadgeGlass()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Weather overlay active"))
-        .accessibilityValue(Text(draft.selectedParticleEffect.titleKey))
+        .accessibilityValue(Text(resolvedWeatherEffect.titleKey))
     }
 }
 

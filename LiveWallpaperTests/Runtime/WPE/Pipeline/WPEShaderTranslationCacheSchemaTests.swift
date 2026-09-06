@@ -41,7 +41,7 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     /// Bump together with `schemaVersion`.
-    static let expectedSchemaVersion = 1
+    static let expectedSchemaVersion = 2
     /// 2026-08-30: comment-only compression across eight of the files above moved the
     /// fingerprint without touching a line of code, so the MSL is byte-identical and
     /// `schemaVersion` deliberately stayed at 1 — bumping it would have thrown away every
@@ -51,7 +51,18 @@ struct WPEShaderTranslationCacheSchemaTests {
     /// already handles both), and `WPERenderPipelineBuilder` joined `translatorSources`
     /// above — its memo wrapper is a pure cache. Both are proven byte-for-byte by
     /// `WPEPreprocessGoldenBaselineTests` against a 2342-entry corpus baseline: 0 diffs.
-    static let expectedFingerprint = "be1b9ddd8d6cba06ebb120169b510a43c030ad29641b77d808edbd9e6f4606b7"
+    /// 2026-09-05: schema 2 rejects invalid declarations before layout/MSL expansion.
+    static let expectedFingerprint = "0f9d7239b17790ee1521584147be399197f2afe6658a889f0e5be7770e6580b3"
+
+    @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
+    func defaultCacheRootIsIsolated() {
+        #expect(NSClassFromString("XCTestCase") != nil)
+        let expected = ConfigurationDirectory().root.appendingPathComponent("wpe-msl", isDirectory: true)
+        #expect(WPEShaderTranslationCache.defaultRootURL == expected)
+        let production = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("wpe-msl", isDirectory: true)
+        #expect(WPEShaderTranslationCache.defaultRootURL != production)
+    }
 
     @Test("A translator edit forces a cache schema bump")
     func translatorFingerprintMatchesSchemaVersion() throws {

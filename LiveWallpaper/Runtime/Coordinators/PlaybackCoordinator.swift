@@ -11,6 +11,10 @@ final class PlaybackCoordinator {
     let configurationStore: WallpaperConfigurationStore
     let playableVideoLoader: any PlayableVideoLoading
     let bookmarkResolver: SecurityScopedBookmarkResolver
+    /// Keep candidate construction and post-save validation injectable without
+    /// changing the shipping AVFoundation path or SettingsManager validation.
+    let makeVideoPlayer: VideoWallpaperSession.RetryPlayerFactory
+    let validateSavedVideoConfiguration: @MainActor (CGDirectDisplayID) -> Bool
     /// Injected from `ScreenManager` (policy source of truth).
     let applyPolicy: @MainActor (Screen) -> Void
     /// Callbacks into ScreenManager-owned lifetimes.
@@ -65,6 +69,15 @@ final class PlaybackCoordinator {
         configurationStore: WallpaperConfigurationStore,
         playableVideoLoader: any PlayableVideoLoading,
         bookmarkResolver: SecurityScopedBookmarkResolver = .shared,
+        makeVideoPlayer: @escaping VideoWallpaperSession.RetryPlayerFactory = { url, frame, fitMode, entryName in
+            WallpaperVideoPlayer(
+                url: url, frame: frame, fitMode: fitMode,
+                packageEntryName: entryName, startsHidden: true
+            )
+        },
+        validateSavedVideoConfiguration: @MainActor @escaping (CGDirectDisplayID) -> Bool = {
+            SettingsManager.shared.validateConfiguration(for: $0)
+        },
         applyPolicy: @MainActor @escaping (Screen) -> Void,
         applyVideoEffects: @MainActor @escaping (Screen, ScreenConfiguration) -> Void,
         prepareVideoEffects: @MainActor @escaping (
@@ -111,6 +124,8 @@ final class PlaybackCoordinator {
         self.configurationStore = configurationStore
         self.playableVideoLoader = playableVideoLoader
         self.bookmarkResolver = bookmarkResolver
+        self.makeVideoPlayer = makeVideoPlayer
+        self.validateSavedVideoConfiguration = validateSavedVideoConfiguration
         self.applyPolicy = applyPolicy
         self.applyVideoEffects = applyVideoEffects
         self.prepareVideoEffects = prepareVideoEffects

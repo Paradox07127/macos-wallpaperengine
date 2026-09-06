@@ -11,12 +11,25 @@ struct PowerWidgetTests {
         return s
     }
 
-    @Test("No battery level → plug/AC hero, never a fabricated percent")
+    @Test("No source or battery level must not imply AC")
     func desktopHasNoFakePercent() {
         let m = MonitorPowerModel(system: system { $0.batteryLevel = nil; $0.powerSource = nil })
         #expect(m.hasBattery == false)
         #expect(m.heroPercent == nil)
-        #expect(m.status == "Power Adapter")
+        #expect(m.status == "Readings unavailable")
+        #expect(m.sourceReadout == "—")
+    }
+
+    @Test("A known battery source remains a battery when charge is unavailable")
+    func partialBatteryReading() {
+        let battery = MonitorPowerModel(system: system { $0.powerSource = "battery" })
+        #expect(battery.hasBattery)
+        #expect(battery.heroPercent == nil)
+        #expect(battery.sourceReadout == "—")
+        #expect(battery.status == "Battery")
+        let adapter = MonitorPowerModel(system: system { $0.powerSource = "ac" })
+        #expect(adapter.sourceReadout == "AC")
+        #expect(adapter.status == "Power Adapter")
     }
 
     @Test("Battery level rounds to a whole-number hero percent")

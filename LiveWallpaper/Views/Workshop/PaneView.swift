@@ -9,6 +9,7 @@ struct PaneView: View {
     @Environment(WorkshopSetupController.self) private var setupController
     @AppStorage("loomscreen.workshop.pane.selectedTab.v1", store: .appScoped()) private var selectedTab: WorkshopPaneTab = .installed
     @AppStorage("loomscreen.workshop.onboarding.shown.v1", store: .appScoped()) private var onboardingShown: Bool = false
+    @AppStorage("loomscreen.workshop.privateSessionNotice.shown.v1", store: .appScoped()) private var privateSessionNoticeShown = false
 
     @State private var folderImport = WorkshopFolderImportCoordinator.shared
     @State private var browseViewModel: BrowseViewModel?
@@ -108,19 +109,29 @@ struct PaneView: View {
 
     // MARK: - Tab body
 
-    @ViewBuilder
     private var tabBody: some View {
-        switch selectedTab {
-        case .installed:
-            InstalledView(
-                onBrowseTag: browseByTag,
-                onBrowseOnline: { selectedTab = .browseOnline },
-                onInstallSteamCMD: { isShowingInstallConsent = true },
-                onOpenWorkshopSettings: { openWorkshopSettings() },
-                isInstallingSteamCMD: isInstallingSteamCMD
-            )
-        case .browseOnline:
-            browseTab
+        VStack(spacing: 0) {
+            if doctor.username != nil, !privateSessionNoticeShown {
+                PrivateSessionNoticeBanner(
+                    onConnect: {
+                        privateSessionNoticeShown = true
+                        openWorkshopSettings(anchor: .workshopConnection)
+                    },
+                    onDismiss: { privateSessionNoticeShown = true }
+                )
+            }
+            switch selectedTab {
+            case .installed:
+                InstalledView(
+                    onBrowseTag: browseByTag,
+                    onBrowseOnline: { selectedTab = .browseOnline },
+                    onInstallSteamCMD: { isShowingInstallConsent = true },
+                    onOpenWorkshopSettings: { openWorkshopSettings() },
+                    isInstallingSteamCMD: isInstallingSteamCMD
+                )
+            case .browseOnline:
+                browseTab
+            }
         }
     }
 
@@ -203,6 +214,53 @@ struct PaneView: View {
     }
 }
 
+/// One-time notice for users configured before downloads got their own Steam
+/// session (they used to share, and sign out, the Steam app's).
+private struct PrivateSessionNoticeBanner: View {
+    let onConnect: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "person.badge.key")
+                .font(.title3)
+                .foregroundStyle(DesignTokens.Colors.Status.warning)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Steam downloads now sign in separately")
+                    .font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Loomscreen keeps its own Steam download session, apart from the Steam app, so downloading no longer signs the Steam app out. Connect your account once; after that, downloads stay signed in.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 8)
+            Button("Dismiss", action: onDismiss)
+                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .controlSize(.small)
+            Button(action: onConnect) {
+                Label("Connect account", systemImage: "arrow.right")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.md), tint: DesignTokens.Colors.Status.warning)
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                .strokeBorder(DesignTokens.Colors.Status.warning.opacity(0.30), lineWidth: 1)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+    }
+}
+
 enum WorkshopPaneTab: String, CaseIterable, Identifiable {
     case installed
     case browseOnline
@@ -258,6 +316,8 @@ struct WorkshopPaneActions: View {
 
     @State private var showingSignIn = false
     @State private var showingAccountMenu = false
+    @State private var showingRemoveSessionConfirm = false
+    @State private var showingSubscriptionSync = false
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
@@ -269,6 +329,14 @@ struct WorkshopPaneActions: View {
             .help(Text("Add a Steam Workshop item by URL or ID"))
             .accessibilityLabel(Text("Add from Workshop URL or ID"))
 
+            Button {
+                showingSubscriptionSync = true
+            } label: {
+                Image(systemName: "arrow.down.circle")
+            }
+            .help(Text("Download subscribed wallpapers missing from this Mac"))
+            .accessibilityLabel(Text("Sync subscribed wallpapers"))
+
             accountControl
         }
         .task { await setupController.loadAccounts() }
@@ -278,6 +346,25 @@ struct WorkshopPaneActions: View {
                     setupController.adoptSignedInAccount(accountName)
                 }
             }
+        }
+        .sheet(isPresented: $showingSubscriptionSync) {
+            AppLanguageScope(defaults: .appScoped()) {
+                SubscriptionSyncSheet()
+            }
+        }
+        .confirmationDialog(
+            Text("Remove the saved Steam session?"),
+            isPresented: $showingRemoveSessionConfirm,
+            titleVisibility: .visible
+        ) {
+            // No destructive role on the confirm button: the user already
+            // pressed a control labelled Remove (rules/ui-design.md).
+            Button("Remove") {
+                Task { await doctor.removeSignedInSession() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Loomscreen deletes only its own download session for this account. Your Steam app sign-in is not affected. You'll connect this account again the next time you download.")
         }
     }
 
@@ -334,6 +421,10 @@ struct WorkshopPaneActions: View {
                 onRescan: {
                     showingAccountMenu = false
                     Task { await setupController.loadAccounts() }
+                },
+                onRemoveSession: {
+                    showingAccountMenu = false
+                    showingRemoveSessionConfirm = true
                 }
             )
             .buttonStyle(.borderless)

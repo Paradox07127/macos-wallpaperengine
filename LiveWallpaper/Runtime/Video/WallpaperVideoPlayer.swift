@@ -188,6 +188,12 @@ final class WallpaperVideoPlayer {
     }
 
     #if DEBUG
+    /// Install an owned empty fixture window without loading any media.
+    func installPlaybackWindowForTesting(_ fixture: VideoWallpaperWindow) {
+        precondition(window == nil)
+        window = fixture
+    }
+
     // Test-only introspection; no production reader.
     var hasInstalledPlaybackWindow: Bool { window != nil }
     var boundVideoOutputCountForTesting: Int { boundVideoOutputs.count }
@@ -1022,7 +1028,14 @@ final class WallpaperVideoPlayer {
         }
     }
 
+    func applyCapturePolicy(_ sharingType: NSWindow.SharingType) {
+        window?.sharingType = sharingType
+    }
+
     func orderWindowBack() {
+        // A hidden preparation/retry candidate may predate a policy change.
+        // Re-read at publication, after any async preparation has completed.
+        applyCapturePolicy(WallpaperCapturePolicy.windowSharingType)
         window?.orderBack(nil)
     }
 

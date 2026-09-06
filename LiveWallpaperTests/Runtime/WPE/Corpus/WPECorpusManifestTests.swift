@@ -6,76 +6,26 @@ import Testing
 
 @Suite("WPE corpus manifest")
 struct WPECorpusManifestTests {
-    /// Opt-in gate as an `.enabled` trait: no config and no canonical Steam
-    /// corpus must surface as a SKIPPED test, not a vacuous pass.
-    private static var corpusAvailable: Bool {
-        let fileManager = FileManager.default
-        if let applicationSupport = try? fileManager.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false
-        ) {
-            let configURL = applicationSupport
-                .appendingPathComponent("LiveWallpaper", isDirectory: true)
-                .appendingPathComponent("oracle-capture.json")
-            if fileManager.fileExists(atPath: configURL.path) { return true }
-        }
-        let passwd = getpwuid(getuid())
-        let realHome = passwd.map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
-        let canonicalRoot = URL(fileURLWithPath: realHome, isDirectory: true)
-            .appendingPathComponent("Library/Application Support/Steam/steamapps/workshop/content/431960", isDirectory: true)
-        return fileManager.fileExists(atPath: canonicalRoot.path)
+    private static var corpusRoot: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_CORPUS_MANIFEST_ROOT")
+    }
+
+    private static var outputDirectory: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_CORPUS_MANIFEST_OUTPUT")
     }
 
     @Test(
-        "Container corpus writes a deterministic path-redacted manifest",
-        .enabled(if: corpusAvailable)
+        "Explicit corpus writes a deterministic path-redacted manifest",
+        .enabled(if: corpusRoot != nil && outputDirectory != nil)
     )
     func containerCorpusWritesManifest() throws {
         let fileManager = FileManager.default
-        let applicationSupport = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: false
-        )
-        let liveWallpaperSupport = applicationSupport.appendingPathComponent("LiveWallpaper", isDirectory: true)
-        let configURL = liveWallpaperSupport.appendingPathComponent("oracle-capture.json")
-
-        let selection: CorpusSelection
-        if fileManager.fileExists(atPath: configURL.path) {
-            let data = try Data(contentsOf: configURL)
-            let config = try JSONDecoder().decode(OracleCaptureRootConfig.self, from: data)
-            try #require(!config.corpusRoot.isEmpty, "oracle-capture.json corpusRoot must not be empty")
-            selection = CorpusSelection(
-                root: URL(fileURLWithPath: config.corpusRoot, isDirectory: true),
-                label: "oracle-capture-config"
-            )
-        } else {
-            // The real Steam profile, not this process's container. Until the
-            // 2026-08 migration the wallpapers lived in the container and this
-            // fallback occasionally found them; afterwards the container tree was
-            // deleted outright, so anchoring here made the test permanently
-            // vacuous — it printed "skipping" on every run with nothing to say so.
-            // `getpwuid`, not `applicationSupport` — inside the sandbox the latter
-            // is the container, and `NSHomeDirectory()` would be too. This is the
-            // same mechanism the connector's own home probe uses.
-            let passwd = getpwuid(getuid())
-            let realHome = passwd.map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
-            let canonicalRoot = URL(fileURLWithPath: realHome, isDirectory: true)
-                .appendingPathComponent("Library/Application Support", isDirectory: true)
-                .appendingPathComponent("Steam", isDirectory: true)
-                .appendingPathComponent("steamapps", isDirectory: true)
-                .appendingPathComponent("workshop", isDirectory: true)
-                .appendingPathComponent("content", isDirectory: true)
-                .appendingPathComponent("431960", isDirectory: true)
-            try #require(
-                fileManager.fileExists(atPath: canonicalRoot.path),
-                "corpusAvailable trait admitted the test but the canonical corpus vanished mid-run"
-            )
-            selection = CorpusSelection(root: canonicalRoot, label: "canonical-container-431960")
-        }
+        let corpusRoot = try #require(Self.corpusRoot)
+        let selection = CorpusSelection(root: corpusRoot, label: "explicit-corpus")
+        let outputDirectory = try #require(Self.outputDirectory)
 
         let first = try WPECorpusManifestBuilder.build(root: selection.root, rootLabel: selection.label)
-        try #require(!first.entries.isEmpty, "configured/canonical WPE corpus contains no project directories")
+        try #require(!first.entries.isEmpty, "explicit WPE corpus contains no project directories")
         let firstData = try WPECorpusManifestBuilder.encode(first)
         let secondData = try WPECorpusManifestBuilder.encode(
             WPECorpusManifestBuilder.build(root: selection.root, rootLabel: selection.label)
@@ -84,8 +34,6 @@ struct WPECorpusManifestTests {
         #expect(firstData.range(of: Data(selection.root.path.utf8)) == nil,
                 "manifest must not contain corpus absolute path")
 
-        let outputDirectory = liveWallpaperSupport
-            .appendingPathComponent("oracle-out", isDirectory: true)
         try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         let outputURL = outputDirectory.appendingPathComponent("corpus-manifest.json")
         try firstData.write(to: outputURL, options: .atomic)
@@ -99,6 +47,23 @@ struct WPECorpusManifestTests {
         print("[wpe-corpus-manifest] entries="
               + first.entries.map { "\($0.folderID):\($0.projectType)" }.joined(separator: ","))
         print("[wpe-corpus-manifest] wrote \(outputURL.path)")
+    }
+
+    @Test("External fixtures require explicit opt-in and an absolute path")
+    func externalFixtureSelectionIsExplicit() {
+        let key = "WPE_CORPUS_MANIFEST_ROOT"
+        let enabled = "LIVEWALLPAPER_EXTERNAL_FIXTURES"
+        #expect(TestScratch.externalFixtureURL(pathKey: key, environment: [:]) == nil)
+        #expect(TestScratch.externalFixtureURL(pathKey: key, environment: [key: "/tmp/corpus"]) == nil)
+        #expect(TestScratch.externalFixtureURL(pathKey: key, environment: [enabled: "1"]) == nil)
+        for path in ["", "relative/corpus", "~/corpus", "/tmp/invalid\0path"] {
+            #expect(TestScratch.externalFixtureURL(
+                pathKey: key, environment: [enabled: "1", key: path]
+            ) == nil)
+        }
+        #expect(TestScratch.externalFixtureURL(
+            pathKey: key, environment: [enabled: "1", key: "/tmp/explicit-corpus"]
+        )?.path == "/tmp/explicit-corpus")
     }
 
     @Test("Manifest builder is sorted, repeatable, and never serializes its root")
@@ -155,10 +120,6 @@ struct WPECorpusManifestTests {
         try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
             .write(to: folder.appendingPathComponent("project.json"))
     }
-}
-
-private struct OracleCaptureRootConfig: Decodable {
-    let corpusRoot: String
 }
 
 private struct CorpusSelection {

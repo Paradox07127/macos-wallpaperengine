@@ -65,6 +65,17 @@ struct WorkshopDownloadReadinessTests {
         #expect(service.isDownloadReady)
     }
 
+    @Test("An untested session after relaunch can attempt a cached download")
+    func unknownSessionDoesNotMeanLoggedOut() throws {
+        let service = try makeService()
+        try configureAllGreen(service, bookmark: resolvableBookmark())
+        service.setProbe(.cachedLogin, status: .notRun)
+        #expect(service.downloadBlocker == nil)
+        #expect(!service.isGreen(.cachedLogin))
+        service.noteSuccessfulSteamOperation(generation: service.accountGeneration)
+        #expect(service.isGreen(.cachedLogin))
+    }
+
     @Test("An operation reporting login-required demotes the green probe")
     func loginRequiredDemotesCachedLogin() throws {
         let service = try makeService()
@@ -72,7 +83,7 @@ struct WorkshopDownloadReadinessTests {
         #expect(service.isGreen(.cachedLogin))
         #expect(service.downloadBlocker == nil)
 
-        service.noteOperationReportedLoginRequired()
+        service.noteOperationReportedLoginRequired(generation: service.accountGeneration)
 
         #expect(!service.isGreen(.cachedLogin))
         #expect(service.downloadBlocker != nil)
@@ -82,6 +93,83 @@ struct WorkshopDownloadReadinessTests {
             Issue.record("expected a yellow cachedLogin probe after login-required")
             return
         }
+    }
+
+    @Test("Removing the saved session stops an in-flight result from greening the probe")
+    func removedSessionIgnoresInFlightResults() throws {
+        let service = try makeService()
+        try configureAllGreen(service, bookmark: resolvableBookmark())
+        let inFlight = service.accountGeneration
+
+        service.forgetSignedInSession()
+
+        // The account stays selected; only its session is gone.
+        #expect(service.username == "someone")
+        #expect(service.cachedLoginVerdict == nil)
+        #expect(!service.isGreen(.cachedLogin))
+
+        service.noteSuccessfulSteamOperation(generation: inFlight)
+        #expect(!service.isGreen(.cachedLogin))
+
+        // Control: a result from after the removal still lands.
+        service.noteSuccessfulSteamOperation(generation: service.accountGeneration)
+        #expect(service.isGreen(.cachedLogin))
+    }
+
+    @Test("A transient network failure reddens the probe but does not block downloads")
+    func transientFailureDoesNotBlockDownloads() throws {
+        let service = try makeService()
+        try configureAllGreen(service, bookmark: resolvableBookmark())
+
+        for outcome in [SteamCachedLoginOutcome.noConnection, .timedOut, .rateLimited] {
+            service.applyCachedLoginOutcome(
+                SteamCachedLoginResult(outcome: outcome, steamID64: nil, diagnosticTail: ""),
+                username: "someone", binary: URL(fileURLWithPath: "/tmp/steamcmd"),
+                generation: service.accountGeneration
+            )
+            #expect(!service.isGreen(.cachedLogin))
+            #expect(
+                service.downloadBlocker == nil,
+                Comment(rawValue: "\(outcome) locked the download entry; the download validates its own session")
+            )
+        }
+    }
+
+    @Test("A missing, expired or refused session blocks downloads")
+    func credentialFailureBlocksDownloads() throws {
+        // Control for the transient case above: these verdicts are about the
+        // account, not the network, and must still gate.
+        let service = try makeService()
+        try configureAllGreen(service, bookmark: resolvableBookmark())
+
+        for outcome in [SteamCachedLoginOutcome.noCachedSession, .sessionExpired, .loginFailed] {
+            service.applyCachedLoginOutcome(
+                SteamCachedLoginResult(outcome: outcome, steamID64: nil, diagnosticTail: ""),
+                username: "someone", binary: URL(fileURLWithPath: "/tmp/steamcmd"),
+                generation: service.accountGeneration
+            )
+            #expect(service.downloadBlocker != nil, Comment(rawValue: "\(outcome) did not block"))
+        }
+    }
+
+    @Test("An operation that started under another account cannot colour this one")
+    func staleOperationResultsAreIgnored() throws {
+        let service = try makeService()
+        try configureAllGreen(service, bookmark: resolvableBookmark())
+        service.setProbe(.cachedLogin, status: .notRun)
+        let stale = service.accountGeneration
+        try service.setUsername("bob")
+
+        service.noteSuccessfulSteamOperation(generation: stale)
+        #expect(!service.isGreen(.cachedLogin))
+        service.noteOperationReportedLoginRequired(generation: stale)
+        #expect(service.downloadBlocker == nil)
+
+        // Control: the same calls with the live generation take effect.
+        service.noteSuccessfulSteamOperation(generation: service.accountGeneration)
+        #expect(service.isGreen(.cachedLogin))
+        service.noteOperationReportedLoginRequired(generation: service.accountGeneration)
+        #expect(service.downloadBlocker != nil)
     }
 
     /// The Diagnostics section reports on things `downloadBlocker` deliberately

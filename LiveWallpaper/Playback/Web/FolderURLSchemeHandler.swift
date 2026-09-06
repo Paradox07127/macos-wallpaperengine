@@ -145,16 +145,16 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         if Self.isRegularFile(primaryURL) {
             source = .file(primaryURL)
             mime = Self.mimeType(for: primaryURL)
-        } else if let fallback = Self.oggFallbackURL(for: primaryURL) {
+        } else if let fallback = Self.oggFallback(for: primaryURL, inside: folderURL) {
             if !reportedOggSubstitutions.contains(primaryURL.lastPathComponent) {
                 reportedOggSubstitutions.insert(primaryURL.lastPathComponent)
                 Logger.info(
-                    "FolderScheme: serving \(fallback.lastPathComponent) for \(primaryURL.lastPathComponent) (macOS WebKit Ogg/Opus decoder workaround)",
+                    "FolderScheme: serving \(fallback.url.lastPathComponent) for \(primaryURL.lastPathComponent) (macOS WebKit Ogg/Opus decoder workaround)",
                     category: .screenManager
                 )
             }
-            source = .file(fallback)
-            mime = Self.mimeType(for: fallback)
+            source = .file(fallback.url)
+            mime = fallback.mimeType
         } else if let resolved = packageByteSource(for: url) {
             source = resolved.source
             mime = resolved.mime
@@ -399,16 +399,19 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
     /// Prefer non-Ogg siblings: WebKit Ogg/Opus is flaky; WPE often hardcodes .ogg.
     nonisolated private static let oggFallbackExtensions: [String] = ["mp3", "m4a", "aac", "wav", "flac"]
 
-    nonisolated static func oggFallbackURL(for primary: URL) -> URL? {
+    nonisolated static func oggFallback(
+        for primary: URL, inside folder: URL
+    ) -> (url: URL, mimeType: String)? {
         let ext = primary.pathExtension.lowercased()
         guard ext == "ogg" || ext == "oga" || ext == "opus" else { return nil }
         let parent = primary.deletingLastPathComponent()
         let baseName = primary.deletingPathExtension().lastPathComponent
-        let fm = FileManager.default
         for candidateExt in oggFallbackExtensions {
             let candidate = parent.appendingPathComponent("\(baseName).\(candidateExt)")
-            if fm.fileExists(atPath: candidate.path) {
-                return candidate
+            if let resolved = ResourceUtilities.containedRegularFileURL(candidate, inside: folder) {
+                // MIME follows the authored sibling extension even when its
+                // contained symlink target has an extensionless filename.
+                return (resolved, mimeType(for: candidate))
             }
         }
         return nil

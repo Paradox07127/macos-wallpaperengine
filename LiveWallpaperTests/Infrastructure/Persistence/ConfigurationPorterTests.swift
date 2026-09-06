@@ -350,7 +350,7 @@ struct ConfigurationPorterBookmarkMergeTests {
 @MainActor
 struct SettingsManagerMigrationTests {
     @Test("Seeds AtomicFileStore from legacy UserDefaults blob on first launch")
-    func seedsFromLegacyUserDefaults() throws {
+    func seedsFromLegacyUserDefaults() async throws {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -375,10 +375,11 @@ struct SettingsManagerMigrationTests {
 
         let onDisk = directory.appendingPathComponent("screen-configurations.json")
         #expect(FileManager.default.fileExists(atPath: onDisk.path(percentEncoded: false)))
+        await TestScratch.discard(directory, flushing: manager)
     }
 
     @Test("Migration version is NOT bumped when seed writes fail (retry on next launch)")
-    func migrationVersionDeferredOnSeedFailure() throws {
+    func migrationVersionDeferredOnSeedFailure() async throws {
         let unwritableRoot = try makeUnwritableDirectory()
         defer {
             try? FileManager.default.setAttributes(
@@ -391,23 +392,24 @@ struct SettingsManagerMigrationTests {
         let legacyConfigs = [
             ScreenConfiguration(screenID: 7, wallpaper: .video(bookmarkData: Data([0xCC])))
         ]
-        UserDefaults.standard.set(try JSONEncoder().encode(legacyConfigs), forKey: "screenConfigurations")
-        UserDefaults.standard.removeObject(forKey: "Settings.MigrationVersion")
-        defer {
-            UserDefaults.standard.removeObject(forKey: "screenConfigurations")
-            UserDefaults.standard.removeObject(forKey: "Settings.MigrationVersion")
-        }
+        let scratch = try TestScratch.defaultsSuite("com.loomscreen.pro.MigrationTests.migrationVersionDeferredOnSeedFailure")
+        let defaults = scratch.defaults
+        defer { scratch.discard() }
+        let legacyData = try JSONEncoder().encode(legacyConfigs)
+        defaults.set(legacyData, forKey: "screenConfigurations")
+        defaults.removeObject(forKey: "Settings.MigrationVersion")
 
         let unwritableSubdir = unwritableRoot.appendingPathComponent("Configuration", isDirectory: true)
-        _ = SettingsManager(directory: ConfigurationDirectory(root: unwritableSubdir))
+        let manager = SettingsManager(directory: ConfigurationDirectory(root: unwritableSubdir), defaults: defaults)
 
-        let postVersion = UserDefaults.standard.integer(forKey: "Settings.MigrationVersion")
+        let postVersion = defaults.integer(forKey: "Settings.MigrationVersion")
         #expect(postVersion == 0,
                 "Migration version must stay at 0 after a failed seed so the next launch retries")
+        await manager.flushPendingConfigurationWrites()
     }
 
     @Test("Zero-byte store file does not block migration from a valid legacy blob")
-    func zeroByteFileDoesNotBlockMigration() throws {
+    func zeroByteFileDoesNotBlockMigration() async throws {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -432,10 +434,11 @@ struct SettingsManagerMigrationTests {
         let loaded = manager.loadConfigurations()
         #expect(loaded.first?.screenID == 42,
                 "A zero-byte file must not count as persisted; the legacy blob should seed the store")
+        await TestScratch.discard(directory, flushing: manager)
     }
 
     @Test("File payload wins over the legacy UserDefaults blob")
-    func filePayloadWinsOverLegacy() throws {
+    func filePayloadWinsOverLegacy() async throws {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -449,16 +452,17 @@ struct SettingsManagerMigrationTests {
         let legacyConfigs = [
             ScreenConfiguration(screenID: 99, wallpaper: .video(bookmarkData: Data([0xBB])))
         ]
-        UserDefaults.standard.set(try JSONEncoder().encode(legacyConfigs), forKey: "screenConfigurations")
-        UserDefaults.standard.removeObject(forKey: "Settings.MigrationVersion")
-        defer {
-            UserDefaults.standard.removeObject(forKey: "screenConfigurations")
-            UserDefaults.standard.removeObject(forKey: "Settings.MigrationVersion")
-        }
+        let scratch = try TestScratch.defaultsSuite("com.loomscreen.pro.MigrationTests.filePayloadWinsOverLegacy")
+        let defaults = scratch.defaults
+        defer { scratch.discard() }
+        let legacyData = try JSONEncoder().encode(legacyConfigs)
+        defaults.set(legacyData, forKey: "screenConfigurations")
+        defaults.removeObject(forKey: "Settings.MigrationVersion")
 
-        let manager = SettingsManager(directory: ConfigurationDirectory(root: directory))
+        let manager = SettingsManager(directory: ConfigurationDirectory(root: directory), defaults: defaults)
         let loaded = manager.loadConfigurations()
         #expect(loaded.first?.screenID == 1, "File store wins; legacy 99 must not appear")
+        await TestScratch.discard(directory, flushing: manager)
     }
 
     private func makeTempDirectory() throws -> URL {

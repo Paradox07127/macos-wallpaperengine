@@ -312,12 +312,15 @@ struct HTMLSourceSection: View {
     }
 
     /// File pick promotes bookmark to parent folder (sibling asset access); folders use index inference.
+    ///
+    /// No `allowedContentTypes`: a folder is `public.folder`, which conforms to nothing in an
+    /// HTML-only list, so the filter disabled the Choose button for every directory and
+    /// `canChooseDirectories` above had no effect. Every other folder picker in the app omits it.
     private func pickLocal() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = ResourceUtilities.supportedHTMLContentTypes
         panel.prompt = L10n.Panel.useAsWallpaper
         guard panel.runModal() == .OK, let url = panel.url else { return }
 

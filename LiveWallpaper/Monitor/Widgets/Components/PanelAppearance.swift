@@ -72,28 +72,24 @@ enum MonitorPanelAppearance {
         return AdaptiveGlass.isAvailable
     }
 
-    /// Dark layer between the glass and the readouts, needed because `.regular.tint()` shifts hue but not luminance —
-    /// measured on macOS 27, raising tint alpha 0.55→0.82 moved the card's median luminance only 132→138, while every
-    /// widget here draws light-on-dark. Tint alone left the faint chrome at 1.16:1 against the card; this scrim brings
-    /// it to 2.33:1, against 2.82:1 for the painted card. Deliberately not opaque: the wallpaper's colour still comes
-    /// through the body, and the glass ring and its refraction still show at the edge.
-    static func glassScrim(tintHex: String, opacity: Double) -> Color {
-        let alpha = resolvedOpacity(opacity)
-        let base = color(fromHex: tintHex) ?? Design.oklch(0.212, 0.013, 74)
-        return base.opacity(0.58 * alpha)
+    /// Keep light readouts legible even when the wallpaper or selected tint is white.
+    /// Appearance opacity changes the material, never removes its contrast floor.
+    static func readableTint(_ hex: String) -> Color {
+        guard let rgb = parseHexRGB(hex) else { return Design.bg1 }
+        let peak = max(rgb.red, rgb.green, rgb.blue, 0.001)
+        let scale = min(1, 0.14 / peak)
+        return Color(red: rgb.red * scale, green: rgb.green * scale, blue: rgb.blue * scale)
     }
 
-    /// Top/bottom fill for the card. A custom tint keeps the designed
-    /// light-to-dark falloff and alpha ratio instead of painting flat, so the
-    /// panel still reads as a lit surface rather than a coloured rectangle.
-    static func fill(tintHex: String, opacity: Double) -> (top: Color, bottom: Color) {
-        let alpha = resolvedOpacity(opacity)
-        guard let tint = color(fromHex: tintHex) else {
-            return (Design.panelFillTop.opacity(alpha), Design.panelFillBottom.opacity(alpha))
-        }
-        return (
-            tint.opacity(0.72 * alpha),
-            tint.opacity(0.60 * alpha)
-        )
+    static func glassScrim(tintHex: String, opacity: Double) -> Color {
+        readableTint(tintHex).opacity(0.94 + 0.03 * resolvedOpacity(opacity))
+    }
+
+    static func fill(tintHex: String, opacity: Double, reduceTransparency: Bool = false) -> (top: Color, bottom: Color) {
+        let alpha = reduceTransparency ? 1 : 0.90 + 0.10 * resolvedOpacity(opacity)
+        let tint = readableTint(tintHex)
+        let bottom = NSColor(tint).usingColorSpace(.sRGB) ?? .black
+        let shaded = Color(red: bottom.redComponent * 0.8, green: bottom.greenComponent * 0.8, blue: bottom.blueComponent * 0.8)
+        return (tint.opacity(alpha), shaded.opacity(alpha))
     }
 }

@@ -13,6 +13,9 @@ struct WorkshopDiagnosticsSection: View {
     @Binding var showingExportToast: Bool
 
     @Environment(SteamCMDDoctorService.self) private var service
+    @Environment(WorkshopSetupController.self) private var controller
+
+    @State private var showingSignIn = false
 
     var body: some View {
         Section {
@@ -21,7 +24,8 @@ struct WorkshopDiagnosticsSection: View {
                     report: service.probes[kind]
                         ?? DoctorProbeReport(id: kind, status: .notRun, lastRun: .distantPast),
                     service: service,
-                    onCopied: { showingExportToast = true }
+                    onCopied: { showingExportToast = true },
+                    onConnectAccount: { showingSignIn = true }
                 )
             }
 
@@ -50,6 +54,15 @@ struct WorkshopDiagnosticsSection: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, DesignTokens.Spacing.xs)
+            // Hung off a row rather than the Section: a modified `Section` stops
+            // being a section to `Form`.
+            .sheet(isPresented: $showingSignIn) {
+                AppLanguageScope(defaults: .appScoped()) {
+                    SteamSignInSheet { accountName in
+                        controller.adoptSignedInAccount(accountName)
+                    }
+                }
+            }
         } header: {
             SettingsSearchSectionHeader("Diagnostics", anchor: .workshopDiagnostics)
         }
@@ -75,6 +88,11 @@ struct WorkshopDiagnosticsSection: View {
             }
             if let lastRun = report?.lastRun, lastRun > .distantPast {
                 info["lastRun"] = ISO8601DateFormatter().string(from: lastRun)
+            }
+            if kind == .cachedLogin {
+                info["sessionStorage"] = "isolated-per-account-v1"
+                info["diagnosticTail"] = sanitizeForExport(service.cachedLoginDiagnosticTail)
+                info["exitCode"] = service.cachedLoginExitCode
             }
             probesPayload[kind.rawValue] = info
         }

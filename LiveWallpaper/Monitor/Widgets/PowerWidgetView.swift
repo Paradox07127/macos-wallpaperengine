@@ -29,7 +29,7 @@ struct PowerWidgetView: View {
     /// Header glyph reflects the ACTUAL level (never a fabricated full battery —
     /// the same honesty rule the glyph/hero themselves follow). Desktop → plug.
     private var powerSymbol: String {
-        guard let level = model.level else { return "powerplug" }
+        guard let level = model.level else { return model.powerSource == "ac" ? "powerplug" : "questionmark" }
         if model.charging { return "battery.100.bolt" }
         switch level {
         case 0.9...:   return "battery.100"
@@ -138,7 +138,14 @@ struct PowerWidgetView: View {
             BatteryGlyph(level: level, charging: model.charging, charged: model.charged)
                 .frame(width: width, height: height)
         } else {
-            PowerPlugBadge().frame(width: width, height: height)
+            if model.powerSource == "ac" {
+                PowerPlugBadge().frame(width: width, height: height)
+            } else {
+                Text(verbatim: "—")
+                    .font(Design.heroFont(size: height))
+                    .foregroundStyle(Design.inkMuted)
+                    .frame(width: width, height: height)
+            }
         }
     }
 
@@ -156,7 +163,7 @@ struct PowerWidgetView: View {
             }
             .lineLimit(1)
         } else {
-            Text(verbatim: "AC")
+            Text(verbatim: model.sourceReadout)
                 .font(Design.heroFont(size: size))
                 .foregroundStyle(Design.inkPrimary)
                 .lineLimit(1)
@@ -287,9 +294,14 @@ struct MonitorPowerModel {
         accessories = system?.accessories ?? []
     }
 
-    /// A machine actually has a battery only when it reports a level. A desktop
-    /// (level == nil) → plug badge + AC, never a fabricated 100%.
-    var hasBattery: Bool { level != nil }
+    /// Missing charge does not imply an adapter or the absence of a battery.
+    var hasBattery: Bool {
+        level != nil || powerSource == "battery"
+    }
+
+    var sourceReadout: String {
+        powerSource == "ac" ? "AC" : "—"
+    }
 
     var heroPercent: Int? {
         guard let level else { return nil }
@@ -297,11 +309,19 @@ struct MonitorPowerModel {
     }
 
     var status: String {
-        if !hasBattery { return "Power Adapter" }
-        if charged { return "Charged" }
-        if charging { return "Charging" }
-        if powerSource == "ac" { return "Power Adapter" }
-        return "Battery"
+        if charged {
+            return "Charged"
+        }
+        if charging {
+            return "Charging"
+        }
+        if powerSource == "ac" {
+            return "Power Adapter"
+        }
+        if hasBattery {
+            return "Battery"
+        }
+        return "Readings unavailable"
     }
 
     struct TimeLine { let value: String; let suffix: String }

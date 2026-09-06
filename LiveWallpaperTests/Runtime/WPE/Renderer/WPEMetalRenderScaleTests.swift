@@ -9,6 +9,37 @@ import LiveWallpaperProWPE
 /// loader's reduced-mip upload selection.
 @Suite("WPE Metal render scale decoupling", .serialized)
 struct WPEMetalRenderScaleTests {
+    @Test("FBO divisors retain truncation and reject unrepresentable dimensions")
+    func divisorNumericBoundary() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let pool = WPEMetalRenderTargetPool(device: device, maximumTextureDimension2D: 1024)
+        for (scale, width, height) in [(2.0, 278, 250), (0, 557, 500), (-1, 557, 500),
+                                       (Double.nan, 557, 500), (Double.infinity, 557, 500),
+                                       (Double.greatestFiniteMagnitude, 1, 1)] {
+            let spec = WPERenderFBO(name: "numeric", scale: scale, format: "rgba8888")
+            let key = pool.diagnosticKey(for: .fbo(name: spec.name), spec: spec,
+                                         layer: Self.makeLayer(localFBOs: [spec]),
+                                         sceneSize: CGSize(width: 557, height: 500))
+            #expect(key.width == width)
+            #expect(key.height == height)
+        }
+        for scale in [Double.leastNonzeroMagnitude, 1e-300] {
+            let spec = WPERenderFBO(name: "numeric", scale: scale, format: "rgba8888")
+            let layer = Self.makeLayer(localFBOs: [spec])
+            let size = CGSize(width: 1, height: 1)
+            let key = pool.diagnosticKey(for: .fbo(name: spec.name), spec: spec, layer: layer, sceneSize: size)
+            #expect(key.width == 1 << 20)
+            #expect(key.height == 1 << 20)
+            let pipeline = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(graphLayer: layer, passes: [])])
+            pool.prepare(pipeline: pipeline, aliasIntervals: [.init(key: key, firstPass: 0, lastPass: 1)])
+            #expect(pool.aliasPlanDeviceQueryCount == 0)
+            #expect(throws: WPEMetalRenderExecutorError.renderTargetDimensionsExceedDeviceLimit(
+                targetName: spec.name, width: key.width, height: key.height, limit: 1024
+            )) {
+                _ = try pool.texture(for: .fbo(name: spec.name), layer: layer, sceneSize: size, avoiding: nil)
+            }
+        }
+    }
 
     // MARK: - scaledCanvasSize (the single conversion)
 

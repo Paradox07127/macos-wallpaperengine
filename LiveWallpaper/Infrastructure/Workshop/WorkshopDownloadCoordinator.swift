@@ -156,11 +156,11 @@ final class WorkshopDownloadCoordinator {
         case .notConfigured(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         case .loginRequired:
-            finish(itemID: itemID, title: title, phase: .failed(String(localized: "Sign in to SteamCMD in the Doctor (Settings → Workshop) first.", bundle: .appLanguage, comment: "Workshop download blocked: no cached SteamCMD login.")))
+            finish(itemID: itemID, title: title, phase: .failed(String(localized: "Loomscreen's Steam download session isn't connected. Connect your account in Settings → Workshop, then try again.", bundle: .appLanguage, comment: "Steam download blocked because Loomscreen's own Steam session is not signed in; shared by engine-assets and Workshop item downloads.")))
         case .untrustedBinary:
             finish(itemID: itemID, title: title, phase: .failed(String(localized: "SteamCMD isn't a verified Valve build, so the download was blocked. Re-select the official SteamCMD in the Doctor.", bundle: .appLanguage, comment: "Workshop download blocked: unverified SteamCMD binary.")))
-        case .notEntitled:
-            finish(itemID: itemID, title: title, phase: .failed(String(localized: "This Steam account can't download Wallpaper Engine items — it may not own Wallpaper Engine, or downloads are region-restricted.", bundle: .appLanguage, comment: "Workshop download blocked: account not entitled.")))
+        case .steamUnreachable:
+            finish(itemID: itemID, title: title, phase: .failed(String(localized: "Steam reported \"No Connection\" while downloading this item. Check your network and try again; Steam also answers this way when the account doesn't own Wallpaper Engine.", bundle: .appLanguage, comment: "Workshop download failed: SteamCMD reported No Connection, which is ambiguous between network and ownership.")))
         case .removedFromSteam:
             finish(itemID: itemID, title: title, phase: .failed(String(localized: "This item is no longer available on Steam.", bundle: .appLanguage, comment: "Workshop download failed: item removed from Steam.")))
         case .timedOut:
@@ -373,8 +373,8 @@ final class WorkshopDownloadCoordinator {
             return WorkshopDependencyFetchOutcome(failureReason: "SteamCMD login required")
         case .untrustedBinary:
             return WorkshopDependencyFetchOutcome(failureReason: "SteamCMD binary not verified")
-        case .notEntitled:
-            return WorkshopDependencyFetchOutcome(failureReason: "account not entitled")
+        case .steamUnreachable:
+            return WorkshopDependencyFetchOutcome(failureReason: "Steam unreachable")
         case .removedFromSteam:
             return WorkshopDependencyFetchOutcome(failureReason: "removed from Steam")
         case .timedOut:

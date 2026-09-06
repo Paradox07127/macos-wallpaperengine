@@ -46,17 +46,17 @@ struct PlaybackControls: View {
     /// without a word of text.
     private var frameRateSymbol: String {
         switch displayedFrameRate {
-        case .quarter: "gauge.with.dots.needle.0percent"
-        case .third: "gauge.with.dots.needle.33percent"
-        case .half: "gauge.with.dots.needle.67percent"
-        case .full: "gauge.with.dots.needle.100percent"
+        case .fps15: "gauge.with.dots.needle.0percent"
+        case .fps30: "gauge.with.dots.needle.33percent"
+        case .fps60: "gauge.with.dots.needle.67percent"
+        case .matchDisplay: "gauge.with.dots.needle.100percent"
         }
     }
 
-    /// The cap is a divisor, so every label has to be resolved against what it
-    /// divides: the panel for scene and web, and for video whichever is lower,
-    /// the panel or the file (a 30 fps file on a 144 Hz screen has nothing above
-    /// 30 to divide).
+    /// A target is not always deliverable, so every label has to be resolved
+    /// against this display: scene and web land on a divisor of the panel, and
+    /// video is additionally bounded by the file (capping a 30 fps file at 60 is
+    /// not a cap).
     private func frameRateTitle(_ limit: FrameRateLimit) -> String {
         let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
         guard wallpaperType == .video else {
@@ -285,8 +285,9 @@ struct PlaybackControls: View {
     /// Icon-only: a spelled-out "60 FPS" would be the bar's one free-width text
     /// (1.5–2× wider in Japanese); the value lives in the tooltip and a11y value.
     /// A slider, not a menu, to match the speed and audio popovers beside it. The
-    /// steps are discrete (`FrameRateLimit` is an enum), so it indexes into
-    /// `allCases`, declared low-to-high and ending at the panel's own rate.
+    /// steps are discrete (`FrameRateLimit` is an enum), so it indexes into the
+    /// cases this display can actually tell apart — a 60 Hz panel has no step
+    /// above 60, so "match display" is not offered there.
     private var frameRateControl: some View {
         let forceSDRActive = Self.frameRateDisabled(wallpaperType: wallpaperType, videoColorSpace: videoColorSpace)
         return Button {
@@ -311,7 +312,7 @@ struct PlaybackControls: View {
         VStack(spacing: DesignTokens.Spacing.sm) {
             Slider(
                 value: frameRateIndexBinding,
-                in: 0 ... Double(FrameRateLimit.allCases.count - 1),
+                in: 0 ... Double(max(frameRateCases.count - 1, 1)),
                 step: 1,
                 onEditingChanged: { editing in
                     if editing {
@@ -338,27 +339,49 @@ struct PlaybackControls: View {
     /// elsewhere in this app go through `CoalescedSlider`.
     private var displayedFrameRate: FrameRateLimit {
         guard let index = draggingFrameRateIndex else { return frameRateLimit }
-        return Self.frameRate(atIndex: index)
+        return frameRate(atIndex: index)
     }
 
     private func commitDraggedFrameRate() {
         defer { draggingFrameRateIndex = nil }
         guard let index = draggingFrameRateIndex else { return }
-        frameRateBinding.wrappedValue = Self.frameRate(atIndex: index)
+        frameRateBinding.wrappedValue = frameRate(atIndex: index)
     }
 
     /// Slider position → case. An out-of-range position clamps rather than
     /// trapping, which a raw subscript would.
-    private static func frameRate(atIndex position: Double) -> FrameRateLimit {
-        let index = min(max(Int(position.rounded()), 0), FrameRateLimit.allCases.count - 1)
-        return FrameRateLimit.allCases[index]
+    private func frameRate(atIndex position: Double) -> FrameRateLimit {
+        let cases = frameRateCases
+        let index = min(max(Int(position.rounded()), 0), cases.count - 1)
+        return cases[index]
+    }
+
+    /// The steps this display can distinguish, low to high.
+    private var frameRateCases: [FrameRateLimit] {
+        FrameRateLimit.availableCases(
+            forRefreshRate: Double(screenManager.getScreenRefreshRate(for: screen.id))
+        )
+    }
+
+    /// A saved cap can be absent from this display's steps — "match display" is
+    /// dropped at 60 Hz, where it runs at the same rate as the 60 step. Falling
+    /// back to the step that resolves to the same rate keeps the slider on the
+    /// position the wallpaper is actually running at, instead of snapping to the
+    /// slowest step.
+    private var frameRateIndex: Int {
+        let cases = frameRateCases
+        if let exact = cases.firstIndex(of: frameRateLimit) {
+            return exact
+        }
+        let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
+        let resolved = frameRateLimit.frameRate(forRefreshRate: refreshRate)
+        return cases.firstIndex { $0.frameRate(forRefreshRate: refreshRate) == resolved } ?? 0
     }
 
     private var frameRateIndexBinding: Binding<Double> {
         Binding(
             get: {
-                draggingFrameRateIndex
-                    ?? Double(FrameRateLimit.allCases.firstIndex(of: frameRateLimit) ?? 0)
+                draggingFrameRateIndex ?? Double(frameRateIndex)
             },
             set: { draggingFrameRateIndex = $0 }
         )
