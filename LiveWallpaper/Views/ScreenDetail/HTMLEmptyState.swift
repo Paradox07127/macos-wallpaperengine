@@ -105,12 +105,18 @@ struct HTMLEmptyState: View {
         .frame(maxWidth: addressBarWidth)
     }
 
-    /// Requires a value that actually parses, not just a non-empty one: `commitURL`
-    /// returns silently when `HTMLSource(userInput:)` fails, so gating on emptiness
-    /// alone left "foo" + Return doing nothing with no feedback at all. Now the
-    /// arrow lighting up IS the feedback that the address is usable.
+    /// Only a URL: `HTMLSource(userInput:)` turns any other non-empty text into
+    /// `.inline`, which the source section treats as legacy-only, so "foo" +
+    /// Return would have set the desktop to a page reading "foo". The arrow
+    /// lighting up is the feedback that the address is usable.
     private var canCommit: Bool {
-        HTMLSource(userInput: urlInput.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
+        parsedURL != nil
+    }
+
+    private var parsedURL: HTMLSource? {
+        let source = HTMLSource(userInput: urlInput.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard case .url? = source else { return nil }
+        return source
     }
 
     // MARK: - Secondary path
@@ -150,13 +156,10 @@ struct HTMLEmptyState: View {
     // MARK: - Actions
 
     private func commitURL() {
-        let trimmed = urlInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let parsed = HTMLSource(userInput: trimmed) else { return }
+        guard let parsed = parsedURL else { return }
         screenManager.setHTMLWallpaper(source: parsed, config: config, for: screen)
     }
 
-    /// Commits straight away when the pasted value already parses; otherwise it
-    /// just fills the field so the user can finish editing it.
     private func pasteFromClipboard() {
         guard let raw = NSPasteboard.general.string(forType: .string) else { return }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

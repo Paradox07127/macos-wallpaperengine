@@ -188,7 +188,6 @@ final class WallpaperVideoPlayer {
     }
 
     #if DEBUG
-    /// Install an owned empty fixture window without loading any media.
     func installPlaybackWindowForTesting(_ fixture: VideoWallpaperWindow) {
         precondition(window == nil)
         window = fixture

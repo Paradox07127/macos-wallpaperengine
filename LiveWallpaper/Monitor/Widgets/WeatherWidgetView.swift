@@ -51,7 +51,21 @@ struct WeatherWidgetView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .monitorPanelChrome()
+            .accessibilityLabel(tileAccessibilityLabel)
         }
+    }
+
+    /// Names the whole tile for VoiceOver — the header and the sky Canvas are both
+    /// `accessibilityHidden`, so with the caption's own label removed (kept purely
+    /// visual below) the tile would otherwise have no name at all when
+    /// `showCaption` is off. Reuses the caption's own strings rather than adding
+    /// a new localized template.
+    private var tileAccessibilityLabel: Text {
+        guard let weather, let condition = weather.currentCondition else {
+            return Text(verbatim: weather?.locationStatus.localizedTitle ?? WidgetFactory.displayName(.weather))
+        }
+        guard let place = weather.activeLocationLabel else { return Text(verbatim: condition.localizedTitle) }
+        return Text(verbatim: condition.localizedTitle) + Text(verbatim: ", ") + Text(verbatim: place)
     }
 
     /// Same type and tracking as every other tile's header, in white because
@@ -86,11 +100,8 @@ struct WeatherWidgetView: View {
                 }
             }
             .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text(
-                "Weather status: \(condition.localizedTitle)",
-                comment: "Weather badge a11y label. The placeholder is the current condition or location status."
-            ))
+            // Purely visual: the tile's own accessibilityLabel above names the tile.
+            .accessibilityHidden(true)
         }
     }
 
@@ -265,7 +276,6 @@ struct WeatherScenePainter {
             let x = unit(index, 1) * w
             let y = unit(index, 2) * h * 0.7
             let radius = 0.5 + unit(index, 3) * 0.9
-            // Each star twinkles on its own period and phase.
             let twinkle = 0.5 + 0.5 * sin(time * (0.6 + Double(unit(index, 4)) * 1.4) + Double(unit(index, 5)) * .pi * 2)
             let alpha = 0.35 + 0.6 * twinkle
             context.fill(

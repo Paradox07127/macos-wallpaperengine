@@ -175,10 +175,11 @@ final class MeteorShower {
         )
     }
 
-    private func launch() {
-        guard !isSuspended, host != nil else { return }
+    @discardableResult
+    private func launch() -> CALayer? {
+        guard !isSuspended, host != nil else { return nil }
         let flight = Self.flight(in: bounds) { range in CGFloat.random(in: range) }
-        guard let sprite = Self.sprite(for: flight) else { return }
+        guard let sprite = Self.sprite(for: flight) else { return nil }
 
         let meteor = CALayer()
         meteor.contents = sprite
@@ -203,13 +204,25 @@ final class MeteorShower {
         group.duration = flight.duration
         group.isRemovedOnCompletion = false
         group.fillMode = .forwards
+        // Removal rides the layer's own clock: the delegate fires when the flight
+        // ends in layer time, so a shower frozen mid-flight keeps its meteor and
+        // one frozen past the flight still sheds it on resume. A wall-clock
+        // `asyncAfter` did neither — it skipped while suspended and never came back.
+        group.delegate = FlightEnd(meteor: meteor)
         meteor.add(group, forKey: "flight")
+        return meteor
+    }
 
-        // The layer is spent once the envelope reaches zero. Removal rides the same
-        // clock as the flight, so a suspended meteor is not swept away mid-air.
-        let deadline = DispatchTime.now() + flight.duration + 0.1
-        DispatchQueue.main.asyncAfter(deadline: deadline) { [weak meteor, weak self] in
-            guard let self, !self.isSuspended else { return }
+    /// The animation retains its delegate and the layer its animation, so the
+    /// layer is held weakly here or the three would keep each other alive.
+    private final class FlightEnd: NSObject, CAAnimationDelegate {
+        private weak var meteor: CALayer?
+
+        init(meteor: CALayer) {
+            self.meteor = meteor
+        }
+
+        func animationDidStop(_: CAAnimation, finished _: Bool) {
             meteor?.removeFromSuperlayer()
         }
     }
@@ -239,16 +252,8 @@ final class MeteorShower {
     }
 
     #if DEBUG
-    var debugLiveMeteorCount: Int {
-        container.sublayers?.count ?? 0
-    }
-
-    var debugIsScheduling: Bool {
-        timer != nil
-    }
-
     /// Launches one meteor immediately, so a test does not have to wait out a random gap.
-    func debugLaunchNow() {
+    func debugLaunchNow() -> CALayer? {
         launch()
     }
     #endif

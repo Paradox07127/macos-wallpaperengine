@@ -57,4 +57,11 @@ struct NetworkWidgetTests {
         #expect(NetworkWidgetView.splitRate("—").value == "—")
         #expect(NetworkWidgetView.splitRate("—").unit.isEmpty)
     }
+
+    @Test("unavailable current-rate reads as the peak tag's em dash, not 0 B/s")
+    func rateTextFallsBackWhenUnavailable() {
+        #expect(NetworkWidgetView.rateText(0, available: false) == "—")
+        #expect(NetworkWidgetView.rateText(6.2 * 1_048_576, available: false) == "—")
+        #expect(NetworkWidgetView.rateText(6.2 * 1_048_576, available: true) == Format.rate(6.2 * 1_048_576))
+    }
 }

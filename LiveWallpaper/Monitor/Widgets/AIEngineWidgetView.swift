@@ -34,7 +34,7 @@ private struct AIEngineContent: View {
     private var processes: [MonitorANEProcess]? { system?.aneProcesses }
     var body: some View {
         WidgetContainer(
-            label: "ANE MEMORY",
+            label: "ANE Memory",
             systemImage: WidgetFactory.icon(.aiEngine),
             cellHeight: cellHeight,
             status: { statusAccessory }

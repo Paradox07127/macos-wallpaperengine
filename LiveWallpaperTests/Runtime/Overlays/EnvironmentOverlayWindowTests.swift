@@ -59,4 +59,94 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         let updatedFrame = try XCTUnwrap(controller.debugWindowFrame(screenID: screenID))
         XCTAssertEqual(updatedFrame, newFrame, "particle overlay frame did not follow the resolution/arrangement change")
     }
+
+    /// "Show wallpaper in screen capture" reached the wallpaper windows and the
+    /// Monitor board but not this panel: `makeHost` never set `sharingType`, so
+    /// with the setting off the rain still went into a screen share.
+    @MainActor
+    func testParticleOverlayHonoursTheCapturePolicy() {
+        let restore = WallpaperCapturePolicy.allowsScreenCapture
+        defer { WallpaperCapturePolicy.allowsScreenCapture = restore }
+        let controller = EnvironmentOverlayController()
+        let screenID = CGDirectDisplayID(1)
+        defer { controller.teardownAll() }
+
+        WallpaperCapturePolicy.allowsScreenCapture = false
+        controller.apply(
+            effect: .rain, density: 1, screenID: screenID,
+            screenFrame: NSRect(x: 0, y: 0, width: 200, height: 200)
+        )
+        XCTAssertEqual(
+            controller.debugWindowSharingType(screenID: screenID), NSWindow.SharingType.none,
+            "a new overlay ignored the capture setting"
+        )
+
+        WallpaperCapturePolicy.allowsScreenCapture = true
+        controller.applyCapturePolicy(WallpaperCapturePolicy.windowSharingType)
+        XCTAssertEqual(
+            controller.debugWindowSharingType(screenID: screenID), .readOnly,
+            "a policy change did not reach a live overlay"
+        )
+    }
+
+    /// Unplugging a display releases its wallpaper session before `screens` is
+    /// updated, so the reconcile inside that release still sees the display and
+    /// keeps its particle panel; nothing swept it afterwards. AppKit moves a
+    /// window whose display is gone onto one that remains, so the unplugged
+    /// display's rain landed on top of the survivor's.
+    @MainActor
+    func testParticleOverlayLeavesWithItsDisplay() throws {
+        let screen = try Screen(nsScreen: XCTUnwrap(NSScreen.main))
+        var live: [Screen] = [screen]
+        let store = WallpaperConfigurationStore(persistence: InMemoryConfigurationPersistence())
+        var configuration = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data())
+        configuration.particleEffect = .rain
+        store.save(configuration)
+        let coordinator = WallpaperEffectsCoordinator(
+            configurationStore: store,
+            screensProvider: { live },
+            saveConfiguration: { _ in },
+            applyFrameRateLimit: { _, _ in },
+            screenRefreshRate: { _ in 60 }
+        )
+        defer { coordinator.shutdown() }
+
+        coordinator.reconcileEnvironmentOverlays()
+        XCTAssertNotNil(
+            coordinator.debugEnvironmentOverlay.debugSuspensionReasons(screenID: screen.id),
+            "no overlay was built to begin with"
+        )
+
+        live = []
+        coordinator.screensDidChange(arrivedScreenIDs: [])
+        XCTAssertNil(
+            coordinator.debugEnvironmentOverlay.debugSuspensionReasons(screenID: screen.id),
+            "the overlay outlived its display"
+        )
+    }
+}
+
+@MainActor
+private final class InMemoryConfigurationPersistence: ScreenConfigurationPersisting {
+    private var configurations: [CGDirectDisplayID: ScreenConfiguration] = [:]
+
+    func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
+        configurations[screenID]
+    }
+
+    func saveConfiguration(_ configuration: ScreenConfiguration) {
+        configurations[configuration.screenID] = configuration
+    }
+
+    func cleanSettingsForScreen(_ screenID: CGDirectDisplayID) {
+        configurations[screenID] = nil
+    }
+
+    func loadConfigurations() -> [ScreenConfiguration] {
+        Array(configurations.values)
+    }
+
+    func replaceAllConfigurations(_ configurations: [ScreenConfiguration]) {
+        self.configurations = Dictionary(uniqueKeysWithValues: configurations.map { ($0.screenID, $0) })
+    }
 }

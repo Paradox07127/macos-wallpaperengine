@@ -95,4 +95,11 @@ struct DiskWidgetTests {
         #expect(nanSplit.read == 0)
         #expect(nanSplit.write == 1)
     }
+
+    @Test("unavailable current-rate reads as the peak tag's em dash, not 0 B/s")
+    func rateTextFallsBackWhenUnavailable() {
+        #expect(DiskWidgetView.rateText(0, available: false) == "—")
+        #expect(DiskWidgetView.rateText(1_048_576, available: false) == "—")
+        #expect(DiskWidgetView.rateText(1_048_576, available: true) == Format.rate(1_048_576))
+    }
 }

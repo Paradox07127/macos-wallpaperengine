@@ -113,6 +113,13 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
         return allCases.filter { seen.insert($0.frameRate(forRefreshRate: refreshRate)).inserted }
     }
 
+    /// True when `self` and `other` produce the same on-screen rate on this
+    /// display — e.g. `.matchDisplay` and `.fps60` at 60 Hz, the pair
+    /// `availableCases` collapses into one slider step.
+    public func resolvesToSameRate(as other: FrameRateLimit, forRefreshRate refreshRate: Double) -> Bool {
+        frameRate(forRefreshRate: refreshRate) == other.frameRate(forRefreshRate: refreshRate)
+    }
+
     /// Plain video only: anything below the source pays for an `AVVideoComposition`
     /// pass; `matchDisplay` stays on the native path. Effects already require
     /// composition regardless.

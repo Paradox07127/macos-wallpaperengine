@@ -111,12 +111,19 @@ struct OverlayPreviewArea: View {
         GeometryReader { geo in
             let geometry = MonitorBoardGeometry(
                 boardSize: geo.size,
-                referenceWidth: max(screen.frame.width, 1)
+                referenceWidth: max(screen.frame.width, 1),
+                safeArea: MonitorSafeAreaInsets.of(screen.nsScreen)
             )
             let cells = MusicOverlayLayout.cells(for: music.size)
             let footprint = geometry.pixelSize(columns: cells.columns, rows: cells.rows)
+            // Clamped into the safe area exactly as the desktop layer is, or a tile
+            // dropped against the preview's edge lands inside the menu bar there
+            // and under the Dock on the desktop.
             let raw = CGRect(
-                origin: CGPoint(x: music.x * geo.size.width, y: music.y * geo.size.height),
+                origin: geometry.clampOrigin(
+                    CGPoint(x: music.x * geo.size.width, y: music.y * geo.size.height),
+                    footprint: footprint
+                ),
                 size: footprint
             )
             let rect = geometry.renderRect(forRawRect: raw)
@@ -135,7 +142,7 @@ struct OverlayPreviewArea: View {
                         .strokeBorder(Color.accentColor, lineWidth: 2)
                 }
             }
-            .gesture(musicDragGesture(music: music, footprint: footprint, canvas: geo.size))
+            .gesture(musicDragGesture(music: music, footprint: footprint, canvas: geo.size, geometry: geometry))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text("Drag to move the Music layer"))
             .position(
@@ -153,7 +160,8 @@ struct OverlayPreviewArea: View {
     private func musicDragGesture(
         music: MusicOverlayConfiguration,
         footprint: CGSize,
-        canvas: CGSize
+        canvas: CGSize,
+        geometry: MonitorBoardGeometry
     ) -> some Gesture {
         // `.named` on the canvas, never the default `.local`: this gesture is
         // attached to the very view that `.position` moves by the translation,
@@ -167,10 +175,17 @@ struct OverlayPreviewArea: View {
                 isDraggingMusicLayer = false
                 musicDragTranslation = .zero
                 guard canvas.width > 0, canvas.height > 0 else { return }
-                let maxX = max(0, 1 - footprint.width / canvas.width)
-                let maxY = max(0, 1 - footprint.height / canvas.height)
-                let x = min(max(music.x + value.translation.width / canvas.width, 0), maxX)
-                let y = min(max(music.y + value.translation.height / canvas.height, 0), maxY)
+                // Persist what the desktop will draw: the drop clamped into the
+                // safe area, not the raw canvas position.
+                let dropped = geometry.clampOrigin(
+                    CGPoint(
+                        x: music.x * canvas.width + value.translation.width,
+                        y: music.y * canvas.height + value.translation.height
+                    ),
+                    footprint: footprint
+                )
+                let x = dropped.x / canvas.width
+                let y = dropped.y / canvas.height
                 let current = screenManager.monitorOverlay(for: screen).music
                 let next = MusicOverlayLayout.setting(x: x, y: y, on: current)
                 if next != current {

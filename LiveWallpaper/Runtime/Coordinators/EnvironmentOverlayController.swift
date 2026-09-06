@@ -74,6 +74,14 @@ final class EnvironmentOverlayController {
         syncWindowVisibility(host)
     }
 
+    /// Pushes a changed capture policy onto overlays that already exist; new
+    /// ones read it in `makeHost`.
+    func applyCapturePolicy(_ sharing: NSWindow.SharingType) {
+        for host in hosts.values {
+            host.window.sharingType = sharing
+        }
+    }
+
     private func applyReduceMotion(_ reduced: Bool) {
         for host in hosts.values {
             host.view.setSuspended(reduced, for: .reduceMotion)
@@ -118,9 +126,12 @@ final class EnvironmentOverlayController {
         hosts[screenID]?.view.suspensionReasons
     }
 
-    /// Whether the accessibility observer is currently registered.
     var debugIsWatchingReduceMotion: Bool {
         reduceMotion.isWatching
+    }
+
+    func debugWindowSharingType(screenID: CGDirectDisplayID) -> NSWindow.SharingType? {
+        hosts[screenID]?.window.sharingType
     }
     #endif
 
@@ -158,6 +169,7 @@ final class EnvironmentOverlayController {
         window.isRestorable = false
         window.animationBehavior = .none
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        window.sharingType = WallpaperCapturePolicy.windowSharingType
 
         let view = ParticleOverlayView(frame: NSRect(origin: .zero, size: screenFrame.size))
         view.autoresizingMask = [.width, .height]

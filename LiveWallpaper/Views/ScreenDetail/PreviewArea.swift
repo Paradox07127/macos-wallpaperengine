@@ -160,8 +160,6 @@ struct PreviewArea: View {
                 }
             }
         } else {
-            // Nothing picked yet: same skeleton the video empty state uses, so
-            // switching wallpaper type does not switch layout language.
             HTMLEmptyState(screen: screen, config: draft.htmlConfig)
                 .padding(DesignTokens.Spacing.xl)
         }

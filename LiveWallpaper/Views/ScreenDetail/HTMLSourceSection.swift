@@ -7,8 +7,7 @@ import LiveWallpaperCore
 /// the picker bar and the empty state both offer this path.
 @MainActor
 enum HTMLLocalSourcePicker {
-    /// File picks promote the bookmark to the parent folder (sibling asset
-    /// access); folders infer their index file.
+    /// A file pick bookmarks that file alone; a folder pick infers its index file.
     ///
     /// No `allowedContentTypes`: a folder is `public.folder`, which conforms to
     /// nothing in an HTML-only list, so the filter disabled the Choose button for

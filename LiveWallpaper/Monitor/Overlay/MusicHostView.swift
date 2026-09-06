@@ -129,6 +129,12 @@ struct MusicOverlayRootContainer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // Same reason as `MonitorBoardRootContainer`: no window above this host
+        // carries the app language.
+        clocked.appLanguageScoped(defaults: .appScoped())
+    }
+
+    private var clocked: some View {
         // One clock for the layer, stopped while suspended — the same contract
         // the board's tiles run on.
         TimelineView(MonitorBoardClock(suspended: layout.suspended)) { timeline in

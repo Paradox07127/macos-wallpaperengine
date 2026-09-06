@@ -249,6 +249,17 @@ final class OverlayController: NSObject {
     /// keeps nil until it is rebuilt.
     var weatherService: WeatherReactiveService?
 
+    /// Boards already on the desktop get it too; `apply` for an existing host
+    /// only pushes configuration.
+    func updateWeatherService(_ service: WeatherReactiveService?) {
+        weatherService = service
+        for host in hosts.values {
+            if case let .monitor(view, _) = host.content {
+                view.setWeatherService(service)
+            }
+        }
+    }
+
     // MARK: - Per-screen reconcile
 
     func apply(
