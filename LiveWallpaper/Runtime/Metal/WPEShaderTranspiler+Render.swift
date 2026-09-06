@@ -212,6 +212,10 @@ extension WPEShaderTranspiler {
         let uvFallbackInitializers: Set<String> = [
             "in.uv", "in.uv.x", "float4(in.uv, in.uv)", "float3(in.uv, 0.0)",
         ]
+        // The audio varyings fall back to a flat 0.0 instead of a ramp when their vertex-only
+        // spectrum uniforms are missing, so the effect silently stops reacting rather than
+        // rendering wrong — 2370927443's `effects/shake` (issue #133). Mark that case too.
+        let flatFallbackVaryings: Set<String> = ["v_AudioPulse", "v_AudioShift"]
         for varying in varyings {
             if varying.name == "uv" { continue }
             let initializer = varyingInitializer(
@@ -220,15 +224,17 @@ extension WPEShaderTranspiler {
                 availableUniforms: uniformNames,
                 comboValues: comboValues
             )
+            let isUVFallback = uvFallbackInitializers.contains(initializer)
             if varying.name != "v_TexCoord",
-               uvFallbackInitializers.contains(initializer),
+               isUVFallback || (initializer == "0.0" && flatFallbackVaryings.contains(varying.name)),
                // A reconstruction may assign the whole varying or only components
                // (`v_Transform.x = …`), so match the assignment target, not just ` name = `.
                !varyingReconstruction.contains(where: {
                    $0.contains(" \(varying.name) = ") || $0.contains(" \(varying.name).")
                }),
                warningCleanMainBody.range(of: "\\b\(NSRegularExpression.escapedPattern(for: varying.name))\\b", options: .regularExpression) != nil {
-                out.append("    // WPE-DIAGNOSTIC: varying '\(varying.name)' has no reconstruction rule and fell back to a screen-UV default; this likely renders incorrectly.")
+                let fallback = isUVFallback ? "screen-UV" : "constant-zero"
+                out.append("    // WPE-DIAGNOSTIC: varying '\(varying.name)' has no reconstruction rule and fell back to a \(fallback) default; this likely renders incorrectly.")
             }
             if let arrayLength = varying.arrayLength {
                 let initializers = texCoordBoxFilterInitializers(varying: varying, availableUniforms: uniformNames)
@@ -1040,7 +1046,10 @@ extension WPEShaderTranspiler {
             return []
         }
 
-        let resolution = comboValues["RESOLUTION"] ?? 32
+        // The spectrum arrays only come in these three sizes, and the loop below
+        // indexes them up to `resolution`: any other combo value read past the array.
+        let requested = comboValues["RESOLUTION"] ?? 32
+        let resolution = [16, 32, 64].contains(requested) ? requested : 32
         let leftName: String
         let rightName: String
         switch resolution {

@@ -41,7 +41,7 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     /// Bump together with `schemaVersion`.
-    static let expectedSchemaVersion = 4
+    static let expectedSchemaVersion = 6
     /// 2026-08-30: comment-only compression across eight of the files above moved the
     /// fingerprint without touching a line of code, so the MSL is byte-identical and
     /// `schemaVersion` deliberately stayed at 1 — bumping it would have thrown away every
@@ -57,7 +57,15 @@ struct WPEShaderTranslationCacheSchemaTests {
     /// entry for that shader holds the old, wrong MSL and must be discarded.
     /// 2026-09-06: schema 4 adds the same treatment for the 2798319181 depth-of-field chain,
     /// 3124095265 fade, 3082978660 audio bars and 3647393229 frame_builder.
-    static let expectedFingerprint = "bb7c3e15eed8bda1010696c173b2b37aca8d84cb548bbfb7931ac6d5ea1e2465"
+    /// 2026-09-06: schema 5. Missing-uniform injection matches whole identifiers, so a
+    /// shader carrying a look-alike name (`u_sizeFactor` beside a needed `u_size`) now
+    /// gets the injection its cached MSL lacked (a declaration is what counts, not the name appearing anywhere); an audio `RESOLUTION` outside 16/32/64
+    /// clamps to 32 instead of reading past the spectrum array.
+    /// 2026-09-06: schema 6 injects the seven audio uniforms that `shake.vert` / `pulse.vert`
+    /// declare inside `#if AUDIOPROCESSING`, so `v_AudioPulse` / `v_AudioShift` / `v_Pulse`
+    /// rebuild the real response instead of a constant 0 (2370927443, issue #133); cached MSL
+    /// for those shaders holds the deaf version.
+    static let expectedFingerprint = "85597e4319771c32ca92cab746bdb2636c25d2b93491d8f7c45617d3fe020f74"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

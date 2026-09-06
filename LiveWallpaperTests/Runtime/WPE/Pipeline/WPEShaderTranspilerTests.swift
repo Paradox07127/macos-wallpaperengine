@@ -278,6 +278,35 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
+    /// The loop bound came straight from the combo while the spectrum arrays only
+    /// exist at 16/32/64, so `RESOLUTION 128` read 96 floats past the 32-wide array.
+    @Test("An audio RESOLUTION the spectrum arrays do not come in falls back to 32")
+    func audioResolutionIsClampedToAnExistingSpectrum() throws {
+        let source = """
+        // stage: fragment
+        #version 410 core
+        uniform sampler2D g_Texture0;
+        uniform float u_ampExponent;
+        uniform float u_FreqBalance;
+        uniform float u_LRBalance;
+        uniform float g_AudioSpectrum32Left[32];
+        uniform float g_AudioSpectrum32Right[32];
+        in vec2 v_TexCoord;
+        in vec4 audioValue[RESOLUTION];
+        void main() {
+            gl_FragColor = texture(g_Texture0, v_TexCoord) * audioValue[0].x;
+        }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(
+            shaderName: "workshop/2799421411/effects/audio_responsive_oscilloscope",
+            preprocessedSource: source,
+            comboValues: ["RESOLUTION": 128, "EQUALIZE": 0]
+        )
+        #expect(result.mslSource.contains("wpeAudioIndex < 32;"))
+        #expect(!result.mslSource.contains("wpeAudioIndex < 128;"))
+        #expect(result.mslSource.contains("wpe_audio_oscilloscope_value(g_AudioSpectrum32Left"))
+    }
+
     @Test("waterflow v_Cycles / v_Blend varyings reconstruct from time uniforms (not screen UV)")
     func reconstructsWaterflowFlowVaryings() throws {
         let source = """

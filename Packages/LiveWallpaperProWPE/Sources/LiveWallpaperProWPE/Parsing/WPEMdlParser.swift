@@ -1305,6 +1305,12 @@ public enum WPEMdlParser {
                 indices.append(try reader.readUInt32())
             }
         }
+        // The buffer goes to the GPU as written and the puppet vertex shader
+        // indexes `vertices[vertexID]` with it, so an index past the table is an
+        // out-of-bounds read there, not a parse error later.
+        guard indices.allSatisfy({ $0 < vertexCount }) else {
+            throw WPEMdlParserError.invalidIndexBuffer(indexByteCount)
+        }
 
         let parts = version >= 21
             ? try parseVersion21Parts(
@@ -1404,6 +1410,13 @@ public enum WPEMdlParser {
                 reader.readFloat(),
                 reader.readFloat()
             )
+            // An authored zero (degenerate triangle, exporter placeholder) is the
+            // same NaN as an unauthored one; a NaN compares false against the
+            // threshold, so finiteness is checked on its own.
+            let lengthSquared = simd_length_squared(normal)
+            if !lengthSquared.isFinite || lengthSquared < 1e-12 {
+                normal = SIMD3<Float>(0, 0, 1)
+            }
         }
         if meshFlags & WPEMdlMeshFlags.tangent != 0 {
             try skipKnownBytes(
