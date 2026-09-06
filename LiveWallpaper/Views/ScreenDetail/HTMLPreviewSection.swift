@@ -427,6 +427,10 @@ struct HTMLRenderingDiagnosticsOverlay: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isButton)
                     .accessibilityHint(Text("Hide details"))
+                    // The trait says "button" but a tap gesture is invisible to
+                    // VoiceOver, so without this the element announces itself as
+                    // activatable and then does nothing when activated.
+                    .accessibilityAction { toggle() }
                     .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
                     .onTapGesture { toggle() }
             } else {

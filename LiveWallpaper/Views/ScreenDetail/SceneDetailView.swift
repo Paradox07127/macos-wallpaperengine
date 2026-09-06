@@ -49,10 +49,6 @@ struct SceneDetailView: View {
     let origin: WPEOrigin
     let descriptor: SceneDescriptor
     let session: SceneWallpaperSession?
-    /// Whether the display reports a *scene rendering* failure above this card.
-    /// Session-derived state misses failures that never produced a scene session
-    /// (`ScreenManager.transientRuntimeErrors`). Narrower than "any runtime error" on purpose: a revoked bookmark or unplayable file isn't something an engine-assets install fixes.
-    let hasSceneRenderingError: Bool
     /// Scale: a preview-view control, the same role video's overlay has always had.
     @Binding var fitMode: VideoFitMode
     let playbackControls: AnyView
@@ -707,7 +703,9 @@ private struct DiagnosticLogSheet: View {
         // layer" case, which AdaptiveGlass has no API for. The system material
         // already goes opaque under Reduce Transparency.
         .background(.ultraThinMaterial)
-        .task { if rendered == nil { rendered = Self.colourise(log) } }
+        // Keyed on the log: without the id the sheet keeps the first colourised
+        // text forever, so a log that grows while the sheet is open stops updating.
+        .task(id: log) { rendered = Self.colourise(log) }
     }
 
     private var header: some View {

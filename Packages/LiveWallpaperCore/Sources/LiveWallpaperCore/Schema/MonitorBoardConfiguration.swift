@@ -217,10 +217,25 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
     /// Always consumes exactly one unkeyed element so a failed placement decode
     /// (e.g. unknown kind from a newer build) skips that element instead of
     /// corrupting the rest of the array.
+    ///
+    /// The skip is deliberately silent to the *format* — the bundle schema is
+    /// additive on purpose, so refusing the whole board because one widget is
+    /// from a newer build would lose far more than it saves. It is not silent to
+    /// the log: the widget really is gone from the restored board, which is the
+    /// kind of thing that has to be visible in a bug report.
     private struct LossyPlacement: Decodable {
         let value: MonitorWidgetPlacement?
         init(from decoder: Decoder) {
-            value = try? MonitorWidgetPlacement(from: decoder)
+            do {
+                value = try MonitorWidgetPlacement(from: decoder)
+            } catch {
+                Logger.warning(
+                    "MonitorBoardConfiguration: dropped an undecodable widget placement "
+                        + "(likely a kind added by a newer build): \(error)",
+                    category: .settings
+                )
+                value = nil
+            }
         }
     }
 
