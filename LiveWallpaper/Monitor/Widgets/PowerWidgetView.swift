@@ -378,10 +378,11 @@ struct MonitorPowerModel {
 
     nonisolated static func accessorySymbol(_ kind: String?) -> String {
         switch kind {
-        case "mouse":    return "magicmouse"
-        case "keyboard": return "keyboard"
-        case "trackpad": return "trackpad"
-        default:         return "dot.radiowaves.left.and.right"
+        case "mouse": "magicmouse"
+        case "keyboard": "keyboard"
+        // No `trackpad` symbol ships in SF Symbols; this is the stock stand-in.
+        case "trackpad": "rectangle.and.hand.point.up.left.filled"
+        default: "dot.radiowaves.left.and.right"
         }
     }
 

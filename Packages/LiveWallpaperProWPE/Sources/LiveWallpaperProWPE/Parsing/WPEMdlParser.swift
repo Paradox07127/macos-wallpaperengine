@@ -142,17 +142,23 @@ public struct WPEPuppetVertex: Hashable, Sendable {
     public let uv: SIMD2<Float>
     public let skinBlendIndices: SIMD4<Int32>
     public let skinBlendWeights: SIMD4<Float>
+    /// Model-local vertex normal, or `(0, 0, 1)` when the mesh authors none.
+    /// Only the 3D scene-model path consumes it (generic2/generic4 lighting and
+    /// screen-space reflection); the 2D puppet path leaves it untouched.
+    public let normal: SIMD3<Float>
 
     public init(
         position: SIMD3<Float>,
         uv: SIMD2<Float>,
         skinBlendIndices: SIMD4<Int32> = SIMD4<Int32>(0, 0, 0, 0),
-        skinBlendWeights: SIMD4<Float> = SIMD4<Float>(1, 0, 0, 0)
+        skinBlendWeights: SIMD4<Float> = SIMD4<Float>(1, 0, 0, 0),
+        normal: SIMD3<Float> = SIMD3<Float>(0, 0, 1)
     ) {
         self.position = position
         self.uv = uv
         self.skinBlendIndices = skinBlendIndices
         self.skinBlendWeights = skinBlendWeights
+        self.normal = normal
     }
 }
 
@@ -1389,12 +1395,14 @@ public enum WPEMdlParser {
             try reader.readFloat()
         )
 
+        // Consumed by the 3D scene-model path only. `(0, 0, 1)` when unauthored:
+        // generic2/generic4 normalize it, so a zero vector would produce NaN.
+        var normal = SIMD3<Float>(0, 0, 1)
         if meshFlags & WPEMdlMeshFlags.normal != 0 {
-            try skipKnownBytes(
-                byteCount: 3 * MemoryLayout<Float>.size,
-                reader: &reader,
-                auditRecorder: auditRecorder,
-                label: "MDLV vertex normal"
+            normal = try SIMD3<Float>(
+                reader.readFloat(),
+                reader.readFloat(),
+                reader.readFloat()
             )
         }
         if meshFlags & WPEMdlMeshFlags.tangent != 0 {
@@ -1453,7 +1461,8 @@ public enum WPEMdlParser {
             position: position,
             uv: uv,
             skinBlendIndices: skinBlendIndices,
-            skinBlendWeights: skinBlendWeights
+            skinBlendWeights: skinBlendWeights,
+            normal: normal
         )
     }
 

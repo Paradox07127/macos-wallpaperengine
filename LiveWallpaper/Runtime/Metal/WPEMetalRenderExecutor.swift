@@ -1638,6 +1638,15 @@ final class WPEMetalRenderExecutor {
             frameState: &frameState
         )
 
+        // Blit + mipmap generation need their own encoder, so the capture has to
+        // happen here, before this pass opens its render encoder.
+        try captureReflectionSourceIfNeeded(
+            pass: pass,
+            layer: layer,
+            commandBuffer: commandBuffer,
+            frameState: frameState
+        )
+
         let previousTextureForTarget: MTLTexture?
         if readsCurrentTarget {
             previousTextureForTarget = try previousTextureForRead(
@@ -2088,6 +2097,63 @@ final class WPEMetalRenderExecutor {
             destinationOrigin: MTLOrigin()
         )
         blit.endEncoding()
+    }
+
+    /// WPE's `_rt_MipMappedFrameBuffer` (generic4 `g_Texture3`): the scene as
+    /// rendered SO FAR, with a mip chain so `roughness × g_Texture3MipMapInfo`
+    /// blurs the mirror. It must be a separate texture, not the live scene target
+    /// — this pass draws into that target, and sampling it would be an undefined
+    /// read-write of the surface being written.
+    private func captureReflectionSourceIfNeeded(
+        pass: WPEPreparedRenderPass,
+        layer: WPERenderLayer,
+        commandBuffer: MTLCommandBuffer,
+        frameState: WPEMetalFrameState
+    ) throws {
+        reflectionSourceTexture = nil
+        guard case .material = pass.pass.phase,
+              (pass.pass.combos["REFLECTION"] ?? 0) != 0,
+              Self.sceneModelMaterialShader(for: pass.pass.shader) != nil,
+              layer.puppetPath != nil,
+              (layer.imagePath as NSString).pathExtension.lowercased() == "mdl",
+              let source = frameState.currentFrameSceneTexture else {
+            return
+        }
+        let capture = try reflectionCaptureTexture(matching: source)
+        try copyTexture(source, to: capture, commandBuffer: commandBuffer)
+        if capture.mipmapLevelCount > 1 {
+            guard let blit = commandBuffer.makeBlitCommandEncoder() else {
+                throw WPEMetalRenderExecutorError.commandBufferFailed
+            }
+            WPEFrameOccupancyMeter.count(.helperEncoder)
+            blit.generateMipmaps(for: capture)
+            blit.endEncoding()
+        }
+        reflectionSourceTexture = capture
+    }
+
+    private func reflectionCaptureTexture(matching source: MTLTexture) throws -> MTLTexture {
+        if let cached = reflectionCaptureCache,
+           cached.width == source.width,
+           cached.height == source.height,
+           cached.pixelFormat == source.pixelFormat {
+            return cached
+        }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: source.pixelFormat,
+            width: source.width,
+            height: source.height,
+            mipmapped: true
+        )
+        // `.renderTarget` is what `generateMipmaps` requires (it renders each level).
+        descriptor.usage = [.shaderRead, .renderTarget]
+        descriptor.storageMode = .private
+        guard let texture = device.makeTexture(descriptor: descriptor) else {
+            throw WPEMetalTextureLoaderError.textureAllocationFailed
+        }
+        texture.label = "_rt_MipMappedFrameBuffer"
+        reflectionCaptureCache = texture
+        return texture
     }
 
     /// Keeps the layer's ping-pong composite chain intact for a pass whose visibility gate
@@ -2911,7 +2977,10 @@ final class WPEMetalRenderExecutor {
     func sceneModelGenericUniforms(
         for pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
-        hasComponentMap: Bool
+        hasComponentMap: Bool,
+        materialShader: SceneModelMaterialShader = .genericImage4,
+        hasReflectionSource: Bool = false,
+        reflectionTopMipLevel: Int = 0
     ) -> WPESceneModelGenericUniforms {
         func constantVector3(_ names: [String], default def: SIMD3<Float>) -> SIMD3<Float> {
             for name in names {
@@ -2935,19 +3004,30 @@ final class WPEMetalRenderExecutor {
             return SIMD3<Float>(Float(v[0]), Float(v[1]), Float(v[2]))
         }
 
-        // generic2 and generic4 annotate the SAME uniforms under different material
-        // names: generic4 uses "color"/"alpha"/"brightness", generic2 uses
-        // "Color"/"Alpha"/"Brigtness". `Brigtness` is WPE's own typo in
-        // assets/shaders/generic2.frag — matching it verbatim is the contract; do
-        // not "fix" the spelling. Constant keys are stored as authored (verbatim
-        // from `constantshadervalues`), so both spellings have to be probed.
-        let tint = constantVector3(["color", "Color", "g_TintColor"], default: SIMD3<Float>(1, 1, 1))
-        let tintAlpha = constantScalar(["alpha", "Alpha", "g_TintAlpha"], default: 1)
-            * Float(layer.geometry.alpha)
+        // generic2 and generic4 expose the SAME uniforms under DIFFERENT material
+        // names: generic4 annotates "color"/"alpha"/"brightness", generic2
+        // annotates "Color"/"Alpha"/"Brigtness" (WPE's own typo in
+        // assets/shaders/generic2.frag — match it verbatim, do not "fix" it).
+        // The spellings cannot share one priority list: authors ship BOTH keys in
+        // one material and only the shader's own is bound. In 3470948192 the
+        // generic2 `uc` carries "Alpha" = 0.025 (the doppler slider) next to a
+        // stale "alpha" = 1, and the generic4 droplet `sd` carries "color" = black
+        // next to "Color" = white. Probing the other spelling flips each of those.
+        let isGeneric2 = materialShader == .generic2
+        let tint = constantVector3(
+            isGeneric2 ? ["Color", "g_TintColor"] : ["color", "g_TintColor"],
+            default: SIMD3<Float>(1, 1, 1)
+        )
+        let tintAlpha = constantScalar(
+            isGeneric2 ? ["Alpha", "g_TintAlpha"] : ["alpha", "Alpha", "g_TintAlpha"],
+            default: 1
+        ) * Float(layer.geometry.alpha)
         let emissiveColor = constantVector3(["emissivecolor", "g_EmissiveColor"], default: SIMD3<Float>(1, 1, 1))
         let emissiveBrightness = constantScalar(["emissivebrightness", "g_EmissiveBrightness"], default: 1)
-        let brightness = constantScalar(["brightness", "Brigtness", "g_Brightness"], default: 1)
-            * Float(layer.geometry.brightness)
+        let brightness = constantScalar(
+            isGeneric2 ? ["Brigtness", "g_Brightness"] : ["brightness", "g_Brightness"],
+            default: 1
+        ) * Float(layer.geometry.brightness)
         let ambient = mergedVector3("g_LightAmbientColor", default: SIMD3<Float>(1, 1, 1))
         let skylight = mergedVector3("g_LightSkylightColor", default: SIMD3<Float>(1, 1, 1))
         let lightingEnabled = (pass.pass.combos["LIGHTING"] ?? 1) != 0
@@ -2958,18 +3038,29 @@ final class WPEMetalRenderExecutor {
             || pass.pass.constants["emissivebrightness"] != nil
         let emissiveMapActive = hasComponentMap && emissiveAuthored
 
+        // REFLECTION only draws when the mip-mapped scene capture is actually
+        // bound: without it `g_Texture3` would fall back to the albedo and paint
+        // the model with its own texture.
+        let reflectionEnabled = (pass.pass.combos["REFLECTION"] ?? 0) != 0 && hasReflectionSource
+        let reflectivity = constantScalar(["reflectivity", "g_Reflectivity"], default: 1)
+        let roughness = constantScalar(["roughness", "g_Roughness"], default: 0.7)
+        let metallic = constantScalar(["metallic", "g_Metallic"], default: 0)
+        let renderSize = currentScenePixelSize
+        let aspect = renderSize.height > 0 ? Float(renderSize.width / renderSize.height) : 1
+
         return WPESceneModelGenericUniforms(
             tintColorAlpha: SIMD4<Float>(tint.x, tint.y, tint.z, tintAlpha),
             emissive: SIMD4<Float>(emissiveColor.x, emissiveColor.y, emissiveColor.z, emissiveBrightness),
-            // No per-vertex normals in the mesh path — evaluate the vertex
-            // hemisphere mix(skylight, ambient, N·up*0.5+0.5) at its midpoint.
-            ambientLighting: SIMD4<Float>(
-                (skylight.x + ambient.x) * 0.5,
-                (skylight.y + ambient.y) * 0.5,
-                (skylight.z + ambient.z) * 0.5,
-                lightingEnabled ? 1 : 0
+            ambientLighting: SIMD4<Float>(ambient.x, ambient.y, ambient.z, lightingEnabled ? 1 : 0),
+            brightnessFlags: SIMD4<Float>(
+                brightness,
+                emissiveMapActive ? 1 : 0,
+                hdr ? 1 : 0,
+                reflectionEnabled ? 1 : 0
             ),
-            brightnessFlags: SIMD4<Float>(brightness, emissiveMapActive ? 1 : 0, hdr ? 1 : 0, 0)
+            skylightColor: SIMD4<Float>(skylight.x, skylight.y, skylight.z, 0),
+            reflection: SIMD4<Float>(reflectivity, roughness, metallic, Float(reflectionTopMipLevel)),
+            screen: SIMD4<Float>(Float(renderSize.width), Float(renderSize.height), aspect, 0)
         )
     }
 
@@ -2979,6 +3070,13 @@ final class WPEMetalRenderExecutor {
     static let isSceneBloomEnabled: Bool =
         (UserDefaults.standard.object(forKey: "WPEMetalSceneBloomEnabled") as? Bool) ?? true
 
+
+    /// Set by `captureReflectionSourceIfNeeded` for the pass about to be encoded,
+    /// cleared for every other pass so a stale capture can never leak into one.
+    var reflectionSourceTexture: MTLTexture?
+    /// Reused across frames; only the allocation persists, the content is
+    /// re-captured per reflecting pass.
+    private var reflectionCaptureCache: MTLTexture?
 
     var bloomLevelTextures: [MTLTexture] = []
     /// Backs `bloomLevelTextures` from one placement heap (same `.tracked` mechanism as the FBO

@@ -324,10 +324,18 @@ struct WPESceneModelGenericUniforms {
     var tintColorAlpha: SIMD4<Float>
     /// rgb = g_EmissiveColor, w = g_EmissiveBrightness.
     var emissive: SIMD4<Float>
-    /// rgb = mix(g_LightSkylightColor, g_LightAmbientColor, 0.5), w = LIGHTING combo (0/1).
+    /// rgb = g_LightAmbientColor, w = LIGHTING combo (0/1). The hemisphere mix
+    /// against `skylightColor` happens per fragment now that the mesh carries normals.
     var ambientLighting: SIMD4<Float>
-    /// x = g_Brightness × layer brightness, y = emissive map bound (0/1), z = scene HDR (0/1), w pad.
+    /// x = g_Brightness × layer brightness, y = emissive map bound (0/1),
+    /// z = scene HDR (0/1), w = REFLECTION combo (0/1).
     var brightnessFlags: SIMD4<Float>
+    /// rgb = g_LightSkylightColor, w unused.
+    var skylightColor: SIMD4<Float>
+    /// x = g_Reflectivity, y = g_Roughness, z = g_Metallic, w = g_Texture3MipMapInfo.
+    var reflection: SIMD4<Float>
+    /// xy = render size in pixels, z = width/height (WPE `g_Screen`), w unused.
+    var screen: SIMD4<Float>
 }
 
 /// Layout MUST match `WPEShapeQuadUniforms` in `WPEMetalBuiltins.metal`. Four
@@ -347,6 +355,9 @@ struct WPEMetalPuppetVertex {
     var uv: SIMD4<Float>
     var skinBlendIndices: SIMD4<UInt32>
     var skinBlendWeights: SIMD4<Float>
+    /// Model-local normal (w unused). Read only by the scene-model vertex; the
+    /// 2D puppet vertices ignore it.
+    var normal: SIMD4<Float>
 }
 
 struct WPEPuppetMeshUniforms {
@@ -359,8 +370,15 @@ struct WPEPuppetMeshUniforms {
 /// Layout MUST match `WPESceneModelMeshUniforms` in `WPEMetalBuiltins.metal`.
 struct WPESceneModelMeshUniforms {
     var modelViewProjectionMatrix: simd_float4x4
+    /// Kept separate from the composed MVP: generic2/generic4 need the WORLD
+    /// position and world normal (view vector, hemispheric ambient) and the
+    /// view-projection alone (screen-space reflection offset).
+    var modelMatrix: simd_float4x4
+    var viewProjectionMatrix: simd_float4x4
     /// x = bone palette count, y = skinning enabled (1/0), z/w reserved.
     var modeAndPadding: SIMD4<Float>
+    /// xyz = g_EyePosition, w reserved.
+    var eyeAndPadding: SIMD4<Float>
 }
 
 /// Layout MUST match `WPEPuppetSceneCompositeUniforms` in `WPEMetalBuiltins.metal`. Placement

@@ -90,6 +90,26 @@ struct PanelAppearanceTests {
         print("Widget visual review: \(directory.path)")
     }
 
+    /// The slider advertises 0.25…1.0 and the stored value is the user's. The
+    /// card's alpha once spanned only 0.90…1.0, so every setting painted the
+    /// same near-solid card and someone asking for a faint panel got 0.925.
+    @Test("the card's alpha is the value the user asked for")
+    func materialAlphaTracksTheSetting() throws {
+        func alpha(_ color: Color) throws -> Double {
+            try Double(#require(NSColor(color).usingColorSpace(.sRGB)).alphaComponent)
+        }
+        for value in [0.25, 0.5, 1.0] {
+            let fill = MonitorPanelAppearance.fill(tintHex: "#3366FF", opacity: value)
+            let top = try alpha(fill.top)
+            let bottom = try alpha(fill.bottom)
+            #expect(abs(top - value) < 0.001, "top alpha at \(value)")
+            #expect(abs(bottom - value) < 0.001, "bottom alpha at \(value)")
+        }
+        // Reduce Transparency is the one thing allowed to override the choice.
+        let forced = MonitorPanelAppearance.fill(tintHex: "#3366FF", opacity: 0.25, reduceTransparency: true)
+        #expect(try alpha(forced.top) == 1)
+    }
+
     @Test("Reduced transparency is opaque and faint labels stay readable over white")
     func contrastSurvivesBrightBackgrounds() throws {
         func rgb(_ color: Color) throws -> NSColor {
@@ -105,9 +125,17 @@ struct PanelAppearanceTests {
             let opaque = MonitorPanelAppearance.fill(tintHex: hex, opacity: 0.25, reduceTransparency: true)
             #expect(try rgb(opaque.top).alphaComponent == 1)
             #expect(try rgb(opaque.bottom).alphaComponent == 1)
+            // An opaque card is its own ground, so it needs no halo behind the ink.
+            #expect(MonitorPanelAppearance.inkBacking(tintHex: hex, opacity: 0.25, reduceTransparency: true) == nil)
+
+            // The faintest card the slider offers, over the brightest wallpaper
+            // there is, with the ink's own backing between them.
             let fill = try rgb(MonitorPanelAppearance.fill(tintHex: hex, opacity: 0.25).top)
+            let halo = try MonitorPanelAppearance
+                .inkBacking(tintHex: hex, opacity: 0.25, reduceTransparency: false)
+                .map { try rgb($0).alphaComponent } ?? 0
             let background = luminance([fill.redComponent, fill.greenComponent, fill.blueComponent].map {
-                $0 * fill.alphaComponent + 1 - fill.alphaComponent
+                ($0 * fill.alphaComponent + 1 - fill.alphaComponent) * (1 - halo)
             })
             #expect((foreground + 0.05) / (background + 0.05) >= 4.5)
         }

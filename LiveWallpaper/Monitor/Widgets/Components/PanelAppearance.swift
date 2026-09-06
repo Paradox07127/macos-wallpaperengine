@@ -72,21 +72,56 @@ enum MonitorPanelAppearance {
         return AdaptiveGlass.isAvailable
     }
 
+    /// Brightest channel a card's own colour is allowed to reach, and the ground
+    /// the ink halo restores when the card is too faint to reach it on its own.
+    /// Every widget draws light-on-dark, and a ground this dark clears 4.5:1 for
+    /// `Design.inkFaint`, the palest ink on the board.
+    private static let groundCeiling: Double = 0.14
+
     /// Keep light readouts legible even when the wallpaper or selected tint is white.
     /// Appearance opacity changes the material, never removes its contrast floor.
     static func readableTint(_ hex: String) -> Color {
         guard let rgb = parseHexRGB(hex) else { return Design.bg1 }
         let peak = max(rgb.red, rgb.green, rgb.blue, 0.001)
-        let scale = min(1, 0.14 / peak)
+        let scale = min(1, groundCeiling / peak)
         return Color(red: rgb.red * scale, green: rgb.green * scale, blue: rgb.blue * scale)
     }
 
+    /// The card's alpha, which is the user's value and nothing else: the dial
+    /// exists for people who genuinely want a faint panel, so legibility is
+    /// bought with `inkBacking` rather than by quietly refusing the setting.
+    /// Reduce Transparency is the one override — that material has to be solid.
+    static func materialAlpha(_ opacity: Double, reduceTransparency: Bool) -> Double {
+        reduceTransparency ? 1 : resolvedOpacity(opacity)
+    }
+
+    /// Halo drawn behind a tile's own content, and nil when the card is already
+    /// dark enough without it. A card at 0.25 over a white wallpaper leaves pale
+    /// ink on a near-white ground, so the few points a glyph actually covers are
+    /// darkened back to `groundCeiling` — the ground a solid card would give —
+    /// instead of the whole panel being pushed opaque.
+    static func inkBacking(tintHex: String, opacity: Double, reduceTransparency: Bool) -> Color? {
+        let alpha = materialAlpha(opacity, reduceTransparency: reduceTransparency)
+        let tint = NSColor(readableTint(tintHex)).usingColorSpace(.sRGB) ?? .black
+        let peak = Double(max(tint.redComponent, tint.greenComponent, tint.blueComponent))
+        // Worst case is a white wallpaper: wherever the card is not, 1 shows through.
+        let overWhite = (1 - alpha) + alpha * peak
+        guard overWhite > groundCeiling else { return nil }
+        return .black.opacity(1 - groundCeiling / overWhite)
+    }
+
+    /// Soft enough to read as a halo rather than an outline at every tile size.
+    static let inkBackingRadius: CGFloat = 3
+
+    /// Lighter than the painted fill by design — the point of glass is that the
+    /// wallpaper still comes through the body — and proportional, so the dial
+    /// means the same thing in both card styles.
     static func glassScrim(tintHex: String, opacity: Double) -> Color {
-        readableTint(tintHex).opacity(0.94 + 0.03 * resolvedOpacity(opacity))
+        readableTint(tintHex).opacity(0.58 * resolvedOpacity(opacity))
     }
 
     static func fill(tintHex: String, opacity: Double, reduceTransparency: Bool = false) -> (top: Color, bottom: Color) {
-        let alpha = reduceTransparency ? 1 : 0.90 + 0.10 * resolvedOpacity(opacity)
+        let alpha = materialAlpha(opacity, reduceTransparency: reduceTransparency)
         let tint = readableTint(tintHex)
         let bottom = NSColor(tint).usingColorSpace(.sRGB) ?? .black
         let shaded = Color(red: bottom.redComponent * 0.8, green: bottom.greenComponent * 0.8, blue: bottom.blueComponent * 0.8)

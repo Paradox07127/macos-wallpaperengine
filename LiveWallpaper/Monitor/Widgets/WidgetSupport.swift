@@ -69,15 +69,24 @@ struct MonitorChartWindow: Sendable, Equatable {
     /// breaks there instead of interpolating across it.
     var tolerance: Double
 
-    /// `interval` is the series' own cadence. 1.75× it separates one dropped
-    /// sample (a 2× step at a steady rate) from ordinary jitter; with no cadence
-    /// to go on, a twentieth of the window is the fallback.
+    /// How far a curve may reach across missing samples, as a multiple of the
+    /// series' own cadence. One dropped delivery leaves a 2× step — the board
+    /// pulls the newest snapshot out of a one-slot broker at the same nominal
+    /// rate the sampler fills it, so a push that runs long loses the sample it
+    /// stepped over — and two dropped in a row leave 3×. Measured jitter on the
+    /// real sampler is ±11% of the cadence, which puts those two cases at 2.2
+    /// and 2.7 at worst; 2.5 separates them with margin on both sides. So a
+    /// curve bridges one missing reading and breaks on two.
+    static let bridgeFactor = 2.5
+
+    /// `interval` is the series' own cadence; with none to go on, a twentieth
+    /// of the window is the fallback.
     init(reference: Double, seconds: Double, interval: Double?) {
         let span = max(seconds, .ulpOfOne)
         self.reference = reference
         length = span
         let cadence = interval.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? span / 20
-        tolerance = cadence * 1.75
+        tolerance = cadence * Self.bridgeFactor
     }
 
     var start: Double {
@@ -175,25 +184,33 @@ struct MonitorHistorySnapshot: Sendable, Equatable {
 }
 
 extension MonitorHistorySnapshot {
-    /// Median spacing of the shared axis: the board's real cadence, which the
-    /// refresh slider moves between 0.5 s and 5 s per sample.
-    var sampleInterval: Double? {
-        Self.medianStep(sampleTimes)
-    }
-
-    var gpuSampleInterval: Double? {
-        Self.medianStep(gpuSampleTimes)
-    }
-
     func chartWindow(reference: Date, seconds: Double) -> MonitorChartWindow {
-        MonitorChartWindow(
-            reference: reference.timeIntervalSince1970, seconds: seconds, interval: sampleInterval
-        )
+        Self.window(reference: reference, seconds: seconds, times: sampleTimes)
     }
 
     func gpuChartWindow(reference: Date, seconds: Double) -> MonitorChartWindow {
-        MonitorChartWindow(
-            reference: reference.timeIntervalSince1970, seconds: seconds, interval: gpuSampleInterval
+        Self.window(reference: reference, seconds: seconds, times: gpuSampleTimes)
+    }
+
+    /// Cadence measured over the samples this window actually draws, not over
+    /// the whole 240-sample buffer. The refresh slider moves the board between
+    /// 0.5 s and 5 s per sample without clearing history, so the buffer keeps
+    /// the old cadence long after the chart stopped having it: measured, right
+    /// after 0.5 s → 2 s the buffer median was still 0.500 s while every step in
+    /// a 60 s window was 2.000 s, and all 30 adjacent pairs read as gaps — 31
+    /// isolated dots, for the 240 s the fast samples take to age out. The
+    /// whole-buffer median stays the fallback only when the window holds fewer
+    /// than two samples, where there is no pair to break anyway.
+    private static func window(
+        reference: Date, seconds: Double, times: [Double]
+    ) -> MonitorChartWindow {
+        let end = reference.timeIntervalSince1970
+        let span = max(seconds, .ulpOfOne)
+        let inside = times.filter { $0 >= end - span && $0 <= end }
+        return MonitorChartWindow(
+            reference: end,
+            seconds: span,
+            interval: medianStep(inside) ?? medianStep(times)
         )
     }
 
@@ -261,6 +278,8 @@ final class MonitorHistoryStore: ObservableObject {
     private let capacity: Int
     private var lastSampleAt: Double?
     private var lastGPUSampleAt: Double?
+    /// Only consulted for snapshots that carry no measurement time — see `ingest`.
+    private var lastSystem: MonitorSystemSnapshot?
 
     /// 240, not 120: the longest offered window is 120 s and the refresh
     /// slider goes down to 0.5 s per sample, so a 120-sample buffer could only
@@ -273,15 +292,31 @@ final class MonitorHistoryStore: ObservableObject {
         current = MonitorHistorySnapshot()
         lastSampleAt = nil
         lastGPUSampleAt = nil
+        lastSystem = nil
     }
 
     func ingest(_ snapshot: MonitorSnapshot) {
-        var next = current
         guard let sys = snapshot.system else { return }
-        let t = sys.sampledAt ?? (snapshot.timestamp > 0 ? snapshot.timestamp : Date().timeIntervalSince1970)
-        if let last = lastSampleAt, t <= last { return }
+        // A sample needs a time the reading was actually taken at. Failing that
+        // the publish clock is all there is, and the hub republishes the same
+        // unchanged reading whenever any other source updates — taken at face
+        // value that lands as a fresh point milliseconds after the last one and
+        // manufactures a cadence nothing ever sampled at. So an unchanged
+        // reading with no measurement time is not a sample, and neither is one
+        // with no time at all: `Date()` used to invent one.
+        if sys.sampledAt == nil, sys == lastSystem {
+            return
+        }
+        guard let t = sys.sampledAt ?? (snapshot.timestamp > 0 ? snapshot.timestamp : nil) else {
+            return
+        }
+        if let last = lastSampleAt, t <= last {
+            return
+        }
+        var next = current
         let dt = lastSampleAt.map { min(max(t - $0, 0), 10) } ?? 0
         lastSampleAt = t
+        lastSystem = sys
         next.sampleTimes.append(t)
 
         let cpu = Self.sampled(sys, "cpu")
