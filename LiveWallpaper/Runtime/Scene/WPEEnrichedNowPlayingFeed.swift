@@ -22,8 +22,28 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
 
     private var subscribers: [UUID: @Sendable (UInt64, MonitorNowPlayingState) -> Void] = [:]
     private var source: NowPlayingSource?
+    /// Demand, tracked separately from the source object so the reference count
+    /// is readable without one. `source` is nil both before the first subscriber
+    /// and while a test is running without a real source.
+    private var sourceIsRunning = false
     private var ordinal: UInt64 = 0
     private var latest: MonitorNowPlayingState?
+
+    #if DEBUG
+    /// Test seam. `NowPlayingSource` reads the user's library and starts the
+    /// enrichment machinery, so a test of the fan-out / replay / demand contract
+    /// runs the bookkeeping with this off and pushes states through
+    /// `deliverForTesting`. Demand still counts, which is the point.
+    var startsRealSourceForTesting = true
+
+    var isSourceRunningForTesting: Bool {
+        sourceIsRunning
+    }
+
+    func deliverForTesting(_ state: MonitorNowPlayingState?) {
+        fanOut(state)
+    }
+    #endif
 
     /// Receives the source's enriched pushes and hops them back to the main
     /// actor. The full sink protocol exists for the overlay hub; only the
@@ -33,9 +53,10 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
         init(deliver: @escaping @MainActor @Sendable (MonitorNowPlayingState?) -> Void) {
             self.deliver = deliver
         }
-        func updateSystem(_ snapshot: MonitorSystemSnapshot) async {}
-        func updateAgents(sourceID: String, sessions: [MonitorAgentSessionState]) async {}
-        func updateHealth(_ health: MonitorSourceHealth) async {}
+
+        func updateSystem(_: MonitorSystemSnapshot) async {}
+        func updateAgents(sourceID _: String, sessions _: [MonitorAgentSessionState]) async {}
+        func updateHealth(_: MonitorSourceHealth) async {}
         func updateNowPlaying(_ state: MonitorNowPlayingState?) async {
             let deliver = deliver
             await MainActor.run { deliver(state) }
@@ -46,17 +67,25 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
         subscribers[id] = handler
         // Same replay contract as the monitor: a scene loaded mid-song starts
         // correct instead of waiting for the next track change.
-        if let latest { handler(ordinal, latest) }
+        if let latest {
+            handler(ordinal, latest)
+        }
         startSourceIfNeeded()
     }
 
     func unsubscribe(id: UUID) {
         subscribers.removeValue(forKey: id)
-        if subscribers.isEmpty { stopSource() }
+        if subscribers.isEmpty {
+            stopSource()
+        }
     }
 
     private func startSourceIfNeeded() {
-        guard source == nil else { return }
+        guard !sourceIsRunning else { return }
+        sourceIsRunning = true
+        #if DEBUG
+        guard startsRealSourceForTesting else { return }
+        #endif
         // `audioReactive: false` + no-op demand: the scene renderer manages its
         // own audio capture; this feed must never retain the tap.
         let source = NowPlayingSource(
@@ -71,20 +100,26 @@ final class WPEEnrichedNowPlayingFeed: WPENowPlayingEventSource {
     }
 
     private func stopSource() {
+        guard sourceIsRunning else { return }
+        sourceIsRunning = false
+        // Cleared with the source: a subscriber arriving after a quiet period
+        // must not be replayed a track the feed stopped following.
+        latest = nil
         guard let source else { return }
         self.source = nil
-        latest = nil
         Task { await source.stop() }
     }
 
     private func fanOut(_ state: MonitorNowPlayingState?) {
-        guard source != nil else { return }
+        guard sourceIsRunning else { return }
         // A nil push (source teardown) is not a track state; the dispatcher's
         // own diff gate handles "no track" through the phase field.
         guard let state else { return }
         ordinal &+= 1
         latest = state
-        for handler in subscribers.values { handler(ordinal, state) }
+        for handler in subscribers.values {
+            handler(ordinal, state)
+        }
     }
 }
 #endif
