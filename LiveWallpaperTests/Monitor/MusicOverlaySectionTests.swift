@@ -56,13 +56,41 @@ final class MusicOverlaySectionTests: XCTestCase {
         for board in [CGSize(width: 1280, height: 800), CGSize(width: 2560, height: 1440)] {
             for size in MusicOverlaySize.allCases {
                 let centered = Layout.setting(anchor: .center, on: layer(size: size), boardSize: board)
-                let rect = try XCTUnwrap(Layout.renderRect(configuration: centered, boardSize: board, topInsetFraction: 0))
+                let rect = try XCTUnwrap(Layout.renderRect(configuration: centered, boardSize: board, safeArea: .none))
                 XCTAssertEqual(rect.midX, board.width / 2, accuracy: 0.01)
                 XCTAssertEqual(rect.midY, board.height / 2, accuracy: 0.01)
                 XCTAssertEqual(Layout.anchor(of: centered, boardSize: board), .center)
                 let trailing = Layout.setting(anchor: .bottomTrailing, on: layer(size: size), boardSize: board)
-                let edge = try XCTUnwrap(Layout.renderRect(configuration: trailing, boardSize: board, topInsetFraction: 0))
+                let edge = try XCTUnwrap(Layout.renderRect(configuration: trailing, boardSize: board, safeArea: .none))
                 XCTAssertEqual(board.width - edge.maxX, rect.minX - centered.x * board.width, accuracy: 0.01)
+            }
+        }
+    }
+
+    /// The layer shares the board's usable area, so a Dock on any edge moves it
+    /// exactly as it moves a widget.
+    func testMusicLayerStaysClearOfADockOnAnyEdge() throws {
+        let board = CGSize(width: 1600, height: 1000)
+        let cases: [(String, MonitorSafeAreaInsets)] = [
+            ("bottom", MonitorSafeAreaInsets(top: 0.04, bottom: 0.12)),
+            ("left", MonitorSafeAreaInsets(top: 0.04, leading: 0.06)),
+            ("right", MonitorSafeAreaInsets(top: 0.04, trailing: 0.06)),
+        ]
+        for (name, insets) in cases {
+            let safe = MonitorBoardGeometry(boardSize: board, safeArea: insets).safeRect
+            for size in MusicOverlaySize.allCases {
+                for anchor in Layout.Anchor.allCases {
+                    let configuration = Layout.setting(
+                        anchor: anchor, on: layer(size: size), boardSize: board
+                    )
+                    let rect = try XCTUnwrap(Layout.renderRect(
+                        configuration: configuration, boardSize: board, safeArea: insets
+                    ))
+                    XCTAssertTrue(
+                        safe.insetBy(dx: -0.5, dy: -0.5).contains(rect),
+                        "\(name) Dock, \(size) at \(anchor): \(rect) escaped \(safe)"
+                    )
+                }
             }
         }
     }

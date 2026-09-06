@@ -4,6 +4,48 @@ import LiveWallpaperCore
 
 // MARK: - Monitor board layout engine
 
+/// The strip each display edge loses to the menu bar or the Dock, as a fraction
+/// of the display's own size, counted y-down from the top-left like every other
+/// board coordinate. Fractions rather than points so one value describes both
+/// the desktop board and the inspector's scaled-down copy of the same display.
+struct MonitorSafeAreaInsets: Equatable, Sendable {
+    var top: CGFloat
+    var leading: CGFloat
+    var bottom: CGFloat
+    var trailing: CGFloat
+
+    static let none = MonitorSafeAreaInsets()
+
+    init(top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0) {
+        self.top = Self.fraction(top)
+        self.leading = Self.fraction(leading)
+        self.bottom = Self.fraction(bottom)
+        self.trailing = Self.fraction(trailing)
+    }
+
+    /// `visibleFrame` is the display's frame minus the menu bar and the Dock,
+    /// wherever the Dock happens to be — so measuring all four edges against it
+    /// covers a left, right or bottom Dock without asking AppKit about the Dock
+    /// at all, and without special-casing the top. Both rects are AppKit's
+    /// y-up screen coordinates, which is why `top` reads off `maxY`.
+    init(frame: CGRect, visibleFrame visible: CGRect) {
+        guard frame.width > 0, frame.height > 0 else {
+            self.init()
+            return
+        }
+        self.init(
+            top: (frame.maxY - visible.maxY) / frame.height,
+            leading: (visible.minX - frame.minX) / frame.width,
+            bottom: (visible.minY - frame.minY) / frame.height,
+            trailing: (frame.maxX - visible.maxX) / frame.width
+        )
+    }
+
+    private static func fraction(_ value: CGFloat) -> CGFloat {
+        value.isFinite ? min(max(value, 0), 1) : 0
+    }
+}
+
 /// Cell-exact geometry on Apple's 170 pt tile: S 170×170, M 356×170, L 356×356 pt.
 struct MonitorBoardGeometry: Equatable {
     let boardSize: CGSize
@@ -15,8 +57,10 @@ struct MonitorBoardGeometry: Equatable {
     /// HALF-gutter, both axes: neighbours end up `2 * tileInset` apart.
     let tileInset: CGFloat
     let cornerRadius: CGFloat
-    /// Menu-bar avoidance floor for widget origins (0 if host passes no inset).
-    let topInset: CGFloat
+    /// Menu-bar / Dock avoidance in board pixels: the part of the board a widget
+    /// may be placed into. Equal to the whole board when the host passes no
+    /// insets.
+    let safeRect: CGRect
 
     /// Pitch = tile + one gutter (`tile == pitch - 2 * inset`), so a small widget stays exactly Apple's
     /// 170×170; spans absorb the gutter they cross (medium 356×170, large 356×356). Numbers live in
@@ -28,7 +72,7 @@ struct MonitorBoardGeometry: Equatable {
     static let appleTileInset = CGFloat(MonitorBoardMetrics.gutter / 2)
     static let appleCornerRadius: CGFloat = 16
 
-    init(boardSize: CGSize, referenceWidth: CGFloat = 0, topInsetFraction: CGFloat = 0) {
+    init(boardSize: CGSize, referenceWidth: CGFloat = 0, safeArea: MonitorSafeAreaInsets = .none) {
         let reference = referenceWidth > 0 ? referenceWidth : boardSize.width
         let s = reference > 0 ? boardSize.width / reference : 1
 
@@ -41,7 +85,28 @@ struct MonitorBoardGeometry: Equatable {
         self.cellHeight = max(ch, 0)
         self.tileInset = Self.appleTileInset * s
         self.cornerRadius = max(Self.appleCornerRadius * s, 1)
-        self.topInset = max(0, min(boardSize.height, boardSize.height * topInsetFraction))
+        safeRect = Self.safeRect(boardSize: boardSize, safeArea: safeArea)
+    }
+
+    /// Menu-bar avoidance floor for widget origins.
+    var topInset: CGFloat {
+        safeRect.minY
+    }
+
+    /// Opposing insets that between them swallow the display leave nothing to
+    /// place into; the whole board is a better answer than a negative rect.
+    private static func safeRect(boardSize: CGSize, safeArea: MonitorSafeAreaInsets) -> CGRect {
+        let width = boardSize.width * (1 - safeArea.leading - safeArea.trailing)
+        let height = boardSize.height * (1 - safeArea.top - safeArea.bottom)
+        // `CGRect.width` reports the standardized magnitude, so a negative span
+        // has to be caught before the rect is built.
+        guard width > 0, height > 0 else { return CGRect(origin: .zero, size: boardSize) }
+        return CGRect(
+            x: boardSize.width * safeArea.leading,
+            y: boardSize.height * safeArea.top,
+            width: width,
+            height: height
+        )
     }
 
     var isDegenerate: Bool {
@@ -65,12 +130,16 @@ struct MonitorBoardGeometry: Equatable {
         return raw.insetBy(dx: dx, dy: dy)
     }
 
+    /// Keeps a footprint inside the usable area. A footprint larger than that
+    /// area pins to its top-left corner rather than inverting the range.
     func clampOrigin(_ origin: CGPoint, footprint: CGSize) -> CGPoint {
-        let maxX = boardSize.width - footprint.width
-        let maxY = boardSize.height - footprint.height
-        return CGPoint(
-            x: LayoutEngine.clamp(origin.x, 0, max(maxX, 0)),
-            y: LayoutEngine.clamp(origin.y, topInset, max(maxY, topInset))
+        CGPoint(
+            x: LayoutEngine.clamp(
+                origin.x, safeRect.minX, max(safeRect.maxX - footprint.width, safeRect.minX)
+            ),
+            y: LayoutEngine.clamp(
+                origin.y, safeRect.minY, max(safeRect.maxY - footprint.height, safeRect.minY)
+            )
         )
     }
 }
@@ -139,10 +208,11 @@ enum LayoutEngine {
         items: [MonitorBoardItem],
         ignoring ignoredID: UUID?
     ) -> Bool {
-        if rect.minX < -epsilon
-            || rect.minY < geometry.topInset - epsilon
-            || rect.maxX > geometry.boardSize.width + epsilon
-            || rect.maxY > geometry.boardSize.height + epsilon {
+        let area = geometry.safeRect
+        if rect.minX < area.minX - epsilon
+            || rect.minY < area.minY - epsilon
+            || rect.maxX > area.maxX + epsilon
+            || rect.maxY > area.maxY + epsilon {
             return false
         }
         for item in items {
@@ -194,7 +264,9 @@ enum LayoutEngine {
                 }
             }
         }
-        if let best, bestDistance <= maxDisplacement { return best }
+        if let best, bestDistance <= maxDisplacement {
+            return best
+        }
         return nil
     }
 
@@ -207,8 +279,7 @@ enum LayoutEngine {
         items: [MonitorBoardItem],
         ignoring ignoredID: UUID?
     ) -> MonitorSnapResult {
-        let bw = geometry.boardSize.width
-        let bh = geometry.boardSize.height
+        let area = geometry.safeRect
         let dw = footprint.width
         let dh = footprint.height
 
@@ -240,12 +311,15 @@ enum LayoutEngine {
             }
         }
 
-        considerX(target: 0, guidePos: 0, partner: nil)
-        considerX(target: bw - dw, guidePos: bw, partner: nil)
-        considerX(target: (bw - dw) / 2, guidePos: bw / 2, partner: nil)
-        considerY(target: geometry.topInset, guidePos: geometry.topInset, partner: nil)
-        considerY(target: bh - dh, guidePos: bh, partner: nil)
-        considerY(target: (bh - dh) / 2, guidePos: bh / 2, partner: nil)
+        // Edges of the usable area, not of the display: with a Dock on screen
+        // the two differ, and snapping to the screen edge would park a tile
+        // underneath it.
+        considerX(target: area.minX, guidePos: area.minX, partner: nil)
+        considerX(target: area.maxX - dw, guidePos: area.maxX, partner: nil)
+        considerX(target: area.midX - dw / 2, guidePos: area.midX, partner: nil)
+        considerY(target: area.minY, guidePos: area.minY, partner: nil)
+        considerY(target: area.maxY - dh, guidePos: area.maxY, partner: nil)
+        considerY(target: area.midY - dh / 2, guidePos: area.midY, partner: nil)
 
         for item in items where item.id != ignoredID {
             let r = item.rect
@@ -341,10 +415,14 @@ enum LayoutEngine {
 
         if let atAnchor = legal(anchor) { return atAnchor }
 
-        let shiftedLeft = CGPoint(x: geometry.boardSize.width - newFootprint.width, y: anchor.y)
-        if shiftedLeft.x < anchor.x, let hit = legal(shiftedLeft) { return hit }
-        let shiftedUp = CGPoint(x: anchor.x, y: geometry.boardSize.height - newFootprint.height)
-        if shiftedUp.y < anchor.y, let hit = legal(shiftedUp) { return hit }
+        let shiftedLeft = CGPoint(x: geometry.safeRect.maxX - newFootprint.width, y: anchor.y)
+        if shiftedLeft.x < anchor.x, let hit = legal(shiftedLeft) {
+            return hit
+        }
+        let shiftedUp = CGPoint(x: anchor.x, y: geometry.safeRect.maxY - newFootprint.height)
+        if shiftedUp.y < anchor.y, let hit = legal(shiftedUp) {
+            return hit
+        }
         let shiftedBoth = CGPoint(x: shiftedLeft.x, y: shiftedUp.y)
         if let hit = legal(shiftedBoth) { return hit }
 
@@ -366,8 +444,8 @@ enum LayoutEngine {
         items: [MonitorBoardItem]
     ) -> CGPoint? {
         let target = CGPoint(
-            x: (geometry.boardSize.width - footprint.width) / 2,
-            y: geometry.boardSize.height * 0.64
+            x: geometry.safeRect.midX - footprint.width / 2,
+            y: geometry.safeRect.minY + geometry.safeRect.height * 0.64
         )
         guard let spot = resolve(
             origin: target,

@@ -203,7 +203,136 @@ final class BoardLayoutEngineTests: XCTestCase {
     }
 
     private func insetGeometry() -> MonitorBoardGeometry {
-        MonitorBoardGeometry(boardSize: boardSize, topInsetFraction: 0.05)
+        MonitorBoardGeometry(boardSize: boardSize, safeArea: MonitorSafeAreaInsets(top: 0.05))
+    }
+
+    // MARK: - Menu bar and Dock
+
+    /// A 1512×982 display parked left of the main one, 25 pt of menu bar and a
+    /// 70 pt Dock on its left edge.
+    private func sideDockScreen() -> (frame: CGRect, visible: CGRect) {
+        let frame = CGRect(x: -1512, y: 300, width: 1512, height: 982)
+        let visible = CGRect(x: -1512 + 70, y: 300, width: 1512 - 70, height: 982 - 25)
+        return (frame, visible)
+    }
+
+    func testSafeAreaReadsEveryEdgeOffTheVisibleFrame() {
+        let screen = sideDockScreen()
+        let insets = MonitorSafeAreaInsets(frame: screen.frame, visibleFrame: screen.visible)
+        XCTAssertEqual(insets.top, 25.0 / 982, accuracy: 1e-9)
+        XCTAssertEqual(insets.leading, 70.0 / 1512, accuracy: 1e-9)
+        XCTAssertEqual(insets.bottom, 0, accuracy: 1e-9)
+        XCTAssertEqual(insets.trailing, 0, accuracy: 1e-9)
+
+        // Same display, Dock moved to the bottom: AppKit reports it as a raised
+        // visible origin, which must land on `bottom` and nowhere else.
+        let bottomDock = MonitorSafeAreaInsets(
+            frame: screen.frame,
+            visibleFrame: CGRect(x: -1512, y: 300 + 70, width: 1512, height: 982 - 25 - 70)
+        )
+        XCTAssertEqual(bottomDock.bottom, 70.0 / 982, accuracy: 1e-9)
+        XCTAssertEqual(bottomDock.leading, 0, accuracy: 1e-9)
+        XCTAssertEqual(bottomDock.top, 25.0 / 982, accuracy: 1e-9)
+    }
+
+    func testBottomDockIsExcludedFromThePlaceableArea() {
+        let g = MonitorBoardGeometry(
+            boardSize: boardSize, safeArea: MonitorSafeAreaInsets(top: 0.05, bottom: 0.1)
+        )
+        let footprint = g.pixelSize(for: .memory, size: .small)
+        XCTAssertEqual(g.safeRect.maxY, 900, accuracy: 0.001)
+
+        let clamped = g.clampOrigin(CGPoint(x: 200, y: 99999), footprint: footprint)
+        XCTAssertEqual(clamped.y, 900 - footprint.height, accuracy: 0.001)
+
+        let intruding = CGRect(
+            origin: CGPoint(x: 200, y: 900 - footprint.height + 20), size: footprint
+        )
+        XCTAssertFalse(LayoutEngine.isLegal(rect: intruding, geometry: g, items: [], ignoring: nil))
+    }
+
+    func testSideDockIsExcludedFromThePlaceableArea() {
+        let left = MonitorBoardGeometry(
+            boardSize: boardSize, safeArea: MonitorSafeAreaInsets(leading: 0.05)
+        )
+        let footprint = left.pixelSize(for: .memory, size: .small)
+        XCTAssertEqual(left.safeRect.minX, 80, accuracy: 0.001)
+        XCTAssertEqual(left.clampOrigin(CGPoint(x: 0, y: 300), footprint: footprint).x, 80, accuracy: 0.001)
+        XCTAssertFalse(LayoutEngine.isLegal(
+            rect: CGRect(origin: CGPoint(x: 20, y: 300), size: footprint),
+            geometry: left, items: [], ignoring: nil
+        ))
+
+        let right = MonitorBoardGeometry(
+            boardSize: boardSize, safeArea: MonitorSafeAreaInsets(trailing: 0.05)
+        )
+        XCTAssertEqual(right.safeRect.maxX, 1520, accuracy: 0.001)
+        XCTAssertEqual(
+            right.clampOrigin(CGPoint(x: 99999, y: 300), footprint: footprint).x,
+            1520 - footprint.width, accuracy: 0.001
+        )
+    }
+
+    func testSnapOffersTheDockEdgeRatherThanTheScreenEdge() {
+        let g = MonitorBoardGeometry(
+            boardSize: boardSize, safeArea: MonitorSafeAreaInsets(leading: 0.05, bottom: 0.1)
+        )
+        let footprint = g.pixelSize(for: .memory, size: .small)
+
+        let nearLeft = LayoutEngine.snap(
+            freeOrigin: CGPoint(x: 86, y: 400), footprint: footprint,
+            geometry: g, items: [], ignoring: nil
+        )
+        XCTAssertTrue(nearLeft.snappedX)
+        XCTAssertEqual(nearLeft.origin.x, 80, accuracy: 0.001)
+
+        let nearBottom = LayoutEngine.snap(
+            freeOrigin: CGPoint(x: 400, y: 900 - footprint.height - 6), footprint: footprint,
+            geometry: g, items: [], ignoring: nil
+        )
+        XCTAssertTrue(nearBottom.snappedY)
+        XCTAssertEqual(nearBottom.origin.y, 900 - footprint.height, accuracy: 0.001)
+    }
+
+    func testAutomaticPlacementLandsInsideTheSafeArea() throws {
+        let g = MonitorBoardGeometry(
+            boardSize: boardSize,
+            safeArea: MonitorSafeAreaInsets(top: 0.05, leading: 0.05, bottom: 0.12, trailing: 0.05)
+        )
+        let footprint = g.pixelSize(for: .cpu, size: .medium)
+        let origin = try XCTUnwrap(LayoutEngine.firstFit(footprint: footprint, geometry: g, items: []))
+        let rect = CGRect(origin: origin, size: footprint)
+        XCTAssertTrue(g.safeRect.insetBy(dx: -LayoutEngine.epsilon, dy: -LayoutEngine.epsilon).contains(rect))
+    }
+
+    /// The preview lays the board out at the display's own point size and scales
+    /// the result; the same fractions therefore have to describe both.
+    func testSafeAreaScalesWithTheBoardSoPreviewAndDesktopCorrespond() {
+        let insets = MonitorSafeAreaInsets(top: 0.05, leading: 0.04, bottom: 0.1, trailing: 0.02)
+        let desktop = MonitorBoardGeometry(boardSize: CGSize(width: 1512, height: 982), safeArea: insets)
+        let scaled = MonitorBoardGeometry(boardSize: CGSize(width: 756, height: 491), safeArea: insets)
+        XCTAssertEqual(scaled.safeRect.minX, desktop.safeRect.minX / 2, accuracy: 0.001)
+        XCTAssertEqual(scaled.safeRect.minY, desktop.safeRect.minY / 2, accuracy: 0.001)
+        XCTAssertEqual(scaled.safeRect.width, desktop.safeRect.width / 2, accuracy: 0.001)
+        XCTAssertEqual(scaled.safeRect.height, desktop.safeRect.height / 2, accuracy: 0.001)
+
+        // Portrait: the fractions are per-axis, so rotating the display must not
+        // leak the width inset into the height.
+        let portrait = MonitorBoardGeometry(boardSize: CGSize(width: 982, height: 1512), safeArea: insets)
+        XCTAssertEqual(portrait.safeRect.minY, 1512 * 0.05, accuracy: 0.001)
+        XCTAssertEqual(portrait.safeRect.minX, 982 * 0.04, accuracy: 0.001)
+    }
+
+    func testInsetsThatSwallowTheDisplayFallBackToTheWholeBoard() {
+        let g = MonitorBoardGeometry(
+            boardSize: boardSize, safeArea: MonitorSafeAreaInsets(top: 0.6, bottom: 0.6)
+        )
+        XCTAssertEqual(g.safeRect, CGRect(origin: .zero, size: boardSize))
+
+        // Non-finite is "unknown", which means no inset; a finite overshoot is
+        // still a real edge and clamps to the whole axis.
+        let garbage = MonitorSafeAreaInsets(top: .nan, leading: -3, bottom: .infinity, trailing: 9)
+        XCTAssertEqual(garbage, MonitorSafeAreaInsets(top: 0, leading: 0, bottom: 0, trailing: 1))
     }
 
     func testTopInsetStoredAsPixels() {

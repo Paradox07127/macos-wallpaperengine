@@ -45,10 +45,8 @@ final class InteractionModel: ObservableObject {
 
     @Published var boardSize: CGSize = .zero
 
-    /// Menu-bar avoidance; folded into every `geometry` so clamp/snap/reflow stay below it.
-    var topInsetFraction: CGFloat = 0
-
-    var referenceWidth: CGFloat = 0
+    /// Menu-bar / Dock avoidance; folded into every `geometry` so clamp/snap/reflow stay inside it.
+    var safeArea: MonitorSafeAreaInsets = .none
 
     /// Committing edits only (drag-end, add, remove, resize) — never per mouse-move.
     var onConfigurationEdited: ((MonitorBoardConfiguration) -> Void)?
@@ -71,8 +69,7 @@ final class InteractionModel: ObservableObject {
     var geometry: MonitorBoardGeometry {
         MonitorBoardGeometry(
             boardSize: boardSize,
-            referenceWidth: referenceWidth,
-            topInsetFraction: topInsetFraction
+            safeArea: safeArea
         )
     }
 

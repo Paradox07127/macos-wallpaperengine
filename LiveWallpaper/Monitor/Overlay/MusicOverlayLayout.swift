@@ -29,11 +29,11 @@ enum MusicOverlayLayout {
     static func renderRect(
         configuration: MusicOverlayConfiguration,
         boardSize: CGSize,
-        topInsetFraction: CGFloat
+        safeArea: MonitorSafeAreaInsets
     ) -> CGRect? {
         let geometry = MonitorBoardGeometry(
             boardSize: boardSize,
-            topInsetFraction: topInsetFraction
+            safeArea: safeArea
         )
         guard !geometry.isDegenerate else { return nil }
         let cells = cells(for: configuration.size)
