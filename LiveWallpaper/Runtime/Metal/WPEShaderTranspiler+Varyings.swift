@@ -261,7 +261,18 @@ extension WPEShaderTranspiler {
         ("u_ratio", "float"),
     ]
 
+    /// Only a declaration counts: `u_sizeFactor`, a comment, or a bare use of
+    /// the name must not pass for `uniform float u_size;`, or the
+    /// reconstruction reads a uniform nothing declared.
+    static func declaresUniform(_ name: String, in source: String) -> Bool {
+        source.range(
+            of: "(?m)^\\s*uniform\\s+\\w+\\s+\(name)\\s*(\\[[^\\]]*\\])?\\s*;",
+            options: .regularExpression
+        ) != nil
+    }
+
     static func declaringVertexOnlyUniforms(in source: String, shaderName: String) -> String {
+        let source = declaringAudioResponseUniforms(in: source)
         let needed: [(name: String, glslType: String)]
         if texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
            source.contains("v_Distorsion") {
@@ -274,10 +285,43 @@ extension WPEShaderTranspiler {
             return source
         }
         let missing = needed
-            .filter { !source.contains($0.name) }
+            .filter { !declaresUniform($0.name, in: source) }
             .map { "uniform \($0.glslType) \($0.name);" }
         guard !missing.isEmpty else { return source }
         return missing.joined(separator: "\n") + "\n" + source
+    }
+
+    // MARK: - audio-reactive engine effects (2370927443, issue #133)
+
+    /// The engine's audio `.vert`s (`shake`, `pulse`) keep these behind `#if AUDIOPROCESSING`
+    /// and their fragments declare none of them — the fragment carries only the varying the
+    /// `.vert` wrote. Whole declarations, not `(name, type)` pairs, because two are arrays.
+    static let audioResponseVertexUniforms: [(name: String, declaration: String)] = [
+        ("g_AudioSpectrum16Left", "uniform float g_AudioSpectrum16Left[16];"),
+        ("g_AudioSpectrum16Right", "uniform float g_AudioSpectrum16Right[16];"),
+        ("g_AudioFrequencyMin", "uniform float g_AudioFrequencyMin;"),
+        ("g_AudioFrequencyMax", "uniform float g_AudioFrequencyMax;"),
+        ("g_AudioPower", "uniform float g_AudioPower;"),
+        ("g_AudioBounds", "uniform vec2 g_AudioBounds;"),
+        ("g_AudioMultiply", "uniform float g_AudioMultiply;"),
+    ]
+
+    /// Varyings whose reconstruction in `varyingInitializer` calls `wpe_audio_response16`.
+    static let audioResponseVaryings = ["v_AudioPulse", "v_AudioShift", "v_Pulse"]
+
+    /// Appended and guarded, unlike the three families above: the combo `#define`s live in
+    /// the preprocessed source's preamble, so a leading `#if AUDIOPROCESSING` would test an
+    /// undefined macro and always strip. `stripInactivePreprocessorBranches` runs after this
+    /// and drops the block — with its 34 uniform slots — whenever the audio mode is off.
+    /// Without the injection the uniform gate fails and the response collapses to a constant
+    /// 0, which turned 2370927443's `effects/shake` into a plain copy (issue #133).
+    static func declaringAudioResponseUniforms(in source: String) -> String {
+        guard audioResponseVaryings.contains(where: { source.contains($0) }) else { return source }
+        let missing = audioResponseVertexUniforms
+            .filter { !declaresUniform($0.name, in: source) }
+            .map(\.declaration)
+        guard !missing.isEmpty else { return source }
+        return source + "\n#if AUDIOPROCESSING\n" + missing.joined(separator: "\n") + "\n#endif\n"
     }
 
     // MARK: - frame_builder (workshop 3647393229)

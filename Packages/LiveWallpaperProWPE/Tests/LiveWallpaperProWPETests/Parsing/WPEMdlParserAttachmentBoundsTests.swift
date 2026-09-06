@@ -50,7 +50,16 @@ struct WPEMdlParserAttachmentBoundsTests {
 
     /// Minimal MDLV0023 single-triangle puppet (no skeleton). Byte-for-byte the
     /// known-good mesh fixture; the parser reaches attachment parsing after it.
-    private func singleTriangleMDLV23() -> Data {
+    /// An index past the vertex table went to the GPU as written: `vertices[vertexID]`
+    /// in the puppet vertex shader read whatever lay beyond the buffer.
+    @Test("An index outside the vertex table is rejected at parse time")
+    func indexBeyondVertexTableIsRejected() {
+        #expect(throws: WPEMdlParserError.self) {
+            try WPEMdlParser.parse(data: singleTriangleMDLV23(lastIndex: 3))
+        }
+    }
+
+    private func singleTriangleMDLV23(lastIndex: UInt16 = 2) -> Data {
         var data = Data()
         data.append(contentsOf: Array("MDLV0023".utf8))
         data.appendLE(UInt32(0x80000900))
@@ -73,7 +82,7 @@ struct WPEMdlParserAttachmentBoundsTests {
         data.appendLE(UInt32(3 * MemoryLayout<UInt16>.size))
         data.appendLE(UInt16(0))
         data.appendLE(UInt16(1))
-        data.appendLE(UInt16(2))
+        data.appendLE(lastIndex)
 
         data.append(UInt8(0))
         data.append(UInt8(1))

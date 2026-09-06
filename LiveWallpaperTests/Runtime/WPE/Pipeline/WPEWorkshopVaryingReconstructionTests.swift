@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 @testable import LiveWallpaper
+import Metal
 import Testing
 
 /// The transpile path is fragment-only: it never runs a workshop `.vert`, and rebuilds the
@@ -37,6 +38,20 @@ struct WPEWorkshopVaryingReconstructionTests {
             preprocessedSource: source,
             comboValues: comboValues
         ).mslSource
+    }
+
+    /// The "already declared" check was a substring match, so a shader carrying
+    /// `u_sizeFactor` was taken to have `u_size` and the reconstruction referenced a
+    /// uniform nothing declared — the whole layer went to `mslLibraryFailed`.
+    @Test("A uniform whose name merely contains a needed one does not stand in for it")
+    func lookalikeUniformDoesNotSuppressInjection() throws {
+        let lookalike = "uniform float u_sizeFactor;\n" + Self.lensSource
+        let translated = try translate(shaderName: "workshop/2811235087/effects/lens_distortion", source: lookalike)
+        #expect(
+            translated.range(of: "\\bu_size\\b", options: .regularExpression) != nil,
+            "u_size was not injected beside u_sizeFactor"
+        )
+        #expect(translated.range(of: "\\bu_sizeFactor\\b", options: .regularExpression) != nil)
     }
 
     @Test("Distortion and centre come from the .vert formulas, not a screen-UV ramp")
@@ -265,6 +280,101 @@ struct WPEWorkshopVaryingReconstructionTests {
         // `.zw` is the framebuffer UV; the historical `.xy` downgrade must not run here,
         // so the fragment's own read still names `.zw` after the texture rewrite.
         #expect(msl.contains("g_Texture0.sample(wpeSampler0, v_TexCoord.zw)"))
+    }
+
+    // MARK: - audio-reactive engine effects (2370927443 / issue #133)
+
+    /// `shake.frag` declares only `varying float v_AudioPulse;` — every audio uniform the
+    /// response needs lives in `shake.vert`, which the fragment-only path never runs. Without
+    /// the injection the reconstruction's uniform gate fails, the pulse collapses to a
+    /// constant 0 and `effects/shake` degrades into a plain copy (2370927443 looked deaf).
+    private static let shakeSource = """
+    #version 410 core
+    #define AUDIOPROCESSING 3
+    #define DIRECTION 0
+    uniform sampler2D g_Texture0;
+    uniform sampler2D g_Texture1;
+    uniform float g_Time;
+    uniform float g_Speed;
+    uniform float g_Amp;
+    uniform vec2 g_Friction;
+    varying vec4 v_TexCoord;
+    varying vec2 v_Bounds;
+
+    #if AUDIOPROCESSING
+    varying float v_AudioPulse;
+    #endif
+
+    void main() {
+        vec2 flowMask = (texture(g_Texture1, v_TexCoord.zw).rg - vec2(0.498, 0.498)) * 2.0;
+        float offset = 0.0;
+    #if AUDIOPROCESSING == 0
+        offset = sin(g_Speed * g_Time) * g_Friction.x;
+        offset = saturate((offset - v_Bounds.x) * v_Bounds.y);
+        offset = offset * 2.0 - 1.0;
+    #else
+        offset += v_AudioPulse;
+    #endif
+        gl_FragColor = texture(g_Texture0, offset * g_Amp * g_Amp * flowMask + v_TexCoord.xy);
+    }
+    """
+
+    private func compileMSL(_ msl: String) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let options = MTLCompileOptions()
+        options.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: msl, options: options)
+    }
+
+    @Test("shake gets the audio uniforms its .vert declared, so v_AudioPulse is a real response")
+    func reconstructsShakeAudioPulse() throws {
+        let msl = try translate(
+            shaderName: "effects/shake",
+            source: Self.shakeSource,
+            comboValues: ["AUDIOPROCESSING": 3, "DIRECTION": 0]
+        )
+        #expect(msl.contains("wpe_audio_response16(g_AudioSpectrum16Left, g_AudioSpectrum16Right, 3,"))
+        #expect(!msl.contains("v_AudioPulse = 0.0"))
+        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_AudioPulse'"))
+        // All seven .vert-only uniforms reach the MSL, spectra as arrays and the rest as
+        // scalars/vectors read out of the packed uniform buffer.
+        #expect(msl.contains("float g_AudioSpectrum16Left[16];"))
+        #expect(msl.contains("float g_AudioSpectrum16Right[16];"))
+        #expect(msl.contains("float g_AudioFrequencyMin = u.vals["))
+        #expect(msl.contains("float g_AudioFrequencyMax = u.vals["))
+        #expect(msl.contains("float g_AudioPower = u.vals["))
+        #expect(msl.contains("float2 g_AudioBounds = u.vals["))
+        #expect(msl.contains("float g_AudioMultiply = u.vals["))
+        try compileMSL(msl)
+
+        // The mode selects which channel(s) CreateAudioResponse averages, so it must ride
+        // through to the helper rather than being pinned to the "both" form.
+        let left = try translate(
+            shaderName: "effects/shake",
+            source: Self.shakeSource.replacingOccurrences(of: "#define AUDIOPROCESSING 3", with: "#define AUDIOPROCESSING 1"),
+            comboValues: ["AUDIOPROCESSING": 1, "DIRECTION": 0]
+        )
+        #expect(left.contains("wpe_audio_response16(g_AudioSpectrum16Left, g_AudioSpectrum16Right, 1,"))
+    }
+
+    /// Control: at AUDIOPROCESSING 0 `shake.vert` neither declares nor writes `v_AudioPulse`,
+    /// and the fragment's reads are behind the same guard — so the varying is gone and the
+    /// injected block must be stripped with it instead of spending 34 uniform slots.
+    @Test("shake at AUDIOPROCESSING 0 carries no audio uniform and no diagnostic")
+    func shakeWithoutAudioProcessingDeclaresNoAudioUniforms() throws {
+        let msl = try translate(
+            shaderName: "effects/shake",
+            source: Self.shakeSource.replacingOccurrences(of: "#define AUDIOPROCESSING 3", with: "#define AUDIOPROCESSING 0"),
+            comboValues: ["AUDIOPROCESSING": 0, "DIRECTION": 0]
+        )
+        // Assert on the emitted declarations/call, not the bare names: the MSL preamble
+        // always defines `wpe_audio_response16` and names the uniforms in its comment.
+        #expect(!msl.contains("wpe_audio_response16(g_AudioSpectrum16Left"))
+        #expect(!msl.contains("float g_AudioSpectrum16Left[16];"))
+        #expect(!msl.contains("float2 g_AudioBounds = u.vals["))
+        #expect(!msl.contains("v_AudioPulse ="))
+        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_AudioPulse'"))
+        try compileMSL(msl)
     }
 }
 #endif
