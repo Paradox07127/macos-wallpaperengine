@@ -13,6 +13,76 @@ will be cut once the surface has stabilized through real-world use.
 Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
 not covered by this file.
 
+## [0.6.6] — 2026-09-06
+
+### Added
+
+- Weather tile for the Monitor board: the local sky as a picture — a gradient
+  for the condition and the hour, clouds, rain or snow leaning with the real
+  wind, fog, stars, the odd lightning strike — with one caption naming the
+  condition and the place.
+- Steam Workshop subscriptions sync: signing in pulls the account's subscribed
+  items so they can be downloaded from Loomscreen without opening Steam.
+- Settings → Workshop: "Show presets as wallpapers", off by default. Presets
+  restyle another wallpaper rather than being one; Browse now leaves them out
+  unless this is on, using the `Preset` category tag Steam already carries.
+- Wave audio effect for the Now Playing layer, which is placed by dragging on
+  the preview canvas and lands where it was dropped — clamped into the safe
+  area exactly as the desktop draws it.
+
+### Changed
+
+- Particles no longer need a wallpaper session: a display set to draw rain or
+  snow does so over the macOS wallpaper too. They honour Reduce Motion, and so
+  does the Monitor board — live, not only when it was built.
+- The frame-rate cap is stored as a target rate rather than a divisor of the
+  display's refresh rate. On a 240 Hz panel the old divisors were 240/120/80/60,
+  so 30 was unreachable and the cheapest option still cost 60. Saved settings
+  migrate; the same rate on a 60 Hz panel no longer rewrites "match display"
+  into a fixed 60.
+- Workshop browse filters: a genre selection means "any of these" — a wallpaper
+  tagged Anime and Landscape stays when you pick Anime — and tag- or
+  creator-scoped browsing keeps the maturity, type and resolution filters you
+  set. The first page arrives before creator names are looked up, the grid
+  stays up while filters change, and a browse without an API key is cached
+  like one with it.
+- SteamCMD gets a private Steam session per account and downloads straight
+  into the library; deleting an item takes the same lock a download holds, and
+  a download is imported only after its folder is re-checked to lie inside the
+  authorised library.
+- Monitor readings that are unavailable — the first tick after a tile is
+  placed, a failed sample — show "—" instead of a confident zero, in the peaks
+  and in the current rates alike. Chart windows are cut by wall clock, so a
+  pause leaves a gap rather than compressing the curve.
+
+### Fixed
+
+- The particle layer ignored "Show wallpaper in screen capture" and stayed on
+  the display it belonged to after that display was unplugged — macOS moved
+  its window onto a remaining screen.
+- Meteors suspended mid-flight were never removed once the flight ended: the
+  removal ran on the wall clock while the flight ran on the layer's, which
+  pauses. Removal now rides the animation itself.
+- A Weather tile placed after startup drew no sky: the board it landed on had
+  been built before the weather service existed.
+- The web wallpaper's address bar accepted any text as a page — "foo" and
+  Return set the desktop to a page reading "foo".
+- Audio-reactive Workshop effects whose audio uniforms live only in the vertex
+  shader (`effects/shake`, scene 2370927443) did nothing: the fragment-only
+  transpiler never saw the declarations and the response collapsed to zero.
+  Those declarations are now supplied, and the fallback leaves a diagnostic
+  marker in the generated shader (#133).
+- An `.mdl` index past its vertex table went to the GPU as written and read
+  beyond the buffer; zero or NaN normals produced NaN lighting. Both are
+  rejected or replaced at parse time. An audio `RESOLUTION` the spectrum
+  arrays do not come in no longer reads past them.
+- The Workshop connector's profile cleanups re-resolved a path they had just
+  checked for symlinks; they now unlink relative to a pinned directory
+  descriptor and treat only "already gone" as success. A sign-in whose `+quit`
+  took more than three seconds to flush its session was reported as failed.
+- The Monitor board and the Now Playing layer localised their titles in the
+  system language while the labels beside them followed the app language.
+
 ## [0.6.5] — 2026-09-04
 
 ### Added
