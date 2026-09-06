@@ -638,7 +638,9 @@ private enum AgentSessionStrings {
     static var noActiveSessions: LocalizedStringKey { "No active sessions" }
     /// Why-no-data: a wanted AI source has no folder grant (synthesized
     /// `unauthorized` health from the runtime).
-    static var authorizeHint: LocalizedStringKey { "Authorize the agent folders in Monitor settings." }
+    static var authorizeHint: LocalizedStringKey {
+        "Authorize the agent folders in Widgets settings."
+    }
 
     static var runningKeyword: LocalizedStringKey { "running" }
     static var warnKeyword: LocalizedStringKey { "warn" }

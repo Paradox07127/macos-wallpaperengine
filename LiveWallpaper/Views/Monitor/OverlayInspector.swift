@@ -49,7 +49,7 @@ struct MonitorOverlaySection: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.small)
-            .accessibilityLabel(Text("Show Monitor on this display"))
+            .accessibilityLabel(Text("Show widgets on this display"))
         }
     }
 

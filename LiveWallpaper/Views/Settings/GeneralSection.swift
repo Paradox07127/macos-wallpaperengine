@@ -98,7 +98,7 @@ extension GeneralSettingsView {
                 iconColor: .pink,
                 title: "Show wallpaper in screenshots",
                 subtitle: "Let screenshots, screen recording, and screen sharing capture the wallpaper",
-                info: "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The Monitor overlay follows this setting too."
+                info: "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The widget overlay follows this setting too."
             ) {
                 Toggle("", isOn: $wallpaperVisibleInScreenCapture)
                     .labelsHidden()

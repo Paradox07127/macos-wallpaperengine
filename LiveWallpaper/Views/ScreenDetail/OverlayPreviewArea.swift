@@ -42,7 +42,7 @@ struct OverlayPreviewArea: View {
                     )
                 } else {
                     OverlayPreviewCanvas(screen: screen, backdrop: backdrop) {
-                        OverlayOffNotice(text: "Monitor is off for this display")
+                        OverlayOffNotice(text: "Widgets are off for this display")
                     }
                 }
             case .weather:

@@ -48,56 +48,9 @@ enum MusicOverlayLayout {
         return geometry.renderRect(forRawRect: CGRect(origin: origin, size: footprint))
     }
 
-    // MARK: - Nine-up anchors
-
     /// The nine positions the Position control offers. Anything else is a spot
     /// the user dragged to, which no button claims.
-    enum Anchor: String, CaseIterable, Hashable {
-        case topLeading, top, topTrailing
-        case leading, center, trailing
-        case bottomLeading, bottom, bottomTrailing
-    }
-
-    /// Wide enough to survive the rounding a drag leaves behind, far narrower
-    /// than the gap between two neighbouring anchors at any allowed size.
-    static let anchorTolerance = 0.02
-
-    /// A layer wider than the board would otherwise produce a negative origin.
-    static func anchorOrigin(_ anchor: Anchor, size: MusicOverlaySize, boardSize: CGSize = referenceBoardSize) -> CGPoint {
-        let footprint = normalizedFootprint(for: size, boardSize: boardSize)
-        let freeX = max(0, 1 - footprint.width)
-        let freeY = max(0, 1 - footprint.height)
-        let x: Double = switch anchor {
-        case .topLeading, .leading, .bottomLeading: 0
-        case .top, .center, .bottom: freeX / 2
-        case .topTrailing, .trailing, .bottomTrailing: freeX
-        }
-        let y: Double = switch anchor {
-        case .topLeading, .top, .topTrailing: 0
-        case .leading, .center, .trailing: freeY / 2
-        case .bottomLeading, .bottom, .bottomTrailing: freeY
-        }
-        return CGPoint(x: x, y: y)
-    }
-
-    /// Which anchor this layer sits on, or nil for a dragged position.
-    static func anchor(of configuration: MusicOverlayConfiguration, boardSize: CGSize = referenceBoardSize) -> Anchor? {
-        Anchor.allCases.first { candidate in
-            let origin = anchorOrigin(candidate, size: configuration.size, boardSize: boardSize)
-            return abs(origin.x - configuration.x) <= anchorTolerance
-                && abs(origin.y - configuration.y) <= anchorTolerance
-        }
-    }
-
     // MARK: - Edits
-
-    static func setting(anchor: Anchor, on configuration: MusicOverlayConfiguration, boardSize: CGSize = referenceBoardSize) -> MusicOverlayConfiguration {
-        var next = configuration
-        let origin = anchorOrigin(anchor, size: configuration.size, boardSize: boardSize)
-        next.x = origin.x
-        next.y = origin.y
-        return next
-    }
 
     /// Drag landing spot from the inspector preview.
     static func setting(x: Double, y: Double, on configuration: MusicOverlayConfiguration) -> MusicOverlayConfiguration {

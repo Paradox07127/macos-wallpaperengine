@@ -25,7 +25,7 @@ final class MusicOverlaySectionTests: XCTestCase {
     func testMusicAndBoardAreSeparatelyStored() {
         var overlay = MonitorOverlayConfiguration()
         let board = overlay.board
-        overlay.music = Layout.setting(anchor: .bottomTrailing, on: layer())
+        overlay.music = Layout.setting(x: 0.7, y: 0.8, on: layer())
         XCTAssertEqual(overlay.board, board, "a Music edit must not be able to touch the board")
 
         var withWidgets = overlay
@@ -50,23 +50,6 @@ final class MusicOverlaySectionTests: XCTestCase {
         XCTAssertEqual(overlay.music, .default)
     }
 
-    // MARK: Anchors
-
-    func testAnchorsUseActualDisplayDimensions() throws {
-        for board in [CGSize(width: 1280, height: 800), CGSize(width: 2560, height: 1440)] {
-            for size in MusicOverlaySize.allCases {
-                let centered = Layout.setting(anchor: .center, on: layer(size: size), boardSize: board)
-                let rect = try XCTUnwrap(Layout.renderRect(configuration: centered, boardSize: board, safeArea: .none))
-                XCTAssertEqual(rect.midX, board.width / 2, accuracy: 0.01)
-                XCTAssertEqual(rect.midY, board.height / 2, accuracy: 0.01)
-                XCTAssertEqual(Layout.anchor(of: centered, boardSize: board), .center)
-                let trailing = Layout.setting(anchor: .bottomTrailing, on: layer(size: size), boardSize: board)
-                let edge = try XCTUnwrap(Layout.renderRect(configuration: trailing, boardSize: board, safeArea: .none))
-                XCTAssertEqual(board.width - edge.maxX, rect.minX - centered.x * board.width, accuracy: 0.01)
-            }
-        }
-    }
-
     /// The layer shares the board's usable area, so a Dock on any edge moves it
     /// exactly as it moves a widget.
     func testMusicLayerStaysClearOfADockOnAnyEdge() throws {
@@ -79,80 +62,27 @@ final class MusicOverlaySectionTests: XCTestCase {
         for (name, insets) in cases {
             let safe = MonitorBoardGeometry(boardSize: board, safeArea: insets).safeRect
             for size in MusicOverlaySize.allCases {
-                for anchor in Layout.Anchor.allCases {
-                    let configuration = Layout.setting(
-                        anchor: anchor, on: layer(size: size), boardSize: board
-                    )
-                    let rect = try XCTUnwrap(Layout.renderRect(
-                        configuration: configuration, boardSize: board, safeArea: insets
-                    ))
-                    XCTAssertTrue(
-                        safe.insetBy(dx: -0.5, dy: -0.5).contains(rect),
-                        "\(name) Dock, \(size) at \(anchor): \(rect) escaped \(safe)"
-                    )
+                let footprint = Layout.normalizedFootprint(for: size, boardSize: board)
+                // The nine extremes of the free area — every corner, every edge and the
+                // middle — which is where a Dock is most likely to catch the layer.
+                for fx in [0.0, 0.5, 1.0] {
+                    for fy in [0.0, 0.5, 1.0] {
+                        let configuration = Layout.setting(
+                            x: fx * max(0, 1 - footprint.width),
+                            y: fy * max(0, 1 - footprint.height),
+                            on: layer(size: size)
+                        )
+                        let rect = try XCTUnwrap(Layout.renderRect(
+                            configuration: configuration, boardSize: board, safeArea: insets
+                        ))
+                        XCTAssertTrue(
+                            safe.insetBy(dx: -0.5, dy: -0.5).contains(rect),
+                            "\(name) Dock, \(size) at (\(fx), \(fy)): \(rect) escaped \(safe)"
+                        )
+                    }
                 }
             }
         }
-    }
-
-    func testEveryAnchorRoundTrips() {
-        for size in MusicOverlaySize.allCases {
-            var configuration = layer(size: size)
-            for anchor in Layout.Anchor.allCases {
-                configuration = Layout.setting(anchor: anchor, on: configuration)
-                XCTAssertEqual(
-                    Layout.anchor(of: configuration), anchor,
-                    "\(anchor) at \(size) did not read back as itself"
-                )
-            }
-        }
-    }
-
-    func testAnchorOriginsStayOnTheBoardAtEverySize() {
-        for size in MusicOverlaySize.allCases {
-            let footprint = Layout.normalizedFootprint(for: size)
-            for anchor in Layout.Anchor.allCases {
-                let origin = Layout.anchorOrigin(anchor, size: size)
-                XCTAssertGreaterThanOrEqual(origin.x, 0, "\(anchor) at \(size)")
-                XCTAssertGreaterThanOrEqual(origin.y, 0, "\(anchor) at \(size)")
-                XCTAssertLessThanOrEqual(origin.x + footprint.width, 1 + 1e-9, "\(anchor) at \(size)")
-                XCTAssertLessThanOrEqual(origin.y + footprint.height, 1 + 1e-9, "\(anchor) at \(size)")
-            }
-        }
-    }
-
-    /// Large is the widest layer, so its three columns sit closest together —
-    /// if the tolerance ever swallows a neighbour it happens here first.
-    func testLargeAnchorsAreDistinctAndInBounds() {
-        let footprint = Layout.normalizedFootprint(for: .large)
-        let leading = Layout.anchorOrigin(.leading, size: .large)
-        let center = Layout.anchorOrigin(.center, size: .large)
-        let trailing = Layout.anchorOrigin(.trailing, size: .large)
-
-        XCTAssertEqual(leading.x, 0)
-        XCTAssertEqual(trailing.x, 1 - footprint.width, accuracy: 1e-9)
-        XCTAssertEqual(center.x, (1 - footprint.width) / 2, accuracy: 1e-9)
-        XCTAssertGreaterThan(center.x - leading.x, 2 * Layout.anchorTolerance)
-        XCTAssertGreaterThan(trailing.x - center.x, 2 * Layout.anchorTolerance)
-    }
-
-    func testAnchorMatchesWithinToleranceAndNotOutside() {
-        var configuration = Layout.setting(anchor: .center, on: layer())
-        let exact = Layout.anchorOrigin(.center, size: configuration.size)
-
-        configuration.x = exact.x + Layout.anchorTolerance * 0.9
-        XCTAssertEqual(Layout.anchor(of: configuration), .center)
-
-        configuration.x = exact.x + Layout.anchorTolerance * 1.1
-        XCTAssertNil(Layout.anchor(of: configuration), "a dragged position must claim no anchor")
-    }
-
-    func testSettingAnchorLeavesSizeAndOptionsUntouched() {
-        let base = layer(size: .large, options: ["style": .string("vinyl")])
-        let next = Layout.setting(anchor: .bottomTrailing, on: base)
-        XCTAssertEqual(next.size, base.size)
-        XCTAssertEqual(next.options, base.options)
-        XCTAssertEqual(next.enabled, base.enabled)
     }
 
     func testSettingOriginClampsToTheBoard() {

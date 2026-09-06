@@ -426,7 +426,7 @@ struct BoardSettingsView: View {
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "monitor-layout.json"
         panel.canCreateDirectories = true
-        panel.title = String(localized: "Export Monitor Layout", bundle: .appLanguage, comment: "Save-panel title for exporting a monitor board layout.")
+        panel.title = String(localized: "Export Widget Layout", bundle: .appLanguage, comment: "Save-panel title for exporting a widget board layout.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let encoder = JSONEncoder()
@@ -442,7 +442,7 @@ struct BoardSettingsView: View {
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.title = String(localized: "Import Monitor Layout", bundle: .appLanguage, comment: "Open-panel title for importing a monitor board layout.")
+        panel.title = String(localized: "Import Widget Layout", bundle: .appLanguage, comment: "Open-panel title for importing a widget board layout.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let data = try Data(contentsOf: url)

@@ -29,9 +29,9 @@ enum OverlayKind: Hashable, CaseIterable {
 
     var title: LocalizedStringKey {
         switch self {
-        case .weather: return "Weather"
-        case .monitor: return "Monitor"
-        case .music:   return "Music"
+        case .weather: "Weather"
+        case .monitor: "Widgets"
+        case .music: "Music"
         }
     }
 
@@ -40,9 +40,9 @@ enum OverlayKind: Hashable, CaseIterable {
     /// inside an interpolated sentence.
     var applyToAllName: String {
         switch self {
-        case .weather: return String(localized: "Weather", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
-        case .monitor: return String(localized: "Monitor", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
-        case .music:   return String(localized: "Music", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
+        case .weather: String(localized: "Weather", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
+        case .monitor: String(localized: "Widgets", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
+        case .music: String(localized: "Music", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
         }
     }
 
