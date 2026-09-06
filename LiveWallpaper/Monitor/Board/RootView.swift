@@ -27,9 +27,13 @@ struct RootView: View {
     @ObservedObject private var history: MonitorHistoryStore
     @Environment(\.monitorReduceMotion) private var reduceMotion
     @Environment(\.monitorSuspended) private var suspended
+    /// How far the board is being shrunk into the inspector canvas. Only the
+    /// edit chrome reads it — a widget tile shrinks with the board on purpose.
+    @Environment(\.monitorRenderScale) private var renderScale
     @FocusState private var boardFocused: Bool
 
     @State private var addButtonFrame: CGRect = .zero
+    @State private var toolbarFrame: CGRect = .zero
     /// Non-nil only for the settings inspector's copy of the board.
     private let preview: MonitorBoardPreview?
 
@@ -108,6 +112,7 @@ struct RootView: View {
             .frame(width: boardSize.width, height: boardSize.height, alignment: .topLeading)
             .coordinateSpace(name: MonitorBoardCoordinateSpace.name)
             .onPreferenceChange(MonitorAddButtonFrameKey.self) { addButtonFrame = $0 }
+            .onPreferenceChange(MonitorBoardToolbarFrameKey.self) { toolbarFrame = $0 }
             .onAppear { model.reflow(boardSize: boardSize) }
             .onChange(of: boardSize) { _, newSize in model.reflow(boardSize: newSize) }
         }
@@ -298,8 +303,21 @@ struct RootView: View {
 
     @ViewBuilder
     private func editControls(geometry: MonitorBoardGeometry, boardSize: CGSize) -> some View {
+        // Chrome sizes itself in screen points and is grown back to board points;
+        // panels are still placed in board points. Every conversion is here.
+        let metrics = MonitorBoardChromeMetrics(boardSize: boardSize, renderScale: renderScale)
+
         MonitorBoardEditToolbar(model: model, showsDone: !isInspectorPreview)
-            .padding(.top, toolbarTopInset(boardHeight: boardSize.height))
+            .monitorChromeScaled()
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: MonitorBoardToolbarFrameKey.self,
+                        value: proxy.frame(in: .named(MonitorBoardCoordinateSpace.name))
+                    )
+                }
+            )
+            .padding(.top, metrics.toolbarTopInset)
             .frame(width: boardSize.width, height: boardSize.height, alignment: .top)
             .zIndex(70)
 
@@ -309,10 +327,12 @@ struct RootView: View {
             let render = geometry.renderRect(forRawRect: rawRect(placement, geometry: geometry))
             MonitorWidgetControlBar(model: model, placement: placement)
                 .fixedSize()
+                .monitorChromeScaled()
                 .modifier(ControlBarPlacement(
                     anchorRect: render,
                     boardSize: boardSize,
-                    estimatedSize: Self.controlBarEstimate(for: placement.kind)
+                    estimatedSize: metrics.controlBarEstimate(for: placement.kind),
+                    boost: metrics.boost
                 ))
                 .zIndex(60)
         }
@@ -321,48 +341,35 @@ struct RootView: View {
            let placement = model.placements.first(where: { $0.id == settingsID }),
            model.drag == nil {
             let render = geometry.renderRect(forRawRect: rawRect(placement, geometry: geometry))
-            MonitorWidgetSettingsCard(model: model, placement: placement, maxHeight: boardSize.height - 16)
-                .modifier(SettingsCardPlacement(anchorRect: render, boardSize: boardSize))
-                .zIndex(80)
+            MonitorWidgetSettingsCard(
+                model: model, placement: placement, maxHeight: metrics.settingsCardMaxHeight
+            )
+            .monitorChromeScaled()
+            .modifier(SettingsCardPlacement(
+                anchorRect: render, boardSize: boardSize, boost: metrics.boost
+            ))
+            .zIndex(80)
         }
 
         if model.isCatalogOpen {
-            let catalogWidth = min(760, boardSize.width * 0.86)
-            let anchor = catalogAnchorFrame(boardSize: boardSize)
-            let scrollCap = catalogScrollCap(anchorMaxY: anchor.maxY, boardHeight: boardSize.height)
+            let catalogWidth = metrics.catalogWidth
+            let anchor = metrics.catalogAnchor(
+                toolbarFrame: toolbarFrame, addButtonFrame: addButtonFrame
+            )
+            let scrollCap = metrics.catalogScrollCap(anchorMaxY: anchor.maxY)
             MonitorCatalogView(model: model, maxScrollHeight: scrollCap)
                 .frame(width: catalogWidth)
                 .fixedSize(horizontal: false, vertical: true)
+                .monitorChromeScaled()
                 .modifier(CatalogBelowPlacement(
                     anchorFrame: anchor,
                     boardSize: boardSize,
-                    panelWidth: catalogWidth,
-                    estimatedHeight: scrollCap + 64
+                    panelWidth: metrics.board(catalogWidth),
+                    estimatedHeight: metrics.board(scrollCap + 64),
+                    boost: metrics.boost
                 ))
                 .zIndex(75)
         }
-    }
-
-    /// Pre-measure estimate: gear+trash (~68) + ~30pt per size segment.
-    private static func controlBarEstimate(for kind: MonitorWidgetKind) -> CGSize {
-        let count = kind.allowedSizes.count
-        return CGSize(width: 68 + (count > 1 ? CGFloat(count) * 30 + 16 : 0), height: 36)
-    }
-
-    /// ≤55% board height; 64pt reserves catalog header + padding above the bottom margin.
-    private func catalogScrollCap(anchorMaxY: CGFloat, boardHeight: CGFloat) -> CGFloat {
-        max(min(boardHeight * 0.55, boardHeight - anchorMaxY - 16 - 64), 80)
-    }
-
-    private func toolbarTopInset(boardHeight: CGFloat) -> CGFloat {
-        boardHeight >= 500 ? min(max(boardHeight * 0.035, 44), 60) : boardHeight * 0.055
-    }
-
-    /// Prefer Add Widget frame; else top-centre under the toolbar.
-    private func catalogAnchorFrame(boardSize: CGSize) -> CGRect {
-        if addButtonFrame != .zero { return addButtonFrame }
-        let inset = toolbarTopInset(boardHeight: boardSize.height)
-        return CGRect(x: boardSize.width / 2 - 40, y: inset, width: 80, height: 30)
     }
 }
 
@@ -437,12 +444,15 @@ private struct ControlBarPlacement: ViewModifier {
     let anchorRect: CGRect
     let boardSize: CGSize
     let estimatedSize: CGSize
+    /// Gaps are drawn through the same shrink the chrome undoes, so they are
+    /// grown with it — otherwise the bar ends up a screen point off its tile.
+    let boost: CGFloat
     @State private var measured: CGSize?
 
     func body(content: Content) -> some View {
         let size = measured ?? estimatedSize
-        let margin: CGFloat = 6
-        let gap: CGFloat = 8
+        let margin: CGFloat = 6 * boost
+        let gap: CGFloat = 8 * boost
         var top = anchorRect.minY - size.height - gap
         if top < margin {
             let below = anchorRect.maxY + gap
@@ -459,12 +469,15 @@ private struct ControlBarPlacement: ViewModifier {
 private struct SettingsCardPlacement: ViewModifier {
     let anchorRect: CGRect
     let boardSize: CGSize
+    let boost: CGFloat
     @State private var measured: CGSize?
 
     func body(content: Content) -> some View {
-        let size = measured ?? CGSize(width: MonitorWidgetSettingsCard.cardWidth, height: 340)
-        let margin: CGFloat = 8
-        let gap: CGFloat = 8
+        let size = measured ?? CGSize(
+            width: MonitorWidgetSettingsCard.cardWidth * boost, height: 340 * boost
+        )
+        let margin: CGFloat = 8 * boost
+        let gap: CGFloat = 8 * boost
         var left = anchorRect.maxX + gap
         if left + size.width > boardSize.width - margin {
             let toLeft = anchorRect.minX - gap - size.width
@@ -484,13 +497,14 @@ private struct CatalogBelowPlacement: ViewModifier {
     let boardSize: CGSize
     let panelWidth: CGFloat
     let estimatedHeight: CGFloat
+    let boost: CGFloat
     @State private var measured: CGSize?
 
     func body(content: Content) -> some View {
         let height = measured?.height ?? estimatedHeight
-        let margin: CGFloat = 8
+        let margin: CGFloat = 8 * boost
         let left = clampPanelLeft(anchorFrame.midX - panelWidth / 2, width: panelWidth, span: boardSize.width, margin: margin)
-        let top = clampPanelTop(anchorFrame.maxY + 8, height: height, span: boardSize.height, margin: margin)
+        let top = clampPanelTop(anchorFrame.maxY + 8 * boost, height: height, span: boardSize.height, margin: margin)
         return content
             .modifier(MonitorPanelSizeReader(size: $measured))
             .offset(x: left, y: top)
