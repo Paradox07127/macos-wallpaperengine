@@ -175,6 +175,20 @@ extension WPEShaderTranspiler {
            family == "swing" || family == "twirl" || family == "blur_precise_gaussian" {
             return true
         }
+        // lens_distortion: `.zw` is the aspect·size DIVISOR the fragment divides the
+        // centred coordinate by, not a UV. The `.xy` downgrade made that divisor the
+        // screen UV, so `coord` collapsed to the constant 2 for every fragment
+        // (3647999330: the post layer's red and green channels pinned to the clamped
+        // corner texel while blue stayed an identity copy).
+        if texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion" {
+            return true
+        }
+        // frame_builder: `.zw` is the raw UV the fragment samples the framebuffer with, while
+        // `.xy` is the signed pixel coordinate. Both are rebuilt above, so the downgrade —
+        // which would make the sample UV follow the signed coordinate — must not run.
+        if texCoordZWFamilyName(shaderName: shaderName) == "frame_builder_by_gariam" {
+            return true
+        }
         return texCoordZWResolutionSlot(shaderName: shaderName, comboValues: comboValues) != nil
     }
 
@@ -217,6 +231,222 @@ extension WPEShaderTranspiler {
         default:
             return nil
         }
+    }
+
+    // MARK: - lens_distortion (workshop 2811235087)
+
+    /// Uniforms `lens_distortion.vert` declares and its fragment does not. The fragment-only
+    /// path still needs them to rebuild `v_Distorsion` / `v_Transforms` / `v_TexCoord`, and the
+    /// pipeline builder already resolved their material names across BOTH stages, so declaring
+    /// them here gives the reconstruction real values instead of a screen-UV ramp.
+    /// Same mechanism as the fluidsimulation `g_Texture0Resolution` injection.
+    static let lensDistortionVertexUniforms: [(name: String, glslType: String)] = [
+        ("u_zoom", "float"),
+        ("u_general", "float"),
+        ("u_distorsion1", "float"),
+        ("u_distorsion2", "float"),
+        ("u_aberration", "float"),
+        ("u_center", "vec2"),
+        ("u_angle", "float"),
+        ("u_size", "float"),
+        ("g_Texture0Resolution", "vec4"),
+    ]
+
+    /// Uniforms `gaussian.vert` / `bokeh.vert` (workshop 2798319181) declare and their
+    /// fragments do not. Every one of them feeds the per-tap STEP.
+    static let bokehBlurVertexUniforms: [(name: String, glslType: String)] = [
+        ("g_TexelSize", "vec2"),
+        ("g_Texture0Resolution", "vec4"),
+        ("u_aperture", "float"),
+        ("u_ratio", "float"),
+    ]
+
+    static func declaringVertexOnlyUniforms(in source: String, shaderName: String) -> String {
+        let needed: [(name: String, glslType: String)]
+        if texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
+           source.contains("v_Distorsion") {
+            needed = lensDistortionVertexUniforms
+        } else if bokehBlurStage(inSource: source) != nil {
+            needed = bokehBlurVertexUniforms
+        } else if isFrameBuilder(inSource: source) {
+            needed = frameBuilderVertexUniforms
+        } else {
+            return source
+        }
+        let missing = needed
+            .filter { !source.contains($0.name) }
+            .map { "uniform \($0.glslType) \($0.name);" }
+        guard !missing.isEmpty else { return source }
+        return missing.joined(separator: "\n") + "\n" + source
+    }
+
+    // MARK: - frame_builder (workshop 3647393229)
+
+    /// Uniforms `frame_builder_by_gariam.vert` declares and its fragment does not.
+    static let frameBuilderVertexUniforms: [(name: String, glslType: String)] = [
+        ("u_position", "vec2"),
+        ("u_rotation", "float"),
+        ("g_LayerModelMatrix", "mat4"),
+    ]
+
+    /// Matched on the varying signature, like auto_sway and the DOF chain.
+    static func isFrameBuilder(varyingNames names: Set<String>) -> Bool {
+        names.isSuperset(of: ["v_TexCoord", "v_Size", "v_Transform"])
+    }
+
+    static func isFrameBuilder(inSource source: String) -> Bool {
+        source.contains("varying")
+            && ["v_TexCoord", "v_Size", "v_Transform"].allSatisfy { source.contains($0) }
+    }
+
+    /// Fragment-side reconstruction of `frame_builder_by_gariam.vert`. Everything it writes is
+    /// in PIXELS (notch radius, border thickness, half-extent), and `v_TexCoord.xy` is a
+    /// SIGNED coordinate centred on the layer — the fragment picks the corner by its sign.
+    /// The screen-UV fallback made all of them 0…1, so the shape collapsed and every pixel
+    /// took the same "bottom-right" corner branch (3647999330's launcher panels rendered as a
+    /// diagonal wedge instead of a rounded frame).
+    static func frameBuilderVaryingReconstructionLines(
+        varyings: [WPEVaryingDecl],
+        availableUniforms: Set<String>,
+        comboValues: [String: Int]
+    ) -> [String] {
+        let names = Set(varyings.map(\.name))
+        guard isFrameBuilder(varyingNames: names),
+              hasUniforms(
+                  "u_position", "u_rotation", "g_LayerModelMatrix", "u_size",
+                  "u_NotchSize", "u_Thickness", "u_extrudeEdge", "u_Softness",
+                  "g_Texture0Resolution",
+                  in: availableUniforms
+              ) else {
+            return []
+        }
+
+        // REF_RES swaps the pixel basis to the authored reference. The .vert declares
+        // `u_refResolution` as vec2 while the .frag declares it float — WPE's own
+        // inconsistency; the fragment's declaration is the one we parsed, so splat it.
+        let resolution = (comboValues["REF_RES"] ?? 0) == 1 && availableUniforms.contains("u_refResolution")
+            ? "float2(u_refResolution)"
+            : "g_Texture0Resolution.xy"
+        // FIXSCALE (default on) divides out the layer's own scale so the frame keeps its
+        // authored pixel thickness however the layer is stretched.
+        let scale = (comboValues["FIXSCALE"] ?? 1) == 1
+            ? "float2(length(g_LayerModelMatrix[0].xy), length(g_LayerModelMatrix[1].xy))"
+            : "float2(1.0)"
+        // Round-cornered TYPEs measure the notch on the diagonal: `length(vec2(x))` = x·√2.
+        let roundedTypes = Set([0, 7, 8, 9, 10, 11, 13])
+        let notchDiagonal = roundedTypes.contains(comboValues["TYPE"] ?? 0)
+
+        var lines: [String] = []
+        lines.append("    // workshop 3647393229 frame_builder vertex stage, reconstructed per-pixel.")
+        lines.append("    {")
+        lines.append("        float2 wpeFB_res = \(resolution);")
+        lines.append("        float2 wpeFB_scale = \(scale);")
+        lines.append("        v_Transform.x = max(1e-6, u_NotchSize * wpeFB_res.x * 0.2);")
+        if notchDiagonal {
+            lines.append("        v_Transform.x = length(float2(v_Transform.x));")
+        }
+        lines.append("        v_Transform.y = u_Thickness * wpeFB_res.x * 0.05;")
+        lines.append("        v_Transform.z = u_extrudeEdge * wpeFB_res.x * 0.1;")
+        lines.append("        v_TexCoord.zw = in.uv;")
+        lines.append("        v_TexCoord.xy = wpe_rotate_vec2("
+            + "(in.uv + u_position - 0.5) * wpeFB_res * wpeFB_scale, u_rotation);")
+        lines.append("        v_Size.xy = u_size * wpeFB_res * 0.5 * wpeFB_scale"
+            + " - v_Transform.y - u_Softness - u_Softness;")
+        lines.append("    }")
+        return lines
+    }
+
+    // MARK: - bokeh_blur depth of field (workshop 2798319181)
+
+    enum BokehBlurStage {
+        /// `gaussian.vert` — separable pre/post blur, gated by `qualityNormalizer`.
+        case gaussian
+        /// `bokeh.vert` — the disc-kernel pass, which also packs gamma and highlights.
+        case bokeh
+    }
+
+    /// Matched on the varying signature rather than the shader name (same choice auto_sway
+    /// makes): a repack under another workshop ID still reconstructs, and an unrelated
+    /// `effects/gaussian` from a different package does not inherit these `.vert` semantics.
+    static func bokehBlurStage(varyingNames names: Set<String>) -> BokehBlurStage? {
+        guard names.contains("v_PixelSize"), names.contains("v_TexCoord") else {
+            return nil
+        }
+        if names.contains("qualityNormalizer") {
+            return .gaussian
+        }
+        if names.isSuperset(of: ["v_Aperture", "v_Gamma", "v_Highlights"]) {
+            return .bokeh
+        }
+        return nil
+    }
+
+    /// Pre-parse variant: the uniform injection runs before varyings are parsed, so it can
+    /// only look at the raw text.
+    static func bokehBlurStage(inSource source: String) -> BokehBlurStage? {
+        let declared = ["v_PixelSize", "v_TexCoord", "qualityNormalizer",
+                        "v_Aperture", "v_Gamma", "v_Highlights"]
+            .filter { source.contains("varying") && source.contains($0) }
+        return bokehBlurStage(varyingNames: Set(declared))
+    }
+
+    /// Fragment-side reconstruction of the depth-of-field `.vert`s. `v_PixelSize` is the
+    /// per-tap step in UV — roughly `2·texel·aperture`, i.e. a few thousandths — and the
+    /// screen-UV fallback inflated it to a whole frame, so every tap of the 43-sample disc
+    /// landed somewhere else in the picture instead of on a neighbouring texel. Same shape as
+    /// the `blur_precise_gaussian` step bug. All terms are uniform-only, so recomputing them
+    /// per pixel is exact.
+    static func bokehBlurVaryingReconstructionLines(
+        varyings: [WPEVaryingDecl],
+        availableUniforms: Set<String>,
+        comboValues: [String: Int]
+    ) -> [String] {
+        let names = Set(varyings.map(\.name))
+        guard let stage = bokehBlurStage(varyingNames: names),
+              hasUniforms("g_TexelSize", "g_Texture0Resolution", "u_ratio", "u_aperture", in: availableUniforms) else {
+            return []
+        }
+
+        var lines: [String] = []
+        lines.append("    // workshop 2798319181 depth-of-field vertex stage, reconstructed per-pixel (uniform-only).")
+        lines.append("    {")
+        lines.append("        float2 wpeDOF_ratio = g_TexelSize * g_Texture0Resolution.xy;")
+        lines.append("        float wpeDOF_ratioYX = wpe_safe_ratio(wpeDOF_ratio.y, wpeDOF_ratio.x);")
+
+        let aperture: String
+        switch stage {
+        case .gaussian:
+            aperture = "u_aperture"
+            if names.contains("qualityNormalizer") {
+                // gaussian.vert:20 folds the QUALITY combo, which is a compile-time constant.
+                let quality = Double(comboValues["QUALITY"] ?? 2)
+                lines.append("        qualityNormalizer = \((quality + 1.0) * 0.6);")
+            }
+        case .bokeh:
+            // bokeh.vert:26-30 — "Depth of field" (MODE 1) opens the aperture 5x over "Mask".
+            lines.append("        v_Aperture = \(comboValues["MODE"] == 1 ? "15.0" : "3.0") * u_aperture;")
+            aperture = "v_Aperture"
+            if names.contains("v_Highlights"), availableUniforms.contains("u_lightFactor") {
+                lines.append("        v_Highlights = float2(-0.999, 0.999) * u_lightFactor;")
+            }
+            if names.contains("v_Gamma"), availableUniforms.contains("u_gamma") {
+                lines.append("        v_Gamma = float2(u_gamma, 1.0 / u_gamma);")
+            }
+        }
+
+        // ANAMORPHIC squeezes the vertical step by the lens ratio instead of the aperture.
+        let pixelSize = comboValues["ANAMORPHIC"] == 1
+            ? "(g_TexelSize + g_TexelSize) * float2(wpeDOF_ratioYX, u_ratio) * \(aperture)"
+            : "(g_TexelSize + g_TexelSize) * float2(wpeDOF_ratioYX * \(aperture), \(aperture))"
+        lines.append("        v_PixelSize = \(pixelSize);")
+        lines.append("    }")
+        return lines
+    }
+
+    /// Whether every uniform the lens_distortion reconstruction reads is declared. A repack
+    /// that renamed one keeps the old screen-UV fallback rather than silently reading zero.
+    static func hasLensDistortionUniforms(_ availableUniforms: Set<String>) -> Bool {
+        lensDistortionVertexUniforms.allSatisfy { availableUniforms.contains($0.name) }
     }
 
     /// Family key = the shader basename when the path sits in an `effects/` directory

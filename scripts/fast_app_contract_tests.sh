@@ -55,6 +55,9 @@ SUITES=(
   SystemMemoryPressureWatcherTests
   VideoResolutionContractCharacterizationTests
   WPECorpusManifestTests
+  # String transform only, no Metal device: a workshop varying with no
+  # reconstruction rule silently becomes a screen-UV ramp (3647999330 post layer).
+  WPEWorkshopVaryingReconstructionTests
   WPERendererOwnershipCharacterizationTests
   # Name-table only, no Metal device: an unrecognised model material shader
   # silently swaps a .mdl mesh for a billboard quad (3470948192 star dome).
@@ -78,6 +81,25 @@ SUITES=(
   # Carbon hotkeys: dispatcher target + C trampoline. An inline MainActor
   # closure on GetApplicationEventTarget() registered but never fired.
   GlobalShortcutCarbonWiringTests
+  # Source probes that were all red at some point in 2026-09 while `make verify`
+  # stayed green, because a contract suite outside this list never runs:
+  # a queued deleteWorkshopItem with no expiry guard, a video session whose
+  # startsHidden moved into a factory, two unaudited package write sites, and
+  # the rule that only the XPC connector writes the user's Steam library.
+  ConnectorQueueExpiryTests
+  VideoSessionLifecycleTests
+  WPEMappedPackageWriteFenceTests
+  SteamWriteOwnershipTests
+  # Pure alpha arithmetic, no view host: the paused dim used to multiply the
+  # music tile's type as well as its cover, so a dialled-down overlay went
+  # unreadable the moment playback stopped.
+  NowPlayingVisibilityTests
+  # Glyph-width arithmetic against the measured gauge centre: a CPU at 100%
+  # needed a 0.561 scale against a 0.6 floor and rendered as "1...".
+  WidgetReadoutFitTests
+  # Source probes over the widget headers: which tiles carry an icon, where it
+  # comes from, and that the gauge column cannot strand width beside the ring.
+  MonitorWidgetChromeTests
 )
 
 action="test"

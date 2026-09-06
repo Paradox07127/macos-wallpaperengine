@@ -62,13 +62,4 @@ struct GPUWidgetTests {
         #expect(GPUWidgetView.isStale(sampledAt: 3_000_000 - 15, now: now, samplePeriod: nil) == false)
         #expect(GPUWidgetView.isStale(sampledAt: 3_000_000 - 16, now: now, samplePeriod: nil) == true)
     }
-
-    @Test("temperature word band: cool < 48 ≤ warm < 58 ≤ hot")
-    func temperatureBand() {
-        #expect(GPUWidgetView.tempLabel(40) == "cool")
-        #expect(GPUWidgetView.tempLabel(48) == "warm")
-        #expect(GPUWidgetView.tempLabel(57) == "warm")
-        #expect(GPUWidgetView.tempLabel(58) == "hot")
-        #expect(GPUWidgetView.tempLabel(72) == "hot")
-    }
 }

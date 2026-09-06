@@ -31,6 +31,7 @@ struct WPEShaderTranspiler {
            !preprocessedSource.contains("g_Texture0Resolution") {
             parseSource = "uniform vec4 g_Texture0Resolution;\n" + preprocessedSource
         }
+        parseSource = Self.declaringVertexOnlyUniforms(in: parseSource, shaderName: shaderName)
         let scrubbedSource = Self.scrubFragmentOutDeclarations(parseSource)
         let activeSource = Self.stripInactivePreprocessorBranches(in: scrubbedSource)
         let lines = activeSource.components(separatedBy: "\n")

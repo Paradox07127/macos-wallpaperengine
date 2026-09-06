@@ -111,7 +111,7 @@ struct AgentSessionWidgetView: View {
     ) -> some View {
         WidgetContainer(
             label: AgentSessionStrings.title,
-            systemImage: "point.3.filled.connected.trianglepath.dotted",
+            systemImage: WidgetFactory.icon(.fleet),
             cellHeight: cellHeight,
             status: { headerStatus(scale: scale) },
             content: body

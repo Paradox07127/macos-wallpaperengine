@@ -192,7 +192,15 @@ extension WPEShaderTranspiler {
         }
 
         let uniformNames = Set(uniforms.map(\.name))
-        let autoSwayReconstruction = autoSwayVaryingReconstructionLines(
+        let varyingReconstruction = autoSwayVaryingReconstructionLines(
+            varyings: varyings,
+            availableUniforms: uniformNames,
+            comboValues: comboValues
+        ) + bokehBlurVaryingReconstructionLines(
+            varyings: varyings,
+            availableUniforms: uniformNames,
+            comboValues: comboValues
+        ) + frameBuilderVaryingReconstructionLines(
             varyings: varyings,
             availableUniforms: uniformNames,
             comboValues: comboValues
@@ -214,7 +222,11 @@ extension WPEShaderTranspiler {
             )
             if varying.name != "v_TexCoord",
                uvFallbackInitializers.contains(initializer),
-               !autoSwayReconstruction.contains(where: { $0.contains(" \(varying.name) = ") }),
+               // A reconstruction may assign the whole varying or only components
+               // (`v_Transform.x = …`), so match the assignment target, not just ` name = `.
+               !varyingReconstruction.contains(where: {
+                   $0.contains(" \(varying.name) = ") || $0.contains(" \(varying.name).")
+               }),
                warningCleanMainBody.range(of: "\\b\(NSRegularExpression.escapedPattern(for: varying.name))\\b", options: .regularExpression) != nil {
                 out.append("    // WPE-DIAGNOSTIC: varying '\(varying.name)' has no reconstruction rule and fell back to a screen-UV default; this likely renders incorrectly.")
             }
@@ -243,7 +255,7 @@ extension WPEShaderTranspiler {
             out.append("    [[maybe_unused]] \(declaration.metalType) \(declaration.name) = \(declaration.initializer);")
         }
 
-        out.append(contentsOf: autoSwayReconstruction)
+        out.append(contentsOf: varyingReconstruction)
 
         out.append("    {")
         out.append(warningCleanMainBody)
@@ -612,6 +624,16 @@ extension WPEShaderTranspiler {
         }
         switch varying.name {
         case "v_TexCoord":
+            // Simple_Audio_Bars.vert applies its own offset/rotate/scale to the BAR coordinate
+            // under TRANSFORM, so the raw UV puts the whole bar strip in the wrong place
+            // (3647999330 authors offset 0,-0.1). Its `applyFx` divides by the scale, where
+            // fade's multiplies — reproduce each verbatim rather than sharing one helper.
+            if varying.metalType == "float2",
+               texCoordZWFamilyName(shaderName: shaderName) == "simple_audio_bars",
+               comboValues["TRANSFORM"] == 1,
+               hasUniforms("g_Offset", "g_Scale", "g_Direction", in: availableUniforms) {
+                return "(wpe_rotate_vec2(in.uv - 0.5, -g_Direction) + g_Offset) / max(g_Scale, float2(1e-6)) + 0.5"
+            }
             if varying.metalType == "float2" {
                 return "in.uv"
             }
@@ -637,6 +659,16 @@ extension WPEShaderTranspiler {
                     ? "float4(in.uv, 0.0, g_Scale.y / g_Texture0Resolution.w)"
                     : "float4(in.uv, g_Scale.x / g_Texture0Resolution.z, 0.0)"
             }
+            // lens_distortion.vert:27-28 — `.xy` is the zoomed pixel coordinate and `.zw`
+            // the aspect·size DIVISOR, a per-frame constant. Both must come before the
+            // resolution ladder, whose float4(uv, uv·scale) turned the divisor into a UV.
+            if varying.metalType == "float4",
+               texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
+               hasLensDistortionUniforms(availableUniforms) {
+                return "float4((in.uv - 0.5) * (1.0 + (1.0 - u_zoom) * u_general) + 0.5, "
+                    + "float2(wpe_safe_ratio(g_Texture0Resolution.y, g_Texture0Resolution.x), 1.0) "
+                    + "* max(1e-6, u_size * 4.0))"
+            }
             if varying.metalType == "float4",
                let resolutionUniform = texCoordResolutionUniform(
                 shaderName: shaderName,
@@ -644,6 +676,58 @@ extension WPEShaderTranspiler {
                 comboValues: comboValues
                ) {
                 return "wpe_texcoord_with_resolution(in.uv, \(resolutionUniform))"
+            }
+        case "p_TexCoord":
+            // fade.vert (workshop 3124095265): the gradient's own coordinate, offset/rotated/
+            // scaled independently of `v_TexCoord`. Identity only while the author leaves the
+            // transform at its defaults, which 3647999330's second fade layer does and its
+            // first (scale 0.95) does not. Simple_Audio_Bars writes `p_TexCoord = a_TexCoord`,
+            // so its screen-UV default is already exact and it deliberately has no rule here.
+            if varying.metalType == "float2",
+               texCoordZWFamilyName(shaderName: shaderName) == "fade",
+               hasUniforms("g_Offset", "g_Scale", "g_Direction", in: availableUniforms) {
+                return "wpe_rotate_vec2(in.uv - g_Offset - 0.5, -g_Direction) * g_Scale + 0.5"
+            }
+        case "i_DCorrectingFactor":
+            // Simple_Audio_Bars.vert (workshop 3082978660): the aspect ratio that keeps the
+            // rounded bar caps circular. Declared only under BAR_STYLE 1, so seeing it means
+            // that combo is on; DEFORMITY 3 ("Adaptive") is the default that reads it.
+            if varying.metalType == "float",
+               texCoordZWFamilyName(shaderName: shaderName) == "simple_audio_bars",
+               availableUniforms.contains("g_Texture0Resolution") {
+                guard (comboValues["DEFORMITY"] ?? 3) == 3 else { return "1.0" }
+                // LEFT/RIGHT/CENTER_H/STEREO_H lay the bars out horizontally and invert it.
+                let horizontal = [2, 3, 6, 8].contains(comboValues["SHAPE"] ?? 0)
+                return horizontal
+                    ? "wpe_safe_ratio(g_Texture0Resolution.y, g_Texture0Resolution.x)"
+                    : "wpe_safe_ratio(g_Texture0Resolution.x, g_Texture0Resolution.y)"
+            }
+        case "v_Distorsion":
+            // lens_distortion.vert:29-34. `.xy` is the barrel/pincushion strength, `.zw` the
+            // chromatic-aberration split. The screen-UV fallback made the two EQUAL, so the
+            // shader's `amount - ca` blue tap cancelled to an identity sample while the `uv`
+            // and `uv + ca` taps ran off the edge and clamped (3647999330).
+            if varying.metalType == "float4",
+               texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
+               hasLensDistortionUniforms(availableUniforms) {
+                let amount = "(float2(u_distorsion1, u_distorsion2 + u_distorsion2) * -u_general)"
+                // CA defaults to 1 in the .vert's own [COMBO] annotation.
+                let aberration = (comboValues["CA"] ?? 1) == 1
+                    ? "u_aberration * 0.1 * \(amount)"
+                    : "float2(0.0)"
+                return "float4(\(amount), \(aberration))"
+            }
+        case "v_Transforms":
+            // lens_distortion.vert:35-39. `.xy` recentres the distorted sample; the fallback
+            // left it a UV ramp, which alone shifts every tap by up to a full frame. `.zw` is
+            // the ANAMORPHIC rotation and is only read under that combo.
+            if varying.metalType == "float4",
+               texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
+               hasLensDistortionUniforms(availableUniforms) {
+                let rotation = comboValues["ANAMORPHIC"] == 1
+                    ? "float2(cos(-u_angle), sin(-u_angle))"
+                    : "float2(0.0)"
+                return "float4((1.0 - u_center - 0.5) * u_general - 0.5, \(rotation))"
             }
         case "v_TexCoordMask":
             if varying.metalType == "float4",

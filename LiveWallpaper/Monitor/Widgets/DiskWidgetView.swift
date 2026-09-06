@@ -33,7 +33,7 @@ struct DiskWidgetView: View {
 
     private func small(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
-        return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
+        return WidgetContainer(label: "Disk", systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
             Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {
@@ -85,7 +85,7 @@ struct DiskWidgetView: View {
 
     private func medium(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
-        return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
+        return WidgetContainer(label: "Disk", systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
             Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {
@@ -209,7 +209,7 @@ struct DiskWidgetView: View {
     private func large(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         let topIO = topIOProcesses
-        return WidgetContainer(label: "Disk", cellHeight: cellHeight) {
+        return WidgetContainer(label: "Disk", systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
             Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {

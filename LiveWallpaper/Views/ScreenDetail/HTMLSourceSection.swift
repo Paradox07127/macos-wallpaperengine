@@ -2,44 +2,60 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Chrome for `HTMLSourceSection`: glass when it floats over the live web preview,
-/// a flat card when it sits in page flow with nothing behind it to refract.
-private struct HTMLSourceChrome: ViewModifier {
-    let floating: Bool
+/// Opens the shared file/folder panel for a locally-backed HTML wallpaper and
+/// hands back a resolved source. Lives here rather than in either view because
+/// the picker bar and the empty state both offer this path.
+@MainActor
+enum HTMLLocalSourcePicker {
+    /// File picks promote the bookmark to the parent folder (sibling asset
+    /// access); folders infer their index file.
+    ///
+    /// No `allowedContentTypes`: a folder is `public.folder`, which conforms to
+    /// nothing in an HTML-only list, so the filter disabled the Choose button for
+    /// every directory and `canChooseDirectories` had no effect. Every other
+    /// folder picker in the app omits it.
+    static func pick(_ completion: (HTMLSource) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = L10n.Panel.useAsWallpaper
+        guard panel.runModal() == .OK, let url = panel.url else { return }
 
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if floating {
-            // Capsule, matching the scene preview's info bar — same role, same shape.
-            content.adaptiveGlassSurface(.capsule)
-        } else {
-            // Field-for-field the flat look of `ContainerGroupBoxStyle` (same
-            // `Corner.panel` / `Card.strokeWidth` source); kept hand-built only
-            // because this chrome needs the glass/flat dual state above.
-            content
-                .background(
-                    RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
-                        .fill(DesignTokens.Colors.surfaceRaised)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignTokens.Corner.panel, style: .continuous)
-                        .strokeBorder(
-                            DesignTokens.Colors.separator.opacity(0.55),
-                            lineWidth: DesignTokens.Card.strokeWidth
-                        )
-                )
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        guard exists else { return }
+
+        if isDirectory.boolValue {
+            guard let bookmark = ResourceUtilities.createBookmark(for: url) else { return }
+            completion(.folder(bookmarkData: bookmark, indexFileName: inferIndexFileName(in: url)))
+            return
         }
+
+        guard let source = ResourceUtilities.htmlSourceFromPickedFile(url) else { return }
+        completion(source)
+    }
+
+    private static func inferIndexFileName(in folder: URL) -> String {
+        let didStart = folder.startAccessingSecurityScopedResource()
+        defer {
+            if didStart {
+                folder.stopAccessingSecurityScopedResource()
+            }
+        }
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return ResourceUtilities.inferHTMLIndexFileName(from: entries)
     }
 }
 
-/// Picker and options for URL- or locally-backed HTML wallpapers.
+/// Picker and options for URL- or locally-backed HTML wallpapers, as the bar
+/// floating over the live web preview. Before anything is picked the page shows
+/// `HTMLEmptyState` instead, so this only ever renders over live content — which
+/// is what earns it glass.
 struct HTMLSourceSection: View {
     var screen: Screen
     @Binding var source: HTMLSource?
     @Binding var config: HTMLConfig
-    /// `true` when the picker floats over the web preview instead of sitting in
-    /// page flow — the one case where glass has live content to refract.
-    var floating: Bool = false
 
     @Environment(ScreenManager.self) private var screenManager
     @State private var trustStore = TrustedHostStore.shared
@@ -56,9 +72,10 @@ struct HTMLSourceSection: View {
                 .frame(maxWidth: .infinity)
                 .animation(.snappy(duration: 0.18), value: selectedSegment)
         }
-        .padding(.horizontal, floating ? 16 : 20)
-        .padding(.vertical, floating ? 6 : 16)
-        .modifier(HTMLSourceChrome(floating: floating))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        // Capsule, matching the scene preview's info bar — same role, same shape.
+        .adaptiveGlassSurface(.capsule)
         .onAppear { scheduleBindingSync() }
         .onChange(of: source) { _, _ in
             scheduleBindingSync()
@@ -311,36 +328,10 @@ struct HTMLSourceSection: View {
         screenManager.setHTMLWallpaper(source: parsed, config: config, for: screen)
     }
 
-    /// File pick promotes bookmark to parent folder (sibling asset access); folders use index inference.
-    ///
-    /// No `allowedContentTypes`: a folder is `public.folder`, which conforms to nothing in an
-    /// HTML-only list, so the filter disabled the Choose button for every directory and
-    /// `canChooseDirectories` above had no effect. Every other folder picker in the app omits it.
     private func pickLocal() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = L10n.Panel.useAsWallpaper
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-        guard exists else { return }
-
-        if isDirectory.boolValue {
-            guard let bookmark = ResourceUtilities.createBookmark(for: url) else { return }
-            let indexFileName = inferIndexFileName(in: url)
-            screenManager.setHTMLWallpaper(
-                source: .folder(bookmarkData: bookmark, indexFileName: indexFileName),
-                config: config,
-                for: screen
-            )
-            return
+        HTMLLocalSourcePicker.pick { picked in
+            screenManager.setHTMLWallpaper(source: picked, config: config, for: screen)
         }
-
-        guard let source = ResourceUtilities.htmlSourceFromPickedFile(url) else { return }
-        screenManager.setHTMLWallpaper(source: source, config: config, for: screen)
     }
 
     // MARK: - Helpers
@@ -361,13 +352,6 @@ struct HTMLSourceSection: View {
             if selectedSegment != .inline { selectedSegment = .inline }
             if !urlInput.isEmpty { urlInput = "" }
         }
-    }
-
-    private func inferIndexFileName(in folder: URL) -> String {
-        let didStart = folder.startAccessingSecurityScopedResource()
-        defer { if didStart { folder.stopAccessingSecurityScopedResource() } }
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        return ResourceUtilities.inferHTMLIndexFileName(from: entries)
     }
 }
 

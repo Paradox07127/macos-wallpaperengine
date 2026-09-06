@@ -21,7 +21,7 @@ struct ProcessesWidgetView: View {
             )
             WidgetContainer(
                 label: "Processes",
-                systemImage: "list.bullet",
+                systemImage: WidgetFactory.icon(.processes),
                 cellHeight: scaleHeight,
                 status: { headerStatus(rows: rows, scale: scale) },
                 content: { content(rows: rows, scale: scale) }
@@ -110,9 +110,9 @@ struct ProcessesWidgetView: View {
         HStack(spacing: colGap) {
             localizedColumnLabel(Self.colProgram, scale: scale)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            columnHeader(Self.colCPU, systemImage: "cpu", columnWidth: cpuColWidth, scale: scale)
+            columnHeader(Self.colCPU, systemImage: WidgetFactory.icon(.cpu), columnWidth: cpuColWidth, scale: scale)
                 .frame(width: cpuColWidth, alignment: .center)
-            columnHeader(Self.colMEM, systemImage: "memorychip", columnWidth: memColWidth, scale: scale)
+            columnHeader(Self.colMEM, systemImage: WidgetFactory.icon(.memory), columnWidth: memColWidth, scale: scale)
                 .frame(width: memColWidth, alignment: .trailing)
         }
         .padding(.bottom, scale.caption * 0.3)

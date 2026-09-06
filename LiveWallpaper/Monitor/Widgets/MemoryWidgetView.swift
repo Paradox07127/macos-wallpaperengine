@@ -15,6 +15,7 @@ struct MemoryWidgetView: View {
             let cellHeight = geo.size.height / (2 * rowSpan)
             WidgetContainer(
                 label: "MEM",
+                systemImage: WidgetFactory.icon(.memory),
                 cellHeight: cellHeight,
                 status: { statusDot }
             ) {
@@ -634,16 +635,23 @@ private struct MemoryTopProcessRow: View {
             }
             .frame(width: scale.caption * 3.0, height: scale.caption * 0.42)
 
+            // Both reserved columns overflow on real machines and, unlike the
+            // matching columns in CPUWidgetView and ProcessesWidgetView, had no
+            // scale floor to fall back on: "1600%" (a 16-core process) measures
+            // 37.91 pt against 31.90 pt, and "128.0G" 38.93 pt against 36.30 pt,
+            // so both truncated. The widest of the two needs 0.84.
             Text(verbatim: MemoryWidgetView.cpuColumnText(proc.cpuPercent))
                 .font(Design.subFont(size: scale.caption * 0.94))
                 .monospacedDigit()
                 .foregroundStyle(proc.cpuPercent > 0 ? Design.inkMuted : Design.inkFaint)
+                .minimumScaleFactor(0.7)
                 .frame(width: scale.caption * 2.9, alignment: .trailing)
 
             Text(verbatim: gib(proc.memBytes))
                 .font(Design.subFont(size: scale.caption * 0.94))
                 .monospacedDigit()
                 .foregroundStyle(AMSegmentStyle.legendColor(.app))
+                .minimumScaleFactor(0.7)
                 .frame(width: scale.caption * 3.3, alignment: .trailing)
         }
         .lineLimit(1)
