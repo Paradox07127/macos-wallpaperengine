@@ -399,7 +399,6 @@ final class InteractionModel: ObservableObject {
         onConfigurationEdited?(baseConfiguration)
     }
 
-    /// Small when allowed (agent session/processes/weather prefer medium).
     static func defaultSize(for kind: MonitorWidgetKind) -> MonitorWidgetSize {
         let allowed = kind.allowedSizes
         let prefersMedium = switch kind {

@@ -44,7 +44,7 @@ final class HostView: NSView {
     }
 
     /// Live sky for the Weather tile. Nil in the preview and in tests.
-    private let weatherService: WeatherReactiveService?
+    private var weatherService: WeatherReactiveService?
 
     /// The point size the board lays out at, when that differs from the size
     /// this view is drawn at — the inspector draws a whole desktop into a few
@@ -61,6 +61,13 @@ final class HostView: NSView {
             guard logicalSize != oldValue else { return }
             rebuildRootView()
         }
+    }
+
+    /// The configuration's own override, kept so a system change can be judged
+    /// without re-reading the configuration.
+    private var reduceMotionOverride: Bool?
+    private lazy var reduceMotionWatcher = ReduceMotionWatcher { [weak self] _ in
+        self?.systemReduceMotionDidChange()
     }
 
     private var pendingPersistTask: Task<Void, Never>?
@@ -103,6 +110,11 @@ final class HostView: NSView {
 
         super.init(frame: frameRect)
 
+        reduceMotionOverride = configuration.reduceMotionOverride
+        // Watched, not read once: the particle layer follows the system switch
+        // live, and a board that only read it at init kept animating beside a
+        // layer that had stopped.
+        reduceMotionWatcher.start()
         interactionModel.safeArea = safeArea
 
         wantsLayer = true
@@ -148,9 +160,41 @@ final class HostView: NSView {
         }
         interactionModel.apply(configuration: configuration)
         pointerScope = Self.pointerScope(for: configuration, isEditing: interactionModel.isEditing)
-        reduceMotion = Self.effectiveReduceMotion(configuration)
+        reduceMotionOverride = configuration.reduceMotionOverride
+        reduceMotion = reduceMotionOverride ?? reduceMotionWatcher.isReduced
         rebuildRootView()
     }
+
+    /// The sky is only built once a Weather tile exists, which can be after this
+    /// host is already on the desktop; `apply(configuration:)` carries no service.
+    func setWeatherService(_ service: WeatherReactiveService?) {
+        guard weatherService !== service else { return }
+        weatherService = service
+        rebuildRootView()
+    }
+
+    private func systemReduceMotionDidChange() {
+        let next = reduceMotionOverride ?? reduceMotionWatcher.isReduced
+        guard next != reduceMotion else { return }
+        reduceMotion = next
+        rebuildRootView()
+    }
+
+    #if DEBUG
+    var debugReduceMotion: Bool {
+        hostingView.rootView.reduceMotion
+    }
+
+    var debugWeatherService: WeatherReactiveService? {
+        hostingView.rootView.weatherService
+    }
+
+    /// Test seam, forwarded — see `ReduceMotionWatcher.override`.
+    var reduceMotionWatcherOverride: Bool? {
+        get { reduceMotionWatcher.override }
+        set { reduceMotionWatcher.override = newValue }
+    }
+    #endif
 
     // MARK: - Suspend
 
@@ -282,6 +326,14 @@ struct MonitorBoardRootContainer: View {
     var logicalSize: CGSize?
 
     var body: some View {
+        // The desktop hosts have no window chrome to inherit the app language from,
+        // so `Text(key)` in a tile followed the system language while the
+        // `String(localized:bundle:)` labels beside it followed the app's.
+        scaled.appLanguageScoped(defaults: .appScoped())
+    }
+
+    @ViewBuilder
+    private var scaled: some View {
         if let logicalSize, logicalSize.width > 0, logicalSize.height > 0 {
             GeometryReader { proxy in
                 let scale = Self.previewScale(available: proxy.size, logical: logicalSize)

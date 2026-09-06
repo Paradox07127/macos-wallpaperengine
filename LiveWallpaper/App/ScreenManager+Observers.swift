@@ -554,6 +554,9 @@ extension ScreenManager {
             screen.applyCapturePolicy(sharing)
         }
         OverlayController.shared.applyCapturePolicyToLiveOverlays()
+        if effectsCoordinatorWasInitialized {
+            effectsCoordinator.applyCapturePolicyToEnvironmentOverlays(sharing)
+        }
     }
     
     private func handleSystemSleep() {

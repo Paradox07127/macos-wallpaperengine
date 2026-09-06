@@ -235,8 +235,10 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             var netTx: Double = 0
             var netInterfaces: [MonitorNetworkInterface] = []
             var pathSnapshot: NetworkPathObserver.Snapshot?
+            var networkAvailable = false
             if options.network {
                 let netRaw = SystemMetricsSamplers.sampleNetworkCounters()
+                networkAvailable = prevNet != nil
                 netRx = SystemMetricsSamplers.rate(current: netRaw.rx, previous: prevNet?.rx ?? netRaw.rx, interval: elapsed)
                 netTx = SystemMetricsSamplers.rate(current: netRaw.tx, previous: prevNet?.tx ?? netRaw.tx, interval: elapsed)
                 pathSnapshot = netPath.currentSnapshot()
@@ -329,7 +331,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             let samples: [String: MonitorMetricSample] = [
                 "cpu": provenance(cpuSample?.available == true),
                 "memory": provenance(memory?.breakdown != nil),
-                "network": provenance(options.network && !netInterfaces.isEmpty),
+                "network": provenance(networkAvailable && !netInterfaces.isEmpty),
                 "disk": provenance(diskAvailable),
                 "power": provenance(power?.powerSource != nil || power?.battery != nil),
                 "gpu": provenance(lastGPU?.deviceUtil != nil, at: lastGPUSampledAt, every: interval * Double(gpuSampleCadence)),

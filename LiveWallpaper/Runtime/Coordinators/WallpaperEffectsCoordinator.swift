@@ -187,6 +187,10 @@ final class WallpaperEffectsCoordinator {
     /// visible difference.
     func screensDidChange(arrivedScreenIDs: Set<CGDirectDisplayID>) {
         guard !isShutdown else { return }
+        // A display that left was released while `screens` still listed it, so the
+        // reconcile in that release kept its panel; this is the first call after
+        // the list shrank.
+        environmentOverlay.retainOnly(Set(screensProvider().map(\.id)))
         refreshWeatherMonitoringState()
         for screen in screensProvider() where arrivedScreenIDs.contains(screen.id) {
             guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
@@ -275,6 +279,10 @@ final class WallpaperEffectsCoordinator {
     func trackedWorkKeyCount(for screenID: CGDirectDisplayID) -> Int {
         videoEffectsApplier.trackedWorkKeyCount(for: screenID)
     }
+
+    var debugEnvironmentOverlay: EnvironmentOverlayController {
+        environmentOverlay
+    }
     #endif
 
     func workRevision(
@@ -321,6 +329,10 @@ final class WallpaperEffectsCoordinator {
 
     func setEnvironmentOverlaySuspended(_ suspended: Bool, for screen: Screen) {
         environmentOverlay.setRuntimeSuspended(suspended, screenID: screen.id)
+    }
+
+    func applyCapturePolicyToEnvironmentOverlays(_ sharing: NSWindow.SharingType) {
+        environmentOverlay.applyCapturePolicy(sharing)
     }
 
     // MARK: - Private helpers
@@ -423,6 +435,8 @@ final class WallpaperEffectsCoordinator {
         withObservationTracking {
             _ = weatherService.currentParticleEffect
             _ = weatherService.currentEffectAdjustments
+            _ = weatherService.currentWind
+            _ = weatherService.currentIntensity
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self,

@@ -345,7 +345,13 @@ struct PlaybackControls: View {
     private func commitDraggedFrameRate() {
         defer { draggingFrameRateIndex = nil }
         guard let index = draggingFrameRateIndex else { return }
-        frameRateBinding.wrappedValue = frameRate(atIndex: index)
+        let chosen = frameRate(atIndex: index)
+        // On this display the top step can resolve to the same rate as a saved
+        // .matchDisplay (e.g. .fps60 at 60 Hz) — writing it would silently cap a
+        // later, faster display the user never touched this control on.
+        let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
+        guard !chosen.resolvesToSameRate(as: frameRateLimit, forRefreshRate: refreshRate) else { return }
+        frameRateBinding.wrappedValue = chosen
     }
 
     /// Slider position → case. An out-of-range position clamps rather than

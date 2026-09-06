@@ -14,6 +14,11 @@ struct DiskWidgetView: View {
     private var sys: MonitorSystemSnapshot { context.snapshot.system ?? MonitorSystemSnapshot() }
     private var history: MonitorHistorySnapshot { context.history }
 
+    /// Distinguishes "no counter sampled yet" / a failed sample from a legitimate 0 B/s reading.
+    private var diskReadingsAvailable: Bool {
+        context.snapshot.system?.metricSamples?["disk"]?.available ?? true
+    }
+
     var body: some View {
         GeometryReader { geo in
             let rowSpan: CGFloat = context.placement.size == .large ? 2 : 1
@@ -49,7 +54,7 @@ struct DiskWidgetView: View {
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * 2.4)
                 Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                             value: Format.rate(history.values(history.diskRead, in: chartWindow).max() ?? 0),
+                             value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? "—",
                              scale: scale)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -77,7 +82,7 @@ struct DiskWidgetView: View {
             Text(verbatim: letter)
                 .font(Design.heroFont(size: size))
                 .foregroundStyle(color)
-            Self.rateHero(rate, size: size)
+            Self.rateHero(rate, available: diskReadingsAvailable, size: size)
         }
     }
 
@@ -102,7 +107,7 @@ struct DiskWidgetView: View {
                 .frame(minHeight: scale.caption * 3)
                 .overlay(alignment: .topTrailing) {
                     Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                                 value: Format.rate(history.values(history.diskRead, in: chartWindow).max() ?? 0),
+                                 value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? "—",
                                  scale: scale)
                         .padding(scale.label * 0.3)
                 }
@@ -129,10 +134,10 @@ struct DiskWidgetView: View {
             Spacer(minLength: 4)
 
             HStack(spacing: scale.caption * 0.35) {
-                Text(verbatim: Format.rate(sys.diskReadBytesPerSec))
+                Text(verbatim: Self.rateText(sys.diskReadBytesPerSec, available: diskReadingsAvailable))
                     .foregroundStyle(Design.inkPrimary)
                 Text(verbatim: "·").foregroundStyle(Design.inkFaint)
-                Text(verbatim: Format.rate(sys.diskWriteBytesPerSec))
+                Text(verbatim: Self.rateText(sys.diskWriteBytesPerSec, available: diskReadingsAvailable))
                     .foregroundStyle(Design.inkPrimary)
             }
             .font(Design.captionFont(size: scale.caption))
@@ -227,12 +232,12 @@ struct DiskWidgetView: View {
                 .frame(minHeight: scale.caption * (topIO.isEmpty ? 5 : 3))
                 .overlay(alignment: .topTrailing) {
                     Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                                 value: Format.rate(history.values(history.diskRead, in: chartWindow).max() ?? 0), scale: scale)
+                                 value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? "—", scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     Self.peakTag(label: String(localized: "W peak", bundle: .appLanguage, comment: "Disk widget: recent write-rate peak label."),
-                                 value: Format.rate(history.values(history.diskWrite, in: chartWindow).max() ?? 0), scale: scale)
+                                 value: history.values(history.diskWrite, in: chartWindow).max().map { Format.rate($0) } ?? "—", scale: scale)
                         .padding(scale.label * 0.3)
                 }
                 sessionSectionLabel(scale: scale)
@@ -283,21 +288,21 @@ struct DiskWidgetView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             ioRateColumn(letter: "R", color: Self.readColor,
-                         rate: proc.ioReadBytesPerSec ?? 0, scale: scale)
+                         rate: proc.ioReadBytesPerSec, scale: scale)
             ioRateColumn(letter: "W", color: Self.writeColor,
-                         rate: proc.ioWriteBytesPerSec ?? 0, scale: scale)
+                         rate: proc.ioWriteBytesPerSec, scale: scale)
         }
     }
 
     /// One hue-lettered rate column (the widget's R/W letter idiom, matching the mirrored scope's up/down assignment).
     private func ioRateColumn(
-        letter: String, color: Color, rate: Double, scale: Design.TypeScale
+        letter: String, color: Color, rate: Double?, scale: Design.TypeScale
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.caption * 0.3) {
             Text(verbatim: letter)
                 .font(Design.captionFont(size: scale.caption * 0.86))
                 .foregroundStyle(color)
-            Text(verbatim: Format.rate(rate))
+            Text(verbatim: rate.map { Format.rate($0) } ?? "—")
                 .font(Design.subFont(size: scale.caption * 0.94)).monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
                 .lineLimit(1)
@@ -390,8 +395,8 @@ struct DiskWidgetView: View {
 
     // MARK: - Static helpers (testable, chrome-free)
 
-    static func rateHero(_ bytesPerSec: Double, size: CGFloat) -> some View {
-        let text = Format.rate(bytesPerSec)
+    static func rateHero(_ bytesPerSec: Double, available: Bool = true, size: CGFloat) -> some View {
+        let text = rateText(bytesPerSec, available: available)
         let parts = text.split(separator: " ", maxSplits: 1)
         let value = String(parts.first ?? "")
         let unit = parts.count > 1 ? String(parts[1]) : ""
@@ -405,6 +410,12 @@ struct DiskWidgetView: View {
                     .foregroundStyle(Design.inkFaint)
             }
         }
+    }
+
+    /// The current-rate readout falls back to the peak tag's own "—" when the
+    /// sampler has no reading yet (or the last one failed) — never a fake 0 B/s.
+    nonisolated static func rateText(_ bytesPerSec: Double, available: Bool) -> String {
+        available ? Format.rate(bytesPerSec) : "—"
     }
 
     static func peakTag(label: String, value: String, scale: Design.TypeScale) -> some View {

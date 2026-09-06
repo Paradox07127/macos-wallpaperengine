@@ -20,7 +20,9 @@ extension ScreenManager {
         }
         // Suspend before host create so occluded overlays never get a prime snapshot.
         refreshMonitorOverlayVisibility()
-        OverlayController.shared.weatherService = weatherService
+        // Reading `weatherService` builds the effects coordinator, so only a board
+        // that draws the sky pays for it.
+        OverlayController.shared.updateWeatherService(hasEnabledWeatherWidget ? weatherService : nil)
         OverlayController.shared.onOverlayEdited = { [weak self] screenID, board in
             self?.persistMonitorOverlayBoard(board, screenID: screenID)
         }
@@ -180,6 +182,10 @@ extension ScreenManager {
         guard next != monitorOverlays else { return }
         monitorOverlays = next
         SettingsManager.shared.saveMonitorOverlays(next)
+        // A Weather tile dropped on the desktop arrives with `reconcile: false`,
+        // so this is where a board already built gets the sky — and where the
+        // coordinator is first built, before the guard below starts its polling.
+        OverlayController.shared.updateWeatherService(hasEnabledWeatherWidget ? weatherService : nil)
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.monitorBoardsDidChange()
         }

@@ -34,6 +34,7 @@ struct FrameRateLimitTargetResolutionTests {
         #expect(FrameRateLimit.fps60.frameRate(forRefreshRate: 144) == 48)
         #expect(FrameRateLimit.fps30.frameRate(forRefreshRate: 144) == 29)
         #expect(FrameRateLimit.fps15.frameRate(forRefreshRate: 144) == 14)
+        #expect(FrameRateLimit.matchDisplay.frameRate(forRefreshRate: 144) == 144)
     }
 
     @Test("A panel slower than the target cannot be sped up to it")
@@ -58,6 +59,18 @@ struct FrameRateLimitTargetResolutionTests {
             FrameRateLimit.availableCases(forRefreshRate: 240)
                 == [.fps15, .fps30, .fps60, .matchDisplay]
         )
+    }
+
+    /// The slider's top step on a 60 Hz panel is `.fps60` (`.matchDisplay` is
+    /// dropped as a duplicate). Landing a drag there must not overwrite a saved
+    /// `.matchDisplay`, or a later move to a 120 Hz display would find itself
+    /// capped at 60 for a value the user never touched.
+    @Test("Same-rate steps at 60 Hz are recognized; distinct rates and higher panels are not")
+    func resolvesToSameRate() {
+        #expect(FrameRateLimit.matchDisplay.resolvesToSameRate(as: .fps60, forRefreshRate: 60))
+        #expect(FrameRateLimit.fps60.resolvesToSameRate(as: .matchDisplay, forRefreshRate: 60))
+        #expect(FrameRateLimit.matchDisplay.resolvesToSameRate(as: .fps60, forRefreshRate: 120) == false)
+        #expect(FrameRateLimit.fps30.resolvesToSameRate(as: .fps60, forRefreshRate: 60) == false)
     }
 
     /// Video re-times through `AVVideoComposition` rather than vsync, so it holds an

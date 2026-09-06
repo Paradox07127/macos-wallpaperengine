@@ -21,7 +21,6 @@ final class ParticleOverlayView: NSView {
     private var currentEffect: ParticleEffect = .none
 
     private var activeEmitter: CAEmitterLayer?
-    /// Meteors fly on their own layers rather than out of an emitter.
     private var meteorShower: MeteorShower?
     private(set) var suspensionReasons: ParticleSuspensionReasons = []
     var isSuspended: Bool {
@@ -165,16 +164,6 @@ final class ParticleOverlayView: NSView {
     /// The cells a preset would build, so a test can fly them itself.
     func debugCells(for effect: ParticleEffect, tilt: CGFloat) -> [CAEmitterCell] {
         preset(for: effect, tilt: tilt).cells
-    }
-
-    /// Where a preset puts its emission region for a given frame — the other
-    /// half of a preset, and the half that decides whether particles are born
-    /// in view or walk in from outside it.
-    func debugEmitterGeometry(
-        for effect: ParticleEffect, tilt: CGFloat, bounds: CGRect
-    ) -> (position: CGPoint, size: CGSize) {
-        let preset = preset(for: effect, tilt: tilt)
-        return (preset.position(bounds), preset.size(bounds))
     }
     #endif
 

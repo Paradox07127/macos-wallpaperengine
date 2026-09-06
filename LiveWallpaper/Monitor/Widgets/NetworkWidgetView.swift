@@ -15,6 +15,11 @@ struct NetworkWidgetView: View {
     private var system: MonitorSystemSnapshot? { snapshot.system }
     private var history: MonitorHistorySnapshot { context.history }
 
+    /// Distinguishes "no counter sampled yet" / a failed sample from a legitimate 0 B/s reading.
+    private var netReadingsAvailable: Bool {
+        system?.metricSamples?["network"]?.available ?? true
+    }
+
     var body: some View {
         GeometryReader { geo in
             let rowSpan: CGFloat = context.placement.size == .large ? 2 : 1
@@ -108,7 +113,7 @@ struct NetworkWidgetView: View {
             HStack(alignment: .firstTextBaseline) {
                 currentPairLabel(scale: scale)
                 Spacer(minLength: 6)
-                Text(verbatim: "\(Format.rate(rxRate)) · \(Format.rate(txRate))")
+                Text(verbatim: "\(Self.rateText(rxRate, available: netReadingsAvailable)) · \(Self.rateText(txRate, available: netReadingsAvailable))")
                     .font(Design.subFont(size: scale.caption))
                     .monospacedDigit()
                     .foregroundStyle(Design.inkPrimary)
@@ -169,7 +174,7 @@ struct NetworkWidgetView: View {
             Text(verbatim: "↓ PEAK")
                 .tracking(Design.labelTracking(size: scale.label))
                 .foregroundStyle(Design.inkFaint)
-            Text(verbatim: Format.rate(history.values(history.netRx, in: chartWindow(seconds: chartWindowSeconds)).max() ?? 0))
+            Text(verbatim: history.values(history.netRx, in: chartWindow(seconds: chartWindowSeconds)).max().map { Format.rate($0) } ?? "—")
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
         }
@@ -278,11 +283,11 @@ struct NetworkWidgetView: View {
         let size = scale.sub * 1.12
         return VStack(alignment: .leading, spacing: scale.label * 0.35) {
             rateRow(label: "↓", labelColor: Self.rxColor,
-                    text: Format.rate(rxRate),
+                    text: Self.rateText(rxRate, available: netReadingsAvailable),
                     font: Design.subFont(size: size),
                     unitSize: size * 0.62)
             rateRow(label: "↑", labelColor: Self.txColor,
-                    text: Format.rate(txRate),
+                    text: Self.rateText(txRate, available: netReadingsAvailable),
                     font: Design.subFont(size: size),
                     unitSize: size * 0.62)
         }
@@ -401,6 +406,12 @@ struct NetworkWidgetView: View {
 
     nonisolated static func isIPv4(_ address: String) -> Bool {
         address.contains(".") && !address.contains(":")
+    }
+
+    /// The current-rate readout falls back to the peak tag's own "—" when the
+    /// sampler has no reading yet (or the last one failed) — never a fake 0 B/s.
+    nonisolated static func rateText(_ bytesPerSec: Double, available: Bool) -> String {
+        available ? Format.rate(bytesPerSec) : "—"
     }
 
     nonisolated static func splitRate(_ text: String) -> (value: String, unit: String) {

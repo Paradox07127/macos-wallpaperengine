@@ -203,7 +203,6 @@ struct Sparkline: View {
 }
 
 extension [MonitorHistoryPoint] {
-    /// Fixture helper: evenly spaced samples ending at `reference`.
     static func evenlySpaced(
         _ values: [Double?], endingAt reference: Double, every step: Double = 1
     ) -> [MonitorHistoryPoint] {
