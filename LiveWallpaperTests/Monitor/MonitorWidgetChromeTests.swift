@@ -89,21 +89,17 @@ struct MonitorWidgetChromeTests {
 
     /// CPU's ring used to sit ~12 pt right of GPU's because its gauge frame had
     /// no alignment and centred the (height-limited) square inside a wider slot.
-    /// The two widgets reach the same leading edge by different means, so this
-    /// asserts each one's own mechanism rather than one shared string:
+    /// Both widgets now pin a width and align the ring to its leading edge, but
+    /// the widths come from different places, and that difference is the point:
     ///
-    /// - CPU caps only the HEIGHT. `ArcGauge` is `aspectRatio(1, .fit)`, so a
-    ///   width cap makes the frame report the cap (96 pt) while the ring measured
-    ///   67.7 pt — dead column the trend curve could not reach. With height alone
-    ///   the frame is the ring's own width, and its enclosing leading-aligned
-    ///   stack puts it flush left with nothing to align inside.
-    /// - GPU keeps a fixed width (68/108 — its own budget, untouched here), so it
-    ///   still needs `alignment: .leading` or the ring re-centres. It is also the
-    ///   control group: if this half stops holding, the scan is reading the wrong
-    ///   line.
+    /// - GPU's is a literal (68/108 — its own budget, untouched here).
+    /// - CPU's must be `Self.gaugeSide(…)`. A literal there is what stranded
+    ///   28.3 pt beside a 67.7 pt ring, and `gaugeSide` also reserves the widest
+    ///   composition legend so the row stops reflowing when the reading crosses
+    ///   10% or 100% (measured: the column walked 67.70 → 73.50 → 80.00).
     @Test("CPU and GPU pin their arc gauge to the same leading edge")
     func gaugeColumnsAreLeadingAligned() throws {
-        let sites: [(file: String, declaration: String, capsWidth: Bool)] = [
+        let sites: [(file: String, declaration: String, literalWidth: Bool)] = [
             ("CPUWidgetView.swift", "private func mediumBody(cellHeight: CGFloat) -> some View {", false),
             ("CPUWidgetView.swift", "private func largeBody(cellHeight: CGFloat) -> some View {", false),
             ("GPUWidgetView.swift", "private var mediumBody: some View {", true),
@@ -116,18 +112,22 @@ struct MonitorWidgetChromeTests {
                 Comment(rawValue: "\(site.file) no longer declares \(site.declaration)")
             )
             let frame = try #require(
-                Self.firstGaugeFrame(in: body),
-                Comment(rawValue: "\(site.file) \(site.declaration) has no ArcGauge frame to check")
+                Self.gaugeWidthFrame(in: body),
+                Comment(rawValue: "\(site.file) \(site.declaration): no frame constrains the gauge column's width, so it floats with the ring")
             )
-            if site.capsWidth {
+            #expect(
+                frame.contains("alignment: .leading"),
+                Comment(rawValue: "\(site.file) \(site.declaration): \(frame) fixes a width without a leading alignment, which re-centres the ring")
+            )
+            if site.literalWidth {
                 #expect(
-                    frame.contains("alignment: .leading"),
-                    Comment(rawValue: "\(site.file) \(site.declaration): \(frame) fixes a width without a leading alignment, which re-centres the ring")
+                    !frame.contains("gaugeSide"),
+                    Comment(rawValue: "\(site.file) \(site.declaration) is the control group and should still size its own column")
                 )
             } else {
                 #expect(
-                    !frame.contains("width:"),
-                    Comment(rawValue: "\(site.file) \(site.declaration): \(frame) caps the gauge width, so the column reports the cap instead of the ring and strands the difference")
+                    frame.contains("Self.gaugeSide("),
+                    Comment(rawValue: "\(site.file) \(site.declaration): \(frame) hardcodes the gauge column, which strands whatever the ring does not use")
                 )
             }
         }
@@ -167,11 +167,34 @@ struct MonitorWidgetChromeTests {
     }
 
     /// The first `.frame(…)` modifier applied after the body's first `ArcGauge(`.
-    private static func firstGaugeFrame(in body: String) -> String? {
+    /// The first `.frame(...)` after the gauge that constrains WIDTH, flattened to
+    /// one line. Not simply the first frame: CPU caps the ring's height on one
+    /// call and pins the column's width on the next, and it is the second that
+    /// this file is about.
+    private static func gaugeWidthFrame(in body: String) -> String? {
         guard let gauge = body.range(of: "ArcGauge(") else { return nil }
-        return body[gauge.upperBound...]
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { $0.hasPrefix(".frame(") }
+        var cursor = gauge.upperBound
+        while let open = body.range(of: ".frame(", range: cursor ..< body.endIndex) {
+            var depth = 1
+            var index = open.upperBound
+            while index < body.endIndex, depth > 0 {
+                if body[index] == "(" {
+                    depth += 1
+                }
+                if body[index] == ")" {
+                    depth -= 1
+                }
+                index = body.index(after: index)
+            }
+            let call = body[open.lowerBound ..< index]
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .joined(separator: " ")
+            if call.contains("width:") {
+                return call
+            }
+            cursor = index
+        }
+        return nil
     }
 }

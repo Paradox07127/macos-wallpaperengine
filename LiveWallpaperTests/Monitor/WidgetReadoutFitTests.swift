@@ -152,7 +152,7 @@ final class WidgetReadoutFitTests: XCTestCase {
                                 "MemoryWidgetView no longer declares MemoryTopProcessRow")
         let floor = try XCTUnwrap(Self.scaleFloor(in: row),
                                   "MemoryTopProcessRow lost its minimumScaleFactor; nothing shrinks these columns")
-        let slots = Self.captionSlotMultipliers(in: row)
+        let slots = Self.trailingTextSlotMultipliers(in: row)
         XCTAssertEqual(slots.count, 2, "expected the cpu% and GiB slots, found \(slots)")
 
         // A process saturating 16 cores; the widest string cpuColumnText emits.
@@ -185,7 +185,7 @@ final class WidgetReadoutFitTests: XCTestCase {
             } else if source[index] == "}" {
                 depth -= 1
                 if seenOpen, depth == 0 {
-                    return String(source[start.lowerBound...index])
+                    return String(source[start.lowerBound ... index])
                 }
             }
             index = source.index(after: index)
@@ -209,47 +209,141 @@ final class WidgetReadoutFitTests: XCTestCase {
             options: .regularExpression,
             range: cursor ..< body.endIndex
         ) {
-            if let value = trailingNumber(in: body[match]) { out.append(value) }
+            if let value = trailingNumber(in: body[match]) {
+                out.append(value)
+            }
             cursor = match.upperBound
         }
         return out
     }
 
-    /// The last run of digits/dot in `text`, e.g. "2.9" from ".frame(width: scale.caption * 2.9".
-    private static func trailingNumber(in text: Substring) -> CGFloat? {
-        let digits = text.reversed().prefix { $0.isNumber || $0 == "." }.reversed()
-        return Double(String(digits)).map(CGFloat.init)
+    /// Only the slots that hold right-aligned text. `MemoryTopProcessRow` also
+    /// sizes a status dot and an inline bar off `scale.caption`, so taking every
+    /// match by position would read the dot's 0.5 as the cpu% column.
+    private static func trailingTextSlotMultipliers(in body: String) -> [CGFloat] {
+        var out: [CGFloat] = []
+        var cursor = body.startIndex
+        while let match = body.range(
+            of: #"\.frame\(width: scale\.caption \* [0-9.]+, alignment: \.trailing\)"#,
+            options: .regularExpression,
+            range: cursor ..< body.endIndex
+        ) {
+            let head = body[match].prefix { $0 != "," }
+            if let value = trailingNumber(in: head) {
+                out.append(value)
+            }
+            cursor = match.upperBound
+        }
+        return out
     }
 
-    /// The same shape in the two widgets that already had a floor, so a future
-    /// edit that drops one of them is caught here rather than on a busy Mac.
-    func testCPUAndProcessesTopRowColumnsHoldTheirWidestRealReadings() {
-        let caption: CGFloat = 11
-        let floor: CGFloat = 0.7
+    /// The last run of digits/dot in `text`, e.g. "2.9" from ".frame(width:
+    /// scale.caption * 2.9" and "0.7" from "minimumScaleFactor(0.7)". The
+    /// leading `drop` is what makes the second one work: without it a match that
+    /// ends in `)` scanned no digits at all and returned nil, which silently
+    /// turned `scaleFloor` into "this row has no floor" on every caller.
+    private static func trailingNumber(in text: Substring) -> CGFloat? {
+        var digits = ""
+        var seenDigit = false
+        for character in text.reversed() {
+            if character.isNumber || (character == "." && seenDigit) {
+                seenDigit = seenDigit || character.isNumber
+                digits.insert(character, at: digits.startIndex)
+            } else if seenDigit {
+                break
+            }
+        }
+        return Double(digits).map { CGFloat($0) }
+    }
 
-        // CPUWidgetView.procRows: cpu% in caption*2.1, mem in caption*3.4.
-        let cpuText = CPUWidgetView.cpuText(1600)
-        XCTAssertEqual(cpuText, "1600")
-        XCTAssertGreaterThanOrEqual(
-            caption * 2.1 / width(cpuText, font(caption, monospacedDigit: true)), floor
-        )
+    /// Brace-matched body of whatever declaration starts with `declaration`.
+    private static func declarationBody(_ declaration: String, in source: String) -> String? {
+        guard let start = source.range(of: declaration) else { return nil }
+        var depth = 0
+        var index = start.lowerBound
+        var seenOpen = false
+        while index < source.endIndex {
+            if source[index] == "{" {
+                depth += 1
+                seenOpen = true
+            } else if source[index] == "}" {
+                depth -= 1
+                if seenOpen, depth == 0 {
+                    return String(source[start.lowerBound ... index])
+                }
+            }
+            index = source.index(after: index)
+        }
+        return nil
+    }
+
+    /// The multiplier in `let <name> = base * N`, the shape `processTable` uses.
+    private static func baseMultiplier(_ name: String, in body: String) -> CGFloat? {
+        guard let match = body.range(of: #"let \#(name) = base \* [0-9.]+"#,
+                                     options: .regularExpression)
+        else { return nil }
+        return trailingNumber(in: body[match])
+    }
+
+    /// The same shape in the two widgets that already had a floor. Both sets of
+    /// slots and both floors are read out of the widgets for the same reason as
+    /// `MemoryTopProcessRow` above — narrowing a slot there has to move this
+    /// test, and a floor is only real if the row still declares it.
+    func testCPUAndProcessesTopRowColumnsHoldTheirWidestRealReadings() throws {
+        let caption: CGFloat = 11 // Design.TypeScale(cellHeight: 89).caption
         let memText = Format.bytes(128 * 1_073_741_824 as Double)
         XCTAssertEqual(memText, "128.0 GB")
-        XCTAssertGreaterThanOrEqual(
-            caption * 3.4 / width(memText, font(caption * 0.94, monospacedDigit: true, floor: 11)),
-            floor
+        let memFont = font(caption * 0.94, monospacedDigit: true, floor: 11)
+
+        // CPUWidgetView.procRows: the inline bar, then the cpu% and mem slots.
+        let cpuSource = try RepositoryRoot.source("LiveWallpaper/Monitor/Widgets/CPUWidgetView.swift")
+        let procRows = try XCTUnwrap(Self.declarationBody("private func procRows(", in: cpuSource),
+                                     "CPUWidgetView no longer declares procRows")
+        let cpuFloor = try XCTUnwrap(Self.scaleFloor(in: procRows),
+                                     "procRows lost its minimumScaleFactor; nothing shrinks these columns")
+        let cpuSlots = Self.captionSlotMultipliers(in: procRows)
+        XCTAssertEqual(cpuSlots.count, 3, "expected the bar, cpu% and mem slots, found \(cpuSlots)")
+
+        let cpuText = CPUWidgetView.cpuText(1600)
+        XCTAssertEqual(cpuText, "1600")
+        let cpuWidth = width(cpuText, font(caption, monospacedDigit: true))
+        XCTAssertGreaterThan(cpuWidth, caption * cpuSlots[1],
+                             "control: if this column stopped overflowing, the floor below is untested")
+        XCTAssertGreaterThanOrEqual(caption * cpuSlots[1] / cpuWidth, cpuFloor)
+
+        XCTAssertGreaterThan(width(memText, memFont), caption * cpuSlots[2],
+                             "control: if this column stopped overflowing, the floor below is untested")
+        XCTAssertGreaterThanOrEqual(caption * cpuSlots[2] / width(memText, memFont), cpuFloor)
+
+        // ProcessesWidgetView.processTable sizes its columns off `base`, and the
+        // two floors live one level down in the cells that draw them.
+        let procSource = try RepositoryRoot.source("LiveWallpaper/Monitor/Widgets/ProcessesWidgetView.swift")
+        let table = try XCTUnwrap(Self.declarationBody("private func processTable(", in: procSource),
+                                  "ProcessesWidgetView no longer declares processTable")
+        let valueSlot = try XCTUnwrap(Self.baseMultiplier("cpuValueWidth", in: table),
+                                      "processTable no longer sizes cpuValueWidth off base")
+        let memSlot = try XCTUnwrap(Self.baseMultiplier("memColWidth", in: table),
+                                    "processTable no longer sizes memColWidth off base")
+        let cpuCellFloor = try XCTUnwrap(
+            Self.declarationBody("private func cpuCell(", in: procSource).flatMap { Self.scaleFloor(in: $0) },
+            "ProcessesWidgetView.cpuCell lost its minimumScaleFactor"
+        )
+        let rowFloor = try XCTUnwrap(
+            Self.declarationBody("private func processRow(", in: procSource).flatMap { Self.scaleFloor(in: $0) },
+            "ProcessesWidgetView.processRow lost its minimumScaleFactor"
         )
 
-        // ProcessesWidgetView: cpu% in caption*3.4, mem in caption*4.0.
-        XCTAssertGreaterThanOrEqual(
-            caption * 3.4 / width(ProcessesWidgetView.cpuText(1600),
-                                  font(caption * 0.94, monospacedDigit: true, floor: 11)),
-            floor
-        )
-        XCTAssertGreaterThanOrEqual(
-            caption * 4.0 / width(memText, font(caption * 0.94, monospacedDigit: true, floor: 11)),
-            floor
-        )
+        // This one is wide enough to need no shrink at all, so it is pinned at
+        // the stronger claim; the floor stays asserted in case that stops holding.
+        let procCPUText = ProcessesWidgetView.cpuText(1600)
+        XCTAssertEqual(procCPUText, "1600")
+        let procCPUWidth = width(procCPUText, memFont)
+        XCTAssertGreaterThanOrEqual(caption * valueSlot / procCPUWidth, 1)
+        XCTAssertGreaterThanOrEqual(caption * valueSlot / procCPUWidth, cpuCellFloor)
+
+        XCTAssertGreaterThan(width(memText, memFont), caption * memSlot,
+                             "control: if this column stopped overflowing, the floor below is untested")
+        XCTAssertGreaterThanOrEqual(caption * memSlot / width(memText, memFont), rowFloor)
     }
 
     // MARK: - The gauge column reports the ring, not its cap
@@ -300,6 +394,195 @@ final class WidgetReadoutFitTests: XCTestCase {
             gaugeSize(proposing: CGSize(width: wide, height: 140)) { $0.frame(maxHeight: 96) },
             CGSize(width: 96, height: 96)
         )
+    }
+
+    // MARK: - The gauge column is a declared width, not a measured one
+
+    /// Every ring height the M and L rows offer, measured by hosting replicas of
+    /// the two bodies (`WidgetContainer` chrome, identity row, composition
+    /// legend / bar, core strip, process rows) at the board's own tile sizes over
+    /// board scales 0.7 … 2.0. `cellHeight` is `tileHeight / 2` (M) or `/ 4` (L);
+    /// `offeredHeight` is what the row leaves the ring before any cap, which is
+    /// the whole problem: it is not proportional to the tile (the container's
+    /// 11 pt inset and the 10…12 pt label clamp are fixed costs), so a column
+    /// that reported it could not be predicted from anything.
+    private struct GaugeRow {
+        let name: String
+        let cellHeight: CGFloat
+        let rows: Int
+        let identity: Bool
+        let legend: Bool
+        let offeredHeight: CGFloat
+    }
+
+    /// The six board scales, in each configuration that changes what is stacked
+    /// above or below the M ring; L's chrome also moves with its core strip and
+    /// process list, which is why it does not get a bound of its own.
+    private let gaugeRows: [GaugeRow] = [
+        GaugeRow(name: "M @0.7", cellHeight: 59.50, rows: 1, identity: true, legend: true, offeredHeight: 20.70),
+        GaugeRow(name: "M @0.85", cellHeight: 72.25, rows: 1, identity: true, legend: true, offeredHeight: 45.20),
+        GaugeRow(name: "M @1.0", cellHeight: 85.00, rows: 1, identity: true, legend: true, offeredHeight: 67.70),
+        GaugeRow(name: "M @1.25", cellHeight: 106.25, rows: 1, identity: true, legend: true, offeredHeight: 104.81),
+        GaugeRow(name: "M @1.6", cellHeight: 136.00, rows: 1, identity: true, legend: true, offeredHeight: 153.24),
+        GaugeRow(name: "M @2.0", cellHeight: 170.00, rows: 1, identity: true, legend: true, offeredHeight: 221.24),
+
+        GaugeRow(name: "M @0.7 no legend", cellHeight: 59.50, rows: 1, identity: true, legend: false, offeredHeight: 59.00),
+        GaugeRow(name: "M @0.85 no legend", cellHeight: 72.25, rows: 1, identity: true, legend: false, offeredHeight: 83.50),
+        GaugeRow(name: "M @1.0 no legend", cellHeight: 85.00, rows: 1, identity: true, legend: false, offeredHeight: 106.00),
+        GaugeRow(name: "M @1.25 no legend", cellHeight: 106.25, rows: 1, identity: true, legend: false, offeredHeight: 143.88),
+        GaugeRow(name: "M @1.6 no legend", cellHeight: 136.00, rows: 1, identity: true, legend: false, offeredHeight: 196.00),
+        GaugeRow(name: "M @2.0 no legend", cellHeight: 170.00, rows: 1, identity: true, legend: false, offeredHeight: 264.00),
+
+        GaugeRow(name: "M @0.7 no identity", cellHeight: 59.50, rows: 1, identity: false, legend: true, offeredHeight: 39.70),
+        GaugeRow(name: "M @0.85 no identity", cellHeight: 72.25, rows: 1, identity: false, legend: true, offeredHeight: 65.20),
+        GaugeRow(name: "M @1.0 no identity", cellHeight: 85.00, rows: 1, identity: false, legend: true, offeredHeight: 90.70),
+        GaugeRow(name: "M @1.25 no identity", cellHeight: 106.25, rows: 1, identity: false, legend: true, offeredHeight: 132.12),
+        GaugeRow(name: "M @1.6 no identity", cellHeight: 136.00, rows: 1, identity: false, legend: true, offeredHeight: 185.24),
+        GaugeRow(name: "M @2.0 no identity", cellHeight: 170.00, rows: 1, identity: false, legend: true, offeredHeight: 253.24),
+
+        GaugeRow(name: "M @0.7 bare", cellHeight: 59.50, rows: 1, identity: false, legend: false, offeredHeight: 78.00),
+        GaugeRow(name: "M @0.85 bare", cellHeight: 72.25, rows: 1, identity: false, legend: false, offeredHeight: 103.50),
+        GaugeRow(name: "M @1.0 bare", cellHeight: 85.00, rows: 1, identity: false, legend: false, offeredHeight: 129.00),
+        GaugeRow(name: "M @1.25 bare", cellHeight: 106.25, rows: 1, identity: false, legend: false, offeredHeight: 171.19),
+        GaugeRow(name: "M @1.6 bare", cellHeight: 136.00, rows: 1, identity: false, legend: false, offeredHeight: 228.00),
+        GaugeRow(name: "M @2.0 bare", cellHeight: 170.00, rows: 1, identity: false, legend: false, offeredHeight: 296.00),
+
+        GaugeRow(name: "L @0.7", cellHeight: 62.30, rows: 2, identity: true, legend: true, offeredHeight: 39.22),
+        GaugeRow(name: "L @0.85", cellHeight: 75.65, rows: 2, identity: true, legend: true, offeredHeight: 59.95),
+        GaugeRow(name: "L @1.0", cellHeight: 89.00, rows: 2, identity: true, legend: true, offeredHeight: 85.15),
+        GaugeRow(name: "L @1.25", cellHeight: 111.25, rows: 2, identity: true, legend: true, offeredHeight: 121.08),
+        GaugeRow(name: "L @1.6", cellHeight: 142.40, rows: 2, identity: true, legend: true, offeredHeight: 176.80),
+        GaugeRow(name: "L @2.0", cellHeight: 178.00, rows: 2, identity: true, legend: true, offeredHeight: 248.00),
+        // L with its core strip and process list gone — the row that makes the
+        // cap the only bound L can take.
+        GaugeRow(name: "L @0.7 bare", cellHeight: 62.30, rows: 2, identity: false, legend: false, offeredHeight: 101.10),
+    ]
+
+    private func gaugeSide(_ row: GaugeRow) -> CGFloat {
+        CPUWidgetView.gaugeSide(
+            cellHeight: row.cellHeight, rows: row.rows,
+            hasIdentityRow: row.identity, hasCompositionLegend: row.legend
+        )
+    }
+
+    /// The column may only ever be wider than the ring it holds. If it is ever
+    /// narrower the ring becomes width-limited and shrinks below what shipped.
+    func testGaugeSideNeverNarrowsTheRingItReserves() {
+        for row in gaugeRows {
+            let ring = min(CPUWidgetView.gaugeSideCap, row.offeredHeight)
+            XCTAssertGreaterThanOrEqual(
+                gaugeSide(row), ring,
+                "\(row.name): the column reserves \(gaugeSide(row)) pt for a \(ring) pt ring, which clips it"
+            )
+        }
+        // Control: the assertion above only bites on rows where the cap is NOT
+        // what sizes the ring, and there have to be some.
+        let tight = gaugeRows.filter { $0.offeredHeight < CPUWidgetView.gaugeSideCap }
+        XCTAssertGreaterThanOrEqual(tight.count, 10,
+                                    "every measured row is cap-limited; nothing above is tested")
+    }
+
+    /// What the column strands, tile by tile. The `maxWidth: 96` this replaced
+    /// stranded 28.30 pt on the desktop board's own M tile.
+    func testGaugeSideStrandsFarLessThanTheOldFixedWidth() throws {
+        let medium = try XCTUnwrap(gaugeRows.first { $0.name == "M @1.0" })
+        XCTAssertEqual(CPUWidgetView.gaugeSideCap - medium.offeredHeight, 28.30, accuracy: 0.01)
+        XCTAssertLessThanOrEqual(gaugeSide(medium) - medium.offeredHeight, 13)
+        // The ring is untouched, so a narrower column is exactly what it hands
+        // back to the trend curve. Most M rows land under the old fixed width;
+        // the rest are rows where the ring itself reaches the cap.
+        let narrowed = gaugeRows.filter { $0.rows == 1 && gaugeSide($0) < CPUWidgetView.gaugeSideCap }
+        XCTAssertGreaterThanOrEqual(
+            narrowed.count, 8,
+            "only \(narrowed.count) of the M rows got a narrower column than the 96 pt it replaced"
+        )
+    }
+
+    /// L takes the cap flat because its ring reaches it: with the core strip and
+    /// the process list gone the row offered 101.10 pt at board scale 0.7, above
+    /// the cap at the smallest tile there is.
+    func testLargeGaugeSideIsTheCapAtEveryInput() {
+        for row in gaugeRows where row.rows == 2 {
+            for identity in [true, false] {
+                for legend in [true, false] {
+                    XCTAssertEqual(
+                        CPUWidgetView.gaugeSide(cellHeight: row.cellHeight, rows: 2,
+                                                hasIdentityRow: identity, hasCompositionLegend: legend),
+                        CPUWidgetView.gaugeSideCap
+                    )
+                }
+            }
+        }
+    }
+
+    /// The composition legend — not the ring — is what the M column reports
+    /// below board scale 1.25, and its own width swings with the reading
+    /// ("USER 5%" … "USER 100%"). Widths measured headless at its widest.
+    func testGaugeSideReservesTheWidestCompositionLegend() {
+        let measured: [(cellHeight: CGFloat, label: CGFloat, legend: CGFloat)] = [
+            (59.50, 10, 80.00), (72.25, 10, 80.00), (85.00, 10, 80.00),
+            (106.25, 10.625, 81.72), (136.00, 12, 91.90), (170.00, 12, 91.90),
+        ]
+        for tile in measured {
+            XCTAssertEqual(Design.TypeScale(cellHeight: tile.cellHeight).label, tile.label, accuracy: 0.001)
+            XCTAssertGreaterThanOrEqual(
+                CPUWidgetView.gaugeSide(cellHeight: tile.cellHeight, rows: 1,
+                                        hasIdentityRow: true, hasCompositionLegend: true),
+                tile.legend,
+                "the legend truncates at cellHeight \(tile.cellHeight)"
+            )
+        }
+        // Control: on the desktop board's own M tile the ring term alone is
+        // under the legend, so the legend floor is what pins the column there.
+        let ringTerm = 85 * 2 - CPUWidgetView.gaugeChromeBase
+            - CPUWidgetView.gaugeChromeIdentityRow - CPUWidgetView.gaugeChromeCompositionLegend
+        XCTAssertEqual(ringTerm, 71.70, accuracy: 0.01)
+        XCTAssertLessThan(ringTerm, 80.00)
+    }
+
+    /// The whole point: the column reports the declared width whatever height
+    /// the row happens to offer. The height still comes from the row, which is
+    /// why the ring is unchanged — `gaugeSide` only ever bounds the width.
+    @MainActor
+    func testPinnedGaugeColumnReportsGaugeSideAtEveryOfferedHeight() {
+        let side = CPUWidgetView.gaugeSide(cellHeight: 85, rows: 1,
+                                           hasIdentityRow: true, hasCompositionLegend: true)
+        for offered: CGFloat in [20.70, 45.20, 67.70, 96, 140, 300] {
+            let size = gaugeSize(proposing: CGSize(width: 300, height: offered)) {
+                $0.frame(maxHeight: CPUWidgetView.gaugeSideCap)
+                    .frame(width: side, alignment: .leading)
+            }
+            XCTAssertEqual(size.width, side, accuracy: 0.01,
+                           "column moved to \(size.width) pt when the row offered \(offered) pt")
+            XCTAssertEqual(size.height, min(CPUWidgetView.gaugeSideCap, offered), accuracy: 0.01)
+        }
+    }
+
+    /// The pinned column must not make the gauge frame taller than the row it
+    /// sits in, or the M tile overflows. It cannot: `gaugeSide` only stays under
+    /// the cap while the row's own offer is under it too, so the height the cap
+    /// lets through is always the row's.
+    func testMediumGaugeSideIsNeverUnderWhatItsRowOffers() {
+        for row in gaugeRows where row.rows == 1 {
+            XCTAssertGreaterThanOrEqual(
+                gaugeSide(row), min(CPUWidgetView.gaugeSideCap, row.offeredHeight),
+                "\(row.name): a \(gaugeSide(row)) pt column under a \(row.offeredHeight) pt row"
+            )
+        }
+    }
+
+    /// Both bodies have to actually apply it; without this the function above
+    /// could be perfect and unused.
+    func testMediumAndLargeBodiesPinTheirGaugeColumn() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Monitor/Widgets/CPUWidgetView.swift")
+        for declaration in ["private func mediumBody(", "private func largeBody("] {
+            let body = try XCTUnwrap(Self.declarationBody(declaration, in: source),
+                                     "CPUWidgetView no longer declares \(declaration)")
+            XCTAssertTrue(
+                body.contains("width: Self.gaugeSide("),
+                "\(declaration) no longer pins its gauge column, so the row moves with the ring again"
+            )
+        }
     }
 
     /// Lays the real `ArcGauge` out under `cap` against `proposing` and returns

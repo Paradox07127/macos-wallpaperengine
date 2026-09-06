@@ -109,8 +109,9 @@ struct CPUWidgetView: View {
             cellHeight: cellHeight,
             status: { CPUStateDot(fraction: cpuFraction) }
         ) {
+            let identity = Self.identityLine(system?.cpuInfo)
             VStack(alignment: .leading, spacing: scale.label * 0.5) {
-                if let identity = Self.identityLine(system?.cpuInfo) {
+                if let identity {
                     identityRow(identity, scale: scale)
                 }
 
@@ -124,19 +125,21 @@ struct CPUWidgetView: View {
                         ) {
                             heroReadout(fraction: cpuFraction, baseSize: scale.hero * 1.05)
                         }
-                        // Capped by HEIGHT, not width: the ring is
-                        // `aspectRatio(1, .fit)`, so a `maxWidth: 96` frame
-                        // still reports 96 pt while the ring itself measured
-                        // 67.7 pt on a 356×170 tile — 28.3 pt of dead column
-                        // the trend curve could not reach. A height cap holds
-                        // the ring to the same size (measured identical at
-                        // board scales 0.7…2.0) and lets the frame report the
-                        // ring's own width.
-                        .frame(maxHeight: 96)
+                        // Height cap, so the ring is the same size it has always
+                        // been; the column beside it is pinned by `gaugeSide`.
+                        .frame(maxHeight: Self.gaugeSideCap)
                         if showComposition {
                             compositionLegend(userPct: userPct, sysPct: sysPct, scale: scale)
                         }
                     }
+                    .frame(
+                        width: Self.gaugeSide(
+                            cellHeight: cellHeight, rows: 1,
+                            hasIdentityRow: identity != nil,
+                            hasCompositionLegend: showComposition
+                        ),
+                        alignment: .leading
+                    )
 
                     VStack(alignment: .leading, spacing: scale.label * 0.5) {
                         if showHeatmap {
@@ -167,8 +170,9 @@ struct CPUWidgetView: View {
             cellHeight: cellHeight,
             status: { CPUStateDot(fraction: cpuFraction) }
         ) {
+            let identity = Self.identityLine(system?.cpuInfo)
             VStack(alignment: .leading, spacing: scale.label * 0.6) {
-                if let identity = Self.identityLine(system?.cpuInfo) {
+                if let identity {
                     identityRow(identity, scale: scale)
                 }
 
@@ -177,10 +181,15 @@ struct CPUWidgetView: View {
                     ArcGauge(value: cpuFraction, peak: peakFraction) {
                         heroReadout(fraction: cpuFraction, baseSize: scale.hero * 0.92)
                     }
-                    // Height cap for the reason spelled out in `mediumBody`;
-                    // the fixed 96 pt width reserved 10.85 pt the 85.15 pt ring
-                    // never used.
-                    .frame(maxHeight: 96)
+                    .frame(maxHeight: Self.gaugeSideCap)
+                    .frame(
+                        width: Self.gaugeSide(
+                            cellHeight: cellHeight, rows: 2,
+                            hasIdentityRow: identity != nil,
+                            hasCompositionLegend: showComposition
+                        ),
+                        alignment: .leading
+                    )
 
                     VStack(alignment: .leading, spacing: scale.label * 0.45) {
                         if showComposition {
@@ -809,6 +818,67 @@ extension CPUWidgetView {
 
     /// The "%" is drawn at this fraction of the digits' size at every call site.
     nonisolated static let heroUnitRatio: CGFloat = 0.4
+
+    /// Tallest ring the M and L tiles draw, at every board scale.
+    nonisolated static let gaugeSideCap: CGFloat = 96
+
+    /// Chrome stacked above the M ring at the smallest type size the scale
+    /// produces: 22 pt of `WidgetContainer` vertical inset, its header, and the
+    /// row spacing under it. Measured headless, board scales 0.7…2.0.
+    nonisolated static let gaugeChromeBase: CGFloat = 41
+    /// What the identity row and its spacing add to `gaugeChromeBase`.
+    nonisolated static let gaugeChromeIdentityRow: CGFloat = 19
+    /// What the composition legend and its spacing add to `gaugeChromeBase`.
+    nonisolated static let gaugeChromeCompositionLegend: CGFloat = 38.3
+    /// Legend chip width as a multiple of `scale.label`. Measured at its widest
+    /// reading ("USER 100%" / "SYS 100%", both `Text(verbatim:)`, so no locale
+    /// widens them): 80.00 pt at the 10 pt label, 81.72 at 10.625, 91.90 at 12 —
+    /// ratios 8.00 / 7.69 / 7.66, the peak being the 10 pt label where the 0.95×
+    /// legend font is still clamped up. 8.05 rather than a knife-edge 8.00 so
+    /// the chip is never a rounding error away from truncating.
+    nonisolated static let gaugeLegendSlots: CGFloat = 8.05
+
+    /// Width the arc-gauge column reserves. Pure in these inputs, so the trend
+    /// (M) / detail (L) column beside it holds still while the reading changes.
+    ///
+    /// It is an upper BOUND of the ring, not the ring: `ArcGauge` is
+    /// `aspectRatio(1, .fit)` and draws whatever height its row is left with,
+    /// so a column that reported that height moved every time the ring did.
+    /// The ring keeps its `gaugeSideCap` height cap and comes out the same size
+    /// as before at every board scale measured (M 20.70 / 45.20 / 67.70 / 96 /
+    /// 96 / 96 pt at 0.7 … 2.0).
+    ///
+    /// M subtracts the chrome from the tile's own height (`cellHeight * 2`),
+    /// taking the chrome at its smallest: chrome only grows with type size, so
+    /// the minimum can only over-reserve, never clip the ring. That term alone
+    /// strands at most 4.0 pt (board scale 1.0), against the 28.3 pt the
+    /// `maxWidth: 96` this replaced stranded there. The legend floor is what
+    /// actually sets the column below board scale 1.25, where the legend chip is
+    /// wider than the ring — and where its own width used to swing 13.0 pt as
+    /// the reading went from one digit to three, dragging the trend curve with
+    /// it. Column at 0.7 … 2.0 is 80.50 / 80.50 / 80.50 / 96 / 96 / 96 pt.
+    ///
+    /// L takes the cap flat: its ring already reaches 96 pt whenever the core
+    /// strip or the process list is absent (the row's residual measured 101.1 pt
+    /// at board scale 0.7 with both gone), and both come and go, so nothing
+    /// tighter holds for every L tile.
+    nonisolated static func gaugeSide(
+        cellHeight: CGFloat, rows: Int,
+        hasIdentityRow: Bool, hasCompositionLegend: Bool
+    ) -> CGFloat {
+        guard rows == 1 else { return gaugeSideCap }
+        var chrome = gaugeChromeBase
+        if hasIdentityRow {
+            chrome += gaugeChromeIdentityRow
+        }
+        if hasCompositionLegend {
+            chrome += gaugeChromeCompositionLegend
+        }
+        let legend = hasCompositionLegend
+            ? Design.TypeScale(cellHeight: cellHeight).label * gaugeLegendSlots
+            : 0
+        return min(gaugeSideCap, max(0, legend, cellHeight * 2 - chrome))
+    }
 
     /// Size the hero digits shrink to once the reading needs three of them.
     ///
