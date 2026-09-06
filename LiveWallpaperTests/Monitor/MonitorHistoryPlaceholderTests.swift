@@ -219,10 +219,13 @@ struct MonitorHistoryPlaceholderTests {
 
         // Board showing only network: CPU arrives as a placeholder zero every tick.
         // Strictly increasing and non-zero: `ingest` treats 0 as "absent" and
-        // drops any sample that does not advance the clock.
+        // drops any sample that does not advance the clock. Each tick carries
+        // its own measurement time, as a real poll does — without one an
+        // unchanged reading is a republish, not a sample.
         for index in 1...10 {
             var placeholder = Self.snapshot(cpuTotal: 0)
             placeholder.timestamp = Double(index)
+            placeholder.system?.sampledAt = Double(index)
             store.ingest(placeholder)
         }
         #expect(store.current.cpuTotal.count == 10)

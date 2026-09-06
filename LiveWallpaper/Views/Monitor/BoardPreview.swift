@@ -21,7 +21,8 @@ struct BoardPreviewArea: View {
     var backdrop: MonitorPreviewBackdrop = .none
 
     @State private var board: MonitorBoardConfiguration = .default
-    @State private var mode: MonitorBoardPreviewMode = .snapshot
+    /// Chosen in the inspector's settings, beside the other preview settings.
+    @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var mode: MonitorBoardPreviewMode = .snapshot
     /// Captured once per mode change, never on a sample arriving: a board the
     /// user is dragging tiles around in must not relayout under their hand.
     @State private var preview = MonitorBoardPreview(mode: .snapshot)
@@ -32,9 +33,9 @@ struct BoardPreviewArea: View {
         MonitorSafeAreaInsets.of(screen.nsScreen)
     }
 
-    /// The board is laid out at the display's own point size and the whole thing
-    /// is scaled down afterwards. Handing a tile the shrunken width instead
-    /// re-wraps its text, and the preview stops predicting the desktop.
+    /// The board lays out at the display's own point size and the host shrinks
+    /// itself to fit. Handing a tile the shrunken width instead re-wraps its
+    /// text, and the preview stops predicting the desktop.
     private var logicalSize: CGSize {
         CGSize(width: max(screen.frame.width, 1), height: max(screen.frame.height, 1))
     }
@@ -42,25 +43,21 @@ struct BoardPreviewArea: View {
     var body: some View {
         VStack(spacing: DesignTokens.Spacing.sm) {
             OverlayPreviewCanvas(screen: screen, backdrop: backdrop) {
-                GeometryReader { proxy in
-                    let scale = proxy.size.width > 0 ? proxy.size.width / logicalSize.width : 1
-                    BoardPreview(
-                        configuration: board,
-                        preview: preview,
-                        safeArea: safeArea,
-                        onConfigurationEdited: { edited in
-                            // The preview already reflects the drag; mirror it into our
-                            // state so the write-back doesn't bounce the tile.
-                            board = edited
-                            screenManager.setMonitorOverlayBoard(edited, for: screen)
-                        }
-                    )
-                    .frame(width: logicalSize.width, height: logicalSize.height)
-                    .scaleEffect(scale, anchor: .topLeading)
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-                }
+                BoardPreview(
+                    configuration: board,
+                    preview: preview,
+                    logicalSize: logicalSize,
+                    safeArea: safeArea,
+                    onConfigurationEdited: { edited in
+                        // The preview already reflects the drag; mirror it into our
+                        // state so the write-back doesn't bounce the tile.
+                        board = edited
+                        screenManager.setMonitorOverlayBoard(edited, for: screen)
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            controls
+            caption
         }
         .onAppear {
             reload()
@@ -77,31 +74,19 @@ struct BoardPreviewArea: View {
         }
     }
 
-    private var controls: some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            Picker(selection: $mode) {
-                ForEach(MonitorBoardPreviewMode.allCases, id: \.self) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            } label: {
-                EmptyView()
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-
-            Text(caption)
+    private var caption: some View {
+        HStack(spacing: 0) {
+            Text(captionText)
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-
             Spacer(minLength: 0)
         }
     }
 
     /// Says what the board is showing, so a frozen reading is never mistaken for
     /// a live one and the fixture is never mistaken for this Mac.
-    private var caption: String {
+    private var captionText: String {
         switch mode {
         case .names:
             return ""
@@ -140,6 +125,9 @@ struct BoardPreview: NSViewRepresentable {
     let configuration: MonitorBoardConfiguration
     /// Frozen contents; the preview host is never pushed a live snapshot.
     let preview: MonitorBoardPreview
+    /// The display's own point size; the host draws itself down to whatever
+    /// room the canvas has.
+    let logicalSize: CGSize
     /// Menu-bar / Dock zones, WYSIWYG with the real display.
     let safeArea: MonitorSafeAreaInsets
     let onConfigurationEdited: (MonitorBoardConfiguration) -> Void
@@ -155,6 +143,7 @@ struct BoardPreview: NSViewRepresentable {
             preview: preview,
             safeArea: safeArea
         )
+        host.logicalSize = logicalSize
         host.onConfigurationEdited = onConfigurationEdited
         context.coordinator.attach(host)
         // Defer published state changes until after SwiftUI's view-update transaction.
@@ -166,6 +155,7 @@ struct BoardPreview: NSViewRepresentable {
     }
 
     func updateNSView(_ host: HostView, context: Context) {
+        host.logicalSize = logicalSize
         host.onConfigurationEdited = onConfigurationEdited
         let needsApply = context.coordinator.lastAppliedConfiguration != configuration
         if needsApply {

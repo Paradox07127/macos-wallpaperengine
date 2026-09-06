@@ -14,6 +14,8 @@ enum MonitorBoardPreviewMode: String, CaseIterable, Sendable {
     /// Icon and name only — legible on a canvas too small for a real tile.
     case names
 
+    static let defaultsKey = "Monitor.PreviewMode"
+
     var title: LocalizedStringKey {
         switch self {
         case .snapshot: "Last reading"

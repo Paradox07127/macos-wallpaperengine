@@ -349,6 +349,7 @@ struct WPEPuppetVertex {
     float4 uv;
     uint4 skinBlendIndices;
     float4 skinBlendWeights;
+    float4 normal; // model-local; scene-model path only
 };
 
 struct WPEPuppetMeshUniforms {
@@ -358,7 +359,21 @@ struct WPEPuppetMeshUniforms {
 
 struct WPESceneModelMeshUniforms {
     float4x4 modelViewProjectionMatrix;
+    float4x4 modelMatrix;          // world position + normal rotation
+    float4x4 viewProjectionMatrix; // screen-space normal for the reflection offset
     float4 modeAndPadding; // x=bone palette count; y=skinning enabled; z,w reserved
+    float4 eyeAndPadding;  // xyz = g_EyePosition
+};
+
+// Ports generic2.vert / generic4.vert's per-vertex outputs. `worldNormal` and
+// `worldPos` feed the hemispheric ambient and the view vector; `screenPos` is
+// gl_Position.xyw, which generic4's REFLECTION block divides to get the screen UV.
+struct WPESceneModelVertexOut {
+    float4 position [[position]];
+    float2 uv;
+    float3 worldNormal;
+    float3 worldPos;
+    float3 screenPos;
 };
 
 // Puppet clip-composite path (WPE genericimage4 CLIPPINGUVS): carries the
@@ -405,6 +420,34 @@ static inline float4 wpe_skin_puppet_position(
     return skinned / weightSum;
 }
 
+static inline float3 wpe_skin_puppet_normal(
+    WPEPuppetVertex v,
+    constant float4x4* bonePalette,
+    uint paletteCount
+) {
+    float4 weights = max(v.skinBlendWeights, float4(0.0));
+    float weightSum = weights.x + weights.y + weights.z + weights.w;
+    if (weightSum <= 0.00001) {
+        return v.normal.xyz;
+    }
+    float3 source = v.normal.xyz;
+    float3 skinned = float3(0.0);
+    uint4 indices = v.skinBlendIndices;
+    float weightArray[4] = { weights.x, weights.y, weights.z, weights.w };
+    uint indexArray[4] = { indices.x, indices.y, indices.z, indices.w };
+    for (uint i = 0; i < 4; ++i) {
+        if (weightArray[i] <= 0.0) { continue; }
+        if (indexArray[i] < paletteCount) {
+            float4x4 bone = bonePalette[indexArray[i]];
+            float3x3 rotation = float3x3(bone[0].xyz, bone[1].xyz, bone[2].xyz);
+            skinned += weightArray[i] * (rotation * source);
+        } else {
+            skinned += weightArray[i] * source;
+        }
+    }
+    return skinned / weightSum;
+}
+
 vertex WPEVertexOut wpe_puppet_mesh_vertex(
     uint vertexID [[vertex_id]],
     constant WPEPuppetVertex* vertices [[buffer(0)]],
@@ -424,7 +467,7 @@ vertex WPEVertexOut wpe_puppet_mesh_vertex(
     return out;
 }
 
-vertex WPEVertexOut wpe_scene_model_mesh_vertex(
+vertex WPESceneModelVertexOut wpe_scene_model_mesh_vertex(
     uint vertexID [[vertex_id]],
     constant WPEPuppetVertex* vertices [[buffer(0)]],
     constant WPESceneModelMeshUniforms& u [[buffer(1)]],
@@ -432,13 +475,26 @@ vertex WPEVertexOut wpe_scene_model_mesh_vertex(
 ) {
     WPEPuppetVertex v = vertices[vertexID];
     uint paletteCount = uint(max(u.modeAndPadding.x, 0.0));
-    float4 position = (u.modeAndPadding.y > 0.5 && paletteCount > 0)
+    bool skinned = u.modeAndPadding.y > 0.5 && paletteCount > 0;
+    float4 position = skinned
         ? wpe_skin_puppet_position(v, bonePalette, paletteCount)
         : float4(v.position.xyz, 1.0);
+    // Skinning moves the surface, so the normal has to follow it. The palette
+    // is rigid here (bind-pose composition, no non-uniform per-bone scale), so
+    // the rotation part is the correct normal transform.
+    float3 localNormal = skinned
+        ? wpe_skin_puppet_normal(v, bonePalette, paletteCount)
+        : v.normal.xyz;
 
-    WPEVertexOut out;
+    WPESceneModelVertexOut out;
     out.position = u.modelViewProjectionMatrix * position;
     out.uv = v.uv.xy;
+    float4 worldPos = u.modelMatrix * position;
+    out.worldPos = worldPos.xyz;
+    out.worldNormal = normalize(float3x3(
+        u.modelMatrix[0].xyz, u.modelMatrix[1].xyz, u.modelMatrix[2].xyz
+    ) * localNormal);
+    out.screenPos = out.position.xyw;
     return out;
 }
 
@@ -916,13 +972,13 @@ static inline float2 wpe_logical_texture_uv(float2 uv, float2 scale) {
     return clamp(uv * max(scale, float2(0.0)), float2(0.0), float2(1.0));
 }
 
-fragment half4 wpe_genericimage2_fragment(
-    WPEVertexOut in [[stage_in]],
-    texture2d<half, access::sample> texture0 [[texture(0)]],
-    constant WPEGenericImageUniforms& uniforms [[buffer(0)]]
+static inline half4 wpe_genericimage2_shade(
+    float2 uv,
+    texture2d<half, access::sample> texture0,
+    constant WPEGenericImageUniforms& uniforms
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    float2 sourceUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.xy);
+    float2 sourceUV = wpe_logical_texture_uv(uv, uniforms.textureUVScale.xy);
     float4 sampled = float4(texture0.sample(linearSampler, sourceUV));
     float3 rgb = sampled.rgb * uniforms.color.rgb * uniforms.alphaMaskUV.y;
     float alpha = sampled.a * uniforms.color.a * uniforms.alphaMaskUV.x;
@@ -932,6 +988,25 @@ fragment half4 wpe_genericimage2_fragment(
     // semi-transparent texels (puppet hair edges) no longer decay by alpha^N
     // across the effect chain.
     return half4(float4(rgb * alpha, alpha));
+}
+
+fragment half4 wpe_genericimage2_fragment(
+    WPEVertexOut in [[stage_in]],
+    texture2d<half, access::sample> texture0 [[texture(0)]],
+    constant WPEGenericImageUniforms& uniforms [[buffer(0)]]
+) {
+    return wpe_genericimage2_shade(in.uv, texture0, uniforms);
+}
+
+/// Same shading, fed by `wpe_scene_model_mesh_vertex`: a `.mdl` layer whose
+/// material is an IMAGE shader (genericimage2/3/4) still draws its mesh, and the
+/// mesh vertex emits the richer scene-model varyings this stage_in must match.
+fragment half4 wpe_scene_model_image_fragment(
+    WPESceneModelVertexOut in [[stage_in]],
+    texture2d<half, access::sample> texture0 [[texture(0)]],
+    constant WPEGenericImageUniforms& uniforms [[buffer(0)]]
+) {
+    return wpe_genericimage2_shade(in.uv, texture0, uniforms);
 }
 
 fragment half4 wpe_genericimage4_fragment(
@@ -1018,45 +1093,106 @@ fragment half4 wpe_bloom_upsample_fragment(
 // scene lights reduces to the vertex hemispheric ambient
 // mix(g_LightSkylightColor, g_LightAmbientColor, N·up*0.5+0.5); CombineLighting
 // and the HDR brightness/emissive-overbright terms follow common_pbr_2.h. The
-// mesh vertex carries no normals, so the hemisphere mix is evaluated at its
-// midpoint — today's users (emissive-dominated suns, small planets) make the
-// residual invisible.
+// mesh vertex now carries real MDLV normals, so the hemisphere mix is evaluated
+// per vertex like WPE's.
 struct WPESceneModelGenericUniforms {
     float4 tintColorAlpha;   // rgb = g_TintColor (raw, WPE uploads unconverted), a = g_TintAlpha × layer alpha
     float4 emissive;         // rgb = g_EmissiveColor, w = g_EmissiveBrightness
-    float4 ambientLighting;  // rgb = mix(skylight, ambient, 0.5), w = LIGHTING combo
-    float4 brightnessFlags;  // x = g_Brightness × layer brightness, y = emissive map bound, z = scene HDR
+    float4 ambientLighting;  // rgb = g_LightAmbientColor, w = LIGHTING combo
+    float4 brightnessFlags;  // x = g_Brightness × layer brightness, y = emissive map bound, z = scene HDR, w = REFLECTION combo
+    float4 skylightColor;    // rgb = g_LightSkylightColor, w unused
+    /// x = g_Reflectivity, y = g_Roughness, z = g_Metallic, w = g_Texture3MipMapInfo (top mip index).
+    float4 reflection;
+    /// xy = render size in pixels, z = width/height (WPE `g_Screen`), w unused.
+    float4 screen;
 };
 
+/// Port of generic4.frag's `#if REFLECTION` block. `reflectionSource` is WPE's
+/// `g_Texture3` (`_rt_MipMappedFrameBuffer`): the scene rendered SO FAR, with a
+/// mip chain, so `roughness × mipInfo` blurs the mirror. The term is ADDITIVE and
+/// is not modulated by albedo — that is why 3470948192's droplet (albedo
+/// `util/black`, tint 0,0,0, metallic 1) is made ENTIRELY of this reflection.
+static inline float3 wpe_scene_model_reflection(
+    float3 worldNormal,
+    float3 viewVector,
+    float3 screenPos,
+    float4x4 viewProjectionMatrix,
+    texture2d<half, access::sample> reflectionSource,
+    constant WPESceneModelGenericUniforms& u
+) {
+    constexpr sampler reflectionSampler(address::clamp_to_edge, filter::linear, mip_filter::linear);
+    float reflectivity = u.reflection.x;
+    float roughness = u.reflection.y;
+    float metallic = u.reflection.z;
+
+    float2 screenUV = (screenPos.xy / screenPos.z) * 0.5 + 0.5;
+    float fresnelTerm = abs(dot(worldNormal, viewVector));
+    float3 normal = normalize(float3x3(
+        viewProjectionMatrix[0].xyz, viewProjectionMatrix[1].xyz, viewProjectionMatrix[2].xyz
+    ) * worldNormal);
+    // WPE's non-Android branch: constant on X, aspect-scaled on Y.
+    normal.xy = normal.xy * float2(0.15, 0.15 * u.screen.z);
+    screenUV += normal.xy * pow(fresnelTerm, 4.0) * 10.0;
+    float clipReflection = smoothstep(1.3, 1.0, screenUV.x) * smoothstep(-0.3, 0.0, screenUV.x)
+        * smoothstep(1.3, 1.0, screenUV.y) * smoothstep(-0.3, 0.0, screenUV.y);
+
+    // Metal textures are top-left origin; the scene capture is stored unflipped,
+    // so the clip-space Y from `screenPos` has to be flipped to sample it.
+    float2 sampleUV = float2(screenUV.x, 1.0 - screenUV.y);
+    float3 reflectionColor = float3(reflectionSource.sample(
+        reflectionSampler, sampleUV, level(roughness * u.reflection.w)
+    ).rgb) * clipReflection;
+    reflectionColor = reflectionColor * (1.0 - fresnelTerm) * reflectivity;
+    reflectionColor = pow(max(float3(0.001), reflectionColor), float3(2.0 - metallic));
+    return saturate(reflectionColor);
+}
+
 fragment half4 wpe_scene_model_generic4_fragment(
-    WPEVertexOut in [[stage_in]],
+    WPESceneModelVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     texture2d<half, access::sample> texture1 [[texture(1)]],
-    constant WPESceneModelGenericUniforms& u [[buffer(0)]]
+    texture2d<half, access::sample> texture3 [[texture(3)]],
+    constant WPESceneModelGenericUniforms& u [[buffer(0)]],
+    constant WPESceneModelMeshUniforms& mesh [[buffer(1)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 albedo = float4(texture0.sample(linearSampler, in.uv));
     albedo.rgb *= u.tintColorAlpha.rgb;
     float alpha = albedo.a * u.tintColorAlpha.a;
 
+    float3 worldNormal = normalize(in.worldNormal);
+    float3 viewVector = normalize(mesh.eyeAndPadding.xyz - in.worldPos);
     float maskAlpha = u.brightnessFlags.y > 0.5
         ? float(texture1.sample(linearSampler, in.uv).a)
         : 0.0;
     float3 light = max(float3(0.0), u.emissive.rgb * albedo.rgb * (maskAlpha * u.emissive.w));
+    float3 hemisphere = mix(
+        u.skylightColor.rgb, u.ambientLighting.rgb, dot(worldNormal, float3(0.0, 1.0, 0.0)) * 0.5 + 0.5
+    );
     float3 ambient = u.ambientLighting.w > 0.5
-        ? u.ambientLighting.rgb * albedo.rgb
+        ? hemisphere * albedo.rgb
         : albedo.rgb;
 
+    // Source order is CombineLighting → `#if REFLECTION` → `#if HDR`; keep it,
+    // the reflection is added BEFORE the brightness multiply and is what the
+    // emissive overbright then scales.
     float3 combined;
     if (u.brightnessFlags.z > 0.5) {
-        // CombineLighting HDR variant + `#if HDR` brightness/emissive overbright.
+        // CombineLighting HDR variant.
         float lightLen = length(light);
         float overbright = (saturate(lightLen - 2.0) * 0.5) / max(0.01, lightLen);
         combined = saturate(ambient + light) + light * overbright;
-        combined *= u.brightnessFlags.x;
-        combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
     } else {
         combined = ambient + light;
+    }
+    if (u.brightnessFlags.w > 0.5) {
+        combined += wpe_scene_model_reflection(
+            worldNormal, viewVector, in.screenPos, mesh.viewProjectionMatrix, texture3, u
+        );
+    }
+    if (u.brightnessFlags.z > 0.5) {
+        combined *= u.brightnessFlags.x;
+        combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
     }
     // Premultiplied-alpha render target — see wpe_genericimage2_fragment.
     return half4(float4(combined * alpha, alpha));
@@ -1068,10 +1204,11 @@ fragment half4 wpe_scene_model_generic4_fragment(
 // unconditionally), and the `#if HDR` brightness multiply is NOT preceded by a
 // saturate. The specular terms drop out because we feed no scene lights, so
 // g_LightsColorRadius stays 0 and every ComputeLightSpecular call returns 0.
-// The mesh vertex carries no normals, so mix(skylight, ambient, N·up*0.5+0.5)
-// is evaluated at its midpoint — same approximation the generic4 port makes.
+// generic2's REFLECTION samples `_rt_Reflection` (slot 2), NOT generic4's
+// mip-mapped frame buffer, so it is deliberately not wired here: no corpus scene
+// authors it, and guessing the source would be worse than leaving it off.
 fragment half4 wpe_scene_model_generic2_fragment(
-    WPEVertexOut in [[stage_in]],
+    WPESceneModelVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPESceneModelGenericUniforms& u [[buffer(0)]]
 ) {
@@ -1080,7 +1217,12 @@ fragment half4 wpe_scene_model_generic2_fragment(
     albedo.rgb *= u.tintColorAlpha.rgb;
     float alpha = albedo.a * u.tintColorAlpha.a;
 
-    float3 combined = albedo.rgb * u.ambientLighting.rgb;
+    float3 hemisphere = mix(
+        u.skylightColor.rgb,
+        u.ambientLighting.rgb,
+        dot(normalize(in.worldNormal), float3(0.0, 1.0, 0.0)) * 0.5 + 0.5
+    );
+    float3 combined = albedo.rgb * hemisphere;
     if (u.brightnessFlags.z > 0.5) {
         combined *= u.brightnessFlags.x;
     }

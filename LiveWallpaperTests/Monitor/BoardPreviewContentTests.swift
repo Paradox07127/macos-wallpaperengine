@@ -48,6 +48,7 @@ struct BoardPreviewContentTests {
         let preview = MonitorBoardPreview.resolve(mode: .sample, latest: nil)
         let snapshot = try #require(preview.snapshot)
         var combinations = 0
+        var covered: Set<MonitorWidgetKind> = []
         for kind in MonitorWidgetKind.allCases {
             for size in kind.allowedSizes {
                 combinations += 1
@@ -60,9 +61,15 @@ struct BoardPreviewContentTests {
                     now: preview.chartReference(fallback: Date())
                 )
                 #expect(context.readingsNotice == nil, "\(kind) \(size) had nothing to draw")
+                covered.insert(kind)
             }
         }
-        #expect(combinations == 24)
+        // Derived, not a literal: the point is that every kind and size the
+        // board offers has real content, so adding a widget must extend the
+        // coverage rather than fail this count.
+        let expected = MonitorWidgetKind.allCases.reduce(0) { $0 + $1.allowedSizes.count }
+        #expect(combinations == expected)
+        #expect(MonitorWidgetKind.allCases.allSatisfy { covered.contains($0) })
     }
 
     /// The chart window's reference is the frozen instant, so a preview left

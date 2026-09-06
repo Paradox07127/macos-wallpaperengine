@@ -20,7 +20,9 @@ enum PointerScope: Equatable, Sendable {
 final class HostView: NSView {
 
     private let dataModel: DataModel
-    private let interactionModel: InteractionModel
+    /// Internal rather than private so a test can drive a drag through the same
+    /// model the gesture uses.
+    let interactionModel: InteractionModel
     private let hostingView: NSHostingView<MonitorBoardRootContainer>
 
     private(set) var pointerScope: PointerScope
@@ -43,6 +45,28 @@ final class HostView: NSView {
 
     /// Live sky for the Weather tile. Nil in the preview and in tests.
     private let weatherService: WeatherReactiveService?
+
+    /// The point size the board lays out at, when that differs from the size
+    /// this view is drawn at — the inspector draws a whole desktop into a few
+    /// hundred points. Scaling is done by growing `bounds` past `frame` rather
+    /// than by a SwiftUI `scaleEffect`, because AppKit puts the same transform
+    /// on event coordinates: `hitTest` and `convert(_:from:)` keep working, and
+    /// tiles still lay their text out at the desktop's width.
+    var logicalSize: CGSize? {
+        didSet {
+            guard logicalSize != oldValue else { return }
+            applyLogicalBounds()
+            hostingView.frame = bounds
+        }
+    }
+
+    /// How much smaller than its own layout the board is drawn: 1 on the desktop.
+    /// Tiles that have to stay readable at any preview size read this.
+    private var renderScale: CGFloat {
+        bounds.width > 0 ? frame.width / bounds.width : 1
+    }
+
+    private var appliedRenderScale: CGFloat = 1
 
     private var pendingPersistTask: Task<Void, Never>?
     /// Retained with the debounced task so teardown can flush synchronously instead of losing the final edit on cancel.
@@ -157,7 +181,8 @@ final class HostView: NSView {
             reduceMotion: reduceMotion,
             suspended: isSuspended,
             preview: preview,
-            weatherService: weatherService
+            weatherService: weatherService,
+            renderScale: renderScale
         )
     }
 
@@ -212,7 +237,25 @@ final class HostView: NSView {
 
     override func layout() {
         super.layout()
+        applyLogicalBounds()
         hostingView.frame = bounds
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        applyLogicalBounds()
+        hostingView.frame = bounds
+    }
+
+    private func applyLogicalBounds() {
+        guard let logicalSize, logicalSize.width > 0, logicalSize.height > 0 else { return }
+        if bounds.size != logicalSize {
+            setBoundsSize(logicalSize)
+        }
+        if appliedRenderScale != renderScale {
+            appliedRenderScale = renderScale
+            rebuildRootView()
+        }
     }
 
     // MARK: - Persistence debounce
@@ -257,11 +300,13 @@ struct MonitorBoardRootContainer: View {
     var suspended: Bool = false
     var preview: MonitorBoardPreview?
     var weatherService: WeatherReactiveService?
+    var renderScale: CGFloat = 1
 
     var body: some View {
         RootView(model: model, data: data, preview: preview)
             .environment(\.monitorReduceMotion, reduceMotion)
             .environment(\.monitorSuspended, suspended)
+            .environment(\.monitorRenderScale, renderScale)
             .environment(\.monitorWeather, weatherService)
     }
 }
@@ -305,6 +350,16 @@ extension EnvironmentValues {
         get { self[MonitorReduceMotionKey.self] }
         set { self[MonitorReduceMotionKey.self] = newValue }
     }
+}
+
+// MARK: - Render scale environment
+
+extension EnvironmentValues {
+    /// The factor the whole board is drawn down by — 1 on the desktop, a
+    /// fraction in the inspector preview. Only tiles that must stay readable
+    /// regardless of preview size read it; a real widget deliberately shrinks
+    /// with the board so the preview predicts the desktop.
+    @Entry var monitorRenderScale: CGFloat = 1
 }
 
 // MARK: - Weather environment
