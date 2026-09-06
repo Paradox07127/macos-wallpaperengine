@@ -579,7 +579,7 @@ struct WorkshopInspectorContent: View {
 
     private func copy(_ value: String) {
         let pasteboard = NSPasteboard.general
-        pasteboard.declareTypes([.string], owner: nil)
+        pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
     }
 

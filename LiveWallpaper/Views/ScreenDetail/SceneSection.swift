@@ -153,15 +153,6 @@ struct SceneSection: View {
         }
     }
 
-    /// Only the scene-rendering flavour: bookmark and playback failures reach
-    /// the same banner but have nothing to do with engine assets.
-    private var isSceneRenderingFailure: Bool {
-        if case .sceneRenderingFailed = screenManager.runtimeError(for: screen) {
-            return true
-        }
-        return false
-    }
-
     private var hasActiveSceneWallpaper: Bool {
         guard let configuration = screenManager.getConfiguration(for: screen),
               case .scene = configuration.activeWallpaper,
@@ -180,7 +171,6 @@ struct SceneSection: View {
                 origin: origin,
                 descriptor: descriptor,
                 session: session,
-                hasSceneRenderingError: isSceneRenderingFailure,
                 fitMode: $fitMode,
                 playbackControls: playbackControls
             )

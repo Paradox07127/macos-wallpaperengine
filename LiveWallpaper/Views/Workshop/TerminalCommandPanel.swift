@@ -68,7 +68,7 @@ struct TerminalCommandPanel: View {
 
     private func copyToClipboard() {
         let pasteboard = NSPasteboard.general
-        pasteboard.declareTypes([.string], owner: nil)
+        pasteboard.clearContents()
         pasteboard.setString(command, forType: .string)
         onCopied()
     }

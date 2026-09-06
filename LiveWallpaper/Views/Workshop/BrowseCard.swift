@@ -338,7 +338,7 @@ struct BrowseCard: View, Equatable {
 
     private func copy(_ value: String) {
         let pasteboard = NSPasteboard.general
-        pasteboard.declareTypes([.string], owner: nil)
+        pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
     }
 }

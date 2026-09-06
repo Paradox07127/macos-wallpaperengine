@@ -109,7 +109,7 @@ struct WorkshopDiagnosticsSection: View {
         if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             let pasteboard = NSPasteboard.general
-            pasteboard.declareTypes([.string], owner: nil)
+            pasteboard.clearContents()
             pasteboard.setString(json, forType: .string)
             showingExportToast = true
         }
