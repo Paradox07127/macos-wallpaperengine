@@ -579,7 +579,16 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // library directly: an unlink walking the same item tree a running
         // `workshop_download_item` is writing would leave a half-deleted item
         // and a download that reports success over missing files.
+        let enqueuedAt = Date()
         Self.steamCMDQueue.async {
+            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+                let expired = SteamDeleteResult(
+                    outcome: .refused,
+                    freedBytes: 0,
+                    refusalReason: "deletion expired while queued behind another SteamCMD operation"
+                )
+                return reply((try? JSONEncoder().encode(expired)) ?? Data())
+            }
             let result = SteamLibraryWriter.deleteWorkshopItem(workshopID: workshopID, steamRoot: libraryRoot)
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }

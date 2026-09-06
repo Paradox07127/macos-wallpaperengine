@@ -545,7 +545,14 @@ struct VideoSessionLifecycleTests {
         #expect(player.contains("startsHidden: Bool = false"))
         #expect(player.contains("func prepareFrameRateLimit("))
         #expect(coordinator.contains("WallpaperSessionTransaction.prepareAndCommit("))
-        #expect(coordinator.contains("startsHidden: true"))
+        // The replacement player is built through the injectable factory now, so
+        // the hidden-start guarantee lives on the factory's default rather than
+        // at the call site.
+        #expect(coordinator.contains("makeVideoPlayer("))
+        let owner = try RepositoryRoot.source(
+            "LiveWallpaper/Runtime/Coordinators/PlaybackCoordinator.swift"
+        )
+        #expect(owner.contains("startsHidden: true"))
         #expect(coordinator.contains("PlainVideoFrameRateCompositionPolicy.compositionLimit("))
         #expect(coordinator.contains("await player.prepareFrameRateLimit("))
         #expect(coordinator.contains("player.prepareForCurrentComposition("))
