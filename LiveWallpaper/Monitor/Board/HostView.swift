@@ -48,25 +48,20 @@ final class HostView: NSView {
 
     /// The point size the board lays out at, when that differs from the size
     /// this view is drawn at — the inspector draws a whole desktop into a few
-    /// hundred points. Scaling is done by growing `bounds` past `frame` rather
-    /// than by a SwiftUI `scaleEffect`, because AppKit puts the same transform
-    /// on event coordinates: `hitTest` and `convert(_:from:)` keep working, and
-    /// tiles still lay their text out at the desktop's width.
+    /// hundred points. The shrinking itself is done *inside* the SwiftUI tree
+    /// this host embeds (`MonitorBoardRootContainer`), never by an AppKit
+    /// transform on the host: a `bounds`/`frame` mismatch — like an ancestor
+    /// `scaleEffect` around the representable — is invisible to the nested
+    /// `NSHostingView`, which keeps deriving pointer locations from the outer,
+    /// unscaled tree. Probed 2026-09-06: with either AppKit-side scale a drag
+    /// aimed at board (500,400) arrived as (125,100); with the scale inside,
+    /// as (500,400).
     var logicalSize: CGSize? {
         didSet {
             guard logicalSize != oldValue else { return }
-            applyLogicalBounds()
-            hostingView.frame = bounds
+            rebuildRootView()
         }
     }
-
-    /// How much smaller than its own layout the board is drawn: 1 on the desktop.
-    /// Tiles that have to stay readable at any preview size read this.
-    private var renderScale: CGFloat {
-        bounds.width > 0 ? frame.width / bounds.width : 1
-    }
-
-    private var appliedRenderScale: CGFloat = 1
 
     private var pendingPersistTask: Task<Void, Never>?
     /// Retained with the debounced task so teardown can flush synchronously instead of losing the final edit on cancel.
@@ -182,7 +177,7 @@ final class HostView: NSView {
             suspended: isSuspended,
             preview: preview,
             weatherService: weatherService,
-            renderScale: renderScale
+            logicalSize: logicalSize
         )
     }
 
@@ -237,25 +232,7 @@ final class HostView: NSView {
 
     override func layout() {
         super.layout()
-        applyLogicalBounds()
         hostingView.frame = bounds
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        applyLogicalBounds()
-        hostingView.frame = bounds
-    }
-
-    private func applyLogicalBounds() {
-        guard let logicalSize, logicalSize.width > 0, logicalSize.height > 0 else { return }
-        if bounds.size != logicalSize {
-            setBoundsSize(logicalSize)
-        }
-        if appliedRenderScale != renderScale {
-            appliedRenderScale = renderScale
-            rebuildRootView()
-        }
     }
 
     // MARK: - Persistence debounce
@@ -300,14 +277,40 @@ struct MonitorBoardRootContainer: View {
     var suspended: Bool = false
     var preview: MonitorBoardPreview?
     var weatherService: WeatherReactiveService?
-    var renderScale: CGFloat = 1
+    /// Set only by the inspector preview: the desktop point size the board must
+    /// lay out at while being drawn into a canvas a fraction of that size.
+    var logicalSize: CGSize?
 
     var body: some View {
+        if let logicalSize, logicalSize.width > 0, logicalSize.height > 0 {
+            GeometryReader { proxy in
+                let scale = Self.previewScale(available: proxy.size, logical: logicalSize)
+                board
+                    .frame(width: logicalSize.width, height: logicalSize.height)
+                    // The one place the board is shrunk. SwiftUI applies the
+                    // inverse to its own hit testing, which an AppKit-side
+                    // scale on the host would not reach.
+                    .scaleEffect(scale, anchor: .topLeading)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                    .environment(\.monitorRenderScale, scale)
+            }
+        } else {
+            board
+        }
+    }
+
+    private var board: some View {
         RootView(model: model, data: data, preview: preview)
             .environment(\.monitorReduceMotion, reduceMotion)
             .environment(\.monitorSuspended, suspended)
-            .environment(\.monitorRenderScale, renderScale)
             .environment(\.monitorWeather, weatherService)
+    }
+
+    /// How far a `logical`-sized board is shrunk to fit `available`. 1 whenever
+    /// there is nothing to shrink, so a desktop board is never scaled.
+    static func previewScale(available: CGSize, logical: CGSize?) -> CGFloat {
+        guard let logical, logical.width > 0, available.width > 0 else { return 1 }
+        return available.width / logical.width
     }
 }
 
