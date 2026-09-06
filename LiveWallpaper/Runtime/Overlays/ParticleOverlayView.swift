@@ -9,6 +9,8 @@ final class ParticleOverlayView: NSView {
     private var currentEffect: ParticleEffect = .none
 
     private var activeEmitter: CAEmitterLayer?
+    /// Meteors fly on their own layers rather than out of an emitter.
+    private var meteorShower: MeteorShower?
     private(set) var isSuspended = false
 
     // MARK: - Layer Hosting
@@ -53,8 +55,18 @@ final class ParticleOverlayView: NSView {
             oldEmitter.removeFromSuperlayer()
             activeEmitter = nil
         }
+        meteorShower?.detach()
+        meteorShower = nil
 
         guard effect != .none else { return }
+
+        if effect == .meteors, let hostLayer = layer {
+            let shower = MeteorShower()
+            shower.attach(to: hostLayer, bounds: bounds, density: density)
+            shower.setSuspended(isSuspended)
+            meteorShower = shower
+            return
+        }
 
         let emitter = CAEmitterLayer()
         emitter.emitterMode = .surface
@@ -77,6 +89,7 @@ final class ParticleOverlayView: NSView {
 
     func updateDensity(_ density: CGFloat) {
         activeEmitter?.birthRate = Float(max(0.05, density))
+        meteorShower?.updateDensity(density)
     }
 
     /// Rebuilds for a new lean, not a rotation: rotating swings the emission line off the
@@ -101,6 +114,7 @@ final class ParticleOverlayView: NSView {
         if let activeEmitter {
             applySuspensionState(to: activeEmitter)
         }
+        meteorShower?.setSuspended(suspended)
     }
 
     private func applySuspensionState(to emitter: CAEmitterLayer) {
@@ -129,12 +143,23 @@ final class ParticleOverlayView: NSView {
     func debugCells(for effect: ParticleEffect, tilt: CGFloat) -> [CAEmitterCell] {
         preset(for: effect, tilt: tilt).cells
     }
+
+    /// Where a preset puts its emission region for a given frame — the other
+    /// half of a preset, and the half that decides whether particles are born
+    /// in view or walk in from outside it.
+    func debugEmitterGeometry(
+        for effect: ParticleEffect, tilt: CGFloat, bounds: CGRect
+    ) -> (position: CGPoint, size: CGSize) {
+        let preset = preset(for: effect, tilt: tilt)
+        return (preset.position(bounds), preset.size(bounds))
+    }
     #endif
 
     // MARK: - Layout
 
     override func layout() {
         super.layout()
+        meteorShower?.updateBounds(bounds)
         guard let emitter = activeEmitter, currentEffect != .none else { return }
         emitter.frame = bounds
         let preset = preset(for: currentEffect, tilt: tiltRadians)
@@ -174,7 +199,8 @@ final class ParticleOverlayView: NSView {
         case .mist: Self.mistPreset
         case .embers: Self.embersPreset
         case .bubbles: Self.bubblesPreset
-        case .meteors: Self.meteorsPreset
+        // Flown by `MeteorShower` on its own layer, not emitted.
+        case .meteors: Self.emptyPreset
         }
     }
 
@@ -507,52 +533,9 @@ final class ParticleOverlayView: NSView {
     }()
 
     // MARK: - Meteors
-
-    /// A sparse shower of shooting stars across the upper sky. Deliberately rare and
-    /// fast: a meteor always on screen is a streak of rain. The slant is fixed rather
-    /// than wind-driven — meteors come in on their own path, and the whole field
-    /// sharing one angle is what reads as a radiant shower rather than noise.
-    private static let meteorsPreset: EmitterPreset = {
-        // Shallow enough to read as "across the sky" rather than "falling".
-        let slant: CGFloat = 1.0
-        let makeLayer = {
-            (scale: CGFloat, velocity: CGFloat, birthRate: Float,
-             length: CGFloat, width: CGFloat, alpha: CGFloat) -> CAEmitterCell in
-            let cell = CAEmitterCell()
-            cell.contents = ParticleTextures.comet(
-                length: length, width: width,
-                color: NSColor(calibratedRed: 0.92, green: 0.96, blue: 1.0, alpha: alpha).cgColor,
-                tilt: slant
-            )
-            cell.birthRate = birthRate
-            cell.lifetime = 2.2
-            cell.lifetimeRange = 0.6
-            cell.velocity = velocity
-            cell.velocityRange = velocity * 0.2
-            cell.emissionLongitude = -.pi / 2 + slant
-            cell.emissionRange = .pi / 60
-            cell.scale = scale
-            cell.scaleRange = scale * 0.3
-            cell.alphaRange = 0.25
-            // Burns out rather than blinking off at the end of its life.
-            cell.alphaSpeed = -Float(alpha) / 2.2
-            cell.color = NSColor(white: 1, alpha: alpha).cgColor
-            return cell
-        }
-
-        let bright = makeLayer(1.1, 900, 0.5, 200, 3.0, 0.9)
-        let faint = makeLayer(0.6, 700, 1.1, 150, 2.2, 0.5)
-
-        return EmitterPreset(
-            cells: [bright, faint],
-            shape: .rectangle,
-            renderMode: .additive,
-            // Along the top, reaching well past the upwind edge so the slant
-            // does not leave one corner empty.
-            position: { CGPoint(x: $0.midX, y: $0.maxY) },
-            size: { CGSize(width: $0.width * 3.0, height: EmitterPreset.bandThickness) }
-        )
-    }()
+    //
+    // Not an emitter preset: see `MeteorShower`. A shooting star needs to brighten
+    // before it fades, and `CAEmitterCell` only offers a straight-line `alphaSpeed`.
 
     // MARK: - Bokeh
 
@@ -793,8 +776,8 @@ final class ParticleOverlayView: NSView {
 //
 // CAEmitterCell needs CGImage textures; CGBitmapContext is reliable here.
 
-private enum ParticleTextures {
-
+/// Shared with `MeteorShower`, which flies one of these sprites on its own layer.
+enum ParticleTextures {
     private static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
 
     private static func makeContext(width: Int, height: Int) -> CGContext? {
@@ -1013,16 +996,18 @@ private enum ParticleTextures {
     }
 
     /// A meteor: a hot round head with a long tail behind it. Same lean-baked-into-the-
-    /// bitmap trick as ``streak`` — rotating the emitter would swing its emission line
-    /// off the screen — but the brightness runs the other way: a raindrop is a uniform
-    /// blur, a meteor is a burning object with a trail, so nearly all the light is at
-    /// the leading end and the tail is what is left behind it.
+    /// bitmap trick as ``streak`` — the sprite is flown along its own axis, so the angle
+    /// has to be in the pixels — but the brightness runs the other way: a raindrop is a
+    /// uniform blur, a meteor is a burning object with a trail, so nearly all the light
+    /// is at the leading end and the tail is what is left behind it.
     static func comet(
         length: CGFloat, width: CGFloat, color: CGColor, tilt: CGFloat
     ) -> CGImage? {
-        let head = width * 1.8
-        let w = max(Int(ceil(abs(length * sin(tilt)) + head)), 4)
-        let h = max(Int(ceil(abs(length * cos(tilt)) + head)), 4)
+        let head = max(width * 2.6, 4)
+        // Room for the head glow on every side. Sized to the streak alone, the rotated
+        // glow ran off the canvas and the head came out as a hard little square.
+        let w = max(Int(ceil(abs(length * sin(tilt)) + abs(width * cos(tilt)) + head * 2)), 8)
+        let h = max(Int(ceil(abs(length * cos(tilt)) + abs(width * sin(tilt)) + head * 2)), 8)
         guard let ctx = makeContext(width: w, height: h) else { return nil }
         ctx.translateBy(x: CGFloat(w) / 2, y: CGFloat(h) / 2)
         ctx.rotate(by: tilt)
@@ -1030,21 +1015,34 @@ private enum ParticleTextures {
 
         guard let opaque = color.copy(alpha: 1.0), let clear = color.copy(alpha: 0.0),
               let tail = CGGradient(
-                colorsSpace: colorSpace,
-                colors: [clear, opaque] as CFArray,
-                locations: [0.0, 1.0]
+                  colorsSpace: colorSpace,
+                  colors: [clear, opaque] as CFArray,
+                  locations: [0.0, 1.0]
               )
         else { return nil }
 
-        // Tail: drawn from the trailing end (top of the local box) down to the
-        // head, tapered across its width so it does not alias into a bar.
+        // Tail: drawn from the trailing end (top of the local box) down to the head, and
+        // narrowing towards that end — a parallel bar reads as a scratch on the glass.
+        let taper = CGMutablePath()
+        let tailInset = width * 0.42
+        taper.move(to: CGPoint(x: 0, y: 0))
+        taper.addLine(to: CGPoint(x: width, y: 0))
+        taper.addLine(to: CGPoint(x: width - tailInset, y: length))
+        taper.addLine(to: CGPoint(x: tailInset, y: length))
+        taper.closeSubpath()
+        ctx.saveGState()
+        ctx.addPath(taper)
+        ctx.clip()
         let steps = max(Int(ceil(width)), 2)
-        for column in 0..<steps {
+        let edges = stride(from: 0, to: steps, by: 1).map { column -> CGFloat in
             let t = (CGFloat(column) + 0.5) / CGFloat(steps)
-            let edge = 1 - abs(t * 2 - 1)
+            return 1 - abs(t * 2 - 1)
+        }
+        let peak = edges.max() ?? 1
+        for (column, edge) in edges.enumerated() {
             ctx.saveGState()
             ctx.clip(to: CGRect(x: CGFloat(column), y: 0, width: 1, height: length))
-            ctx.setAlpha(edge * edge)
+            ctx.setAlpha((edge / peak) * (edge / peak))
             ctx.drawLinearGradient(
                 tail,
                 start: CGPoint(x: 0, y: length),
@@ -1053,14 +1051,27 @@ private enum ParticleTextures {
             )
             ctx.restoreGState()
         }
+        ctx.restoreGState()
 
-        if let core = color.copy(alpha: 1.0), let gone = color.copy(alpha: 0.0),
-           let glow = CGGradient(
-            colorsSpace: colorSpace, colors: [core, gone] as CFArray, locations: [0.0, 1.0]
+        // Head: a wide soft halo with a hot core inside it. One gradient alone gave
+        // either a dim smudge or a hard dot.
+        let at = CGPoint(x: width / 2, y: 0)
+        if let halo = color.copy(alpha: 0.45), let gone = color.copy(alpha: 0.0),
+           let bloom = CGGradient(
+               colorsSpace: colorSpace, colors: [halo, gone] as CFArray, locations: [0.0, 1.0]
            ) {
-            let at = CGPoint(x: width / 2, y: 0)
             ctx.drawRadialGradient(
-                glow, startCenter: at, startRadius: 0, endCenter: at, endRadius: head,
+                bloom, startCenter: at, startRadius: 0, endCenter: at, endRadius: head,
+                options: []
+            )
+        }
+        if let core = color.copy(alpha: 1.0), let gone = color.copy(alpha: 0.0),
+           let hot = CGGradient(
+               colorsSpace: colorSpace, colors: [core, core, gone] as CFArray,
+               locations: [0.0, 0.35, 1.0]
+           ) {
+            ctx.drawRadialGradient(
+                hot, startCenter: at, startRadius: 0, endCenter: at, endRadius: head * 0.42,
                 options: []
             )
         }
