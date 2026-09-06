@@ -30,7 +30,7 @@ struct PanelChrome: ViewModifier {
     /// `.glassEffect` truly refracts through a desktop-level `OverlayWindow` onto the wallpaper behind it (not just its own
     /// window) — a two-colour backdrop showed through, seam bending at the edge.
     private func glassCard(_ content: Content) -> some View {
-        content
+        inkBacked(content)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .adaptiveGlassScrimmed(
                 cornerRadius: cornerRadius,
@@ -42,9 +42,22 @@ struct PanelChrome: ViewModifier {
             .environment(\.colorScheme, .dark)
     }
 
+    /// The readouts' own dark ground, for the settings where the card no longer
+    /// supplies one. Clipped away with the card, so it never leaks past the edge.
+    @ViewBuilder
+    private func inkBacked(_ content: Content) -> some View {
+        if let backing = MonitorPanelAppearance.inkBacking(
+            tintHex: tintHex, opacity: panelOpacity, reduceTransparency: reduceTransparency
+        ) {
+            content.shadow(color: backing, radius: MonitorPanelAppearance.inkBackingRadius)
+        } else {
+            content
+        }
+    }
+
     private func paintedCard(_ content: Content) -> some View {
         let fill = MonitorPanelAppearance.fill(tintHex: tintHex, opacity: panelOpacity, reduceTransparency: reduceTransparency)
-        return content
+        return inkBacked(content)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(

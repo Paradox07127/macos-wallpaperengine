@@ -320,6 +320,46 @@ struct WPEMdlParserTests {
         ])
     }
 
+    /// The normal used to be `skipKnownBytes`'d. The 3D scene-model path needs it:
+    /// generic2/generic4 evaluate `mix(skylight, ambient, N·up*0.5+0.5)` from it,
+    /// and generic4's screen-space reflection offsets its sample by it — with no
+    /// normal the 3470948192 droplet had nothing to reflect with.
+    @Test("MDLV vertex normals are parsed, not skipped")
+    func parsesMDLVVertexNormals() throws {
+        let normals = [
+            SIMD3<Float>(0, 1, 0),
+            SIMD3<Float>(1, 0, 0),
+            SIMD3<Float>(0, 0, -1),
+        ]
+        let mesh = try #require(
+            WPEMdlParser.parse(data: makeSingleTriangleMDLV23(normals: normals)).meshes.first
+        )
+        #expect(mesh.vertices.map(\.normal) == normals)
+        // Control: the vertex reader consumed exactly three floats, so everything
+        // after the normal still lands on its own field.
+        #expect(mesh.vertices.map(\.position) == [
+            SIMD3<Float>(-10, -20, 0),
+            SIMD3<Float>(10, -20, 0),
+            SIMD3<Float>(0, 20, 0),
+        ])
+        #expect(mesh.vertices.map(\.uv) == [
+            SIMD2<Float>(0, 1),
+            SIMD2<Float>(1, 1),
+            SIMD2<Float>(0.5, 0),
+        ])
+    }
+
+    /// A mesh whose flags omit the normal keeps +Z rather than the zero vector:
+    /// both model shaders normalize it, and a zero would come back NaN.
+    @Test("A mesh with no authored normal falls back to +Z")
+    func unauthoredNormalFallsBackToPlusZ() throws {
+        let mesh = try #require(
+            WPEMdlParser.parse(data: makeSingleTriangleMDLV16SceneModel(includeNormal: false)).meshes.first
+        )
+        #expect(!mesh.vertices.isEmpty)
+        #expect(mesh.vertices.allSatisfy { $0.normal == SIMD3<Float>(0, 0, 1) })
+    }
+
     @Test("Preserves MDLV23 clip masks and source-target part-table indices")
     func parsesMDLV23ClipGroups() throws {
         var data = makeSingleTriangleMDLV23()
@@ -815,7 +855,7 @@ struct WPEMdlParserTests {
         #expect(model.meshes.first?.vertices.count == 1)
     }
 
-    private func makeSingleTriangleMDLV23() -> Data {
+    private func makeSingleTriangleMDLV23(normals: [SIMD3<Float>] = []) -> Data {
         var data = Data()
         data.append(contentsOf: Array("MDLV0023".utf8))
         data.appendLE(UInt32(0x80000900))
@@ -836,7 +876,7 @@ struct WPEMdlParserTests {
             (SIMD3<Float>(-10, -20, 0), SIMD2<Float>(0, 1)),
             (SIMD3<Float>(10, -20, 0), SIMD2<Float>(1, 1)),
             (SIMD3<Float>(0, 20, 0), SIMD2<Float>(0.5, 0))
-        ])
+        ], normals: normals)
         data.appendLE(UInt32(vertexData.count))
         data.append(vertexData)
 
@@ -1159,7 +1199,7 @@ struct WPEMdlParserTests {
         return data
     }
 
-    private func makeSingleTriangleMDLV16SceneModel() -> Data {
+    private func makeSingleTriangleMDLV16SceneModel(includeNormal: Bool = true) -> Data {
         var data = Data()
         data.append(contentsOf: Array("MDLV0016".utf8))
         data.appendLE(UInt32(0x00000f00))
@@ -1169,12 +1209,19 @@ struct WPEMdlParserTests {
 
         data.appendCString("materials/models/Hollow Cylinder/diffuse_0.json")
         data.appendLE(UInt32(0))
-        data.appendLE(UInt32(0x0000000f))
+        // 0xF is position|normal|tangent|uv; clearing 0x2 drops the normal.
+        data.appendLE(UInt32(includeNormal ? 0x0000_000F : 0x0000_000D))
 
         var vertices = Data()
-        vertices.appendSceneModelVertex(position: SIMD3<Float>(-1, -1, 0), uv: SIMD2<Float>(0, 1))
-        vertices.appendSceneModelVertex(position: SIMD3<Float>(1, -1, 0), uv: SIMD2<Float>(1, 1))
-        vertices.appendSceneModelVertex(position: SIMD3<Float>(0, 1, 0), uv: SIMD2<Float>(0.5, 0))
+        vertices.appendSceneModelVertex(
+            position: SIMD3<Float>(-1, -1, 0), uv: SIMD2<Float>(0, 1), includeNormal: includeNormal
+        )
+        vertices.appendSceneModelVertex(
+            position: SIMD3<Float>(1, -1, 0), uv: SIMD2<Float>(1, 1), includeNormal: includeNormal
+        )
+        vertices.appendSceneModelVertex(
+            position: SIMD3<Float>(0, 1, 0), uv: SIMD2<Float>(0.5, 0), includeNormal: includeNormal
+        )
         data.appendLE(UInt32(vertices.count))
         data.append(vertices)
 
@@ -1338,15 +1385,19 @@ private extension Data {
         appendCString("{}")
     }
 
-    static func puppetVertices(_ vertices: [(position: SIMD3<Float>, uv: SIMD2<Float>)]) -> Data {
+    static func puppetVertices(
+        _ vertices: [(position: SIMD3<Float>, uv: SIMD2<Float>)],
+        normals: [SIMD3<Float>] = []
+    ) -> Data {
         var data = Data()
-        for vertex in vertices {
+        for (index, vertex) in vertices.enumerated() {
+            let normal = index < normals.count ? normals[index] : SIMD3<Float>(0, 0, 1)
             data.appendLE(vertex.position.x)
             data.appendLE(vertex.position.y)
             data.appendLE(vertex.position.z)
-            data.appendLE(Float(0))
-            data.appendLE(Float(0))
-            data.appendLE(Float(1))
+            data.appendLE(normal.x)
+            data.appendLE(normal.y)
+            data.appendLE(normal.z)
             data.appendLE(Float(1))
             data.appendLE(Float(0))
             data.appendLE(Float(0))
@@ -1365,13 +1416,19 @@ private extension Data {
         return data
     }
 
-    mutating func appendSceneModelVertex(position: SIMD3<Float>, uv: SIMD2<Float>) {
+    mutating func appendSceneModelVertex(
+        position: SIMD3<Float>,
+        uv: SIMD2<Float>,
+        includeNormal: Bool = true
+    ) {
         appendLE(position.x)
         appendLE(position.y)
         appendLE(position.z)
-        appendLE(Float(0))
-        appendLE(Float(0))
-        appendLE(Float(1))
+        if includeNormal {
+            appendLE(Float(0))
+            appendLE(Float(0))
+            appendLE(Float(1))
+        }
         appendLE(Float(1))
         appendLE(Float(0))
         appendLE(Float(0))

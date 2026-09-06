@@ -30,6 +30,7 @@ struct MonitorOverlaySection: View {
                 layerRow
                 Divider()
                 OverlayBackdropRow(available: backdropAvailable)
+                MonitorPreviewModeRow()
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())
@@ -78,6 +79,32 @@ struct MonitorOverlaySection: View {
         }
     }
 
+}
+
+/// What the board preview draws. A setting rather than a control on the preview
+/// itself: it sits with the backdrop switch because both describe the preview,
+/// and neither changes anything on the desktop.
+struct MonitorPreviewModeRow: View {
+    @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var mode: MonitorBoardPreviewMode = .snapshot
+
+    var body: some View {
+        SettingRow(
+            icon: "rectangle.on.rectangle.angled",
+            iconColor: .purple,
+            title: "Preview Contents",
+            info: "What the board preview draws: this display's last reading, fixed sample data, or just the instrument names"
+        ) {
+            Picker("", selection: $mode) {
+                ForEach(MonitorBoardPreviewMode.allCases, id: \.self) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityLabel(Text("Preview Contents"))
+        }
+    }
 }
 
 /// The preview's wallpaper backdrop, shown on every overlay page.

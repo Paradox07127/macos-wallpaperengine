@@ -633,7 +633,8 @@ extension WPEMetalRenderExecutor {
             var uniforms = sceneModelGenericUniforms(
                 for: pass,
                 layer: layer,
-                hasComponentMap: false
+                hasComponentMap: false,
+                materialShader: .generic2
             )
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else if materialShader == .genericImage4 {
@@ -673,16 +674,24 @@ extension WPEMetalRenderExecutor {
                 }
             }
             encoder.setFragmentTexture(componentMap ?? primary, index: 1)
+            // `g_Texture3` = `_rt_MipMappedFrameBuffer`. Falling back to `primary`
+            // keeps the slot bound (Metal requires it), and the REFLECTION flag
+            // below is gated on the capture existing so the fallback is never read.
+            let reflectionSource = reflectionSourceTexture
+            encoder.setFragmentTexture(reflectionSource ?? primary, index: 3)
             var uniforms = sceneModelGenericUniforms(
                 for: pass,
                 layer: layer,
-                hasComponentMap: componentMap != nil
+                hasComponentMap: componentMap != nil,
+                materialShader: .genericImage4,
+                hasReflectionSource: reflectionSource != nil,
+                reflectionTopMipLevel: (reflectionSource?.mipmapLevelCount ?? 1) - 1
             )
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else {
             encoder.setRenderPipelineState(try renderPipeline(
                 vertexName: "wpe_scene_model_mesh_vertex",
-                fragmentName: "wpe_genericimage2_fragment",
+                fragmentName: "wpe_scene_model_image_fragment",
                 blendMode: pass.pass.blending,
                 colorPixelFormat: destination.texture.pixelFormat,
                 depthPixelFormat: depthPixelFormat
@@ -703,6 +712,13 @@ extension WPEMetalRenderExecutor {
         var meshUniforms = sceneModelMeshUniforms(for: layer, frameState: frameState, paletteState: paletteState)
         try bindPuppetBonePalette(paletteState.bonePalette, encoder: encoder)
         encoder.setVertexBytes(
+            &meshUniforms,
+            length: MemoryLayout<WPESceneModelMeshUniforms>.stride,
+            index: 1
+        )
+        // generic4's reflection needs the eye position and the view-projection in
+        // the FRAGMENT stage too (view vector, screen-space normal offset).
+        encoder.setFragmentBytes(
             &meshUniforms,
             length: MemoryLayout<WPESceneModelMeshUniforms>.stride,
             index: 1
@@ -1102,7 +1118,7 @@ extension WPEMetalRenderExecutor {
         return (layer.imagePath as NSString).pathExtension.lowercased() == "mdl"
     }
 
-    enum SceneModelMaterialShader {
+    enum SceneModelMaterialShader: Equatable {
         case generic2
         case genericImage2
         case genericImage4
@@ -1150,14 +1166,18 @@ extension WPEMetalRenderExecutor {
             )
         )
         let viewProjection = Self.matrix(fromColumnMajorDoubles: frameState.cameraUniforms.viewProjectionMatrix)
+        let eye = frameState.cameraUniforms.sceneCamera.eye
         return WPESceneModelMeshUniforms(
             modelViewProjectionMatrix: viewProjection * modelMatrix,
+            modelMatrix: modelMatrix,
+            viewProjectionMatrix: viewProjection,
             modeAndPadding: SIMD4<Float>(
                 Float(paletteState.bonePalette.count),
                 paletteState.skinningEnabled,
                 0,
                 0
-            )
+            ),
+            eyeAndPadding: SIMD4<Float>(Float(eye.x), Float(eye.y), Float(eye.z), 0)
         )
     }
 
@@ -2376,7 +2396,8 @@ extension WPEMetalRenderExecutor {
                     vertex.skinBlendWeights.y,
                     vertex.skinBlendWeights.z,
                     vertex.skinBlendWeights.w
-                )
+                ),
+                normal: SIMD4<Float>(vertex.normal.x, vertex.normal.y, vertex.normal.z, 0)
             )
         }
         let vertexBuffer = vertices.withUnsafeBytes { rawBuffer in

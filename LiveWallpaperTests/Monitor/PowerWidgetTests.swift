@@ -1,6 +1,7 @@
-import Testing
+import AppKit
 import Foundation
 @testable import LiveWallpaper
+import Testing
 
 @Suite("Monitor power widget")
 struct PowerWidgetTests {
@@ -114,8 +115,18 @@ struct PowerWidgetTests {
     func accessorySymbolMapping() {
         #expect(MonitorPowerModel.accessorySymbol("mouse") == "magicmouse")
         #expect(MonitorPowerModel.accessorySymbol("keyboard") == "keyboard")
-        #expect(MonitorPowerModel.accessorySymbol("trackpad") == "trackpad")
+        #expect(MonitorPowerModel.accessorySymbol("trackpad") == "rectangle.and.hand.point.up.left.filled")
         #expect(MonitorPowerModel.accessorySymbol("other") == "dot.radiowaves.left.and.right")
+
+        // The mapping is only useful if the symbols actually exist: `trackpad`
+        // did not, and rendered as a blank cell.
+        for kind in ["mouse", "keyboard", "trackpad", "other"] {
+            let symbol = MonitorPowerModel.accessorySymbol(kind)
+            #expect(
+                NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil,
+                Comment(rawValue: "\(kind) maps to a symbol that does not exist: \(symbol)")
+            )
+        }
         #expect(MonitorPowerModel.accessorySymbol(nil) == "dot.radiowaves.left.and.right")
     }
 
