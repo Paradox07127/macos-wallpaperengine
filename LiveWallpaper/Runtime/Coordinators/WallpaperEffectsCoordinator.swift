@@ -320,7 +320,7 @@ final class WallpaperEffectsCoordinator {
     }
 
     func setEnvironmentOverlaySuspended(_ suspended: Bool, for screen: Screen) {
-        environmentOverlay.setSuspended(suspended, screenID: screen.id)
+        environmentOverlay.setRuntimeSuspended(suspended, screenID: screen.id)
     }
 
     // MARK: - Private helpers
@@ -398,7 +398,7 @@ final class WallpaperEffectsCoordinator {
             screenID: screen.id,
             screenFrame: frame
         )
-        environmentOverlay.setSuspended(isScreenSuspended(screen.id), screenID: screen.id)
+        environmentOverlay.setRuntimeSuspended(isScreenSuspended(screen.id), screenID: screen.id)
     }
 
     private func refreshWeatherMonitoringState() {

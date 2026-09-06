@@ -2,6 +2,18 @@ import AppKit
 import LiveWallpaperCore
 import QuartzCore
 
+/// Why the particle layer is paused. Reasons stack — the layer runs only while the set is
+/// empty — so the runtime's resume after a wake cannot also lift a Reduce Motion pause,
+/// and the two can be raised and dropped in either order.
+struct ParticleSuspensionReasons: OptionSet {
+    let rawValue: Int
+
+    /// The wallpaper runtime's own gate: display asleep, other windows covering it, etc.
+    static let runtime = ParticleSuspensionReasons(rawValue: 1 << 0)
+    /// System Settings > Accessibility > Display > Reduce motion.
+    static let reduceMotion = ParticleSuspensionReasons(rawValue: 1 << 1)
+}
+
 final class ParticleOverlayView: NSView {
 
     // MARK: - State
@@ -11,7 +23,10 @@ final class ParticleOverlayView: NSView {
     private var activeEmitter: CAEmitterLayer?
     /// Meteors fly on their own layers rather than out of an emitter.
     private var meteorShower: MeteorShower?
-    private(set) var isSuspended = false
+    private(set) var suspensionReasons: ParticleSuspensionReasons = []
+    var isSuspended: Bool {
+        !suspensionReasons.isEmpty
+    }
 
     // MARK: - Layer Hosting
 
@@ -108,13 +123,19 @@ final class ParticleOverlayView: NSView {
     }
 
     /// Suspend emitter; resume adjusts beginTime so the pause does not fast-forward.
-    func setSuspended(_ suspended: Bool) {
-        guard isSuspended != suspended else { return }
-        isSuspended = suspended
+    /// Only the last reason to be dropped restarts it.
+    func setSuspended(_ suspended: Bool, for reason: ParticleSuspensionReasons = .runtime) {
+        let wasSuspended = isSuspended
+        if suspended {
+            suspensionReasons.insert(reason)
+        } else {
+            suspensionReasons.remove(reason)
+        }
+        guard wasSuspended != isSuspended else { return }
         if let activeEmitter {
             applySuspensionState(to: activeEmitter)
         }
-        meteorShower?.setSuspended(suspended)
+        meteorShower?.setSuspended(isSuspended)
     }
 
     private func applySuspensionState(to emitter: CAEmitterLayer) {
@@ -135,8 +156,10 @@ final class ParticleOverlayView: NSView {
     }
 
     #if DEBUG
-    var debugEmitterState: (isHidden: Bool, speed: Float, birthRate: Float)? {
-        activeEmitter.map { ($0.isHidden, $0.speed, $0.birthRate) }
+    var debugEmitterState: (
+        isHidden: Bool, speed: Float, birthRate: Float, beginTime: CFTimeInterval
+    )? {
+        activeEmitter.map { ($0.isHidden, $0.speed, $0.birthRate, $0.beginTime) }
     }
 
     /// The cells a preset would build, so a test can fly them itself.
@@ -770,6 +793,64 @@ final class ParticleOverlayView: NSView {
         )
     }()
 
+}
+
+// MARK: - Reduce Motion
+
+/// The system "Reduce motion" switch, watched rather than polled: AppKit posts
+/// `accessibilityDisplayOptionsDidChangeNotification` whenever one of those switches moves.
+/// Owners `start()` it while they have something moving and `stop()` it when they do not.
+@MainActor
+final class ReduceMotionWatcher {
+    /// Test seam — a test process cannot flip the real Accessibility switch. Writing it does
+    /// not re-evaluate anything by itself; the next notification, or the owner's next read of
+    /// `isReduced`, is what applies it.
+    var override: Bool?
+
+    var isReduced: Bool {
+        override ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    var isWatching: Bool {
+        token != nil
+    }
+
+    /// `nonisolated(unsafe)`: written only from MainActor code, but `deinit` runs anywhere
+    /// and is the fail-safe for an owner that was dropped without calling `stop()`.
+    private nonisolated(unsafe) var token: NSObjectProtocol?
+    private let onChange: @MainActor (Bool) -> Void
+
+    init(onChange: @escaping @MainActor (Bool) -> Void) {
+        self.onChange = onChange
+    }
+
+    deinit {
+        if let token {
+            NSWorkspace.shared.notificationCenter.removeObserver(token)
+        }
+    }
+
+    func start() {
+        guard token == nil else { return }
+        token = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            // `queue: nil` means the block runs on the posting thread. AppKit posts this one
+            // on the main thread; `assumeIsolated` asserts that rather than assuming it.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.onChange(self.isReduced)
+            }
+        }
+    }
+
+    func stop() {
+        guard let token else { return }
+        NSWorkspace.shared.notificationCenter.removeObserver(token)
+        self.token = nil
+    }
 }
 
 // MARK: - Particle Texture Factory
