@@ -240,4 +240,27 @@ final class MusicOverlaySectionTests: XCTestCase {
         XCTAssertTrue(source.contains("maxWidth: .infinity, maxHeight: .infinity, alignment:"))
         XCTAssertTrue(source.contains(".padding(max(6, side * 0.26))"))
     }
+
+    /// The paused dim used to multiply the whole tile, so a user who had also
+    /// dialled the layer down read the title at `opacity × 0.55 × brightness`
+    /// and could not make out song or artist. It reaches the cover only now.
+    /// The opacity dial keeps reaching everything — that is what it is for, and
+    /// an earlier attempt to exempt the type from it was rejected.
+    func testPausedDimNoLongerMultipliesTheWholeTile() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Monitor/Widgets/NowPlayingWidgetView.swift"
+        )
+        XCTAssertFalse(
+            source.contains(".opacity(layout.dimmed ? 0.55 : 1)"),
+            "a tile-wide pause dim takes the type down with the cover"
+        )
+        XCTAssertTrue(
+            source.contains(".opacity(visibility.art)"),
+            "the pause dim must still reach the cover"
+        )
+        XCTAssertTrue(
+            source.contains(".opacity(visibility.layer)"),
+            "the opacity dial stays a whole-layer dial, type included"
+        )
+    }
 }

@@ -212,12 +212,100 @@ struct NowPlayingWidgetLayout: Equatable {
     }
 }
 
+// MARK: - Pure visibility decision (which dial reaches which part of the tile)
+
+/// The layer used to multiply three factors onto every pixel it drew: the user's
+/// opacity dial, the text-brightness dial, and the paused dim. A dialled-down
+/// layer that was also paused therefore painted title and artist at
+/// `opacity × brightness × 0.55`, which is why they stopped being readable.
+/// They are separate factors here: `layer` still covers everything (that dial is
+/// the user's "how present is this at all"), `text` reaches only type, and the
+/// paused dim reaches only cover art and the platter.
+struct NowPlayingVisibility: Equatable, Sendable {
+    /// What keeps type legible over arbitrary wallpaper art.
+    enum TextBacking: Equatable, Sendable {
+        /// The shipped borderless look: the drop shadow and nothing else.
+        case shadow
+        /// A translucent plate under the type block, on top of that shadow.
+        case plate(opacity: Double)
+        /// Reduce Transparency: the same plate, with nothing showing through.
+        case opaquePlate
+    }
+
+    /// Multiplies the whole layer, type included.
+    var layer: Double
+    /// Multiplies each text role's authored alpha (0.97 title, 0.74 eyebrow …).
+    var text: Double
+    /// Cover art and the vinyl platter.
+    var art: Double
+    /// Transport glyphs and the progress line.
+    var controls: Double
+    var textBacking: TextBacking
+
+    /// Paused presentation: the cover recedes, the type it labels does not.
+    static let pausedArtDim = 0.55
+    /// Above this the drop shadow alone carries the type, so the default look
+    /// stays plateless.
+    static let plateOnsetOpacity = 0.9
+    /// Plate strength once the opacity dial is all the way down.
+    static let maxPlateOpacity = 0.5
+    /// Increase Contrast floor — above `maxPlateOpacity`, so asking the system
+    /// for more contrast always yields more of it than the dial alone would.
+    static let contrastPlateOpacity = 0.55
+
+    nonisolated static func resolve(
+        options: NowPlayingOptions,
+        dimmed: Bool,
+        reduceTransparency: Bool,
+        increaseContrast: Bool
+    ) -> NowPlayingVisibility {
+        NowPlayingVisibility(
+            layer: options.opacity,
+            text: options.textBrightness,
+            art: dimmed ? pausedArtDim : 1,
+            controls: 1,
+            textBacking: backing(
+                layerOpacity: options.opacity,
+                reduceTransparency: reduceTransparency,
+                increaseContrast: increaseContrast
+            )
+        )
+    }
+
+    /// The plate fades in as the opacity dial takes contrast away, and the two
+    /// accessibility settings outrank the dial: Reduce Transparency means the
+    /// backing stops being see-through at all, Increase Contrast raises it above
+    /// anything the dial produces on its own.
+    nonisolated static func backing(
+        layerOpacity: Double,
+        reduceTransparency: Bool,
+        increaseContrast: Bool
+    ) -> TextBacking {
+        if reduceTransparency {
+            return .opaquePlate
+        }
+        let range = NowPlayingOptions.Limits.opacity
+        let clamped = layerOpacity.isFinite
+            ? min(max(layerOpacity, range.lowerBound), range.upperBound)
+            : range.upperBound
+        let span = plateOnsetOpacity - range.lowerBound
+        let shortfall = span > 0 ? min(max((plateOnsetOpacity - clamped) / span, 0), 1) : 0
+        var alpha = maxPlateOpacity * shortfall
+        if increaseContrast {
+            alpha = max(alpha, contrastPlateOpacity)
+        }
+        return alpha > 0 ? .plate(opacity: alpha) : .shadow
+    }
+}
+
 // MARK: - View (borderless art layer — no container, no header, no panel)
 
 struct NowPlayingWidgetView: View {
     let context: MusicOverlayContext
 
     @Environment(\.monitorSuspended) private var suspended
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @State private var accent: NowPlayingAccentColor?
     @State private var lyrics: [LyricLine] = []
     @State private var discAngle: Double = 0
@@ -304,10 +392,23 @@ struct NowPlayingWidgetView: View {
         NowPlayingOptions.resolvedAccent(options: options, artwork: accent)?.color ?? Design.signalAmber
     }
 
+    /// Which dial reaches which part of the tile — the pause dim deliberately
+    /// stops at the cover.
+    private var visibility: NowPlayingVisibility {
+        NowPlayingVisibility.resolve(
+            options: options,
+            dimmed: layout.dimmed,
+            reduceTransparency: reduceTransparency,
+            increaseContrast: colorSchemeContrast == .increased
+        )
+    }
+
     /// Text alphas are authored per role (0.97 title, 0.74 eyebrow …); the
     /// brightness dial scales all of them by one factor rather than restating
     /// each role's ramp.
-    private func textAlpha(_ base: Double) -> Double { base * options.textBrightness }
+    private func textAlpha(_ base: Double) -> Double {
+        base * visibility.text
+    }
 
     private var titleDesign: Font.Design { options.resolvedTitleFont.design }
     private var alignment: NowPlayingOptions.Alignment { options.resolvedAlignment }
@@ -367,7 +468,6 @@ struct NowPlayingWidgetView: View {
                             .transition(entranceTransition)
                     }
                     .animation(layout.motion ? .easeOut(duration: 0.4) : nil, value: trackKey)
-                    .opacity(layout.dimmed ? 0.55 : 1)
                     .overlay { transportOverlay(state: state, in: geo.size) }
                     .overlay(alignment: .bottom) { permissionNotice(in: geo.size) }
                     .task(id: accentTaskKey) { await refreshAccent(for: state) }
@@ -379,7 +479,7 @@ struct NowPlayingWidgetView: View {
                     .onChange(of: context.now) { _, _ in advanceDisc() }
                 }
             }
-            .opacity(options.opacity)
+            .opacity(visibility.layer)
             .contentShape(Rectangle())
             .onHover { inside in
                 withAnimation(.easeInOut(duration: 0.2)) { hovering = inside }
@@ -567,7 +667,7 @@ struct NowPlayingWidgetView: View {
         } label: {
             Image(systemName: Self.symbol(for: button, phase: state.phase))
                 .font(.system(size: side * 0.4, weight: .semibold))
-                .foregroundStyle(.white.opacity(textAlpha(0.95)))
+                .foregroundStyle(.white.opacity(0.95 * visibility.controls))
                 // No per-button fill: the pill behind the row is the only
                 // scrim. The frame stays full-size so the target does not
                 // shrink with the glyph.
@@ -735,6 +835,7 @@ struct NowPlayingWidgetView: View {
                 NowPlayingArtworkView(data: artwork, cacheKey: trackKey, shape: artworkShape(radius: 4))
                     .frame(width: artworkSide, height: artworkSide)
                     .shadow(color: .black.opacity(options.artworkShadow), radius: 7, x: 0, y: 2)
+                    .opacity(visibility.art)
             }
 
             VStack(alignment: alignment.horizontal, spacing: eyebrowSize * 0.5) {
@@ -762,6 +863,7 @@ struct NowPlayingWidgetView: View {
                     .padding(.top, eyebrowSize * 0.4)
 
             }
+            .nowPlayingTextBacking(visibility.textBacking, inset: eyebrowSize * 0.7)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment.bottomFrame)
         .padding(inset)
@@ -871,6 +973,7 @@ struct NowPlayingWidgetView: View {
                     .padding(.top, smallSize * 0.3)
 
             }
+            .nowPlayingTextBacking(visibility.textBacking, inset: smallSize * 0.7)
             .frame(maxWidth: .infinity, alignment: alignment.frame)
         }
         .padding(inset)
@@ -933,6 +1036,7 @@ struct NowPlayingWidgetView: View {
             }
             .padding(4)
             .rotationEffect(.degrees(discAngle))
+            .opacity(visibility.art)
         }
         .frame(width: side, height: side)
         .overlay { vinylAudioOverlay(side: side) }
@@ -1010,6 +1114,7 @@ struct NowPlayingWidgetView: View {
                 }
 
             }
+            .nowPlayingTextBacking(visibility.textBacking, inset: smallSize * 0.7)
             .padding(max(8, size.height * 0.08))
 
             audioReactiveSlot
@@ -1136,6 +1241,34 @@ private extension View {
     func nowPlayingTextShadow() -> some View {
         shadow(color: .black.opacity(0.55), radius: 9, x: 0, y: 2)
             .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+    }
+
+    /// Local ground under the type block. The shadow above carries it at full
+    /// strength; this fades a plate in as the opacity dial takes that contrast
+    /// away, and answers Reduce Transparency / Increase Contrast. The inset is
+    /// added and immediately subtracted so the plate is wider than the glyphs
+    /// without the tile's layout moving.
+    @ViewBuilder
+    func nowPlayingTextBacking(
+        _ backing: NowPlayingVisibility.TextBacking, inset: CGFloat
+    ) -> some View {
+        switch backing {
+        case .shadow:
+            self
+        case let .plate(opacity):
+            nowPlayingPlate(alpha: opacity, inset: inset)
+        case .opaquePlate:
+            nowPlayingPlate(alpha: 1, inset: inset)
+        }
+    }
+
+    func nowPlayingPlate(alpha: Double, inset: CGFloat) -> some View {
+        padding(inset)
+            .background {
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                    .fill(.black.opacity(alpha))
+            }
+            .padding(-inset)
     }
 }
 
