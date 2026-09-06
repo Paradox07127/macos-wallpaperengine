@@ -95,6 +95,9 @@ SUITES=(
   VideoSessionLifecycleTests
   WPEMappedPackageWriteFenceTests
   SteamWriteOwnershipTests
+  # The connector's id/containment predicates are the last line of defence
+  # before a write lands in the user's real Steam library.
+  SteamLibraryPathsTests
   # Pure alpha arithmetic, no view host: the paused dim used to multiply the
   # music tile's type as well as its cover, so a dialled-down overlay went
   # unreadable the moment playback stopped.

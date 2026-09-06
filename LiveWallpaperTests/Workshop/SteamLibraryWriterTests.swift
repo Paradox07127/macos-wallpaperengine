@@ -1,6 +1,7 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import LiveWallpaperProWPE
+import Testing
 
 /// The connector is the only component that can write to the user's Steam
 /// library, so its containment rules are the last line of defence. These cover
@@ -55,6 +56,45 @@ struct SteamLibraryPathsTests {
         #expect(!SteamLibraryPaths.isSafeWorkshopID("\u{0664}"), "Arabic-Indic four")
         #expect(!SteamLibraryPaths.isSafeWorkshopID("-123"))
         #expect(!SteamLibraryPaths.isSafeWorkshopID("12.3"))
+    }
+
+    /// The two predicates are deliberately different contracts, but they are not
+    /// independent: the connector's id becomes a directory name that the main
+    /// target then has to accept as a project component. So the containment
+    /// direction — strict ⊆ lenient — is the invariant, and only that direction.
+    /// Nothing pinned it before; widening the connector side (a `-`, a `.`) would
+    /// have silently produced ids the main target refuses to address.
+    @Test("Every id the connector accepts is also a legal project component")
+    func connectorIDsAreAlwaysLegalProjectComponents() {
+        // Swept, not fixtured: a fixture list can only contain ids the connector
+        // already accepts, so it can never notice the connector being widened —
+        // which is the only way this invariant breaks. The sweep asks the
+        // question of every candidate instead, so a newly accepted character
+        // shows up the moment it is accepted.
+        var candidates: [String] = (0x20 ... 0x7E).map { String(UnicodeScalar($0)!) }
+        candidates += ["..", "../", "/", "\\", ".", "", "a/b", "12/34", "..12", "12..34"]
+        candidates += ["1", "3725117707", String(repeating: "9", count: 20)]
+        candidates += (0 ... 9).map { "12\($0)" }
+
+        var acceptedByConnector = 0
+        for candidate in candidates where SteamLibraryPaths.isSafeWorkshopID(candidate) {
+            acceptedByConnector += 1
+            #expect(
+                WPEPathSafety.isSafeProjectID(candidate),
+                "connector would create \"\(candidate)\" as a directory the main target refuses to address"
+            )
+        }
+        // Guards the sweep itself: if a future refactor made the connector reject
+        // everything, every #expect above would vacuously pass.
+        #expect(acceptedByConnector >= 20, "the sweep stopped exercising the connector's accept path")
+
+        // The control: containment is one-way on purpose. A folder import's id is
+        // the folder name, which the connector must keep refusing — if this ever
+        // passes, the connector has stopped being the stricter of the two.
+        for name in ["My Scene", "scene-01", "3725117707.bak"] {
+            #expect(WPEPathSafety.isSafeProjectID(name))
+            #expect(!SteamLibraryPaths.isSafeWorkshopID(name))
+        }
     }
 
     @Test("Nothing outside the Steam profile is writable")
