@@ -464,6 +464,32 @@ struct WeatherReactivePolicyTests {
         #expect(WeatherReactiveService.refreshInterval == .seconds(3600))
     }
 
+    /// Particles decorate whatever is behind them, wallpaper or not.
+    ///
+    /// The overlay is its own click-through panel above the desktop; it never needed a
+    /// LiveWallpaper session to draw. Requiring one meant a display showing macOS's own
+    /// wallpaper could not have rain on it, which is the one case where an overlay is
+    /// the *only* thing the app is drawing.
+    @Test("Particles draw without a wallpaper session, but obey the master gate")
+    func particlesDoNotRequireAWallpaper() {
+        #expect(WeatherReactivePolicy.shouldDrawParticles(effect: .rain, wallpapersEnabled: true))
+        #expect(WeatherReactivePolicy.shouldDrawParticles(effect: .snow, wallpapersEnabled: true))
+        #expect(!WeatherReactivePolicy.shouldDrawParticles(effect: .none, wallpapersEnabled: true))
+        #expect(!WeatherReactivePolicy.shouldDrawParticles(effect: .rain, wallpapersEnabled: false))
+    }
+
+    /// The guard this replaced is easy to reinstate by reflex, and nothing else would
+    /// notice: the overlay would simply stop appearing on displays without a wallpaper.
+    @Test("The particle overlay path does not consult the wallpaper session")
+    func particleOverlayPathIgnoresTheRuntimeSession() throws {
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Runtime/Coordinators/WallpaperEffectsCoordinator.swift"
+        )
+        #expect(source.contains("WeatherReactivePolicy.shouldDrawParticles"))
+        #expect(!source.contains("guard screen.runtimeSession != nil"))
+        #expect(!source.contains("guard screen.runtimeSession != nil,"))
+    }
+
     @Test("Monitor runs only when an active screen has weather-reactive effects")
     func monitorRequiresActiveWeatherReactiveConfiguration() {
         let activeID: CGDirectDisplayID = 10

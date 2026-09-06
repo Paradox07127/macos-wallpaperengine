@@ -155,7 +155,9 @@ extension ScreenManager {
         bumpTransition(for: screen.id)
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.retireAllWork(for: screen.id)
-            effectsCoordinator.removeEnvironmentOverlay(for: screen)
+            // Not a teardown: particles are not part of the wallpaper session, and a
+            // display set to draw them keeps doing so over the system wallpaper.
+            effectsCoordinator.reconcileEnvironmentOverlays()
         }
         transitionRegistry.cancelAssetReadiness(for: screen.id)
         setTransientRuntimeError(nil, for: screen.id)

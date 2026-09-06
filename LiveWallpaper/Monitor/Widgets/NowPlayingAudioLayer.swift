@@ -259,11 +259,36 @@ enum NowPlayingAudioLayer {
             return 1 + limited(lift, to: maxPulseGain - 1)
         }
 
-        /// How many of `capacity` particles are alive at this bass level.
-        nonisolated static func liveParticles(count: Int, bass: Float, intensity: Double) -> Int {
-            guard count > 0 else { return 0 }
-            let share = limited(0.25 + Double(bass) * 1.5 * intensity, to: 1)
-            return max(1, Int((Double(count) * share).rounded()))
+        /// How far a peak cap sinks per second once the bar has dropped away from it.
+        /// Slow enough to read as a held reading, fast enough not to litter the tile
+        /// with stale caps.
+        nonisolated static let peakFallPerSecond: Float = 0.9
+
+        /// A peak cap follows its bar instantly upwards and sinks at a fixed rate
+        /// afterwards, which is what makes a transient legible after the bar has gone.
+        nonisolated static func peak(previous: Float, band: Float, dt: Double) -> Float {
+            max(band, max(0, previous - peakFallPerSecond * Float(dt)))
+        }
+
+        /// How many motes the budget's soft edge spans.
+        nonisolated static let moteFadeWidth: Double = 3
+
+        /// How brightly mote `index` burns at this bass level, 0…1.
+        ///
+        /// A budget with a hard edge (`for index in 0 ..< liveCount`) deleted the last
+        /// motes the instant the bass dipped, mid-flight and at full brightness — the
+        /// field looked like it was glitching rather than breathing. The edge is a ramp
+        /// now, so the same dip dims those motes to nothing over a moment instead.
+        nonisolated static func moteVisibility(
+            index: Int, count: Int, bass: Float, intensity: Double
+        ) -> Double {
+            guard count > 0, index >= 0, index < count else { return 0 }
+            let share = limited(0.25 + Double(bass) * 1.5 * intensity, to: 1) * limited(intensity, to: 1)
+            let budget = Double(count) * share
+            // Three motes wide, not one: the budget moves about 48 motes per unit of
+            // bass, so a one-mote ramp still took a mote from full to dark inside a
+            // fiftieth of the bass range — visibly a blink. Three spreads that out.
+            return limited(max(0, budget - Double(index)) / moteFadeWidth, to: 1)
         }
 
         /// Ring alpha at `progress` through a ripple's life.
@@ -296,6 +321,8 @@ enum NowPlayingAudioLayer {
 
 final class NowPlayingAudioEngine {
     private(set) var bands: [Float] = []
+    /// Held maxima, one per band: they follow `bands` up and sink on their own.
+    private(set) var peaks: [Float] = []
     private(set) var drives = NowPlayingAudioLayer.Drives()
     /// 0…1 visibility envelope (0.3s ramp) driven by the silence gate.
     private(set) var fade: Double = 0
@@ -316,6 +343,7 @@ final class NowPlayingAudioEngine {
     func step(now: TimeInterval, bandCount: Int, sensitivity: Float, tracksBeat: Bool) {
         if bands.count != bandCount {
             bands = [Float](repeating: 0, count: bandCount)
+            peaks = [Float](repeating: 0, count: bandCount)
             scratch = [Float](repeating: 0, count: bandCount)
         }
 
@@ -327,6 +355,9 @@ final class NowPlayingAudioEngine {
         for index in bands.indices {
             bands[index] = NowPlayingAudioLayer.smoothed(
                 previous: bands[index], target: scratch[index], dt: dt
+            )
+            peaks[index] = NowPlayingAudioLayer.Effects.peak(
+                previous: peaks[index], band: bands[index], dt: dt
             )
         }
         drives.advance(left: frame.left, right: frame.right, dt: dt)
@@ -416,6 +447,9 @@ struct NowPlayingAudioReactiveView: View {
     private static let barSpacing: CGFloat = 4
     /// Floor so a quiet passage leaves a readable baseline instead of nothing.
     private static let barFloor: CGFloat = 2
+    private static let capHeight: CGFloat = 2
+    /// A cap closer than this to its bar is not drawn at all.
+    private static let capGap: CGFloat = 3
     /// Fewer, thicker spokes for the same reason the bars got wider.
     private static let spokeCount = 32
     private static let spokeWidth: CGFloat = 3.5
@@ -543,18 +577,30 @@ struct NowPlayingAudioReactiveView: View {
 
     private func drawBars(in context: inout GraphicsContext, size: CGSize, gain: Double) {
         var path = Path()
+        var caps = Path()
         var x: CGFloat = 0
         let radius = Self.barWidth / 2
-        for value in engine.bands {
+        for (index, value) in engine.bands.enumerated() {
             let height = max(Self.barFloor, CGFloat(value) * size.height)
             path.addRoundedRect(
                 in: CGRect(x: x, y: size.height - height, width: Self.barWidth, height: height),
                 cornerSize: CGSize(width: radius, height: radius)
             )
+            // The held maximum, drawn only once it has separated from its own bar:
+            // a cap sitting on the bar top is just a thicker bar.
+            let peak = index < engine.peaks.count ? CGFloat(engine.peaks[index]) : 0
+            let capY = size.height - max(Self.barFloor, peak * size.height)
+            if capY < size.height - height - Self.capGap {
+                caps.addRoundedRect(
+                    in: CGRect(x: x, y: capY, width: Self.barWidth, height: Self.capHeight),
+                    cornerSize: CGSize(width: Self.capHeight / 2, height: Self.capHeight / 2)
+                )
+            }
             x += Self.barWidth + Self.barSpacing
         }
         let alpha = NowPlayingAudioLayer.Effects.alpha(0.82 * engine.fade * gain)
         context.fill(path, with: .color(accent.opacity(alpha)))
+        context.fill(caps, with: .color(accent.opacity(NowPlayingAudioLayer.Effects.alpha(alpha * 0.75))))
     }
 
     private func drawRadial(
@@ -622,12 +668,13 @@ struct NowPlayingAudioReactiveView: View {
         intensity: Double, gain: Double
     ) {
         let capacity = Self.particleCapacity(for: size)
-        let live = NowPlayingAudioLayer.Effects.liveParticles(
-            count: capacity, bass: engine.drives.bass, intensity: intensity
-        )
         let mid = Double(engine.drives.mid)
         let envelope = Double(engine.drives.bassAtt)
-        for index in 0..<live {
+        for index in 0 ..< capacity {
+            let visibility = NowPlayingAudioLayer.Effects.moteVisibility(
+                index: index, count: capacity, bass: engine.drives.bass, intensity: intensity
+            )
+            guard visibility > 0 else { continue }
             let s1 = Self.seedUnit(index, 1)
             let s2 = Self.seedUnit(index, 2)
             let s3 = Self.seedUnit(index, 3)
@@ -639,7 +686,7 @@ struct NowPlayingAudioReactiveView: View {
             let y = yFraction * size.height
             let diameter = 3.5 + 2 * s4
             let alpha = NowPlayingAudioLayer.Effects.alpha(
-                engine.fade * (0.16 + 0.62 * envelope) * gain * sin(.pi * yFraction)
+                engine.fade * (0.16 + 0.62 * envelope) * gain * sin(.pi * yFraction) * visibility
             )
             guard alpha > 0.004 else { continue }
             context.fill(

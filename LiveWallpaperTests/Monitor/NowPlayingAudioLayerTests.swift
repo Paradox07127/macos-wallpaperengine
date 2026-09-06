@@ -4,6 +4,71 @@ import XCTest
 final class NowPlayingAudioLayerTests: XCTestCase {
     private typealias Layer = NowPlayingAudioLayer
 
+    // MARK: Peak caps and mote fading
+
+    /// A peak cap is a spectrum analyser's memory: it jumps to whatever the bar just
+    /// reached and then sinks slowly, so the eye can read a transient that the bar
+    /// itself has already dropped.
+    func testPeakCapRisesInstantlyAndFallsSlowly() {
+        // Up is instant: a cap that lagged behind its own bar would sit inside it.
+        XCTAssertEqual(Layer.Effects.peak(previous: 0.2, band: 0.9, dt: 1 / 30), 0.9, accuracy: 1e-6)
+        XCTAssertEqual(Layer.Effects.peak(previous: 0.9, band: 0.95, dt: 1 / 30), 0.95, accuracy: 1e-6)
+
+        // Down is slow, and slower than the bar it sits on — the whole point.
+        let afterOneFrame = Layer.Effects.peak(previous: 0.9, band: 0, dt: 1 / 30)
+        XCTAssertLessThan(afterOneFrame, 0.9)
+        XCTAssertGreaterThan(afterOneFrame, 0.8, "the cap drops with the bar instead of trailing it")
+
+        // It reaches the floor rather than hovering, and never goes below it.
+        XCTAssertEqual(Layer.Effects.peak(previous: 0.05, band: 0, dt: 10), 0, accuracy: 1e-6)
+        XCTAssertGreaterThanOrEqual(Layer.Effects.peak(previous: 0, band: 0, dt: 1), 0)
+    }
+
+    /// Motes used to be drawn by `for index in 0 ..< liveCount`, so a dip in the bass
+    /// deleted the last few mid-flight: they blinked out at whatever position and
+    /// brightness they had. Visibility now falls off smoothly at the edge of the
+    /// budget, so the same dip dims them instead.
+    func testMoteVisibilityIsContinuousInTheBass() {
+        let count = 32
+        for index in [0, 5, 15, 24, 31] {
+            var previous = Layer.Effects.moteVisibility(
+                index: index, count: count, bass: 0, intensity: 1
+            )
+            var biggestJump = 0.0
+            for step in 1 ... 400 {
+                let bass = Float(step) / 400
+                let value = Layer.Effects.moteVisibility(
+                    index: index, count: count, bass: bass, intensity: 1
+                )
+                biggestJump = max(biggestJump, abs(value - previous))
+                previous = value
+                XCTAssertGreaterThanOrEqual(value, 0)
+                XCTAssertLessThanOrEqual(value, 1)
+            }
+            XCTAssertLessThan(
+                biggestJump, 0.1,
+                "mote \(index) jumps \(biggestJump) in brightness over a 1/400 change in bass"
+            )
+        }
+    }
+
+    /// The budget still means something: quiet music lights fewer motes than loud.
+    func testMoteVisibilityGrowsWithTheBass() {
+        let count = 32
+        func lit(_ bass: Float) -> Double {
+            (0 ..< count)
+                .map { Layer.Effects.moteVisibility(index: $0, count: count, bass: bass, intensity: 1) }
+                .reduce(0, +)
+        }
+        XCTAssertLessThan(lit(0.05), lit(0.4))
+        XCTAssertLessThan(lit(0.4), lit(0.9))
+        XCTAssertEqual(
+            Layer.Effects.moteVisibility(index: 0, count: count, bass: 0.9, intensity: 0),
+            0, accuracy: 1e-6,
+            "the intensity dial at zero still lights a mote"
+        )
+    }
+
     // MARK: shouldRun — full truth table
 
     func testShouldRunTruthTable() {
@@ -477,7 +542,7 @@ final class NowPlayingAudioLayerTests: XCTestCase {
                 Effects.rippleAlpha(progress: 0, fade: 1, intensity: intensity), 1
             )
             XCTAssertLessThanOrEqual(
-                Effects.liveParticles(count: 64, bass: drive, intensity: intensity), 64
+                Effects.moteVisibility(index: 0, count: 64, bass: drive, intensity: intensity), 1
             )
         }
 
@@ -505,10 +570,10 @@ final class NowPlayingAudioLayerTests: XCTestCase {
             Effects.chromaticOffset(treb: 0.1, intensity: 0.5),
             Effects.chromaticOffset(treb: 0.1, intensity: 1.0)
         )
-        XCTAssertGreaterThanOrEqual(Effects.liveParticles(count: 32, bass: 0, intensity: 1), 1)
+        XCTAssertGreaterThan(Effects.moteVisibility(index: 0, count: 32, bass: 0, intensity: 1), 0)
         XCTAssertLessThan(
-            Effects.liveParticles(count: 32, bass: 0.1, intensity: 1),
-            Effects.liveParticles(count: 32, bass: 0.6, intensity: 1)
+            Effects.moteVisibility(index: 12, count: 32, bass: 0.1, intensity: 1),
+            Effects.moteVisibility(index: 12, count: 32, bass: 0.6, intensity: 1)
         )
     }
 
