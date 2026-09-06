@@ -115,6 +115,10 @@ final class WorkshopPublicSearchSource {
     private let metadata: SteamWorkshopMetadataService
     private let session: URLSession
     private let appID: Int
+    /// Same disk cache the keyed path uses: one keyless page costs ~0.7 MB of
+    /// HTML plus a details POST, so paging back to page 1 must not pay it again.
+    private let cache: WorkshopQueryCache
+    private var inflight: [String: Task<WorkshopQueryPage, Error>] = [:]
 
     /// The browse page is ~0.7 MB of HTML; this only has to bound a hostile
     /// response, not a legitimate one.
@@ -123,14 +127,40 @@ final class WorkshopPublicSearchSource {
     init(
         metadata: SteamWorkshopMetadataService = SteamWorkshopMetadataService(),
         session: URLSession = WorkshopPublicSearchSource.defaultSession(),
-        appID: Int = WorkshopQueryService.wallpaperEngineAppID
+        appID: Int = WorkshopQueryService.wallpaperEngineAppID,
+        cache: WorkshopQueryCache = WorkshopQueryCache()
     ) {
         self.metadata = metadata
         self.session = session
         self.appID = appID
+        self.cache = cache
     }
 
+    /// Keyless pages need no per-account namespace on the cache key — there is
+    /// no account — so the canonical request hash is the key as it stands.
     func fetch(_ request: WorkshopQueryRequest) async throws -> WorkshopQueryPage {
+        let cacheKey = WorkshopQueryCacheKey.canonical(request)
+        if let task = inflight[cacheKey] {
+            return try await task.value
+        }
+        // The cache read happens inside the task, not before it: awaiting first
+        // would let a second caller past the `inflight` check and issue its own
+        // page fetch.
+        let task = Task { [weak self] () -> WorkshopQueryPage in
+            guard let self else { throw CancellationError() }
+            if let cached = await cache.read(forKey: cacheKey) {
+                return cached
+            }
+            let page = try await fetchFromNetwork(request)
+            await cache.write(page, forKey: cacheKey)
+            return page
+        }
+        inflight[cacheKey] = task
+        defer { inflight[cacheKey] = nil }
+        return try await task.value
+    }
+
+    private func fetchFromNetwork(_ request: WorkshopQueryRequest) async throws -> WorkshopQueryPage {
         let url = WorkshopPublicBrowseURL.url(for: request, appID: appID)
         let html = try await loadHTML(at: url)
         let ids = WorkshopPublicIDExtractor.publishedFileIDs(fromHTML: html)

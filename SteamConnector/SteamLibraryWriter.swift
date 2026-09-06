@@ -210,6 +210,26 @@ enum SteamLibraryWriter {
         return SteamDeleteResult(outcome: .deleted, freedBytes: size, refusalReason: nil)
     }
 
+    /// Removes `directory` the way a Workshop item is removed: every level under
+    /// `root` is opened relative to the one above with `O_NOFOLLOW`, so a
+    /// component swapped for a link after the caller's own path check is refused
+    /// or unlinked, never followed. The connector's own profile cleanups used
+    /// `removeItem(atPath:)` after that check, which re-resolves the string.
+    static func removeDirectory(_ directory: URL, under root: URL) throws {
+        let rootComponents = root.standardizedFileURL.pathComponents
+        let components = directory.standardizedFileURL.pathComponents
+        guard components.count > rootComponents.count,
+              components.starts(with: rootComponents),
+              let name = components.last
+        else { throw WriteError.outsideAllowedSubtree }
+        let parent = try openDirectory(
+            root: root,
+            components: Array(components[rootComponents.count ..< components.count - 1])
+        )
+        defer { close(parent) }
+        try removeTree(parent: parent, name: name)
+    }
+
     // MARK: - Prune
 
     /// Cuts a finished Wallpaper Engine install down to its `assets/` subtree —
@@ -322,7 +342,12 @@ enum SteamLibraryWriter {
     private static func removeTree(parent: Int32, name: String, depth: Int = 0) throws {
         guard depth < maxTreeDepth else { throw WriteError.unexpectedLayout }
         var info = stat()
-        guard fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { return }
+        if fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+            // Only "already gone" (ENOENT) is a no-op — any other failure (e.g. a
+            // permission error mid-removal) must not be reported as removed.
+            guard errno == ENOENT else { throw WriteError.unexpectedLayout }
+            return
+        }
         if (info.st_mode & S_IFMT) == S_IFDIR {
             let child = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
             guard child >= 0 else { throw WriteError.symbolicLinkRejected }

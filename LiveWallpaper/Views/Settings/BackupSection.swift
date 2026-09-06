@@ -90,6 +90,7 @@ extension GeneralSettingsView {
         postSettingsNotificationAsync(.dockVisibilityDidChange)
         postSettingsNotificationAsync(.globalShortcutsDidChange)
         postSettingsNotificationAsync(.weatherLocationPreferenceDidChange)
+        postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)
         screenManager.handleGlobalSettingsChanged()
         screenManager.resetAllWallpaperSessions()
         screenManager.refreshScreens(preserveRuntimeSessions: false)

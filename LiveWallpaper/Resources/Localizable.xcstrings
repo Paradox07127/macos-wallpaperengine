@@ -46696,6 +46696,41 @@
         }
       }
     },
+    "Presets are restyles of other wallpapers, hidden from Browse unless this is on" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Presets are restyles of other wallpapers, hidden from Browse unless this is on"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los preajustes son reestilizaciones de otros fondos de pantalla; Explorar los oculta a menos que actives esto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プリセットは他の壁紙の見た目を変えたものです。オンにしない限り閲覧には表示されません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预设是对其他壁纸的重新搭配，除非开启，否则不会显示在浏览中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "預設是對其他桌布的重新搭配，除非開啟，否則不會顯示在瀏覽中"
+          }
+        }
+      }
+    },
     "Presets are settings other people saved for this wallpaper. Downloading one adds it to the Preset menu in this wallpaper's scene settings — it does not add another wallpaper." : {
       "comment" : "Info tooltip for the presets section on a Workshop wallpaper's detail page.",
       "localizations" : {
@@ -58213,6 +58248,76 @@
         }
       }
     },
+    "Show presets as wallpapers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show presets as wallpapers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar preajustes como fondos de pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プリセットを壁紙として表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把预设当作壁纸显示"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把預設當作桌布顯示"
+          }
+        }
+      }
+    },
+    "Show presets as wallpapers in Browse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show presets as wallpapers in Browse"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar preajustes como fondos de pantalla en Explorar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閲覧でプリセットを壁紙として表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在浏览中把预设当作壁纸显示"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在瀏覽中把預設當作桌布顯示"
+          }
+        }
+      }
+    },
     "Show sanitized log in Finder" : {
       "localizations" : {
         "es" : {
@@ -65800,6 +65905,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "程式碼簽章無效。"
+          }
+        }
+      }
+    },
+    "The download didn't land in your authorized Steam library, so it wasn't imported." : {
+      "comment" : "Workshop download refused: the item directory failed containment revalidation under the authorized Steam library.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The download didn't land in your authorized Steam library, so it wasn't imported."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La descarga no quedó dentro de tu biblioteca de Steam autorizada, así que no se importó."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードが許可された Steam ライブラリ内に見つからなかったため、読み込みませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载没有落在你已授权的 Steam 库中，因此未导入。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載沒有落在你已授權的 Steam 庫中，因此未匯入。"
           }
         }
       }

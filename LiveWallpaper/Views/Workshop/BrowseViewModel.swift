@@ -60,7 +60,11 @@ extension WorkshopQueryItem {
 }
 
 /// Official WPE Workshop genre tags — exact display strings, since Steam matches
-/// tags by exact case. Deselect-to-narrow: deselected genres become `excludedtags`.
+/// tags by exact case. On the keyed path a narrowed selection becomes
+/// `requiredtags` with `match_all_tags=false`: an item can carry several genres,
+/// so excluding the unselected ones would drop every multi-genre wallpaper. The
+/// keyless page has no `match_all_tags`, so it keeps the exclusion form —
+/// see `makeRequest`.
 enum WorkshopGenre {
     static let allTags: [String] = [
         "Abstract", "Animal", "Anime", "Cartoon", "CGI", "Cyberpunk", "Fantasy",
@@ -70,8 +74,6 @@ enum WorkshopGenre {
     ]
 }
 
-/// Single-select (an item targets one resolution, so multi-select would AND to
-/// nothing) mapping to one exact Workshop resolution tag. `.any` applies no tag.
 enum WorkshopResolutionFilter: String, CaseIterable, Identifiable {
     case any
     case standardDefinition
@@ -140,6 +142,12 @@ final class BrowseViewModel {
     /// runtime, so never surface them (server-side exclusion, not post-filter).
     nonisolated static let alwaysExcludedTags = ["Application"]
 
+    /// `Preset` items restyle another wallpaper rather than being one — excluded
+    /// unless the user opted in via Settings → Workshop.
+    nonisolated static func excludedTags(showsPresets: Bool) -> [String] {
+        showsPresets ? alwaysExcludedTags : alwaysExcludedTags + ["Preset"]
+    }
+
     /// Typing schedules a debounced auto-search (fires after `searchDebounce` of quiet); Return / Search submit immediately.
     var searchInput: String = "" {
         didSet {
@@ -173,6 +181,9 @@ final class BrowseViewModel {
     var hidesDownloadedInBrowse: Bool = false
     private(set) var currentRequest: WorkshopQueryRequest
     private(set) var items: [WorkshopQueryItem] = []
+    /// True once any page has been applied. The skeleton is for "nothing has
+    /// ever loaded"; a reload over an existing grid dims it instead.
+    private(set) var hasLoadedPage: Bool = false
     private(set) var totalAvailable: Int?
     private(set) var isLoading: Bool = false
     /// True while paging — current results stay on screen until the new page
@@ -223,10 +234,19 @@ final class BrowseViewModel {
 
     var canGoNextPage: Bool {
         guard !isRateLimited, !isLoading, !isPaging else { return false }
-        if let totalPages { return pageIndex < totalPages }
-        if usesKeylessSearch { return hasMoreKeylessPages && pageIndex < Self.maxQueryPage }
-        return items.count >= perPage
+        if let totalPages {
+            return pageIndex < totalPages
+        }
+        if usesKeylessSearch {
+            return hasMoreKeylessPages && pageIndex < Self.maxQueryPage
+        }
+        return lastFetchedRawItemCount >= perPage
     }
+
+    /// Size of the last fetched page BEFORE `displayable` dropped Application /
+    /// Preset items: counting `items` instead greys out Next on a full page that
+    /// happened to contain one filtered item.
+    var lastFetchedRawItemCount: Int = 0
 
     var canGoPrevPage: Bool {
         !isRateLimited && !isLoading && !isPaging && pageIndex > 1
@@ -274,6 +294,9 @@ final class BrowseViewModel {
         }
     }
 
+    /// The previous page stays on screen until the new one replaces it (the way
+    /// `goToPage` already works) — clearing here flashed the skeleton on every
+    /// filter change. `isLoading` is what the grid dims itself with.
     func reload() async {
         guard !isRateLimited else { return }
         autoSearchTask?.cancel()
@@ -281,7 +304,6 @@ final class BrowseViewModel {
         pageIndex = 1
         let request = makeRequest(page: 1)
         currentRequest = request
-        items = []
         totalAvailable = nil
         hasMoreKeylessPages = false
         isLoading = true
@@ -297,7 +319,7 @@ final class BrowseViewModel {
     /// successful fetch, so a failed jump leaves the pager consistent.
     func goToPage(_ target: Int) async {
         guard !isRateLimited, !isLoading, !isPaging else { return }
-        let upperBound = totalPages ?? Int.max
+        let upperBound = totalPages ?? Self.maxQueryPage
         let clamped = min(max(target, 1), upperBound)
         guard clamped != pageIndex else { return }
         isPaging = true
@@ -355,9 +377,19 @@ final class BrowseViewModel {
         guard !isRateLimited else { return }
         let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Pinning a tag we always exclude would require and exclude it at once,
+        // which can only ever come back empty.
+        guard !Self.excludedTags(showsPresets: showsWorkshopPresets).contains(trimmed) else { return }
         creatorFilter = nil
         pinnedTag = trimmed
         await reload()
+    }
+
+    /// Applies the scope `browseTag`/`browseCreator` set, without the fetch they
+    /// follow it with — the request shape is otherwise only reachable through the network.
+    func applyScopeForTesting(pinnedTag: String? = nil, creator: CreatorFilter? = nil) {
+        self.pinnedTag = pinnedTag
+        creatorFilter = creator
     }
 
     func clearPinnedTag() async {
@@ -525,23 +557,42 @@ final class BrowseViewModel {
                     : try await self.services.queryService.fetch(request)
                 guard token == self.currentRequestToken else { return false }
                 if replacingItems {
-                    self.items = Self.displayable(page.items)
+                    items = Self.displayable(page.items, showsPresets: showsWorkshopPresets)
+                    lastFetchedRawItemCount = page.items.count
+                    hasLoadedPage = true
                 }
                 self.hasMoreKeylessPages = self.usesKeylessSearch && page.nextCursor != nil
                 self.totalAvailable = page.totalAvailable
                 self.lastError = nil
                 self.rateLimitUntil = nil
                 succeeded = true
+                if !usesKeylessSearch {
+                    Task { [weak self] in
+                        await self?.mergeCreatorNames(into: page, request: request, token: token)
+                    }
+                }
             } catch let error as WorkshopQueryError {
                 guard token == self.currentRequestToken else { return false }
                 self.lastError = error
                 if case .rateLimited(let retryAfter) = error {
                     self.rateLimitUntil = Date().addingTimeInterval(retryAfter ?? 60)
                 }
+                // `reload` no longer blanks the grid up front, so a failed one
+                // has to drop the page it was replacing — otherwise the error
+                // state (gated on an empty grid) never shows and the old
+                // filter's results stay on screen. Paging keeps its results.
+                if replacingItems, !paging {
+                    items = []
+                    lastFetchedRawItemCount = 0
+                }
             } catch is CancellationError {
             } catch {
                 guard token == self.currentRequestToken else { return false }
                 self.lastError = .responseParseFailure
+                if replacingItems, !paging {
+                    items = []
+                    lastFetchedRawItemCount = 0
+                }
             }
             guard token == self.currentRequestToken else { return false }
             if paging {
@@ -555,17 +606,42 @@ final class BrowseViewModel {
         return await task.value
     }
 
-    /// Normal browse already excludes `Application` server-side (no-op here); the
-    /// creator-scoped GetUserFiles path can't, so this enforces it client-side.
-    private static func displayable(_ items: [WorkshopQueryItem]) -> [WorkshopQueryItem] {
-        items.filter { item in
+    /// Second phase of a keyed fetch: personas arrive after the grid has already
+    /// painted. Gated on the same token as the page, so names from a superseded
+    /// request can never be painted onto the page that replaced it.
+    private func mergeCreatorNames(
+        into page: WorkshopQueryPage,
+        request: WorkshopQueryRequest,
+        token: UInt64
+    ) async {
+        let names = await services.queryService.resolveCreatorNames(for: page, request: request)
+        guard token == currentRequestToken, !names.isEmpty else { return }
+        items = items.map { item in
+            guard let id = item.creatorID, let name = names[id] else { return item }
+            var copy = item
+            copy.creatorPersonaName = name
+            return copy
+        }
+    }
+
+    /// Normal browse already excludes `Application`/`Preset` server-side (no-op
+    /// here); the creator-scoped GetUserFiles path can't, so this enforces it client-side.
+    private static func displayable(_ items: [WorkshopQueryItem], showsPresets: Bool) -> [WorkshopQueryItem] {
+        let excluded = excludedTags(showsPresets: showsPresets)
+        return items.filter { item in
             !item.tags.contains { tag in
-                alwaysExcludedTags.contains { tag.caseInsensitiveCompare($0) == .orderedSame }
+                excluded.contains { tag.caseInsensitiveCompare($0) == .orderedSame }
             }
         }
     }
 
-    private func makeRequest(page: Int) -> WorkshopQueryRequest {
+    /// Read fresh on every request: Settings → Workshop writes straight to
+    /// `GlobalSettings`, with no push into this view model.
+    private var showsWorkshopPresets: Bool {
+        SettingsManager.shared.loadGlobalSettings().showsWorkshopPresetsInBrowse
+    }
+
+    func makeRequest(page: Int) -> WorkshopQueryRequest {
         if let creatorFilter {
             // GetUserFiles ignores this field (protobuf default sorts by
             // lastupdated); it only feeds the cache key, so name the truth.
@@ -573,6 +649,7 @@ final class BrowseViewModel {
                 sort: .lastUpdated,
                 page: page,
                 numPerPage: perPage,
+                excludedTags: excludedFilterTags(),
                 creatorSteamID: creatorFilter.steamID
             )
         }
@@ -585,28 +662,40 @@ final class BrowseViewModel {
                 numPerPage: perPage,
                 timeFrame: preferredTimeFrame,
                 requiredTags: [pinnedTag],
-                excludedTags: Self.alwaysExcludedTags
+                excludedTags: excludedFilterTags()
             )
         }
 
         let trimmed = searchInput.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        var excluded: [String] = []
-        excluded += deselectedTags(in: selectedTypes, all: WorkshopContentTypeFilter.selectableCases) { $0.tag }
-        excluded += deselectedTags(in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases) { $0.tag }
-        excluded += deselectedTags(in: selectedResolutions, all: WorkshopResolutionFilter.selectableCases) { $0.tag }
-        excluded += deselectedGenreTags()
-        excluded += Self.alwaysExcludedTags
-
+        // The public browse page has no `match_all_tags`, so several
+        // `requiredtags[]` there cannot be stated as "any of"; the keyless path
+        // keeps the exclusion form it had before the keyed path switched.
+        let keyless = usesKeylessSearch
         return WorkshopQueryRequest(
             sort: preferredSort,
             searchText: trimmed,
             page: page,
             numPerPage: perPage,
             timeFrame: preferredTimeFrame,
-            requiredTags: [],
-            excludedTags: excluded
+            requiredTags: keyless ? [] : selectedGenreTags(),
+            // Genre is the only multi-valued facet — a wallpaper can be Anime
+            // AND Landscape — so a genre selection matches ANY of them.
+            matchAllTags: false,
+            excludedTags: excludedFilterTags() + (keyless ? deselectedGenreTags() : [])
         )
+    }
+
+    /// Type / maturity / resolution partition their items (each carries exactly
+    /// one), so a narrowed selection is exactly the deselected tags excluded.
+    /// Genre does not partition and is handled by `selectedGenreTags()`.
+    private func excludedFilterTags() -> [String] {
+        var excluded: [String] = []
+        excluded += deselectedTags(in: selectedTypes, all: WorkshopContentTypeFilter.selectableCases) { $0.tag }
+        excluded += deselectedTags(in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases) { $0.tag }
+        excluded += deselectedTags(in: selectedResolutions, all: WorkshopResolutionFilter.selectableCases) { $0.tag }
+        excluded += Self.excludedTags(showsPresets: showsWorkshopPresets)
+        return excluded
     }
 
     /// Empty when the category is fully selected or fully empty (both = "no filter").
@@ -619,9 +708,14 @@ final class BrowseViewModel {
         return all.filter { !selected.contains($0) }.compactMap(tag)
     }
 
-    private func deselectedGenreTags() -> [String] {
+    private func selectedGenreTags() -> [String] {
         guard !selectedGenres.isEmpty, selectedGenres.count < WorkshopGenre.allTags.count else { return [] }
-        return WorkshopGenre.allTags.filter { !selectedGenres.contains($0) }
+        return WorkshopGenre.allTags.filter { selectedGenres.contains($0) }
+    }
+
+    /// Keyless form of the genre narrowing: the unselected genres, excluded.
+    private func deselectedGenreTags() -> [String] {
+        deselectedTags(in: selectedGenres, all: WorkshopGenre.allTags) { $0 }
     }
 }
 #endif

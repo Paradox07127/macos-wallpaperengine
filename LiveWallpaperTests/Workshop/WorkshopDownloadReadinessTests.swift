@@ -192,6 +192,52 @@ struct WorkshopDownloadReadinessTests {
         }
     }
 
+    /// `SteamWorkshopDownloadResult.itemPath` is decoded from the connector's
+    /// JSON reply, so it is a claim about where the files went. Authorization
+    /// has to come from the id we asked for, resolved under the library the
+    /// user actually granted.
+    @Test("A finished download is authorized by containment, not by the reported path")
+    func downloadedItemDirectoryIsRevalidated() throws {
+        let doctor = try makeService()
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory
+            .appendingPathComponent("DownloadContainment-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: root) }
+        let steamRoot = root.appendingPathComponent("Steam", isDirectory: true)
+        let content = steamRoot
+            .appendingPathComponent("steamapps/workshop/content/431960", isDirectory: true)
+        let outside = root.appendingPathComponent("outside", isDirectory: true)
+        try fm.createDirectory(at: content, withIntermediateDirectories: true)
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: outside.appendingPathComponent("project.json"))
+
+        let item = content.appendingPathComponent("100", isDirectory: true)
+        try fm.createDirectory(at: item, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: item.appendingPathComponent("project.json"))
+
+        // Control: a real item directory inside the authorized library is taken.
+        #expect(
+            doctor.authorizedDownloadedItemDirectory(workshopID: "100", steamRoot: steamRoot)?.path
+                == item.resolvingSymlinksInPath().path
+        )
+
+        // The id's directory is a symlink to a project outside the library.
+        try fm.removeItem(at: item)
+        try fm.createSymbolicLink(at: item, withDestinationURL: outside)
+        #expect(doctor.authorizedDownloadedItemDirectory(workshopID: "100", steamRoot: steamRoot) == nil)
+
+        // Nothing under the authorized library carries this id at all.
+        #expect(doctor.authorizedDownloadedItemDirectory(workshopID: "200", steamRoot: steamRoot) == nil)
+
+        // The download path cannot be driven without the connector, so pin that
+        // it hands the importer the revalidated folder and not the reply's path.
+        let source = try RepositoryRoot.source(
+            "LiveWallpaper/Infrastructure/Workshop/Doctor/SteamCMDDoctorService.swift"
+        )
+        #expect(!source.contains("onContentReady(URL(fileURLWithPath:"))
+        #expect(source.contains("guard let folder = authorizedDownloadedItemDirectory("))
+    }
+
     @Test("Everything green with a resolvable grant is ready")
     func allGreenResolvableIsReady() throws {
         // Control: the added conditions must not block a genuinely ready setup.

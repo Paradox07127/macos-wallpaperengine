@@ -532,6 +532,95 @@ struct InstalledOwnershipCharacterizationTests {
 
 
 
+    /// The repository is the only place a Workshop item's files live, so the
+    /// library record must not outlive them — nor be dropped while they stay.
+    @Test("a refused mutation gate leaves the library record and bookmark intact")
+    @MainActor
+    func deleteRefusedByMutationGateKeepsLocalRecords() async {
+        let target = entry(id: "100", title: "Fixture", importedAt: 10)
+        let store = WorkshopInstalledLibraryStoreProbe(entries: [target])
+        let probe = WorkshopInstalledDeleteProbe(store: store, bookmarks: ["100"])
+        probe.repositoryThrows = true
+        let model = InstalledLibraryModel(
+            dependencies: store.dependencies,
+            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
+        )
+        model.onAppear()
+
+        model.performDelete(target, services: probe.services)
+        await Self.waitUntil { model.errorMessage != nil }
+
+        #expect(probe.log == ["repository:100"])
+        #expect(store.entries == [target])
+        #expect(probe.bookmarks == ["100"])
+        // Not the post-removal "files couldn't be deleted" message, which names
+        // the title: nothing was removed, so nothing was orphaned.
+        #expect(model.errorMessage?.contains("Fixture") != true)
+        #expect(model.visibleEntries == [target])
+        model.onDisappear()
+    }
+
+    @Test("the repository delete runs before the history and bookmark removal")
+    @MainActor
+    func deleteRemovesRepositoryItemBeforeLocalRecords() async {
+        let target = entry(id: "100", title: "Fixture", importedAt: 10)
+        let store = WorkshopInstalledLibraryStoreProbe(entries: [target])
+        let probe = WorkshopInstalledDeleteProbe(store: store, bookmarks: ["100"])
+        let gate = WorkshopInstalledUpdateGate()
+        probe.gate = (gate, "delete-100")
+        let model = InstalledLibraryModel(
+            dependencies: store.dependencies,
+            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
+        )
+        model.onAppear()
+
+        model.performDelete(target, services: probe.services)
+        await gate.waitUntilSuspended("delete-100")
+        #expect(probe.log == ["repository:100"])
+        #expect(store.entries == [target])
+        // Optimistic hide: the row is gone while the repository call runs.
+        #expect(model.visibleEntries.isEmpty)
+
+        await gate.resume("delete-100", value: "deleted")
+        await Self.waitUntil { probe.log.count >= 3 }
+
+        #expect(probe.log == ["repository:100", "removeImport:100", "removeBookmark:100"])
+        #expect(store.entries.isEmpty)
+        #expect(model.errorMessage == nil)
+        model.onDisappear()
+    }
+
+    @Test("delete refuses outright while the same item is downloading")
+    @MainActor
+    func deleteRefusesWhileItemIsMutating() async {
+        let target = entry(id: "100", title: "Fixture", importedAt: 10)
+        let store = WorkshopInstalledLibraryStoreProbe(entries: [target])
+        let probe = WorkshopInstalledDeleteProbe(store: store, bookmarks: ["100"])
+        probe.isMutating = true
+        let model = InstalledLibraryModel(
+            dependencies: store.dependencies,
+            lifecycleOwner: InstalledPageLifecycleOwner(monitorHooks: .noOp)
+        )
+        model.onAppear()
+
+        model.performDelete(target, services: probe.services)
+        await Self.waitUntil { model.errorMessage != nil }
+
+        #expect(probe.log.isEmpty)
+        #expect(store.entries == [target])
+        #expect(probe.bookmarks == ["100"])
+        #expect(model.visibleEntries == [target])
+        model.onDisappear()
+    }
+
+    @MainActor
+    private static func waitUntil(_ condition: () -> Bool) async {
+        for _ in 0 ..< 500 where !condition() {
+            await Task.yield()
+        }
+        #expect(condition())
+    }
+
     @MainActor
     private func waitForCommandDrain(_ model: InstalledLibraryModel) async {
         for _ in 0..<100 where model.activeApplyCommandCount != 0 {
@@ -846,6 +935,51 @@ private final class WorkshopDragMonitorProbe {
 private extension InstalledPageLifecycleOwner.DragMonitorHooks {
     static var noOp: Self {
         Self(installLocal: { _ in nil }, installGlobal: { _ in nil }, remove: { _ in })
+    }
+}
+
+@MainActor
+private final class WorkshopInstalledDeleteProbe {
+    let store: WorkshopInstalledLibraryStoreProbe
+    var bookmarks: Set<String>
+    var isMutating = false
+    var repositoryThrows = false
+    var gate: (gate: WorkshopInstalledUpdateGate, key: String)?
+    /// Call order across the two halves of a delete — the whole point here.
+    private(set) var log: [String] = []
+
+    init(store: WorkshopInstalledLibraryStoreProbe, bookmarks: Set<String> = []) {
+        self.store = store
+        self.bookmarks = bookmarks
+    }
+
+    var services: InstalledLibraryModel.DeleteServices {
+        InstalledLibraryModel.DeleteServices(
+            containsBookmark: { [self] in bookmarks.contains($0) },
+            removeBookmarks: { [self] id in
+                bookmarks.remove(id)
+                log.append("removeBookmark:\(id)")
+            },
+            removeImportIfMatching: { [self] identity in
+                guard let index = store.entries.firstIndex(where: {
+                    WorkshopInstalledEntryIdentity($0) == identity
+                }) else { return false }
+                store.entries.remove(at: index)
+                log.append("removeImport:\(identity.workshopID)")
+                return true
+            },
+            isMutating: { [self] _ in isMutating },
+            deleteSharedRepositoryItem: { [self] id in
+                log.append("repository:\(id)")
+                if let gate {
+                    _ = await gate.gate.suspend(gate.key)
+                }
+                if repositoryThrows {
+                    throw WorkshopRepositoryCoordinator.MutationError.itemAlreadyMutating(id)
+                }
+                return SteamDeleteResult(outcome: .deleted, freedBytes: 1, refusalReason: nil)
+            }
+        )
     }
 }
 

@@ -426,15 +426,23 @@ struct InstalledView: View {
                         matchingImportedAt: $0.importedAt
                     )
                 },
+                isMutating: { UInt64($0).map { WorkshopDownloadCoordinator.shared.isBusy($0) } ?? false },
                 deleteSharedRepositoryItem: { [doctor] workshopID in
                     // The connector deletes inside this library and cannot see
                     // the bookmark that authorized it; unresolvable means we
                     // have nothing safe to name, so nothing is deleted.
                     guard let steamRoot = try? doctor.resolveWorkdirURL() else { return nil }
-                    return await SteamConnectorClient.deleteWorkshopItem(
-                        workshopID: workshopID,
-                        libraryPath: steamRoot.path(percentEncoded: false)
-                    )
+                    // Same gate as a download: `workshopItemWillMutate` makes a
+                    // runtime still reading this id let go before the tree is cut.
+                    // A refusal propagates so the caller keeps the library record.
+                    return try await WorkshopRepositoryCoordinator.shared.withExclusiveMutation(
+                        workshopID: workshopID
+                    ) {
+                        await SteamConnectorClient.deleteWorkshopItem(
+                            workshopID: workshopID,
+                            libraryPath: steamRoot.path(percentEncoded: false)
+                        )
+                    }
                 }
             )
         )

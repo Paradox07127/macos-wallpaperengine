@@ -979,3 +979,77 @@ struct SteamCMDProfileTests {
         }
     }
 }
+
+/// The connector's profile cleanups (account session, staged Workshop tree,
+/// subscription probe, managed install) checked the path for links and then
+/// handed the same string to `removeItem(atPath:)`, which resolves it again.
+@Suite("Profile directory removal never follows a link")
+struct SteamProfileDirectoryRemovalTests {
+    @Test("A link is unlinked and its target kept; a linked parent is refused; a real tree goes")
+    func linksAreUnlinkedNotFollowed() throws {
+        let fm = FileManager.default
+        let stamp = UUID().uuidString
+        let root = fm.temporaryDirectory.appendingPathComponent("profile-removal-\(stamp)", isDirectory: true)
+        let outside = fm.temporaryDirectory.appendingPathComponent("profile-removal-outside-\(stamp)", isDirectory: true)
+        defer {
+            try? fm.removeItem(at: root)
+            try? fm.removeItem(at: outside)
+        }
+        let accounts = root.appendingPathComponent("Accounts", isDirectory: true)
+        try fm.createDirectory(at: accounts, withIntermediateDirectories: true)
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        let keep = outside.appendingPathComponent("keep.txt")
+        try Data("keep".utf8).write(to: keep)
+
+        let link = accounts.appendingPathComponent("alice")
+        try fm.createSymbolicLink(at: link, withDestinationURL: outside)
+        try SteamLibraryWriter.removeDirectory(link, under: root)
+        #expect(throws: (any Error).self) { try fm.destinationOfSymbolicLink(atPath: link.path) }
+        #expect(fm.fileExists(atPath: keep.path), "removal followed the link into its target")
+
+        try fm.removeItem(at: accounts)
+        try fm.createSymbolicLink(at: accounts, withDestinationURL: outside)
+        #expect(throws: SteamLibraryWriter.WriteError.self) {
+            try SteamLibraryWriter.removeDirectory(accounts.appendingPathComponent("keep.txt"), under: root)
+        }
+        #expect(fm.fileExists(atPath: keep.path), "removal walked through a linked parent")
+
+        try fm.removeItem(at: accounts)
+        let real = accounts.appendingPathComponent("bob", isDirectory: true)
+        try fm.createDirectory(at: real.appendingPathComponent("config", isDirectory: true), withIntermediateDirectories: true)
+        try Data("s".utf8).write(to: real.appendingPathComponent("config/config.vdf"))
+        try SteamLibraryWriter.removeDirectory(real, under: root)
+        #expect(!fm.fileExists(atPath: real.path))
+        #expect(fm.fileExists(atPath: accounts.path), "the parent went with it")
+    }
+
+    /// Control: a target that never existed is genuinely a no-op (the ENOENT path).
+    @Test("A target that is already gone is a no-op")
+    func alreadyGoneIsANoOp() throws {
+        let fm = FileManager.default
+        let stamp = UUID().uuidString
+        let root = fm.temporaryDirectory.appendingPathComponent("profile-removal-enoent-\(stamp)", isDirectory: true)
+        defer { try? fm.removeItem(at: root) }
+        let dir = root.appendingPathComponent("Accounts", isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try SteamLibraryWriter.removeDirectory(dir.appendingPathComponent("ghost"), under: root)
+        #expect(fm.fileExists(atPath: dir.path))
+    }
+
+    /// A component name over NAME_MAX (255 bytes) makes `fstatat` fail with
+    /// ENAMETOOLONG, not ENOENT — a deterministic non-ENOENT failure reachable
+    /// without root. The caller must see this as a real error, not "already gone".
+    @Test("An fstatat failure other than ENOENT must not be reported as removed")
+    func nonENOENTStatFailureThrows() throws {
+        let fm = FileManager.default
+        let stamp = UUID().uuidString
+        let root = fm.temporaryDirectory.appendingPathComponent("profile-removal-toolong-\(stamp)", isDirectory: true)
+        defer { try? fm.removeItem(at: root) }
+        let dir = root.appendingPathComponent("Accounts", isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let tooLong = dir.appendingPathComponent(String(repeating: "x", count: 300))
+        #expect(throws: SteamLibraryWriter.WriteError.self) {
+            try SteamLibraryWriter.removeDirectory(tooLong, under: root)
+        }
+    }
+}
