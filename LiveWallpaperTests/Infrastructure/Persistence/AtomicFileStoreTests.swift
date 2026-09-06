@@ -199,6 +199,56 @@ struct AtomicFileStoreTests {
         #expect(backup == TestValue(label: "v2", count: 2))
     }
 
+    /// The rollback branch: rotation has already moved the primary aside when the
+    /// temp → primary move fails. Without the restore the store would be left with
+    /// no primary at all, and a reader would silently fall back a generation.
+    @Test("A failed temp → primary move restores the rotated backup")
+    func failedPromotionRestoresTheRotatedPrimary() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("payload.json")
+        let tempURL = fileURL.appendingPathExtension("tmp")
+
+        try AtomicFileStore<TestValue>(fileURL: fileURL).write(TestValue(label: "v1", count: 1))
+
+        let saboteur = FailingMoveFileManager(failingSource: tempURL)
+        let store = AtomicFileStore<TestValue>(fileURL: fileURL, fileManager: saboteur)
+        #expect(throws: (any Error).self) {
+            try store.write(TestValue(label: "v2", count: 2))
+        }
+
+        #expect(saboteur.refusedMoves == 1, "the promotion the rollback exists for never ran")
+        #expect(
+            FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)),
+            "rotation moved the primary aside and nothing put it back"
+        )
+        #expect(store.read() == TestValue(label: "v1", count: 1))
+    }
+
+    /// Fails exactly the one move the rollback guards — promoting temp into the
+    /// primary slot — and lets rotation itself through, which is the only order
+    /// that reaches the branch.
+    private final class FailingMoveFileManager: FileManager, @unchecked Sendable {
+        // Only ever touched from the single thread running one `write` call; the
+        // store holds no queue of its own and the test does not spawn any.
+        private let failingSource: URL
+        private(set) var refusedMoves = 0
+
+        init(failingSource: URL) {
+            self.failingSource = failingSource
+            super.init()
+        }
+
+        override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+            guard srcURL.standardizedFileURL == failingSource.standardizedFileURL else {
+                try super.moveItem(at: srcURL, to: dstURL)
+                return
+            }
+            refusedMoves += 1
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+
     private func makeTempDirectory() throws -> URL {
         let url = FileManager.default
             .temporaryDirectory
