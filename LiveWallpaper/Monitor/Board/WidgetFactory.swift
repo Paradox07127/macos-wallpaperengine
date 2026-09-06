@@ -88,15 +88,42 @@ struct MonitorWidgetNameTile: View {
     /// Board-authoritative radius so fill stays concentric with the selection border.
     var cornerRadius: CGFloat = MonitorBoardGeometry.appleCornerRadius
 
+    /// How far the board around this tile is being shrunk, so the one mode whose
+    /// whole job is legibility can undo it.
+    @Environment(\.monitorRenderScale) private var renderScale
+
     private var scale: Design.TypeScale { .init(cellHeight: cellHeight) }
 
+    private var iconSize: CGFloat {
+        scale.hero * 0.58
+    }
+
+    private var labelSize: CGFloat {
+        scale.caption + 1
+    }
+
+    /// The label read at a fifth of a 5K desktop is under three points of text.
+    /// This mode exists *for* canvases too small to read a real tile on, so it
+    /// is the one tile that grows to meet a floor in screen points instead of
+    /// shrinking with the board — the real-widget modes still predict the
+    /// desktop exactly. Capped at what the cell can hold.
+    private var typeBoost: CGFloat {
+        guard renderScale > 0, renderScale < 1 else { return 1 }
+        let stack = iconSize + max(4, cellHeight * 0.05) + labelSize * 1.2
+        let room = max(cellHeight - 2 * Design.contentInsetH, 1) / max(stack, 1)
+        return max(1, min(Self.minimumLabelScreenSize / (labelSize * renderScale), room))
+    }
+
+    /// Apple's smallest legible UI text.
+    private static let minimumLabelScreenSize: CGFloat = 11
+
     var body: some View {
-        VStack(spacing: max(4, cellHeight * 0.05)) {
+        VStack(spacing: max(4, cellHeight * 0.05) * typeBoost) {
             Image(systemName: WidgetFactory.icon(kind))
-                .font(.system(size: scale.hero * 0.58, weight: .regular))
+                .font(.system(size: iconSize * typeBoost, weight: .regular))
                 .foregroundStyle(Design.inkFaint)
             Text(verbatim: WidgetFactory.displayName(kind))
-                .font(Design.subFont(size: scale.caption + 1))
+                .font(Design.subFont(size: labelSize * typeBoost))
                 .foregroundStyle(Design.inkMuted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

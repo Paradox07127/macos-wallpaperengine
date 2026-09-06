@@ -56,6 +56,9 @@ SUITES=(
   VideoResolutionContractCharacterizationTests
   WPECorpusManifestTests
   WPERendererOwnershipCharacterizationTests
+  # Name-table only, no Metal device: an unrecognised model material shader
+  # silently swaps a .mdl mesh for a billboard quad (3470948192 star dome).
+  WPESceneModelMaterialShaderTests
   WPESceneScriptB2bResourceLimitTests
   WPESceneScriptContainmentCharacterizationTests
   WPEUploadCancellationOracleTests

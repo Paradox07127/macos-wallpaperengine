@@ -36,6 +36,39 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(pack(layout, pass: pass, on: executor)[0].x == 999)
     }
 
+    /// §2.2 exception. A uniform carrying a `material` annotation is authorable
+    /// per material, and the pipeline builder writes the authored constant onto
+    /// the uniform's own name. Where such a uniform ALSO collides with a frame
+    /// global the authored value wins: `g_Brightness` is both the runtime pause
+    /// dimmer and generic2's "Brigtness", and the frame tier used to shadow every
+    /// authored model brightness (3470948192's star dome authors 1.5).
+    @Test("An authored material constant beats the frame global of the same name")
+    func authoredMaterialValueBeatsFrameGlobalOfTheSameName() throws {
+        let executor = try makeExecutor()
+        let pass = makePass(id: "a9", uniformValues: ["g_Brightness": .number(1.5)])
+        let material = [WPEUniformSlot(
+            name: "g_Brightness",
+            glslType: "float",
+            slot: 0,
+            slotCount: 1,
+            materialName: "Brigtness"
+        )]
+
+        #expect(planSteps(material, pass: pass, on: executor) == [
+            [.passValue("g_Brightness"), .frameGlobal("g_Brightness")],
+        ])
+        #expect(pack(material, pass: pass, on: executor, frame: makeFrame())[0].x == 1.5)
+
+        // Control: the SAME uniform without a material annotation keeps the frame
+        // tier in front (0.6 is the fixture's runtime brightness), so the reorder
+        // is scoped to material-authorable uniforms and nothing else moved.
+        let plain = [WPEUniformSlot(name: "g_Brightness", glslType: "float", slot: 0, slotCount: 1)]
+        #expect(planSteps(plain, pass: pass, on: executor) == [
+            [.frameGlobal("g_Brightness"), .passValue("g_Brightness")],
+        ])
+        #expect(pack(plain, pass: pass, on: executor, frame: makeFrame())[0].x == 0.6)
+    }
+
     /// §2.2 "Candidate priority dominates source priority within the frame/pass
     /// tiers": an EARLIER candidate's pass value beats a LATER candidate's
     /// frame-global. A rewrite that grouped by source (all frame globals first)
@@ -616,6 +649,111 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(unlit.ambientLighting == SIMD4<Float>(1, 1, 1, 1))
     }
 
+    /// §2.5, generic2 half. generic2 and generic4 expose the SAME uniforms under
+    /// DIFFERENT material names, and authors ship both spellings in one material,
+    /// so the two readings cannot share a priority list. 3470948192's `uc` carries
+    /// generic2's "Alpha" = 0.025 (the doppler slider) beside a stale "alpha" = 1.
+    @Test("generic2 material spellings bind independently of generic4's")
+    func generic2MaterialSpellings() throws {
+        let executor = try makeExecutor()
+        let layer = makeLayer(objectID: "MODEL")
+        let pass = makePass(
+            id: "d5e",
+            shader: "generic2",
+            constants: [
+                "Alpha": .number(0.025),
+                "alpha": .number(1),
+                "Color": .vector([0.8, 0.8, 0.8]),
+                "Brigtness": .number(1.5),
+            ]
+        )
+
+        let generic2 = executor.sceneModelGenericUniforms(
+            for: pass, layer: layer, hasComponentMap: false, materialShader: .generic2
+        )
+        #expect(generic2.tintColorAlpha == SIMD4<Float>(0.8, 0.8, 0.8, 0.025))
+        #expect(generic2.brightnessFlags.x == 1.5)
+
+        // Control: the generic4 reading of the SAME material takes the other
+        // spellings and lands on alpha = 1 / brightness = 1 / tint = default —
+        // proving the split is what makes the generic2 answer above possible.
+        let generic4 = executor.sceneModelGenericUniforms(
+            for: pass, layer: layer, hasComponentMap: false, materialShader: .genericImage4
+        )
+        #expect(generic4.tintColorAlpha == SIMD4<Float>(1, 1, 1, 1))
+        #expect(generic4.brightnessFlags.x == 1)
+    }
+
+    /// §2.5, generic4 REFLECTION. The combo alone is not enough: `g_Texture3` is
+    /// `_rt_MipMappedFrameBuffer`, and when that capture is missing the slot falls
+    /// back to the albedo, which would paint the model with its own texture instead
+    /// of the scene. 3470948192's droplet is entirely this term (albedo is
+    /// `util/black` × tint 0,0,0), so the gate decides between a mirror and a hole.
+    @Test("REFLECTION lights up only when the mip-mapped scene capture is bound")
+    func sceneModelReflectionRequiresItsCapture() throws {
+        let executor = try makeExecutor()
+        let layer = makeLayer(objectID: "MODEL")
+        let pass = makePass(
+            id: "d5f",
+            shader: "models/generic4",
+            constants: [
+                "reflectivity": .number(0.5),
+                "roughness": .number(0.25),
+                "metallic": .number(1),
+            ],
+            combos: ["REFLECTION": 1]
+        )
+
+        let bound = executor.sceneModelGenericUniforms(
+            for: pass,
+            layer: layer,
+            hasComponentMap: false,
+            materialShader: .genericImage4,
+            hasReflectionSource: true,
+            reflectionTopMipLevel: 9
+        )
+        #expect(bound.brightnessFlags.w == 1)
+        #expect(bound.reflection == SIMD4<Float>(0.5, 0.25, 1, 9))
+
+        // Control: same authored combo, no capture — the flag stays off.
+        let unbound = executor.sceneModelGenericUniforms(
+            for: pass, layer: layer, hasComponentMap: false, materialShader: .genericImage4
+        )
+        #expect(unbound.brightnessFlags.w == 0)
+
+        // Control: capture bound but the material never asked for REFLECTION.
+        let unrequested = executor.sceneModelGenericUniforms(
+            for: makePass(id: "d5f2", shader: "models/generic4"),
+            layer: layer,
+            hasComponentMap: false,
+            materialShader: .genericImage4,
+            hasReflectionSource: true
+        )
+        #expect(unrequested.brightnessFlags.w == 0)
+    }
+
+    /// §2.5, hemisphere. `mix(skylight, ambient, N·up*0.5+0.5)` is a PER-VERTEX
+    /// term in generic2.vert/generic4.vert. Now that the mesh carries real MDLV
+    /// normals the mix moved into the fragment, so the two colours must reach it
+    /// separately instead of pre-averaged at the hemisphere midpoint.
+    @Test("Ambient and skylight reach the model fragment as separate colours")
+    func sceneModelCarriesAmbientAndSkylightSeparately() throws {
+        let executor = try makeExecutor()
+        let pass = makePass(
+            id: "d5h",
+            shader: "models/generic4",
+            uniformValues: [
+                "g_LightAmbientColor": .vector([1, 0, 0]),
+                "g_LightSkylightColor": .vector([0, 0, 1]),
+            ]
+        )
+        let uniforms = executor.sceneModelGenericUniforms(
+            for: pass, layer: makeLayer(objectID: "MODEL"), hasComponentMap: false
+        )
+        #expect(uniforms.ambientLighting == SIMD4<Float>(1, 0, 0, 1))
+        #expect(uniforms.skylightColor == SIMD4<Float>(0, 0, 1, 0))
+    }
+
     /// §2.5 "effects/skew". MODE=1 vertex params use a THIRD chain: exact
     /// `uniformValues[name] ?? constants[name]` interleaved PER CANDIDATE, so a
     /// constant on an earlier candidate beats a pass value on a later one —
@@ -1108,7 +1246,8 @@ private func makePass(
     materialUniformNames: [String: String] = [:],
     textures: [Int: WPETextureReference] = [:],
     binds: [Int: WPETextureReference] = [:],
-    bindings: [Int: WPETextureReference] = [:]
+    bindings: [Int: WPETextureReference] = [:],
+    combos: [String: Int] = [:]
 ) -> WPEPreparedRenderPass {
     WPEPreparedRenderPass(
         pass: WPERenderPass(
@@ -1120,7 +1259,7 @@ private func makePass(
             textures: textures,
             binds: binds,
             constants: constants,
-            combos: [:],
+            combos: combos,
             blending: "normal",
             cullMode: "nocull",
             depthTest: "disabled",
