@@ -62,7 +62,7 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
             y: 0.20
         )
         let model = makeModel(placements: [placement])
-        model.topInsetFraction = 0.05
+        model.safeArea = MonitorSafeAreaInsets(top: 0.05)
         var emissions: [MonitorBoardConfiguration] = []
         model.onConfigurationEdited = { emissions.append($0) }
 
@@ -74,7 +74,7 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
         let footprint = model.geometry.pixelSize(for: landed.kind, size: landed.size)
         let expectedPixelOrigin = CGPoint(
             x: boardSize.width - footprint.width,
-            y: boardSize.height * model.topInsetFraction
+            y: boardSize.height * model.safeArea.top
         )
         let expectedNormalized = LayoutEngine.normalized(
             pixelOrigin: expectedPixelOrigin,
@@ -227,7 +227,7 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
             y: 0.01
         )
         let model = makeModel(placements: [placement])
-        model.topInsetFraction = 0.05
+        model.safeArea = MonitorSafeAreaInsets(top: 0.05)
         model.selectedID = id
 
         #expect(model.moveSelectedWidget(.right, distance: 5000))
@@ -237,7 +237,7 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
         let footprint = model.footprint(for: landed)
         let origin = model.pixelOrigin(for: landed)
         #expect(isApproximatelyEqual(origin.x, boardSize.width - footprint.width))
-        #expect(isApproximatelyEqual(origin.y, boardSize.height * model.topInsetFraction))
+        #expect(isApproximatelyEqual(origin.y, boardSize.height * model.safeArea.top))
         #expect((0 ... 1).contains(landed.x))
         #expect((0 ... 1).contains(landed.y))
     }
@@ -314,6 +314,47 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
         #expect(chrome.contains("model.moveWidget(id: placementID, direction: .down)"))
         #expect(chrome.contains("model.perform(.delete(id: placementID))"))
         #expect(interaction.contains("case delete(id: UUID)"))
+    }
+
+    @Test("a widget added while a Dock is on screen lands clear of it")
+    @MainActor
+    func addedWidgetAvoidsTheDock() throws {
+        let model = makeModel(placements: [])
+        // A tall Dock strip: first fit aims below the middle of the usable area,
+        // so anything less would land clear of it by luck rather than by rule.
+        model.safeArea = MonitorSafeAreaInsets(top: 0.04, leading: 0.06, bottom: 0.5)
+        #expect(model.addWidget(kind: .cpu))
+
+        let placement = try #require(model.placements.first)
+        let footprint = model.geometry.pixelSize(for: placement.kind, size: placement.size)
+        let origin = model.pixelOrigin(for: placement)
+        let safe = model.geometry.safeRect
+        #expect(origin.x >= safe.minX - 0.5)
+        #expect(origin.y >= safe.minY - 0.5)
+        #expect(origin.x + footprint.width <= safe.maxX + 0.5)
+        #expect(origin.y + footprint.height <= safe.maxY + 0.5)
+    }
+
+    /// Drawing a board is a read. A stored position that predates the Dock is
+    /// clamped for the frame being drawn, and the configuration keeps the value
+    /// the user actually chose.
+    @Test("laying out a board stored under the Dock emits no configuration edit")
+    @MainActor
+    func drawingDoesNotWriteBackTheClamp() throws {
+        let id = try #require(UUID(uuidString: "EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE"))
+        let stored = MonitorWidgetPlacement(id: id, kind: .cpu, size: .small, x: 0.1, y: 0.95)
+        let model = makeModel(placements: [stored])
+        model.safeArea = MonitorSafeAreaInsets(bottom: 0.2)
+        var emissions = 0
+        model.onConfigurationEdited = { _ in emissions += 1 }
+
+        let geometry = model.geometry
+        let footprint = geometry.pixelSize(for: stored.kind, size: stored.size)
+        let drawn = geometry.clampOrigin(model.pixelOrigin(for: stored), footprint: footprint)
+
+        #expect(drawn.y + footprint.height <= geometry.safeRect.maxY + 0.5)
+        #expect(emissions == 0)
+        #expect(model.placements.first?.y == stored.y)
     }
 
     @MainActor
