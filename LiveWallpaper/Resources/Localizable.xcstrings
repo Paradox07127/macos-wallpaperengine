@@ -8231,31 +8231,32 @@
         }
       }
     },
-    "Authorize the agent folders in Monitor settings." : {
-      "comment" : "Monitor AI widgets: empty-state hint when the Claude/Codex folder grant is missing.",
+    "Authorize the agent folders in Widgets settings." : {
+      "comment" : "Agent widgets: empty-state hint when the Claude/Codex folder grant is missing.",
+      "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Autoriza las carpetas del agente en los ajustes de Monitor."
+            "value" : "Autoriza las carpetas del agente en los ajustes de Widgets."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "モニター設定でエージェントフォルダーへのアクセスを許可してください。"
+            "value" : "ウィジェット設定でエージェントフォルダーへのアクセスを許可してください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在监控设置中授权 agent 文件夹。"
+            "value" : "请在组件设置中授权 agent 文件夹。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在監控設定中授權 agent 資料夾。"
+            "value" : "請在元件設定中授權 agent 資料夾。"
           }
         }
       }
@@ -25668,31 +25669,32 @@
         }
       }
     },
-    "Export Monitor Layout" : {
-      "comment" : "Save-panel title for exporting a monitor board layout.",
+    "Export Widget Layout" : {
+      "comment" : "Save-panel title for exporting a widget board layout.",
+      "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Exportar disposición de Monitor"
+            "value" : "Exportar disposición de widgets"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "モニターレイアウトを書き出す"
+            "value" : "ウィジェットレイアウトを書き出す"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "导出监控布局"
+            "value" : "导出组件布局"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "匯出監控版面"
+            "value" : "匯出元件版面"
           }
         }
       }
@@ -29765,31 +29767,32 @@
         }
       }
     },
-    "Import Monitor Layout" : {
-      "comment" : "Open-panel title for importing a monitor board layout.",
+    "Import Widget Layout" : {
+      "comment" : "Open-panel title for importing a widget board layout.",
+      "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Importar disposición de Monitor"
+            "value" : "Importar disposición de widgets"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "モニターレイアウトを読み込む"
+            "value" : "ウィジェットレイアウトを読み込む"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "导入监控布局"
+            "value" : "导入组件布局"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "匯入監控版面"
+            "value" : "匯入元件版面"
           }
         }
       }
@@ -36798,66 +36801,67 @@
         }
       }
     },
-    "Monitor" : {
-      "comment" : "Overlay name inside the apply-to-all confirmation.",
+    "Widgets" : {
+      "comment" : "Overlay page name for the widget board.",
+      "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Monitor"
+            "value" : "Widgets"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "モニター"
+            "value" : "ウィジェット"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "监控"
+            "value" : "组件"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "監控"
+            "value" : "元件"
           }
         }
       }
     },
-    "Monitor is off for this display" : {
-      "comment" : "Overlay preview placeholder when the Monitor board is switched off for this display.",
+    "Widgets are off for this display" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Monitor is off for this display"
+            "value" : "Widgets are off for this display"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Monitor está desactivado en esta pantalla"
+            "value" : "Los widgets están desactivados en esta pantalla"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このディスプレイではモニターがオフです"
+            "value" : "このディスプレイではウィジェットがオフです"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此显示器未开启监控叠加层"
+            "value" : "此显示器未开启组件叠加层"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此顯示器未開啟監控疊加層"
+            "value" : "此顯示器未開啟元件疊加層"
           }
         }
       }
@@ -57699,32 +57703,31 @@
         }
       }
     },
-    "Show Monitor on this display" : {
-      "comment" : "Accessibility label for the per-display Monitor overlay toggle.",
+    "Show widgets on this display" : {
       "extractionState" : "manual",
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar Monitor en esta pantalla"
+            "value" : "Mostrar widgets en esta pantalla"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このディスプレイにモニターを表示"
+            "value" : "このディスプレイにウィジェットを表示"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此显示器上显示 Monitor"
+            "value" : "在此显示器上显示组件"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此顯示器上顯示 Monitor"
+            "value" : "在此顯示器上顯示元件"
           }
         }
       }
@@ -74695,36 +74698,37 @@
         }
       }
     },
-    "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The Monitor overlay follows this setting too." : {
+    "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The widget overlay follows this setting too." : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The Monitor overlay follows this setting too."
+            "value" : "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The widget overlay follows this setting too."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si está desactivado, las capturas muestran la imagen de escritorio estática de macOS. Desactivarlo también evita que una animación a pantalla completa entre en una transmisión de reunión compartida, lo que puede reducir el ancho de banda que consume. La superposición Monitor también sigue este ajuste."
+            "value" : "Si está desactivado, las capturas muestran la imagen de escritorio estática de macOS. Desactivarlo también evita que una animación a pantalla completa entre en una transmisión de reunión compartida, lo que puede reducir el ancho de banda que consume. La superposición de widgets también sigue este ajuste."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "オフにすると、代わりに macOS の静止したデスクトップピクチャが写ります。全画面のアニメーションが会議の共有映像に含まれなくなるため、必要な帯域を抑えられます。モニターオーバーレイもこの設定に従います。"
+            "value" : "オフにすると、代わりに macOS の静止したデスクトップピクチャが写ります。全画面のアニメーションが会議の共有映像に含まれなくなるため、必要な帯域を抑えられます。ウィジェットオーバーレイもこの設定に従います。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭后，截取到的是 macOS 的静态桌面图片。关闭还能让全屏动画不进入会议共享画面，从而降低占用的带宽。监控叠加层也跟随此设置。"
+            "value" : "关闭后，截取到的是 macOS 的静态桌面图片。关闭还能让全屏动画不进入会议共享画面，从而降低占用的带宽。组件叠加层也跟随此设置。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉後，擷取到的是 macOS 的靜態桌面圖片。關閉還能讓全螢幕動畫不進入會議共享畫面，從而降低佔用的頻寬。監控疊加層也跟隨此設定。"
+            "value" : "關閉後，擷取到的是 macOS 的靜態桌面圖片。關閉還能讓全螢幕動畫不進入會議共享畫面，從而降低佔用的頻寬。元件疊加層也跟隨此設定。"
           }
         }
       }

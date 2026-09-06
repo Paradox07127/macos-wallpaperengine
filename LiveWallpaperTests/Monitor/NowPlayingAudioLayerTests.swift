@@ -4,6 +4,37 @@ import XCTest
 final class NowPlayingAudioLayerTests: XCTestCase {
     private typealias Layer = NowPlayingAudioLayer
 
+    // MARK: Wave
+
+    /// The wave reads its shape off the spectrum, so a band has to be sampleable at
+    /// any point across the tile, not just at the band centres.
+    func testBandSamplingSpansTheSpectrumAndSurvivesAnEmptyOne() {
+        let bands: [Float] = [0, 0.5, 1]
+        XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 0), 0, accuracy: 1e-6)
+        XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 1), 1, accuracy: 1e-6)
+        XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 0.5), 0.5, accuracy: 1e-6)
+        // Between two bands it interpolates rather than stepping.
+        XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 0.25), 0.25, accuracy: 1e-6)
+        // Out of range and empty are both answerable: the tile is drawn either way.
+        XCTAssertEqual(Layer.Effects.sampledBand(bands, at: -1), 0, accuracy: 1e-6)
+        XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 2), 1, accuracy: 1e-6)
+        XCTAssertEqual(Layer.Effects.sampledBand([], at: 0.5), 0, accuracy: 1e-6)
+    }
+
+    /// Silence has to be still. The halo this replaced kept breathing on a residual
+    /// bass reading, which is what made it read as restless rather than musical.
+    func testWaveIsFlatInSilenceAndGrowsWithTheBand() {
+        XCTAssertEqual(Layer.Effects.waveAmplitude(band: 0, fade: 1, intensity: 1), 0, accuracy: 1e-6)
+        XCTAssertEqual(Layer.Effects.waveAmplitude(band: 0.8, fade: 0, intensity: 1), 0, accuracy: 1e-6)
+        XCTAssertEqual(Layer.Effects.waveAmplitude(band: 0.8, fade: 1, intensity: 0), 0, accuracy: 1e-6)
+        XCTAssertLessThan(
+            Layer.Effects.waveAmplitude(band: 0.2, fade: 1, intensity: 1),
+            Layer.Effects.waveAmplitude(band: 0.7, fade: 1, intensity: 1)
+        )
+        // Never taller than half the tile, whatever the dial says.
+        XCTAssertLessThanOrEqual(Layer.Effects.waveAmplitude(band: 9, fade: 1, intensity: 9), 1)
+    }
+
     // MARK: Peak caps and mote fading
 
     /// A peak cap is a spectrum analyser's memory: it jumps to whatever the bar just

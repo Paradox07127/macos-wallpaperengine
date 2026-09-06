@@ -83,7 +83,6 @@ struct MusicOverlaySection: View {
                 Divider()
                 sizeRow
                 Divider()
-                positionRow
                 Divider()
                 OverlayBackdropRow(available: backdropAvailable)
                 #if !LITE_BUILD
@@ -215,74 +214,6 @@ struct MusicOverlaySection: View {
         case .small: "Small"
         case .medium: "Medium"
         case .large: "Large"
-        }
-    }
-
-    // MARK: Position
-
-    private var positionRow: some View {
-        SettingRow(
-            icon: "square.grid.3x3",
-            iconColor: .teal,
-            title: "Position",
-            info: "Pick a spot, or drag the layer around in the preview"
-        ) {
-            anchorGrid
-                .disabled(!isOn)
-        }
-    }
-
-    private static let anchorRows: [[MusicOverlayLayout.Anchor]] = [
-        [.topLeading, .top, .topTrailing],
-        [.leading, .center, .trailing],
-        [.bottomLeading, .bottom, .bottomTrailing],
-    ]
-
-    /// No button is lit once the layer has been dragged off the nine spots —
-    /// lighting the nearest one would misreport where the layer actually is.
-    private var anchorGrid: some View {
-        let current = MusicOverlayLayout.anchor(of: music, boardSize: screen.frame.size)
-        return VStack(spacing: 3) {
-            ForEach(Self.anchorRows, id: \.self) { row in
-                HStack(spacing: 3) {
-                    ForEach(row, id: \.self) { anchor in
-                        anchorButton(anchor, isCurrent: anchor == current)
-                    }
-                }
-            }
-        }
-        .accessibilityLabel(Text("Position"))
-    }
-
-    private func anchorButton(
-        _ anchor: MusicOverlayLayout.Anchor, isCurrent: Bool
-    ) -> some View {
-        Button {
-            update { MusicOverlayLayout.setting(anchor: anchor, on: $0, boardSize: screen.frame.size) }
-        } label: {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(isCurrent ? Color.accentColor : Color.secondary.opacity(0.25))
-                .frame(width: 13, height: 10)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(Self.anchorLabel(anchor)))
-        .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
-    }
-
-    private static func anchorLabel(
-        _ anchor: MusicOverlayLayout.Anchor
-    ) -> LocalizedStringKey {
-        switch anchor {
-        case .topLeading: "Top left"
-        case .top: "Top center"
-        case .topTrailing: "Top right"
-        case .leading: "Middle left"
-        case .center: "Center"
-        case .trailing: "Middle right"
-        case .bottomLeading: "Bottom left"
-        case .bottom: "Bottom center"
-        case .bottomTrailing: "Bottom right"
         }
     }
 

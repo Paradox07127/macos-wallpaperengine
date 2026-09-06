@@ -270,6 +270,26 @@ enum NowPlayingAudioLayer {
             max(band, max(0, previous - peakFallPerSecond * Float(dt)))
         }
 
+        /// The spectrum read at any point across the tile, not just at a band centre:
+        /// the wave needs a value per pixel column, and stepping between bands would
+        /// give it a staircase.
+        nonisolated static func sampledBand(_ bands: [Float], at t: Double) -> Float {
+            guard !bands.isEmpty else { return 0 }
+            guard bands.count > 1 else { return bands[0] }
+            let position = min(max(t, 0), 1) * Double(bands.count - 1)
+            let low = Int(position.rounded(.down))
+            let high = min(low + 1, bands.count - 1)
+            let blend = Float(position - Double(low))
+            return bands[low] * (1 - blend) + bands[high] * blend
+        }
+
+        /// Wave height at a band, as a fraction of half the tile. Zero in silence: the
+        /// halo this replaced went on breathing on a residual reading, which is what
+        /// made it restless rather than musical.
+        nonisolated static func waveAmplitude(band: Float, fade: Double, intensity: Double) -> Double {
+            limited(Double(max(band, 0)) * limited(intensity, to: 1) * limited(fade, to: 1), to: 1)
+        }
+
         /// How many motes the budget's soft edge spans.
         nonisolated static let moteFadeWidth: Double = 3
 
@@ -427,7 +447,6 @@ struct NowPlayingAudioReactiveView: View {
 
     /// Built once per parent update rather than per tick: `Gradient(colors:)`
     /// would otherwise allocate an array 30 times a second.
-    private let haloGradient: Gradient
 
     @State private var engine = NowPlayingAudioEngine()
     @State private var idle = false
@@ -437,7 +456,6 @@ struct NowPlayingAudioReactiveView: View {
         self.accent = accent
         self.active = active
         self.options = options
-        haloGradient = Gradient(colors: [accent, accent.opacity(0)])
     }
 
     /// Bars were 2pt wide on a 2pt gap, which on a wallpaper viewed from a
@@ -563,7 +581,7 @@ struct NowPlayingAudioReactiveView: View {
         case .radial(let discFraction):
             drawRadial(in: &context, size: size, discFraction: discFraction, gain: gain)
         case .aurora:
-            drawHalo(in: &context, size: size, gain: gain)
+            drawWave(in: &context, size: size, now: now, gain: gain)
         }
         if options.effectParticles {
             drawParticles(in: &context, size: size, now: now, intensity: intensity, gain: gain)
@@ -630,24 +648,49 @@ struct NowPlayingAudioReactiveView: View {
         )
     }
 
-    /// Additive halo on top of aurora's static 0.3 glow, breathing on the bass
+    /// Flowing ribbons on top of aurora's static 0.3 glow
     /// envelope. The amplitude used to cap at 0.15 — under the glow it sits on,
     /// so the breathing was there in the numbers and invisible on screen.
-    private func drawHalo(in context: inout GraphicsContext, size: CGSize, gain: Double) {
-        let low = Double(engine.drives.bassAtt)
-        let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        let radius = size.width * 0.375 * (1 + 0.18 * low)
-        let alpha = NowPlayingAudioLayer.Effects.alpha(0.34 * low * engine.fade * gain)
-        guard alpha > 0.002 else { return }
-        var halo = context
-        halo.opacity = alpha
-        halo.fill(
-            Path(ellipseIn: CGRect(
-                x: center.x - radius, y: center.y - radius,
-                width: radius * 2, height: radius * 2
-            )),
-            with: .radialGradient(haloGradient, center: center, startRadius: 0, endRadius: radius)
-        )
+    private func drawWave(
+        in context: inout GraphicsContext, size: CGSize, now: TimeInterval, gain: Double
+    ) {
+        guard size.width > 1, size.height > 1 else { return }
+        // Three ribbons at different speeds and heights: one alone reads as a line
+        // being wiggled, several as a moving body of light.
+        let ribbons: [(speed: Double, scale: Double, alpha: Double)] = [
+            (0.9, 1.0, 0.34), (-0.55, 0.72, 0.24), (0.32, 0.46, 0.16),
+        ]
+        let midline = size.height * 0.5
+        let reach = size.height * 0.42
+        let columns = max(Int(size.width / 6), 8)
+
+        for ribbon in ribbons {
+            var path = Path()
+            for column in 0 ... columns {
+                let t = Double(column) / Double(columns)
+                let band = NowPlayingAudioLayer.Effects.sampledBand(engine.bands, at: t)
+                let amplitude = NowPlayingAudioLayer.Effects.waveAmplitude(
+                    band: band, fade: engine.fade, intensity: gain
+                )
+                // The travelling term is what makes it flow; the band term is what
+                // makes it the music's shape rather than a screensaver.
+                let travel = sin(t * .pi * 2.4 + now * ribbon.speed * 1.6)
+                let offset = reach * ribbon.scale * (amplitude * 0.75 + 0.12) * travel
+                let point = CGPoint(x: t * size.width, y: midline + offset)
+                if column == 0 {
+                    path.move(to: point)
+                } else {
+                    path.addLine(to: point)
+                }
+            }
+            let alpha = NowPlayingAudioLayer.Effects.alpha(ribbon.alpha * engine.fade * gain)
+            guard alpha > 0.002 else { continue }
+            context.stroke(
+                path,
+                with: .color(accent.opacity(alpha)),
+                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+            )
+        }
     }
 
     // MARK: Particles + ripples
