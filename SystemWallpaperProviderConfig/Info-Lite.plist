@@ -16,10 +16,14 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
+	<!-- macOS refuses to load an appex whose CFBundleVersion differs from its
+	     containing app's. Both keys track the target's MARKETING_VERSION so a
+	     release bump cannot leave the extension behind; scripts/release_contract_check.sh
+	     fails if either is hardcoded again. -->
 	<key>CFBundleShortVersionString</key>
-	<string>0.6.1</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>EXAppExtensionAttributes</key>
