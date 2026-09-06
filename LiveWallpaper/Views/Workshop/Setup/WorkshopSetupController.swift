@@ -308,10 +308,7 @@ final class WorkshopSetupController {
     private func scanForSteamLibrary() {
         let candidate = AppleAerialsLibrary.realHomeDirectory()
             .appendingPathComponent("Library/Application Support/Steam", isDirectory: true)
-        let config = candidate
-            .appendingPathComponent("config", isDirectory: true)
-            .appendingPathComponent("config.vdf", isDirectory: false)
-        scannedLibraryPath = FileManager.default.fileExists(atPath: config.path(percentEncoded: false))
+        scannedLibraryPath = FileManager.default.fileExists(atPath: candidate.path(percentEncoded: false))
             ? candidate.path(percentEncoded: false)
             : nil
     }
@@ -326,7 +323,7 @@ final class WorkshopSetupController {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
+        panel.canCreateDirectories = true
         // Not `homeDirectoryForCurrentUser` — sandbox maps that to the container, which also has a `Steam` folder we must not bind.
         let applicationSupport = AppleAerialsLibrary.realHomeDirectory()
             .appendingPathComponent("Library/Application Support", isDirectory: true)
@@ -335,7 +332,7 @@ final class WorkshopSetupController {
         } else {
             panel.directoryURL = applicationSupport
         }
-        panel.message = String(localized: "Choose Steam's main folder containing config/config.vdf.", bundle: .appLanguage, comment: "Open-panel message when authorizing the official Steam Library.")
+        panel.message = String(localized: "Choose the Steam library folder for wallpaper files. Download sign-in is stored separately.", bundle: .appLanguage, comment: "Open-panel message for the content library; credentials use a private profile.")
         panel.prompt = String(localized: "Use Steam Library", bundle: .appLanguage, comment: "Open-panel confirm button when authorizing the official Steam Library.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         beginSetupAction()
@@ -375,10 +372,9 @@ final class WorkshopSetupController {
         }
     }
 
-    /// Through `setUsername`, never by assigning `username` directly: a changed
-    /// account name has to knock `cachedLogin` back to `.notRun`, or the green
-    /// earned by the previous account keeps `isDownloadReady` true while
-    /// downloads already run as the new one.
+    /// Through `setUsername` so the previous account's green is dropped, then
+    /// green directly: the connector already re-checked the cached login before
+    /// reporting the sign-in as a success, so a second Steam login proves nothing.
     func adoptSignedInAccount(_ accountName: String) {
         beginSetupAction()
         do {
@@ -387,10 +383,8 @@ final class WorkshopSetupController {
             setupError = error.localizedDescription
             return
         }
-        Task {
-            await loadAccounts()
-            await doctor.runProbe(.cachedLogin)
-        }
+        doctor.noteSuccessfulSteamOperation(generation: doctor.accountGeneration)
+        Task { await loadAccounts() }
     }
 
     // MARK: - Scene resources
@@ -451,14 +445,22 @@ final class WorkshopSetupController {
         runWithPreflight { [self] in engineInstaller.download(using: doctor) }
     }
 
-    /// Same preflight, for the version check — it runs SteamCMD too.
+    /// No preflight: the version check logs in anonymously, so it needs SteamCMD
+    /// and nothing about the account or library.
     func checkEngineAssetsUpdate() {
-        runWithPreflight { [self] in engineInstaller.checkForUpdate(using: doctor) }
+        engineAssetsError = nil
+        guard doctor.hasBoundBinary else {
+            engineAssetsError = String(
+                localized: "Set up SteamCMD first — Steam downloads run through it.",
+                bundle: .appLanguage, comment: "Reason the automatic scene-resources download is unavailable: no SteamCMD."
+            )
+            return
+        }
+        engineInstaller.checkForUpdate(using: doctor)
     }
 
-    /// Both Steam-side asset actions: refuse with a reason when a prerequisite is missing, run
-    /// immediately when readiness is already proven, otherwise prove it first. Saying why matters:
-    /// "Check for updates" isn't disabled when a prerequisite is missing, so a silent return would read as a dead button.
+    /// Refuse with a reason when a prerequisite is missing, run immediately when
+    /// readiness is already proven, otherwise prove it first.
     private func runWithPreflight(_ action: @escaping () -> Void) {
         engineAssetsError = nil
         if let reason = engineAssetsDownloadBlockReason {

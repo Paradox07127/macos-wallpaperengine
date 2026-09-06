@@ -62,28 +62,17 @@ struct NetworkWidgetView: View {
 
     /// S shows the short interface label ("Wi-Fi"); M shows "en0 · Wi-Fi".
     private var headerInterfaceLabel: String? {
-        switch context.placement.size {
-        case .small:
-            let typeLabel = Format.interfaceTypeLabel(activeInterfaceType)
-            if !typeLabel.isEmpty { return typeLabel }
-            return activeInterface?.name
-        case .medium, .large:
-            guard let iface = activeInterface else {
-                let typeLabel = Format.interfaceTypeLabel(activeInterfaceType)
-                return typeLabel.isEmpty ? nil : typeLabel
-            }
-            let typeLabel = Format.interfaceTypeLabel(activeInterfaceType)
-            return typeLabel.isEmpty ? iface.name : "\(iface.name) · \(typeLabel)"
-        }
+        context.placement.size == .small
+            ? String(localized: "All", bundle: .appLanguage)
+            : String(localized: "All interfaces", bundle: .appLanguage)
     }
 
     private var connectivityDot: some View {
         Circle()
-            .fill(isOnline ? Design.signalSage : Design.signalCoral)
+            .fill(connectivityColor)
             .frame(width: 6, height: 6)
             .overlay(Circle().strokeBorder(Color.black.opacity(0.4), lineWidth: 1))
-            .shadow(color: (isOnline ? Design.signalSage : Design.signalCoral)
-                .opacity(0.6), radius: 3)
+            .help(Text(verbatim: statusLine))
     }
 
     // MARK: - Small (2×2)
@@ -148,11 +137,12 @@ struct NetworkWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    @ViewBuilder
     private func mirroredScope(scale: Design.TypeScale, windowSeconds: Int) -> some View {
-        MirroredAreaChart(
-            up: history.windowed(history.netRx, seconds: windowSeconds),
-            down: history.windowed(history.netTx, seconds: windowSeconds),
+        let window = chartWindow(seconds: windowSeconds)
+        return MirroredAreaChart(
+            up: history.points(history.netRx, in: window),
+            down: history.points(history.netTx, in: window),
+            window: window,
             upColor: Self.rxColor,
             downColor: Self.txColor
         )
@@ -179,7 +169,7 @@ struct NetworkWidgetView: View {
             Text(verbatim: "↓ PEAK")
                 .tracking(Design.labelTracking(size: scale.label))
                 .foregroundStyle(Design.inkFaint)
-            Text(verbatim: Format.rate(history.netRxPeak))
+            Text(verbatim: Format.rate(history.values(history.netRx, in: chartWindow(seconds: chartWindowSeconds)).max() ?? 0))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
         }
@@ -190,7 +180,7 @@ struct NetworkWidgetView: View {
 
     /// Session-total Σ, chip-wrapped like every other small board annotation.
     private func sessionTotalTag(scale: Design.TypeScale) -> some View {
-        Text(verbatim: "Σ \(Format.bytes(sessionTotalBytes))")
+        (Text("Estimated total") + Text(verbatim: " \(Format.bytes(sessionTotalBytes))"))
             .font(Design.captionFont(size: scale.label))
             .foregroundStyle(Design.inkFaint)
             .monitorChip(scale)
@@ -199,6 +189,9 @@ struct NetworkWidgetView: View {
     @ViewBuilder
     private func interfaceDetail(scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading, spacing: scale.caption * 0.34) {
+            if let name = activeInterface?.name {
+                interfaceRow(key: String(localized: "Active interface", bundle: .appLanguage), value: name, scale: scale)
+            }
             if let ip = privateIPv4 {
                 interfaceRow(key: "IPv4", value: ip, scale: scale)
             }
@@ -321,10 +314,23 @@ struct NetworkWidgetView: View {
 
     // MARK: - Derived data
 
+    private var chartWindowSeconds: Int {
+        switch context.placement.size {
+        case .small: Self.smallChartWindowSeconds
+        case .medium: Self.mediumChartWindowSeconds
+        case .large: Self.largeChartWindowSeconds
+        }
+    }
+
+    /// Anchored on the context's clock, so the chart and the peak tag beside it
+    /// summarize the same stretch of time.
+    private func chartWindow(seconds: Int) -> MonitorChartWindow {
+        history.chartWindow(reference: context.now, seconds: Double(seconds))
+    }
+
     private var rxRate: Double { system?.netRxBytesPerSec ?? 0 }
     private var txRate: Double { system?.netTxBytesPerSec ?? 0 }
 
-    private var isOnline: Bool { (system?.netPath?.status ?? "unknown") == "satisfied" }
 
     private var sessionTotalBytes: Double {
         history.netRxSessionBytes + history.netTxSessionBytes
@@ -344,9 +350,19 @@ struct NetworkWidgetView: View {
     /// Connectivity word — localized (rendered verbatim as an already-localized
     /// value, since the same row helper also carries data like the IPv4 address).
     private var statusLine: String {
-        isOnline
-            ? String(localized: "connected", bundle: .appLanguage, comment: "Network widget: the active interface has connectivity.")
-            : String(localized: "offline", bundle: .appLanguage, comment: "Network widget: the active interface has no connectivity.")
+        switch system?.netPath?.status {
+        case "satisfied": String(localized: "connected", bundle: .appLanguage)
+        case "unsatisfied": String(localized: "offline", bundle: .appLanguage)
+        default: String(localized: "Waiting for readings", bundle: .appLanguage)
+        }
+    }
+
+    private var connectivityColor: Color {
+        switch system?.netPath?.status {
+        case "satisfied": Design.signalSage
+        case "unsatisfied": Design.signalCoral
+        default: Design.signalIdle
+        }
     }
 
     /// Path condition chips — localized words (constrained / expensive).
@@ -423,6 +439,8 @@ private func networkPreviewContext(size: MonitorWidgetSize) -> MonitorWidgetCont
     let tx: [Double] = (0..<120).map { (i: Int) -> Double in
         1_048_576.0 * (0.2 + 0.7 * abs(cos(Double(i) / 9.0)))
     }
+    let now = Date()
+    history.sampleTimes = rx.indices.map { now.timeIntervalSince1970 - Double(rx.count - 1 - $0) }
     history.netRx = rx
     history.netTx = tx
     history.netRxPeak = 88 * 1_048_576
@@ -436,7 +454,7 @@ private func networkPreviewContext(size: MonitorWidgetSize) -> MonitorWidgetCont
         placement: MonitorWidgetPlacement(kind: .network, size: size),
         isEditing: false,
         reduceMotion: false,
-        now: Date()
+        now: now
     )
 }
 

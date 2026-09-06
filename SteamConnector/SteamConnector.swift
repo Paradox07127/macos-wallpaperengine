@@ -18,10 +18,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// Every SteamCMD run in this process is serialized here. The app used
     /// to hold one operation lease across all of them; once work moved
     /// behind XPC, requests arrived independently, so an engine install and
-    /// a Workshop download could drive two SteamCMD processes at the same
-    /// real Steam profile (sharing its lock and staging directory) and one
-    /// loses. Serializing here is the only place the guarantee survives an
-    /// arbitrary number of clients.
+    /// a Workshop download could drive two SteamCMD processes against the same
+    /// account profile and one loses. It now also orders item deletion against
+    /// downloads, which write into the shared library directly. Serializing
+    /// here is the only place the guarantee survives an arbitrary number of
+    /// clients.
     private static let steamCMDQueue = DispatchQueue(label: "com.loomscreen.pro.SteamConnector.steamcmd")
 
     /// Registered by `spawn` only on the SteamCMD path — codesign shares
@@ -99,6 +100,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         steamCMDPath: String,
         arguments: [String],
         timeout: TimeInterval,
+        realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         operationID: String? = nil,
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil
     ) -> SteamCMDRun {
@@ -111,6 +113,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 timedOut: false
             )
         }
+        let profile: (home: URL, fd: Int32)
+        do { profile = try SteamCMDProfile.acquire(accountName: SteamCMDProfile.account(in: arguments), realHome: realHome) } catch {
+            return SteamCMDRun(output: "SteamCMD profile unavailable: \(error)", timedOut: false)
+        }
+        defer { close(profile.fd) }
         // Exit 42 is SteamCMD's "my self-update replaced the binary —
         // relaunch me"; a fresh install needs two restarts before its first
         // 0 (measured 2026-08-28). Each attempt gets the full timeout, so
@@ -127,6 +134,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     executable: steamCMDPath,
                     arguments: arguments,
                     timeout: timeout,
+                    profileHome: profile.home.path(percentEncoded: false),
                     activeOperationID: operationID
                 ) { line in
                     guard let onProgress, let progress = SteamCMDProgressLine.parse(line) else { return }
@@ -171,13 +179,14 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         executable: String,
         arguments: [String],
         timeout: TimeInterval,
+        profileHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory(),
         activeOperationID: String? = nil,
         onLine: (@Sendable (String) -> Void)? = nil
     ) -> SteamCMDRun {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
-        process.environment = SteamCMDChildEnvironment.make()
+        process.environment = SteamCMDChildEnvironment.make(home: profileHome)
         process.standardInput = FileHandle.nullDevice
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -306,13 +315,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     }
 
     func discoverAccounts(with reply: @escaping @Sendable (Data) -> Void) {
-        let realHome = SteamConnectorEnvironmentProbe.posixHomeDirectory()
-        let config = SteamConnectorEnvironmentProbe.steamConfigURL(realHome: realHome)
-        // Only the parsed summaries leave this process. `config.vdf` also holds
-        // machine-auth tokens and connect-cache secrets, so the raw text must
-        // never be handed back across the XPC boundary.
-        let text = (try? String(contentsOf: config, encoding: .utf8)) ?? ""
-        let accounts = SteamAccountsFile.parseAccounts(fromConfigVDF: text)
+        let accounts = SteamCMDProfile.accounts()
         reply((try? JSONEncoder().encode(accounts)) ?? Data())
     }
 
@@ -361,6 +364,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     func downloadWorkshopItem(
         workshopID: String,
         accountName: String,
+        libraryPath: String,
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
@@ -378,6 +382,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             respond(.steamCMDUnavailable)
             return
         }
+        // Before the queue, not inside it: a library we would refuse must not
+        // hold the serial queue behind a download that cannot happen.
+        guard let libraryRoot = SteamLibraryPaths.validatedLibraryRoot(libraryPath) else {
+            respond(.steamCMDUnavailable, tail: "Refused Steam library path: \(libraryPath)")
+            return
+        }
 
         let sink = progressSink
         let enqueuedAt = Date()
@@ -390,10 +400,20 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 respond(.steamCMDUnavailable, tail: Self.noExecutableReason)
                 return
             }
+            // `force_install_dir` — before `+login`, the order Valve documents —
+            // sends the Workshop tree (content AND SteamCMD's ledger) to the
+            // shared library while the private profile keeps only credentials.
+            // The path carries no account name on purpose: every account
+            // downloads into the one library the app reads.
+            //
+            // No `validate`: the ledger now sits beside the content it
+            // describes, and validating would re-fetch everything the user
+            // subscribed to through the Steam client as well.
             let run = Self.runSteamCMD(
                 steamCMDPath: steamCMDPath,
                 arguments: [
                     "+@NoPromptForPassword", "1",
+                    "+force_install_dir", libraryRoot.path(percentEncoded: false),
                     "+login", accountName,
                     "+workshop_download_item", SteamLibraryPaths.wallpaperEngineAppID, workshopID,
                     "+quit"
@@ -411,27 +431,167 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 respond(.loginRequired, tail: out, executed: steamCMDPath); return
             }
             if out.contains("ERROR! Download item \(workshopID) failed (No Connection).") {
-                respond(.notEntitled, tail: out, executed: steamCMDPath); return
+                respond(.steamUnreachable, tail: out, executed: steamCMDPath); return
             }
             if out.contains("ERROR! Download item \(workshopID) failed (No match).") {
                 respond(.removedFromSteam, tail: out, executed: steamCMDPath); return
             }
             // Trust the tree, not the log line: SteamCMD prints the destination
             // it *intended*, and a partial run can leave that path absent.
-            let folder = SteamLibraryPaths.workshopContentRoot()
+            let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: libraryRoot)
                 .appendingPathComponent(workshopID, isDirectory: true)
             let project = folder.appendingPathComponent("project.json", isDirectory: false)
-            guard out.contains("Success. Downloaded item \(workshopID)"),
-                  FileManager.default.fileExists(atPath: project.path(percentEncoded: false)) else {
+            guard out.contains("Success. Downloaded item \(workshopID)") else {
                 respond(.unrecognized, tail: out, executed: steamCMDPath); return
+            }
+            guard FileManager.default.fileExists(atPath: project.path(percentEncoded: false)) else {
+                // Name the one way this can happen: a SteamCMD that ignored
+                // `force_install_dir` would leave the item in the profile.
+                let stray = (try? SteamCMDProfile.steamRoot(accountName: accountName))
+                    .map { SteamLibraryPaths.workshopContentRoot(steamRoot: $0).appendingPathComponent(workshopID, isDirectory: true) }
+                    .map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } ?? false
+                respond(
+                    .unrecognized,
+                    tail: stray ? "SteamCMD ignored force_install_dir and left the item in the private profile" : out,
+                    executed: steamCMDPath
+                )
+                return
             }
             respond(.downloaded, tail: out, path: folder.path(percentEncoded: false), executed: steamCMDPath)
         }
     }
 
-    func deleteWorkshopItem(workshopID: String, with reply: @escaping @Sendable (Data) -> Void) {
-        let result = SteamLibraryWriter.deleteWorkshopItem(workshopID: workshopID)
-        reply((try? JSONEncoder().encode(result)) ?? Data())
+    func listSubscribedWorkshopItems(accountName: String, with reply: @escaping @Sendable (Data) -> Void) {
+        @Sendable func respond(
+            _ outcome: SteamSubscribedItemsResult.Outcome,
+            tail: String = "",
+            ids: [String] = [],
+            executed: String? = nil
+        ) {
+            let result = SteamSubscribedItemsResult(
+                outcome: outcome,
+                workshopIDs: ids,
+                diagnosticTail: String(tail.suffix(500)),
+                executedBinaryPath: executed
+            )
+            reply((try? JSONEncoder().encode(result)) ?? Data())
+        }
+        guard SteamAccountsFile.isValidAccountName(accountName) else {
+            respond(.steamCMDUnavailable)
+            return
+        }
+
+        let enqueuedAt = Date()
+        Self.steamCMDQueue.async {
+            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
+            guard let steamCMDPath = Self.resolvedExecutablePath() else {
+                respond(.steamCMDUnavailable, tail: Self.noExecutableReason)
+                return
+            }
+            guard let scratch = try? SteamCMDProfile.subscriptionProbeDirectory(accountName: accountName) else {
+                respond(.steamCMDUnavailable, tail: "No subscription probe directory for \(accountName)")
+                return
+            }
+            let probe = Self.readSubscriptionLedger(
+                accountName: accountName, steamCMDPath: steamCMDPath, scratch: scratch
+            )
+            // Gone before the caller hears anything: the tree is a copy of the
+            // user's Workshop ledger with no reason to outlive one reply.
+            Self.discardSubscriptionProbe(scratch)
+            respond(probe.outcome, tail: probe.tail, ids: probe.ids, executed: steamCMDPath)
+        }
+    }
+
+    /// Runs `workshop_status` into `scratch` and reads back the ledger SteamCMD
+    /// records the account's subscription list in. Downloads nothing.
+    private static func readSubscriptionLedger(
+        accountName: String,
+        steamCMDPath: String,
+        scratch: URL
+    ) -> (outcome: SteamSubscribedItemsResult.Outcome, tail: String, ids: [String]) {
+        // `force_install_dir` before `+login`, the order Valve documents and
+        // the same one `downloadWorkshopItem` uses: it redirects the whole
+        // Workshop tree, ledger included, so nothing here reaches the shared
+        // library.
+        let run = runSteamCMD(
+            steamCMDPath: steamCMDPath,
+            arguments: [
+                "+@NoPromptForPassword", "1",
+                "+force_install_dir", scratch.path(percentEncoded: false),
+                "+login", accountName,
+                "+workshop_status", SteamLibraryPaths.wallpaperEngineAppID,
+                "+quit",
+            ],
+            timeout: 180
+        )
+        let out = run.output
+        if run.timedOut {
+            return (.timedOut, out, [])
+        }
+        if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
+            return (.loginRequired, out, [])
+        }
+        if out.contains("No Connection") {
+            return (.steamUnreachable, out, [])
+        }
+
+        let ledger = scratch.appendingPathComponent(
+            "steamapps/workshop/appworkshop_\(SteamLibraryPaths.wallpaperEngineAppID).acf",
+            isDirectory: false
+        )
+        guard let ledgerText = try? String(contentsOf: ledger, encoding: .utf8) else {
+            // Not reported as an empty subscription list: whether
+            // `workshop_status` alone is enough to make SteamCMD refresh the
+            // list is unverified, so a silent `[]` would read to the user as
+            // "you are subscribed to nothing".
+            return (
+                .unrecognized,
+                "SteamCMD did not write a subscription ledger; workshop_status may not refresh subscriptions",
+                []
+            )
+        }
+        // A ledger that exists and parses to nothing is a real answer: the
+        // account is subscribed to nothing. Only its absence is unexplained.
+        return (.listed, out, SteamWorkshopManifest.subscribedIDs(fromACF: ledgerText))
+    }
+
+    /// Symlink-guarded the same way `discardStagedWorkshopTree` is.
+    private static func discardSubscriptionProbe(_ directory: URL) {
+        guard SteamCMDManagedInstaller.firstSymlinkComponent(of: directory) == nil else { return }
+        try? FileManager.default.removeItem(atPath: SteamCMDManagedInstaller.normalisedPath(directory))
+    }
+
+    func deleteWorkshopItem(
+        workshopID: String,
+        libraryPath: String,
+        with reply: @escaping @Sendable (Data) -> Void
+    ) {
+        guard let libraryRoot = SteamLibraryPaths.validatedLibraryRoot(libraryPath) else {
+            let refused = SteamDeleteResult(
+                outcome: .refused,
+                freedBytes: 0,
+                refusalReason: "Refused Steam library path: \(libraryPath)"
+            )
+            reply((try? JSONEncoder().encode(refused)) ?? Data())
+            return
+        }
+        // On the SteamCMD queue since downloads started landing in the shared
+        // library directly: an unlink walking the same item tree a running
+        // `workshop_download_item` is writing would leave a half-deleted item
+        // and a download that reports success over missing files.
+        let enqueuedAt = Date()
+        Self.steamCMDQueue.async {
+            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+                let expired = SteamDeleteResult(
+                    outcome: .refused,
+                    freedBytes: 0,
+                    refusalReason: "deletion expired while queued behind another SteamCMD operation"
+                )
+                return reply((try? JSONEncoder().encode(expired)) ?? Data())
+            }
+            let result = SteamLibraryWriter.deleteWorkshopItem(workshopID: workshopID, steamRoot: libraryRoot)
+            reply((try? JSONEncoder().encode(result)) ?? Data())
+        }
     }
 
     /// Deliberately NOT on `steamCMDQueue`: the point is to interrupt the run
@@ -922,28 +1082,21 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// prompts and nowhere else — not argv, the transcript (prompts echo
     /// nothing), the reply, or a log. The verdict doesn't trust the
     /// transcript alone: success only if the account then appears in the
-    /// shared profile's `config.vdf`, the same ground truth
-    /// `discoverAccounts` reads.
-    private static func runLoginSession(
+    /// isolated profile. Success requires normal shutdown followed by a fresh
+    /// cached login, not merely an account appearing in a configuration file.
+    static func runLoginSession(
         binaryPath: String,
-        request: SteamCMDLoginRequest
+        request: SteamCMDLoginRequest,
+        realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()
     ) -> SteamCMDLoginResult {
         guard !SteamCMDExecutionFence.refusesExecution(of: binaryPath) else {
             return .failed(.unavailable)
         }
-        func knownAccounts() -> [SteamAccountSummary] {
-            let realHome = SteamConnectorEnvironmentProbe.posixHomeDirectory()
-            let config = SteamConnectorEnvironmentProbe.steamConfigURL(realHome: realHome)
-            let text = (try? String(contentsOf: config, encoding: .utf8)) ?? ""
-            return SteamAccountsFile.parseAccounts(fromConfigVDF: text)
+        let profile: (home: URL, fd: Int32)
+        do { profile = try SteamCMDProfile.acquire(accountName: request.accountName, realHome: realHome) } catch {
+            return .failed(.unavailable)
         }
-        func summary(in accounts: [SteamAccountSummary]) -> SteamAccountSummary? {
-            accounts.first { $0.accountName.lowercased() == request.accountName.lowercased() }
-        }
-        // Snapshot, not a plain "is it there afterwards": for an account that
-        // was already cached, presence proves nothing about THIS attempt — a
-        // wrong password would read as success.
-        let accountKnownBefore = summary(in: knownAccounts()) != nil
+        defer { close(profile.fd) }
 
         var master: Int32 = -1
         var slave: Int32 = -1
@@ -955,7 +1108,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binaryPath)
         process.arguments = SteamCMDLoginProbe.arguments(accountName: request.accountName)
-        process.environment = SteamCMDChildEnvironment.make()
+        process.environment = SteamCMDChildEnvironment.make(home: profile.home.path(percentEncoded: false))
         let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
         process.standardInput = slaveHandle
         process.standardOutput = slaveHandle
@@ -1050,11 +1203,23 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 break readLoop
             case .loggedIn:
                 outcome = .success
-                break readLoop
+                // +quit is already queued. Keep draining output until SteamCMD
+                // finishes saving its session and exits on its own.
+                if !process.isRunning {
+                    break readLoop
+                }
+            }
+        }
+        // EOF can precede Process's termination notification by a few ticks.
+        // Allow a successful +quit to finish before treating it as a timeout.
+        if outcome == .success, process.isRunning {
+            let shutdownDeadline = Date().addingTimeInterval(3)
+            while process.isRunning, Date() < shutdownDeadline {
+                usleep(10000)
             }
         }
         if process.isRunning {
-            if outcome == .failed {
+            if outcome == .failed || outcome == .success {
                 outcome = .timedOut
             }
             process.terminate()
@@ -1065,16 +1230,14 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             }
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
-
-        // Two independent success signals: the transcript's banner, and the
-        // account newly appearing in the shared profile's `config.vdf` (the
-        // ground truth `discoverAccounts` reads — catches a success whose
-        // banner line we failed to match). "Newly": see the snapshot above.
-        let accountAfter = summary(in: knownAccounts())
-        if outcome == .success || (!accountKnownBefore && accountAfter != nil) {
-            return SteamCMDLoginResult(outcome: .success, steamID64: accountAfter?.steamID64)
+        process.waitUntilExit()
+        guard outcome == .success, process.terminationStatus == 0 else {
+            return .failed(outcome == .success ? .failed : outcome, reason: refusalReason)
         }
-        return .failed(outcome, reason: refusalReason)
+        flock(profile.fd, LOCK_UN)
+        let cached = runCachedLoginProbe(accountName: request.accountName, steamCMDPath: binaryPath, realHome: realHome)
+        guard cached.outcome == .sessionValid else { return .failed(.failed, reason: cached.failureReason) }
+        return SteamCMDLoginResult(outcome: .success, steamID64: cached.steamID64)
     }
 
     func removeManagedSteamCMD(with reply: @escaping @Sendable (Data) -> Void) {
@@ -1107,6 +1270,58 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 send(SteamCMDManagedRemovalResult(outcome: .removed, failureReason: nil))
             } catch {
                 send(SteamCMDManagedRemovalResult(
+                    outcome: .refused, failureReason: error.localizedDescription
+                ))
+            }
+        }
+    }
+
+    func removeAccountSession(accountName: String, with reply: @escaping @Sendable (Data) -> Void) {
+        @Sendable func send(_ result: SteamAccountSessionRemovalResult) {
+            reply((try? JSONEncoder().encode(result)) ?? Data())
+        }
+        let enqueuedAt = Date()
+        // On the SteamCMD queue so a removal cannot run while a login or
+        // download is using the same profile.
+        Self.steamCMDQueue.async {
+            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+                return send(SteamAccountSessionRemovalResult(
+                    outcome: .refused,
+                    failureReason: "removal expired while queued behind another SteamCMD operation"
+                ))
+            }
+            guard let directory = try? SteamCMDProfile.sessionDirectory(accountName: accountName) else {
+                return send(SteamAccountSessionRemovalResult(
+                    outcome: .refused, failureReason: "not a removable account session"
+                ))
+            }
+            // The serial queue only orders this process. The per-profile lock is
+            // what keeps a second connector instance from running SteamCMD
+            // against the profile while it is being deleted.
+            guard let lease = try? SteamCMDProfile.acquire(accountName: accountName) else {
+                return send(SteamAccountSessionRemovalResult(
+                    outcome: .refused, failureReason: "the profile is in use by another SteamCMD operation"
+                ))
+            }
+            defer { close(lease.fd) }
+            // Same symlink walk as the managed-install removal: a link planted
+            // along this path would turn a delete of our own directory into a
+            // delete of someone else's.
+            if let offending = SteamCMDManagedInstaller.firstSymlinkComponent(of: directory) {
+                return send(SteamAccountSessionRemovalResult(
+                    outcome: .refused,
+                    failureReason: "Session path component is a symbolic link: \(offending)"
+                ))
+            }
+            let path = SteamCMDManagedInstaller.normalisedPath(directory)
+            guard FileManager.default.fileExists(atPath: path) else {
+                return send(SteamAccountSessionRemovalResult(outcome: .notFound, failureReason: nil))
+            }
+            do {
+                try FileManager.default.removeItem(atPath: path)
+                send(SteamAccountSessionRemovalResult(outcome: .removed, failureReason: nil))
+            } catch {
+                send(SteamAccountSessionRemovalResult(
                     outcome: .refused, failureReason: error.localizedDescription
                 ))
             }
@@ -1295,19 +1510,14 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     }
 
     func latestWallpaperEngineBuildID(
-        accountName: String,
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
         @Sendable func send(_ lookup: SteamEngineBuildLookup) {
             reply((try? JSONEncoder().encode(lookup)) ?? Data())
         }
-        guard SteamAccountsFile.isValidAccountName(accountName) else {
-            send(.failed(.steamCMDUnavailable))
-            return
-        }
-        // Same profile, same lock: an update check must not race a queued
-        // install or download.
+        // Same lock as install and download: an update check must not race a
+        // queued SteamCMD run.
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
             guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
@@ -1323,7 +1533,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 arguments: [
                     "+@NoPromptForPassword", "1",
                     "+@sSteamCmdForcePlatformType", "windows",
-                    "+login", accountName,
+                    // Anonymous on purpose: app_info_print for 431960 is
+                    // public, and this runs unattended at launch — Steam allows
+                    // one login per account across the GUI client and SteamCMD,
+                    // so using the user's account here could kick their client.
+                    "+login", "anonymous",
                     "+app_info_update", "1",
                     "+app_info_print", SteamLibraryPaths.wallpaperEngineAppID,
                     "+quit"
@@ -1331,14 +1545,8 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 timeout: 180,
                 operationID: operationID
             )
-            // Same markers the download and assets-install paths already
-            // classify on. This one used to skip the check entirely, so an
-            // expired session reached the user as "no build id".
             if run.timedOut { return send(.failed(.timedOut)) }
             let out = run.output
-            if out.contains("FAILED (No cached credentials") || out.contains("Login Failure") {
-                return send(.failed(.loginRequired))
-            }
             // Checked before the parse: with no connection there is no build
             // line to find, and "we could not read the answer" is the wrong
             // story for an answer that never came.
@@ -1354,6 +1562,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
 
     func installWallpaperEngineAssets(
         accountName: String,
+        libraryPath: String,
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
@@ -1371,6 +1580,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             respond(.steamCMDUnavailable)
             return
         }
+        // Before the queue, not inside it: a library we would refuse must not
+        // hold the serial queue behind an install that cannot be published.
+        guard let libraryRoot = SteamLibraryPaths.validatedLibraryRoot(libraryPath) else {
+            respond(.steamCMDUnavailable, tail: "Refused Steam library path: \(libraryPath)")
+            return
+        }
 
         let sink = progressSink
         let enqueuedAt = Date()
@@ -1380,6 +1595,13 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 respond(.steamCMDUnavailable, tail: Self.noExecutableReason)
                 return
             }
+            // `app_update` sessions are keyed on the AppID, and Wallpaper
+            // Engine's Workshop content hangs off that same AppID: a Workshop
+            // tree left in this profile by the old staging design joins the
+            // session, and `validate` then covers every item its ledger names.
+            // Measured 2026-09-05: 3.6 GiB of stale items on top of the 826 MiB
+            // engine download, reported to the user as one 3.88 GB download.
+            Self.discardStagedWorkshopTree(accountName: accountName)
             // `validate` repairs the previous run's pruned tree, so only the
             // files we removed last time come back down the wire.
             let run = Self.runSteamCMD(
@@ -1416,7 +1638,16 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 sink?.connectorDidReportProgress(data)
             }
             do {
-                let assets = try SteamLibraryWriter.pruneWallpaperEngineInstall()
+                let profile = try SteamCMDProfile.acquire(accountName: accountName)
+                defer { close(profile.fd) }
+                let stagingRoot = try SteamCMDProfile.steamRoot(accountName: accountName)
+                _ = try SteamLibraryWriter.pruneWallpaperEngineInstall(steamRoot: stagingRoot)
+                let assets = try SteamLibraryWriter.publishContent(
+                    components: SteamLibraryPaths.wallpaperEngineComponents + ["assets"],
+                    from: stagingRoot,
+                    to: libraryRoot
+                )
+                flock(profile.fd, LOCK_UN)
                 // `app_update`'s output carries a placeholder `"buildid" "0"`,
                 // so ask app_info for the branch actually installed instead
                 // of scraping the update log. Re-resolved rather than riding
@@ -1432,7 +1663,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                     arguments: [
                         "+@NoPromptForPassword", "1",
                         "+@sSteamCmdForcePlatformType", "windows",
-                        "+login", accountName,
+                        "+login", "anonymous",
                         "+app_info_print", SteamLibraryPaths.wallpaperEngineAppID,
                         "+quit"
                     ],
@@ -1454,17 +1685,28 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     }
 
 
+    /// Removes an account profile's leftover Workshop tree. Symlink-guarded the
+    /// same way the managed-install removal is; a failure is not worth failing
+    /// the install over, since the only cost is the wasted transfer.
+    private static func discardStagedWorkshopTree(accountName: String) {
+        guard let tree = try? SteamCMDProfile.stagedWorkshopTree(accountName: accountName),
+              SteamCMDManagedInstaller.firstSymlinkComponent(of: tree) == nil else { return }
+        try? FileManager.default.removeItem(atPath: SteamCMDManagedInstaller.normalisedPath(tree))
+    }
+
     /// Uses the one runner, so a wedged login cannot hold the serial queue: the
     /// previous copy here had only a SIGTERM and then blocked in `readToEnd()`,
     /// which would have stalled every download and install queued behind it.
     private static func runCachedLoginProbe(
         accountName: String,
-        steamCMDPath: String
+        steamCMDPath: String,
+        realHome: String = SteamConnectorEnvironmentProbe.posixHomeDirectory()
     ) -> SteamCachedLoginResult {
         let run = runSteamCMD(
             steamCMDPath: steamCMDPath,
             arguments: ["+@NoPromptForPassword", "1", "+login", accountName, "+quit"],
-            timeout: 60
+            timeout: 60,
+            realHome: realHome
         )
         if run.timedOut {
             return SteamCachedLoginResult(
@@ -1475,7 +1717,17 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             )
         }
         var result = SteamCachedLoginParser.parse(stdout: run.output)
+        if result.outcome == .sessionValid {
+            let config = try? SteamCMDProfile.steamRoot(accountName: accountName, realHome: realHome).appendingPathComponent("config/config.vdf")
+            let accounts = config.map { SteamAccountsFile.parseAccounts(fromConfigVDF: (try? String(contentsOf: $0, encoding: .utf8)) ?? "") } ?? []
+            let expected = accounts.first { $0.accountName.lowercased() == accountName.lowercased() }?.steamID64
+            if run.exitCode != 0 || expected == nil || result.steamID64 != expected {
+                result = SteamCachedLoginResult(outcome: .loginFailed, steamID64: nil,
+                                                diagnosticTail: result.diagnosticTail, failureReason: "Cached login identity could not be verified")
+            }
+        }
         result.executedBinaryPath = steamCMDPath
+        result.exitCode = run.exitCode
         return result
     }
 }

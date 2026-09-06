@@ -253,13 +253,15 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 )
             }
 
+            var diskAvailable = false
             var diskRead: Double = 0
             var diskWrite: Double = 0
             if options.disk {
                 let diskRaw = SystemMetricsSamplers.sampleDiskCounters()
                 diskRead = SystemMetricsSamplers.rate(current: diskRaw.read, previous: prevDisk?.read ?? diskRaw.read, interval: elapsed)
                 diskWrite = SystemMetricsSamplers.rate(current: diskRaw.written, previous: prevDisk?.written ?? diskRaw.written, interval: elapsed)
-                prevDisk = diskRaw
+                diskAvailable = diskRaw.available && prevDisk != nil
+                prevDisk = diskRaw.available ? (diskRaw.read, diskRaw.written) : nil
             }
 
             if options.gpu, MonitoringCadence.shouldSampleGPU(updateCount: updateCount, cadence: gpuSampleCadence) {
@@ -320,6 +322,20 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
 
             let loadAverages = options.cpu ? loadAverageSampler() : nil
 
+            let sampledAt = now.timeIntervalSince1970
+            func provenance(_ available: Bool, at date: Double? = nil, every period: Double? = nil) -> MonitorMetricSample {
+                MonitorMetricSample(available: available, sampledAt: date ?? sampledAt, interval: period ?? interval)
+            }
+            let samples: [String: MonitorMetricSample] = [
+                "cpu": provenance(cpuSample?.available == true),
+                "memory": provenance(memory?.breakdown != nil),
+                "network": provenance(options.network && !netInterfaces.isEmpty),
+                "disk": provenance(diskAvailable),
+                "power": provenance(power?.powerSource != nil || power?.battery != nil),
+                "gpu": provenance(lastGPU?.deviceUtil != nil, at: lastGPUSampledAt, every: interval * Double(gpuSampleCadence)),
+                "processes": provenance(topProcesses != nil, at: lastTopProcessesSampledAt?.timeIntervalSince1970, every: topProcessSampleSeconds),
+                "aiEngine": provenance(lastANE?.hasFootprint != nil, at: lastANESampledAt?.timeIntervalSince1970, every: 5),
+            ]
             let snapshot = MonitorSystemSnapshot(
                 cpuTotal: cpuSample?.total ?? 0,
                 cpuUser: cpuSample?.user ?? 0,
@@ -362,7 +378,9 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 aneFootprintBytes: lastANE?.totalFootprintBytes,
                 sensors: sensors,
                 topIOProcesses: topIOProcesses,
-                gpuMemUsedBytes: lastGPU?.memUsedBytes
+                gpuMemUsedBytes: lastGPU?.memUsedBytes,
+                sampledAt: sampledAt,
+                metricSamples: samples
             )
 
             // Bail before publishing if stop() cancelled us mid-tick, so a late

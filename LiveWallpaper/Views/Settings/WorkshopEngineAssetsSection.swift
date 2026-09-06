@@ -318,12 +318,7 @@ struct WorkshopEngineAssetsSection: View {
             )
         case .unableToCompare:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked, but their version is unknown. Download again to refresh them.", bundle: .appLanguage, comment: "Engine-assets settings status when installed build id is unknown."),
-                tint: DesignTokens.Colors.Status.warning
-            )
-        case .loginRequired:
-            return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked. Your Steam sign-in expired, so the version check couldn't run.", bundle: .appLanguage, comment: "Engine-assets settings status when Steam refused the cached session during an update check."),
+                message: String(localized: "Downloaded assets linked, but their version is unknown. Click Update to download the current build and record it.", bundle: .appLanguage, comment: "Engine-assets settings status when installed build id is unknown."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case let .checkFailed(reason):

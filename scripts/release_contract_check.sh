@@ -88,7 +88,7 @@ fi
 # CI must not drift away from the Makefile: every gate the pipeline depends on
 # is reached through a make target, so a locally-green `make verify` means the
 # same thing as a green pipeline.
-for make_target in 'make test-packages' 'make test-app-hosted' 'make contracts' 'make fast'; do
+for make_target in 'make test-packages' 'make test-app-hosted' 'make contracts' 'make fast' 'make lint'; do
   if ! grep -Fq "$make_target" .github/workflows/ci.yml; then
     echo "ERROR: CI no longer runs '$make_target'; local and CI gates have diverged." >&2
     exit 1
@@ -144,7 +144,7 @@ if grep -q 'CODE_SIGNING_ALLOWED=NO' "$candidate_script"; then
   exit 1
 fi
 
-pro_release_block="$(sed -n '/^echo "== Link matrix + archive smoke: Pro Release =="/,/^PRO_XPC_SERVICE=/p' "$candidate_script")"
+pro_release_block="$(sed -n '/^echo "== Link matrix + archive smoke: Pro Release =="/,/^PRO_ARCHIVED_APP=/p' "$candidate_script")"
 lite_debug_block="$(sed -n '/^echo "== Link matrix: Lite Debug =="/,/^LITE_DEBUG_BIN=/p' "$candidate_script")"
 lite_release_block="$(sed -n '/^echo "== Link matrix + archive smoke: Lite Release =="/,/^LITE_ARCHIVED_APP=/p' "$candidate_script")"
 
@@ -178,15 +178,13 @@ grep -q -- '-configuration Release' <<<"$lite_release_block"
 grep -q -- '-destination "$MACOS_ARCHIVE_DESTINATION"' <<<"$lite_release_block"
 grep -q -- '-archivePath "$LITE_ARCHIVE_PATH"' <<<"$lite_release_block"
 grep -q 'CODE_SIGN_IDENTITY="-"' <<<"$lite_release_block"
-# Lite ships universal (ARCHS_STANDARD) so it runs on Intel Macs; Pro stays
-# pinned to arm64 above. The gate keeps its teeth by requiring the archive to be
-# checked for an arm64 slice — pinning the arch here would contradict the SKU.
+# Lite ships both arm64 and x86_64; Pro stays pinned to arm64 above.
 if grep -q 'ARCHS=' <<<"$lite_release_block"; then
   echo "ERROR: Lite archive must not pin ARCHS — it ships universal for Intel support." >&2
   exit 1
 fi
 # Lives just past the block's end marker, so assert against the whole script.
-grep -Fq 'assert_contains_arm64 "$LITE_RELEASE_BIN"' "$candidate_script"
+grep -Fq 'assert_universal_binary "$LITE_RELEASE_BIN"' "$candidate_script"
 grep -q 'SWIFT_EMIT_LOC_STRINGS=NO' <<<"$lite_release_block"
 
 for scheme_file in \

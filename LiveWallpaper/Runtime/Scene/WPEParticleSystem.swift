@@ -4,6 +4,13 @@ import LiveWallpaperProWPE
 import Metal
 import simd
 
+/// Limits history-ribbon allocation before converting authored subdivision to Int.
+func wpeTrailPointCount(subdivision: Double) -> Int {
+    let finiteSubdivision = subdivision.isFinite ? subdivision : 3
+    let segments = min(max(finiteSubdivision, 1), 7).rounded()
+    return Int(segments) + 1
+}
+
 /// Layout MUST match `WPEParticleInstance` in `WPEMetalBuiltins.metal` exactly.
 struct WPEParticleInstance {
     var positionAndSize: SIMD4<Float>
@@ -440,13 +447,11 @@ final class WPEParticleSystem {
         self.isRope = definition.isRope
         let usesTrailRibbon = definition.usesTrailRibbon
         self.usesTrailRibbon = usesTrailRibbon
-        let trailPoints: Int
-        if usesTrailRibbon, let trail = definition.trailRenderer {
+        let trailPoints = if usesTrailRibbon, let trail = definition.trailRenderer {
             // `subdivision` is segments, so points = segments + 1. Clamp 2…8.
-            let segments = max(1, Int(trail.subdivision.rounded()))
-            trailPoints = min(max(segments + 1, 2), 8)
+            wpeTrailPointCount(subdivision: trail.subdivision)
         } else {
-            trailPoints = 0
+            0
         }
         self.trailPointCount = trailPoints
         if definition.isRope || usesTrailRibbon {

@@ -17,13 +17,13 @@ final class MusicHostView: NSView {
     init(
         frame frameRect: NSRect,
         configuration: MusicOverlayConfiguration,
-        topInsetFraction: CGFloat = 0,
+        safeArea: MonitorSafeAreaInsets = .none,
         isEditingPreview: Bool = false
     ) {
         self.configuration = configuration
         let layoutModel = MusicOverlayLayoutModel(
             configuration: configuration,
-            topInsetFraction: topInsetFraction,
+            safeArea: safeArea,
             isEditingPreview: isEditingPreview
         )
         self.layoutModel = layoutModel
@@ -53,10 +53,12 @@ final class MusicHostView: NSView {
         dataModel.update(snapshot)
     }
 
-    func apply(configuration: MusicOverlayConfiguration, topInsetFraction: CGFloat? = nil) {
+    func apply(configuration: MusicOverlayConfiguration, safeArea: MonitorSafeAreaInsets? = nil) {
         self.configuration = configuration
         layoutModel.configuration = configuration
-        if let topInsetFraction { layoutModel.topInsetFraction = topInsetFraction }
+        if let safeArea {
+            layoutModel.safeArea = safeArea
+        }
     }
 
     /// Stops the 1 Hz clock and the reactive animations while suspended.
@@ -95,7 +97,7 @@ final class MusicHostView: NSView {
         guard let rect = MusicOverlayLayout.renderRect(
             configuration: configuration,
             boardSize: bounds.size,
-            topInsetFraction: layoutModel.topInsetFraction
+            safeArea: layoutModel.safeArea
         ) else { return false }
         // SwiftUI lays out y-down from the top edge; this view is not flipped.
         let boardPoint = isFlipped ? local : CGPoint(x: local.x, y: bounds.height - local.y)
@@ -108,13 +110,13 @@ final class MusicHostView: NSView {
 @MainActor
 final class MusicOverlayLayoutModel: ObservableObject {
     @Published var configuration: MusicOverlayConfiguration
-    @Published var topInsetFraction: CGFloat
+    @Published var safeArea: MonitorSafeAreaInsets
     @Published var suspended = true
     let isEditingPreview: Bool
 
-    init(configuration: MusicOverlayConfiguration, topInsetFraction: CGFloat, isEditingPreview: Bool) {
+    init(configuration: MusicOverlayConfiguration, safeArea: MonitorSafeAreaInsets, isEditingPreview: Bool) {
         self.configuration = configuration
-        self.topInsetFraction = topInsetFraction
+        self.safeArea = safeArea
         self.isEditingPreview = isEditingPreview
     }
 }
@@ -134,7 +136,7 @@ struct MusicOverlayRootContainer: View {
                 if let rect = MusicOverlayLayout.renderRect(
                     configuration: layout.configuration,
                     boardSize: proxy.size,
-                    topInsetFraction: layout.topInsetFraction
+                    safeArea: layout.safeArea
                 ) {
                     NowPlayingWidgetView(context: MusicOverlayContext(
                         snapshot: data.snapshot,

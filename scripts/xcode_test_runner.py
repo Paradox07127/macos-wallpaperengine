@@ -40,26 +40,31 @@ def required_suites_missing(tests: dict[str, Any], required: Iterable[str]) -> l
     return sorted(set(required) - identifiers)
 
 
-def required_suites_all_skipped(tests: dict[str, Any], required: Iterable[str]) -> list[str]:
-    """Required suites whose Test Case nodes exist but every one of them
-    reports result == "Skipped" — the suite ran and produced zero real
-    verification (e.g. an early crash left downstream suites unexecuted, or
-    a suite's tests are all gated behind a condition that never holds in
-    this environment). A node with no "result" key at all is treated as
-    non-skipped rather than flagged, since some xcresult "tests" reports
-    omit it on nodes that plainly ran.
+def required_suites_without_passes(
+    tests: dict[str, Any], required: Iterable[str], allow_skipped: Iterable[str] = ()
+) -> list[str]:
+    """Require execution evidence, including runs beneath parameterized cases.
+
+    xcresulttool's TestNode schema makes result optional. A missing aggregate
+    result is fine if its Test Case Run children explicitly passed; a bare node
+    without any result cannot prove that verification executed.
     """
-    cases_by_suite: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for node in walk_nodes(tests):
-        if node.get("nodeType") != "Test Case":
+    results_by_suite: dict[str, set[Any]] = defaultdict(set)
+    for case in walk_nodes(tests):
+        if case.get("nodeType") != "Test Case":
             continue
-        suite = str(node.get("nodeIdentifier", "")).split("/", 1)[0]
-        cases_by_suite[suite].append(node)
+        suite = str(case.get("nodeIdentifier", "")).split("/", 1)[0]
+        results_by_suite[suite].update(
+            node.get("result") for node in walk_nodes(case)
+            if node.get("nodeType") in ("Test Case", "Test Case Run")
+        )
+    exempt = set(allow_skipped)
     return sorted(
-        suite
-        for suite in required
-        if cases_by_suite.get(suite)
-        and all(case.get("result") == "Skipped" for case in cases_by_suite[suite])
+        suite for suite in required
+        if results_by_suite.get(suite)
+        and "Passed" not in results_by_suite[suite]
+        # An opt-in exception covers explicit skips, never unknown results.
+        and not (suite in exempt and results_by_suite[suite] == {"Skipped"})
     )
 
 
@@ -82,11 +87,16 @@ def validate_summary(
     total = summary.get("totalTestCount")
     failed = summary.get("failedTests")
     skipped = summary.get("skippedTests")
+    passed = summary.get("passedTests")
     result = summary.get("result")
     if not isinstance(total, int):
         errors.append("xcresult summary has no integer totalTestCount")
-    elif total < minimum_test_count:
-        errors.append(f"test count {total} is below required minimum {minimum_test_count}")
+    if type(passed) is not int:
+        errors.append("xcresult summary has no integer passedTests")
+    elif passed < minimum_test_count:
+        errors.append(f"passed test count {passed} is below required minimum {minimum_test_count}")
+    elif isinstance(total, int) and passed > total:
+        errors.append(f"passed test count {passed} exceeds total {total}")
     if result != "Passed":
         errors.append(f"xcresult status is {result!r}, expected 'Passed'")
     if not isinstance(failed, int) or failed != 0:
@@ -193,9 +203,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--label", required=True)
     parser.add_argument("--result-bundle", type=Path, required=True)
     parser.add_argument("--log", type=Path)
-    parser.add_argument("--minimum-test-count", type=int, default=1)
+    parser.add_argument("--minimum-test-count", type=int, default=1,
+                        help="Minimum actual passed tests; skipped cases do not count")
     parser.add_argument("--require-suite", action="append", default=[])
-    # Suites exempt from the all-skipped false-green check (still must be
+    # Suites exempt from the no-passed-case check (still must be
     # present). For suites gated on an environment the runner may lack, e.g.
     # WPECorpusManifestTests needs a local Workshop corpus CI runners don't have.
     parser.add_argument("--allow-skipped-suite", action="append", default=[])
@@ -254,20 +265,21 @@ def main() -> int:
                 validation_errors.append(
                     f"required suites absent from xcresult: {', '.join(missing)}"
                 )
-            all_skipped = required_suites_all_skipped(tests, arguments.require_suite)
-            exempt = set(arguments.allow_skipped_suite)
-            tolerated = sorted(set(all_skipped) & exempt)
+            without_passes = required_suites_without_passes(tests, arguments.require_suite)
+            enforced = required_suites_without_passes(
+                tests, arguments.require_suite, arguments.allow_skipped_suite
+            )
+            tolerated = sorted(set(without_passes) - set(enforced))
             if tolerated:
                 print(
-                    "note: fully-skipped but explicitly allowed: "
+                    "note: no passed cases but explicitly allowed: "
                     f"{', '.join(tolerated)}",
                     flush=True,
                 )
-            all_skipped = [suite for suite in all_skipped if suite not in exempt]
-            if all_skipped:
+            if enforced:
                 validation_errors.append(
-                    "required suites present but every test case was skipped "
-                    f"(no real verification ran): {', '.join(all_skipped)}"
+                    "required suites present but without a passed test case "
+                    f"(no real verification proved): {', '.join(enforced)}"
                 )
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError, ValueError) as error:
         validation_errors.append(f"could not read xcresult: {error}")

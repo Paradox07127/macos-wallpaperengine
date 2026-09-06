@@ -988,7 +988,7 @@ struct SteamCMDLoginTests {
     @Test("The connector's login body has no other argv source")
     func loginBodyUsesTheBuilder() throws {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
-        let start = try #require(source.range(of: "private static func runLoginSession"))
+        let start = try #require(source.range(of: "static func runLoginSession"))
         let body = String(source[start.lowerBound...].prefix(5_000))
         #expect(body.contains("SteamCMDLoginProbe.arguments(accountName:"))
         #expect(!body.contains("request.password]"))

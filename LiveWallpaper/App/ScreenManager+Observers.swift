@@ -551,7 +551,7 @@ extension ScreenManager {
             SettingsManager.shared.loadGlobalSettings().wallpaperVisibleInScreenCapture
         let sharing = WallpaperCapturePolicy.windowSharingType
         for screen in screens {
-            screen.activeWallpaperWindow?.sharingType = sharing
+            screen.applyCapturePolicy(sharing)
         }
         OverlayController.shared.applyCapturePolicyToLiveOverlays()
     }

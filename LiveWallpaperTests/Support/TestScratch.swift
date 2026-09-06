@@ -8,6 +8,19 @@ import Foundation
 /// accumulated 236 directories under `tmp/` and 645 plists under
 /// `Library/Preferences/`.
 enum TestScratch {
+    /// External corpus tests never discover the current user's home or old config files.
+    /// This selector performs no filesystem access; even test discovery is inert
+    /// unless the caller explicitly enables external fixtures and supplies a path.
+    static func externalFixtureURL(
+        pathKey: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL? {
+        guard environment["LIVEWALLPAPER_EXTERNAL_FIXTURES"] == "1",
+              let path = environment[pathKey],
+              path.hasPrefix("/"), !path.contains("\0") else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
     enum Failure: Error {
         case defaultsSuiteUnavailable(String)
     }

@@ -8,8 +8,9 @@ struct WeatherStatusBadge: View {
 
     /// Accessory apps (LSUIElement) cannot show the system Location permission dialog directly; we surface a one-tap shortcut to System Settings instead.
     private var needsLocationSettingsLink: Bool {
+        guard SettingsManager.shared.loadGlobalSettings().weatherLocation.source == .coreLocation else { return false }
         switch weatherService.locationStatus {
-        case .notDetermined, .denied, .error: return true
+        case .notDetermined, .denied: return true
         default: return false
         }
     }
@@ -37,6 +38,15 @@ struct WeatherStatusBadge: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                }
+
+                if let updated = weatherService.lastSuccessfulUpdate {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        Text("Last updated")
+                        Text(updated, style: .relative)
+                    }
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
                 }
 
                 if let error = weatherService.lastError {

@@ -18,6 +18,7 @@ protocol WallpaperRuntimeSession: AnyObject {
     var runtimeError: WallpaperRuntimeError? { get }
 
     func show()
+    func applyCapturePolicy(_ sharingType: NSWindow.SharingType)
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile)
     func updateFrame(to frame: CGRect)
     func cleanup()
@@ -31,6 +32,10 @@ protocol WallpaperRuntimeSession: AnyObject {
 
 extension WallpaperRuntimeSession {
     var runtimeError: WallpaperRuntimeError? { nil }
+
+    func applyCapturePolicy(_ sharingType: NSWindow.SharingType) {
+        wallpaperWindow?.sharingType = sharingType
+    }
 
     func retry() async {}
 }

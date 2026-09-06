@@ -344,7 +344,7 @@ struct HTMLPerformanceTargetTests {
         defer { harness.teardown() }
 
         // The harness display reports 60 Hz, so half of it is 30.
-        harness.coordinator.updateFrameRateLimit(.half, for: harness.screen)
+        harness.coordinator.updateFrameRateLimit(.fps30, for: harness.screen)
 
         #expect(harness.target.targets == [30])
     }
@@ -358,8 +358,8 @@ struct HTMLPerformanceTargetTests {
 
         // Seeded at `.full`, so go through a divided cap first: the assertion is
         // that returning to full rate is still routed, not swallowed as "no cap".
-        harness.coordinator.updateFrameRateLimit(.half, for: harness.screen)
-        harness.coordinator.updateFrameRateLimit(.full, for: harness.screen)
+        harness.coordinator.updateFrameRateLimit(.fps30, for: harness.screen)
+        harness.coordinator.updateFrameRateLimit(.matchDisplay, for: harness.screen)
 
         #expect(harness.target.targets == [30, 60])
     }
@@ -795,7 +795,7 @@ private struct HTMLPacingHarness {
         var configuration = ScreenConfiguration(
             screenID: screen.id,
             wallpaper: .html(source: .url(URL(string: "about:blank")!), config: .default),
-            frameRateLimit: .full
+            frameRateLimit: .matchDisplay
         )
         configuration.displayFingerprint = screen.displayFingerprint
         store.save(configuration)

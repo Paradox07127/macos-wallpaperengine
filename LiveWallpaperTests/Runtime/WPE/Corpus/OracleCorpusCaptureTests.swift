@@ -55,41 +55,25 @@ struct OracleCorpusCaptureTests {
     }
 
     private static var captureConfigURL: URL? {
-        if let explicitPath = ProcessInfo.processInfo.environment["WPE_ORACLE_CAPTURE_CONFIG"],
-           !explicitPath.isEmpty {
-            let explicitURL = URL(fileURLWithPath: explicitPath)
-            return FileManager.default.fileExists(atPath: explicitURL.path) ? explicitURL : nil
-        }
-        let temporaryURL = URL(
-            fileURLWithPath: "/private/tmp/livewallpaper-oracle-evidence.json"
-        )
-        if FileManager.default.fileExists(atPath: temporaryURL.path) {
-            return temporaryURL
-        }
-        guard let base = try? FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false
-        ) else { return nil }
-        let configURL = base
-            .appendingPathComponent("LiveWallpaper")
-            .appendingPathComponent("oracle-capture.json")
-        return FileManager.default.fileExists(atPath: configURL.path) ? configURL : nil
+        TestScratch.externalFixtureURL(pathKey: "WPE_ORACLE_CAPTURE_CONFIG")
+    }
+
+    private static var captureOutputRoot: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_ORACLE_CAPTURE_OUTPUT")
     }
 
     @MainActor
     @Test(
-        "Capture oracle traces for a scene corpus (opt-in via container config file)",
-        .enabled(if: captureConfigURL != nil)
+        "Capture oracle traces for a scene corpus (opt-in via explicit config path)",
+        .enabled(if: captureConfigURL != nil && captureOutputRoot != nil)
     )
     func captureCorpus() async throws {
-        let base = try FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false
-        ).appendingPathComponent("LiveWallpaper")
         let configURL = try #require(Self.captureConfigURL)
         let data = try Data(contentsOf: configURL)
         let config = try JSONDecoder().decode(Config.self, from: data)
         try #require(!config.corpusRoot.isEmpty, "oracle-capture.json corpusRoot must not be empty")
         let root = URL(fileURLWithPath: config.corpusRoot)
-        let outDir = base.appendingPathComponent("oracle-out").appendingPathComponent(config.label)
+        let outDir = try #require(Self.captureOutputRoot)
         try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
         let filter = config.scenes.map(Set.init)
         print("[oracle-capture] config: corpusRoot=\(config.corpusRoot) label=\(config.label) "
@@ -120,7 +104,7 @@ struct OracleCorpusCaptureTests {
 
         let device = try #require(MTLCreateSystemDefaultDevice())
         let engineAssetsRoot = config.engineAssetsRoot.map { URL(fileURLWithPath: $0) }
-            ?? WPEEngineAssetsLibrary.shared.resolveAuthorizedRoot()
+            ?? TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_ENGINE_ASSETS_ROOT")
         print("[oracle-capture] engineAssetsRoot=\(engineAssetsRoot?.path ?? "<nil>")")
 
         let folders = ((try? FileManager.default.contentsOfDirectory(
@@ -488,21 +472,19 @@ struct OracleCorpusCaptureTests {
 @Suite("Oracle text corpus evidence")
 struct OracleTextCorpusEvidenceTests {
     private struct RootConfig: Decodable { let corpusRoot: String }
-    private static let configURL = URL(
-        fileURLWithPath: "/private/tmp/livewallpaper-oracle-evidence.json"
-    )
-    private static var configExists: Bool {
-        FileManager.default.fileExists(atPath: configURL.path)
+    private static var configURL: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_ORACLE_CAPTURE_CONFIG")
     }
 
     @Test(
         "Scan packaged scene JSON for real copy/opaque text examples",
-        .enabled(if: configExists)
+        .enabled(if: configURL != nil)
     )
     func scanTextBackgroundModes() throws {
+        let configURL = try #require(Self.configURL)
         let config = try JSONDecoder().decode(
             RootConfig.self,
-            from: Data(contentsOf: Self.configURL)
+            from: Data(contentsOf: configURL)
         )
         let root = URL(fileURLWithPath: config.corpusRoot, isDirectory: true)
         let folders = try FileManager.default.contentsOfDirectory(

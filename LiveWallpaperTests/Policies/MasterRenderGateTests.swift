@@ -250,3 +250,196 @@ private final class GateTestRuntimeSession: WallpaperRuntimeSession {
     func cleanup() { cleanupCallCount += 1 }
     func prepareForDisplay(timeout: Duration) async -> WallpaperPreparationResult { .ready }
 }
+
+/// Independent configuration/gate dependencies: these async tests never change
+/// the singleton master switch or the other MasterRenderGateTests' settings.
+@Suite("Video selection while globally disabled")
+@MainActor
+struct VideoSelectionGateTests {
+    @Test("A validated selection saves while off without preparing a player", arguments: [false, true])
+    func disabledSelectionSavesWithoutBuilding(hasPrevious: Bool) async throws {
+        let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
+        let persistence = GateSelectionPersistence()
+        let store = WallpaperConfigurationStore(persistence: persistence)
+        if hasPrevious {
+            var previous = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data([0x11]))
+            previous.displayFingerprint = screen.displayFingerprint
+            previous.playbackSpeed = 0.75
+            previous.videoVolume = 0.37
+            previous.muted = true
+            store.save(previous)
+        }
+        let loader = FakePlayableVideoLoader()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("gate-selection-\(UUID().uuidString).mov")
+        try Data().write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        var enabled = false
+        var builtPlayers: [WallpaperVideoPlayer] = []
+        var notifications = 0
+        let coordinator = PlaybackCoordinator(
+            configurationStore: store,
+            playableVideoLoader: loader,
+            bookmarkResolver: SecurityScopedBookmarkResolver(
+                resolveData: { _ in (url, false) }, refreshData: { _ in Data() }
+            ),
+            makeVideoPlayer: { url, frame, fitMode, entryName in
+                let player = WallpaperVideoPlayer(
+                    url: url, frame: frame, fitMode: fitMode,
+                    packageEntryName: entryName, startsHidden: true, loadImmediately: false
+                )
+                builtPlayers.append(player)
+                return player
+            },
+            validateSavedVideoConfiguration: { _ in true },
+            applyPolicy: { _ in }, applyVideoEffects: { _, _ in },
+            refreshRateLookup: { _ in 60 }, screensProvider: { [screen] },
+            markSessionStateChanged: {}, releaseRuntimeSession: { $0.resetRuntimeSession() },
+            notifyWallpaperSessionChanged: { notifications += 1 },
+            originReconciler: PreservingOriginReconciler(), isGloballyEnabled: { enabled },
+            notifyConfigurationChanged: { _ in }
+        )
+        defer {
+            coordinator.transition.bumpTransition(for: screen.id)
+            screen.resetRuntimeSession()
+            builtPlayers.forEach { $0.cleanup() }
+        }
+        let bookmark = Data([0x22])
+        coordinator.setVideo(url: url, bookmarkData: bookmark, for: screen)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while builtPlayers.isEmpty, notifications == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(await loader.completedValidationCount == 1)
+        #expect(builtPlayers.isEmpty, "Global off must not construct a playback candidate")
+        #expect(notifications == 1)
+        let saved = store.get(for: screen.id)
+        #expect(saved?.videoBookmarkData == bookmark)
+        #expect(screen.runtimeSession == nil)
+        if hasPrevious {
+            #expect(saved?.playbackSpeed == 0.75)
+            #expect(saved?.videoVolume == 0.37)
+            #expect(saved?.muted == true)
+        }
+        enabled = true
+        let restored = try #require(saved)
+        coordinator.applyConfiguration(restored, to: screen)
+        #expect(builtPlayers.count == 1)
+        #expect(builtPlayers.first?.videoURL == url, "Re-enabling must prepare the newly saved selection")
+    }
+
+    @Test("Rejected or stale disabled selections keep the latest configuration", arguments: [
+        "media-validation", "saved-validation", "revision", "termination",
+    ], [false, true])
+    func rejectedDisabledSelectionDoesNotCommit(kind: String, hasPrevious: Bool) async throws {
+        let screen = try #require(NSScreen.screens.first.map(Screen.init(nsScreen:)))
+        let persistence = GateSelectionPersistence()
+        let store = WallpaperConfigurationStore(persistence: persistence)
+        var expected: ScreenConfiguration?
+        if hasPrevious {
+            var previous = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data([0x11]))
+            previous.displayFingerprint = screen.displayFingerprint
+            store.save(previous)
+            expected = previous
+        }
+        let loader = FakePlayableVideoLoader(
+            validationError: kind == "media-validation" ? .validationFailed : nil,
+            suspendsValidation: true
+        )
+        var active = true
+        var lifecycleChecks = 0
+        var savedValidationChecks = 0
+        var notifications = 0
+        var errors = 0
+        var builtPlayers: [WallpaperVideoPlayer] = []
+        let coordinator = PlaybackCoordinator(
+            configurationStore: store, playableVideoLoader: loader,
+            bookmarkResolver: SecurityScopedBookmarkResolver(
+                resolveData: { _ in throw CocoaError(.fileNoSuchFile) }, refreshData: { _ in Data() }
+            ),
+            makeVideoPlayer: { url, frame, fitMode, entryName in
+                let player = WallpaperVideoPlayer(
+                    url: url, frame: frame, fitMode: fitMode,
+                    packageEntryName: entryName, startsHidden: true, loadImmediately: false
+                )
+                builtPlayers.append(player)
+                return player
+            },
+            validateSavedVideoConfiguration: { _ in
+                savedValidationChecks += 1
+                return kind != "saved-validation"
+            },
+            applyPolicy: { _ in }, applyVideoEffects: { _, _ in },
+            refreshRateLookup: { _ in 60 }, screensProvider: { [screen] },
+            markSessionStateChanged: {}, releaseRuntimeSession: { $0.resetRuntimeSession() },
+            notifyWallpaperSessionChanged: { notifications += 1 },
+            reportRuntimeError: { _, error in
+                if error != nil {
+                    errors += 1
+                }
+            },
+            originReconciler: PreservingOriginReconciler(), isGloballyEnabled: { false },
+            isRuntimeInstallationAllowed: {
+                lifecycleChecks += 1
+                return active
+            },
+            notifyConfigurationChanged: { _ in }
+        )
+        defer {
+            coordinator.transition.bumpTransition(for: screen.id)
+            screen.resetRuntimeSession()
+            builtPlayers.forEach { $0.cleanup() }
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rejected-selection-\(UUID().uuidString).mov")
+        coordinator.setVideo(url: url, bookmarkData: Data([0x22]), for: screen)
+        let pendingDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while await loader.pendingValidationCount == 0, ContinuousClock.now < pendingDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(await loader.pendingValidationCount == 1)
+        if kind == "revision" {
+            var newer = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data([0x33]))
+            newer.displayFingerprint = screen.displayFingerprint
+            store.save(newer)
+            expected = newer
+        } else if kind == "termination" {
+            active = false
+        }
+        await loader.resumeAllValidations()
+        let completionDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while lifecycleChecks < 2, ContinuousClock.now < completionDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(lifecycleChecks >= 2)
+        #expect(builtPlayers.isEmpty)
+        #expect(notifications == 0)
+        #expect(screen.runtimeSession == nil)
+        #expect(store.get(for: screen.id) == expected)
+        #expect(savedValidationChecks == (kind == "saved-validation" ? 1 : 0))
+        #expect(errors == (kind == "media-validation" ? 1 : 0))
+    }
+}
+
+@MainActor
+private final class GateSelectionPersistence: ScreenConfigurationPersisting {
+    private var configurations: [CGDirectDisplayID: ScreenConfiguration] = [:]
+
+    func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {
+        configurations[screenID]
+    }
+
+    func saveConfiguration(_ configuration: ScreenConfiguration) {
+        configurations[configuration.screenID] = configuration
+    }
+
+    func cleanSettingsForScreen(_ screenID: CGDirectDisplayID) {
+        configurations[screenID] = nil
+    }
+
+    func loadConfigurations() -> [ScreenConfiguration] {
+        Array(configurations.values)
+    }
+
+    func replaceAllConfigurations(_ configurations: [ScreenConfiguration]) {
+        self.configurations = Dictionary(uniqueKeysWithValues: configurations.map { ($0.screenID, $0) })
+    }
+}

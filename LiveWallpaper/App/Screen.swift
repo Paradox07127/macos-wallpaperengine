@@ -36,6 +36,15 @@ final class Screen: Identifiable, Hashable {
         runtimeSession?.wallpaperWindow
     }
 
+    /// A policy change also covers windows still visible during their fade.
+    /// Keep this separate from activeWallpaperWindow's non-video UI contract.
+    func applyCapturePolicy(_ sharingType: NSWindow.SharingType) {
+        runtimeSession?.applyCapturePolicy(sharingType)
+        for session in retiringSessions.values {
+            session.applyCapturePolicy(sharingType)
+        }
+    }
+
     var videoPlayer: WallpaperVideoPlayer? {
         runtimeSession?.videoPlayer
     }
@@ -132,9 +141,9 @@ final class Screen: Identifiable, Hashable {
     /// committing it, behind this one, so fading the outgoing window out reveals
     /// it — one animation, no compositing of two live scenes.
     ///
-    /// Video keeps `wallpaperWindow` nil — that property also drives capture
-    /// sharing, the HTML coordinator and the playback inspector, and widening it
-    /// would change all three — so its window is reached through the player.
+    /// Video keeps `wallpaperWindow` nil for the HTML coordinator and playback
+    /// inspector contracts, so retirement reaches its window through the player.
+    /// Capture policy uses the session's separate capability.
     /// A session that never installed a window takes the immediate path below.
     private func retire(_ old: (any WallpaperRuntimeSession)?) {
         guard let old else { return }

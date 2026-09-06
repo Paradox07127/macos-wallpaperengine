@@ -26,12 +26,22 @@ final class HostView: NSView {
     private(set) var pointerScope: PointerScope
     private var reduceMotion: Bool
     private(set) var isSuspended = false
-    /// The board inside the settings inspector rather than on the desktop:
-    /// tiles are name-only (arranging must never pump live data) and the
-    /// toolbar drops "Done", because leaving edit mode is what the preview is
-    /// for — there is nothing else it could show.
-    private let isInspectorPreview: Bool
-    /// Live sky for the Weather tile. Nil on the inspector preview and in tests.
+    /// Non-nil for the board inside the settings inspector rather than on the
+    /// desktop: it draws frozen data instead of the live pump, and the toolbar
+    /// drops "Done", because leaving edit mode is what the preview is for —
+    /// there is nothing else it could show.
+    private(set) var preview: MonitorBoardPreview?
+
+    var isInspectorPreview: Bool {
+        preview != nil
+    }
+
+    /// What each tile draws in this host; nil on the desktop, which draws live.
+    var previewTile: MonitorBoardPreview.Tile? {
+        preview?.tile
+    }
+
+    /// Live sky for the Weather tile. Nil in the preview and in tests.
     private let weatherService: WeatherReactiveService?
 
     private var pendingPersistTask: Task<Void, Never>?
@@ -50,15 +60,14 @@ final class HostView: NSView {
     init(
         frame frameRect: NSRect,
         configuration: MonitorBoardConfiguration,
-        isInspectorPreview: Bool = false,
-        topInsetFraction: CGFloat = 0,
-        referenceWidth: CGFloat = 0,
+        preview: MonitorBoardPreview? = nil,
+        safeArea: MonitorSafeAreaInsets = .none,
         historyStore: MonitorHistoryStore? = nil,
         weatherService: WeatherReactiveService? = nil
     ) {
         let reduceMotion = Self.effectiveReduceMotion(configuration)
         self.pointerScope = Self.pointerScope(for: configuration, isEditing: false)
-        self.isInspectorPreview = isInspectorPreview
+        self.preview = preview
         self.weatherService = weatherService
         self.reduceMotion = reduceMotion
         self.dataModel = DataModel(historyStore: historyStore)
@@ -68,15 +77,14 @@ final class HostView: NSView {
             data: dataModel,
             reduceMotion: reduceMotion,
             suspended: false,
-            isInspectorPreview: isInspectorPreview,
+            preview: preview,
             weatherService: weatherService
         )
         self.hostingView = NSHostingView(rootView: container)
 
         super.init(frame: frameRect)
 
-        interactionModel.topInsetFraction = topInsetFraction
-        interactionModel.referenceWidth = referenceWidth
+        interactionModel.safeArea = safeArea
 
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -111,12 +119,14 @@ final class HostView: NSView {
     // MARK: - Live configuration
 
     /// Push a new board configuration (rebuilds the SwiftUI root).
-    func apply(configuration: MonitorBoardConfiguration, topInsetFraction: CGFloat? = nil) {
+    func apply(configuration: MonitorBoardConfiguration, safeArea: MonitorSafeAreaInsets? = nil) {
         // Drop in-flight debounced persist: older edit would clobber this newer external config.
         pendingPersistTask?.cancel()
         pendingPersistTask = nil
         pendingPersistConfig = nil
-        if let topInsetFraction { interactionModel.topInsetFraction = topInsetFraction }
+        if let safeArea {
+            interactionModel.safeArea = safeArea
+        }
         interactionModel.apply(configuration: configuration)
         pointerScope = Self.pointerScope(for: configuration, isEditing: interactionModel.isEditing)
         reduceMotion = Self.effectiveReduceMotion(configuration)
@@ -132,23 +142,23 @@ final class HostView: NSView {
         rebuildRootView()
     }
 
+    /// Swaps the frozen contents an inspector board draws. Ignored on the
+    /// desktop, which has no preview and must keep its live pump.
+    func setPreview(_ preview: MonitorBoardPreview) {
+        guard self.preview != nil, self.preview != preview else { return }
+        self.preview = preview
+        rebuildRootView()
+    }
+
     private func rebuildRootView() {
         hostingView.rootView = MonitorBoardRootContainer(
             model: interactionModel,
             data: dataModel,
             reduceMotion: reduceMotion,
             suspended: isSuspended,
-            isInspectorPreview: isInspectorPreview,
+            preview: preview,
             weatherService: weatherService
         )
-    }
-
-    func setReferenceWidth(_ width: CGFloat) {
-        guard interactionModel.referenceWidth != width else { return }
-        interactionModel.referenceWidth = width
-        if interactionModel.boardSize != .zero {
-            interactionModel.reflow(boardSize: interactionModel.boardSize)
-        }
     }
 
     // MARK: - Editing
@@ -245,27 +255,36 @@ struct MonitorBoardRootContainer: View {
     @ObservedObject var data: DataModel
     let reduceMotion: Bool
     var suspended: Bool = false
-    var isInspectorPreview: Bool = false
+    var preview: MonitorBoardPreview?
     var weatherService: WeatherReactiveService?
 
     var body: some View {
-        RootView(model: model, data: data, isInspectorPreview: isInspectorPreview)
+        RootView(model: model, data: data, preview: preview)
             .environment(\.monitorReduceMotion, reduceMotion)
             .environment(\.monitorSuspended, suspended)
             .environment(\.monitorWeather, weatherService)
     }
 }
 
-// MARK: - Menu-bar top inset
+// MARK: - Menu-bar / Dock safe area
 
-extension HostView {
-    /// The display's menu-bar forbidden zone as a fraction of its height.
-    static func menuBarTopInsetFraction(forFrame frame: NSRect) -> CGFloat {
-        guard let screen = NSScreen.screens.first(where: { framesMatch($0.frame, frame) }) else { return 0 }
-        let height = screen.frame.height
-        guard height > 0 else { return 0 }
-        let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
-        return max(0, min(menuBar / height, 1))
+extension MonitorSafeAreaInsets {
+    /// The one place a real display's usable area is read, so the desktop board,
+    /// the Now Playing layer and the inspector preview cannot disagree about it.
+    @MainActor
+    static func of(_ screen: NSScreen) -> MonitorSafeAreaInsets {
+        MonitorSafeAreaInsets(frame: screen.frame, visibleFrame: screen.visibleFrame)
+    }
+
+    /// Matched by frame because the caller holds a display rect, not an
+    /// `NSScreen`. An unmatched frame (a display that just went away) has no
+    /// known Dock, so it gets no insets rather than another display's.
+    @MainActor
+    static func forScreen(matching frame: NSRect) -> MonitorSafeAreaInsets {
+        guard let screen = NSScreen.screens.first(where: { framesMatch($0.frame, frame) }) else {
+            return .none
+        }
+        return of(screen)
     }
 
     private static func framesMatch(_ a: NSRect, _ b: NSRect) -> Bool {

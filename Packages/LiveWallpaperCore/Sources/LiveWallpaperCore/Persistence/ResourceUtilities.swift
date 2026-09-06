@@ -4,6 +4,30 @@ import UniformTypeIdentifiers
 
 @MainActor
 public final class ResourceUtilities {
+    /// Resolve the actual regular file before opening a resource within an
+    /// authorized folder. Scope acquisition/lifetime stays with the caller.
+    /// Root-contained symlinks are allowed; an escaping target is never returned.
+    public nonisolated static func containedRegularFileURL(_ url: URL, inside root: URL) -> URL? {
+        guard url.isFileURL, root.isFileURL else { return nil }
+        let rootURL = root.standardizedFileURL.resolvingSymlinksInPath()
+        let target = url.standardizedFileURL.resolvingSymlinksInPath()
+        guard target.pathComponents.starts(with: rootURL.pathComponents),
+              let values = try? target.resourceValues(forKeys: [.isRegularFileKey]),
+              values.isRegularFile == true else { return nil }
+        return target
+    }
+
+    /// Stored project filenames may use Windows separators. Reject traversal
+    /// components before joining; containment then checks the resolved target.
+    public nonisolated static func containedRegularFileURL(
+        relativePath: String, inside root: URL
+    ) -> URL? {
+        let path = relativePath.replacingOccurrences(of: "\\", with: "/")
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.contains("\0"),
+              !path.split(separator: "/").contains("..") else { return nil }
+        return containedRegularFileURL(root.appendingPathComponent(path), inside: root)
+    }
+
     // MARK: - Security-Scoped Bookmarks
 
     public static let bookmarkCreationOptions: URL.BookmarkCreationOptions = [

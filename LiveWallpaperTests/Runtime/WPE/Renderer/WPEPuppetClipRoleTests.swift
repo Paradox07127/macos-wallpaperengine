@@ -7,14 +7,7 @@ import simd
 @Suite("WPE puppet clip-role detection")
 struct WPEPuppetClipRoleTests {
     private static var realPuppetModelPath: String? {
-        let candidates = [
-            ProcessInfo.processInfo.environment["WPE_REAL_PUPPET_MODEL_PATH"],
-            NSHomeDirectory()
-                + "/Library/Application Support/Steam/steamapps/workshop/content/431960/3704273480/"
-                + "scene-unpacked/models/身体---拆分_puppet.mdl",
-            "/private/tmp/wpe-3704273480-unpacked/3704273480/models/身体---拆分_puppet.mdl",
-        ]
-        return candidates.compactMap { $0 }.first(where: { FileManager.default.fileExists(atPath: $0) })
+        TestScratch.externalFixtureURL(pathKey: "WPE_REAL_PUPPET_MODEL_PATH")?.path
     }
 
     private func identityColumnMajor() -> [Float] {
@@ -346,18 +339,12 @@ struct WPEPuppetClipRoleTests {
         #expect(routing.routeForTarget == [2: 0, 3: 1])
     }
 
-    private static var workshopCorpusRoot: URL {
-        let passwd = getpwuid(getuid())
-        let realHome = passwd.map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
-        return URL(fileURLWithPath: realHome, isDirectory: true)
-            .appendingPathComponent(
-                "Library/Application Support/Steam/steamapps/workshop/content/431960",
-                isDirectory: true
-            )
+    private static var workshopCorpusRoot: URL? {
+        TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_CORPUS_ROOT")
     }
 
     private static var workshopCorpusAvailable: Bool {
-        FileManager.default.fileExists(atPath: workshopCorpusRoot.path)
+        workshopCorpusRoot != nil
     }
 
     @Test(
@@ -366,8 +353,9 @@ struct WPEPuppetClipRoleTests {
     )
     func workshopClipGroupsAllProduceRoutes() throws {
         let fileManager = FileManager.default
+        let corpusRoot = try #require(Self.workshopCorpusRoot)
         let folders = try fileManager.contentsOfDirectory(
-            at: Self.workshopCorpusRoot,
+            at: corpusRoot,
             includingPropertiesForKeys: [.isDirectoryKey]
         )
         var groupCount = 0

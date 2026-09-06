@@ -66,11 +66,7 @@ lint:
 	python3 scripts/lint_changed_lines.py --base "$(BASE)"
 
 test-packages:
-	@for package in $(PACKAGES); do \
-	  echo "== Package tests: $$package =="; \
-	  swift test --package-path "Packages/$$package" \
-	    --scratch-path "$(SWIFTPM_SCRATCH)/$$package"; \
-	done
+	bash scripts/app_tests.sh packages "$(SWIFTPM_SCRATCH)" $(PACKAGES)
 
 test-app:
 	@echo "== Fast app architecture/security contracts =="

@@ -27,10 +27,6 @@ final class WPEEngineAssetsInstaller {
         case upToDate(buildID: String?)
         case unableToCompare
         case checkFailed(CheckFailure)
-        /// Steam refused the cached session. Separate from `checkFailed`
-        /// because it is the only one of these with an obvious next step, and
-        /// because it is the one the user actually hits.
-        case loginRequired
 
         /// Why the check could not answer. These shared one sentence — "SteamCMD
         /// did not return the latest build" — which describes only the last of
@@ -63,8 +59,8 @@ final class WPEEngineAssetsInstaller {
                     )
                 case .unparsedOutput:
                     String(
-                        localized: "SteamCMD did not return the latest Wallpaper Engine build.",
-                        bundle: .appLanguage, comment: "Engine-assets update check failure subtitle."
+                        localized: "Steam answered, but the Wallpaper Engine build number couldn't be read from its reply.",
+                        bundle: .appLanguage, comment: "Engine-assets update check failure cause when SteamCMD ran but its reply had no readable build number."
                     )
                 case .steamUnreachable:
                     String(
@@ -81,7 +77,6 @@ final class WPEEngineAssetsInstaller {
         ) -> UpdateCheckOutcome {
             guard let lookup else { return .checkFailed(.notRun) }
             switch lookup.outcome {
-            case .loginRequired: return .loginRequired
             case .timedOut: return .checkFailed(.timedOut)
             case .steamCMDUnavailable: return .checkFailed(.steamCMDUnavailable)
             case .unrecognized: return .checkFailed(.unparsedOutput)
@@ -148,7 +143,15 @@ final class WPEEngineAssetsInstaller {
 
     // MARK: - Download / update
 
-    func download(using doctor: SteamCMDDoctorService) {
+    /// Seam for tests: the connector install call is injectable.
+    func download(
+        using doctor: SteamCMDDoctorService,
+        install: @escaping @Sendable (String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void) async -> SteamEngineAssetsResult? = {
+            await SteamConnectorClient.installWallpaperEngineAssets(
+                accountName: $0, libraryPath: $1, operationID: $2, onProgress: $3
+            )
+        }
+    ) {
         guard !isBusy else { return }
         let attempt = UUID()
         currentAttempt = attempt
@@ -156,7 +159,7 @@ final class WPEEngineAssetsInstaller {
         progress = nil
         progressBytes = nil
         updateCheckOutcome = .notChecked
-        task = Task { [weak self] in await self?.run(using: doctor, attempt: attempt) }
+        task = Task { [weak self] in await self?.run(using: doctor, attempt: attempt, install: install) }
     }
 
     func cancel() {
@@ -192,9 +195,15 @@ final class WPEEngineAssetsInstaller {
     }
 
     /// Install via connector (real $HOME / shared Steam library; app has no write duty).
-    private func run(using doctor: SteamCMDDoctorService, attempt: UUID) async {
-        // Prefer adopting an existing install over re-downloading.
-        if adoptExistingInstallIfPresent(doctor: doctor, attempt: attempt) { return }
+    private func run(
+        using doctor: SteamCMDDoctorService,
+        attempt: UUID,
+        install: @Sendable (String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void) async -> SteamEngineAssetsResult?
+    ) async {
+        // A first download adopts an install already on disk; an Update must run SteamCMD.
+        if !hasManagedInstall, adoptExistingInstallIfPresent(doctor: doctor, attempt: attempt) {
+            return
+        }
         guard let account = doctor.username, (try? doctor.resolveBinaryURL()) != nil else {
             fail(String(
                 localized: "Choose your Steam account and SteamCMD in Settings → Workshop → Steam connection first.",
@@ -202,10 +211,18 @@ final class WPEEngineAssetsInstaller {
             ))
             return
         }
-        let result = await SteamConnectorClient.installWallpaperEngineAssets(
-            accountName: account,
-            operationID: attempt.uuidString,
-            onProgress: { [weak self] update in
+        // The connector writes into this library, so it has to be told which
+        // one: it runs unsandboxed and cannot see the bookmark that authorized it.
+        guard let steamRoot = try? doctor.resolveWorkdirURL() else {
+            fail(String(localized: "No Steam Library is authorized.", bundle: .appLanguage, comment: "Workshop diagnostics error."))
+            return
+        }
+        let generation = doctor.accountGeneration
+        let result = await install(
+            account,
+            steamRoot.path(percentEncoded: false),
+            attempt.uuidString,
+            { [weak self] update in
                 Task { @MainActor [weak self] in
                     guard let self, currentAttempt == attempt else { return }
                     switch update.phase {
@@ -238,12 +255,13 @@ final class WPEEngineAssetsInstaller {
         doctor.noteExecutionReceipt(result.executedBinaryPath)
         switch result.outcome {
         case .installed:
+            doctor.noteSuccessfulSteamOperation(generation: generation)
             await adoptInstall(result, doctor: doctor, attempt: attempt)
         case .loginRequired:
             // Steam itself said the session is gone — demote the green probe so
             // download readiness stops disagreeing with reality.
-            doctor.noteOperationReportedLoginRequired()
-            fail(String(localized: "Sign in to Steam in Terminal, then re-check the connection.", bundle: .appLanguage, comment: "Engine-assets install blocked: no cached Steam session."))
+            doctor.noteOperationReportedLoginRequired(generation: generation)
+            fail(String(localized: "Loomscreen's Steam download session isn't connected. Connect your account in Settings → Workshop, then try again.", bundle: .appLanguage, comment: "Steam download blocked because Loomscreen's own Steam session is not signed in; shared by engine-assets and Workshop item downloads."))
         case .notEntitled:
             fail(String(localized: "This Steam account doesn't own Wallpaper Engine, so its assets can't be downloaded.", bundle: .appLanguage, comment: "Engine-assets download blocked: account doesn't own Wallpaper Engine."))
         case .pruneRefused:
@@ -349,37 +367,26 @@ final class WPEEngineAssetsInstaller {
     // MARK: - Update check
 
     func checkForUpdate(using doctor: SteamCMDDoctorService) {
-        checkForUpdate(
-            account: doctor.username,
-            binaryResolvable: (try? doctor.resolveBinaryURL()) != nil,
-            // Demoting the probe is the point: without it the account row keeps
-            // its green while every Steam operation is failing to log in.
-            onLoginRequired: { doctor.noteOperationReportedLoginRequired() }
-        )
+        checkForUpdate(binaryResolvable: (try? doctor.resolveBinaryURL()) != nil)
     }
 
-    /// Seam for tests: doctor fields and the connector lookup are injectable.
-    /// `fetchLatestBuildID` stays ahead of `onLoginRequired`: Swift's forward
-    /// scan binds an unlabelled trailing closure to the first closure
-    /// parameter, and every existing caller passes the fetch that way.
+    /// Seam for tests: the doctor field and the connector lookup are injectable.
     func checkForUpdate(
-        account: String?,
         binaryResolvable: Bool,
-        fetchLatestBuildID: @escaping @Sendable (String, String) async -> SteamEngineBuildLookup? = {
-            await SteamConnectorClient.latestWallpaperEngineBuildID(accountName: $0, operationID: $1)
-        },
-        onLoginRequired: @escaping @MainActor () -> Void = {}
+        fetchLatestBuildID: @escaping @Sendable (String) async -> SteamEngineBuildLookup? = {
+            await SteamConnectorClient.latestWallpaperEngineBuildID(operationID: $0)
+        }
     ) {
         guard !isBusy, hasManagedInstall else { return }
         // Checked before any state is set: an early exit after `.checking` would
         // leave `isBusy` true forever and dead-lock download/check/remove.
-        guard let account, binaryResolvable else { return }
+        guard binaryResolvable else { return }
         let attempt = UUID()
         currentAttempt = attempt
         phase = .checking
         updateCheckOutcome = .checking
         task = Task { [weak self] in
-            let lookup = await fetchLatestBuildID(account, attempt.uuidString)
+            let lookup = await fetchLatestBuildID(attempt.uuidString)
             guard let self, currentAttempt == attempt else { return }
             task = nil
             currentAttempt = nil
@@ -389,14 +396,11 @@ final class WPEEngineAssetsInstaller {
                 installedBuildID: installedBuildID,
                 lookup: lookup
             )
-            if outcome == .loginRequired { onLoginRequired() }
             updateCheckOutcome = outcome
-            updateAvailable = {
-                if case .available = outcome {
-                    return true
-                }
-                return false
-            }()
+            updateAvailable = switch outcome {
+            case .available, .unableToCompare: true
+            default: false
+            }
             postUpdateCheckToast(outcome)
         }
     }
@@ -513,16 +517,9 @@ final class WPEEngineAssetsInstaller {
             )
         case .unableToCompare:
             WorkshopToastCenter.shared.post(
-                headline: String(localized: "Couldn't compare versions", bundle: .appLanguage, comment: "Engine-assets update check version-unknown headline."),
+                headline: String(localized: "Assets version unknown", bundle: .appLanguage, comment: "Engine-assets update check version-unknown headline."),
                 title: "",
-                message: String(localized: "Download again to refresh the managed assets.", bundle: .appLanguage, comment: "Engine-assets update check version-unknown subtitle."),
-                isSuccess: false
-            )
-        case .loginRequired:
-            WorkshopToastCenter.shared.post(
-                headline: String(localized: "Steam sign-in expired", bundle: .appLanguage, comment: "Engine-assets update check failure headline when Steam refused the cached session."),
-                title: "",
-                message: String(localized: "Sign in to your Steam account again, then check for updates.", bundle: .appLanguage, comment: "Engine-assets update check failure subtitle when Steam refused the cached session."),
+                message: String(localized: "The downloaded assets don't record a build number. Click Update to download the current build and record it.", bundle: .appLanguage, comment: "Engine-assets update check version-unknown subtitle."),
                 isSuccess: false
             )
         case let .checkFailed(reason):

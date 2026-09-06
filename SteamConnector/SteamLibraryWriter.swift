@@ -26,17 +26,158 @@ enum SteamLibraryWriter {
         }
     }
 
+    /// Publish only content, never SteamCMD's configuration or manifests. Build
+    /// a complete sibling first, then atomically exchange it with the old tree.
+    /// All traversal and writes stay anchored to open directory descriptors.
+    static func publishContent(
+        components: [String],
+        from sourceRoot: URL,
+        to steamRoot: URL
+    ) throws -> URL {
+        let destination = components.reduce(steamRoot) { $0.appendingPathComponent($1) }
+        guard !components.isEmpty,
+              SteamLibraryPaths.isWritable(destination, steamRoot: steamRoot),
+              SteamLibraryPaths.isWritable(components.reduce(sourceRoot) { $0.appendingPathComponent($1) }, steamRoot: sourceRoot)
+        else { throw WriteError.outsideAllowedSubtree }
+        let source = try openDirectory(root: sourceRoot, components: components)
+        defer { close(source) }
+        guard try !listDirectory(fd: source).isEmpty else { throw WriteError.unexpectedLayout }
+        let parent = try openDirectory(root: steamRoot, components: Array(components.dropLast()), create: true)
+        defer { close(parent) }
+        let staging = ".loomscreen-\(UUID().uuidString)"
+        guard mkdirat(parent, staging, 0o700) == 0 else { throw WriteError.unexpectedLayout }
+        // Cleared once the swap has happened and the merge below has carried
+        // every target-only entry across. Between those two points the old tree
+        // still holds the only copy of files the new one lacks, so the cleanup
+        // must not run: a merge that throws leaves them in the hidden staging
+        // name (which the library scan skips) instead of deleting them.
+        var discardDisplacedTree = true
+        defer {
+            if discardDisplacedTree {
+                try? removeTree(parent: parent, name: staging)
+            }
+        }
+        let target = openat(parent, staging, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard target >= 0 else { throw WriteError.unexpectedLayout }
+        defer { close(target) }
+        try copyTree(source: source, target: target)
+        let name = components[components.count - 1]
+        var info = stat()
+        let exists = fstatat(parent, name, &info, AT_SYMLINK_NOFOLLOW) == 0
+        guard !exists || (info.st_mode & S_IFMT) == S_IFDIR else { throw WriteError.symbolicLinkRejected }
+        var sourceInfo = stat()
+        guard fstat(source, &sourceInfo) == 0,
+              !exists || info.st_dev != sourceInfo.st_dev || info.st_ino != sourceInfo.st_ino
+        else { throw WriteError.unexpectedLayout }
+        let flags = exists ? UInt32(RENAME_SWAP) : UInt32(RENAME_EXCL)
+        guard renameatx_np(parent, staging, parent, name, flags) == 0 else { throw WriteError.unexpectedLayout }
+        if exists {
+            // `target` followed its inode through the swap and now names the live
+            // tree; the displaced old tree sits under the staging name.
+            let old = openat(parent, staging, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            guard old >= 0 else { throw WriteError.unexpectedLayout }
+            defer { close(old) }
+            discardDisplacedTree = false
+            try adoptTargetOnlyEntries(old: old, new: target)
+            discardDisplacedTree = true
+        }
+        // Keep one content repository. Only the engine-assets install still
+        // stages into a profile and publishes from it; Workshop items are
+        // written straight into the library by SteamCMD.
+        if let sourceParent = try? openDirectory(root: sourceRoot, components: Array(components.dropLast())) {
+            defer { close(sourceParent) }
+            var current = stat()
+            if fstatat(sourceParent, name, &current, AT_SYMLINK_NOFOLLOW) == 0,
+               current.st_dev == sourceInfo.st_dev, current.st_ino == sourceInfo.st_ino {
+                try? removeTree(parent: sourceParent, name: name)
+            }
+        }
+        return destination
+    }
+
+    private static func copyTree(source: Int32, target: Int32, depth: Int = 0) throws {
+        guard depth < maxTreeDepth else { throw WriteError.unexpectedLayout }
+        for name in try listDirectory(fd: source) {
+            var info = stat()
+            guard fstatat(source, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { throw WriteError.unexpectedLayout }
+            switch info.st_mode & S_IFMT {
+            case S_IFDIR:
+                guard mkdirat(target, name, 0o700) == 0 else { throw WriteError.unexpectedLayout }
+                let input = openat(source, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                let output = openat(target, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                defer {
+                    if input >= 0 {
+                        close(input)
+                    }
+                    if output >= 0 {
+                        close(output)
+                    }
+                }
+                guard input >= 0, output >= 0 else { throw WriteError.symbolicLinkRejected }
+                try copyTree(source: input, target: output, depth: depth + 1)
+            case S_IFREG:
+                let input = openat(source, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+                let output = openat(target, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+                defer {
+                    if input >= 0 {
+                        close(input)
+                    }
+                    if output >= 0 {
+                        close(output)
+                    }
+                }
+                var opened = stat()
+                guard input >= 0, output >= 0, fstat(input, &opened) == 0,
+                      (opened.st_mode & S_IFMT) == S_IFREG else { throw WriteError.symbolicLinkRejected }
+                guard fcopyfile(input, output, nil, copyfile_flags_t(COPYFILE_DATA)) == 0 else { throw WriteError.unexpectedLayout }
+            default: throw WriteError.symbolicLinkRejected
+            }
+        }
+    }
+
+    /// Files the user or another program put beside a downloaded item are not
+    /// ours to delete: move whatever only the old tree has into the new one.
+    /// Links stay behind for `removeTree` to unlink — never moved, never followed.
+    private static func adoptTargetOnlyEntries(old: Int32, new: Int32, depth: Int = 0) throws {
+        guard depth < maxTreeDepth else { throw WriteError.unexpectedLayout }
+        for name in try listDirectory(fd: old) {
+            var oldInfo = stat()
+            guard fstatat(old, name, &oldInfo, AT_SYMLINK_NOFOLLOW) == 0 else { throw WriteError.unexpectedLayout }
+            let kind = oldInfo.st_mode & S_IFMT
+            guard kind == S_IFDIR || kind == S_IFREG else { continue }
+            var newInfo = stat()
+            if fstatat(new, name, &newInfo, AT_SYMLINK_NOFOLLOW) != 0 {
+                guard errno == ENOENT,
+                      renameatx_np(old, name, new, name, UInt32(RENAME_EXCL)) == 0 else { throw WriteError.unexpectedLayout }
+            } else if kind == S_IFDIR, (newInfo.st_mode & S_IFMT) == S_IFDIR {
+                let input = openat(old, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                let output = openat(new, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+                defer {
+                    if input >= 0 {
+                        close(input)
+                    }
+                    if output >= 0 {
+                        close(output)
+                    }
+                }
+                guard input >= 0, output >= 0 else { throw WriteError.unexpectedLayout }
+                try adoptTargetOnlyEntries(old: input, new: output, depth: depth + 1)
+            }
+        }
+    }
+
     // MARK: - Delete
 
     /// Removes one Workshop item. Steam's `appworkshop_431960.acf`
     /// deliberately keeps listing it afterwards — it's Steam's ledger, not
     /// ours, and a later `workshop_download_item` re-fetching it is the
     /// wanted behaviour; do not "fix" that by rewriting the acf.
-    /// `steamRoot` is injectable purely so the destructive path can be
-    /// tested against a scratch tree; production always takes the default.
+    /// `steamRoot` is required, never defaulted: the connector must be told
+    /// which library the user authorized, and a default here would let a future
+    /// caller silently write to the hardcoded one instead.
     static func deleteWorkshopItem(
         workshopID: String,
-        steamRoot: URL = SteamLibraryPaths.steamRoot()
+        steamRoot: URL
     ) -> SteamDeleteResult {
         guard SteamLibraryPaths.isSafeWorkshopID(workshopID) else {
             return SteamDeleteResult(outcome: .refused, freedBytes: 0, refusalReason: "unsafe Workshop id")
@@ -75,7 +216,7 @@ enum SteamLibraryWriter {
     /// the only part Loomscreen reads. Refuses rather than guesses: a missing
     /// `assets/` means the install is not what we think it is.
     static func pruneWallpaperEngineInstall(
-        steamRoot: URL = SteamLibraryPaths.steamRoot()
+        steamRoot: URL
     ) throws -> URL {
         let root = SteamLibraryPaths.wallpaperEngineInstallRoot(steamRoot: steamRoot)
         guard SteamLibraryPaths.isWritable(root, steamRoot: steamRoot) else {
@@ -131,10 +272,14 @@ enum SteamLibraryWriter {
     /// where an ancestor is swapped for a link, so later checks describe
     /// the attacker's target instead. Once this returns, the fd names the
     /// directory itself — nothing after can redirect the removal.
-    private static func openDirectory(root: URL, components: [String]) throws -> Int32 {
+    private static func openDirectory(root: URL, components: [String], create: Bool = false) throws -> Int32 {
         var fd = open(root.path(percentEncoded: false), O_RDONLY | O_DIRECTORY)
         guard fd >= 0 else { throw WriteError.unexpectedLayout }
         for component in components {
+            if create, mkdirat(fd, component, 0o755) != 0, errno != EEXIST {
+                close(fd)
+                throw WriteError.unexpectedLayout
+            }
             let next = openat(fd, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
             close(fd)
             guard next >= 0 else {
@@ -145,15 +290,11 @@ enum SteamLibraryWriter {
         return fd
     }
 
-    /// Reads every entry name **without** consuming the caller's
-    /// descriptor: `fdopendir` adopts whatever it's given and `closedir`
-    /// closes it, so it gets a `dup`. An earlier version handed it the
-    /// caller's own descriptor — the recursion below then kept using a
-    /// closed fd, silently skipping every nested entry, and could have
-    /// operated relative to an unrelated directory if another thread reused
-    /// the number.
+    /// Open a fresh description relative to the pinned directory. `dup` keeps
+    /// the descriptor alive but SHARES its directory offset: a presence check
+    /// would consume the entries before the subsequent copy sees them.
     private static func listDirectory(fd: Int32) throws -> [String] {
-        let copy = dup(fd)
+        let copy = openat(fd, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard copy >= 0 else { throw WriteError.unexpectedLayout }
         guard let dir = fdopendir(copy) else {
             close(copy)

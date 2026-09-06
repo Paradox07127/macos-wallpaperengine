@@ -296,7 +296,7 @@ struct MemoryWidgetView: View {
     /// The last `trendWindowSeconds` of a history series for the M/L trend.
     /// All four series share `sampleTimes`, so windowing them independently
     /// still leaves them the same length and aligned.
-    private func recentSeries(_ series: KeyPath<MonitorHistorySnapshot, [Double]>) -> [Double] {
+    private func recentSeries(_ series: KeyPath<MonitorHistorySnapshot, [Double?]>) -> [Double] {
         context.history.windowed(context.history[keyPath: series], seconds: trendWindowSeconds)
     }
 

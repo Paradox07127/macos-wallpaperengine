@@ -80,7 +80,7 @@ struct ProcessesWidgetView: View {
         let maxCPU = max(rows.map(\.cpuPercent).max() ?? 0, .ulpOfOne)
         let base = scale.caption
         let cpuBarWidth = base * 2.6
-        let cpuValueWidth = base * 2.2
+        let cpuValueWidth = base * 3.4
         let cpuColWidth = cpuBarWidth + base * 0.45 + cpuValueWidth
         let memColWidth = base * 4.0
         let colGap = base * 0.7
