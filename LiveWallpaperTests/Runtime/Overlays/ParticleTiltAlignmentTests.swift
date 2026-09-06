@@ -128,6 +128,15 @@ final class ParticleTiltAlignmentTests: XCTestCase {
     private func captureTwice(
         _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval, gap: TimeInterval
     ) throws -> (Frame, Frame) {
+        let frames = try captureSeries(build, size: size, settle: settle, gap: gap, count: 2)
+        return (frames[0], frames[1])
+    }
+
+    /// `count` calibrated frames `gap` seconds apart of one host window.
+    @MainActor
+    private func captureSeries(
+        _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval, gap: TimeInterval, count: Int
+    ) throws -> [Frame] {
         guard let screen = NSScreen.main else { throw XCTSkip("no screen") }
         let frame = NSRect(
             x: screen.frame.midX - size.width / 2,
@@ -154,10 +163,12 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         window.contentView = view
         window.orderFrontRegardless()
         RunLoop.current.run(until: Date().addingTimeInterval(settle))
-        let first = try snapshot(of: window, size: size)
-        RunLoop.current.run(until: Date().addingTimeInterval(gap))
-        let second = try snapshot(of: window, size: size)
-        return (first, second)
+        var frames = try [snapshot(of: window, size: size)]
+        for _ in 1 ..< max(count, 1) {
+            RunLoop.current.run(until: Date().addingTimeInterval(gap))
+            try frames.append(snapshot(of: window, size: size))
+        }
+        return frames
     }
 
     // MARK: - Measurements
@@ -278,8 +289,11 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 520, height: 520))
         // The farthest rain band is included on purpose (-1 = last): it is the
         // one a per-band slip between texture and heading breaks first.
+        // Meteors are deliberately absent: they are drawn as a round nucleus that
+        // lays its own train, so there is no angle baked into a sprite to keep in
+        // step with anything. Rain is the only effect left that bakes one.
         let subjects: [(ParticleEffect, CGFloat, Int)] = [
-            (.rain, 0.5, 0), (.rain, -0.5, 0), (.rain, 0.5, -1), (.meteors, 0, 0),
+            (.rain, 0.5, 0), (.rain, -0.5, 0), (.rain, 0.5, -1),
         ]
 
         for (effect, tilt, requested) in subjects {
@@ -386,6 +400,156 @@ final class ParticleTiltAlignmentTests: XCTestCase {
                 )
             }
         }
+    }
+
+    /// The meteor sprite exists and leans the way meteors fly. Nothing else checks it
+    /// now that meteors are out of the emitter path, and a nil texture would leave the
+    /// menu entry working and the sky empty.
+    @MainActor
+    func testMeteorSpriteIsDrawableAndLeansWithTheFlight() throws {
+        let frame = try capture({ view in
+            let flight = MeteorShower.flight(in: view.bounds) { $0.lowerBound }
+            let sprite = ParticleTextures.comet(
+                length: flight.length, width: flight.width,
+                color: NSColor.white.cgColor, tilt: MeteorShower.slant
+            )
+            let layer = CALayer()
+            layer.contents = sprite
+            layer.frame = CGRect(
+                x: (view.bounds.width - CGFloat(sprite?.width ?? 0)) / 2,
+                y: (view.bounds.height - CGFloat(sprite?.height ?? 0)) / 2,
+                width: CGFloat(sprite?.width ?? 0), height: CGFloat(sprite?.height ?? 0)
+            )
+            view.layer?.addSublayer(layer)
+        }, size: CGSize(width: 520, height: 520), settle: 0.35)
+
+        let lean = try XCTUnwrap(downwardLean(frame), "the meteor sprite did not render")
+        // Positive `slant` sends meteors down and to the right, so the streak must too.
+        XCTAssertGreaterThan(lean, 0, "the meteor sprite leans \(lean), against its own flight")
+    }
+
+    /// A meteor brightens before it fades.
+    ///
+    /// This is the whole point of flying meteors on their own layers: `CAEmitterCell`
+    /// offers `alphaSpeed`, one straight line, so an emitted particle can only ever get
+    /// dimmer and every meteor snapped into being at full brightness. Particle libraries
+    /// model this as an alpha envelope over the particle's lifetime, and that is what
+    /// the keyframed opacity here is.
+    @MainActor
+    func testMeteorLightCurveRisesThenFalls() throws {
+        let values = MeteorShower.opacityValues
+        let times = MeteorShower.opacityKeyTimes
+        XCTAssertEqual(values.count, times.count)
+        XCTAssertEqual(times.first, 0)
+        XCTAssertEqual(times.last, 1)
+        XCTAssertEqual(values.first, 0, "a meteor switches on at full brightness")
+        XCTAssertEqual(values.last, 0, "a meteor switches off instead of burning out")
+        XCTAssertEqual(times, times.sorted(), "the envelope's key times run backwards")
+
+        let brightest = try XCTUnwrap(values.max())
+        let peak = try XCTUnwrap(values.firstIndex(of: brightest))
+        XCTAssertGreaterThan(peak, 0, "the envelope never rises")
+        XCTAssertLessThan(peak, values.count - 1, "the envelope never falls")
+        for index in 1 ... peak {
+            XCTAssertGreaterThan(values[index], values[index - 1], "the rise dips at \(index)")
+        }
+        for index in (peak + 1) ..< values.count {
+            XCTAssertLessThan(values[index], values[index - 1], "the fall rises again at \(index)")
+        }
+        // Meteors flare quickly and linger: a symmetric envelope reads as a pulsing dot.
+        XCTAssertLessThan(times[peak], 0.35, "the flare takes \(times[peak]) of the flight")
+    }
+
+    /// Every meteor is born clear of the top edge and flies the shared slant, so none
+    /// appears mid-air and the shower reads as one radiant rather than as noise.
+    @MainActor
+    func testMeteorsEnterFromOffScreenOnTheSharedSlant() {
+        let bounds = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+        // Both ends of every random range, so the extremes are covered too.
+        for pick in [0.0, 0.5, 1.0] as [CGFloat] {
+            let flight = MeteorShower.flight(in: bounds) { range in
+                range.lowerBound + (range.upperBound - range.lowerBound) * pick
+            }
+            XCTAssertGreaterThanOrEqual(
+                flight.start.y - bounds.maxY, flight.length,
+                "a meteor is born \(flight.start.y - bounds.maxY) pt above a \(flight.length) pt sprite"
+            )
+            let dx = flight.end.x - flight.start.x
+            let dy = flight.end.y - flight.start.y
+            XCTAssertLessThan(dy, 0, "the meteor climbs")
+            XCTAssertEqual(
+                atan2(dx, -dy), Double(MeteorShower.slant), accuracy: 1e-6,
+                "the meteor flies off the shower's slant"
+            )
+            XCTAssertGreaterThan(flight.duration, 0)
+            XCTAssertGreaterThan(flight.length, 0)
+            XCTAssertGreaterThan(flight.brightness, 0)
+            XCTAssertLessThanOrEqual(flight.brightness, 1)
+        }
+    }
+
+    /// Gaps between meteors are random and bounded, and a denser sky is a busier one.
+    /// A fixed interval is the tell that a shower is on a metronome.
+    @MainActor
+    func testMeteorGapsAreRandomAndScaleWithDensity() {
+        let gaps = stride(from: 0.05, through: 0.95, by: 0.1)
+            .map { MeteorShower.nextGap(density: 1, uniform: $0) }
+        XCTAssertEqual(gaps, gaps.sorted(by: >), "gaps are not monotonic in the draw")
+        XCTAssertGreaterThan(Set(gaps).count, 5, "the gap barely varies")
+        for gap in gaps {
+            XCTAssertGreaterThanOrEqual(gap, 0.2)
+            XCTAssertLessThanOrEqual(gap, 12)
+        }
+        XCTAssertLessThan(
+            MeteorShower.nextGap(density: 3, uniform: 0.5),
+            MeteorShower.nextGap(density: 0.5, uniform: 0.5),
+            "turning the density up does not bring meteors more often"
+        )
+    }
+
+    /// A meteor must not drag a filled rectangle behind it.
+    ///
+    /// On macOS 27 (26A5425a) a `CAEmitterCell` that carries sub-cells has the whole
+    /// bounding box of its own sprite filled in by the compositor. With a diagonal
+    /// comet sprite as the nucleus that box was about 5,000 px of flat grey some 50
+    /// levels above the night sky, tracking every meteor (measured 2026-09-05, and
+    /// absent from the same scene with the train removed). A round nucleus leaves
+    /// almost no box to fill. Nothing in the type system notices this, and the box
+    /// only shows against a dark sky — so it is measured, on screen.
+    @MainActor
+    func testMeteorsDoNotFillTheirSpriteBox() throws {
+        let frames = try captureSeries({ view in
+            let overlay = ParticleOverlayView(frame: view.bounds)
+            view.addSubview(overlay)
+            overlay.setEffect(.meteors, density: 3, tiltRadians: 0)
+        }, size: CGSize(width: 800, height: 600), settle: 1.8, gap: 0.4, count: 6)
+
+        var sawAMeteor = false
+        for (index, frame) in frames.enumerated() {
+            var histogram = [Int](repeating: 0, count: 256)
+            for y in 0 ..< frame.height {
+                for x in frame.firstDataColumn ..< frame.width {
+                    histogram[Int(frame.pixels[y * frame.width + x])] += 1
+                }
+            }
+            let background = histogram.indices.max { histogram[$0] < histogram[$1] } ?? 0
+            let lit = histogram[min(background + 12, 255)...].reduce(0, +)
+            if lit > 400 {
+                sawAMeteor = true
+            }
+            // A flat plateau: thousands of pixels sharing one exact value. Real
+            // particles are gradients, so a clean frame's largest plateau is a
+            // couple of hundred pixels; the defect measured five thousand.
+            let plateau = histogram.indices
+                .filter { $0 > background + 3 }
+                .map { histogram[$0] }
+                .max() ?? 0
+            XCTAssertLessThan(
+                plateau, 1500,
+                "frame \(index): \(plateau) px share one exact value — a solid rectangle is being drawn"
+            )
+        }
+        XCTAssertTrue(sawAMeteor, "no meteor was drawn in any frame, so nothing was measured")
     }
 
     /// The flutter and rising fields are volumes too, not three sheets: every
@@ -587,7 +751,9 @@ final class ParticleTiltAlignmentTests: XCTestCase {
     @MainActor
     func testEveryEffectBuildsDrawableCells() throws {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
-        for effect in ParticleEffect.allCases where effect != .none {
+        // Meteors are excluded because they are not emitted: `MeteorShower` flies one
+        // sprite per meteor on its own layer, and its sprite is checked below.
+        for effect in ParticleEffect.allCases where effect != .none && effect != .meteors {
             let cells = probe.debugCells(for: effect, tilt: 0.3)
             XCTAssertFalse(cells.isEmpty, "\(effect) builds no cells")
             for (index, cell) in cells.enumerated() {
@@ -609,7 +775,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         let tilt: CGFloat = 0.5
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
         let cells = probe.debugCells(for: .rain, tilt: tilt)
-            + probe.debugCells(for: .meteors, tilt: tilt)
         XCTAssertFalse(cells.isEmpty)
 
         for cell in cells {
