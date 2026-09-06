@@ -1112,12 +1112,25 @@ final class SteamCMDDoctorService {
         switch result.outcome {
         case .downloaded:
             noteSuccessfulSteamOperation(generation: generation)
-            guard let path = result.itemPath else { return .failed(reason: String(localized: "Download reported no folder.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")) }
+            guard result.itemPath != nil else { return .failed(reason: String(localized: "Download reported no folder.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")) }
             // The import reads the folder and mints its own per-project bookmark,
             // so the Steam-library scope has to stay open across the handoff.
             let scope = steamRoot.startAccessingSecurityScopedResource()
-            defer { if scope { steamRoot.stopAccessingSecurityScopedResource() } }
-            return .imported(await onContentReady(URL(fileURLWithPath: path, isDirectory: true)))
+            defer {
+                if scope {
+                    steamRoot.stopAccessingSecurityScopedResource()
+                }
+            }
+            guard let folder = authorizedDownloadedItemDirectory(
+                workshopID: String(itemID),
+                steamRoot: steamRoot
+            ) else {
+                return .failed(reason: String(
+                    localized: "The download didn't land in your authorized Steam library, so it wasn't imported.",
+                    bundle: .appLanguage, comment: "Workshop download refused: the item directory failed containment revalidation under the authorized Steam library."
+                ))
+            }
+            return await .imported(onContentReady(folder))
         case .loginRequired:
             noteOperationReportedLoginRequired(generation: generation)
             return .loginRequired
@@ -1136,6 +1149,20 @@ final class SteamCMDDoctorService {
             return .failed(reason: redacted(result.diagnosticTail))
         }
     }
+
+    /// `result.itemPath` is decoded from the connector's JSON reply, so it is a
+    /// claim, not an authorization: find the id we asked for among the library's
+    /// own validated items and revalidate it before the importer sees a URL.
+    func authorizedDownloadedItemDirectory(workshopID: String, steamRoot: URL) -> URL? {
+        guard let candidate = workshopFileInventory.projectFolders(
+            under: steamRoot,
+            anchoredTo: steamRoot,
+            skipping: []
+        ).first(where: { $0.url.lastPathComponent == workshopID })
+        else { return nil }
+        return workshopFileInventory.revalidatedURL(for: candidate, requiringProjectJSON: true)
+    }
+
     /// Enumerate workshop content folders while workdir scope is held. Lets the library ingest
     /// items SteamCMD wrote outside the in-app download button (a manual `steamcmd`
     /// run, a prior launch, a download whose import didn't record).

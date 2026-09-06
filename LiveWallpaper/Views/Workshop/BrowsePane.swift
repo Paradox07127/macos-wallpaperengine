@@ -101,11 +101,10 @@ struct BrowsePane: View {
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             reloadInstalledIDs()
         }
-        .onChange(of: viewModel.isLoading) { _, loading in
-            if loading { WorkshopRequestCounter.increment() }
-        }
-        .onChange(of: viewModel.isPaging) { _, paging in
-            if paging { WorkshopRequestCounter.increment() }
+        // Read per request but pushed by nothing: without this the grid keeps
+        // showing (or hiding) presets until the next filter change.
+        .onReceive(NotificationCenter.default.publisher(for: .workshopPresetVisibilityDidChange)) { _ in
+            Task { await viewModel.reload() }
         }
     }
 
@@ -181,12 +180,15 @@ struct BrowsePane: View {
             } else {
                 publicSearchFailedState(error)
             }
-        } else if viewModel.items.isEmpty, viewModel.isLoading {
+        } else if !viewModel.hasLoadedPage, viewModel.isLoading {
+            // Only the very first load gets the skeleton; a reload keeps the
+            // previous grid and dims it instead of blanking the pane.
             loadingSkeleton
         } else if viewModel.items.isEmpty {
             emptyState
         } else {
             populatedGrid
+                .opacity(viewModel.isLoading ? DesignTokens.Opacity.disabledContent : 1)
         }
     }
 

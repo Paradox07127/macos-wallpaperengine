@@ -3,8 +3,8 @@ import CryptoKit
 import Foundation
 
 /// On-disk cache for `WorkshopQueryService` paged results: JSON pages in a
-/// `WorkshopDiskCacheStore`, expired 5 minutes after they were last read
-/// (mtime is both the TTL and the LRU stamp here) under a 100 MB hard cap.
+/// `WorkshopDiskCacheStore`, expired 5 minutes after they were written, under a
+/// 100 MB hard cap.
 actor WorkshopQueryCache {
 
     private static let ttl: TimeInterval = 300
@@ -22,7 +22,9 @@ actor WorkshopQueryCache {
             fileExtension: "json",
             capBytes: Self.hardCapBytes,
             timeToLive: Self.ttl,
-            expiryClock: .modificationDate,
+            // Creation date, not mtime: `read` bumps mtime for LRU, so an mtime
+            // TTL never expires a page the user keeps paging back to.
+            expiryClock: .creationDate,
             queueLabel: "com.livewallpaper.workshop-query-cache.disk",
             now: now
         )

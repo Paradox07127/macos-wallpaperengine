@@ -61,6 +61,11 @@ public struct GlobalSettings: Codable, Sendable {
     /// so one saved look can be applied to any display showing that scene.
     public var scenePresets: [String: ScenePreset] = [:]
 
+    /// Steam Workshop's `Preset` tag marks items that restyle another wallpaper
+    /// rather than being one themselves — off by default so Browse only shows
+    /// real wallpapers.
+    public var showsWorkshopPresetsInBrowse: Bool = false
+
     public static let defaultVideoCacheBytes: Int = 150 * 1024 * 1024
     /// Settings slider ceiling (RAM / auto-policy guard).
     public static let maxVideoCacheBytes: Int = 1024 * 1024 * 1024
@@ -91,7 +96,8 @@ public struct GlobalSettings: Codable, Sendable {
         screenNames: [String: String] = [:],
         audioResponseEnabled: Bool = false,
         adaptiveFrameRateEnabled: Bool = false,
-        wallpaperVisibleInScreenCapture: Bool = true
+        wallpaperVisibleInScreenCapture: Bool = true,
+        showsWorkshopPresetsInBrowse: Bool = false
     ) {
         self.globalPauseOnBattery = globalPauseOnBattery
         self.preservePlaybackOnLock = preservePlaybackOnLock
@@ -113,6 +119,7 @@ public struct GlobalSettings: Codable, Sendable {
         self.audioResponseEnabled = audioResponseEnabled
         self.adaptiveFrameRateEnabled = adaptiveFrameRateEnabled
         self.wallpaperVisibleInScreenCapture = wallpaperVisibleInScreenCapture
+        self.showsWorkshopPresetsInBrowse = showsWorkshopPresetsInBrowse
     }
 
     public init(from decoder: Decoder) throws {
@@ -158,6 +165,7 @@ public struct GlobalSettings: Codable, Sendable {
         wallpaperVisibleInScreenCapture = (try? c.decodeIfPresent(Bool.self, forKey: .wallpaperVisibleInScreenCapture)) ?? true
         // Lossy: one unreadable preset must not drop the rest of the library.
         scenePresets = c.decodeLossyStringDictionary(forKey: .scenePresets) ?? [:]
+        showsWorkshopPresetsInBrowse = (try? c.decodeIfPresent(Bool.self, forKey: .showsWorkshopPresetsInBrowse)) ?? false
     }
 
     /// Skip malformed elements; absent/non-array → empty.

@@ -53,9 +53,13 @@ final class InstalledLibraryModel {
         let containsBookmark: @MainActor (String) -> Bool
         let removeBookmarks: @MainActor (String) -> Void
         let removeImportIfMatching: @MainActor (WorkshopInstalledEntryIdentity) -> Bool
+        /// True while a download or update of this id is in flight.
+        let isMutating: @MainActor (String) -> Bool
         /// Real removal from the shared Steam repository, performed by the
-        /// connector — the app holds no write access to Steam's files.
-        let deleteSharedRepositoryItem: @MainActor (String) async -> SteamDeleteResult?
+        /// connector — the app holds no write access to Steam's files. Throws
+        /// when the repository mutation gate refuses, which must abort the
+        /// delete instead of being folded into "nothing was freed".
+        let deleteSharedRepositoryItem: @MainActor (String) async throws -> SteamDeleteResult?
     }
 
     struct DropTicket: Equatable, Sendable {
@@ -94,6 +98,9 @@ final class InstalledLibraryModel {
     var inspectorHidden = false
     private(set) var isDraggingEntry = false
     private(set) var updatedWorkshopIDs: Set<String> = []
+    /// Optimistic hide: rows whose repository delete is in flight, before the
+    /// history record has been removed.
+    private(set) var deletingWorkshopIDs: Set<String> = []
     private var cachedRemoteUpdateEpochs: [String: Double] = [:]
 
     static let remoteUpdateEpochsKey = "loomscreen.workshop.updateCheck.remoteEpochs.v1"
@@ -117,7 +124,8 @@ final class InstalledLibraryModel {
     var visibleEntries: [WPEHistoryEntry] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered = entries.filter { entry in
-            typeMatches(entry)
+            !deletingWorkshopIDs.contains(entry.origin.workshopID)
+                && typeMatches(entry)
                 && sourceMatches(entry)
                 && storageMatches(entry)
                 && matchesSearch(entry, query: query)
@@ -303,23 +311,22 @@ final class InstalledLibraryModel {
     func performDelete(_ entry: WPEHistoryEntry, services: DeleteServices) {
         errorMessage = nil
         let identity = WorkshopInstalledEntryIdentity(entry)
+        let workshopID = entry.origin.workshopID
         pendingDelete = nil
-        guard services.removeImportIfMatching(identity) else {
-            reload()
-            refreshSelectedEntry()
+
+        // A download or update of this id holds the repository mutation gate,
+        // so the delete could only fail there — after the library record was
+        // already gone.
+        guard !services.isMutating(workshopID) else {
+            errorMessage = Self.itemIsMutatingMessage
             return
         }
-        if selectedEntry.map(WorkshopInstalledEntryIdentity.init) == identity {
-            selectedEntry = nil
+
+        guard !workshopID.isEmpty else {
+            removeLocalRecords(identity, services: services)
+            return
         }
 
-        let workshopID = entry.origin.workshopID
-        if services.containsBookmark(workshopID) {
-            services.removeBookmarks(workshopID)
-        }
-        reload()
-
-        guard !workshopID.isEmpty else { return }
         deleteHandles.removeValue(forKey: workshopID)?.task.cancel()
         let expectedToFree = deletesFiles(entry)
         let ticket = DeleteTicket(
@@ -327,8 +334,11 @@ final class InstalledLibraryModel {
             appearanceGeneration: appearanceGeneration,
             identity: identity
         )
-        // History/bookmark removal already committed synchronously. Keep
-        // cleanup alive when the transient page disappears.
+        // The row hides now but the history/bookmark removal waits for the
+        // repository call, so a refused mutation gate leaves a library record
+        // that still points at files that are still there.
+        deletingWorkshopIDs.insert(workshopID)
+        // Keep cleanup alive when the transient page disappears.
         let task = Task { @MainActor [self] in
             guard canContinueDeleteCleanup(ticket) else {
                 finishDelete(ticket)
@@ -337,14 +347,25 @@ final class InstalledLibraryModel {
             // Deleting a wallpaper now removes Steam's own copy: the shared
             // repository is where the files actually live, so leaving them
             // meant "delete" never freed anything.
-            let repositoryDeleted = await services.deleteSharedRepositoryItem(workshopID)?.outcome == .deleted
+            let repositoryDeleted: Bool
+            do {
+                repositoryDeleted = try await services.deleteSharedRepositoryItem(workshopID)?.outcome == .deleted
+            } catch {
+                let shouldPublish = canPublishDelete(ticket)
+                finishDelete(ticket)
+                if shouldPublish {
+                    errorMessage = Self.itemIsMutatingMessage
+                }
+                return
+            }
             guard canContinueDeleteCleanup(ticket) else {
                 finishDelete(ticket)
                 return
             }
+            let removed = removeLocalRecords(identity, services: services)
             let shouldPublish = canPublishDelete(ticket)
             finishDelete(ticket)
-            guard shouldPublish else { return }
+            guard shouldPublish, removed else { return }
             if expectedToFree, !repositoryDeleted {
                 errorMessage = String(
                     localized: "Removed \(entry.origin.title) from the library, but its files couldn't be deleted.",
@@ -353,6 +374,35 @@ final class InstalledLibraryModel {
             }
         }
         deleteHandles[workshopID] = DeleteHandle(ticket: ticket, task: task)
+    }
+
+    /// The persisted half of a delete. The history CAS refuses when a re-import
+    /// replaced this exact import, in which case the bookmark stays too.
+    @discardableResult
+    private func removeLocalRecords(
+        _ identity: WorkshopInstalledEntryIdentity,
+        services: DeleteServices
+    ) -> Bool {
+        guard services.removeImportIfMatching(identity) else {
+            reload()
+            refreshSelectedEntry()
+            return false
+        }
+        if selectedEntry.map(WorkshopInstalledEntryIdentity.init) == identity {
+            selectedEntry = nil
+        }
+        if services.containsBookmark(identity.workshopID) {
+            services.removeBookmarks(identity.workshopID)
+        }
+        reload()
+        return true
+    }
+
+    private static var itemIsMutatingMessage: String {
+        String(
+            localized: "This Workshop item is already being updated.",
+            bundle: .appLanguage, comment: "Workshop download rejected because the same item is already being mutated."
+        )
     }
 
     /// True when deleting will actually reclaim disk. A Workshop item always
@@ -531,6 +581,7 @@ final class InstalledLibraryModel {
         }
         for workshopID in staleWorkshopIDs {
             deleteHandles.removeValue(forKey: workshopID)?.task.cancel()
+            deletingWorkshopIDs.remove(workshopID)
         }
     }
 
@@ -560,14 +611,18 @@ final class InstalledLibraryModel {
         guard deleteHandles[ticket.identity.workshopID]?.ticket == ticket,
               !Task.isCancelled
         else { return false }
-        return !dependencies.loadEntries().contains {
+        // The record survives until the repository call returns now, so absence
+        // is no longer the signal — only a *different* import of the same id is.
+        guard let current = dependencies.loadEntries().first(where: {
             $0.origin.workshopID == ticket.identity.workshopID
-        }
+        }) else { return true }
+        return WorkshopInstalledEntryIdentity(current) == ticket.identity
     }
 
     private func finishDelete(_ ticket: DeleteTicket) {
         guard deleteHandles[ticket.identity.workshopID]?.ticket == ticket else { return }
         deleteHandles.removeValue(forKey: ticket.identity.workshopID)
+        deletingWorkshopIDs.remove(ticket.identity.workshopID)
     }
 
     private func matchesSearch(_ entry: WPEHistoryEntry, query: String) -> Bool {

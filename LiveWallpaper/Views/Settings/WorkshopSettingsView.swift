@@ -9,6 +9,9 @@ struct WorkshopSettingsView: View {
 
     @AppStorage("loomscreen.workshop.blurMatureThumbnails.v1", store: .appScoped()) private var blurMatureThumbnails = true
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedInBrowse = false
+    /// Backed by `GlobalSettings` (not `@AppStorage`): it needs to survive backup/restore
+    /// the same way the rest of `GlobalSettings` does.
+    @State private var showsPresetsInBrowse: Bool
 
     @State private var engineAssets = WPEEngineAssetsLibrary.shared
     @State private var engineInstaller = WPEEngineAssetsInstaller.shared
@@ -17,6 +20,7 @@ struct WorkshopSettingsView: View {
 
     init(pendingSearchAnchor: Binding<SettingsSearchAnchor?> = .constant(nil)) {
         _pendingSearchAnchor = pendingSearchAnchor
+        _showsPresetsInBrowse = State(initialValue: SettingsManager.shared.loadGlobalSettings().showsWorkshopPresetsInBrowse)
     }
 
     /// One page, no pushed screens and no sheets for setup. Each thing
@@ -62,6 +66,30 @@ struct WorkshopSettingsView: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .accessibilityLabel(Text("Hide items already in my library when browsing"))
+                }
+                SettingRow(
+                    icon: "square.stack.3d.up.slash",
+                    iconColor: .teal,
+                    title: "Show presets as wallpapers",
+                    subtitle: "Presets are restyles of other wallpapers, hidden from Browse unless this is on"
+                ) {
+                    Toggle("", isOn: $showsPresetsInBrowse)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .onChange(of: showsPresetsInBrowse) { _, newValue in
+                            var settings = SettingsManager.shared.loadGlobalSettings()
+                            settings.showsWorkshopPresetsInBrowse = newValue
+                            SettingsManager.shared.saveGlobalSettings(settings)
+                            // Deferred to the next MainActor turn like the other
+                            // settings posts, so it does not fire inside the
+                            // SwiftUI reconcile pass that triggered the save.
+                            Task { @MainActor in
+                                NotificationCenter.default.post(
+                                    name: .workshopPresetVisibilityDidChange, object: nil
+                                )
+                            }
+                        }
+                        .accessibilityLabel(Text("Show presets as wallpapers in Browse"))
                 }
             } header: {
                 SettingsSearchSectionHeader("Content", anchor: .workshopContent)

@@ -5,21 +5,29 @@ import Security
 import Testing
 @testable import LiveWallpaper
 
+/// Movable clock for the disk cache's `now` closure.
+private final class TestClock: @unchecked Sendable { // single `Date`, guarded by `lock`
+    private let lock = NSLock()
+    private var current: Date
+
+    init(_ start: Date) {
+        current = start
+    }
+
+    func read() -> Date {
+        lock.withLock { current }
+    }
+
+    func advance(_ seconds: TimeInterval) {
+        lock.withLock { current += seconds }
+    }
+}
+
 @Suite("WorkshopQueryCache")
 struct WorkshopQueryCacheTests {
 
-    @Test("Cache writes, reads, sizes, and clears pages on disk")
-    func cacheRoundTripsPagesOnDisk() async throws {
-        let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
-            .appendingPathComponent("workshop-query-cache-\(UUID().uuidString)", isDirectory: true)
-        defer { try? fileManager.removeItem(at: directory) }
-
-        let cache = WorkshopQueryCache(
-            directoryURL: directory,
-            now: { Date(timeIntervalSince1970: 10_000) }
-        )
-        let page = WorkshopQueryPage(
+    private static func samplePage() -> WorkshopQueryPage {
+        WorkshopQueryPage(
             items: [
                 WorkshopQueryItem(
                     id: 123,
@@ -41,6 +49,41 @@ struct WorkshopQueryCacheTests {
             nextCursor: "next",
             totalAvailable: 1
         )
+    }
+
+    /// The store bumps mtime on every read for LRU, so an mtime-based TTL would
+    /// keep a page alive forever while the user keeps paging back to it.
+    @Test("Reading a cached page does not extend its time to live")
+    func readDoesNotExtendTimeToLive() async {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("workshop-query-cache-ttl-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let clock = TestClock(Date(timeIntervalSince1970: 10000))
+        let cache = WorkshopQueryCache(directoryURL: directory, now: { clock.read() })
+        let page = Self.samplePage()
+        await cache.write(page, forKey: "ttl-key")
+
+        clock.advance(200)
+        #expect(await cache.read(forKey: "ttl-key") == page, "still inside the 300 s TTL")
+
+        clock.advance(200)
+        #expect(await cache.read(forKey: "ttl-key") == nil, "400 s after the write, regardless of the read at 200 s")
+    }
+
+    @Test("Cache writes, reads, sizes, and clears pages on disk")
+    func cacheRoundTripsPagesOnDisk() async {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("workshop-query-cache-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let cache = WorkshopQueryCache(
+            directoryURL: directory,
+            now: { Date(timeIntervalSince1970: 10000) }
+        )
+        let page = Self.samplePage()
 
         await cache.write(page, forKey: "test-key")
 

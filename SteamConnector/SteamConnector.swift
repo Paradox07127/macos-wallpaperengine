@@ -441,7 +441,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             let folder = SteamLibraryPaths.workshopContentRoot(steamRoot: libraryRoot)
                 .appendingPathComponent(workshopID, isDirectory: true)
             let project = folder.appendingPathComponent("project.json", isDirectory: false)
-            guard out.contains("Success. Downloaded item \(workshopID)") else {
+            guard out.contains("Success. Downloaded item \(workshopID) to ") else {
                 respond(.unrecognized, tail: out, executed: steamCMDPath); return
             }
             guard FileManager.default.fileExists(atPath: project.path(percentEncoded: false)) else {
@@ -558,7 +558,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// Symlink-guarded the same way `discardStagedWorkshopTree` is.
     private static func discardSubscriptionProbe(_ directory: URL) {
         guard SteamCMDManagedInstaller.firstSymlinkComponent(of: directory) == nil else { return }
-        try? FileManager.default.removeItem(atPath: SteamCMDManagedInstaller.normalisedPath(directory))
+        try? SteamLibraryWriter.removeDirectory(directory, under: SteamCMDProfile.root())
     }
 
     func deleteWorkshopItem(
@@ -1210,10 +1210,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 }
             }
         }
-        // EOF can precede Process's termination notification by a few ticks.
-        // Allow a successful +quit to finish before treating it as a timeout.
+        // EOF can precede Process's termination notification by a few ticks, and
+        // `+quit` after a fresh login still has the session to write out. A
+        // success cut short here is reported as a failed sign-in even though the
+        // session may already be on disk, so the budget is generous.
         if outcome == .success, process.isRunning {
-            let shutdownDeadline = Date().addingTimeInterval(3)
+            let shutdownDeadline = Date().addingTimeInterval(30)
             while process.isRunning, Date() < shutdownDeadline {
                 usleep(10000)
             }
@@ -1266,7 +1268,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 ))
             }
             do {
-                try FileManager.default.removeItem(atPath: path)
+                try SteamLibraryWriter.removeDirectory(root, under: root.deletingLastPathComponent())
                 send(SteamCMDManagedRemovalResult(outcome: .removed, failureReason: nil))
             } catch {
                 send(SteamCMDManagedRemovalResult(
@@ -1318,7 +1320,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 return send(SteamAccountSessionRemovalResult(outcome: .notFound, failureReason: nil))
             }
             do {
-                try FileManager.default.removeItem(atPath: path)
+                try SteamLibraryWriter.removeDirectory(directory, under: SteamCMDProfile.root())
                 send(SteamAccountSessionRemovalResult(outcome: .removed, failureReason: nil))
             } catch {
                 send(SteamAccountSessionRemovalResult(
@@ -1691,7 +1693,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     private static func discardStagedWorkshopTree(accountName: String) {
         guard let tree = try? SteamCMDProfile.stagedWorkshopTree(accountName: accountName),
               SteamCMDManagedInstaller.firstSymlinkComponent(of: tree) == nil else { return }
-        try? FileManager.default.removeItem(atPath: SteamCMDManagedInstaller.normalisedPath(tree))
+        try? SteamLibraryWriter.removeDirectory(tree, under: SteamCMDProfile.root())
     }
 
     /// Uses the one runner, so a wedged login cannot hold the serial queue: the
