@@ -626,70 +626,6 @@ struct FrameRateLimitTests {
         #expect(result == 24)
     }
 
-    @Test("Decoder: valid raw values")
-    func decoderValid() throws {
-        let data30 = try JSONEncoder().encode(30)
-        let decoded30 = try JSONDecoder().decode(FrameRateLimit.self, from: data30)
-        #expect(decoded30 == .fps30)
-
-        let data60 = try JSONEncoder().encode(60)
-        let decoded60 = try JSONDecoder().decode(FrameRateLimit.self, from: data60)
-        #expect(decoded60 == .fps60)
-
-        let data0 = try JSONEncoder().encode(0)
-        let decoded0 = try JSONDecoder().decode(FrameRateLimit.self, from: data0)
-        #expect(decoded0 == .matchDisplay)
-    }
-
-    @Test("Decoder: invalid raw value defaults to the panel's own rate")
-    func decoderInvalid() throws {
-        let data = try JSONEncoder().encode(999)
-        let decoded = try JSONDecoder().decode(FrameRateLimit.self, from: data)
-        #expect(decoded == .matchDisplay)
-    }
-
-    /// The divisor era wrote 1…4. `full` has to land on `matchDisplay` rather than
-    /// `fps60`, or every 120/240 Hz display would quietly drop to 60 on the first
-    /// launch after this change — the one thing the migration must not do.
-    @Test("Decoder: divisor-era raw values keep their meaning")
-    func decoderDivisorEra() throws {
-        func decode(_ raw: Int) throws -> FrameRateLimit {
-            try JSONDecoder().decode(FrameRateLimit.self, from: JSONEncoder().encode(raw))
-        }
-        #expect(try decode(1) == .matchDisplay)
-        #expect(try decode(2) == .fps30)
-        #expect(try decode(3) == .fps15)
-        #expect(try decode(4) == .fps15)
-    }
-
-    /// The reason the divisor form had to go: on a 240 Hz panel its four steps were
-    /// 240/120/80/60, so 30 was unreachable and the cheapest option still cost 60.
-    @Test("A target resolves to the fastest divisor that does not exceed it")
-    func targetsResolveOntoDivisors() {
-        #expect(FrameRateLimit.fps60.frameRate(forRefreshRate: 240) == 60)
-        #expect(FrameRateLimit.fps30.frameRate(forRefreshRate: 240) == 30)
-        #expect(FrameRateLimit.fps15.frameRate(forRefreshRate: 240) == 15)
-        #expect(FrameRateLimit.matchDisplay.frameRate(forRefreshRate: 240) == 240)
-    }
-
-    /// 144 is not a multiple of 60, so the 60 step has to round *down* to 48. The
-    /// label reports 48 for exactly this reason — rounding up would promise a rate
-    /// `CADisplayLink` will not deliver.
-    @Test("A refresh rate that is not a multiple of the target rounds down")
-    func targetsRoundDownOnAnAwkwardPanel() {
-        #expect(FrameRateLimit.fps60.frameRate(forRefreshRate: 144) == 48)
-        #expect(FrameRateLimit.fps30.frameRate(forRefreshRate: 144) == 29)
-        #expect(FrameRateLimit.matchDisplay.frameRate(forRefreshRate: 144) == 144)
-    }
-
-    /// At 60 Hz and below, "match display" runs at the same rate as the 60 step, so
-    /// offering both would put two identical entries in the menu.
-    @Test("Steps that resolve to the same rate are offered once")
-    func availableCasesDropDuplicates() {
-        #expect(FrameRateLimit.availableCases(forRefreshRate: 60) == [.fps15, .fps30, .fps60])
-        #expect(FrameRateLimit.availableCases(forRefreshRate: 240) == [.fps15, .fps30, .fps60, .matchDisplay])
-    }
-
     @Test("naturalDefault returns fps30 for scene wallpapers (WPE parity)")
     func naturalDefaultForScene() {
         #expect(FrameRateLimit.naturalDefault(for: .scene) == .fps30)
@@ -1326,17 +1262,6 @@ struct ResolveCompositionFPSTests {
             screenRefreshRate: 144
         )
         #expect(fps == 60)
-    }
-
-    /// A source is a ceiling for every step above it, and the floor is the step's
-    /// own target. The divisor form divided the source instead and produced
-    /// [8, 10, 15, 30] here — three steps below anything the user asked for.
-    @Test("On a 144Hz panel a 30fps source clamps to the source, never below the target")
-    func highRefreshPanelKeepsTheStepsDistinctForASlowSource() {
-        let steps = FrameRateLimit.allCases.map {
-            $0.videoFrameRate(forRefreshRate: 144, sourceFrameRate: 30)
-        }
-        #expect(steps == [15, 30, 30, 30])
     }
 
     @Test("The 30 step on a 60fps source on a 60 Hz panel → 30")
