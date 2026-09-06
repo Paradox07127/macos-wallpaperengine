@@ -9,7 +9,6 @@ final class EnvironmentOverlayController {
     private final class Host {
         let window: NSPanel
         let view: ParticleOverlayView
-        var suspended = false
 
         init(window: NSPanel, view: ParticleOverlayView) {
             self.window = window
@@ -27,6 +26,18 @@ final class EnvironmentOverlayController {
 
     private var hosts: [CGDirectDisplayID: Host] = [:]
 
+    /// One watcher for every display: the setting is global, and a per-host observer would
+    /// be four registrations on a four-monitor desk. Runs only while a host exists.
+    private lazy var reduceMotion = ReduceMotionWatcher { [weak self] reduced in
+        self?.applyReduceMotion(reduced)
+    }
+
+    /// Test seam, forwarded to the watcher — see `ReduceMotionWatcher.override`.
+    var reduceMotionOverride: Bool? {
+        get { reduceMotion.override }
+        set { reduceMotion.override = newValue }
+    }
+
     func apply(
         effect: ParticleEffect,
         density: Double,
@@ -43,10 +54,8 @@ final class EnvironmentOverlayController {
         host.window.setFrame(screenFrame, display: true)
         host.view.frame = NSRect(origin: .zero, size: screenFrame.size)
         host.view.setEffect(effect, density: CGFloat(density), tiltRadians: CGFloat(tiltRadians))
-        host.view.setSuspended(host.suspended)
-        if !host.suspended {
-            host.window.orderFrontRegardless()
-        }
+        host.view.setSuspended(reduceMotion.isReduced, for: .reduceMotion)
+        syncWindowVisibility(host)
     }
 
     /// Moves an already-live overlay to a new screen frame (resolution/arrangement
@@ -57,11 +66,23 @@ final class EnvironmentOverlayController {
         host.view.frame = NSRect(origin: .zero, size: frame.size)
     }
 
-    func setSuspended(_ suspended: Bool, screenID: CGDirectDisplayID) {
-        guard let host = hosts[screenID], host.suspended != suspended else { return }
-        host.suspended = suspended
-        host.view.setSuspended(suspended)
-        if suspended {
+    /// The runtime gate only. Reduce Motion is a separate reason on the same layer, so a
+    /// resume here leaves an accessibility pause standing.
+    func setRuntimeSuspended(_ suspended: Bool, screenID: CGDirectDisplayID) {
+        guard let host = hosts[screenID] else { return }
+        host.view.setSuspended(suspended, for: .runtime)
+        syncWindowVisibility(host)
+    }
+
+    private func applyReduceMotion(_ reduced: Bool) {
+        for host in hosts.values {
+            host.view.setSuspended(reduced, for: .reduceMotion)
+            syncWindowVisibility(host)
+        }
+    }
+
+    private func syncWindowVisibility(_ host: Host) {
+        if host.view.isSuspended {
             host.window.orderOut(nil)
         } else {
             host.window.orderFrontRegardless()
@@ -73,6 +94,9 @@ final class EnvironmentOverlayController {
         host.view.setEffect(.none)
         host.window.orderOut(nil)
         host.window.close()
+        if hosts.isEmpty {
+            reduceMotion.stop()
+        }
     }
 
     #if DEBUG
@@ -86,6 +110,17 @@ final class EnvironmentOverlayController {
     /// particle overlay to follow resolution/arrangement changes.
     func debugWindowFrame(screenID: CGDirectDisplayID) -> NSRect? {
         hosts[screenID]?.window.frame
+    }
+
+    /// Every reason this display's particles are paused for, so a test can tell a runtime
+    /// pause from a Reduce Motion one instead of only seeing "stopped".
+    func debugSuspensionReasons(screenID: CGDirectDisplayID) -> ParticleSuspensionReasons? {
+        hosts[screenID]?.view.suspensionReasons
+    }
+
+    /// Whether the accessibility observer is currently registered.
+    var debugIsWatchingReduceMotion: Bool {
+        reduceMotion.isWatching
     }
     #endif
 
@@ -130,6 +165,7 @@ final class EnvironmentOverlayController {
 
         let host = Host(window: window, view: view)
         hosts[screenID] = host
+        reduceMotion.start()
         return host
     }
 }

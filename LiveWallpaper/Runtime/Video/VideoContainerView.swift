@@ -240,7 +240,10 @@ final class VideoContainerView: NSView {
     }
 
     func setParticleEffectsSuspended(_ suspended: Bool) {
-        particleOverlayView.setSuspended(suspended)
+        // Runtime gate only, and it draws nothing either way: this overlay is never added as
+        // a subview (see `init`), it just mirrors player state across a handoff. Reduce Motion
+        // is handled where the particles are actually rendered, in `EnvironmentOverlayController`.
+        particleOverlayView.setSuspended(suspended, for: .runtime)
     }
 
     // MARK: - Layout
