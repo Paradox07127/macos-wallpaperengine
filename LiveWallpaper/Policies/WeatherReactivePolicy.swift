@@ -24,6 +24,17 @@ enum WeatherReactivePolicy {
         }
     }
 
+    /// Whether this display should have a particle overlay at all.
+    ///
+    /// Deliberately independent of the wallpaper. The overlay is its own click-through
+    /// panel above the desktop, so it decorates whatever is behind it — including
+    /// macOS's own wallpaper, with no LiveWallpaper session running. Requiring a session
+    /// ruled out the one case where the overlay is the only thing the app draws. The
+    /// master render gate still applies: turning every wallpaper off turns this off too.
+    static func shouldDrawParticles(effect: ParticleEffect, wallpapersEnabled: Bool) -> Bool {
+        effect != .none && wallpapersEnabled
+    }
+
     /// Which particles a display should actually draw. `.none` is the display's master off switch and
     /// always wins: weather chooses *which* particles fall, never *whether* they do. Resolving the other
     /// way round left "Show on This Display" inert for as long as "Match local weather" was on — the effect

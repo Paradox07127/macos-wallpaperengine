@@ -319,9 +319,11 @@ extension ScreenManager {
 
         if wallpapersGloballyEnabled {
             refreshPerformancePolicyForAllScreens()
-            if effectsCoordinatorWasInitialized {
-                effectsCoordinator.reconcileEnvironmentOverlays()
-            }
+        }
+        // Both directions: particles outlive the wallpaper session, so the gate going
+        // off is the only thing that takes them down.
+        if effectsCoordinatorWasInitialized {
+            effectsCoordinator.reconcileEnvironmentOverlays()
         }
         // Both directions: the reconcile reads the gate itself and tears the
         // panels down when it is off.

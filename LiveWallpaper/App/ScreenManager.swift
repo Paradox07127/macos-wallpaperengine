@@ -318,6 +318,9 @@ final class ScreenManager {
             },
             weatherWidgetPlaced: { [weak self] in
                 self?.hasEnabledWeatherWidget ?? false
+            },
+            isGloballyEnabled: { [weak self] in
+                self?.wallpapersGloballyEnabled ?? true
             }
         )
     }()

@@ -18,6 +18,8 @@ final class WallpaperEffectsCoordinator {
     private let isScreenSuspended: @MainActor (CGDirectDisplayID) -> Bool
     /// Whether a live Monitor board shows a Weather tile — the fetch's other consumer.
     private let weatherWidgetPlaced: @MainActor () -> Bool
+    /// The master render gate. Particles do not need a wallpaper, but they do obey this.
+    private let isGloballyEnabled: @MainActor () -> Bool
 
     /// Bumped per weather observe registration; stale generation short-circuits stacked callbacks.
     private var weatherTrackingGeneration: UInt64 = 0
@@ -32,7 +34,8 @@ final class WallpaperEffectsCoordinator {
         applyFrameRateLimit: @MainActor @escaping (FrameRateLimit, Screen) -> Void,
         screenRefreshRate: @MainActor @escaping (CGDirectDisplayID) -> Int,
         isScreenSuspended: @MainActor @escaping (CGDirectDisplayID) -> Bool = { _ in false },
-        weatherWidgetPlaced: @MainActor @escaping () -> Bool = { false }
+        weatherWidgetPlaced: @MainActor @escaping () -> Bool = { false },
+        isGloballyEnabled: @MainActor @escaping () -> Bool = { true }
     ) {
         self.weatherService = weatherService
         self.videoEffectsApplier = videoEffectsApplier
@@ -43,6 +46,7 @@ final class WallpaperEffectsCoordinator {
         self.screenRefreshRate = screenRefreshRate
         self.isScreenSuspended = isScreenSuspended
         self.weatherWidgetPlaced = weatherWidgetPlaced
+        self.isGloballyEnabled = isGloballyEnabled
     }
 
     // MARK: - Public API (called from ScreenManager facade)
@@ -292,11 +296,10 @@ final class WallpaperEffectsCoordinator {
         let screens = screensProvider()
         environmentOverlay.retainOnly(Set(screens.map(\.id)))
         for screen in screens {
-            guard screen.runtimeSession != nil,
-                  let config = configurationStore.get(
-                    for: screen.id,
-                    fingerprint: screen.displayFingerprint
-                  ) else {
+            guard let config = configurationStore.get(
+                for: screen.id,
+                fingerprint: screen.displayFingerprint
+            ) else {
                 environmentOverlay.teardown(screenID: screen.id)
                 continue
             }
@@ -318,10 +321,6 @@ final class WallpaperEffectsCoordinator {
 
     func setEnvironmentOverlaySuspended(_ suspended: Bool, for screen: Screen) {
         environmentOverlay.setSuspended(suspended, screenID: screen.id)
-    }
-
-    func removeEnvironmentOverlay(for screen: Screen) {
-        environmentOverlay.teardown(screenID: screen.id)
     }
 
     // MARK: - Private helpers
@@ -385,7 +384,9 @@ final class WallpaperEffectsCoordinator {
         // Keep the legacy player state neutral: particles now live in the common
         // per-display overlay so Video, HTML, Shader, and Scene share one path.
         screen.videoPlayer?.setParticleEffect(.none, density: density)
-        guard screen.runtimeSession != nil else {
+        guard WeatherReactivePolicy.shouldDrawParticles(
+            effect: effect, wallpapersEnabled: isGloballyEnabled()
+        ) else {
             environmentOverlay.teardown(screenID: screen.id)
             return
         }
