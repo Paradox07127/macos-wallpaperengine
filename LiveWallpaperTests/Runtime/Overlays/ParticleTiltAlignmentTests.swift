@@ -43,6 +43,7 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval
     ) throws -> Frame {
         guard let screen = NSScreen.main else { throw XCTSkip("no screen") }
+        try CaptureEnvironment.requireUnlockedScreen()
         let frame = NSRect(
             x: screen.frame.midX - size.width / 2,
             y: screen.frame.midY - size.height / 2,
@@ -138,6 +139,7 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval, gap: TimeInterval, count: Int
     ) throws -> [Frame] {
         guard let screen = NSScreen.main else { throw XCTSkip("no screen") }
+        try CaptureEnvironment.requireUnlockedScreen()
         let frame = NSRect(
             x: screen.frame.midX - size.width / 2,
             y: screen.frame.midY - size.height / 2,
@@ -319,16 +321,18 @@ final class ParticleTiltAlignmentTests: XCTestCase {
                 downwardLean(spriteFrame), "\(effect) sprite did not render on screen"
             )
 
-            let travelLean = try XCTUnwrap(
-                travelLean(of: cells), "\(effect) put no particles on screen"
-            )
+            // Measured outside the unwrap on purpose: `XCTUnwrap` records
+            // anything its expression throws as a failure, which would turn
+            // the locked-screen skip into a red test.
+            let measuredTravel = try travelLean(of: cells)
+            let travel = try XCTUnwrap(measuredTravel, "\(effect) put no particles on screen")
 
             XCTAssertGreaterThan(
-                spriteLean * travelLean, 0,
+                spriteLean * travel, 0,
                 """
                 \(effect) cell \(index) at tilt \(tilt): the sprite leans \
                 \(spriteLean > 0 ? "right" : "left") (\(spriteLean)) while the particles \
-                travel \(travelLean > 0 ? "right" : "left") (\(travelLean)) — it is drawn \
+                travel \(travel > 0 ? "right" : "left") (\(travel)) — it is drawn \
                 pointing away from its own path
                 """
             )
@@ -726,10 +730,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
                 (tilt > 0) ? 1.0 : -1.0, expected,
                 "\(name) (\(bearing)°) resolved to the wrong sign before it ever reached the emitter"
             )
-            let lean = try XCTUnwrap(
-                travelLean(of: probe.debugCells(for: .rain, tilt: CGFloat(tilt))),
-                "no rain on screen for the \(name)"
-            )
+            let measured = try travelLean(of: probe.debugCells(for: .rain, tilt: CGFloat(tilt)))
+            let lean = try XCTUnwrap(measured, "no rain on screen for the \(name)")
             XCTAssertEqual(
                 (lean > 0) ? 1.0 : -1.0, expected,
                 """

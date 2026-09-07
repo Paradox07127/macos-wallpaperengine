@@ -18,26 +18,26 @@ final class RainCoverageTests: XCTestCase {
         effect: ParticleEffect, tilt: CGFloat, settle: TimeInterval
     ) throws -> [Double] {
         guard let screen = NSScreen.main else { throw XCTSkip("no screen") }
+        try CaptureEnvironment.requireUnlockedScreen()
         let size = CGSize(width: 700, height: 460)
         let frame = NSRect(x: screen.frame.midX - size.width / 2,
                            y: screen.frame.midY - size.height / 2,
                            width: size.width, height: size.height)
 
-        let backdrop = NSWindow(contentRect: frame, styleMask: [.borderless],
-                                backing: .buffered, defer: false)
-        backdrop.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
-        backdrop.isOpaque = true
-        backdrop.backgroundColor = .black
-        backdrop.orderFrontRegardless()
-        defer { backdrop.orderOut(nil) }
-
+        // One opaque host rather than a transparent overlay over a separate
+        // black backdrop: the capture below reads this window's own backing
+        // store, so the black has to be inside it.
         let window = NSWindow(contentRect: frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2)
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        let view = ParticleOverlayView(frame: NSRect(origin: .zero, size: size))
-        window.contentView = view
+        window.isOpaque = true
+        window.backgroundColor = .black
+        let host = NSView(frame: NSRect(origin: .zero, size: size))
+        host.wantsLayer = true
+        host.layer?.backgroundColor = NSColor.black.cgColor
+        let view = ParticleOverlayView(frame: host.bounds)
+        host.addSubview(view)
+        window.contentView = host
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
 
@@ -46,11 +46,17 @@ final class RainCoverageTests: XCTestCase {
         // reports a hole that is only "these have not arrived yet".
         RunLoop.current.run(until: Date().addingTimeInterval(settle))
 
+        // This window's own backing store, not the screen region it occupies.
+        // A region capture reads whatever is in front: during a full run other
+        // suites put their own windows up, and these measurements failed at
+        // random while passing in isolation.
         let capture = CGWindowListCreateImage(
-            CGRect(x: frame.minX, y: screen.frame.maxY - frame.maxY,
-                   width: frame.width, height: frame.height),
-            .optionOnScreenOnly, kCGNullWindowID, [.bestResolution])
-        let image = try XCTUnwrap(capture, "screen capture returned nil")
+            .null,
+            [.optionIncludingWindow],
+            CGWindowID(window.windowNumber),
+            [.boundsIgnoreFraming, .bestResolution]
+        )
+        let image = try XCTUnwrap(capture, "window capture returned nil")
 
         let width = image.width, height = image.height
         var pixels = [UInt8](repeating: 0, count: width * height)
